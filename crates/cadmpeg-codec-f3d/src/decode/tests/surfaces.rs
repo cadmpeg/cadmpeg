@@ -270,37 +270,38 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
             .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
             .unwrap();
         for (ordinal, profile) in profiles.into_iter().enumerate() {
-            source_less
+            let curve = source_less
                 .model
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == profile)
-                .inspect(|curve| {
-                    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
-                        panic!("original finite ruled profile")
-                    };
-                    curve.parameter_range = Some(
-                        cadmpeg_ir::topology::IncreasingParameterInterval::new([
-                            nurbs.knots()[usize::try_from(nurbs.degree()).unwrap()],
-                            nurbs.knots()[nurbs.pole_count()],
-                        ])
-                        .unwrap(),
-                    );
-                })
-                .expect("ruled profile")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    cadmpeg_ir::math::Point3::new(
-                        f64_from_index(ordinal).expect("fixture index is exact in f64"),
-                        2.0,
-                        3.0,
-                    ),
-                    cadmpeg_ir::math::Vector3::new(4.0, 1.0, -2.0)
-                        .unit()
-                        .unwrap(),
-                )
+                .expect("ruled profile");
+
+            let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
+                panic!("original finite ruled profile")
+            };
+            curve.parameter_range = Some(
+                cadmpeg_ir::topology::IncreasingParameterInterval::new([
+                    nurbs.knots()[usize::try_from(nurbs.degree()).unwrap()],
+                    nurbs.knots()[nurbs.pole_count()],
+                ])
                 .unwrap(),
-            ));
+            );
+
+            curve.geometry =
+                cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        cadmpeg_ir::math::Point3::new(
+                            f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                            2.0,
+                            3.0,
+                        ),
+                        cadmpeg_ir::math::Vector3::new(4.0, 1.0, -2.0)
+                            .unit()
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                ));
         }
         let mut encoded = Vec::new();
         F3dCodec
@@ -373,37 +374,38 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
             .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
             .unwrap();
         for (ordinal, source) in source_curves.into_iter().enumerate() {
-            source_less
+            let curve = source_less
                 .model
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == source)
-                .inspect(|curve| {
-                    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
-                        panic!("original finite sum profile")
-                    };
-                    curve.parameter_range = Some(
-                        cadmpeg_ir::topology::IncreasingParameterInterval::new([
-                            nurbs.knots()[usize::try_from(nurbs.degree()).unwrap()],
-                            nurbs.knots()[nurbs.pole_count()],
-                        ])
-                        .unwrap(),
-                    );
-                })
-                .expect("sum source curve")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    cadmpeg_ir::math::Point3::new(
-                        1.0,
-                        f64_from_index(ordinal).expect("fixture index is exact in f64"),
-                        -1.0,
-                    ),
-                    cadmpeg_ir::math::Vector3::new(2.0, 3.0, 4.0)
-                        .unit()
-                        .unwrap(),
-                )
+                .expect("sum source curve");
+
+            let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
+                panic!("original finite sum profile")
+            };
+            curve.parameter_range = Some(
+                cadmpeg_ir::topology::IncreasingParameterInterval::new([
+                    nurbs.knots()[usize::try_from(nurbs.degree()).unwrap()],
+                    nurbs.knots()[nurbs.pole_count()],
+                ])
                 .unwrap(),
-            ));
+            );
+
+            curve.geometry =
+                cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                        cadmpeg_ir::math::Point3::new(
+                            1.0,
+                            f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                            -1.0,
+                        ),
+                        cadmpeg_ir::math::Vector3::new(2.0, 3.0, 4.0)
+                            .unit()
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                ));
         }
         let mut encoded = Vec::new();
         F3dCodec

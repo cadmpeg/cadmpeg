@@ -2493,8 +2493,6 @@ fn native_law_formula(
     target: &CadIr,
     formula: &cadmpeg_ir::geometry::LawFormula,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
-
     // The native stream spells the null law with its own token; the IR states
     // the variant and knows no such text. The match is exhaustive so a third
     // variant is a compile error here, not a silently written token.
@@ -4887,6 +4885,7 @@ mod native_interval_curve_tests {
     fn source_less_sweep_reduces_locally_bounded_conic_intervals() {
         use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
         use cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload;
         use cadmpeg_ir::geometry::{analytic::CircleCurve, SweepSurfaceLayout};
         use std::io::Cursor;
