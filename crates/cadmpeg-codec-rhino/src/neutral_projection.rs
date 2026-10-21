@@ -241,26 +241,35 @@ pub(crate) fn project(
             .filter(|target| !matches!(target, PresentationItem::Body { .. }));
         if non_body_targets.clone().next().is_some() {
             if let Some(attributes) = object.attributes.parsed() {
-                ctx.charge_entities(1, "rhino_object_visibility")?;
-                ir.model
-                    .view_presentations
-                    .push(cadmpeg_ir::presentation::ViewPresentation {
-                        id: cadmpeg_ir::presentation::PresentationId::mint(format!(
-                            "rhino:model:object-view#{source_order}"
-                        ))
-                        .map_err(CodecError::malformed)?,
-                        object: Some(object.identity.object_id.to_string()),
-                        order: u32::try_from(ir.model.view_presentations.len())
+                for (ordinal, item) in non_body_targets.clone().enumerate() {
+                    let target = match item {
+                        PresentationItem::Point { point } => point.to_string(),
+                        PresentationItem::Curve { curve } => curve.to_string(),
+                        PresentationItem::Surface { surface } => surface.to_string(),
+                        PresentationItem::Tessellation { tessellation } => tessellation.clone(),
+                        _ => continue,
+                    };
+                    ctx.charge_entities(1, "rhino_object_visibility")?;
+                    ir.model
+                        .view_presentations
+                        .push(cadmpeg_ir::presentation::ViewPresentation {
+                            id: cadmpeg_ir::presentation::PresentationId::mint(format!(
+                                "rhino:model:object-view#{source_order}-{ordinal}"
+                            ))
                             .map_err(CodecError::malformed)?,
-                        expanded: None,
-                        visible: Some(attributes.visible),
-                        display_mode: None,
-                        selection_style: None,
-                        line_width: None,
-                        point_size: None,
-                        properties: BTreeMap::new(),
-                        native_ref: None,
-                    });
+                            object: Some(target),
+                            order: u32::try_from(ir.model.view_presentations.len())
+                                .map_err(CodecError::malformed)?,
+                            expanded: None,
+                            visible: Some(attributes.visible),
+                            display_mode: None,
+                            selection_style: None,
+                            line_width: None,
+                            point_size: None,
+                            properties: BTreeMap::new(),
+                            native_ref: None,
+                        });
+                }
                 if matches!(
                     attributes.color_source,
                     crate::objects::ColorSource::Object | crate::objects::ColorSource::Layer
