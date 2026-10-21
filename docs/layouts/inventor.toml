@@ -1028,29 +1028,29 @@ anchor = "terminal_state u8"
 name = "ufrx_occurrence_prefix"
 kind = "byte"
 section = "8"
-anchor = "Each nonempty record starts with"
+anchor = "Each record starts with"
 size = 20
 
 [[record.field]]
-name = "end_string_flag"
+name = "reference_id"
 offset = 0
 type = "u32"
 source = "spec"
-anchor = "end_string_flag u32"
-
-[[record.field]]
-name = "file_reference_id"
-offset = 4
-type = "u32"
-source = "spec"
-anchor = "file_reference_id u32"
+anchor = "reference_id u32"
 
 [[record.field]]
 name = "occurrence_id"
-offset = 8
+offset = 4
 type = "u32"
 source = "spec"
 anchor = "occurrence_id u32"
+
+[[record.field]]
+name = "occurrence_key"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "occurrence_key u32"
 
 [[record.field]]
 name = "header_value"
@@ -1060,11 +1060,11 @@ source = "spec"
 anchor = "header_value u32"
 
 [[record.field]]
-name = "title_form_or_count"
+name = "title_count"
 offset = 16
 type = "u32"
 source = "spec"
-anchor = "title_form_or_count u32"
+anchor = "title_count u32"
 
 [[record]]
 name = "assembly_occurrence_prefix"

@@ -94,6 +94,8 @@ body → region → shell → face → loop → coedge → edge → vertex → p
 
 A loop is either a nonempty `coedges` ring of distinct coedge identities or one unanchored vertex use. For every edge loop, `coedges` contains exactly one simple cycle. Each coedge's `next` and `previous` links are reciprocal and remain within that loop. Pole-vertex uses in an edge loop identify their preceding member with `after`; multiple uses after one coedge retain vector order. A vertex loop contains no coedges and exactly one vertex use whose `after` is absent.
 
+An edge loop's traversal, with each coedge's sense applied, keeps the face on its left when viewed from the side its oriented normal points to. The oriented normal is the surface normal, reversed when the face's `sense` is `reversed`. An outer loop therefore runs counterclockwise about the oriented normal and an inner loop clockwise; on a closed solid the oriented normals point out of the material. This is the STEP `face_bound` convention after `orientation` and `same_sense` are applied, so the STEP reader and writer carry loops unchanged.
+
 All coedges that use an edge form one closed radial ring through `radial_next`. Every member references the same edge:
 
 - one member is a laminar boundary and points to itself;
@@ -348,7 +350,7 @@ The generated document begins with this complete hierarchy and representative ra
         "next": "ce_bottom_1",
         "previous": "ce_bottom_3",
         "radial_next": "ce_front_0",
-        "sense": "forward"
+        "sense": "reversed"
       },
       {
         "id": "ce_front_0",
@@ -357,7 +359,7 @@ The generated document begins with this complete hierarchy and representative ra
         "next": "ce_front_1",
         "previous": "ce_front_3",
         "radial_next": "ce_bottom_0",
-        "sense": "reversed"
+        "sense": "forward"
       }
     ],
     "edges": [
