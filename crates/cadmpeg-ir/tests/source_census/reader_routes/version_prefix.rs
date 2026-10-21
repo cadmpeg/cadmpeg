@@ -2,7 +2,7 @@
 //! Proof of the bounded version-prefix map delegation grammar.
 //!
 //! This recognizes a complete forwarding structure, not a helper's name. Every
-//! consumed prefix pair and the remaining MapAccess must reach the denied wire.
+//! consumed prefix pair and the remaining `MapAccess` must reach the denied wire.
 //! An unrecognized edit is an unresolved route and fails the ordinary census.
 
 use syn::spanned::Spanned;
@@ -92,8 +92,8 @@ fn context(symbol: &SymbolKey) -> HandImplSource {
         body: String::new(),
         method_nodes: Vec::new(),
         method_block: None,
-        deserializer_bindings: Default::default(),
-        local_denied: Default::default(),
+        deserializer_bindings: std::collections::BTreeSet::default(),
+        local_denied: std::collections::BTreeSet::default(),
     }
 }
 
@@ -147,19 +147,19 @@ const VISIT_MAP: &str = r#"{
     Err(serde::de::Error::custom(unsupported_version(None)))
 }"#;
 
-const NEXT_KEY: &str = r#"{
+const NEXT_KEY: &str = r"{
     use serde::de::IntoDeserializer;
     if let Some((key, value)) = self.prefix.next() {
         self.pending = Some(value);
         seed.deserialize(key.into_deserializer()).map(Some)
     } else { self.remaining.next_key_seed(seed) }
-}"#;
+}";
 
-const NEXT_VALUE: &str = r#"{
+const NEXT_VALUE: &str = r"{
     if let Some(value) = self.pending.take() {
         seed.deserialize(value).map_err(serde::de::Error::custom)
     } else { self.remaining.next_value_seed(seed) }
-}"#;
+}";
 
 fn adapter_is_forwarding(items: &[syn::Item], source: &str) -> bool {
     let Some(adapter) = implementation(items, "VersionedFields", "MapAccess") else {

@@ -751,7 +751,7 @@ fn classify_prefix_fixture(source: &str) -> Result<HandReaderClass, String> {
         .sources
         .iter()
         .find(|source| source.name == "Reader")
-        .unwrap();
+        .expect("the fixture declares its Reader source");
     classify_route(reader, &index)
 }
 
