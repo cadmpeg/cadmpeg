@@ -12,7 +12,7 @@ fn occurrence(
     definition: &ProductDefinition,
     parent: Option<&Occurrence>,
 ) -> Occurrence {
-    serde_json::from_value(json!({"id":format!("authored:model:occurrence#{name}"),"prototype":{"scope":"local","definition":definition.id},"parent":parent.map_or(json!({"kind":"root"}),|parent|json!({"kind":"occurrence","occurrence":parent.id})),"ordinal":0,"transform":cadmpeg_ir::transform::Transform::identity(),"scale":[1,1,1],"name":name})).expect("occurrence")
+    serde_json::from_value(json!({"id":format!("authored:model:occurrence#{name}"),"prototype":{"scope":"local","definition":definition.id},"parent":parent.map_or(json!({"kind":"root"}),|parent|json!({"kind":"occurrence","occurrence":parent.id})),"ordinal":0,"transform":cadmpeg_ir::transform::Transform::identity(),"name":name})).expect("occurrence")
 }
 
 #[test]

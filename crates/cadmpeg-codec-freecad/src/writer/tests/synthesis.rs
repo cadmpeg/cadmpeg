@@ -382,7 +382,7 @@ fn exact_editor_feature_expression_constraint_and_appearance_edits_survive() {
                     id.ends_with("#Pad:Length") || id.ends_with("#DesignedFeature:Length")
                 })
             })
-            .unwrap()["expression"] = json!("37 mm");
+            .unwrap()["expression"] = json!(cadmpeg_ir::features::Expression::text("37 mm"));
         let dimensional = parameters
             .iter_mut()
             .find(|parameter| {
@@ -391,7 +391,7 @@ fn exact_editor_feature_expression_constraint_and_appearance_edits_survive() {
                     .is_some_and(|id| id.contains(":constraint:"))
             })
             .unwrap();
-        dimensional["expression"] = json!("31 mm");
+        dimensional["expression"] = json!(cadmpeg_ir::features::Expression::text("31 mm"));
         dimensional["value"] = json!({"kind":"length","value":31.0});
         let body = value["model"]["bodies"][0]["id"].clone();
         let color = cadmpeg_ir::topology::Color::from_rgba8(48, 96, 144, 255);
