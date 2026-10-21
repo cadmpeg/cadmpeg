@@ -1223,7 +1223,17 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         owner: Some(owner.clone()),
         ordinal: 6,
         name: "D6".into(),
-        expression: "D0 + 1mm".into(),
+        // #209 D5: the canonical expression owns its references; there is no
+        // independently omitted dependency mirror to forge.
+        expression: cadmpeg_ir::features::Expression {
+            tokens: vec![
+                cadmpeg_ir::features::ExpressionToken::Parameter(
+                    ParameterId::mint("synthetic:test:id#base-parameter")
+                        .expect("identity grammar"),
+                ),
+                cadmpeg_ir::features::ExpressionToken::Text(" + 1mm".into()),
+            ],
+        },
         display: None,
         value: Some(cadmpeg_ir::features::ParameterValue::Length(
             Length::new(2.0).unwrap(),
@@ -1271,6 +1281,38 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
             native_ref: None,
         });
     }
+    let canonical = &ir.model.parameters[6];
+    assert_eq!(
+        crate::test_support::history::rendered_parameter(&ir, canonical),
+        "D0 + 1mm"
+    );
+    assert_eq!(
+        canonical
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![ir.model.parameters[0].id.clone()]
+    );
+    assert_eq!(
+        ir.model.parameters[4]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![ir.model.parameters[5].id.clone()]
+    );
+    // Preserve the authored malformed/missing references and incorrect D4 cache.
+    assert_eq!(
+        ir.model.parameters[1].expression.literal_text().as_deref(),
+        Some("\"D0@Boss-Extrude1\" + Missing@Sketch1")
+    );
+    assert_eq!(
+        ir.model.parameters[4].value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap()
+        ))
+    );
     let mut report = super::empty_report(true);
 
     append_design_losses(
@@ -1282,7 +1324,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
 
     assert!(report.losses.iter().any(|loss| {
         loss.message
-            == "1 parameter(s) lack an evaluated scalar; 3 parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; 4 parameter expression(s) cannot regenerate a finite typed value; 1 parameter record(s) contain missing or non-preceding dependency edges; 2 parameter record(s) have dependency edges inconsistent with their expressions; 1 dependency-driven parameter(s) disagree with their evaluated expressions."
+            == "1 parameter(s) lack an evaluated scalar; 3 parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; 4 parameter expression(s) cannot regenerate a finite typed value; 1 parameter record(s) contain missing or non-preceding dependency edges; 0 parameter record(s) have dependency edges inconsistent with their expressions; 1 dependency-driven parameter(s) disagree with their evaluated expressions."
     }));
     assert!(report.losses.iter().any(|loss| {
         loss.message
