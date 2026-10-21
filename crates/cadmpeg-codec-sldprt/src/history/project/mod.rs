@@ -32,6 +32,8 @@ mod content_tests;
 mod custom_property_tests;
 mod datum;
 #[cfg(test)]
+mod dimension_admission_tests;
+#[cfg(test)]
 mod dimension_projection_tests;
 #[cfg(test)]
 mod feature_projection_tests;
@@ -1414,13 +1416,30 @@ pub(super) fn neutral_parameter_id(
 }
 
 /// A source dimension is represented once, by its canonical parameter identity.
-pub(crate) fn parameter_dimension<Q>(
+pub(crate) fn parameter_dimension<Q: cadmpeg_ir::features::DimensionValue>(
     feature: &Feature,
     names: &[&str],
 ) -> Option<cadmpeg_ir::features::Dimension<Q>> {
     let projected = projected_parameter_names(feature);
     names.iter().find_map(|name| {
         let ordinal = projected.iter().position(|candidate| candidate == name)?;
+        if let Some(cache) = feature
+            .dimension_properties
+            .get(*name)
+            .and_then(|properties| properties.get("Value"))
+        {
+            let value =
+                crate::history::parameters::parse_native_parameter_literal(feature, name, cache)?;
+            Q::from_parameter_value(&value)?;
+        } else if let Some(value) =
+            crate::history::parameters::source_parameter_value(feature, name)
+        {
+            Q::from_parameter_value(&value)?;
+        } else if feature.parameters.get(*name).is_some_and(|expression| {
+            crate::history::literals::nonfinite_parameter_literal(expression)
+        }) {
+            return None;
+        }
         neutral_parameter_id(feature, ordinal)
             .ok()
             .map(cadmpeg_ir::features::Dimension::Parameter)
@@ -1464,11 +1483,16 @@ fn native_definition(feature: &Feature) -> FeatureDefinition {
             .map(|(name, expression)| {
                 (
                     name.clone(),
-                    parameter_dimension(feature, &[name.as_str()]).unwrap_or_else(|| {
-                        cadmpeg_ir::features::Dimension::Literal(
-                            cadmpeg_ir::features::Expression::text(expression),
-                        )
-                    }),
+                    projected_parameter_names(feature)
+                        .iter()
+                        .position(|candidate| candidate == name.as_str())
+                        .and_then(|ordinal| neutral_parameter_id(feature, ordinal).ok())
+                        .map(cadmpeg_ir::features::Dimension::Parameter)
+                        .unwrap_or_else(|| {
+                            cadmpeg_ir::features::Dimension::Literal(
+                                cadmpeg_ir::features::Expression::text(expression),
+                            )
+                        }),
                 )
             })
             .collect(),

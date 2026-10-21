@@ -243,6 +243,26 @@ pub(super) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue
         .map(ParameterValue::Real)
 }
 
+/// Recognize an explicitly non-finite scalar literal without treating an equation as a cache.
+pub(crate) fn nonfinite_parameter_literal(expression: &str) -> bool {
+    let expression = strip_dimension_count(expression.trim());
+    let expression = strip_diameter_modifier(expression)
+        .or_else(|| strip_radius_modifier(expression))
+        .unwrap_or(expression)
+        .trim();
+    [
+        "uin", "mil", "mm", "cm", "in", "ft", "nm", "um", "µm", "μm", "Å", "A", "m", "rad", "deg",
+        "°", "",
+    ]
+    .into_iter()
+    .any(|suffix| {
+        expression
+            .strip_suffix(suffix)
+            .and_then(|number| number.trim().parse::<f64>().ok())
+            .is_some_and(|number| !number.is_finite())
+    })
+}
+
 pub(super) fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
     let expression = strip_dimension_count(expression.trim());
     if strip_diameter_modifier(expression).is_some()

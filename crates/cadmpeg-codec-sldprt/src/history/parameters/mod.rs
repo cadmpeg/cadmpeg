@@ -22,7 +22,7 @@ use crate::history::classify::{
 use crate::history::literals::{
     dimension_display, format_angle_rad, format_f64_literal, format_length_mm,
     format_length_number, format_parameter_value, parse_angle_rad, parse_dimension_display_length,
-    parse_parameter_literal, parse_positive_dimension_length_mm,
+    parse_parameter_literal, parse_dimension_length_mm,
 };
 use crate::history::project::pattern::{pattern_form, NativePatternClass};
 use crate::history::project::{
@@ -275,10 +275,16 @@ pub(crate) fn parse_native_parameter_literal(
     name: &str,
     expression: &str,
 ) -> Option<ParameterValue> {
+    if feature
+        .parameters
+        .get(name)
+        .and_then(|source| dimension_display(source))
+        .is_some()
+    {
+        return parse_dimension_display_length(expression).map(ParameterValue::Length);
+    }
     if native_parameter_is_length(feature, name, Some(expression)) {
-        return parse_positive_dimension_length_mm(expression)
-            .map(Length::from)
-            .map(ParameterValue::Length);
+        return parse_dimension_length_mm(expression).map(ParameterValue::Length);
     }
     parse_parameter_literal(expression)
 }
@@ -289,6 +295,9 @@ pub(super) fn native_parameter_is_length(
     expression: Option<&str>,
 ) -> bool {
     let cosmetic_thread = classify(feature) == Some(FeatureClass::CosmeticThread);
+    if is_chamfer(feature) && ordered_chamfer_length_control(feature, name) {
+        return true;
+    }
     match name {
         "D1" => {
             is_extrude(feature)
@@ -336,6 +345,33 @@ pub(super) fn native_parameter_is_length(
                 && feature.parameters.len() == 1
                 && feature.parameters.contains_key(name)
         }
+    }
+}
+
+/// The ordered one- or two-control chamfer schema used by operation projection.
+fn ordered_chamfer_length_control(feature: &Feature, name: &str) -> bool {
+    let controls = feature
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            crate::records::FeatureContent::Dimension(name) => feature
+                .parameters
+                .get(name.as_str())
+                .map(|value| (name.as_str(), value.as_str())),
+            crate::records::FeatureContent::Feature(_)
+            | crate::records::FeatureContent::Text(_) => None,
+        })
+        .collect::<Vec<_>>();
+    match controls.as_slice() {
+        [(control, _)] => *control == name,
+        [(first, first_value), (second, second_value)] => {
+            let first_angle =
+                crate::history::literals::parse_bounded_angle_rad(first_value).is_some();
+            let second_angle =
+                crate::history::literals::parse_bounded_angle_rad(second_value).is_some();
+            (name == *first && !first_angle) || (name == *second && !second_angle)
+        }
+        _ => false,
     }
 }
 
