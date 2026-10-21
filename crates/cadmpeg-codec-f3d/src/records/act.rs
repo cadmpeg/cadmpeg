@@ -1241,9 +1241,9 @@ impl ActRootLayout {
         if !crate::act::is_entity_key(&entity_id) {
             return Err("entity_id must be an ACT entity key".into());
         }
-        if !(1..=8).contains(&padding) {
+        if padding > 8 {
             return Err(
-                "components_root_record_offset requires one through eight padding bytes".into(),
+                "components_root_record_offset requires zero through eight padding bytes".into(),
             );
         }
         let string_bytes = entity_id
