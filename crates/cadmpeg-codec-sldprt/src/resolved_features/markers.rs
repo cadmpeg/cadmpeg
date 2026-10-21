@@ -1273,7 +1273,9 @@ fn generated_coordinate_identity_boundary(payload: &[u8], offset: usize) -> bool
     if header.get(..super::CLASS_MARKER.len()) != Some(super::CLASS_MARKER) {
         return false;
     }
-    let length = usize::from(u16::from_le_bytes([header[4], header[5]]));
+    let Some(length) = View::u16_le_at(header, 4).map(usize::from) else {
+        return false;
+    };
     let Some(name) = name_start
         .checked_add(length)
         .and_then(|finish| payload.get(name_start..finish))
