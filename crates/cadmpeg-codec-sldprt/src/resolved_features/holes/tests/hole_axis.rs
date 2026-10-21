@@ -858,7 +858,10 @@ fn hole_topology_uses_exact_cylinder_spans() {
     else {
         unreachable!();
     };
-    let diameter = shape.diameter();
+    let diameter = shape
+        .diameter()
+        .and_then(cadmpeg_ir::Dimension::literal)
+        .copied();
     assert_eq!(
         diameter,
         Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap())

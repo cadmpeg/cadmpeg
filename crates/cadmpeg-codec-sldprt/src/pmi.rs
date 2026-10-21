@@ -833,7 +833,7 @@ fn collect_dimensions(
             record.inspection_offset = record.inspection_offset.and_then(source);
             record.reference_only_offset = record.reference_only_offset.and_then(source);
             if let Some((_, offset)) = &mut record.display_text {
-                *offset = offset.map(source);
+                *offset = offset.and_then(source);
             }
             crate::annotations::note(
                 annotations,
