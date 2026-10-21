@@ -332,7 +332,7 @@ pub(super) fn write(
         let expanded = provider.expanded.map_or(String::new(), |value| {
             format!(" expanded=\"{}\"", u8::from(value))
         });
-        let _ = write!(content, "<ViewProvider name=\"{}\"{expanded}><Properties Count=\"{}\">{}</Properties></ViewProvider>",xml::escaped(&provider.name),provider.properties.len(),provider.properties.values().cloned().collect::<String>());
+        let _infallible_string_write = write!(content, "<ViewProvider name=\"{}\"{expanded}><Properties Count=\"{}\">{}</Properties></ViewProvider>",xml::escaped(&provider.name),provider.properties.len(),provider.properties.values().cloned().collect::<String>());
     }
     let (schema, attributes, states) = document::write(ir, losses)?;
     Ok(format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><GuiDocument SchemaVersion=\"{schema}\"{attributes}>{states}<ViewProviderData Count=\"{}\">{content}</ViewProviderData></GuiDocument>",providers.len()))

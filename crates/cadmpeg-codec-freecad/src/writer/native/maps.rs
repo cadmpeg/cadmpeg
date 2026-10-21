@@ -106,14 +106,16 @@ pub(crate) fn write(
         table_indices.insert(table.index, output_index);
         let mut content = String::new();
         for entry in entries {
-            let _ = write!(content, "{}.{:x}", hex(entry.string_id), entry.flags);
+            let _infallible_string_write =
+                write!(content, "{}.{:x}", hex(entry.string_id), entry.flags);
             for component in &entry.components {
                 content.push('.');
                 content.push_str(&hex(*component));
             }
             content.push(' ');
             if entry.flags & 8 == 0 {
-                let _ = write!(content, "{}:", entry.payload.matches('\n').count());
+                let _infallible_string_write =
+                    write!(content, "{}:", entry.payload.matches('\n').count());
             }
             content.push_str(&entry.payload);
             content.push('\n');
@@ -228,7 +230,7 @@ pub(crate) fn write(
             map.maps.iter().len()
         );
         for (index, node) in map.maps.iter().enumerate() {
-            let _ = write!(
+            let _infallible_string_write = write!(
                 content,
                 "ElementMap {} {} {}",
                 index + 1,
@@ -237,7 +239,7 @@ pub(crate) fn write(
             );
             content.push('\n');
             for group in &node.groups {
-                let _ = write!(
+                let _infallible_string_write = write!(
                     content,
                     "{} ChildCount {} {} NameCount {}",
                     group.indexed_name,

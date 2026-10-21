@@ -134,13 +134,13 @@ fn transformed(
                 axis.rows.len()
             );
             for (index, pole) in poles.iter().take(axis.count).enumerate() {
-                let _ = write!(output, " {}", point_row(pole.get())?);
+                let _infallible_string_write = write!(output, " {}", point_row(pole.get())?);
                 if let Some(weights) = &weights {
-                    let _ = write!(output, " {}", weights[index].get());
+                    let _infallible_string_write = write!(output, " {}", weights[index].get());
                 }
             }
             for (knot, multiplicity) in axis.rows {
-                let _ = write!(output, " {knot} {multiplicity}");
+                let _infallible_string_write = write!(output, " {knot} {multiplicity}");
             }
             output
         }
