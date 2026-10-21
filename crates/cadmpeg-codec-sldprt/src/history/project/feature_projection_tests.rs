@@ -617,8 +617,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         &HashMap::new(),
         &[native_owned.clone(), native_profile.clone()],
     )
-    .expect("project hole")
-    .unwrap();
+    .expect("project hole");
     assert!(matches!(
         projected, FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
@@ -651,8 +650,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         &HashMap::new(),
         std::slice::from_ref(&canonical),
     )
-    .expect("project hole")
-    .unwrap();
+    .expect("project hole");
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         ref shape,
         extent: Some(LinearTermination::Blind { ref length }),

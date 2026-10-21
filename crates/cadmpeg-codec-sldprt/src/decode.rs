@@ -2751,7 +2751,7 @@ fn build_geometry_ir(
         &ir.model.sketch_entities,
         &histories,
         &all_lanes,
-    )?;
+    );
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
         &mut ir.model.features,
         &ir.model.spatial_sketches,
@@ -3825,7 +3825,7 @@ fn build_metadata_ir(
         &ir.model.sketch_entities,
         &histories,
         lanes,
-    )?;
+    );
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
         &mut ir.model.features,
         &ir.model.spatial_sketches,
@@ -4022,7 +4022,7 @@ fn project_design_history(
         lanes,
     );
     crate::resolved_features::holes::
-        enrich_history_cosmetic_thread_diameters_without_hole_constructions(&mut parameter_projection, lanes)?;
+        enrich_history_cosmetic_thread_diameters_without_hole_constructions(&mut parameter_projection, lanes);
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters =
         crate::history::parameters::project_parameters(ctx, &parameter_projection)?;

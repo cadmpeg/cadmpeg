@@ -46,9 +46,13 @@ fn partition_configuration_reports_only_its_new_native_association() {
     assert!(note.message.contains(snapshot.id.as_str()));
     let mut projected = decoded.ir().clone();
     let mut losses = Vec::new();
-    let native = super::design::prepare(&mut projected, &mut losses, &Default::default())
-        .unwrap()
-        .unwrap();
+    let native = super::design::prepare(
+        &mut projected,
+        &mut losses,
+        &std::collections::BTreeSet::default(),
+    )
+    .unwrap()
+    .unwrap();
     let namespace = crate::test_support::native::sldprt_native(&projected);
     assert_eq!(
         namespace
