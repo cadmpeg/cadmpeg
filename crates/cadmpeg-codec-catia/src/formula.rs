@@ -557,7 +557,13 @@ pub(crate) fn transfer_parameters(
         .map(|candidate| {
             (
                 candidate.parameter.id.clone(),
-                candidate.parameter.name.clone(),
+                candidate
+                    .parameter
+                    .properties
+                    .get("catia_binding")
+                    .filter(|binding| !binding.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| candidate.parameter.name.clone()),
             )
         })
         .collect::<BTreeMap<_, _>>();
