@@ -570,6 +570,7 @@ fn edge_flange_to_object_fixture(
     Option<(
         cadmpeg_ir::features::FeatureDefinition,
         crate::records::feature::scope::DesignParameterScope,
+        cadmpeg_ir::CadIr,
     )>,
     cadmpeg_core::CodecError,
 > {
@@ -825,7 +826,13 @@ fn edge_flange_to_object_fixture(
         ..Default::default()
     };
     let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, ctx)?;
-    Ok(definition.map(|definition| (definition, target_scope)))
+    Ok(definition.map(|definition| {
+        (
+            definition,
+            target_scope,
+            super::parameter_document(&parameters),
+        )
+    }))
 }
 
 #[test]
@@ -833,7 +840,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
-    let (definition, target_scope) = crate::test_support::with_decode_context(|decode_ctx| {
+    let (definition, target_scope, ir) = crate::test_support::with_decode_context(|decode_ctx| {
         edge_flange_to_object_fixture(decode_ctx, true, false)
     })
     .unwrap()
@@ -850,7 +857,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         target,
         SheetMetalFlangeHeightTarget::Feature(crate::ids::neutral_feature_id(&target_scope))
     );
-    assert_eq!(super::dimension_value(&offset, &parameters).get(), 15.0);
+    assert_eq!(ir.dimension_value(&offset).unwrap().get(), 15.0);
 }
 
 #[test]
@@ -859,7 +866,7 @@ fn edge_flange_unresolved_to_object_keeps_native_target() {
         FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
 
-    let (definition, _) = crate::test_support::with_decode_context(|decode_ctx| {
+    let (definition, _, _) = crate::test_support::with_decode_context(|decode_ctx| {
         edge_flange_to_object_fixture(decode_ctx, false, false)
     })
     .unwrap()
@@ -884,11 +891,15 @@ fn edge_flange_two_sided_projects() {
     };
     use cadmpeg_ir::scalar::PositiveLength;
 
-    let (definition, _) = crate::test_support::with_decode_context(|decode_ctx| {
+    let (definition, _, ir) = crate::test_support::with_decode_context(|decode_ctx| {
         edge_flange_to_object_fixture(decode_ctx, true, true)
     })
     .unwrap()
     .expect("two-sided EdgeFlange definition");
+    use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
+    let definition =
+        crate::test_support::with_decode_context(|ctx| definition.resolve_dimensions(&ir, ctx))
+            .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
         height, width, ..
     }) = definition
