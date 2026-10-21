@@ -235,3 +235,40 @@ fn genuinely_untyped_marker_only_lane_is_omitted() {
         assert!(losses.iter().any(|loss| loss.message.contains(marker_id)));
     }
 }
+
+#[test]
+fn edited_native_scalar_with_actual_marker_operands_writes_current_value() {
+    let mut source = source();
+    let scalar_id = source.feature_input_lanes[0].scalars[0].id.clone();
+    // The original authored lane bytes carry 0.025; current typed content is
+    // the edited 0.050. Regeneration must take the current value with all three
+    // actual marker ordinals, never return the old source cache.
+    source.feature_input_lanes[0].scalars[0].value =
+        cadmpeg_ir::scalar::FiniteReal::new(0.050).expect("finite test scalar");
+    let (target, losses, dispositions) = regenerate_control(&source);
+    assert!(losses.is_empty(), "{losses:#?}");
+    let [lane] = target.feature_input_lanes.as_slice() else {
+        panic!("one complete native lane");
+    };
+    assert_eq!(lane.sketch_entities.len(), 3);
+    assert_eq!(lane.scalars.len(), 1);
+    assert_eq!(
+        lane.scalars[0].value.get(),
+        0.050,
+        "the old source scalar must not return"
+    );
+    assert_eq!(lane.scalars[0].entity_indices(), [0, 2]);
+    assert_eq!(
+        lane.scalars[0].operands[0].entity_ref.as_deref(),
+        Some(lane.sketch_entities[0].id())
+    );
+    assert_eq!(
+        lane.scalars[0].operands[1].entity_ref.as_deref(),
+        Some(lane.sketch_entities[2].id())
+    );
+    assert_eq!(
+        dispositions.record_disposition("sldprt", "feature_input_scalars", &scalar_id),
+        NativeDisposition::Regenerated
+    );
+    assert_eq!(source.feature_input_lanes[0].scalars[0].value.get(), 0.050);
+}
