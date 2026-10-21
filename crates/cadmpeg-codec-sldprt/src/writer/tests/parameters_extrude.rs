@@ -1162,6 +1162,14 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let blind = ir_edit.model.features[1].id.clone();
+        ir_edit
+            .set_dimension(
+                &blind,
+                "/extent/side/termination/length",
+                cadmpeg_ir::scalar::NonZeroLength::new(8.0).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[1].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 direction,
@@ -1177,13 +1185,20 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
                     .unwrap(),
                 source: None,
             };
+            let ExtrudeExtent::OneSided {
+                side:
+                    ExtrudeSide {
+                        termination: LinearTermination::Blind { length },
+                        ..
+                    },
+            } = extent
+            else {
+                panic!("original blind extrusion");
+            };
+            let length = length.clone();
             *extent = ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::Dimension::Literal(
-                            cadmpeg_ir::scalar::NonZeroLength::new(8.0).unwrap(),
-                        ),
-                    },
+                    termination: LinearTermination::Blind { length },
                     draft: Some(cadmpeg_ir::Dimension::Literal(
                         cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap(),
                     )),

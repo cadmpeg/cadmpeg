@@ -1950,6 +1950,14 @@ fn semantic_writer_round_trips_all_revolution_extents() {
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let owner = ir_edit.model.features[3].id.clone();
+        ir_edit
+            .set_dimension(
+                &owner,
+                "/construction/extent/first/angle",
+                cadmpeg_ir::scalar::PositiveAngle::new(0.75).unwrap(),
+            )
+            .unwrap();
         let updated_ir_edit_evaluation = &mut ir_edit.model.features[3].evaluation;
         let mut updated_ir_edit_definition = updated_ir_edit_evaluation.definition().clone();
         let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, op }) =
@@ -1957,13 +1965,14 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         else {
             panic!("typed revolution");
         };
-        *construction.extent_mut().expect("fixture extent") = RevolveExtent::OneSided {
-            termination: AngularTermination::Angle {
-                angle: cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::PositiveAngle::new(0.75).unwrap(),
-                ),
-            },
+        let RevolveExtent::TwoSided { first, .. } =
+            construction.extent_mut().expect("fixture extent")
+        else {
+            panic!("original two-sided revolution");
         };
+        let termination = first.clone();
+        *construction.extent_mut().expect("fixture extent") =
+            RevolveExtent::OneSided { termination };
         *op = BooleanOp::Intersect;
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
