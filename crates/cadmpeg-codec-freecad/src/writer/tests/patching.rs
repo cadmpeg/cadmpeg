@@ -161,6 +161,18 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
             "edited & verified",
         )
         .expect("edit Label");
+    let label = edited
+        .model
+        .attributes
+        .iter_mut()
+        .find(|attribute| {
+            attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document
+                && attribute.name == "Label"
+        })
+        .expect("canonical document Label");
+    label.values = vec![cadmpeg_ir::attributes::AttributeValue::String(
+        "edited & verified".into(),
+    )];
 
     let mut encoded = Vec::new();
     let report = FcstdCodec
