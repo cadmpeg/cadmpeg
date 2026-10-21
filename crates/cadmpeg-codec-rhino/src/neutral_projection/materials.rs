@@ -110,24 +110,7 @@ pub(super) fn project(
             properties,
             textures: Vec::new(),
         });
-        super::link_native_record(
-            ctx,
-            ir,
-            "materials",
-            ordinal,
-            id.as_str(),
-            &[
-                "name",
-                "diffuse",
-                "index_of_refraction",
-                "reflectivity",
-                "shine",
-                "transparency",
-                "reflection_glossiness",
-                "refraction_glossiness",
-                "fresnel_index_of_refraction",
-            ],
-        )?;
+        super::link_native_record(ctx, ir, "materials", ordinal, id.as_str())?;
     }
     for (source_order, object) in scan.objects.iter().enumerate() {
         let Some(object) = object.framed() else {
