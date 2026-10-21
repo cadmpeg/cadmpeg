@@ -407,7 +407,20 @@ fn transition_and_history_serde_preserve_data_and_clear_cache() {
     }
     let bytes = serde_json::to_vec(&history).unwrap();
     let decoded: AsmHistory = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(decoded, history);
+    let fidelity = crate::native::F3dNative {
+        asm_histories: vec![history.clone()],
+        ..Default::default()
+    }
+    .retained_fidelity()
+    .unwrap();
+    assert_eq!(fidelity.metadata["history.byte_offset"], "0");
+    let mut expected = history.clone();
+    expected.byte_offset = None;
+    for state in expected.states_mut() {
+        assert_eq!(fidelity.metadata[&format!("{}.byte_offset", state.id)], "0");
+        state.byte_offset = None;
+    }
+    assert_eq!(decoded, expected);
     assert!(decoded.materialized.states.get().is_none());
     for state in decoded.states() {
         assert_eq!(
