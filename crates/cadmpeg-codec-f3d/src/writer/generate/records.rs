@@ -272,7 +272,7 @@ pub(super) fn encode_design_bulkstream(
         native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
     }
-    out.extend_from_slice(&parameter_bytes);
+    out.extend(parameter_bytes);
     super::sketch_scopes::encode(&mut out, &mut primary_records, native)?;
     if let Some(body_map) = &registry.body_map {
         let class_tag = body_map.class_tag.as_str();

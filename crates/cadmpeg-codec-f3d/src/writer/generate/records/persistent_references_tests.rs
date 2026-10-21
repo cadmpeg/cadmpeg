@@ -40,7 +40,8 @@ fn one_owned_field_consumes_only_one_same_stream_observation() {
     let mut batch = vec![original_references[0].clone()];
     for ordinal in 1..=32u64 {
         let mut extra = original_references[0].clone();
-        extra.id.push_str(&format!("-independent-{ordinal}"));
+        extra.id.push_str("-independent-");
+        extra.id.push_str(&ordinal.to_string());
         extra.value = value + ordinal;
         batch.push(extra);
     }
