@@ -137,6 +137,8 @@ loss_codes! {
     DisplayJtTessellationsDropped => ("carrier.display-jt-tessellations-dropped", Warning, ObjectRecordsUntransferred),
     /// Native object-model attachment failed; none of its records were kept.
     NativeAttachmentFailed => ("native.attachment-failed", Error, DecodeDiagnostic),
+    /// Source encodings or physical spans disagree before layout leaves the native scanner.
+    SourceIntegrityRejected => ("source.integrity-rejected", Error, DecodeDiagnostic),
 }
 
 impl NxLossCode {
@@ -147,7 +149,7 @@ impl NxLossCode {
     /// tolerates.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
-            Self::NativeAttachmentFailed => Some(Severity::Error),
+            Self::NativeAttachmentFailed | Self::SourceIntegrityRejected => Some(Severity::Error),
             other => other.shared_taxonomy().strict_floor(),
         }
     }
@@ -366,6 +368,7 @@ mod tests {
                 "container.display-jt-arithmetic-lane-bounded",
                 "carrier.display-jt-tessellations-dropped",
                 "native.attachment-failed",
+                "source.integrity-rejected",
             ]
         );
     }

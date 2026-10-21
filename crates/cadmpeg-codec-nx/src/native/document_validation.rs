@@ -6,7 +6,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace, NativeRecord};
 use serde_json::{Map, Value};
 
+mod construction;
+mod surfaces;
+mod values;
+
 pub(crate) fn validate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     namespace: &NativeNamespace,
     ir: &cadmpeg_ir::CadIr,
 ) -> Result<(), NativeConvertError> {
@@ -39,7 +44,7 @@ pub(crate) fn validate(
             return Err(invalid(name, "unknown NX native arena"));
         }
         for record in records {
-            let fields = record.fields()?;
+            let fields = record.copy_fields(ctx)?;
             validate_values(record, &Value::Object(fields.clone()))?;
             for (field, resolves) in [
                 ("neutral_product", &products),
@@ -68,12 +73,18 @@ pub(crate) fn validate(
             let fields = record.fields()?;
             let form = number(record, &fields, "occurrence_lane_form")?;
             if form > 1 || lane_form.is_some_and(|previous| previous != form) {
-                return Err(invalid(record.id(), "occurrence lane forms disagree"));
+                return Err(invalid(
+                    record.id(),
+                    "occurrence_lane_form disagrees across the roster",
+                ));
             }
             lane_form = Some(form);
             if !matches!(number(record, &fields, "marker")?, 49 | 57) {
                 return Err(invalid(record.id(), "unknown occurrence marker"));
             }
+        }
+        for record in occurrences.values() {
+            let fields = record.fields()?;
             let index = number(record, &fields, "prototype_index")?;
             if !(1..=254).contains(&index)
                 || text(record, &fields, "prototype")?
@@ -129,20 +140,40 @@ pub(crate) fn validate(
                         .find(|entry| entry.get("id").and_then(Value::as_str) == Some(toc_id))
                 })
                 .and_then(Value::as_object)
-                .ok_or_else(|| invalid(record.id(), "TOC entry does not resolve in document"))?;
-            if fields.get("segment_type").and_then(Value::as_u64)
-                != entry.get("attributes").and_then(Value::as_u64)
+                .ok_or_else(|| invalid(record.id(), "toc_entry does not resolve in document"))?;
+            let attributes: cadmpeg_ir::native::bytes::NativeBytes<[u8; 4]> =
+                serde_json::from_value(entry.get("attributes").cloned().unwrap_or(Value::Null))
+                    .map_err(|error| {
+                        invalid(record.id(), &format!("toc_entry.attributes: {error}"))
+                    })?;
+            if number(record, &fields, "segment_type")?
+                != u64::from(cadmpeg_core::bytes::assemble_u32_be(*attributes))
             {
                 return Err(invalid(
                     record.id(),
-                    "segment type disagrees with TOC attributes",
+                    "segment_type disagrees with toc_entry.attributes",
                 ));
             }
             for key in ["segment_id", "segment_byte_len"] {
                 if fields.get(key) != entry.get(key) {
-                    return Err(invalid(record.id(), "segment disagrees with its TOC entry"));
+                    return Err(invalid(
+                        record.id(),
+                        &format!("{key} disagrees with toc_entry"),
+                    ));
                 }
             }
+            typed_field::<cadmpeg_ir::native::bytes::NativeBytes<[u8; 16]>>(
+                record,
+                &fields,
+                "segment_id",
+            )?;
+            typed_field::<cadmpeg_ir::native::bytes::NativeBytes<[u8; 16]>>(
+                document,
+                entry,
+                "segment_id",
+            )?;
+            typed_field::<u32>(record, &fields, "segment_type")?;
+            typed_field::<u32>(record, &fields, "segment_byte_len")?;
         }
     }
     for name in [
@@ -153,11 +184,42 @@ pub(crate) fn validate(
         if let Some(elements) = arena(name) {
             for record in elements.values() {
                 let fields = record.fields()?;
+                if name != "display_jt_compressed_element_sequences" {
+                    typed_field::<u32>(record, &fields, "ordinal")?;
+                    typed_field::<u32>(record, &fields, "object_id")?;
+                    typed_field::<cadmpeg_ir::native::bytes::NativeBytes<[u8; 16]>>(
+                        record,
+                        &fields,
+                        "object_type_id",
+                    )?;
+                    typed_field::<cadmpeg_ir::hash::digest::Sha256Digest>(
+                        record,
+                        &fields,
+                        "body_sha256",
+                    )?;
+                    let length: u32 = typed_field(record, &fields, "body_byte_len")?;
+                    let base: u8 = typed_field(record, &fields, "object_base_type")?;
+                    if name == "display_jt_shape_lod_elements" && base != 4 {
+                        return Err(invalid(record.id(), "object_base_type must be 4"));
+                    }
+                    if name == "display_jt_compressed_elements" && length.checked_add(25).is_none()
+                    {
+                        return Err(invalid(
+                            record.id(),
+                            "body_byte_len must fit the complete element frame",
+                        ));
+                    }
+                }
                 require_link(record, &fields, "segment", arena("display_jt_segments"))?;
                 let segment = arena("display_jt_segments")
                     .and_then(|segments| segments.get(text(record, &fields, "segment").ok()?))
                     .ok_or_else(|| invalid(record.id(), "segment does not resolve"))?;
                 let owner = segment.fields()?;
+                if name != "display_jt_shape_lod_elements"
+                    && owner.get("compression").is_none_or(Value::is_null)
+                {
+                    return Err(invalid(record.id(), "segment has no compression envelope"));
+                }
                 if name == "display_jt_shape_lod_elements" {
                     if number(segment, &owner, "segment_type")? != 7 {
                         return Err(invalid(
@@ -167,23 +229,32 @@ pub(crate) fn validate(
                     }
                 } else if number(record, &fields, "segment_type")?
                     != number(segment, &owner, "segment_type")?
-                    || owner.get("compression").is_none_or(Value::is_null)
                 {
-                    return Err(invalid(
-                        record.id(),
-                        "compressed element owner type or envelope disagrees",
-                    ));
+                    return Err(invalid(record.id(), "segment_type disagrees with segment"));
                 }
                 if name == "display_jt_compressed_element_sequences" {
                     let Some(ids) = fields.get("elements").and_then(Value::as_array) else {
                         return Err(invalid(record.id(), "sequence elements are absent"));
                     };
+                    if ids.is_empty() {
+                        return Err(invalid(
+                            record.id(),
+                            "elements must contain at least one compressed element",
+                        ));
+                    }
+                    let mut framed_length = 20_u64;
+                    typed_field::<u32>(record, &fields, "framed_byte_len")?;
+                    typed_field::<cadmpeg_ir::hash::digest::Sha256Digest>(
+                        record,
+                        &fields,
+                        "tail_sha256",
+                    )?;
                     for (ordinal, id) in ids.iter().enumerate() {
                         let element = id
                             .as_str()
                             .and_then(|id| arena("display_jt_compressed_elements")?.get(id))
                             .ok_or_else(|| {
-                                invalid(record.id(), "sequence element does not resolve")
+                                invalid(record.id(), "elements contains an unresolved identity")
                             })?;
                         let element_fields = element.fields()?;
                         if element_fields.get("segment") != fields.get("segment")
@@ -195,11 +266,23 @@ pub(crate) fn validate(
                                 "sequence element owner or ordinal disagrees",
                             ));
                         }
+                        let length = number(element, &element_fields, "body_byte_len")?;
+                        framed_length = framed_length
+                            .checked_add(25)
+                            .and_then(|sum| sum.checked_add(length))
+                            .ok_or_else(|| {
+                                invalid(record.id(), "framed_byte_len overflows body_byte_len sum")
+                            })?;
+                    }
+                    if number(record, &fields, "framed_byte_len")? != framed_length {
+                        return Err(invalid(record.id(), "framed_byte_len disagrees with element body_byte_len values and end marker"));
                     }
                 }
             }
         }
     }
+    construction::validate(ctx, namespace)?;
+    surfaces::validate(ctx, namespace)?;
     Ok(())
 }
 
@@ -227,24 +310,25 @@ fn validate_values(record: &NativeRecord, value: &Value) -> Result<(), NativeCon
             }
             for (name, value) in fields {
                 if name == "component_quantization_bits" {
-                    if !value.as_array().is_some_and(|bits| {
-                        bits.len() == 3
-                            && bits
-                                .iter()
-                                .all(|bit| bit.as_u64().is_some_and(|bit| bit <= 32))
-                    }) {
+                    let bits = serde_json::from_value::<
+                        cadmpeg_ir::native::bytes::NativeBytes<[u8; 3]>,
+                    >(value.clone());
+                    if !bits.is_ok_and(|bits| bits.iter().all(|bit| *bit <= 32)) {
                         return Err(invalid(
                             record.id(),
                             "coordinate quantization requires three bit counts in 0..=32",
                         ));
                     }
                 } else if name == "legal_owner_flags" {
-                    if !value.as_array().is_some_and(|flags| {
-                        matches!(flags.len(), 14 | 16) && flags.iter().all(Value::is_boolean)
+                    let flags = serde_json::from_value::<
+                        cadmpeg_ir::native::bytes::NativeBytes<[u8; 16]>,
+                    >(value.clone());
+                    if !flags.is_ok_and(|flags| {
+                        crate::parasolid::LegalOwnerFlags::try_from(flags.as_slice()).is_ok()
                     }) {
                         return Err(invalid(
                             record.id(),
-                            "legal owners require fourteen or sixteen Boolean flags",
+                            "legal_owner_flags require sixteen binary byte values",
                         ));
                     }
                 }
@@ -270,6 +354,15 @@ fn text<'a>(
         .get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| invalid(record.id(), &format!("{key} is not text")))
+}
+
+fn typed_field<T: serde::de::DeserializeOwned>(
+    record: &NativeRecord,
+    fields: &Map<String, Value>,
+    key: &str,
+) -> Result<T, NativeConvertError> {
+    serde_json::from_value(fields.get(key).cloned().unwrap_or(Value::Null))
+        .map_err(|error| invalid(record.id(), &format!("{key}: {error}")))
 }
 fn number(
     record: &NativeRecord,

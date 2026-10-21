@@ -121,7 +121,7 @@ fn matrix_atom(view: &mut View<'_>) -> Option<f64> {
     value.is_finite().then_some(value)
 }
 
-fn rigid_rotation(matrix: &[f64; 12]) -> bool {
+pub(in crate::native) fn rigid_rotation(matrix: &[f64; 12]) -> bool {
     for row in 0..3 {
         for other in 0..3 {
             let dot: f64 = (0..3)

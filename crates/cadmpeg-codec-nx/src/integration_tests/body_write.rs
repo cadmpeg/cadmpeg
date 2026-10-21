@@ -27,15 +27,20 @@ fn body_write_native_check_rejects_zero_class_indices() {
                 .namespace_mut("nx")
                 .set_arena(ctx, arena, &[&wire])
                 .unwrap();
-            assert!(crate::NxCodec::validate_native(ctx, &ir)
-                .unwrap()
-                .is_empty());
+            assert!(crate::native::source_validation_findings(
+                ctx,
+                ir.native.namespace("nx").unwrap()
+            )
+            .unwrap()
+            .is_empty());
             wire["endpoint_class_index"] = serde_json::json!(0);
             ir.native
                 .namespace_mut("nx")
                 .set_arena(ctx, arena, &[&wire])
                 .unwrap();
-            let findings = crate::NxCodec::validate_native(ctx, &ir).unwrap();
+            let findings =
+                crate::native::source_validation_findings(ctx, ir.native.namespace("nx").unwrap())
+                    .unwrap();
             assert_eq!(findings.len(), 1);
             assert_eq!(
                 findings[0].check,
@@ -94,5 +99,40 @@ fn multiple_body_writes_form_one_checked_feature_result() {
         assert!(<crate::NxCodec as CodecBackend>::validate_native(ctx, &ir)
             .unwrap()
             .is_empty());
+        let original =
+            ir.native.namespace("nx").unwrap().arenas()["feature_operation_body_writes"].clone();
+        for (field, value) in [
+            ("endpoint_class_index", serde_json::json!(0)),
+            (
+                "operation_record",
+                serde_json::json!("nx:feature-history:operation-record#missing"),
+            ),
+        ] {
+            let mut changed = ir.clone();
+            let mut records = original
+                .iter()
+                .map(|record| serde_json::to_value(record).unwrap())
+                .collect::<Vec<_>>();
+            records[0][field] = value;
+            changed
+                .native
+                .namespace_mut("nx")
+                .set_arena(ctx, "feature_operation_body_writes", &records)
+                .unwrap();
+            let findings =
+                <crate::NxCodec as CodecBackend>::validate_native(ctx, &changed).unwrap();
+            assert_eq!(findings.len(), 1, "{field}");
+            assert_eq!(
+                findings[0].check,
+                cadmpeg_ir::report::check::Check::NativeLinks
+            );
+            assert_eq!(findings[0].severity, cadmpeg_ir::report::Severity::Error);
+            assert!(findings[0].message.contains(field), "{field}: {findings:?}");
+            assert_eq!(
+                changed.native.namespace("nx").unwrap().arenas()["feature_operation_body_writes"]
+                    [1],
+                original[1]
+            );
+        }
     });
 }
