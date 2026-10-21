@@ -35,7 +35,10 @@ pub(crate) fn native_namespace(ir: &CadIr, fidelity: &SourceFidelity) -> NativeN
 }
 
 fn restore(value: &mut Value, path: &str, fidelity: &SourceFidelity) {
-    if let Some(id) = value.get("record_id").and_then(Value::as_str) {
+    if let Some(id) = value.get("record_id").and_then(Value::as_str).filter(|_| {
+        value.get("byte_len").is_some_and(Value::is_number)
+            && value.get("sha256").is_some_and(Value::is_string)
+    }) {
         let record = fidelity
             .retained_record(id)
             .expect("source evidence record");

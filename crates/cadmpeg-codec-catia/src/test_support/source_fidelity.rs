@@ -39,7 +39,10 @@ pub(crate) fn native_namespace(ir: &CadIr, fidelity: &SourceFidelity) -> NativeN
 }
 
 fn restore(value: &mut Value, path: &str, fidelity: &SourceFidelity) {
-    if let Some(id) = value.get("record_id").and_then(Value::as_str) {
+    if let Some(id) = value.get("record_id").and_then(Value::as_str).filter(|_| {
+        value.get("byte_len").is_some_and(Value::is_number)
+            && value.get("sha256").is_some_and(Value::is_string)
+    }) {
         let record = fidelity
             .retained_record(id)
             .expect("source evidence record");
@@ -58,6 +61,7 @@ fn restore(value: &mut Value, path: &str, fidelity: &SourceFidelity) {
             // Binary64's semantic value is exact; the scanner's transient
             // bits wrapper is reconstructed only inside this test view.
             if let Some(Value::Object(scalar)) = fields.get_mut("Binary64") {
+                scalar.remove("non_finite");
                 if let Some(number) = scalar.remove("value").and_then(|value| value.as_f64()) {
                     scalar.insert("bits".into(), Value::from(number.to_bits()));
                 }
