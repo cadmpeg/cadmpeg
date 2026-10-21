@@ -408,6 +408,41 @@ pub(super) fn encode_design_bulkstream(
         primary_records.push(primary_record(relation.record_index, out.len())?);
         encode_sketch_relation(&mut out, relation)?;
     }
+    for reference in &native.persistent_references {
+        out.extend_from_slice(persistent_reference_name(reference.kind));
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.extend_from_slice(&14u32.to_le_bytes());
+        out.extend_from_slice(&[0; 14]);
+        out.extend_from_slice(&23u32.to_le_bytes());
+        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
+        out.extend_from_slice(&reference.value.to_le_bytes());
+    }
+    for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
+        if let Some(previous) = ordinal
+            .checked_sub(1)
+            .and_then(|ordinal| native.lost_edge_references.get(ordinal))
+        {
+            if previous.next_class_tag != reference.class_tag
+                || previous.next_record_index != reference.record_index
+            {
+                return Err(CodecError::malformed(format_args!(
+                    "F3D lost-edge record {} does not continue the preceding indexed run",
+                    reference.id
+                )));
+            }
+        } else {
+            native_lp_ascii(&mut out, reference.class_tag.as_str())?;
+            out.extend_from_slice(&reference.record_index.to_le_bytes());
+        }
+        out.extend_from_slice(&[0; 14]);
+        out.extend_from_slice(&19u32.to_le_bytes());
+        out.extend_from_slice(b"EDGE_REFERENCE_LOST");
+        native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
+        out.extend_from_slice(&reference.next_record_index.to_le_bytes());
+    }
+    // A companion owns the bytes until the next parameter/owner or stream end.
+    // Independent reference records must precede this run so they cannot become
+    // payload of its terminal companion.
     if !native.design_parameter_scopes.is_empty() {
         for parameter in &native.design_parameters {
             primary_records.push(primary_record(parameter.record_index, out.len())?);
@@ -456,38 +491,6 @@ pub(super) fn encode_design_bulkstream(
                 }
             }
         }
-    }
-    for reference in &native.persistent_references {
-        out.extend_from_slice(persistent_reference_name(reference.kind));
-        out.extend_from_slice(&2u32.to_le_bytes());
-        out.extend_from_slice(&14u32.to_le_bytes());
-        out.extend_from_slice(&[0; 14]);
-        out.extend_from_slice(&23u32.to_le_bytes());
-        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
-        out.extend_from_slice(&reference.value.to_le_bytes());
-    }
-    for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
-        if let Some(previous) = ordinal
-            .checked_sub(1)
-            .and_then(|ordinal| native.lost_edge_references.get(ordinal))
-        {
-            if previous.next_class_tag != reference.class_tag
-                || previous.next_record_index != reference.record_index
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D lost-edge record {} does not continue the preceding indexed run",
-                    reference.id
-                )));
-            }
-        } else {
-            native_lp_ascii(&mut out, reference.class_tag.as_str())?;
-            out.extend_from_slice(&reference.record_index.to_le_bytes());
-        }
-        out.extend_from_slice(&[0; 14]);
-        out.extend_from_slice(&19u32.to_le_bytes());
-        out.extend_from_slice(b"EDGE_REFERENCE_LOST");
-        native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
-        out.extend_from_slice(&reference.next_record_index.to_le_bytes());
     }
     Ok(Some(EncodedDesignBulkStream {
         bytes: out,

@@ -322,9 +322,27 @@ fn an_unsolved_directional_dimension_is_omitted_with_its_exact_definition_report
         .iter()
         .map(|entity| (entity.construction, entity.geometry.clone()))
         .collect::<Vec<_>>();
-    let pair_id = crate::test_support::native_test::f3d_native(&ir).design_dimension_locus_pairs[0]
-        .id
-        .clone();
+    let original_native = crate::test_support::native_test::f3d_native(&ir);
+    assert_eq!(original_native.persistent_references.len(), 12);
+    assert_eq!(original_native.lost_edge_references.len(), 1);
+    let expected_references = original_native
+        .persistent_references
+        .iter()
+        .map(|reference| (reference.kind, reference.value))
+        .collect::<Vec<_>>();
+    let expected_lost_edges = original_native
+        .lost_edge_references
+        .iter()
+        .map(|reference| {
+            (
+                reference.class_tag.clone(),
+                reference.record_index,
+                reference.next_class_tag.clone(),
+                reference.next_record_index,
+            )
+        })
+        .collect::<Vec<_>>();
+    let pair_id = original_native.design_dimension_locus_pairs[0].id.clone();
     let value = ParameterValue::Length(Length::new(15.0).unwrap());
     ir.set_parameter_expression(&parameter_id, Expression::literal(&value), Some(value))
         .unwrap();
@@ -440,6 +458,59 @@ fn an_unsolved_directional_dimension_is_omitted_with_its_exact_definition_report
         .find(|owner| Some(owner.record_index()) == parameter.owner_record_index())
         .unwrap();
     assert_eq!(owner.evaluated_value().get(), 1.5);
+    assert_eq!(
+        native
+            .persistent_references
+            .iter()
+            .map(|reference| (reference.kind, reference.value))
+            .collect::<Vec<_>>(),
+        expected_references
+    );
+    assert_eq!(
+        native
+            .lost_edge_references
+            .iter()
+            .map(|reference| (
+                reference.class_tag.clone(),
+                reference.record_index,
+                reference.next_class_tag.clone(),
+                reference.next_record_index,
+            ))
+            .collect::<Vec<_>>(),
+        expected_lost_edges
+    );
+    let terminal_companion = native
+        .design_parameter_companions
+        .iter()
+        .find(|companion| companion.record_index() == owner.companion_record_index())
+        .unwrap();
+    assert!(terminal_companion
+        .payload()
+        .unwrap()
+        .owned_recipe_ids()
+        .is_empty());
+    let fidelity = written.source_fidelity();
+    assert_eq!(
+        fidelity.metadata[&format!("{}.payload_byte_length", terminal_companion.id())],
+        "0"
+    );
+    let terminal_offset: u64 = fidelity.metadata
+        [&format!("{}.byte_offset", terminal_companion.id())]
+        .parse()
+        .unwrap();
+    for reference in &native.persistent_references {
+        let offset: u64 = fidelity.metadata[&format!("{}.byte_offset", reference.id)]
+            .parse()
+            .unwrap();
+        assert!(offset < terminal_offset);
+    }
+    for reference in &native.lost_edge_references {
+        let offset: u64 = fidelity.metadata[&format!("{}.record_byte_offset", reference.id)]
+            .parse()
+            .unwrap();
+        assert!(offset < terminal_offset);
+    }
+
     assert_eq!(native.sketch_relations.len(), 2);
     assert_eq!(native.design_dimension_recipe_records.len(), 1);
     assert!(native.design_dimension_locus_pairs.is_empty());
