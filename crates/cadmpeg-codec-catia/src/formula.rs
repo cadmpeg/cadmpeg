@@ -17,7 +17,7 @@ use crate::native::{CatiaLegacyTextField, CatiaNative};
 
 /// Decode-local work record. Dependency discovery is transient; only expression
 /// tokens are transferred into the document.
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct DesignParameter {
     id: ParameterId,
     owner: Option<cadmpeg_ir::features::FeatureId>,
@@ -3979,6 +3979,7 @@ fn neutral_parameter_id(native_id: &str) -> Result<ParameterId, cadmpeg_core::Co
 #[cfg(test)]
 mod parser_tests {
     use super::tests::{evaluated, evaluated_with_mode};
+    use super::DesignParameter;
     use super::{
         evaluate_legacy_output_assignment, finite_scalar, formula_parameter_candidates_agree,
         parameter_expression, static_formula_value, string_literal_expression,
@@ -3986,7 +3987,6 @@ mod parser_tests {
         EvaluatedFormulaValue, FormulaDimension, FormulaParameterCandidate, FormulaParameterRole,
         FormulaParameterType, TypedParameterEvaluation,
     };
-    use cadmpeg_ir::features::DesignParameter;
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::features::ParameterValue;
     use std::collections::BTreeMap;

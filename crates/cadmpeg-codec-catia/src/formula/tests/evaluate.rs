@@ -32,7 +32,7 @@ fn decode_evaluates_formula_precedence_and_parentheses() {
         panic!("validated formula parameters")
     };
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
     assert_eq!(
@@ -89,7 +89,7 @@ fn decode_converts_degree_literals_to_radians() {
         panic!("degree formula parameters")
     };
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
     assert_eq!(
@@ -121,7 +121,7 @@ fn decode_evaluates_the_dimensionless_pi_constant_in_an_angle_expression() {
         panic!("PI formula parameters")
     };
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
     assert_eq!(
@@ -185,7 +185,7 @@ fn decode_evaluates_dimension_checked_trigonometric_calls() {
         panic!("trigonometric formula parameters")
     };
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
     assert_eq!(
@@ -220,7 +220,7 @@ fn decode_evaluates_nested_logarithm_and_extrema_calls() {
         panic!("logarithmic formula parameters")
     };
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         [first.id.clone(), second.id.clone()]
     );
     assert_eq!(
@@ -497,7 +497,7 @@ fn decode_evaluates_a_square_root_of_a_dimensioned_product() {
         panic!("square-root formula parameters")
     };
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         [first.id.clone(), second.id.clone()]
     );
     assert_eq!(
@@ -555,7 +555,7 @@ fn decode_evaluates_an_integral_power_of_a_dimensioned_value() {
         panic!("dimensioned exponent formula parameters")
     };
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
     assert_eq!(
@@ -617,7 +617,7 @@ fn decode_evaluates_dimension_safe_absolute_and_tangent_calls() {
         panic!("absolute and tangent formula parameters")
     };
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         [first.id.clone(), second.id.clone()]
     );
     assert_eq!(
@@ -959,7 +959,7 @@ fn decode_rejects_trigonometric_calls_with_length_arguments() {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Offset");
-    assert!(input.dependencies.is_empty());
+    assert!(input.expression.dependencies().next().is_none());
 }
 
 #[test]
@@ -982,7 +982,7 @@ fn decode_rejects_dimensionally_invalid_formula_output() {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Width");
-    assert!(input.dependencies.is_empty());
+    assert!(input.expression.dependencies().next().is_none());
 }
 
 #[test]

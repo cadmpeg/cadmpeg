@@ -889,7 +889,10 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         panic!("expected one typed definition-chain parameter");
     };
     assert_eq!(parameter.name, "FeatureFEDGE");
-    assert_eq!(parameter.expression, "12.5");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &parameter),
+        "12.5"
+    );
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
@@ -927,7 +930,13 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         boolean_parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Boolean(true))
     );
-    assert_eq!(boolean_parameter.expression, "true");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(
+            decoded.ir(),
+            &boolean_parameter
+        ),
+        "true"
+    );
     assert_eq!(boolean_parameter.properties["value_type"], "Boolean");
     assert_eq!(
         boolean_parameter.properties["catia_definition_value_kind"],
@@ -978,7 +987,11 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         panic!("expected one unset definition-chain parameter");
     };
     assert!(unset_parameter.value.is_none());
-    assert!(unset_parameter.expression.is_empty());
+    assert!(unset_parameter
+        .expression
+        .literal_text()
+        .expect("literal expression")
+        .is_empty());
     assert_eq!(
         wire::coverage_count(
             unset.report(),

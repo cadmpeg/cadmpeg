@@ -34,12 +34,15 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
 
     assert_eq!(input.name, "Thickness");
     assert_eq!(input.ordinal, 0);
-    assert_eq!(input.expression, "35 mm");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &input),
+        "35 mm"
+    );
     assert_eq!(
         input.value,
         Some(ParameterValue::Length(Length::new(35.0).unwrap()))
     );
-    assert!(input.dependencies.is_empty());
+    assert!(input.expression.dependencies().next().is_none());
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
@@ -138,17 +141,23 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     };
 
     assert_eq!(input.name, "Thickness");
-    assert_eq!(input.expression, "35 mm");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &input),
+        "35 mm"
+    );
     assert_eq!(
         input.value,
         Some(ParameterValue::Length(Length::new(35.0).unwrap()))
     );
     assert_eq!(input.properties["value_type"], "LENGTH");
     assert_eq!(input.properties["catia_binding"], "#1_ /2");
-    assert!(input.dependencies.is_empty());
+    assert!(input.expression.dependencies().next().is_none());
     assert_eq!(output.name, "Result");
     assert_eq!(output.ordinal, 1);
-    assert_eq!(output.expression, "#1_ /2-2mm");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &output),
+        "#1_ /2-2mm"
+    );
     assert_eq!(
         output.value,
         Some(ParameterValue::Length(Length::new(33.0).unwrap()))
@@ -156,7 +165,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.properties["catia_binding"], "#result_ /1");
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
     assert_eq!(
@@ -329,7 +338,7 @@ fn decode_keeps_a_mismatched_formula_result_unresolved() {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Width");
-    assert!(input.dependencies.is_empty());
+    assert!(input.expression.dependencies().next().is_none());
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
@@ -368,8 +377,11 @@ fn decode_transfers_a_closed_constant_formula() {
         panic!("constant formula output")
     };
     assert_eq!(output.name, "Result");
-    assert_eq!(output.expression, "10mm+2mm");
-    assert!(output.dependencies.is_empty());
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &output),
+        "10mm+2mm"
+    );
+    assert!(output.expression.dependencies().next().is_none());
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -432,7 +444,7 @@ fn decode_transfers_linear_interpolation_formula() {
         ))
     );
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         vec![start.id.clone(), end.id.clone(), fraction.id.clone()]
     );
 }
@@ -485,7 +497,7 @@ fn decode_transfers_cubic_interpolation_formula() {
         ))
     );
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         vec![start.id.clone(), end.id.clone(), fraction.id.clone()]
     );
 }
@@ -538,7 +550,7 @@ fn decode_transfers_dimensioned_linear_interpolation_formula() {
         ))
     );
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         vec![start.id.clone(), end.id.clone(), fraction.id.clone()]
     );
 }
@@ -565,14 +577,17 @@ fn decode_transfers_typed_integer_to_angle_formula() {
         panic!("typed formula parameters")
     };
 
-    assert_eq!(input.expression, "2");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &input),
+        "2"
+    );
     assert_eq!(input.value, Some(ParameterValue::Integer(2)));
     assert_eq!(
         output.value,
         Some(ParameterValue::Angle(Angle::new(0.5).unwrap()))
     );
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
     assert!(
@@ -601,7 +616,10 @@ fn decode_transfers_dimensionless_real_formula() {
         panic!("real formula parameters")
     };
 
-    assert_eq!(input.expression, "2.5");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &input),
+        "2.5"
+    );
     assert_eq!(
         input.value,
         Some(ParameterValue::Real(
@@ -617,7 +635,7 @@ fn decode_transfers_dimensionless_real_formula() {
     );
     assert_eq!(output.properties["value_type"], "Real");
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
     for parameter in [input, output] {
@@ -650,10 +668,13 @@ fn decode_transfers_an_unset_typed_formula_result() {
 
     assert_eq!(output.value, None);
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
-    assert_eq!(output.expression, "#1_ /2+1mm");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &output),
+        "#1_ /2+1mm"
+    );
     assert_eq!(output.properties["value_type"], "LENGTH");
 }
 
@@ -681,8 +702,14 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
 
     assert_eq!(output.value, None);
     assert_eq!(output.properties["value_type"], "Boolean");
-    assert_eq!(output.expression, "(#1_ /2>#2_ /2) and (#1_ /2>=0)");
-    assert_eq!(output.dependencies.as_slice(), [x.id.clone(), y.id.clone()]);
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &output),
+        "(#1_ /2>#2_ /2) and (#1_ /2>=0)"
+    );
+    assert_eq!(
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
+        [x.id.clone(), y.id.clone()]
+    );
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
@@ -721,14 +748,21 @@ fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
 
     assert_eq!(input.name, "Width");
     assert_eq!(input.value, None);
-    assert!(input.expression.is_empty());
-    assert!(input.dependencies.is_empty());
+    assert!(input
+        .expression
+        .literal_text()
+        .expect("literal expression")
+        .is_empty());
+    assert!(input.expression.dependencies().next().is_none());
     assert_eq!(input.properties["value_type"], "LENGTH");
     assert_eq!(input.properties["catia_binding"], "#1_ /2");
     assert_eq!(output.value, None);
-    assert_eq!(output.expression, "#1_ /2+1mm");
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &output),
+        "#1_ /2+1mm"
+    );
+    assert_eq!(
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
     assert_eq!(output.properties["value_type"], "LENGTH");
@@ -760,8 +794,12 @@ fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output
 
         assert_eq!(input.name, "Value");
         assert_eq!(input.value, None);
-        assert!(input.expression.is_empty());
-        assert!(input.dependencies.is_empty());
+        assert!(input
+            .expression
+            .literal_text()
+            .expect("literal expression")
+            .is_empty());
+        assert!(input.expression.dependencies().next().is_none());
         assert_eq!(input.properties["value_type"], parameter_type);
         assert_eq!(input.properties["catia_binding"], "#1_ /2");
         assert!(
@@ -797,9 +835,12 @@ fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
     assert_eq!(input.value, None);
     assert_eq!(input.properties["value_type"], "String");
     assert_eq!(output.value, None);
-    assert_eq!(output.expression, "#1_");
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &output),
+        "#1_"
+    );
+    assert_eq!(
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
     assert_eq!(output.properties["value_type"], "String");
@@ -871,9 +912,12 @@ fn decode_deduplicates_repeated_single_input_formula_symbols() {
         panic!("repeated formula input parameters")
     };
 
-    assert_eq!(input.expression, "0.25 rad");
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &input),
+        "0.25 rad"
+    );
+    assert_eq!(
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
 }
@@ -911,7 +955,7 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
     assert_eq!([width.ordinal, count.ordinal, output.ordinal], [0, 1, 2]);
     assert_eq!(count.value, Some(ParameterValue::Integer(3)));
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         [width.id.clone(), count.id.clone()].as_slice()
     );
     assert_eq!(
@@ -951,13 +995,16 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
         input.value,
         Some(ParameterValue::Length(Length::new(35.0).unwrap()))
     );
-    assert_eq!(output.expression, "#1_-2mm");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &output),
+        "#1_-2mm"
+    );
     assert_eq!(
         output.value,
         Some(ParameterValue::Length(Length::new(33.0).unwrap()))
     );
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
 
@@ -1170,7 +1217,7 @@ fn decode_transfers_each_supported_formula_input_independently() {
             cadmpeg_ir::scalar::Length::new(12.0).unwrap()
         ))
     );
-    assert!(width.dependencies.is_empty());
+    assert!(width.expression.dependencies().next().is_none());
     assert_eq!(depth.name, "Depth");
     assert_eq!(
         depth.value,
@@ -1178,7 +1225,7 @@ fn decode_transfers_each_supported_formula_input_independently() {
             cadmpeg_ir::scalar::FiniteReal::new(6.5).unwrap()
         ))
     );
-    assert!(depth.dependencies.is_empty());
+    assert!(depth.expression.dependencies().next().is_none());
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
@@ -1214,14 +1261,20 @@ fn decode_transfers_a_chained_formula_definition_once() {
         panic!("formula chain parameters")
     };
 
-    assert_eq!(intermediate.expression, "#1_ /2+1mm");
     assert_eq!(
-        intermediate.dependencies.as_slice(),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &intermediate),
+        "#1_ /2+1mm"
+    );
+    assert_eq!(
+        crate::test_support::parameter_projection::dependencies(intermediate).as_slice(),
         std::slice::from_ref(&input.id)
     );
-    assert_eq!(output.expression, "#2_ /3+1mm");
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &output),
+        "#2_ /3+1mm"
+    );
+    assert_eq!(
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&intermediate.id)
     );
     assert!(
@@ -1247,7 +1300,7 @@ fn decode_rejects_multiple_formula_definitions_for_one_output() {
         panic!("only the independently typed formula input")
     };
     assert_eq!(input.name, "Input");
-    assert!(input.dependencies.is_empty());
+    assert!(input.expression.dependencies().next().is_none());
 }
 
 #[test]
@@ -1266,17 +1319,23 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
 
     assert_eq!(input.name, "Input");
     assert_eq!(intermediate.name, "Intermediate");
-    assert_eq!(intermediate.expression, "2 mm");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &intermediate),
+        "2 mm"
+    );
     assert_eq!(
         intermediate.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap()
         ))
     );
-    assert!(intermediate.dependencies.is_empty());
-    assert_eq!(output.expression, "#2_ /3+1mm");
+    assert!(intermediate.expression.dependencies().next().is_none());
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &output),
+        "#2_ /3+1mm"
+    );
+    assert_eq!(
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&intermediate.id)
     );
     assert!(
@@ -1303,9 +1362,12 @@ fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input()
 
     assert_eq!(input.name, "Input");
     assert_eq!(intermediate.name, "Intermediate");
-    assert_eq!(intermediate.expression, "#1_ /2+1mm");
     assert_eq!(
-        intermediate.dependencies.as_slice(),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), &intermediate),
+        "#1_ /2+1mm"
+    );
+    assert_eq!(
+        crate::test_support::parameter_projection::dependencies(intermediate).as_slice(),
         std::slice::from_ref(&input.id)
     );
     assert!(
@@ -1331,7 +1393,7 @@ fn decode_does_not_infer_a_fallback_from_conflicting_formula_input_types() {
     };
 
     assert_eq!(input.name, "Input");
-    assert!(input.dependencies.is_empty());
+    assert!(input.expression.dependencies().next().is_none());
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .expect("validate the neutral model")
@@ -1393,7 +1455,7 @@ fn decode_rejects_a_formula_exceeding_the_expression_depth_limit() {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Thickness");
-    assert!(input.dependencies.is_empty());
+    assert!(input.expression.dependencies().next().is_none());
 }
 
 #[test]
@@ -1566,11 +1628,11 @@ fn formula_output_expression_charges_its_retained_text() {
 
     let (fits, ir) = transfer(length);
     fits.expect("the output expression fits its retained text");
-    assert!(ir
-        .model
-        .parameters
-        .iter()
-        .any(|parameter| parameter.expression == expression));
+    assert!(ir.model.parameters.iter().any(|parameter| parameter
+        .expression
+        .literal_text()
+        .as_deref()
+        == Some(expression.as_str())));
     let (refused, _) = transfer(length - 1);
     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = refused else {
         panic!("the output expression exceeds the retained limit");

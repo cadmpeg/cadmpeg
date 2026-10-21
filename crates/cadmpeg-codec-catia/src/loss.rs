@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn retained_records_and_diagnostics_do_not_exclude_source_classes() {
         let losses = [
-            super::CatiaLossCode::TopologyE5GaugeSubstituted.note("typed record retained"),
+            super::CatiaLossCode::TopologyB5GaugeSubstituted.note("typed record retained"),
             super::CatiaLossCode::SourceDialectUnverified.note("decode diagnostic"),
         ];
         assert!(super::unrepresented(&losses, None).is_empty());

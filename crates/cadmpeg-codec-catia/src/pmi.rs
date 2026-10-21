@@ -325,7 +325,10 @@ mod tests {
                     };
                     (
                         relation.kind(),
-                        nominal.value.get(),
+                        ir.dimension_value(nominal)
+                            .expect("dimension value")
+                            .value
+                            .get(),
                         lower_deviation.value.get(),
                         upper_deviation.value.get(),
                     )
