@@ -1230,6 +1230,7 @@ mod tests {
             [
                 "dimension.companion-untyped",
                 "configuration.member-unassigned",
+                "configuration.active-cache-unavailable",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
                 "configuration.feature-suppression-unbound",
