@@ -59,7 +59,7 @@ fn reference(
                 })?,
             String::new(),
         ),
-        OperandContainer::Occurrence { occurrence } => (
+        OperandContainer::Occurrence { occurrence, .. } => (
             names
                 .get(occurrence.as_str())
                 .cloned()
@@ -67,7 +67,33 @@ fn reference(
             String::new(),
         ),
     };
-    Ok(xlink(&object, &file, &operand.subelements))
+    let nested_subelements;
+    let subelements = if let OperandContainer::Occurrence {
+        occurrence_path, ..
+    } = &operand.container
+    {
+        if occurrence_path.is_empty() {
+            &operand.subelements
+        } else {
+            let mut prefix = occurrence_path.join(".");
+            prefix.push('.');
+            prefix.push_str(&operand.object);
+            prefix.push('.');
+            nested_subelements = if operand.subelements.is_empty() {
+                vec![prefix]
+            } else {
+                operand
+                    .subelements
+                    .iter()
+                    .map(|selection| format!("{prefix}{selection}"))
+                    .collect()
+            };
+            &nested_subelements
+        }
+    } else {
+        &operand.subelements
+    };
+    Ok(xlink(&object, &file, subelements))
 }
 
 fn scalar(object: &mut Object, name: &str, value: Option<FiniteReal>, angular: bool) {
@@ -115,9 +141,9 @@ fn limits(object: &mut Object, limits: Option<&JointLimits>, angular: bool) {
     bool_property(object, enable_high, maximum.is_some());
 }
 
-fn family(object: &mut Object, kind: &PairedJointKind, losses: &mut Vec<LossNote>) {
+fn family_label(kind: &PairedJointKind) -> Option<&str> {
     use PairedJointKind as K;
-    let label = match kind {
+    Some(match kind {
         K::Fixed { .. } => "Fixed",
         K::Revolute { .. } => "Revolute",
         K::Slider { .. } => "Slider",
@@ -132,7 +158,16 @@ fn family(object: &mut Object, kind: &PairedJointKind, losses: &mut Vec<LossNote
         K::Gears { .. } => "Gears",
         K::Belt { .. } => "Belt",
         K::Native { name, .. } => name,
-    };
+        K::PlaneCoincidence { .. }
+        | K::AxisCoincidence {}
+        | K::PointOnAxis { .. }
+        | K::Insert { .. }
+        | K::Tangent { .. } => return None,
+    })
+}
+
+fn family(object: &mut Object, kind: &PairedJointKind, label: &str, losses: &mut Vec<LossNote>) {
+    use PairedJointKind as K;
     object.set("JointType",xml::property("JointType","App::PropertyEnumeration",&format!("<Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList count=\"1\">{}</CustomEnumList>",xml::element("Enum",&[("value",label.to_owned())]))));
     let angle = match kind {
         K::Fixed { angle, .. }
@@ -210,6 +245,19 @@ pub(super) fn write(
         .unwrap_or_default();
     let mut used: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
     for joint in &ir.model.assembly_joints {
+        let label = match joint.operands() {
+            JointOperands::Grounded { .. } => "",
+            JointOperands::Pair { kind, .. } => {
+                let Some(label) = family_label(kind) else {
+                    losses.push(FreecadLossCode::ExportJointNotTransferred.note(format!(
+                        "joint {} has no FreeCAD joint family for {kind:?}",
+                        joint.id
+                    )));
+                    continue;
+                };
+                label
+            }
+        };
         let existing = joint
             .native_ref
             .as_ref()
@@ -264,16 +312,20 @@ pub(super) fn write(
             } => {
                 let target = reference(&connector.operand, names, losses)?;
                 // Grounded links have no subelement carrier in FreeCAD.
-                if !connector.operand.subelements.is_empty() {
+                if !connector.operand.subelements.is_empty()
+                    || matches!(&connector.operand.container, OperandContainer::Occurrence {
+                        occurrence_path, ..
+                    } if !occurrence_path.is_empty())
+                {
                     losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                        "grounded joint {} selects the containing object rather than subelements",
+                        "grounded joint {} selects the containing object rather than nested objects or subelements",
                         joint.id
                     )));
                 }
                 let target_name = match &connector.operand.container {
                     OperandContainer::External { .. } => None,
                     _ => names.get(&connector.operand.object).or_else(|| {
-                        if let OperandContainer::Occurrence { occurrence } =
+                        if let OperandContainer::Occurrence { occurrence, .. } =
                             &connector.operand.container
                         {
                             names.get(occurrence.as_str())
@@ -320,7 +372,7 @@ pub(super) fn write(
                 connectors,
                 offset_frames,
             } => {
-                family(object, kind, losses);
+                family(object, kind, label, losses);
                 for (index, connector) in connectors.iter().enumerate() {
                     let suffix = index + 1;
                     let key = format!("Reference{suffix}");
