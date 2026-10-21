@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact assembly operand frames, including as-built frames.
 
+use crate::layout::assembly_compact_wide_scope as compact_wide;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::legacy_operand_paths::exact_legacy_class_388_scope;
@@ -14,6 +15,23 @@ use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::records::feature::assembly::DesignAssemblyOperandFrame;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::scope::DesignParameterScope;
+
+/// Operand reference and transform offsets of a wide-family scope:
+/// first reference, first transform, second reference, second transform.
+pub(crate) fn wide_family_frame_offsets(
+    variant: crate::design::assembly::AssemblyOperandFrameVariant,
+) -> Option<[usize; 4]> {
+    match variant {
+        crate::design::assembly::AssemblyOperandFrameVariant::Wide => Some([37, 55, 259, 277]),
+        crate::design::assembly::AssemblyOperandFrameVariant::CompactWide => Some([
+            compact_wide::FIRST_OPERAND_REFERENCE,
+            compact_wide::FIRST_OPERAND_TRANSFORM,
+            compact_wide::SECOND_OPERAND_REFERENCE,
+            compact_wide::SECOND_OPERAND_TRANSFORM,
+        ]),
+        _ => None,
+    }
+}
 
 pub(super) fn exact_assembly_operand_frames(
     bytes: &[u8],
@@ -56,8 +74,17 @@ pub(super) fn exact_assembly_operand_frames(
         crate::design::assembly::AssemblyOperandFrameVariant::Standard => (28, 40, 168, 180),
         crate::design::assembly::AssemblyOperandFrameVariant::Compact => (24, 36, 164, 176),
         crate::design::assembly::AssemblyOperandFrameVariant::Axial => (28, 39, 167, 178),
-        crate::design::assembly::AssemblyOperandFrameVariant::Wide => (37, 55, 259, 277),
-        crate::design::assembly::AssemblyOperandFrameVariant::CompactWide => (32, 50, 254, 272),
+        crate::design::assembly::AssemblyOperandFrameVariant::Wide
+        | crate::design::assembly::AssemblyOperandFrameVariant::CompactWide => {
+            let [first_reference, first_transform, second_reference, second_transform] =
+                wide_family_frame_offsets(frame_variant)?;
+            (
+                first_reference,
+                first_transform,
+                second_reference,
+                second_transform,
+            )
+        }
     };
     if usize::try_from(scope.paired_byte_offset()).ok()?
         != start.checked_add(usize::try_from(scope.frame_length()).ok()?)?
@@ -114,7 +141,9 @@ pub(super) fn exact_assembly_operand_frames(
         frame_variant,
         crate::design::assembly::AssemblyOperandFrameVariant::CompactWide
     ) {
-        if bytes.get(start + 11..start + 32)? != [0; 21]
+        if bytes
+            .get(start + compact_wide::ZERO_RUN_21..start + compact_wide::FIRST_OPERAND_REFERENCE)?
+            != [0; compact_wide::FIRST_OPERAND_REFERENCE - compact_wide::ZERO_RUN_21]
             || bytes.get(start + 43..start + 50)? != [0; 7]
             || bytes.get(start + 265..start + 272)? != [0; 7]
         {

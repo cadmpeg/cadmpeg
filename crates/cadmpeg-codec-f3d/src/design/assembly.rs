@@ -476,6 +476,21 @@ fn project_assembly_joint(
                 None,
             )
         }
+        // A wide scope always qualifies its operands; frames without
+        // qualifiers are an unprojected joint, not an absent one.
+        Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { .. })
+            if AssemblyScopeGeneration::new(
+                scope.frame_length(),
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
+            )
+            .operand_frame_variant()
+            .is_some_and(AssemblyOperandFrameVariant::is_wide_family) =>
+        {
+            return Err(CodecError::NotImplemented(
+                "wide assembly joint operand paths are unresolved".into(),
+            ));
+        }
         _ => return Ok(None),
     };
     let (angular_limits, linear_limits) = match limits {
@@ -1149,6 +1164,62 @@ mod tests {
     }
 
     #[test]
+    fn a_wide_scope_without_operand_qualifiers_is_an_unprojected_joint() {
+        use crate::records::feature::{
+            assembly::{
+                DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
+            },
+            scope::{DesignFeatureKind, DesignScopePayload},
+        };
+        let frames = [17, 45].map(|index| DesignAssemblyOperandFrame {
+            reference_record_index: index,
+            reference_offset: 0,
+            transform: cadmpeg_ir::transform::Transform::identity()
+                .rows()
+                .try_into()
+                .unwrap(),
+            transform_offset: 0,
+        });
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            DesignFeatureKind::Assemble,
+            10,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = 806;
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+                draft.payload = DesignScopePayload::Assemble(Some(
+                    DesignAssemblyAlignment::try_new(
+                        0.0,
+                        [0.0; 3],
+                        Vec::new(),
+                        Some(DesignAssemblyAlignmentForm::Frames { frames }),
+                    )
+                    .unwrap(),
+                ));
+            })
+            .unwrap();
+        let projection = super::project_assembly_joints(
+            &[scope],
+            &[],
+            &crate::design::components::ComponentInserts::default(),
+            &[],
+        );
+        assert!(projection.joints.is_empty());
+        assert_eq!(
+            projection
+                .losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            [crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()]
+        );
+    }
+
+    #[test]
     fn affine_projection_rejects_nonfinite_cadir_coefficients() {
         let mut transform = cadmpeg_ir::transform::Transform::identity().rows();
         transform[0][0] = f64::NAN;
@@ -1308,6 +1379,13 @@ mod tests {
                 super::AssemblyScopeGeneration::new(frame_length, "", "")
                     .alignment_lane_bounds(owner_count),
                 Some(expected)
+            );
+        }
+        for (frame_length, locators) in [(806, [534, 545]), (850, [530, 541]), (861, [534, 545])] {
+            assert_eq!(
+                super::AssemblyScopeGeneration::new(frame_length, "", "")
+                    .operand_path_locator_offsets(),
+                Some(locators)
             );
         }
         for (frame_length, owner_count) in [(627, 6), (732, 6), (705, 8), (772, 8), (604, 4)] {

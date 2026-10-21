@@ -4641,7 +4641,7 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "Every other form stores a u32 count of two followed by two marked same-segment operand-path-locator references."
 size = 26
-note = "Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, and offset 358 in the 633-, 732-, and 744-byte forms."
+note = "Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 526 in the 850-byte form."
 
 [[record.field]]
 name = "locator_count"
@@ -4698,6 +4698,21 @@ note = "The 732-byte compact assembly form uses the two tabulated scope-relative
 path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
 contains = '744 => ((class_tag == "430" && paired_class_tag == "262").then_some(Compact), Some((8, 4, 8)), Some([362, 373])),'
 note = "The class-430/262 744-byte Assemble form uses the compact locator-reference offsets."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+contains = "945 => (Some(Wide), Some((4, 0, 4)), Some([541, 552])),"
+note = "The 945-byte wide Assemble form stores its locator references after the count at offset 537."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+contains = "806 | 861 => (Some(CompactWide), Some((4, 0, 4)), Some([534, 545])),"
+note = "The 806- and 861-byte compact wide Assemble forms store their locator references after the count at offset 530."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+contains = "850 => (Some(CompactWide), Some((4, 0, 4)), Some([530, 541])),"
+note = "The 850-byte compact wide Assemble form stores its locator references after the count at offset 526."
 
 [[record]]
 name = "assembly_as_built_421_scope"
@@ -16677,7 +16692,7 @@ name = "assembly_wide_operand_path_locator"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
 kind = "byte"
 section = "Assembly operands"
-anchor = "A wide operand-path locator is the locator of the 945-byte `Assemble` scope."
+anchor = "A wide operand-path locator is the locator of the 945-, 806-, 850- and 861-byte `Assemble` scopes."
 note = "This size-less byte record describes the fixed prefix through the optional transform. The scope backlink, wrapper reference, constant 2 and zero tail follow one zero byte after the identity flag or the transform."
 
 [[record.field]]
@@ -16728,4 +16743,75 @@ offset = 68
 type = "f64[16]"
 source = "spec"
 anchor = "a row-major rigid 4×4 transform at offset\n68"
+
+[[record]]
+name = "assembly_compact_wide_scope"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_frames.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 806-, 850- and 861-byte `Assemble` scopes use the compact wide"
+note = "This size-less byte record describes the fixed operand prefix of the 806-, 850- and 861-byte scopes. Offsets are relative to the scope's primary indexed header; an LP-UTF16 GUID follows each transform."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The 806-, 850- and 861-byte `Assemble` scopes use the compact wide"
+
+[[record.field]]
+name = "zero_run_21"
+offset = 11
+type = "bytes[21]"
+source = "spec"
+anchor = "Bytes 11 through 31 are zero"
+
+[[record.field]]
+name = "first_operand_reference"
+offset = 32
+type = "bytes[11]"
+source = "spec"
+anchor = "the operand references are\nat offsets 32 and 254"
+
+[[record.field]]
+name = "first_reference_zero_run"
+offset = 43
+type = "bytes[7]"
+source = "spec"
+anchor = "seven zero bytes follow each reference"
+
+[[record.field]]
+name = "first_operand_transform"
+offset = 50
+type = "f64[16]"
+source = "spec"
+anchor = "row-major transforms start at offsets 50 and 272"
+
+[[record.field]]
+name = "first_operand_guid"
+offset = 178
+type = "bytes[76]"
+source = "spec"
+anchor = "an LP-UTF16 GUID follows\neach transform"
+
+[[record.field]]
+name = "second_operand_reference"
+offset = 254
+type = "bytes[11]"
+source = "spec"
+anchor = "the operand references are\nat offsets 32 and 254"
+
+[[record.field]]
+name = "second_reference_zero_run"
+offset = 265
+type = "bytes[7]"
+source = "spec"
+anchor = "seven zero bytes follow each reference"
+
+[[record.field]]
+name = "second_operand_transform"
+offset = 272
+type = "f64[16]"
+source = "spec"
+anchor = "row-major transforms start at offsets 50 and 272"
 

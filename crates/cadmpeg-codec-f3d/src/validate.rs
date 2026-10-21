@@ -2203,28 +2203,28 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 );
                 let as_built_421 = as_built_421_generation.is_some();
                 let operand_paths = alignment.operand_path_refs();
-                let frame_reference_offsets = if wide_frames {
-                    [38, 260]
-                } else if compact_wide_frames {
-                    [33, 255]
-                } else if axial_frames {
-                    [29, 168]
-                } else if compact_frames {
-                    [25, 165]
-                } else {
-                    [29, 169]
-                };
-                let frame_transform_offsets = if wide_frames {
-                    [55, 277]
-                } else if compact_wide_frames {
-                    [50, 272]
-                } else if axial_frames {
-                    [39, 178]
-                } else if compact_frames {
-                    [36, 176]
-                } else {
-                    [40, 180]
-                };
+                let wide_family_offsets = operand_frame_variant
+                    .and_then(crate::design::decode::scopes::wide_family_frame_offsets);
+                let frame_reference_offsets =
+                    if let Some([first, _, second, _]) = wide_family_offsets {
+                        [u64_from_index(first + 1), u64_from_index(second + 1)]
+                    } else if axial_frames {
+                        [29, 168]
+                    } else if compact_frames {
+                        [25, 165]
+                    } else {
+                        [29, 169]
+                    };
+                let frame_transform_offsets =
+                    if let Some([_, first, _, second]) = wide_family_offsets {
+                        [u64_from_index(first), u64_from_index(second)]
+                    } else if axial_frames {
+                        [39, 178]
+                    } else if compact_frames {
+                        [36, 176]
+                    } else {
+                        [40, 180]
+                    };
                 let assembly_owner_count = native
                     .design_parameter_owners
                     .iter()
@@ -2413,11 +2413,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             _ => false,
                         }
                     }
-                    // Frames without qualifiers: an axial scope, or a wide scope
-                    // whose operand paths do not read.
                     Some(records::feature::assembly::DesignAssemblyAlignmentForm::Frames {
                         ..
-                    }) => axial_frames || wide_frames || compact_wide_frames,
+                    }) => axial_frames,
                     Some(records::feature::assembly::DesignAssemblyAlignmentForm::LimitsOnly {
                         ..
                     }) => as_built_421,
