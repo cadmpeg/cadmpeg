@@ -854,7 +854,11 @@ fn configuration_local_modeling_edits_without_brep_are_synthesized() {
     let inactive_id = inactive.id.clone();
     assert_eq!(
         inactive.parameter_value(decoded.ir(), &parameter_id),
-        Some(&ParameterValue::Length(Length::new(50.0).unwrap()))
+        Some(&ParameterValue::Length(Length::new(50.0).unwrap())),
+        "configurations={:#?}; parameters={:#?}; native lanes={:#?}",
+        decoded.ir().model.configurations,
+        decoded.ir().model.parameters,
+        sldprt_native(decoded.ir()).feature_input_lanes,
     );
     assert_eq!(
         inactive.parameter_value(decoded.ir(), &dependent_id),
