@@ -26,8 +26,7 @@ fn append_design_intent_losses(
         &mut cadmpeg_ir::ArenaClasses::default(),
         ir,
         losses,
-    )
-    .unwrap();
+    );
 }
 
 fn one_incomplete_expression_parameter() -> cadmpeg_ir::CadIr {

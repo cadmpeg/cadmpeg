@@ -76,8 +76,7 @@ fn append_design_intent_losses(
         &mut cadmpeg_ir::ArenaClasses::default(),
         ir,
         losses,
-    )
-    .unwrap();
+    );
 }
 
 #[test]

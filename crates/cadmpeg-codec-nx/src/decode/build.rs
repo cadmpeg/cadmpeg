@@ -1336,7 +1336,7 @@ pub(super) fn try_decode_geometry(
         },
         &ir,
         &model,
-    )?;
+    );
     for losses in [carrier_refusals, topology_losses, native_losses] {
         report.losses.extend(losses);
     }
