@@ -33,11 +33,22 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
         .iter_mut()
         .find(|reference| reference.value == 439)
         .expect("generated persistent reference");
-    assert!(reference.byte_offset > Some(0));
-    assert!(reference.value_offset > Some(0));
+    for field in ["byte_offset", "value_offset"] {
+        assert!(
+            fidelity.metadata[&format!("{}.{field}", reference.id)]
+                .parse::<u64>()
+                .expect("retained actual source position")
+                > 0
+        );
+    }
     reference.value = 9_001;
     let recipe = &mut native.construction_recipes[0];
-    assert!(recipe.byte_offset > Some(0));
+    assert!(
+        fidelity.metadata[&format!("{}.byte_offset", recipe.id)]
+            .parse::<u64>()
+            .expect("retained actual recipe source position")
+            > 0
+    );
     assert!(recipe.record_index.is_some());
     assert!(recipe
         .design
