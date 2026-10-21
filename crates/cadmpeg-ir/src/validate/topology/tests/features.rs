@@ -10,6 +10,30 @@ use crate::report::check::Check;
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
+// Configuration records store differences, so these unchanged definition
+// snapshots are errors even after their reference dependencies resolve.
+fn assert_redundant_configuration_definitions(
+    report: &crate::report::check::ValidationReport,
+    configuration: &str,
+    features: &[&str],
+) {
+    assert_eq!(
+        report.findings.len(),
+        features.len(),
+        "{:#?}",
+        report.findings
+    );
+    for feature in features {
+        assert!(report.findings.iter().any(|finding| {
+            finding.check == crate::report::check::Check::ReferentialIntegrity
+                && finding.severity == crate::report::Severity::Error
+                && finding.entity.as_deref() == Some(configuration)
+                && finding.related == [*feature]
+                && finding.message == "inactive configuration repeats the base feature state instead of storing a difference"
+        }), "{:#?}", report.findings);
+    }
+}
+
 #[test]
 fn historical_vertex_selection_requires_input_state_membership() {
     use crate::features::{
@@ -743,7 +767,11 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     let wire = serde_json::to_value(state).unwrap();
     assert!(wire.get("dependencies").is_none());
     assert!(wire.get("outputs").is_none());
-    assert!(validate_neutral(&ir, Vec::new()).unwrap().is_ok());
+    assert_redundant_configuration_definitions(
+        &validate_neutral(&ir, Vec::new()).unwrap(),
+        "synthetic:test:configuration#vertex",
+        &[extrude.as_str()],
+    );
 }
 
 #[test]
@@ -1009,7 +1037,17 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
     ir.model.features[1].dependencies.insert(source.clone());
     ir.model.features[5].dependencies.insert(block.clone());
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
-    assert!(report.is_ok(), "{:#?}", report.findings);
+    assert_redundant_configuration_definitions(
+        &report,
+        "synthetic:test:configuration#offset-plane",
+        &[
+            offset.as_str(),
+            derived.as_str(),
+            pattern.as_str(),
+            instance.as_str(),
+            profile.as_str(),
+        ],
+    );
 }
 
 #[test]
