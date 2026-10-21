@@ -45,11 +45,10 @@ pub(crate) struct SketchCurveLink {
     pub(crate) id: String,
     /// Solved B-rep entity this link provenances back to a sketch curve.
     pub(crate) target: AttributeTarget,
-    /// Numeric design-entity id of the source sketch-curve record.
+    /// First member of the component-scoped source-curve key.
     pub(crate) sketch_curve_id: i64,
-    /// Second member of the source tuple, retained in the spelling the source
-    /// writes. It is `0` in most links; what a non-zero value names is open as
-    /// `DR-30`.
+    /// Secondary curve identity or owning sketch-text record index.
+    /// The unsigned all-ones sentinel remains a distinct source qualifier.
     pub(crate) ref_b: u64,
     /// Which of the sketch curve's two senses this link takes, `0` or `1`.
     /// Absent when the source record leaves the sense unconstrained.
