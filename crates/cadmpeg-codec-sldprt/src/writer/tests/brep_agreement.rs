@@ -333,26 +333,35 @@ fn assert_synthesized_design(decoded: &cadmpeg_test_support::EditableDecodeResul
         written.ir().model.bodies.len(),
         decoded.ir().model.bodies.len()
     );
-    let mut expected = decoded
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (&parameter.name, &parameter.expression))
-        .collect::<Vec<_>>();
-    let mut actual = written
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (&parameter.name, &parameter.expression))
-        .collect::<Vec<_>>();
-    expected.sort_by_key(|(name, _)| *name);
-    actual.sort_by_key(|(name, _)| *name);
-    assert_eq!(
-        actual, expected,
-        "neutral parameters decide the written history"
-    );
+    let mut expected = decoded.ir().model.parameters.iter().collect::<Vec<_>>();
+    let mut actual = written.ir().model.parameters.iter().collect::<Vec<_>>();
+    expected.sort_by_key(|parameter| &parameter.name);
+    actual.sort_by_key(|parameter| &parameter.name);
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.into_iter().zip(expected) {
+        assert_eq!(actual.name, expected.name);
+        assert_eq!(
+            actual.value, expected.value,
+            "the full typed cache survives"
+        );
+        let setter_literal = expected.value.as_ref().filter(|value| {
+            expected.expression == value.literal_expression()
+                && expected.expression.literal_value_as(value).as_ref() == Some(*value)
+        });
+        if let Some(value) = setter_literal {
+            // D5: API-generated single literals equal their typed value. The
+            // native grammar may render 50 mm as 50mm; quantities stay exact.
+            assert_eq!(
+                actual.expression.literal_value_as(value).as_ref(),
+                Some(value)
+            );
+        } else {
+            assert_eq!(
+                actual.expression, expected.expression,
+                "authored expression tokens decide the written history"
+            );
+        }
+    }
     assert!(
         matches!(
             report.write_path(),
