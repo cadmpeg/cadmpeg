@@ -1346,13 +1346,20 @@ fn decode_retains_cyclic_curve_expression_dependencies_without_invalid_edges() {
         panic!("four curve-expression parameters");
     };
 
-    assert!(r.expression.dependencies().next().is_none());
-    assert_eq!(r.properties["cyclic_dependencies"], "a");
-    assert!(a.expression.dependencies().next().is_none());
-    assert_eq!(a.properties["cyclic_dependencies"], "r");
+    assert_eq!(
+        r.expression.dependencies().cloned().collect::<Vec<_>>(),
+        [a.id.clone()]
+    );
+    assert_eq!(
+        a.expression.dependencies().cloned().collect::<Vec<_>>(),
+        [r.id.clone()]
+    );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
+    assert!(validation.findings.iter().any(|finding| finding
+        .message
+        .contains("parameter expression dependency cycle is retained")));
 }
 
 #[test]
