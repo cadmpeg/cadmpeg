@@ -1845,7 +1845,7 @@ mod relation_records_tests {
             .iter()
             .filter_map(|class| {
                 let family = super::relation_family(&class.name)?;
-                let interval = interval_at(class.offset);
+                let interval = class.offset.and_then(interval_at);
                 let class_feature = interval.map(|(_, _, feature)| feature.as_str());
                 let next_class = classes
                     .iter()
@@ -1853,11 +1853,13 @@ mod relation_records_tests {
                         candidate.offset > class.offset
                             && super::relation_family(&candidate.name).is_some()
                             && class_feature.is_some_and(|feature| {
-                                interval_at(candidate.offset)
+                                candidate
+                                    .offset
+                                    .and_then(interval_at)
                                     .is_some_and(|(_, _, owner)| owner.as_str() == feature)
                             })
                     })
-                    .map(|candidate| candidate.offset)
+                    .filter_map(|candidate| candidate.offset)
                     .min();
                 let (feature_end, unknown_feature_limit) = match interval {
                     Some((_, end, _)) => (*end, None),
@@ -1870,7 +1872,7 @@ mod relation_records_tests {
                         ),
                     ),
                 };
-                let scope_end = [next_class, Some(feature_end), unknown_feature_limit]
+                let scope_end = [next_class, Some(feature_end), Some(unknown_feature_limit)]
                     .into_iter()
                     .flatten()
                     .min();

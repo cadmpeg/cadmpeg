@@ -739,7 +739,7 @@ fn native_face_offset_reference_uses_identity_without_a_duplicate_frame() {
         assert_eq!(face, FaceSelection::Native(native.into()));
         assert_eq!(
             distance,
-            crate::history::project::parameter_dimension(&offset, "D1").unwrap()
+            crate::history::project::parameter_dimension(&offset, &["D1"]).unwrap()
         );
         let source = FeatureHistory {
             id: "source".into(),

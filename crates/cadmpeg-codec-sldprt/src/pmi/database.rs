@@ -124,8 +124,10 @@ fn write_overflow(pages: &mut Vec<Vec<u8>>, key: &[u8], value: &[u8]) -> Result<
 
 fn key_hash(bytes: &[u8]) -> u32 {
     bytes.iter().take(2048).fold(5381u32, |value, byte| {
-        // wrapping-exception: UnQLite defines its DJB2 hash modulo 2^32.
-        value.wrapping_mul(33).wrapping_add(u32::from(*byte))
+        // wrapping-exception: UnQLite defines the DJB2 multiplication modulo 2^32.
+        let multiplied = value.wrapping_mul(33);
+        // wrapping-exception: UnQLite defines the DJB2 addition modulo 2^32.
+        multiplied.wrapping_add(u32::from(*byte))
     })
 }
 

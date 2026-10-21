@@ -82,7 +82,7 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
             entities: repeated,
             parameter: parameter_id,
         }) if repeated == vec![SketchEntityId::mint("synthetic:test:id#first").unwrap(), SketchEntityId::mint("synthetic:test:id#second").unwrap()]
-            && parameter_id == parameter.id
+            && parameter_id == cadmpeg_ir::Dimension::Parameter(parameter.id)
     ));
 }
 
@@ -164,7 +164,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         .unwrap(),
         Some(SketchConstraintDefinitionInput::RepeatedDiameter {
             entities: entities.iter().map(|entity| entity.id().clone()).collect(),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -202,7 +202,7 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
     };
     let definition = cadmpeg_ir::sketches::SketchConstraintDefinitionInput::RepeatedDiameter {
         entities: entities.iter().map(|entity| entity.id().clone()).collect(),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     assert!(!relation_constraint_is_inactive(Some(&parameter), &definition, &entities,).unwrap());
 

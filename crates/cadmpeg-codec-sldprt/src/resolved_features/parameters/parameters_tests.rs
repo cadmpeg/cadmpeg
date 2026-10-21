@@ -11,7 +11,7 @@ use crate::records::{
     FeatureContent, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
     FeatureInputScalar, FeatureInputScalarRole,
 };
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 #[test]
 fn native_scalar_must_match_an_existing_discrete_parameter() {
@@ -376,8 +376,8 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
         }
         let owners = ScalarOwners::new(&lane.scalars);
         for feature in features {
-            let start = next(40);
-            let end = (next(4) != 0).then(|| start + next(20));
+            let start = u32::try_from(next(40)).unwrap();
+            let end = (next(4) != 0).then(|| start + u32::try_from(next(20)).unwrap());
             let expected = lane
                 .scalars
                 .iter()
@@ -385,8 +385,8 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
                 .filter(|(_, scalar)| {
                     scalar.feature_ref.as_deref() == Some(feature)
                         || (scalar.feature_ref.is_none()
-                            && scalar.offset > Some(start)
-                            && end.is_none_or(|end| scalar.offset < Some(end)))
+                            && scalar.sequence > start
+                            && end.is_none_or(|end| scalar.sequence < end))
                 })
                 .map(|(index, _)| index)
                 .collect::<Vec<_>>();

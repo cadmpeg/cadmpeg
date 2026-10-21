@@ -419,6 +419,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
             &[lane("lane-a", 40), lane("lane-b", 60)],
             &[],
             &[],
+            &[],
         )
     })
     .expect("cosmetic thread face projection");
@@ -488,6 +489,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
             &[],
             std::slice::from_ref(&topology_face),
             std::slice::from_ref(&surface),
+            &[],
         )
     })
     .expect("cosmetic thread face projection");
@@ -1825,7 +1827,7 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
         full_round_fillet_selection_triple(&borrowed).expect("one lane of three is a triple");
     assert_eq!(
         [center.offset, side_one.offset, side_two.offset],
-        [20, 40, 60]
+        [Some(20), Some(40), Some(60)]
     );
 
     let short = lane[..2].iter().collect::<Vec<_>>();

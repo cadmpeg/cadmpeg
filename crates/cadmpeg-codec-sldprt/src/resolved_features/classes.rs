@@ -1313,19 +1313,18 @@ mod idless_history_binding_tests {
             class(0, 100, "moCosmeticThread_c"),
             class(1, 200, "moRefAxis_c"),
         ];
-        let name =
-            |ordinal: u32, class: &FeatureInputClass, value: &str| FeatureInputName {
-                feature_ref: None,
-                id: format!("name-{ordinal}"),
-                parent: "lane".into(),
-                ordinal,
-                sequence: ordinal,
-                offset: Some(class.offset.and_then(|position| {
-                    position.checked_add(6 + u64_from_index(class.name.len()))
-                })),
-                object_id: None,
-                value: value.into(),
-            };
+        let name = |ordinal: u32, class: &FeatureInputClass, value: &str| FeatureInputName {
+            feature_ref: None,
+            id: format!("name-{ordinal}"),
+            parent: "lane".into(),
+            ordinal,
+            sequence: ordinal,
+            offset: class
+                .offset
+                .and_then(|position| position.checked_add(6 + u64_from_index(class.name.len()))),
+            object_id: None,
+            value: value.into(),
+        };
         let names = vec![
             name(0, &classes[0], "unique generated name"),
             name(1, &classes[1], "duplicate name"),

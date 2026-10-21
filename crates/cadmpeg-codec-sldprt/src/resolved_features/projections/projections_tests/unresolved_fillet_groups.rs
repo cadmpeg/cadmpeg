@@ -104,7 +104,7 @@ fn a_sole_unresolved_fillet_group_carries_its_tangency_weight() {
         sole_unresolved_fillet_group(&fillet(Some(cadmpeg_ir::Dimension::Literal(weight))))
             .expect("a sole group without a radius is carried out of the check")
             .1,
-        Some(weight)
+        Some(cadmpeg_ir::Dimension::Literal(weight))
     );
     assert_eq!(
         sole_unresolved_fillet_group(&fillet(None))

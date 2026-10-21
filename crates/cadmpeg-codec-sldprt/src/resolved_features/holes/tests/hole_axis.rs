@@ -422,7 +422,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         });
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
-        *shape.exit_kind(),
+        shape.exit_kind().clone(),
         shape.diameter().cloned(),
     )
     .unwrap();
@@ -452,7 +452,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
 
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
-        *shape.exit_kind(),
+        shape.exit_kind().clone(),
         shape.diameter().cloned(),
     )
     .unwrap();
@@ -765,7 +765,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
 
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
-        *shape.exit_kind(),
+        shape.exit_kind().clone(),
         shape.diameter().cloned(),
     )
     .unwrap();
@@ -847,7 +847,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
 
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         shape.construction().clone(),
-        *shape.exit_kind(),
+        shape.exit_kind().clone(),
         edited_diameter.cloned(),
     )
     .unwrap();
@@ -925,7 +925,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
 
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
-        *shape.exit_kind(),
+        shape.exit_kind().clone(),
         shape.diameter().cloned(),
     )
     .unwrap();

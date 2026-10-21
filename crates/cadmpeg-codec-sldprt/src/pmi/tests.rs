@@ -219,7 +219,9 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
                 seeds: Vec::new(),
                 pattern: PatternKind::new(PatternTransform::Linear {
                     direction: None,
-                    spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
+                    distance: cadmpeg_ir::scalar::PositiveLength::new(10.0)
+                        .unwrap()
+                        .into(),
                     count: cadmpeg_ir::Dimension::Literal(2),
                     second: None,
                 })
@@ -455,8 +457,15 @@ fn identical_dimension_fields_can_have_different_patch_positions() {
     assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(original.len(), 1);
     let record = &original[0];
-    let basic = patch_slots::field_offset(&payload, record.offset, "isBasic").unwrap();
-    let inspection = patch_slots::field_offset(&payload, record.offset, "isInspection").unwrap();
+    let basic =
+        patch_slots::field_offset(&payload, record.offset.expect("source offset"), "isBasic")
+            .unwrap();
+    let inspection = patch_slots::field_offset(
+        &payload,
+        record.offset.expect("source offset"),
+        "isInspection",
+    )
+    .unwrap();
     let mut reordered = payload.clone();
     let start = basic - (1 + "isBasic".len());
     reordered[start..=inspection].rotate_left(1 + "isBasic".len() + 1);
@@ -478,11 +487,17 @@ fn identical_dimension_fields_can_have_different_patch_positions() {
     assert_eq!(left, right);
     assert_ne!(
         basic,
-        patch_slots::field_offset(&reordered, record.offset, "isBasic").unwrap()
+        patch_slots::field_offset(&reordered, record.offset.expect("source offset"), "isBasic")
+            .unwrap()
     );
     assert_ne!(
         inspection,
-        patch_slots::field_offset(&reordered, record.offset, "isInspection").unwrap()
+        patch_slots::field_offset(
+            &reordered,
+            record.offset.expect("source offset"),
+            "isInspection"
+        )
+        .unwrap()
     );
 }
 
@@ -680,7 +695,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert!(dimension.reference_only);
     assert_eq!(
         decoded.source_fidelity().annotations.provenance[&dimension.id].offset,
-        dimension.offset
+        dimension.offset.expect("source offset")
     );
     let parameter = decoded
         .ir()
@@ -1289,7 +1304,7 @@ fn pmi_skipped_values_are_validated_but_not_kept() {
         shape: super::Shape::Record,
         work: &work,
     };
-    let mut cursor = usize::try_from(records[0].offset).unwrap();
+    let mut cursor = usize::try_from(records[0].offset.expect("source offset")).unwrap();
     let outer = super::parse_value(&ctx, &payload, &mut cursor, 0, parse)
         .unwrap()
         .unwrap();

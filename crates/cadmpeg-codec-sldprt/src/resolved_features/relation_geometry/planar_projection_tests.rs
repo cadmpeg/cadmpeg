@@ -331,7 +331,7 @@ fn project_dimensional_with_policy(policy: &DecodePolicy) -> Result<(), CodecErr
     };
     let expected = SketchConstraintDefinitionInput::Diameter {
         entity: entity.id().clone(),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -404,7 +404,7 @@ fn project_dimensional_points_with_policy(policy: &DecodePolicy) -> Result<(), C
     let expected = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Entity(entities[0].id().clone()),
         second: SketchLocus::Entity(entities[1].id().clone()),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -477,7 +477,7 @@ fn project_dimensional_lines_with_policy(policy: &DecodePolicy) -> Result<(), Co
     };
     let expected = SketchConstraintDefinitionInput::Distance {
         entities: vec![entities[0].id().clone(), entities[1].id().clone()],
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -546,7 +546,7 @@ fn project_repeated_circles_with_policy(policy: &DecodePolicy) -> Result<(), Cod
     };
     let expected = SketchConstraintDefinitionInput::RepeatedDiameter {
         entities: entities.iter().map(|entity| entity.id().clone()).collect(),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -621,7 +621,7 @@ fn project_dynamic_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
     };
     let expected = SketchConstraintDefinitionInput::Distance {
         entities: vec![entities[0].id().clone(), entities[1].id().clone()],
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -720,7 +720,7 @@ fn project_dynamic_marker_points_with_policy(policy: &DecodePolicy) -> Result<()
     let expected = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Entity(entities[0].id().clone()),
         second: SketchLocus::Entity(entities[1].id().clone()),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;

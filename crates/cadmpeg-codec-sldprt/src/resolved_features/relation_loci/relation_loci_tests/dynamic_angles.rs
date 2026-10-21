@@ -90,7 +90,7 @@ fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
         Some(SketchConstraintDefinitionInput::Angle {
             first: first_line.id().clone(),
             second: second_line.id().clone(),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -190,7 +190,7 @@ fn dynamic_angle_uses_unique_complete_roster_when_no_line_resolves() {
         Some(SketchConstraintDefinitionInput::Angle {
             first: first.id().clone(),
             second: second.id().clone(),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -258,7 +258,7 @@ fn dynamic_angle_repairs_one_resolved_line_from_the_profile_roster() {
         Some(SketchConstraintDefinitionInput::Angle {
             first: known.id().clone(),
             second: partner.id().clone(),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }

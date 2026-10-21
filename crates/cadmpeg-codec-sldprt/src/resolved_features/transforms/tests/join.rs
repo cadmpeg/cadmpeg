@@ -604,7 +604,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         Some(cadmpeg_ir::sketches::SketchConstraintDefinitionInput::DistanceLoci {
             parameter,
             ..
-        }) if parameter.as_str() == "synthetic:test:id#distance"
+        }) if parameter.parameter().expect("canonical parameter").as_str() == "synthetic:test:id#distance"
     ));
     let same_locus_relation = FeatureInputRelationInstance {
         operands: relation
@@ -653,7 +653,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             &joins,
         ).unwrap(),
         Some(SketchConstraintDefinitionInput::Radius { parameter, .. })
-            if parameter.as_str() == "synthetic:test:id#circle"
+            if parameter.parameter().expect("canonical parameter").as_str() == "synthetic:test:id#circle"
     ));
     let diameter = parameter("synthetic:test:id#circle", Some(DimensionDisplay::Diameter));
     assert!(matches!(
@@ -666,7 +666,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             &joins,
         ).unwrap(),
         Some(SketchConstraintDefinitionInput::Diameter { parameter, .. })
-            if parameter.as_str() == "synthetic:test:id#circle"
+            if parameter.parameter().expect("canonical parameter").as_str() == "synthetic:test:id#circle"
     ));
     let undisplayed = parameter("synthetic:test:id#circle", None);
     assert_eq!(
@@ -812,7 +812,7 @@ fn line_handle_interior_points_identify_profile_entities() {
         let mut handle = marker(id, Some(coordinates_m));
         handle = handle.with_test_position(
             u32::try_from(ordinal).expect("test index fits u32"),
-            handle.offset(),
+            handle.offset().expect("source offset"),
         );
         handle = handle.with_test_position(
             handle.ordinal(),
@@ -1039,7 +1039,7 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
     let mut handle = marker("circle-marker", Some([0.0, 0.0]));
     handle.reclassify(SketchInputKind::LineOrCircle);
     let mut point = marker("point-marker", Some([0.01, 0.0]));
-    point = point.with_test_position(1, point.offset());
+    point = point.with_test_position(1, point.offset().expect("source offset"));
     point = point.with_test_position(point.ordinal(), 27);
     let lane = FeatureInputLane {
         id: "lane".into(),

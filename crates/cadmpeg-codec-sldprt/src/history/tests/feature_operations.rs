@@ -817,7 +817,9 @@ fn decode_does_not_globalize_configuration_local_sweep_path() {
         }) if path.starts_with("sldprt:feature-input:general-curve-ref:")
     ));
     assert!(matches!(
-        decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
+        decoded.ir().model.configurations[1].feature_states[&feature_id]
+            .definition()
+            .expect("structural override"),
         FeatureDefinition::Operation(FeatureOperation::Sweep { path: None, .. })
     ));
 }
