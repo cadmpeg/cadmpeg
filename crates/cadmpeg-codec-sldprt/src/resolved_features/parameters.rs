@@ -619,7 +619,7 @@ pub(crate) fn sync_feature_scalars(
 }
 
 /// Resolve a duplicate scalar from its canonical owner and effective
-/// configuration. Native-only literal edits retain their declared quantity.
+/// configuration. Native-only facts retain their stated evaluated cache.
 fn current_scalar_cache(
     model: &cadmpeg_ir::document::Model,
     configuration: Option<&cadmpeg_ir::features::DesignConfiguration>,
@@ -668,19 +668,9 @@ fn current_scalar_cache(
             )));
         }
     }
-    let cache = crate::history::parameters::source_parameter_value(feature, name);
-    let literal = feature.parameters.get(name).and_then(|expression| {
-        crate::history::parameters::parse_native_parameter_literal(feature, name, expression)
-    });
-    Ok(match (literal, cache) {
-        (Some(literal), Some(cache))
-            if std::mem::discriminant(&literal) == std::mem::discriminant(&cache) =>
-        {
-            Some(literal)
-        }
-        (_, Some(cache)) => Some(cache),
-        (literal, None) => literal,
-    })
+    Ok(crate::history::parameters::source_parameter_value(
+        feature, name,
+    ))
 }
 
 #[cfg(test)]
