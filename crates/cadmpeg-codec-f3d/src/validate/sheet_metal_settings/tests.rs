@@ -101,9 +101,11 @@ fn settings_native_links_reject_missing_references_wrong_types_and_duplicate_car
 fn settings_native_links_use_typed_class_identity_without_source_offsets() {
     let mut native = native();
     for row in &mut native.design_types {
-        row.byte_offset = None;
-        row.type_guid_offset = None;
-        row.version_offset = None;
+        *row = serde_json::from_value(serde_json::to_value(&*row).unwrap()).unwrap();
+        assert_eq!(
+            (row.byte_offset, row.type_guid_offset, row.version_offset),
+            (None, None, None)
+        );
     }
     for header in &mut native.design_record_headers {
         header.byte_offset = None;
