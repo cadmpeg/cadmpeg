@@ -129,7 +129,13 @@ pub(in crate::writer) fn write(
         "sweep" => sweep(&value, object, names)?,
         "hole" => hole(&value, object, names)?,
         "fillet" | "chamfer" => dress_up(&value, object, names)?,
-        "shell" | "offset_shape" => shell(&value, object, names, feature.source_tag.as_deref())?,
+        "shell" | "offset_shape" => shell(
+            &value,
+            object,
+            names,
+            crate::writer::parameters::has_signed_thickness_driver(ir, feature)
+                .then_some("Part::Thickness"),
+        )?,
         "draft" => {
             object.kind = "PartDesign::Draft".into();
             selection(object, "Base", &value["faces"], names)?;

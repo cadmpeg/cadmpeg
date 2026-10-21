@@ -12,6 +12,53 @@ use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Constraint;
 use cadmpeg_ir::{document::CadIr, features::ParameterValue, report::loss::LossNote};
 use std::collections::HashMap;
 
+/// The signed native Value can carry both authored driver and shell direction
+/// only while the current neutral magnitude is exactly its abs computation.
+/// A historical source kind cannot override an independently edited operand.
+pub(in crate::writer) fn has_signed_thickness_driver(
+    ir: &CadIr,
+    feature: &cadmpeg_ir::features::Feature,
+) -> bool {
+    use cadmpeg_ir::features::{ExpressionToken, FeatureOperation};
+    if feature.source_tag.as_deref() != Some("Part::Thickness") {
+        return false;
+    }
+    let FeatureOperation::Shell {
+        thickness: Some(thickness),
+        outward: Some(outward),
+        ..
+    } = feature.definition().operation()
+    else {
+        return false;
+    };
+    let Some(computed) = thickness.parameter().and_then(|id| {
+        ir.model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == *id)
+    }) else {
+        return false;
+    };
+    let [ExpressionToken::Text(prefix), ExpressionToken::Parameter(raw), ExpressionToken::Text(suffix)] =
+        computed.expression.tokens.as_slice()
+    else {
+        return false;
+    };
+    if prefix != "abs(" || suffix != ")" {
+        return false;
+    }
+    let Some(raw) = ir.model.parameters.iter().find(|parameter| {
+        parameter.id == *raw
+            && parameter.owner.as_ref() == Some(&feature.id)
+            && parameter.name == "Value"
+    }) else {
+        return false;
+    };
+    matches!((&raw.value, &computed.value),
+        (Some(ParameterValue::Length(raw)), Some(ParameterValue::Length(magnitude)))
+        if raw.get().abs() == magnitude.get() && (raw.get() > 0.0) == *outward)
+}
+
 pub(in crate::writer) fn parameter_reference(
     ir: &CadIr,
     id: &cadmpeg_ir::features::ParameterId,

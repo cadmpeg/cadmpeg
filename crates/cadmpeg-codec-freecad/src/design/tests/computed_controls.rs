@@ -69,9 +69,32 @@ pub(super) fn assert_computed_control<Q: DimensionValue + Serialize + Deserializ
         })
     );
     assert_eq!(serde_json::to_value(&edited).unwrap(), before);
+    let changed = match raw_value {
+        ParameterValue::Length(value) => {
+            ParameterValue::Length(cadmpeg_ir::scalar::Length::new(value.get() * 2.0).unwrap())
+        }
+        ParameterValue::Angle(value) => {
+            ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(value.get() * 2.0).unwrap())
+        }
+        _ => panic!("signed-control regression requires a length or angle"),
+    };
     edited
-        .set_parameter_expression(&raw.id, Expression::literal(&raw_value), Some(raw_value))
+        .set_parameter_expression(
+            &raw.id,
+            Expression::literal(&changed),
+            Some(changed.clone()),
+        )
         .unwrap();
+    assert_eq!(
+        edited
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == raw.id)
+            .unwrap()
+            .value,
+        Some(changed)
+    );
     assert!(
         edited
             .model
