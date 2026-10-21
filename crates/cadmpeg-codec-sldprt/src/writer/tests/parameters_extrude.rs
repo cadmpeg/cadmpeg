@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 mod dependencies;
+pub(super) mod reduction;
 
 use std::io::Cursor;
 
@@ -1468,6 +1469,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
 
 #[test]
 fn semantic_writer_round_trips_variable_radius_fillet() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::{
         features::{
             edge_treatments::{RadiusSpec, VariableRadius},
@@ -1577,13 +1579,24 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
             };
         });
     }
-    let mut encoded = Vec::new();
-    crate::test_support::serialize_edited_history(
+    // D1/S-entity: the original indexed radius controls remain independent.
+    // Their native names would reactivate a variable law in this operation.
+    reduction::assert_independent_parameter_reduction(
         regenerated.ir(),
         regenerated.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+        0,
+        "variable fillet radius law",
+    );
+    let positive = reduction::source_less_operation(
+        regenerated.ir().model.features[0].definition().clone(),
+        "Constant radius",
+    );
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .plan(EncodeInput::new(&positive, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut encoded)
+        .unwrap();
     let final_ir = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

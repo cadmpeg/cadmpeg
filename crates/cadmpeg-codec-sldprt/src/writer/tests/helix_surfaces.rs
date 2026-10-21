@@ -919,6 +919,7 @@ fn semantic_writer_round_trips_offset_surface() {
 
 #[test]
 fn semantic_writer_round_trips_knit_surface() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
     let base_bytes = sldprt_with_body(&triangle_body());
@@ -968,13 +969,28 @@ fn semantic_writer_round_trips_knit_surface() {
         });
     }
 
-    let mut encoded = Vec::new();
-    crate::test_support::serialize_edited_history(
+    // D1/S-entity: retaining the independent GapTolerance cannot silently
+    // reactivate a tolerance that the canonical operation has removed.
+    super::parameters_extrude::reduction::assert_independent_parameter_reduction(
         decoded.ir(),
         decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+        0,
+        "independent parameter GapTolerance",
+    );
+    let mut positive = super::parameters_extrude::reduction::source_less_operation(
+        decoded.ir().model.features[0].definition().clone(),
+        "Knit",
+    );
+    positive.model.features[0].source_properties.insert(
+        cadmpeg_core::nonblank_literal!("CheckGeometry"),
+        "true".into(),
+    );
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .plan(EncodeInput::new(&positive, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut encoded)
+        .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
