@@ -43,13 +43,14 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write;
 
 /// Retype an admitted source cache without replacing an authored expression.
-/// Literal source controls receive canonical units; parameter tokens survive.
+/// Keep authored literal spelling when it already denotes the admitted typed
+/// cache. Retyping an incompatible literal needs canonical units; references survive.
 fn set_typed_parameter_cache(parameter: &mut DesignParameter, value: ParameterValue) {
     let literal = parameter
         .value
         .as_ref()
         .is_some_and(|old| parameter.expression.literal_value_as(old).is_some());
-    if literal {
+    if literal && parameter.expression.literal_value_as(&value).as_ref() != Some(&value) {
         parameter.expression = value.literal_expression();
     }
     parameter.value = Some(value);
