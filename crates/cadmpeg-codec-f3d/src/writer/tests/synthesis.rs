@@ -330,21 +330,28 @@ fn unsupported_typed_histories_reduce_without_losing_neutral_geometry() {
         ),
     ] {
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+        let history_ids = histories
+            .iter()
+            .map(|history| history.id.clone())
+            .collect::<Vec<_>>();
         f3d_native_mut(&mut ir).asm_histories = histories;
         let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
         assert_eq!(output.ir().model.bodies.len(), 1);
         assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
         assert_eq!(f3d_native(output.ir()).asm_histories.len(), expected);
-        assert_eq!(
-            report
-                .native_dispositions
-                .disposition("f3d", "asm_histories"),
-            if expected == 0 {
-                cadmpeg_ir::codec::write::NativeDisposition::Dropped
-            } else {
-                cadmpeg_ir::codec::write::NativeDisposition::Written
-            }
-        );
+        for (ordinal, id) in history_ids.iter().enumerate() {
+            assert_eq!(
+                report
+                    .native_dispositions
+                    .record_disposition("f3d", "asm_histories", id),
+                if ordinal < expected {
+                    cadmpeg_ir::codec::write::NativeDisposition::Written
+                } else {
+                    cadmpeg_ir::codec::write::NativeDisposition::Dropped
+                },
+                "original history {id}",
+            );
+        }
         assert!(report.losses.iter().any(|loss| {
             matches!(
                 loss.code.local_code(),
