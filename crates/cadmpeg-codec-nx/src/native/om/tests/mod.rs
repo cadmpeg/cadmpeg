@@ -518,12 +518,14 @@ fn decode_retains_typed_nx_numeric_expression() {
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant"),
     );
-    let expressions = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::ParameterFormula>("expressions")
-    .expect("required invariant");
+    let expressions = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::ParameterFormula>("expressions")
+        .expect("required invariant");
     assert_eq!(expressions.len(), 1);
     assert_eq!(
         expressions[0].owner.as_ref().map(|owner| owner.object_id),
@@ -551,12 +553,14 @@ fn decode_retains_typed_nx_numeric_expression() {
         .source_table
         .as_str()
         .starts_with("nx:om-entry-0:expression-table#"));
-    let declarations = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::ExpressionDeclaration>("expression_declarations")
-    .expect("required invariant");
+    let declarations = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::ExpressionDeclaration>("expression_declarations")
+        .expect("required invariant");
     assert_eq!(declarations.len(), 1);
     assert_eq!(declarations[0].object_id, 0x102);
     assert_eq!(declarations[0].name.index(), 8);
@@ -594,19 +598,23 @@ fn decode_retains_typed_nx_numeric_expression() {
                 && cadmpeg_ir::hash::sha256_hex(data) == record.sha256()
         })
     }));
-    let object_records = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::ObjectRecord>("object_records")
-    .expect("required invariant");
+    let object_records = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::ObjectRecord>("object_records")
+        .expect("required invariant");
     assert_eq!(object_records.len(), 2);
-    let headers = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::StoreHeader>("store_headers")
-    .expect("required invariant");
+    let headers = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::StoreHeader>("store_headers")
+        .expect("required invariant");
     assert_eq!(headers.len(), 1);
     assert_eq!(headers[0].header().version.as_str(), "NX 2027.3102");
     let super::StoreHeader::Fixed(header) = &headers[0] else {
@@ -637,22 +645,26 @@ fn decode_retains_typed_nx_numeric_expression() {
         object_records[0].dependents,
         vec![object_records[1].id.clone()]
     );
-    let strings = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::StringValue>("string_values")
-    .expect("required invariant");
+    let strings = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::StringValue>("string_values")
+        .expect("required invariant");
     assert_eq!(strings.len(), 1);
     assert_eq!(strings[0].record, object_records[1].id);
     assert_eq!(strings[0].object_id, 0x102);
     assert_eq!(strings[0].value.as_str(), "SKETCH_001");
-    let references = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::ObjectReference>("object_references")
-    .expect("required invariant");
+    let references = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::ObjectReference>("object_references")
+        .expect("required invariant");
     assert_eq!(references.len(), 3);
     assert_eq!(references[0].record, object_records[1].id);
     assert_eq!(references[0].object_id, 0x102);
@@ -668,12 +680,14 @@ fn decode_retains_typed_nx_numeric_expression() {
         wire[2]["target_record"].as_str(),
         Some(object_records[0].id.as_str())
     );
-    let handles = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::PersistentHandle>("persistent_handles")
-    .expect("required invariant");
+    let handles = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::PersistentHandle>("persistent_handles")
+        .expect("required invariant");
     assert_eq!(handles.len(), 1);
     assert_eq!(handles[0].value, 0x1234_5678);
     assert_eq!(handles[0].records, vec![object_records[1].id.clone()]);
@@ -691,10 +705,7 @@ fn decode_retains_typed_nx_numeric_expression() {
     ));
     assert_eq!(result.ir().model.features[0].suppressed, Some(false));
     assert_eq!(result.ir().model.parameters.len(), 1);
-    assert_eq!(
-        result.ir().model.parameters[0].expression,
-        format!("{} rad", 120_f64.to_radians()).into()
-    );
+    assert_eq!(result.ir().model.parameters[0].expression, "120".into());
     let parameter = &result.ir().model.parameters[0];
     assert_eq!(parameter.name, expressions[0].name.as_str());
     assert!(matches!(
@@ -769,12 +780,14 @@ fn decode_retains_length_framed_nx_class_definition() {
     let result = NxCodec
         .decode(&mut cur, &DecodeOptions::default())
         .expect("required invariant");
-    let classes = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::ClassDefinition>("class_definitions")
-    .expect("required invariant");
+    let classes = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::ClassDefinition>("class_definitions")
+        .expect("required invariant");
     assert_eq!(classes.len(), 1);
     assert_eq!(classes[0].name, "UGS::EXP_expression");
     assert_eq!(classes[0].ordinal, 0);
@@ -788,12 +801,14 @@ fn decode_retains_length_framed_nx_field_definitions() {
     let result = NxCodec
         .decode(&mut cur, &DecodeOptions::default())
         .expect("required invariant");
-    let fields = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::FieldDefinition>("field_definitions")
-    .expect("required invariant");
+    let fields = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::FieldDefinition>("field_definitions")
+        .expect("required invariant");
     let fields: Vec<_> = fields
         .iter()
         .cloned()
@@ -809,12 +824,14 @@ fn decode_retains_length_framed_nx_field_definitions() {
     assert_eq!(fields[1].trailing_code, 0x81);
     assert!(fields[1].registry_suffix.is_empty());
     assert_eq!(fields[1].source_entry, "/Root/UG_PART/UG_PART");
-    let classes = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::ClassDefinition>("class_definitions")
-    .expect("required invariant");
+    let classes = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::ClassDefinition>("class_definitions")
+        .expect("required invariant");
     let classes: Vec<_> = classes
         .iter()
         .cloned()
@@ -898,12 +915,14 @@ fn decode_retains_nx_arrangement_configurations() {
     let result = NxCodec
         .decode(&mut cur, &DecodeOptions::default())
         .expect("required invariant");
-    let configurations = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::Configuration>("configurations")
-    .expect("required invariant");
+    let configurations = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::Configuration>("configurations")
+        .expect("required invariant");
     assert_eq!(configurations.len(), 2);
     assert_eq!(configurations[0].name, "Model");
     assert!(configurations[0].is_default);
@@ -931,12 +950,14 @@ fn decode_retains_nx_arrangement_configurations() {
     );
     assert!(!result.ir().model.configurations[1].active);
     assert!(result.ir().model.configurations[1].bodies.is_none());
-    let uses = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::ConfigurationAttributeUse>("configuration_attribute_uses")
-    .expect("required invariant");
+    let uses = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::ConfigurationAttributeUse>("configuration_attribute_uses")
+        .expect("required invariant");
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].configuration, configurations[0].id);
     assert_eq!(uses[0].name, "Model");
@@ -944,12 +965,14 @@ fn decode_retains_nx_arrangement_configurations() {
         result.ir().model.configurations[0].properties["active_attribute_use"],
         uses[0].id
     );
-    let attributes = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::PartAttribute>("part_attributes")
-    .expect("required invariant");
+    let attributes = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::PartAttribute>("part_attributes")
+        .expect("required invariant");
     let mut mismatch = attributes.clone();
     mismatch[0].value = "Other".to_string();
     assert!(super::configuration_attribute_uses(&configurations, &mismatch).is_empty());
@@ -968,12 +991,14 @@ fn nx_neutral_active_configuration_requires_the_exact_attribute_join() {
         let result = NxCodec
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");
-        let native = crate::test_support::source_fidelity::native_namespace(
-            result.ir(),
-            result.source_fidelity(),
-        )
-        .arena_as::<super::Configuration>("configurations")
-        .expect("required invariant");
+        let native = result
+            .ir()
+            .native
+            .namespace("nx")
+            .expect("nx namespace")
+            .clone()
+            .arena_as::<super::Configuration>("configurations")
+            .expect("required invariant");
         assert!(native[0].is_default);
         assert!(result
             .ir()

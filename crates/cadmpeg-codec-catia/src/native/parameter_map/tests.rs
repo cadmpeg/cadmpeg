@@ -95,11 +95,13 @@ fn unresolved_a8_maps_create_no_neutral_geometry() {
     assert!(model.surfaces.is_empty() && model.procedural_surfaces.is_empty());
     assert!(model.edges.is_empty() && model.faces.is_empty());
     assert_eq!(
-        crate::test_support::source_fidelity::native_namespace(
-            decoded.ir(),
-            decoded.source_fidelity()
-        )
-        .arenas()["sampled_parameter_maps"]
+        decoded
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone()
+            .arenas()["sampled_parameter_maps"]
             .len(),
         1
     );

@@ -35,11 +35,7 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     assert_eq!(input.name, "Thickness");
     assert_eq!(input.ordinal, 0);
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            input
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), input),
         "35 mm"
     );
     assert_eq!(
@@ -146,11 +142,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
 
     assert_eq!(input.name, "Thickness");
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            input
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), input),
         "35 mm"
     );
     assert_eq!(
@@ -163,11 +155,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(output.name, "Result");
     assert_eq!(output.ordinal, 1);
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            output
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), output),
         "#1_ /2-2mm"
     );
     assert_eq!(
@@ -390,11 +378,7 @@ fn decode_transfers_a_closed_constant_formula() {
     };
     assert_eq!(output.name, "Result");
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            output
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), output),
         "10mm+2mm"
     );
     assert!(output.expression.dependencies().next().is_none());
@@ -594,11 +578,7 @@ fn decode_transfers_typed_integer_to_angle_formula() {
     };
 
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            input
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), input),
         "2"
     );
     assert_eq!(input.value, Some(ParameterValue::Integer(2)));
@@ -637,11 +617,7 @@ fn decode_transfers_dimensionless_real_formula() {
     };
 
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            input
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), input),
         "2.5"
     );
     assert_eq!(
@@ -696,11 +672,7 @@ fn decode_transfers_an_unset_typed_formula_result() {
         std::slice::from_ref(&input.id)
     );
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            output
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), output),
         "#1_ /2+1mm"
     );
     assert_eq!(output.properties["value_type"], "LENGTH");
@@ -731,11 +703,7 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
     assert_eq!(output.value, None);
     assert_eq!(output.properties["value_type"], "Boolean");
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            output
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), output),
         "(#1_ /2>#2_ /2) and (#1_ /2>=0)"
     );
     assert_eq!(
@@ -790,11 +758,7 @@ fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
     assert_eq!(input.properties["catia_binding"], "#1_ /2");
     assert_eq!(output.value, None);
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            output
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), output),
         "#1_ /2+1mm"
     );
     assert_eq!(
@@ -872,11 +836,7 @@ fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
     assert_eq!(input.properties["value_type"], "String");
     assert_eq!(output.value, None);
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            output
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), output),
         "#1_"
     );
     assert_eq!(
@@ -953,11 +913,7 @@ fn decode_deduplicates_repeated_single_input_formula_symbols() {
     };
 
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            input
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), input),
         "0.25 rad"
     );
     assert_eq!(
@@ -1040,11 +996,7 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
         Some(ParameterValue::Length(Length::new(35.0).unwrap()))
     );
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            output
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), output),
         "#1_-2mm"
     );
     assert_eq!(
@@ -1310,11 +1262,7 @@ fn decode_transfers_a_chained_formula_definition_once() {
     };
 
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            intermediate
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), intermediate),
         "#1_ /2+1mm"
     );
     assert_eq!(
@@ -1322,11 +1270,7 @@ fn decode_transfers_a_chained_formula_definition_once() {
         std::slice::from_ref(&input.id)
     );
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            output
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), output),
         "#2_ /3+1mm"
     );
     assert_eq!(
@@ -1376,11 +1320,7 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
     assert_eq!(input.name, "Input");
     assert_eq!(intermediate.name, "Intermediate");
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            intermediate
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), intermediate),
         "2 mm"
     );
     assert_eq!(
@@ -1391,11 +1331,7 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
     );
     assert!(intermediate.expression.dependencies().next().is_none());
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            output
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), output),
         "#2_ /3+1mm"
     );
     assert_eq!(
@@ -1427,11 +1363,7 @@ fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input()
     assert_eq!(input.name, "Input");
     assert_eq!(intermediate.name, "Intermediate");
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            intermediate
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), intermediate),
         "#1_ /2+1mm"
     );
     assert_eq!(
@@ -1499,12 +1431,15 @@ fn decode_retains_a_cyclic_formula_component() {
             ))
         );
     }
-    let native =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            decoded.ir(),
-            decoded.source_fidelity(),
-        ))
-        .unwrap();
+    let native = crate::native::CatiaNative::load(
+        &decoded
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .unwrap();
     let unused = native
         .entity_records
         .iter()

@@ -36,7 +36,7 @@ mod nurbs_fit;
 mod offset;
 pub(crate) mod pcurves;
 pub(crate) mod report;
-pub(crate) mod source_layout;
+mod source_layout;
 mod support_uv;
 
 use build::try_decode_geometry;
@@ -220,12 +220,6 @@ fn decoded(
         )
         .with_untyped(scan.source_untyped.borrow().clone()),
     )?;
-    if let Some(namespace) = ir.native.namespace("nx") {
-        for finding in crate::native::source_validation_findings(ctx, namespace)? {
-            body.losses
-                .push(NxLossCode::SourceIntegrityRejected.note(finding.message));
-        }
-    }
     source_layout::move_layout(&mut ir, &mut source_fidelity)?;
     Ok(Decoded {
         ir,

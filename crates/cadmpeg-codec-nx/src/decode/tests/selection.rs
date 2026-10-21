@@ -1277,10 +1277,12 @@ fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    let namespace = &crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    );
+    let namespace = &result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone();
     assert_eq!(namespace.arenas()["saved_toggle_streams"].len(), 1);
     assert_eq!(namespace.arenas()["saved_toggle_entries"].len(), 1);
     assert!(result.ir().native_unknowns("nx").unwrap().is_empty());

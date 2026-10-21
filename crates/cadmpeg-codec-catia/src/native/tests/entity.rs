@@ -714,12 +714,15 @@ fn native_namespace_binds_two_definition_value_chains() {
         ),
         0
     );
-    let mut native =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            decoded.ir(),
-            decoded.source_fidelity(),
-        ))
-        .expect("load definition-chain evaluation");
+    let mut native = crate::native::CatiaNative::load(
+        &decoded
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load definition-chain evaluation");
     assert_eq!(
         native.entity_records[0].definition_chain_value(),
         Some(&CatiaDefinitionChainValue {
@@ -811,7 +814,12 @@ fn native_namespace_binds_two_definition_value_chains() {
         0
     );
     let atom_native = crate::native::CatiaNative::load(
-        &crate::test_support::source_fidelity::native_namespace(atom.ir(), atom.source_fidelity()),
+        &atom
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
     )
     .expect("load definition-chain atom");
     assert_eq!(
@@ -857,12 +865,15 @@ fn native_namespace_binds_two_definition_value_chains() {
         ),
         1
     );
-    let nested_native =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            nested.ir(),
-            nested.source_fidelity(),
-        ))
-        .expect("load nested definition-chain selector");
+    let nested_native = crate::native::CatiaNative::load(
+        &nested
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load nested definition-chain selector");
     assert_eq!(
         nested_native.entity_records[0]
             .definition_chain_value()
@@ -896,11 +907,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
     };
     assert_eq!(parameter.name, "FeatureFEDGE");
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            parameter
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), parameter),
         "12.5"
     );
     assert_eq!(
@@ -941,11 +948,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         Some(cadmpeg_ir::features::ParameterValue::Boolean(true))
     );
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            boolean_parameter
-        ),
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), boolean_parameter),
         "true"
     );
     assert_eq!(boolean_parameter.properties["value_type"], "Boolean");
@@ -1127,12 +1130,15 @@ fn literal_owner_slots_remain_unassigned() {
         1
     );
 
-    let native =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            decoded.ir(),
-            decoded.source_fidelity(),
-        ))
-        .expect("load literal owner slot");
+    let native = crate::native::CatiaNative::load(
+        &decoded
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load literal owner slot");
     let record = &native.object_graphs[0].records[0];
     assert_eq!(
         record.owner,
@@ -1196,12 +1202,15 @@ fn native_namespace_binds_and_validates_definition_values() {
         ),
         0
     );
-    let mut native =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            decoded.ir(),
-            decoded.source_fidelity(),
-        ))
-        .expect("load definition-bound value");
+    let mut native = crate::native::CatiaNative::load(
+        &decoded
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load definition-bound value");
     assert_eq!(
         native.entity_records[0].definition_value(),
         Some(&CatiaDefinitionValue {

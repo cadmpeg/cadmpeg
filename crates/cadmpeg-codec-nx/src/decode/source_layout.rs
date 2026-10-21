@@ -66,7 +66,7 @@ const BYTE_FIELDS: &[&str] = &[
     "tail",
 ];
 
-pub(crate) fn move_layout(ir: &mut CadIr, fidelity: &mut SourceFidelity) -> Result<(), CodecError> {
+pub(super) fn move_layout(ir: &mut CadIr, fidelity: &mut SourceFidelity) -> Result<(), CodecError> {
     for (arena, records) in ir.native.namespace_mut("nx").arenas_mut() {
         for record in records {
             let identity =
