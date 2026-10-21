@@ -947,7 +947,15 @@ mod tests {
                 "384".to_owned().try_into().unwrap(),
                 typed_guid,
                 100,
-                vec![guid("11111111-1111-1111-1111-11111111111a", 200)],
+                vec![{
+                    let occurrence: crate::records::identity::Located<
+                        crate::records::mesh::DesignRelaxedGuidText,
+                    > = guid("11111111-1111-1111-1111-11111111111a", 200);
+                    crate::records::identity::Located {
+                        value: occurrence.value.into(),
+                        offset: occurrence.offset,
+                    }
+                }],
                 (0..4)
                     .map(|ordinal| guid("22222222-2222-2222-2222-22222222222b", 300 + ordinal))
                     .collect(),

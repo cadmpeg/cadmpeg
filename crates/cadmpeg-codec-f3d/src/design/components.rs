@@ -219,7 +219,7 @@ impl<'a> Projector<'a> {
     fn place(
         &mut self,
         component_guid: &DesignRelaxedGuidText,
-        occurrence_guid: &DesignRelaxedGuidText,
+        occurrence_guid: &impl crate::records::mesh::OccurrenceIdentity,
         transform: impl Into<[[f64; 4]; 4]>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let occurrence_id = crate::ids::neutral_component_occurrence_id(occurrence_guid);
@@ -229,7 +229,7 @@ impl<'a> Projector<'a> {
         let transform = neutral_transform(transform)?;
         let carrier = self
             .native_by_guid
-            .get(&occurrence_guid.as_str().to_ascii_lowercase())
+            .get(&occurrence_guid.identity_text().to_ascii_lowercase())
             .copied()
             .flatten();
         let definition = match carrier.and_then(|carrier| self.carrier_definition(carrier)) {
@@ -873,7 +873,7 @@ mod tests {
             byte_offset,
             component_record_index: 159,
             component_guid: guid("2ad641b3-9ea3-4e5f-a4da-926c3faeccae"),
-            occurrence_guid: guid(occurrence_guid),
+            occurrence_guid: guid(occurrence_guid).into(),
             placement,
             owner_entity,
         })
@@ -1172,7 +1172,10 @@ mod tests {
         assert_eq!(occurrences.len(), 1);
         assert_eq!(
             occurrences[0].id,
-            crate::ids::neutral_component_occurrence_id(&OCCURRENCE.to_owned().try_into().unwrap())
+            crate::ids::neutral_component_occurrence_id(
+                &crate::records::mesh::DesignOccurrenceKey::try_from(OCCURRENCE.to_owned())
+                    .unwrap()
+            )
         );
         assert!(matches!(
             &occurrences[0].prototype,
@@ -1204,7 +1207,8 @@ mod tests {
             *feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::InsertComponent {
                 occurrence: crate::ids::neutral_component_occurrence_id(
-                    &OCCURRENCE.to_owned().try_into().unwrap()
+                    &crate::records::mesh::DesignOccurrenceKey::try_from(OCCURRENCE.to_owned())
+                        .unwrap()
                 ),
             })
         );
