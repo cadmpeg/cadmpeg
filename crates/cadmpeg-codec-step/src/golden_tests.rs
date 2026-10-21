@@ -191,20 +191,132 @@ fn golden_output_is_deterministic() {
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
-        &StepCodec::default(),
-        &harness().fixture_inputs(),
-        |result| {
-            let expected = crate::loss::unrepresented(
-                &result.report().losses,
-                result.ir().native.namespace("step"),
-            );
-            assert_eq!(
-                result.source_fidelity().unrepresented(),
-                expected,
-                "every source-only loss must declare its arena class"
-            );
-        },
-    );
+    let inputs = harness().fixture_inputs();
+    let mut summary = cadmpeg_test_support::depth::DepthSummary::default();
+    for input in &inputs {
+        let compared = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
+            &StepCodec::default(),
+            std::slice::from_ref(input),
+            |result| assert_fixture_source_content(&input.0, result),
+        );
+        summary.inputs += compared.inputs;
+        summary.cut += compared.cut;
+        summary.refused += compared.refused;
+    }
     assert_eq!(summary.cut, 0, "{summary:?}");
+}
+
+/// Independent fixture expectations: unknown DATA types and the unsupported
+/// NULL_STYLE assignment have no typed document record. Header/signature
+/// retention and warnings about typed products or meshes do not add content.
+fn assert_fixture_source_content(name: &str, result: &cadmpeg_ir::codec::DecodeResult) {
+    use cadmpeg_ir::{ArenaClass, ArenaClasses};
+
+    let expected_untyped: &[&str] = match name {
+        // DATA #2 is EXAMPLE_RECORD; PRODUCT #1 is typed. SIGNATURE is
+        // container evidence and does not carry an omitted model class.
+        "ap242_ed3_sections" => &["step:data:example_record#2"],
+        // #42 applies NULL_STYLE, which the style decoder does not admit;
+        // its referring STYLED_ITEM #43 is also retained without a typed value.
+        "ap242_geometry" => &[
+            "step:data:presentation_style_assignment#42",
+            "step:data:styled_item#43",
+        ],
+        // Both DATA records use fixture-only, unsupported entity types.
+        "ap242_minimal" => &["step:data:example_record#1", "step:data:opaque_target#2"],
+        "strings" => &["step:data:example_strings#1"],
+        "ap203_sheet"
+        | "ap214_sheet"
+        | "ap242_assembly"
+        | "ap242_conversion_units"
+        | "ap242_degree_cone"
+        | "ap242_external_documents"
+        | "ap242_geometric_set"
+        | "ap242_mapped_assembly"
+        | "ap242_occurrence_mapped_assembly"
+        | "ap242_presentation_pmi"
+        | "ap242_semantic_pmi"
+        | "ap242_tessellation"
+        | "ap242_vertex_loop"
+        | "complex_instance"
+        | "noncanonical_solid_angle" => &[],
+        _ => panic!("{name}: declare the fixture's typed/opaque source expectation"),
+    };
+    let expected_classes = if expected_untyped.is_empty() {
+        ArenaClasses::new()
+    } else {
+        ArenaClasses::from([ArenaClass::Model])
+    };
+    assert_eq!(
+        result.source_fidelity().unrepresented(),
+        expected_classes,
+        "{name}: omitted source content classes"
+    );
+    let actual_untyped = result
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .filter_map(|(id, record)| {
+            let expected = if expected_untyped.contains(&id.as_str()) {
+                ArenaClasses::from([ArenaClass::Model])
+            } else {
+                ArenaClasses::new()
+            };
+            assert_eq!(record.untyped(), &expected, "{name}: source record {id}");
+            (!record.untyped().is_empty()).then_some(id.as_str())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual_untyped, expected_untyped,
+        "{name}: opaque DATA records"
+    );
+
+    let model = &result.ir().model;
+    if matches!(
+        name,
+        "ap242_assembly" | "ap242_mapped_assembly" | "ap242_occurrence_mapped_assembly"
+    ) {
+        // PRODUCT #3/#8 and PRODUCT_DEFINITION #6/#10 describe ROOT and
+        // CHILD. SHAPE_REPRESENTATION #22/#23 contains only empty item
+        // lists, placements, or mappings of those records, never topology.
+        // The warning must not erase these typed products/occurrences.
+        assert_eq!(
+            model
+                .product_definitions
+                .iter()
+                .map(|product| product.part_number.as_deref())
+                .collect::<Vec<_>>(),
+            [Some("ROOT"), Some("CHILD")],
+            "{name}: typed products"
+        );
+        assert!(model
+            .product_definitions
+            .iter()
+            .all(|product| product.bodies.is_empty()));
+        // One root occurrence plus one per NEXT_ASSEMBLY_USAGE_OCCURRENCE:
+        // #12 in both first fixtures, and #12/#13 in the third.
+        let expected_occurrences = if name == "ap242_occurrence_mapped_assembly" {
+            3
+        } else {
+            2
+        };
+        assert_eq!(
+            model.occurrences.len(),
+            expected_occurrences,
+            "{name}: assembly occurrences"
+        );
+    }
+    if name == "ap242_tessellation" {
+        // COMPLEX_TRIANGULATED_FACE #7 references COORDINATES_LIST #6 and
+        // carries a four-vertex strip and a three-vertex fan. Its absent
+        // exact body container leaves the admitted mesh detached, not opaque.
+        let mesh = model
+            .tessellations
+            .iter()
+            .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
+            .expect("typed complex tessellated face #7");
+        assert!(mesh.body.is_none());
+        assert_eq!(mesh.vertices().len(), 4);
+        assert_eq!(mesh.triangles(), [[0, 1, 2], [2, 1, 3], [0, 1, 3]]);
+    }
 }
