@@ -1226,9 +1226,20 @@ fn record_targets(
     include_record: impl Fn(u64) -> bool,
 ) -> BTreeMap<u64, BTreeSet<String>> {
     let mut targets = BTreeMap::<u64, BTreeSet<String>>::new();
+    let attributes = ir
+        .model
+        .attributes
+        .iter()
+        .map(|attribute| attribute.id.as_str())
+        .collect::<BTreeSet<_>>();
     for identity in
         cadmpeg_ir::index::ModelIndex::build(ir).identities(cadmpeg_ir::index::StandardIndex)
     {
+        // A moved source name belongs to its geometry carrier. Its attribute
+        // id is not another candidate carrier for that same STEP instance.
+        if attributes.contains(identity) {
+            continue;
+        }
         let Some(record_id) = source_record_id(identity) else {
             continue;
         };

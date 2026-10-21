@@ -185,6 +185,13 @@ pub(super) fn decode(
             }
         }
     }
+    for attribute in &ir.model.attributes {
+        if let cadmpeg_ir::attributes::AttributeTarget::Point(point) = &attribute.target {
+            if let Some(id) = step_id(point.as_str()) {
+                referenced_validation_points.insert(id);
+            }
+        }
+    }
     ir.model.points.retain(|point| {
         // A point whose identity names no entity is not a validation point.
         let Some(id) = step_id(point.id.as_str()) else {
