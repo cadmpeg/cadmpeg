@@ -497,6 +497,48 @@ fn hole_profile_construction(
 pub(super) fn hole_sketch_construction(
     profile: &Feature,
 ) -> Result<Option<HoleProfileConstruction>, CodecError> {
+    Ok(hole_sketch_construction_details(profile)?.map(|(construction, _)| construction))
+}
+
+/// Source quantity roles proven by a supported ordered hole-profile construction.
+pub(in crate::history) fn hole_profile_parameter_values(
+    profile: &Feature,
+) -> Result<
+    Option<std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterValue>>,
+    CodecError,
+> {
+    Ok(hole_sketch_construction_details(profile)?.map(|(_, controls)| controls))
+}
+
+fn hole_profile_dimension<Q>(
+    profile: &Feature,
+    name: &str,
+    parse: impl Fn(&str) -> Option<Q>,
+) -> Option<Dimension<Q>> {
+    if let Some(cache) = profile
+        .dimension_properties
+        .get(name)
+        .and_then(|properties| properties.get("Value"))
+    {
+        parse(cache)?;
+    }
+    let ordinal = super::projected_parameter_names(profile)
+        .iter()
+        .position(|candidate| candidate == name)?;
+    super::neutral_parameter_id(profile, ordinal)
+        .ok()
+        .map(Dimension::Parameter)
+}
+
+fn hole_sketch_construction_details(
+    profile: &Feature,
+) -> Result<
+    Option<(
+        HoleProfileConstruction,
+        std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterValue>,
+    )>,
+    CodecError,
+> {
     // Numeric values below classify the source's ordered construction. The
     // resulting design stores only parameter bindings, never these parse values.
     #[derive(Clone)]
@@ -534,21 +576,40 @@ pub(super) fn hole_sketch_construction(
             }
         }));
     let mut dimensions = Vec::new();
+    let mut controls = std::collections::BTreeMap::new();
     for (name, expression) in expressions {
         let dimension = if strip_diameter_modifier(expression).is_some() {
             parse_dimension_display_length(expression)
                 .and_then(|value| PositiveLength::try_from(value).ok())
-                .zip(super::parameter_dimension(profile, &[name]))
+                .zip(hole_profile_dimension(profile, name, |text| {
+                    parse_dimension_display_length(text)
+                        .and_then(|value| PositiveLength::try_from(value).ok())
+                }))
                 .map(|(value, binding)| ParsedDimension::Diameter(Measure { value, binding }))
         } else if let Some(value) = parse_bounded_angle_rad(expression) {
-            super::parameter_dimension(profile, &[name])
+            hole_profile_dimension(profile, name, parse_bounded_angle_rad)
                 .map(|binding| ParsedDimension::Angle(Measure { value, binding }))
         } else {
             parse_positive_dimension_length_mm(expression)
-                .zip(super::parameter_dimension(profile, &[name]))
+                .zip(hole_profile_dimension(
+                    profile,
+                    name,
+                    parse_positive_dimension_length_mm,
+                ))
                 .map(|(value, binding)| ParsedDimension::Length(Measure { value, binding }))
         };
         if let Some(dimension) = dimension {
+            let value = match &dimension {
+                ParsedDimension::Diameter(measure) | ParsedDimension::Length(measure) => {
+                    cadmpeg_ir::features::ParameterValue::Length(cadmpeg_ir::scalar::Length::from(
+                        measure.value,
+                    ))
+                }
+                ParsedDimension::Angle(measure) => cadmpeg_ir::features::ParameterValue::Angle(
+                    cadmpeg_ir::scalar::Angle::from(measure.value),
+                ),
+            };
+            controls.insert(name.to_owned(), value);
             if dimensions.len() == MAX_DIMENSIONS {
                 return Ok(None);
             }
@@ -571,7 +632,7 @@ pub(super) fn hole_sketch_construction(
     diameters.sort_unstable_by(|left, right| left.value.get().total_cmp(&right.value.get()));
     lengths.sort_unstable_by(|left, right| left.value.get().total_cmp(&right.value.get()));
     angles.sort_unstable_by(|left, right| left.value.get().total_cmp(&right.value.get()));
-    Ok(match (&*diameters, &*lengths, &*angles) {
+    let construction = match (&*diameters, &*lengths, &*angles) {
         ([diameter], [depth], []) => Some(HoleProfileConstruction {
             diameter: diameter.binding.clone(),
             depth: Some(depth.binding.clone()),
@@ -734,7 +795,8 @@ pub(super) fn hole_sketch_construction(
             })
         }
         _ => None,
-    })
+    };
+    Ok(construction.map(|construction| (construction, controls)))
 }
 
 pub(crate) fn is_hole_profile_construction(feature: &Feature) -> Result<bool, CodecError> {
