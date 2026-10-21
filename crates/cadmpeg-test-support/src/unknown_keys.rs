@@ -16,11 +16,11 @@ use serde_json::{Map, Value};
 /// The key inserted into every swept shape.
 pub const UNKNOWN_KEY: &str = "zz_bogus";
 
-/// The values the key is probed with, one per JSON value kind. A node refuses
-/// only when it refuses all seven: a free-form map typed by its value kind
-/// accepts one spelling and refuses the others, and one probe value alone
-/// cannot see that. A map whose values are arrays, for one, is visible only to
-/// the `[]` probe.
+/// The baseline probes, one per JSON value kind. A free-form map typed by its
+/// value kind accepts one spelling and refuses the others, and one probe value
+/// alone cannot see that. A map whose values are arrays, for one, is visible only to
+/// the `[]` probe. The sweep also tries an existing member value when present,
+/// so populated structured values need no invented valid spelling.
 fn probe_values() -> [Value; 7] {
     [
         Value::Null,
@@ -99,11 +99,13 @@ fn sweep(
         // Keep every value probe independent by replacing the one key this
         // sweep added. The callback only borrows the document, so no other
         // field can carry state from the preceding value.
-        let key = {
+        // Clone before inserting any sentinel: a populated uniform map's own
+        // member is a valid probe even when no baseline value has its shape.
+        let (key, existing_value) = {
             let fields = object_at_mut(&mut document, &path)?;
-            probe_key(fields)
+            (probe_key(fields), fields.values().next().cloned())
         };
-        for value in probe_values() {
+        for value in probe_values().into_iter().chain(existing_value) {
             object_at_mut(&mut document, &path)?.insert(key.clone(), value);
             if accepts(&document) {
                 accepting.insert(normalise(&path));
