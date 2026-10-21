@@ -7430,8 +7430,29 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
     let mut visibility_ordinals = HashSet::new();
+    // Sketch Geometry member ordinals count within a component: the one whose
+    // entity cluster, starting at its root entity, holds the sketch entity.
+    let mut component_roots = HashMap::<&str, Vec<u64>>::new();
+    for space in &native.design_component_naming_spaces {
+        component_roots
+            .entry(design_stream(&space.id))
+            .or_default()
+            .push(space.component_record_index);
+    }
+    for roots in component_roots.values_mut() {
+        roots.sort_unstable();
+    }
+    let component_of = |stream: &str, entity: u64| {
+        component_roots.get(stream).and_then(|roots| {
+            roots
+                .partition_point(|root| *root <= entity)
+                .checked_sub(1)
+                .and_then(|index| roots.get(index).copied())
+        })
+    };
     for placement in &native.design_sketch_placements {
         let native_stream = design_stream(&placement.id);
+        let component = component_of(native_stream, placement.entity_id.suffix());
         let unique_record = placement_records.insert((native_stream, placement.record_index));
         let unique_scope = match placement.scope_record_index {
             Some(index) => placement_scopes.insert((native_stream, index)),
@@ -7446,7 +7467,11 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 .get(&(native_stream, placement.entity_id.suffix()))
                 .is_some_and(|entity| visibility.stream_ordinal_offset() > entity.byte_offset);
             if header_valid
-                && visibility_ordinals.insert((native_stream, visibility.stream_ordinal.get()))
+                && visibility_ordinals.insert((
+                    native_stream,
+                    component,
+                    visibility.stream_ordinal.get(),
+                ))
             {
                 visibility_offsets.insert((native_stream, visibility.visible_offset()))
             } else {
@@ -7479,13 +7504,15 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             );
         }
     }
-    let mut visibility_ordinal_ranges = BTreeMap::<&str, (usize, u32)>::new();
-    for (stream, ordinal) in visibility_ordinals {
-        let (count, maximum) = visibility_ordinal_ranges.entry(stream).or_default();
+    let mut visibility_ordinal_ranges = BTreeMap::<(&str, Option<u64>), (usize, u32)>::new();
+    for (stream, component, ordinal) in visibility_ordinals {
+        let (count, maximum) = visibility_ordinal_ranges
+            .entry((stream, component))
+            .or_default();
         *count += 1;
         *maximum = (*maximum).max(ordinal);
     }
-    for (stream, (count, maximum)) in visibility_ordinal_ranges {
+    for ((stream, _), (count, maximum)) in visibility_ordinal_ranges {
         if usize::try_from(maximum).ok() != Some(count) {
             push_constant_finding(
                 findings,
