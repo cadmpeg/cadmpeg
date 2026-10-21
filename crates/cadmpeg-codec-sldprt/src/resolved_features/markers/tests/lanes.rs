@@ -131,21 +131,15 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
                 Some(7),
             );
     });
-    assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
-        decoded.ir()
-    )
-    .unwrap()
-    .iter()
-    .any(|finding| finding.message.contains("local object id does not match")));
-
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
+    // Rule P: reject the false source statement at the fidelity boundary,
+    // then write the document through synthesis instead of replaying it.
+    let error = crate::native::source::load(
+        decoded.ir().native.namespace("sldprt").unwrap(),
         decoded.source_fidelity(),
-        &mut Vec::new(),
     )
     .unwrap_err();
     assert!(error.to_string().contains("local object id does not match"));
+    crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
 }
 
 #[test]
@@ -162,21 +156,15 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
                 native.feature_input_lanes[0].sketch_entities[0].local_id(),
             );
     });
-    assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
-        decoded.ir()
-    )
-    .unwrap()
-    .iter()
-    .any(|finding| finding.message.contains("object index does not match")));
-
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
+    // Rule P: reject the false source statement at the fidelity boundary,
+    // then write the document through synthesis instead of replaying it.
+    let error = crate::native::source::load(
+        decoded.ir().native.namespace("sldprt").unwrap(),
         decoded.source_fidelity(),
-        &mut Vec::new(),
     )
     .unwrap_err();
     assert!(error.to_string().contains("object index does not match"));
+    crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
 }
 
 #[test]
@@ -196,10 +184,11 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
     });
     decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
+    // Rule P: reject the false source statement at the fidelity boundary,
+    // then write the document through synthesis instead of replaying it.
+    let error = crate::native::source::load(
+        decoded.ir().native.namespace("sldprt").unwrap(),
         decoded.source_fidelity(),
-        &mut Vec::new(),
     )
     .unwrap_err();
     assert!(
@@ -208,4 +197,5 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
             .contains("expects entity ordinal 1, found 2"),
         "{error}"
     );
+    crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
 }
