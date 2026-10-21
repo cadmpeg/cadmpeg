@@ -648,7 +648,13 @@ fn semantic_writer_round_trips_typed_rib() {
         .parameters
         .iter()
         .find(|parameter| parameter.id == draft_before.id)
-        .expect("same independent draft parameter");
+        .unwrap_or_else(|| panic!(
+            "source Draft={draft_before:#?}; source features={:#?}; written parameters={:#?}; written features={:#?}; written native features={:#?}",
+            decoded.ir().model.features,
+            regenerated.ir().model.parameters,
+            regenerated.ir().model.features,
+            sldprt_native(regenerated.ir()).feature_histories,
+        ));
     assert_eq!(draft.name, draft_before.name);
     assert_eq!(draft.owner, draft_before.owner);
     assert_eq!(draft.expression, draft_before.expression);
