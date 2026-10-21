@@ -46,3 +46,26 @@ fn edge_identity_valid_slot_has_no_finding() {
         assert!(records.contains(&("f3d:Design/BulkStream.dat", 101)));
     })
 }
+
+#[test]
+fn edge_identity_semantic_comparison_rejects_a_changed_resolved_edge() {
+    crate::test_support::with_decode_context(|decode| {
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = native(true);
+        native
+            .store(
+                &cadmpeg_test_support::service_decode_context(),
+                ir.native.namespace_mut("f3d"),
+            )
+            .unwrap();
+        native.design_edge_identity_operands[0].resolved_edge_slot = Some(99);
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
+        let mut findings = Vec::new();
+        super::super::validate_edge_identity_operands(decode, &ctx, &mut findings, &[]).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].message,
+            "Fusion Design edge identity operand has an invalid fixed frame"
+        );
+    });
+}

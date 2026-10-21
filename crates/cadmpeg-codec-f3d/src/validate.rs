@@ -36,14 +36,14 @@ use crate::layout::class_296_261_two_sided_to_faces_extrude_prefix as class_296_
 use crate::layout::legacy_class_397_symmetric_extrude_frame as class_397;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::{design, history, ids, native, records};
-use cadmpeg_core::CodecError;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::{
-    Severity,
     check::{Check, Finding},
+    Severity,
 };
 
 const EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E10: f64 = 1.0e-10;
@@ -5910,8 +5910,9 @@ fn validate_edge_identity_operands<'a>(
         }) && header.is_some_and(|header| {
             source_positions_agree(header.byte_offset, operand.byte_offset())
                 && header.class_tag == operand.class_tag
-        }) && expected_edge_identity_operands.get(operand.id.as_str())
-            == Some(&operand)
+        }) && expected_edge_identity_operands
+            .get(operand.id.as_str())
+            .is_some_and(|expected| operand.same_content(expected))
             && edge_identity_slots.insert((
                 native_stream,
                 operand.group_record_index,

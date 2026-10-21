@@ -131,6 +131,27 @@ impl Clone for DesignEdgeIdentityOperand {
     }
 }
 
+impl DesignEdgeIdentityOperand {
+    /// Compare document semantics independently of transient source framing.
+    pub(crate) fn same_content(&self, other: &Self) -> bool {
+        self.record_index == other.record_index
+            && self.id == other.id
+            && self.scope_record_index == other.scope_record_index
+            && self.group_record_index == other.group_record_index
+            && self.group_member_ordinal == other.group_member_ordinal
+            && self.class_tag == other.class_tag
+            && self.local_id == other.local_id
+            && self.asset_id == other.asset_id
+            && self.context_id == other.context_id
+            && self.historical == other.historical
+            && self.treatment_radius_candidates == other.treatment_radius_candidates
+            && self.transition_edge_candidates == other.transition_edge_candidates
+            && self.resolved_edge_slots == other.resolved_edge_slots
+            && self.resolved_edge_slot == other.resolved_edge_slot
+            && self.resolution_identity_id == other.resolution_identity_id
+    }
+}
+
 impl Serialize for DesignEdgeIdentityOperand {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
