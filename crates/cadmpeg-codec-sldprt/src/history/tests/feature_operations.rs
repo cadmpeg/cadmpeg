@@ -600,7 +600,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     );
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        decoded.ir().model.configurations[0].feature_states[&feature_id].definition().expect("structural override"),
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[0], &feature_id).expect("effective configuration definition"),
         FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
             if matches!(
                 (operands.target(), operands.tools()),
@@ -610,7 +610,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
             )
     ));
     assert!(matches!(
-        decoded.ir().model.configurations[1].feature_states[&feature_id].definition().expect("structural override"), FeatureDefinition::Operation(FeatureOperation::Combine {
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[1], &feature_id).expect("effective configuration definition"), FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
             ..
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))));
@@ -649,12 +649,12 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     assert!(decoded.ir().model.configurations[0].active);
     assert_eq!(decoded.ir().model.configurations[0].source_index, Some(1));
     assert!(matches!(
-        decoded.ir().model.configurations[0].feature_states[&feature_id].definition().expect("structural override"), FeatureDefinition::Operation(FeatureOperation::Combine {
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[0], &feature_id).expect("effective configuration definition"), FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
             ..
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))));
     assert!(matches!(
-        decoded.ir().model.configurations[1].feature_states[&feature_id].definition().expect("structural override"),
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[1], &feature_id).expect("effective configuration definition"),
         FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
             if matches!(
                 (operands.target(), operands.tools()),
@@ -727,7 +727,7 @@ fn decode_projects_compact_solid_sweep_join_operation() {
             },))));
     let feature_id = &decoded.ir().model.features[0].id;
     assert!(matches!(
-        decoded.ir().model.configurations[0].feature_states[feature_id].definition().expect("structural override"), FeatureDefinition::Operation(FeatureOperation::Sweep {
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[0], feature_id).expect("effective configuration definition"), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             ..
         }) if matches!((shape.mode(),), (SweepMode::Solid {
@@ -810,16 +810,19 @@ fn decode_does_not_globalize_configuration_local_sweep_path() {
     ));
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        decoded.ir().model.configurations[0].feature_states[&feature_id].definition().expect("structural override"),
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[0], &feature_id).expect("effective configuration definition"),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
             path: Some(PathRef::Native(path)),
             ..
         }) if path.starts_with("sldprt:feature-input:general-curve-ref:")
     ));
     assert!(matches!(
-        decoded.ir().model.configurations[1].feature_states[&feature_id]
-            .definition()
-            .expect("structural override"),
+        super::effective_definition(
+            decoded.ir(),
+            &decoded.ir().model.configurations[1],
+            &feature_id
+        )
+        .expect("effective configuration definition"),
         FeatureDefinition::Operation(FeatureOperation::Sweep { path: None, .. })
     ));
 }

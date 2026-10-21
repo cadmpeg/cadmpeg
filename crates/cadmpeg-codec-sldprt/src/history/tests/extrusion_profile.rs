@@ -165,10 +165,11 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
     ));
     let feature_id = feature.id.clone();
     assert!(matches!(
-        decoded.ir().model.configurations[0]
-            .feature_states
-            .get(&feature_id)
-            .and_then(|state| state.definition()),
+        super::effective_definition(
+            decoded.ir(),
+            &decoded.ir().model.configurations[0],
+            &feature_id
+        ),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -180,10 +181,11 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         }))
     ));
     assert!(matches!(
-        decoded.ir().model.configurations[1]
-            .feature_states
-            .get(&feature_id)
-            .and_then(|state| state.definition()),
+        super::effective_definition(
+            decoded.ir(),
+            &decoded.ir().model.configurations[1],
+            &feature_id
+        ),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -194,14 +196,34 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
             ..
         }))
     ));
-    assert!(decoded
-        .ir()
-        .model
-        .configurations
-        .iter()
-        .all(
-            |configuration| configuration.feature_states.len() == decoded.ir().model.features.len()
-        ));
+    for configuration in &decoded.ir().model.configurations {
+        // Every feature has an effective state, but a stored definition must
+        // differ from the base. The active configuration stores no overrides.
+        assert!(decoded
+            .ir()
+            .model
+            .features
+            .iter()
+            .all(
+                |feature| super::effective_definition(decoded.ir(), configuration, &feature.id)
+                    .is_some()
+            ));
+        if configuration.active {
+            assert!(configuration.feature_states.is_empty());
+        }
+        for (id, state) in &configuration.feature_states {
+            if let Some(definition) = state.definition() {
+                let base = decoded
+                    .ir()
+                    .model
+                    .features
+                    .iter()
+                    .find(|feature| feature.id == *id)
+                    .unwrap();
+                assert_ne!(definition, base.evaluation.definition());
+            }
+        }
+    }
     let round_trip =
         cadmpeg_ir::CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
     assert_eq!(
@@ -215,9 +237,16 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
 
     let mut edited = decoded.ir().clone();
     let replacement = edited.model.configurations[0].feature_states[&feature_id].clone();
-    edited.model.configurations[1]
-        .feature_states
-        .insert(feature_id, replacement);
+    if edited.model.configurations[1].active {
+        edited
+            .set_feature_definition(&feature_id, replacement.definition().unwrap().clone())
+            .unwrap();
+    } else {
+        edited.model.configurations[1]
+            .feature_states
+            .insert(feature_id, replacement);
+    }
+    crate::history::configuration::normalize_configuration_differences(&mut edited);
     crate::test_support::assert_synthesis_fallback(&edited, decoded.source_fidelity());
 }
 
