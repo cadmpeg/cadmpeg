@@ -64,6 +64,7 @@ fn placement_record_serde_routes_reject_unchecked_matrices() {
         topology::{
             construction::DesignConstructionOperandDualTransform,
             construction::DesignConstructionOperandTransform,
+            construction::DesignConstructionOperandTransformDraft,
         },
     };
     rejects_transform::<DesignAssemblyOperandFrame>(
@@ -112,18 +113,40 @@ fn placement_record_serde_routes_reject_unchecked_matrices() {
         }),
         "transform",
     );
-    let single = serde_json::json!({
-        "record_index":1, "byte_offset":0, "class_tag":"123", "transform_offset":22,
-        "following_record_index":2, "following_byte_offset":152, "following_class_tag":"124",
-    });
-    rejects_transform::<DesignConstructionOperandTransform>(single, "transform");
+    let single_source =
+        DesignConstructionOperandTransform::try_new(DesignConstructionOperandTransformDraft {
+            record_index: 1,
+            byte_offset: 0,
+            class_tag: "123".to_owned().try_into().unwrap(),
+            transform: SketchPlacementMatrix::IDENTITY,
+            transform_offset: 22,
+            following_record_index: 2,
+            following_byte_offset: 152,
+            following_class_tag: "124".to_owned().try_into().unwrap(),
+        })
+        .unwrap();
+    assert_eq!(single_source.byte_offset(), Some(0));
+    assert_eq!(single_source.transform_offset(), Some(22));
+    assert_eq!(single_source.following_byte_offset(), Some(152));
+    rejects_transform::<DesignConstructionOperandTransform>(
+        serde_json::to_value(single_source).unwrap(),
+        "transform",
+    );
+    let dual_source = DesignConstructionOperandDualTransform {
+        record_index: 1,
+        byte_offset: Some(0),
+        class_tag: "123".to_owned().try_into().unwrap(),
+        first_transform: SketchPlacementMatrix::IDENTITY,
+        first_transform_offset: Some(40),
+        second_transform: SketchPlacementMatrix::IDENTITY,
+        second_transform_offset: Some(168),
+    };
+    assert_eq!(dual_source.byte_offset, Some(0));
+    assert_eq!(dual_source.first_transform_offset, Some(40));
+    assert_eq!(dual_source.second_transform_offset, Some(168));
     for field in ["first_transform", "second_transform"] {
         rejects_transform::<DesignConstructionOperandDualTransform>(
-            serde_json::json!({
-                "record_index":1, "byte_offset":0, "class_tag":"123",
-                "first_transform":SketchPlacementMatrix::IDENTITY.rows(), "first_transform_offset":40,
-                "second_transform":SketchPlacementMatrix::IDENTITY.rows(), "second_transform_offset":168,
-            }),
+            serde_json::to_value(&dual_source).unwrap(),
             field,
         );
     }
