@@ -359,8 +359,9 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Extrude,
-            parameters,
-        }) if parameters.get("d12").and_then(cadmpeg_ir::Dimension::parameter) == Some(&crate::ids::neutral_parameter_id(&native[0]))
+            parameters: controls,
+        }) if controls.get("d12").and_then(cadmpeg_ir::Dimension::parameter) == Some(&parameters[0].id)
+            && parameters[0].expression.literal_text().as_deref() == Some("60 mm")
     ));
     assert_eq!(
         features[0]
