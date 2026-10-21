@@ -622,7 +622,7 @@ fn synchronize_features(
         &native.feature_histories,
         &mut native.feature_input_lanes,
     )?;
-    let projected_features = project_features_with_native_inputs(native)?;
+    let projected_features = project_features_with_native_inputs(native, &model.sketches)?;
     let projected_features = projected_features
         .into_iter()
         .map(|feature| (feature.id.clone(), feature))
