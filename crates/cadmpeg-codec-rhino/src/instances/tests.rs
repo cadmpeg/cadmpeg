@@ -1698,7 +1698,19 @@ fn multiple_instance_uses_do_not_copy_local_carriers() {
     assert_eq!(result.ir().model.points.len(), 65);
     assert_eq!(result.ir().model.occurrences.len(), 3);
     assert_eq!(
-        result.ir().model.points[0].position().get(),
+        result
+            .ir()
+            .model
+            .points
+            .iter()
+            .find(|point| point
+                .source_object
+                .as_ref()
+                .is_some_and(|source| source.object_id.as_str()
+                    == Uuid::from_wire(small_member_id).to_string()))
+            .expect("small prototype member")
+            .position()
+            .get(),
         Point3::new(1.0, 0.0, 0.0)
     );
     assert_eq!(result.ir().model.product_definitions[0].bodies.len(), 1);

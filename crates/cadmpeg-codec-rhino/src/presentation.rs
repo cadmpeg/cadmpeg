@@ -4024,6 +4024,7 @@ fn parse_windows_bitmap(
 struct ParsedTextureMapping {
     value: TextureMappingRecord,
     cache_requires_opaque: bool,
+    cache_unreadable: bool,
 }
 
 fn parse_mapping_crc_cache(data: &[u8], payload_range: Range<usize>) -> Result<(), FramingError> {
@@ -4101,6 +4102,7 @@ fn parse_texture_mapping(
             texture_space,
             capped,
         },
+        cache_unreadable: cache_requires_opaque,
         cache_requires_opaque: cache_requires_opaque || untyped_primitive,
     })
 }
@@ -4974,6 +4976,13 @@ pub(crate) fn install(
                         record.range.start,
                     ))? {
                         texture_mappings.push(value.value);
+                        if value.cache_unreadable {
+                            push_presentation_loss(
+                                &mut losses,
+                                RhinoLossCode::PresentationRecordDropped,
+                                format_args!("MappingCRCCache at offset {} could not be transferred: unsupported or malformed cache payload", record.range.start),
+                            );
+                        }
                         if value.cache_requires_opaque {
                             push_presentation_loss(
                                 &mut losses,
