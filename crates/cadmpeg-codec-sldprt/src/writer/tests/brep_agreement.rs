@@ -257,15 +257,30 @@ fn assert_synthesized_design(decoded: &cadmpeg_test_support::EditableDecodeResul
             TargetRequest::Inherit,
         )
         .unwrap();
-    assert!(matches!(
-        plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
-    ));
+    let report = plan.report().clone();
     let mut output = Vec::new();
     plan.write_to(&mut output).unwrap();
     let written = SldprtCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .unwrap();
+    // E1: retained layout cannot add or substitute document content.
+    let synthesized = SldprtCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let synthesized_report = synthesized.report().clone();
+    let mut synthesized_bytes = Vec::new();
+    synthesized.write_to(&mut synthesized_bytes).unwrap();
+    let source_free = SldprtCodec
+        .decode(
+            &mut Cursor::new(synthesized_bytes),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &synthesized_report,
+        written.ir(),
+        source_free.ir(),
+    );
     let expected_stale = decoded
         .ir()
         .model
@@ -304,5 +319,12 @@ fn assert_synthesized_design(decoded: &cadmpeg_test_support::EditableDecodeResul
     assert_eq!(
         actual, expected,
         "neutral parameters decide the written history"
+    );
+    assert!(
+        matches!(
+            report.write_path(),
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        ),
+        "retained-path report after exact content checks: {report:?}"
     );
 }
