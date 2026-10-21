@@ -10,6 +10,7 @@ fn native() -> crate::native::F3dNative {
     crate::native::F3dNative {
         design_types: types.into_iter().enumerate().map(|(offset, (guid, version, entities))| {
             SegmentType::try_new(format!("f3d:Design1/MetaStream.dat:design-type#{offset}"), SegmentTypeData {
+                class_tag: (256 + offset).to_string().try_into().unwrap(),
                 byte_offset: Some(cadmpeg_core::decode::u64_from_index(offset)), type_guid: guid.to_owned().try_into().unwrap(), type_guid_offset: Some(4),
                 base_type_guid: BaseTypeGuid::Absent, version, version_offset: Some(44), module: "Fusion".into(),
                 entities: crate::records::identity::ReferenceRun::unlocated(entities),

@@ -382,11 +382,6 @@ impl DesignParameter {
         }
     }
 
-    /// Source family and ownership.
-    pub(crate) fn source(&self) -> &DesignParameterSource {
-        &self.source
-    }
-
     #[cfg(test)]
     /// Checked replacement of a present unit token.
     pub(crate) fn try_set_unit_value(&mut self, value: String) -> Result<(), String> {

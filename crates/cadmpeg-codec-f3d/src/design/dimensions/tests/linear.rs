@@ -514,7 +514,7 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
     assert!(matches!(
         crate::design::dimensions::symmetric_parallel_line_dimension_definition(&first, &second, (1, 1), &parameter, parameter_id.clone(), 1.0e-6),
         Some(SketchConstraintDefinitionInput::Distance { entities, parameter: actual })
-            if entities == vec![first.id().clone(), second.id().clone()] && actual == cadmpeg_ir::Dimension::Parameter(parameter_id)
+            if entities == vec![first.id().clone(), second.id().clone()] && actual == cadmpeg_ir::Dimension::Parameter(parameter_id.clone())
     ));
 
     let mut direct_parameter = parameter.clone();
@@ -1312,7 +1312,7 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     else {
         panic!("expected repeated distance")
     };
-    assert_eq!(actual, cadmpeg_ir::Dimension::Parameter(parameter));
+    assert_eq!(actual, cadmpeg_ir::Dimension::Parameter(parameter.clone()));
     assert!(matches!(
         measurements.as_slice(),
         [

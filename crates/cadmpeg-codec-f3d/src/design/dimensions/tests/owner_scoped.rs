@@ -244,7 +244,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             entities,
             parameter,
         }) if entities == vec![entity.id().clone(), duplicate.id().clone()]
-            && parameter == cadmpeg_ir::Dimension::Parameter(diameter_parameter)
+            && parameter == cadmpeg_ir::Dimension::Parameter(diameter_parameter.clone())
     ));
 
     let radial_parameter = parse_design_parameter_record(&parameter_record(
@@ -262,7 +262,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             entities,
             parameter,
         }) if entities == vec![entity.id().clone(), duplicate.id().clone()]
-            && parameter == cadmpeg_ir::Dimension::Parameter(radius_parameter)
+            && parameter == cadmpeg_ir::Dimension::Parameter(radius_parameter.clone())
     ));
 
     entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
@@ -334,7 +334,7 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
             entities,
             parameter,
         }) if entities == vec![first.id().clone(), second.id().clone()]
-            && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id)
+            && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id.clone())
     ));
 }
 
@@ -373,7 +373,7 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
             first,
             second,
             parameter,
-        }) if first == horizontal.id().clone() && second == sloped.id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id)
+        }) if first == horizontal.id().clone() && second == sloped.id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id.clone())
     ));
 
     let other_sloped = line("other-sloped", -std::f64::consts::FRAC_PI_6);
@@ -482,7 +482,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
             first,
             second,
             parameter,
-        }) if first == entities[0].id().clone() && second == entities[1].id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id)
+        }) if first == entities[0].id().clone() && second == entities[1].id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id.clone())
     ));
 }
 
@@ -521,7 +521,7 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
             parameter,
-        }) if first == lower.id().clone() && second == upper.id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id)
+        }) if first == lower.id().clone() && second == upper.id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id.clone())
     ));
 
     let another_upper = point("another-upper", -40.0, -7.875);
@@ -582,7 +582,7 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
     assert!(matches!(
         radial_locus_dimension_definition(&[&measured, &annotation, &repeated], &all, "Diameter Dimension-3", 1.0, &parameter),
         Some(SketchConstraintDefinitionInput::RepeatedDiameter { entities, parameter: actual })
-            if entities == vec![measured.id().clone(), repeated.id().clone()] && actual == cadmpeg_ir::Dimension::Parameter(parameter)
+            if entities == vec![measured.id().clone(), repeated.id().clone()] && actual == cadmpeg_ir::Dimension::Parameter(parameter.clone())
     ));
     assert!(matches!(
         radial_locus_dimension_definition(&[&center], &all, "Diameter Dimension-2", 1.0, &parameter),

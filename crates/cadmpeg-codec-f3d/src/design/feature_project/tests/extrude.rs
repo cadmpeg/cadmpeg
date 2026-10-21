@@ -1092,6 +1092,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                         value: 202,
                         offset: Some(1037),
                     }])
+                    .map(|member| crate::records::identity::Located {
+                        value: member.value,
+                        offset: member.offset.unwrap(),
+                    })
                     .collect(),
             )
             .unwrap();

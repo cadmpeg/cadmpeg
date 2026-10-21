@@ -774,6 +774,7 @@ impl F3dLossCode {
 }
 
 /// Whether a decode loss leaves source content without a typed representation.
+#[cfg(test)]
 #[derive(Clone, Copy)]
 enum Representation {
     Design,
@@ -792,6 +793,7 @@ enum Representation {
 /// Every local loss code has an explicit source-content disposition. Codes
 /// emitted from native projection-gap counts retain their actual typed rows;
 /// raw payloads, unresolved source owners and missing semantic records do not.
+#[cfg(test)]
 const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
     (F3dLossCode::ActRecordUntyped, Representation::Both),
     (
@@ -1084,6 +1086,7 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
 ];
 
 /// Classes with source records that have no typed document representation.
+#[cfg(test)]
 pub(crate) fn unrepresented(
     losses: &[LossNote],
     native: &crate::native::F3dNative,
