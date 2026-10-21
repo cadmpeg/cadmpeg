@@ -99,36 +99,20 @@ pub(super) fn shell(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
-    source_kind: Option<&str>,
 ) -> Result<(), CodecError> {
     if tag(value) == "shell" {
-        let signed_native = source_kind == Some("Part::Thickness");
-        object.kind = if signed_native {
-            "Part::Thickness"
-        } else {
-            "PartDesign::Thickness"
-        }
-        .into();
-        selection(
-            object,
-            if signed_native { "Faces" } else { "Base" },
-            &value["removed_faces"],
-            names,
-        )?;
-        let magnitude = number(&value["thickness"], "wall thickness")?;
-        let outward = value["outward"].as_bool().unwrap_or(true);
+        object.kind = "PartDesign::Thickness".into();
+        selection(object, "Base", &value["removed_faces"], names)?;
         length(
             object,
             "Value",
-            if signed_native && !outward {
-                -magnitude
-            } else {
-                magnitude
-            },
+            number(&value["thickness"], "wall thickness")?,
         );
-        if !signed_native {
-            boolean(object, "Reversed", !outward);
-        }
+        boolean(
+            object,
+            "Reversed",
+            !value["outward"].as_bool().unwrap_or(true),
+        );
     } else {
         object.kind = if value["planar"] == true {
             "Part::Offset2D"
@@ -152,7 +136,7 @@ pub(super) fn shell(
         );
     }
     if !value["join"].is_null() {
-        let variants = if object.kind == "PartDesign::Thickness" {
+        let variants = if tag(value) == "shell" {
             &["arc", "intersection"][..]
         } else {
             &["arc", "tangent", "intersection"][..]

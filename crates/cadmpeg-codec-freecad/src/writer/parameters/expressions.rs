@@ -31,7 +31,7 @@ pub(super) fn native_only(
             .iter()
             .find(|feature| feature.native_ref.as_ref() == Some(&property.owner));
         let neutral_controls = feature
-            .map(|feature| super::controls::bindings(ir, feature))
+            .map(super::controls::bindings)
             .transpose()?
             .unwrap_or_default();
         // Insert an empty lane too: removal of the last projected expression

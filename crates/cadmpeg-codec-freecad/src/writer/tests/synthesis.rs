@@ -216,18 +216,12 @@ fn effective_appearance_preserves_independent_body_style() {
         .bodies
         .iter()
         .any(|body| body.color == Some(fallback) && body.visible == Some(false)));
-    assert!(
-        output
-            .ir()
-            .model
-            .appearances
-            .iter()
-            .any(|appearance| appearance.base_color == Some(effective)),
-        "independent material {effective:?}; output appearances: {:#?}; losses: {:#?}",
-        output.ir().model.appearances,
-        report.losses
-    );
-
+    assert!(output
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .any(|appearance| appearance.base_color == Some(effective)));
     assert!(report
         .losses
         .iter()

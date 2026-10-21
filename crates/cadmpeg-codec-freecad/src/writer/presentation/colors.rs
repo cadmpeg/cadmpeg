@@ -399,14 +399,14 @@ mod tests {
             serde_json::from_value(serde_json::json!({"id":"test:model:appearance#empty"}))
                 .unwrap();
         let mut provider = Provider::new("Shape".into());
-        let mut losses = Vec::new();
-        material(&mut provider, &appearance, &mut losses).unwrap();
-        assert!(!provider.properties.contains_key("ShapeMaterial"));
-        assert_eq!(losses.len(), 1);
-        assert_eq!(losses[0].code.local_code(), "appearance.not-transferred");
-        assert_eq!(
-            losses[0].message,
-            "appearance test:model:appearance#empty has no diffuse color required by a native material; ShapeMaterial is omitted"
-        );
+        material(&mut provider, &appearance, &mut Vec::new()).unwrap();
+        let document = roxmltree::Document::parse(&provider.properties["ShapeMaterial"]).unwrap();
+        let value = document
+            .descendants()
+            .find(|node| node.has_tag_name("PropertyMaterial"))
+            .unwrap();
+        assert!(value.attribute("diffuseColor").is_none());
+        assert!(value.attribute("shininess").is_none());
+        assert!(value.attribute("transparency").is_none());
     }
 }

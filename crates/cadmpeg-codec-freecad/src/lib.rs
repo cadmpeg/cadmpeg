@@ -1251,9 +1251,6 @@ impl CodecBackend for FcstdCodec {
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
-        if let Some(finding) = fidelity::validation::validate(ctx, &ir, &source_fidelity)?.first() {
-            return Err(CodecError::malformed(&finding.message));
-        }
         let scope = ir.scope;
         Ok(Decoded {
             ir,

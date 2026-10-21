@@ -500,12 +500,10 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .find(|entry| entry.name() == "Payload.bin")
         .expect("payload entry");
     assert_eq!(payload_entry.referenced_by(), vec![payload.id.clone()]);
-    assert_eq!(
-        crate::test_support::source_fidelity::bytes(result.source_fidelity(), payload_entry.id()),
-        b"payload"
-    );
-    let ledger: Vec<crate::native::LogicalSpan> =
-        crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
+    assert_eq!(payload_entry.data(), b"payload");
+    let ledger = namespace
+        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
+        .expect("logical ledger");
     for entry in &entries {
         let mut spans = ledger
             .iter()
@@ -515,13 +513,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         assert_eq!(spans.first().map(|span| span.span.start()), Some(0));
         assert_eq!(
             spans.last().map(|span| span.span.end()),
-            Some(
-                result
-                    .source_fidelity()
-                    .retained_record(entry.id())
-                    .expect("entry source")
-                    .byte_len()
-            )
+            Some(entry.byte_len())
         );
         assert!(spans
             .windows(2)
@@ -541,50 +533,51 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(ledger.iter().any(|span| {
         span.entry == "Document.xml" && span.classification.as_str() == "structural"
     }));
-    let coverage: crate::native::ByteCoverageRecord =
-        crate::test_support::source_fidelity::layout(result.source_fidelity(), "byte-coverage");
-    assert!(coverage.exact);
-    assert_eq!(coverage.logical_entry_count, entries.len());
+    let coverage = namespace
+        .arena_as::<crate::native::ByteCoverageRecord>("byte_coverage")
+        .expect("byte coverage");
+    assert_eq!(coverage.len(), 1);
+    assert!(coverage[0].exact);
+    assert_eq!(coverage[0].logical_entry_count, entries.len());
     assert_eq!(
-        coverage.logical_byte_len,
+        coverage[0].logical_byte_len,
         entries
             .iter()
             .map(super::super::native::EntryRecord::byte_len)
             .sum::<u64>()
     );
     assert_eq!(
-        coverage.classification_bytes.values().sum::<u64>(),
-        coverage.logical_byte_len
+        coverage[0].classification_bytes.values().sum::<u64>(),
+        coverage[0].logical_byte_len
     );
-    assert!(coverage
+    assert!(coverage[0]
         .named_opaque_entries
         .contains(&"Payload.bin".to_owned()));
     let findings = crate::test_support::validate_native(result.ir());
     assert!(findings.is_empty(), "{findings:#?}");
 
-    let mut corrupted = result.source_fidelity().clone();
+    let mut corrupted = result.ir().clone();
     let missing_payload = ledger
         .iter()
         .filter(|span| span.entry != "Payload.bin")
         .cloned()
         .collect::<Vec<_>>();
-    corrupted.remove_retained_record(&crate::native::native_id("source-layout", "logical-ledger"));
-    crate::fidelity::layout(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut corrupted,
-        "logical-ledger",
-        &missing_payload,
-    )
-    .expect("replace logical ledger");
-    let findings = crate::test_support::with_service_context(&[], |ctx| {
-        crate::fidelity::validation::validate(ctx, result.ir(), &corrupted)
-    })
-    .expect("check corrupted source layout");
-    assert!(findings.iter().any(|finding| {
-        finding
-            .message
-            .contains("logical ledger omits nonempty entry Payload.bin")
-    }));
+    corrupted
+        .native
+        .namespace_mut("fcstd")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "logical_ledger",
+            &missing_payload,
+        )
+        .expect("replace logical ledger");
+    assert!(crate::test_support::validate_native(&corrupted)
+        .iter()
+        .any(|finding| {
+            finding
+                .message
+                .contains("logical ledger omits nonempty entry Payload.bin")
+        }));
 }
 
 #[test]

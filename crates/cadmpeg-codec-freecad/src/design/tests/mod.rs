@@ -2,7 +2,6 @@
 //! Design-history unit tests over synthesized `FCStd` archives.
 
 pub(crate) mod booleans_patterns;
-mod computed_controls;
 pub(crate) mod construction;
 mod history;
 pub(crate) mod holes_extrude;

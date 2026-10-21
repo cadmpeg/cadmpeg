@@ -28,7 +28,7 @@ pub(super) fn write(
         let Some(object) = objects.iter_mut().find(|object| object.name == *name) else {
             continue;
         };
-        let controls = bindings(ir, feature)?;
+        let controls = bindings(feature)?;
         let mut rows = Vec::new();
         for (control, bindings) in controls {
             let Some((id, measurement)) = bindings.first() else {
@@ -82,7 +82,6 @@ pub(super) fn write(
             let expression = match measurement {
                 Measurement::Direct => reference,
                 Measurement::Diameter => format!("{reference} / 2"),
-                Measurement::Negated => format!("-({reference})"),
             };
             expressions
                 .entry(name.clone())
@@ -182,50 +181,7 @@ fn collect(
     }
 }
 
-/// Native control names remain occupied when the current operand is literal.
-/// A former source parameter must not overwrite that independently edited value.
-pub(super) fn reserved(
-    feature: &cadmpeg_ir::features::Feature,
-) -> Result<std::collections::BTreeSet<String>, CodecError> {
-    let definition = serde_json::to_value(feature.definition()).map_err(CodecError::malformed)?;
-    let operation = if definition["definition"] == "post_process" {
-        &definition["operation"]
-    } else {
-        &definition
-    };
-    let tag = operation["definition"].as_str().unwrap_or_default();
-    let mut reserved = std::collections::BTreeSet::new();
-    for pointer in feature.definition().dimension_paths() {
-        let path = pointer
-            .split('/')
-            .skip(1)
-            .map(|part| part.replace("~1", "/").replace("~0", "~"))
-            .collect::<Vec<_>>();
-        let control = if tag == "native" {
-            path.iter()
-                .position(|part| part == "parameters")
-                .and_then(|index| path.get(index + 1))
-                .cloned()
-        } else {
-            crate::design::dimensions::target_control(
-                if path.first().is_some_and(|part| part == "fuzzy_tolerance") {
-                    "post_process"
-                } else {
-                    tag
-                },
-                &path,
-            )
-            .map(str::to_owned)
-        };
-        if let Some(control) = control {
-            reserved.insert(control);
-        }
-    }
-    Ok(reserved)
-}
-
 pub(super) fn bindings(
-    ir: &CadIr,
     feature: &cadmpeg_ir::features::Feature,
 ) -> Result<BTreeMap<String, Vec<(String, Measurement)>>, CodecError> {
     let mut definition =
@@ -251,20 +207,5 @@ pub(super) fn bindings(
         false,
         &mut controls,
     );
-    // Part::Thickness already stores the signed authored Value. Its semantic
-    // magnitude is a computation of that driver, not a replacement native
-    // control; writing a bridge here would rename/overwrite the raw formula.
-    if operation == "shell" && super::has_signed_thickness_driver(ir, feature) {
-        controls.remove("Value");
-    }
-    // The native Reversed flag applies a second sign transform. Its Angle
-    // control must therefore be the inverse of the signed neutral draft angle.
-    if operation == "draft" && definition["outward"] == true {
-        if let Some(bindings) = controls.get_mut("Angle") {
-            for (_, measurement) in bindings {
-                *measurement = Measurement::Negated;
-            }
-        }
-    }
     Ok(controls)
 }

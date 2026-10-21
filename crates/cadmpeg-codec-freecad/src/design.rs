@@ -356,8 +356,7 @@ pub(crate) fn transfer(
             &owned,
             Some(&feature_id(object)?),
         )?;
-        let definition =
-            dimensions::bind(definition, &feature_id(object)?, &mut ir.model.parameters)?;
+        let definition = dimensions::bind(definition, &feature_id(object)?, &ir.model.parameters)?;
         let mut outputs = Vec::new();
         for payload in payloads
             .iter()
@@ -2712,11 +2711,6 @@ fn bind_parameter_dependencies(
     }
     let mut losses = Vec::new();
     for parameter in parameters.iter_mut() {
-        // Computed semantic controls already carry canonical identity tokens.
-        // Re-tokenizing literal_text() would erase their bound formula.
-        if parameter.expression.dependencies().next().is_some() {
-            continue;
-        }
         let text = parameter.expression.literal_text().unwrap_or_default();
         let mut spans = Vec::new();
         for (span, identifier) in expression_identifiers(&text) {

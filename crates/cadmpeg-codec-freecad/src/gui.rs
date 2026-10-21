@@ -434,11 +434,6 @@ fn transfer_schema_one(
             .and_then(|value| value.attribute("value"))
             .and_then(|value| value.parse::<u32>().ok())
             .map(|value| convert_packed_alpha(value, requires_alpha_conversion));
-        // Validate the complete display colour even when this provider has no
-        // BRep body: source presentation remains meaningful on native carriers.
-        let display_color = packed_color
-            .map(|packed| decode_color(packed, transparency))
-            .transpose()?;
         let material = values.get("ShapeMaterial");
         let body_ids = {
             select_shape_bodies(
@@ -457,7 +452,9 @@ fn transfer_schema_one(
                 &mut plan,
                 body_id,
                 Assignment::Set(visibility),
-                Ok(display_color),
+                packed_color
+                    .map(|packed| decode_color(packed, transparency))
+                    .transpose(),
             )?;
         }
         if let Some(file) = values
@@ -566,11 +563,11 @@ fn transfer_schema_one(
         }
         // ShapeColor is the display colour stored on each body. A physical
         // material has a distinct colour and must not inherit that display fact.
-        if material.is_none() && display_color.is_none() {
+        let Some(material) = material else {
             continue;
-        }
+        };
         let material_color = material
-            .and_then(|material| material.attribute("diffuseColor"))
+            .attribute("diffuseColor")
             .and_then(|value| value.parse::<u32>().ok())
             .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
             .map(|packed| decode_color(packed, None))
@@ -586,7 +583,7 @@ fn transfer_schema_one(
                 ),
             ] {
                 if let Some(value) = material
-                    .and_then(|material| material.attribute(source))
+                    .attribute(source)
                     .and_then(|value| value.parse::<f64>().ok())
                     .and_then(cadmpeg_ir::scalar::FiniteReal::new)
                 {
@@ -601,38 +598,12 @@ fn transfer_schema_one(
             library_id: None,
             visual_guid: None,
             physical_token: None,
-            schema: Some(
-                if material.is_some() {
-                    "FCStd ViewProvider ShapeMaterial"
-                } else {
-                    "FCStd ViewProvider ShapeColor"
-                }
-                .into(),
-            ),
+            schema: Some("FCStd ViewProvider ShapeMaterial".into()),
             category: None,
-            base_color: if material.is_some() {
-                material_color
-            } else {
-                display_color
-            },
+            base_color: material_color,
             textures: Vec::new(),
             properties: material_properties,
         });
-        if body_ids.is_empty() {
-            plan.bindings.push(AppearanceBinding {
-                id: binding_id(format_args!(
-                    "fcstd:appearance:binding#{provider_key}:source"
-                ))?,
-                target: AppearanceTarget::Source {
-                    source_id: object_id.to_owned(),
-                },
-                appearance: appearance_id.clone(),
-                source_entity_id: Some(object_id.to_owned()),
-                object_type: Some("ViewProvider".into()),
-                visible: None,
-                channels: BTreeMap::new(),
-            });
-        }
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
                 id: binding_id(format_args!(
