@@ -540,7 +540,8 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
         .unwrap();
     {
         let mut wire =
-            crate::records::parameters::DesignParameterOwnerWire::from(taper_owner.clone());
+            crate::records::parameters::DesignParameterOwnerWire::try_from(taper_owner.clone())
+                .unwrap();
         wire.id = "generated:owner#80".into();
         wire.record_index = 80;
         wire.scope_record_index = scope_record_index;
@@ -552,7 +553,8 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     let mut along_owner = taper_owner.clone();
     {
         let mut wire =
-            crate::records::parameters::DesignParameterOwnerWire::from(along_owner.clone());
+            crate::records::parameters::DesignParameterOwnerWire::try_from(along_owner.clone())
+                .unwrap();
         wire.id = "generated:owner#82".into();
         wire.record_index = 82;
         wire.local_ordinal = 1;

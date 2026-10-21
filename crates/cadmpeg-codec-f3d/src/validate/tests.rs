@@ -16,13 +16,13 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::F3dCodec;
 use crate::records::{
     feature::scope::DesignScopePayload, topology::extrude_selection::DesignOperandRole,
 };
 use crate::test_support::native_test::f3d_native_mut;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
+use crate::F3dCodec;
 
 mod arithmetic;
 mod component_occurrences;
@@ -53,7 +53,7 @@ fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
         design_reference: 329,
         design_reference_offset: Some(37),
         candidate_faces: vec![
-            cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#10").expect("identity grammar"),
+            cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#10").expect("identity grammar")
         ],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
@@ -329,9 +329,13 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         crate::records::entity_header::SegmentType::try_new(
             id.into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: id.rsplit_once('#').unwrap().1.parse().unwrap(),
+                class_tag: (256 + id.rsplit_once('#').unwrap().1.parse::<u32>().unwrap())
+                    .to_string()
+                    .try_into()
+                    .unwrap(),
+                byte_offset: Some(id.rsplit_once('#').unwrap().1.parse().unwrap()),
                 type_guid: type_guid.to_owned().try_into().expect("type GUID"),
-                type_guid_offset: 4,
+                type_guid_offset: Some(4),
                 base_type_guid: if type_guid
                     == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID
                 {
@@ -340,7 +344,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
                             .to_owned()
                             .try_into()
                             .expect("base GUID"),
-                        offset: 8,
+                        offset: Some(8),
                     }
                 } else {
                     crate::records::entity_header::BaseTypeGuid::Absent
@@ -350,12 +354,15 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
                 } else {
                     1
                 },
-                version_offset: 44,
+                version_offset: Some(44),
                 module: crate::records::entity_header::DESIGN_MODULE_FUSION.into(),
                 entities: crate::records::identity::ReferenceRun::located(
                     entities
                         .into_iter()
-                        .map(|value| crate::records::identity::Located { value, offset: 100 })
+                        .map(|value| crate::records::identity::Located {
+                            value,
+                            offset: Some(100),
+                        })
                         .collect(),
                 ),
             },
@@ -434,21 +441,19 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
-    assert!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(|finding| {
-            finding.entity.as_deref()
-                == Some(
-                    duplicate_type_owner.design_feature_timelines[0]
-                        .id()
-                        .as_str(),
-                )
-                && finding.message == "Fusion Design feature timeline has an invalid typed frame"
-        })
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(|finding| {
+        finding.entity.as_deref()
+            == Some(
+                duplicate_type_owner.design_feature_timelines[0]
+                    .id()
+                    .as_str(),
+            )
+            && finding.message == "Fusion Design feature timeline has an invalid typed frame"
+    }));
 
     native.design_feature_timelines[0] =
         crate::records::entity_header::DesignFeatureTimeline::try_new(
@@ -476,16 +481,14 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
-    assert!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(|finding| {
-            finding.entity.as_deref() == Some(native.design_feature_timelines[0].id().as_str())
-                && finding.message == "Fusion Design feature timeline has an invalid typed frame"
-        })
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(|finding| {
+        finding.entity.as_deref() == Some(native.design_feature_timelines[0].id().as_str())
+            && finding.message == "Fusion Design feature timeline has an invalid typed frame"
+    }));
 }
 
 #[test]
@@ -525,11 +528,9 @@ fn validation_accepts_carrier_local_component_references() {
     let findings = crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
     });
-    assert!(
-        !findings
-            .iter()
-            .any(|finding| finding.message.contains("component occurrence"))
-    );
+    assert!(!findings
+        .iter()
+        .any(|finding| finding.message.contains("component occurrence")));
 }
 
 #[test]
@@ -625,17 +626,17 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             design: Some(crate::records::recipes::ConstructionRecipeDesign {
                 id: crate::records::identity::RecordedValue {
                     value: "301".into(),
-                    offset: byte_offset + 197,
+                    offset: Some(byte_offset + 197),
                 },
                 selector: Some(ConstructionRecipeSelector {
                     value: operand_record_index + 4,
-                    byte_offset: byte_offset + 200,
+                    byte_offset: Some(byte_offset + 200),
                 }),
             }),
             recipe_index: ordinal,
             record_index: Some(crate::records::identity::RecordedValue {
                 value: i32::try_from(operand_record_index + 3).unwrap(),
-                offset: 0,
+                offset: Some(0),
             }),
         });
         operands.push(
@@ -669,9 +670,9 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                     } else {
                         vec![DesignBodyRecipeReference {
                             design_reference: u64::from(300 + ordinal),
-                            design_reference_offset: byte_offset + 25,
+                            design_reference_offset: Some(byte_offset + 25),
                             form: 3,
-                            form_offset: byte_offset + 33,
+                            form_offset: Some(byte_offset + 33),
                             candidate_faces: Vec::new(),
                             preceding_candidate_faces: Vec::new(),
                             preceding_body_slots: Vec::new(),
@@ -830,38 +831,32 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
     let invalid_frame = |finding: &cadmpeg_ir::report::check::Finding| {
         finding.message == "Fusion Design construction operand group has an invalid frame"
     };
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(invalid_frame)
-    );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(invalid_frame));
 
     // A Hole body group can use role 0x8 for its whole-body recipe operand.
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::BODIES_B,
         );
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(invalid_frame)
-    );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(invalid_frame));
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::ROLE_0X21,
         );
-    assert!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(invalid_frame)
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(invalid_frame));
 
     {
         let mut native = f3d_native_mut(&mut ir);
@@ -877,25 +872,21 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
                 DesignOperandRole::ROLE_0X21,
             );
     }
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(invalid_frame)
-    );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(invalid_frame));
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::BODIES_B,
         );
-    assert!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(invalid_frame)
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(invalid_frame));
 }
 
 #[test]
@@ -1162,18 +1153,16 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
         )
     };
 
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(|finding| {
-            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
-                && (finding.entity.as_deref() == Some(point_id.as_str())
-                    || finding.entity.as_deref() == Some(curve_id.as_str()))
-                && finding.message.contains("persistent identity")
-        })
-    );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(|finding| {
+        finding.check == cadmpeg_ir::report::check::Check::NativeLinks
+            && (finding.entity.as_deref() == Some(point_id.as_str())
+                || finding.entity.as_deref() == Some(curve_id.as_str()))
+            && finding.message.contains("persistent identity")
+    }));
 }
 
 #[test]
@@ -1208,16 +1197,14 @@ fn validation_accepts_sketch_geometry_identities_with_unknown_owner() {
         native.sketch_curve_identities[1].owner_reference = None;
     }
 
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(|finding| {
-            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
-                && finding.message.contains("persistent identity")
-        })
-    );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(|finding| {
+        finding.check == cadmpeg_ir::report::check::Check::NativeLinks
+            && finding.message.contains("persistent identity")
+    }));
 }
 
 #[test]
@@ -1234,19 +1221,17 @@ fn validation_rejects_aliased_sketch_geometry_records() {
         native.sketch_curve_identities[0].id.clone()
     };
 
-    assert!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(|finding| {
-            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
-                && finding.entity.as_deref() == Some(curve_id.as_str())
-                && finding
-                    .message
-                    .contains("aliases another typed indexed record")
-        })
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(|finding| {
+        finding.check == cadmpeg_ir::report::check::Check::NativeLinks
+            && finding.entity.as_deref() == Some(curve_id.as_str())
+            && finding
+                .message
+                .contains("aliases another typed indexed record")
+    }));
 }
 
 #[test]
@@ -1273,17 +1258,15 @@ fn validation_rejects_duplicate_design_entity_suffixes() {
         id
     };
 
-    assert!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(|finding| {
-            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
-                && finding.entity.as_deref() == Some(duplicate_id.as_str())
-                && finding.message.contains("entity suffix is duplicated")
-        })
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(|finding| {
+        finding.check == cadmpeg_ir::report::check::Check::NativeLinks
+            && finding.entity.as_deref() == Some(duplicate_id.as_str())
+            && finding.message.contains("entity suffix is duplicated")
+    }));
 }
 
 #[test]
@@ -1304,7 +1287,7 @@ fn validation_accepts_user_design_parameter_frame() {
             source: crate::records::parameters::DesignParameterSource::User {
                 family_discriminator: Some(crate::records::identity::Located {
                     value: crate::records::parameters::DesignParameterDiscriminator::Code0,
-                    offset: 122,
+                    offset: Some(122),
                 }),
             },
             expression: "60 mm".into(),
@@ -1323,12 +1306,10 @@ fn validation_accepts_user_design_parameter_frame() {
     )
     .unwrap();
     f3d_native_mut(&mut ir).design_parameters.push(parameter);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .is_empty()
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .is_empty());
 }
 
 #[test]
@@ -1633,35 +1614,29 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
     });
     assert!(!findings.iter().any(profile_message));
-    assert!(
-        !findings
-            .iter()
-            .any(|finding| finding.message.contains("no counted selection group"))
-    );
+    assert!(!findings
+        .iter()
+        .any(|finding| finding.message.contains("no counted selection group")));
 
     f3d_native_mut(&mut ir)
         .design_construction_operand_groups
         .push(group);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(profile_message)
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(profile_message));
 
     let profile = f3d_native_mut(&mut ir).design_parameter_scopes[0]
         .extrude_mut()
         .unwrap()
         .extrude_profile
         .take();
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(profile_message)
-    );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(profile_message));
     f3d_native_mut(&mut ir).design_parameter_scopes[0]
         .extrude_mut()
         .unwrap()
@@ -1670,25 +1645,21 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
     f3d_native_mut(&mut ir)
         .design_construction_operand_groups
         .clear();
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(profile_message)
-    );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(profile_message));
 
     f3d_native_mut(&mut ir).design_parameter_scopes[0]
         .extrude_profile_mut()
         .expect("test Extrude profile")
         .scope_reference_ordinal = 1;
-    assert!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(profile_message)
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(profile_message));
 }
 
 #[test]
@@ -1751,11 +1722,12 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     .unwrap();
     let identity = DesignConstructionOperandIdentity::try_new(
         crate::records::topology::construction::DesignConstructionOperandIdentityDraft {
+            ordinal: 0,
             id: format!("{stream}:operand-identity#1100"),
             group_record_index: 100,
             wrappers: vec![crate::records::topology::construction::DesignIdentityWrapper {
                 record_index: 101,
-                byte_offset: 1_100,
+                byte_offset: Some(1_100),
                 class_tag: crate::records::references::DesignClassTag::try_from("384".to_owned())
                     .unwrap(),
             }],
@@ -1820,13 +1792,11 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         finding.entity.as_deref() == Some(identity_id.as_str())
             && finding.message.contains("invalid nested frame")
     };
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(invalid_identity)
-    );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(invalid_identity));
 
     let mut native = crate::native::F3dNative::load(ir.native.namespace("f3d").unwrap()).unwrap();
     native.design_record_headers.push(DesignRecordHeader {
@@ -1841,13 +1811,11 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
-    assert!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(invalid_identity)
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(invalid_identity));
 }
 
 #[test]
@@ -1963,13 +1931,11 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
             && finding.message
                 == "Fusion Design entity-selection operand has an invalid nested frame"
     };
-    assert!(
-        !crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(invalid_entity_selection)
-    );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    })
+    .iter()
+    .any(invalid_entity_selection));
 }
 
 mod face_recipe_lengths;

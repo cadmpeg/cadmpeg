@@ -533,7 +533,10 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     let whole_sketch_operand = DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             region_selection: None,
-            ..profile_operand.clone().into_draft()
+            ..profile_operand
+                .clone()
+                .into_draft()
+                .expect("retained test source")
         },
     )
     .unwrap();

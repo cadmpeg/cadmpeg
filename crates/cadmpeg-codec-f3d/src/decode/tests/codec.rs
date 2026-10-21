@@ -404,8 +404,8 @@ fn generated_f3d_refuses_incoherent_delta_state_header() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
         let history = &mut native.asm_histories[0];
-        assert!(history.byte_offset > 0);
-        assert!(history.states()[0].byte_offset > 0);
+        assert!(history.byte_offset > Some(0));
+        assert!(history.states()[0].byte_offset > Some(0));
         history.preamble = Some(crate::history_records::AsmPreamble {
             stream_size: 8,
             history_entry_count: 120,
@@ -419,10 +419,10 @@ fn generated_f3d_refuses_incoherent_delta_state_header() {
         history.states_mut()[0].partner_ref = Some(18);
         history.states_mut()[0].owner_ref = 20;
         let board = &mut history.states_mut()[0].bulletin_boards[0];
-        assert!(board.byte_offset > 0);
+        assert!(board.byte_offset > Some(0));
         board.owner_ref = 22;
         board.number = 24;
-        assert!(board.changes[0].byte_offset > 0);
+        assert!(board.changes[0].byte_offset > Some(0));
         board.changes[0].kind = crate::history_records::AsmEntityChangeKind::Delete { old: 26 };
         board.changes[1].kind = crate::history_records::AsmEntityChangeKind::Insert { new: 28 };
     });

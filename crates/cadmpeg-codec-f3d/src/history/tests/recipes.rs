@@ -660,11 +660,11 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         .unwrap()
         .candidate_faces
         .retain(|face| !face.as_str().contains("/cache/"));
-    let mut draft = operand.into_draft();
+    let mut draft = operand.into_draft().unwrap();
     let mut added = reference(&["f3d:brep/cache/brep:face#1"]);
     added.design_reference_offset =
-        draft.byte_offset + 25 + u64_from_index(draft.references.len()) * 12;
-    added.form_offset = added.design_reference_offset + 8;
+        Some(draft.byte_offset + 25 + u64_from_index(draft.references.len()) * 12);
+    added.form_offset = added.design_reference_offset.map(|offset| offset + 8);
     draft.references.push(added);
     draft.nested_record_index_offset =
         draft.byte_offset + 26 + u64_from_index(draft.references.len()) * 12;
@@ -1051,17 +1051,17 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
                 value: "301".into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 9,
-                byte_offset: 0,
+                byte_offset: Some(0),
             }),
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let link = crate::records::sketch_links::PersistentDesignLink {
@@ -1294,11 +1294,9 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::MoveBody {
                 bodies: BodySelection::Native(group_id.into()),
-                translation: (cadmpeg_ir::features::FiniteVector3::new(
-                    cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
-                )
-                .unwrap())
-                .into(),
+                translation: [1.0, 2.0, 3.0].map(|value| {
+                    cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::new(value).unwrap())
+                }),
                 rotation: None,
                 copies: (0).into(),
             }),

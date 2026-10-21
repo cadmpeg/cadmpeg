@@ -167,7 +167,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         }) if matches!((shape.generated_section(),), (Some(GeneratedSweepSection::CircularRegion {
                 region,
 
-            }),) if matches!((&region.outer_radius(), &region.wall_thickness(),), (actual_outer_radius, None,) if (path == path_group.id) && actual_outer_radius.get() == 3.0))));
+            }),) if matches!((&region.outer_radius(), &region.wall_thickness(),), (actual_outer_radius, None,) if (path == path_group.id) && actual_outer_radius.literal_radius().unwrap().get() == 3.0))));
 
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
@@ -211,7 +211,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         }) if matches!((shape.generated_section(),), (Some(GeneratedSweepSection::CircularRegion {
                 region,
 
-            }),) if matches!((&region.outer_radius(), &region.wall_thickness(),), (actual_outer_radius, Some(actual_wall_thickness),) if (path == path_group.id) && actual_outer_radius.get() == 3.0 && actual_wall_thickness.get() == 1.5))));
+            }),) if matches!((&region.outer_radius(), &region.wall_thickness(),), (actual_outer_radius, Some(actual_wall_thickness),) if (path == path_group.id) && actual_outer_radius.literal_radius().unwrap().get() == 3.0 && actual_wall_thickness.literal().unwrap().get() == 1.5))));
 
     let mut too_thick_parameters = parameters.clone();
     too_thick_parameters[3]

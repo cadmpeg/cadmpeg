@@ -40,21 +40,17 @@ fn parameter_rejects_empty_text_and_source_layout_keys() {
     for field in ["expression", "name", "unit"] {
         let mut invalid = wire.clone();
         invalid[field] = json!("");
-        assert!(
-            serde_json::from_value::<DesignParameter>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains(field)
-        );
+        assert!(serde_json::from_value::<DesignParameter>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
     }
     let mut invalid = wire;
     invalid["unit_offset"] = json!(170);
-    assert!(
-        serde_json::from_value::<DesignParameter>(invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("unit_offset")
-    );
+    assert!(serde_json::from_value::<DesignParameter>(invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("unit_offset"));
 }
 
 #[test]
@@ -97,16 +93,14 @@ fn parameter_numeric_and_source_edits_keep_the_old_value_on_failure() {
         assert_eq!(edited, parameter);
     }
     let mut edited = parameter.clone();
-    assert!(
-        edited
-            .try_set_source(DesignParameterSource::User {
-                family_discriminator: Some(Located {
-                    value: DesignParameterDiscriminator::Code0,
-                    offset: Some(121)
-                })
+    assert!(edited
+        .try_set_source(DesignParameterSource::User {
+            family_discriminator: Some(Located {
+                value: DesignParameterDiscriminator::Code0,
+                offset: Some(121)
             })
-            .is_err()
-    );
+        })
+        .is_err());
     assert_eq!(edited, parameter);
     assert!(edited.try_set_unit_value(String::new()).is_err());
     assert_eq!(edited, parameter);

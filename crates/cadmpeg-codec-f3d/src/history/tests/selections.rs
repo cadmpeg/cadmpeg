@@ -501,17 +501,17 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
                 value: design_id.into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: Some(ConstructionRecipeSelector {
                 value: selector,
-                byte_offset: 0,
+                byte_offset: Some(0),
             }),
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let recipes = [
@@ -942,8 +942,9 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
                     id: format!("record-{node_index}"),
                     parent: state_id,
                     revision_id: None,
-                    byte_offset: u64::try_from(node_index)
-                        .expect("fixture reference is nonnegative"),
+                    byte_offset: Some(
+                        u64::try_from(node_index).expect("fixture reference is nonnegative"),
+                    ),
                     framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                         index: 0,
                         name: "End-of-ASM-History-Section".into(),
@@ -1033,7 +1034,7 @@ fn insert_only_history_rejects_gaps_and_updates() {
             id: "record".into(),
             parent: "state".into(),
             revision_id: None,
-            byte_offset: 0,
+            byte_offset: Some(0),
             framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                 index: 0,
                 name: "End-of-ASM-History-Section".into(),
@@ -1111,7 +1112,7 @@ fn materialized_record_table_normalizes_revision_references() {
                 id: "record".into(),
                 parent: state_id,
                 revision_id: Some(2),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                     index: 0,
                     name: "edge".into(),
@@ -1222,7 +1223,7 @@ fn qualified_history_marker_remains_an_archived_record() {
                 id: "record".into(),
                 parent: state_id,
                 revision_id: Some(2),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                     index: 0,
                     name: "End-of-ASM-History-Section".into(),

@@ -1,3 +1,4 @@
+const EPS_OFFSET_DISTANCE: f64 = 1.0e-9;
 // SPDX-License-Identifier: Apache-2.0
 use super::project_dimension_constraints;
 use crate::design::decode::parameters::parse_design_parameter_record;
@@ -459,7 +460,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
                     reference: crate::records::sketch_relations::SketchRelationReference::Index(
                         record_index,
                     ),
-                    offset,
+                    offset: Some(offset),
                     relation_ordinal: Some(relation_ordinal),
                 }
             })
@@ -485,7 +486,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
                 reference: crate::records::sketch_relations::SketchRelationReference::Resolved(
                     resolved,
                 ),
-                offset,
+                offset: Some(offset),
             }
         })
         .collect::<Vec<_>>())
@@ -502,12 +503,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     ]);
 
     let definition = exact_offset_constraint(&relation, "native", &projected).unwrap();
-    let SketchConstraintDefinitionInput::Offset {
-        pairs,
-        distance,
-        parameter,
-    } = definition
-    else {
+    let SketchConstraintDefinitionInput::Offset { pairs, distance } = definition else {
         panic!("expected neutral offset constraint")
     };
     assert_eq!(pairs.len(), 2);
@@ -515,10 +511,10 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     assert_eq!(pairs[0].result, result_horizontal.id().clone());
     assert_eq!(pairs[1].source, source_vertical.id().clone());
     assert_eq!(pairs[1].result, result_vertical.id().clone());
-    assert!((distance.get() - 2.0).abs() <= 1.0e-9);
+    assert!((distance.literal().unwrap().get() - 2.0).abs() <= EPS_OFFSET_DISTANCE);
     assert!(pairs[0].source_reversed);
     assert!(!pairs[1].source_reversed);
-    assert_eq!(parameter, None);
+    assert_eq!(distance.parameter(), None);
 
     let mut repeated_pair = relation;
     let mut returned = repeated_pair.return_members().to_vec();
@@ -527,13 +523,13 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
             reference: crate::records::sketch_relations::SketchRelationReference::Resolved(curve(
                 1, 10,
             )),
-            offset: 0,
+            offset: Some(0),
         },
         crate::records::sketch_relations::SketchRelationReturnMember {
             reference: crate::records::sketch_relations::SketchRelationReference::Resolved(curve(
                 3, 30,
             )),
-            offset: 0,
+            offset: Some(0),
         },
     ]);
     repeated_pair
@@ -672,21 +668,18 @@ fn single_curve_annotation_projects_parameterized_offset() {
         1.0e-6,
     )
     .expect("single-curve annotation offset");
+    let ir = super::length_parameter_document(parameter_id.clone(), 2.0);
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::Offset {
             pairs,
             distance,
-            parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
-                id: actual_parameter,
-                negated: false,
-            }),
         } if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
             source: source.id().clone(),
             result: result.id().clone(),
             source_reversed: true,
-        }] && (distance.get() - 2.0).abs() <= 1.0e-9
-            && actual_parameter == parameter_id
+        }] && (ir.dimension_value(&distance).unwrap().get() - 2.0).abs() <= EPS_OFFSET_DISTANCE
+            && distance.parameter() == Some(&parameter_id)
     ));
 
     let explicit_frame = DesignDimensionAnnotationFrame::try_new(
@@ -723,7 +716,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
             ],
             annotation_byte_offset: 126,
             governing_owner_reference_offset: 127,
-            ..frame.clone().into_draft()
+            ..frame.clone().into_draft().unwrap()
         },
     )
     .unwrap();
@@ -740,16 +733,12 @@ fn single_curve_annotation_projects_parameterized_offset() {
         explicit_definition,
         SketchConstraintDefinitionInput::Offset {
             pairs,
-            parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
-                id: actual_parameter,
-                negated: false,
-            }),
-            ..
+            distance,
         } if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
             source: source.id().clone(),
             result: result.id().clone(),
             source_reversed: true,
-        }] && actual_parameter == parameter_id
+        }] && distance.parameter() == Some(&parameter_id)
     ));
 
     let duplicate_curve_id = format!("{stream}:sketch-curve#12");
@@ -1143,7 +1132,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             parameter: actual_parameter,
         } if first == entities[2].id()
             && second == entities[1].id()
-            && actual_parameter == &neutral_parameter_id_parts(stream, 20)
+            && actual_parameter.parameter() == Some(&neutral_parameter_id_parts(stream, 20))
     ));
 }
 
@@ -1182,7 +1171,7 @@ fn parallel_group_binds_one_common_axis_angle() {
             entity,
             axis: SketchAxis::Horizontal,
             parameter,
-        }) if entity == first.id().clone() && parameter == parameter_id
+        }) if entity == first.id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id)
     ));
     assert!(
         crate::design::dimensions::parallel_group_axis_angle_definition(

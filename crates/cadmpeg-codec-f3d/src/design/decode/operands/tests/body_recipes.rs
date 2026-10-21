@@ -105,17 +105,17 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
                 value: "2265".into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 9,
-                byte_offset: 0,
+                byte_offset: Some(0),
             }),
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let scope = DesignParameterScope::empty(
@@ -256,7 +256,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     combine_recipe.design.as_mut().unwrap().selector =
         Some(crate::records::recipes::ConstructionRecipeSelector {
             value: 1,
-            byte_offset: 0,
+            byte_offset: Some(0),
         });
     let mut combine_operand = operand.clone();
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
@@ -408,17 +408,17 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
                 value: "301".into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 6,
-                byte_offset: 0,
+                byte_offset: Some(0),
             }),
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
 
@@ -488,7 +488,7 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let late = ConstructionRecipe {

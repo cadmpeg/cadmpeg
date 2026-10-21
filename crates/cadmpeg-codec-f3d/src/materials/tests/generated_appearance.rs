@@ -194,7 +194,7 @@ fn decode_transfers_generated_protein_appearance() {
         .expect("generated sketch entity header");
     assert_eq!(sketch_header.entity_id.as_str(), "0_277");
     assert_eq!(sketch_header.class_tag.as_str(), "257");
-    assert!(sketch_header.optional_slot_present);
+    assert_eq!(sketch_header.optional_slot_present, Some(true));
     assert_eq!(
         sketch_header.module(),
         Some(crate::records::entity_header::DESIGN_MODULE_SKETCH)
@@ -248,6 +248,7 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(
         f3d_native(result.ir()).sketch_relations[0]
             .raw_bytes()
+            .expect("retained test source")
             .len(),
         101
     );

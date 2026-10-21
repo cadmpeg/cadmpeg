@@ -56,12 +56,10 @@ fn dimension_locus_group_borrowed_wire_matches_owned_wire_bytes() {
         let reloaded: super::DesignDimensionLocusGroup =
             serde_json::from_value(wire.clone()).unwrap();
         assert!(reloaded.byte_offset.is_none());
-        assert!(
-            reloaded
-                .loci
-                .iter()
-                .all(|locus| locus.returned.offset.is_none())
-        );
+        assert!(reloaded
+            .loci
+            .iter()
+            .all(|locus| locus.returned.offset.is_none()));
         assert_eq!(serde_json::to_value(reloaded).unwrap(), wire);
     }
 }
@@ -153,11 +151,9 @@ fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
         operand.geometry_record_index = None;
     }
     all_null.return_members.clear();
-    assert!(
-        Frame::try_new(all_null)
-            .map_err(|error| error.to_string())
-            .is_ok()
-    );
+    assert!(Frame::try_new(all_null)
+        .map_err(|error| error.to_string())
+        .is_ok());
 }
 
 #[test]
@@ -212,47 +208,37 @@ fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
     ] {
         let mut invalid = wire.clone();
         invalid[field] = 101.into();
-        assert!(
-            serde_json::from_value::<Frame>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains(field)
-        );
+        assert!(serde_json::from_value::<Frame>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
     }
     for field in ["geometry_reference_offset", "role_offset"] {
         let mut invalid = wire.clone();
         invalid["operands"][0][field] = 0.into();
-        assert!(
-            serde_json::from_value::<Frame>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains(field)
-        );
+        assert!(serde_json::from_value::<Frame>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
     }
     let mut invalid = wire.clone();
     invalid["return_member_offsets"] = serde_json::json!([0]);
-    assert!(
-        serde_json::from_value::<Frame>(invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("return_member_offsets")
-    );
+    assert!(serde_json::from_value::<Frame>(invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("return_member_offsets"));
     let mut invalid = wire;
     invalid["return_members"][0] = 11.into();
-    assert!(
-        serde_json::from_value::<Frame>(invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("return_members")
-    );
+    assert!(serde_json::from_value::<Frame>(invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("return_members"));
     let mut empty = draft(100);
     empty.operands.clear();
-    assert!(
-        Frame::try_new(empty)
-            .map_err(|error| error.to_string())
-            .unwrap_err()
-            .contains("operands")
-    );
+    assert!(Frame::try_new(empty)
+        .map_err(|error| error.to_string())
+        .unwrap_err()
+        .contains("operands"));
 }
 
 #[test]
@@ -267,20 +253,16 @@ fn annotation_frame_rejects_unrepresentable_extents() {
     );
     let mut overflow = valid;
     overflow.frame_length += 1;
-    assert!(
-        Frame::try_new(overflow)
-            .map_err(|error| error.to_string())
-            .unwrap_err()
-            .contains("owner_reference_offset")
-    );
+    assert!(Frame::try_new(overflow)
+        .map_err(|error| error.to_string())
+        .unwrap_err()
+        .contains("owner_reference_offset"));
     let mut overflow = draft(0);
     overflow.byte_offset = u64::MAX;
-    assert!(
-        Frame::try_new(overflow)
-            .map_err(|error| error.to_string())
-            .unwrap_err()
-            .contains("annotation_byte_offset")
-    );
+    assert!(Frame::try_new(overflow)
+        .map_err(|error| error.to_string())
+        .unwrap_err()
+        .contains("annotation_byte_offset"));
 }
 
 fn locus_pair(has_first: bool) -> super::DesignDimensionLocusPair {

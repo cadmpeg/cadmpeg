@@ -98,7 +98,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
 
     let compact = candidates(&placement_frame(185, 201, 55, None), 177, "0_172", 185);
     assert_eq!(compact.len(), 1);
-    assert_eq!(compact[0].frame_length(), 201);
+    assert_eq!(compact[0].frame_length(), Some(201));
     assert_eq!(
         *compact[0].transform(),
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()
@@ -118,7 +118,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         1773,
     );
     assert_eq!(explicit.len(), 1);
-    assert_eq!(explicit[0].frame_length(), 329);
+    assert_eq!(explicit[0].frame_length(), Some(329));
     assert_eq!(*explicit[0].transform(), transform);
     assert_eq!(explicit[0].transform_offset(), Some(55));
 
@@ -130,7 +130,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
             1773,
         );
         assert_eq!(legacy.len(), 1);
-        assert_eq!(legacy[0].frame_length(), u64_from_index(length));
+        assert_eq!(legacy[0].frame_length(), Some(u64_from_index(length)));
         assert_eq!(*legacy[0].transform(), transform);
         assert_eq!(legacy[0].transform_offset(), Some(48));
     }
@@ -164,7 +164,7 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
 
     let compact = candidates(&genesis_frame(214, 213, 1, None), 206, "0_201", 214);
     assert_eq!(compact.len(), 1);
-    assert_eq!(compact[0].frame_length(), 213);
+    assert_eq!(compact[0].frame_length(), Some(213));
     assert_eq!(
         *compact[0].transform(),
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()
@@ -184,7 +184,7 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         3060,
     );
     assert_eq!(explicit.len(), 1);
-    assert_eq!(explicit[0].frame_length(), 341);
+    assert_eq!(explicit[0].frame_length(), Some(341));
     assert_eq!(*explicit[0].transform(), transform);
     assert_eq!(explicit[0].transform_offset(), Some(66));
 
@@ -387,14 +387,17 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let placement = crate::design::decode::sketch::parse_member_run_head_placement(
         &bytes,
-        entity.byte_offset,
+        entity.byte_offset.expect("retained test source"),
         &entity.entity_id,
         &records,
     )
     .expect("feature-owned sketch placement");
     assert_eq!(placement.record_index, 200);
-    assert_eq!(placement.byte_offset(), u64_from_index(head_at));
-    assert_eq!(placement.paired_byte_offset(), u64_from_index(paired_at));
+    assert_eq!(placement.byte_offset(), Some(u64_from_index(head_at)));
+    assert_eq!(
+        placement.paired_byte_offset(),
+        Some(u64_from_index(paired_at))
+    );
     assert_eq!(
         *placement.transform(),
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()
@@ -420,12 +423,12 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let compact = crate::design::decode::sketch::parse_member_run_head_placement(
         &bytes,
-        entity.byte_offset,
+        entity.byte_offset.expect("retained test source"),
         &entity.entity_id,
         &records,
     )
     .expect("compact identity sketch placement");
-    assert_eq!(compact.frame_length(), 34);
+    assert_eq!(compact.frame_length(), Some(34));
     assert_eq!(
         *compact.transform(),
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()

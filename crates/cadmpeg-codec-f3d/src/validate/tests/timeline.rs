@@ -5,21 +5,25 @@ fn design_type(
     type_guid: &str,
     entities: &[u64],
 ) -> crate::records::entity_header::SegmentType {
-    use crate::records::entity_header::{BaseTypeGuid, DESIGN_MODULE_FUSION, SegmentType};
+    use crate::records::entity_header::{BaseTypeGuid, SegmentType, DESIGN_MODULE_FUSION};
     let is_timeline = type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID;
     SegmentType::try_new(
         id.into(),
         crate::records::entity_header::SegmentTypeData {
-            byte_offset: id.rsplit_once('#').unwrap().1.parse().unwrap(),
+            class_tag: (256 + id.rsplit_once('#').unwrap().1.parse::<u32>().unwrap())
+                .to_string()
+                .try_into()
+                .unwrap(),
+            byte_offset: Some(id.rsplit_once('#').unwrap().1.parse().unwrap()),
             type_guid: type_guid.to_owned().try_into().unwrap(),
-            type_guid_offset: 4,
+            type_guid_offset: Some(4),
             base_type_guid: if is_timeline {
                 BaseTypeGuid::Guid {
                     value: crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
                         .to_owned()
                         .try_into()
                         .unwrap(),
-                    offset: 8,
+                    offset: Some(8),
                 }
             } else {
                 BaseTypeGuid::Absent
@@ -29,7 +33,7 @@ fn design_type(
             } else {
                 1
             },
-            version_offset: 44,
+            version_offset: Some(44),
             module: DESIGN_MODULE_FUSION.into(),
             entities: crate::records::identity::ReferenceRun::located(
                 entities
@@ -66,27 +70,25 @@ fn native() -> crate::native::F3dNative {
                 &[17, 101],
             ),
         ],
-        design_feature_timelines: vec![
-            DesignFeatureTimeline::try_new(
-                crate::ids::native_design_feature_timeline_id(bulk, 200),
-                DesignTimelineFrame::new(
-                    200,
-                    60,
-                    220,
-                    240,
-                    vec![Located {
-                        value: 101,
-                        offset: 245,
-                    }],
-                )
-                .unwrap(),
-                DesignClassTag::try_from("256".to_owned()).unwrap(),
-                std::num::NonZeroU64::new(35).unwrap(),
-                0,
-                std::num::NonZeroU64::new(17).unwrap(),
+        design_feature_timelines: vec![DesignFeatureTimeline::try_new(
+            crate::ids::native_design_feature_timeline_id(bulk, 200),
+            DesignTimelineFrame::new(
+                200,
+                60,
+                220,
+                240,
+                vec![Located {
+                    value: 101,
+                    offset: 245,
+                }],
             )
             .unwrap(),
-        ],
+            DesignClassTag::try_from("256".to_owned()).unwrap(),
+            std::num::NonZeroU64::new(35).unwrap(),
+            0,
+            std::num::NonZeroU64::new(17).unwrap(),
+        )
+        .unwrap()],
         ..crate::native::F3dNative::default()
     }
 }

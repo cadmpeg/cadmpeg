@@ -151,29 +151,25 @@ fn decal_scanner_validates_real_extents_and_retains_actual_layout_separately() {
         )
         .unwrap()
     };
-    assert!(
-        DesignDecalAsset::new(
-            ["258".into(), "279".into()],
-            [17, 18],
-            u64::MAX,
-            50,
-            "mark.png".into()
-        )
-        .is_err()
-    );
-    assert!(
-        DesignDecalImage::new(
-            "f3d:native:decal#0".into(),
-            Located {
-                value: 23,
-                offset: u64::MAX
-            },
-            DesignDecalMappingMode::FitToFaces,
-            24,
-            asset()
-        )
-        .is_err()
-    );
+    assert!(DesignDecalAsset::new(
+        ["258".into(), "279".into()],
+        [17, 18],
+        u64::MAX,
+        50,
+        "mark.png".into()
+    )
+    .is_err());
+    assert!(DesignDecalImage::new(
+        "f3d:native:decal#0".into(),
+        Located {
+            value: 23,
+            offset: u64::MAX
+        },
+        DesignDecalMappingMode::FitToFaces,
+        24,
+        asset()
+    )
+    .is_err());
     let scanned = DesignDecalImage::new(
         "f3d:native:decal#0".into(),
         Located {
@@ -209,7 +205,7 @@ fn indexed_record_header_keeps_identity_and_class_without_source_position() {
     let source = super::DesignRecordHeader {
         id: "f3d:Design:record#0000000042".into(),
         record_index: 42,
-        class_tag: "365".try_into().unwrap(),
+        class_tag: "365".to_owned().try_into().unwrap(),
         byte_offset: Some(987),
     };
     let wire = serde_json::to_value(&source).unwrap();

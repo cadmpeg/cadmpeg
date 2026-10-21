@@ -414,7 +414,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
             record_index: 100,
             class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         },
     )
     .is_none());
@@ -428,7 +428,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
             record_index: 400,
             class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         },
     )
     .is_none());

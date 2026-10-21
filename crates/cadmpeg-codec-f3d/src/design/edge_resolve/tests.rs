@@ -62,6 +62,8 @@ fn with_source_layout(
     use crate::records::topology::edge_identity::DesignEdgeIdentityOperandDraft;
     let asset_id_offset = layout.local_id_offset() + 18;
     let record_index = identity.record_index();
+    let asset_id = identity.asset_id().clone();
+    let context_id = identity.context_id().clone();
     DesignEdgeIdentityOperand::try_new(DesignEdgeIdentityOperandDraft {
         id: identity.id,
         scope_record_index: identity.scope_record_index,
@@ -72,9 +74,9 @@ fn with_source_layout(
         class_tag: identity.class_tag,
         layout,
         local_id: identity.local_id,
-        asset_id: identity.asset_id,
+        asset_id,
         asset_id_offset,
-        context_id: identity.context_id,
+        context_id,
         context_id_offset: asset_id_offset + 76,
         historical: identity.historical,
         treatment_radius_candidates: identity.treatment_radius_candidates,
@@ -195,7 +197,7 @@ fn sole_identity_group_projects_fixed_fillet_transition_chain() {
                 radius: actual_radius
             },
             tangency_weight: Some(weight),
-        }] if weight.get() == 1.0 && (edges.len() == 2) && actual_radius.literal().is_some_and(|value| value.get() == 3.0)
+        }] if weight.literal().unwrap().get() == 1.0 && (edges.len() == 2) && actual_radius.literal().is_some_and(|value| value.get() == 3.0)
     ));
 }
 

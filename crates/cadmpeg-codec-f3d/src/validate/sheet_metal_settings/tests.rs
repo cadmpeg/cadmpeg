@@ -10,14 +10,14 @@ fn native() -> crate::native::F3dNative {
     crate::native::F3dNative {
         design_types: types.into_iter().enumerate().map(|(offset, (guid, version, entities))| {
             SegmentType::try_new(format!("f3d:Design1/MetaStream.dat:design-type#{offset}"), SegmentTypeData {
-                byte_offset: cadmpeg_core::decode::u64_from_index(offset), type_guid: guid.to_owned().try_into().unwrap(), type_guid_offset: 4,
-                base_type_guid: BaseTypeGuid::Absent, version, version_offset: 44, module: "Fusion".into(),
+                byte_offset: Some(cadmpeg_core::decode::u64_from_index(offset)), type_guid: guid.to_owned().try_into().unwrap(), type_guid_offset: Some(4),
+                base_type_guid: BaseTypeGuid::Absent, version, version_offset: Some(44), module: "Fusion".into(),
                 entities: crate::records::identity::ReferenceRun::unlocated(entities),
             }).unwrap()
         }).collect(),
         design_record_headers: [50, 51, 52, 53, 54].into_iter().map(|index| crate::records::decal::DesignRecordHeader {
             id: format!("f3d:Design1/BulkStream.dat:design-record-header#{index}"), record_index: index,
-            class_tag: "256".to_owned().try_into().unwrap(), byte_offset: if index == 50 {20} else {1000 + u64::from(index)},
+            class_tag: "256".to_owned().try_into().unwrap(), byte_offset: if index == 50 {Some(20)} else {Some(1000 + u64::from(index))},
         }).collect(),
         design_sheet_metal_settings: vec![serde_json::from_value(serde_json::json!({
             "id": "f3d:Design1/BulkStream.dat:design-sheet-metal-settings#20", "record_index": 50,
@@ -75,7 +75,7 @@ fn settings_native_links_reject_missing_references_wrong_types_and_duplicate_car
             4 => native
                 .design_sheet_metal_settings
                 .push(native.design_sheet_metal_settings[0].clone()),
-            5 => native.design_record_headers[0].byte_offset = 21,
+            5 => native.design_record_headers[0].byte_offset = Some(21),
             6 => native.design_sheet_metal_settings[0].paired_byte_offset = 21,
             7 => native.design_record_headers[0].class_tag = "257".to_owned().try_into().unwrap(),
             8 => native.design_types.reverse(),

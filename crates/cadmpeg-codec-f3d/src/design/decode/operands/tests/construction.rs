@@ -818,6 +818,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     historical_split_tool.preceding_candidate_faces =
         vec![FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar")];
     historical_split_tool.recipe_references = vec![DesignRecipeReference {
+        clause_index: 0,
         selector: 1,
         selector_offset: Some(0),
         token: "23".into(),
@@ -943,7 +944,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             3 => {
                 tool.try_set_members(vec![crate::records::identity::Located {
                     value: 201,
-                    offset: tool.members()[0].offset,
+                    offset: tool.members()[0].offset.expect("retained test source"),
                 }])
                 .unwrap();
             }
@@ -966,7 +967,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 target
                     .try_set_members(vec![crate::records::identity::Located {
                         value: 501,
-                        offset: target.members()[0].offset,
+                        offset: target.members()[0].offset.expect("retained test source"),
                     }])
                     .unwrap();
             }
@@ -1504,7 +1505,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 faces: cadmpeg_ir::features::FaceSelection::Native(stitch_scope.id),
                 merge_entities: Some(true),
                 create_solid: Some(true),
-                gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()),
+                gap_tolerance: Some(cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()
+                )),
             }
         ))
     );

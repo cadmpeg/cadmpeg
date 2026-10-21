@@ -897,7 +897,7 @@ mod tests {
             .expect("well-framed group with a class tail")
             .expect("class tail follows the complete channel grammar");
         let tail = group.class_tail.as_ref().unwrap();
-        assert_eq!(tail.bytes(), class_tail);
-        assert_eq!(tail.offset(), u64_from_index(tail_at));
+        assert_eq!(tail.bytes(), Some(class_tail.as_slice()));
+        assert_eq!(tail.offset(), Some(u64_from_index(tail_at)));
     }
 }

@@ -637,7 +637,10 @@ mod tests {
         let mut projected = project_configurations(&[table]).expect("ordered configuration table");
         bind_configuration_parameter_overrides(&mut projected, std::slice::from_ref(&parameter))
             .unwrap();
-        assert_eq!(projected[0].parameter_overrides[&parameter.id], "25 mm");
+        assert_eq!(
+            projected[0].parameter_overrides[&parameter.id],
+            "25 mm".into()
+        );
         assert!(projected[0].properties.is_empty());
         assert_eq!(
             unresolved_configuration_parameter_override_count(&projected),

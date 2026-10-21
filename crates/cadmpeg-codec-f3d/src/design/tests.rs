@@ -256,11 +256,14 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             Some(crate::records::entity_header::SketchHeaderReferences {
                 record_reference: None,
-                record_reference_offset: 0,
+                record_reference_offset: Some(0),
                 references: vec![30]
                     .into_iter()
                     .zip(vec![0])
-                    .map(|(value, offset)| crate::records::identity::Located { value, offset })
+                    .map(|(value, offset)| crate::records::identity::Located {
+                        value,
+                        offset: Some(offset),
+                    })
                     .collect(),
             }),
             crate::records::identity::ReferenceRun::unlocated(Vec::new()),

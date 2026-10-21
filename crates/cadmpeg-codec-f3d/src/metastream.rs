@@ -790,14 +790,23 @@ mod tests {
         for design_type in &types {
             assert!(design_type.byte_offset < design_type.type_guid_offset);
             assert_eq!(
-                string_at(design_type.type_guid_offset, 36),
+                string_at(
+                    design_type.type_guid_offset.expect("retained test source"),
+                    36
+                ),
                 design_type.type_guid.as_str()
             );
-            assert_eq!(u32_at(design_type.version_offset), design_type.version);
+            assert_eq!(
+                u32_at(design_type.version_offset.expect("retained test source")),
+                design_type.version
+            );
             if let crate::records::entity_header::BaseTypeGuid::Guid { value, offset } =
                 &design_type.base_type_guid
             {
-                assert_eq!(string_at(*offset, 36), value.as_str());
+                assert_eq!(
+                    string_at(offset.expect("retained test source"), 36),
+                    value.as_str()
+                );
             }
             let Some(entities) = design_type.entities.located_rows() else {
                 panic!("parsed entity locations");

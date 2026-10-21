@@ -97,7 +97,7 @@ pub(crate) fn edit(
     let scope = target.topology_scope;
     *target = history(
         target.id.clone(),
-        target.byte_offset,
+        target.byte_offset.expect("retained test source"),
         target.preamble,
         target.binding_budget_exceeded,
         states,

@@ -259,6 +259,46 @@ fn rectangular_parameters(count: u32, distance: f64) -> [DesignParameter; 4] {
     ]
 }
 
+fn rectangular_parameter_document(parameters: &[DesignParameter; 4]) -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::features::{DesignParameter as NeutralParameter, ParameterValue};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = parameters
+        .iter()
+        .enumerate()
+        .map(|(index, parameter)| {
+            let value = if index % 2 == 0 {
+                ParameterValue::Integer(
+                    parameter
+                        .evaluated_value()
+                        .get()
+                        .to_string()
+                        .parse()
+                        .unwrap(),
+                )
+            } else {
+                ParameterValue::Length(
+                    cadmpeg_ir::scalar::Length::new(parameter.evaluated_value().get() * 10.0)
+                        .unwrap(),
+                )
+            };
+            NeutralParameter {
+                id: crate::ids::neutral_parameter_id_parts("native", parameter.record_index),
+                owner: None,
+                ordinal: parameter.source_ordinal,
+                name: parameter.name().to_owned(),
+                expression: value.literal_expression(),
+                driving: true,
+                display: None,
+                value: Some(value),
+                properties: Default::default(),
+                pmi: None,
+                native_ref: Some(parameter.id.clone()),
+            }
+        })
+        .collect();
+    ir
+}
+
 #[test]
 fn rectangular_pattern_projects_adjacent_spacing_and_parameter() {
     let seed = point_entity("generated:test:point#seed", 2.0);
@@ -274,13 +314,25 @@ fn rectangular_pattern_projects_adjacent_spacing_and_parameter() {
         panic!("rectangular pattern did not resolve");
     };
     let directions = pattern.directions();
-    assert_eq!(directions[0].spacing().get(), 15.0);
-    assert_eq!(directions[1].spacing().get(), 0.0);
+    assert_eq!(
+        directions[0]
+            .spacing(&rectangular_parameter_document(&parameters))
+            .expect("retained test source")
+            .get(),
+        15.0
+    );
+    assert_eq!(
+        directions[1]
+            .spacing(&rectangular_parameter_document(&parameters))
+            .expect("retained test source")
+            .get(),
+        0.0
+    );
     assert!(matches!(
         directions[0].distance,
-        Some(cadmpeg_ir::sketches::SketchPatternDistance::Spacing { .. })
+        cadmpeg_ir::sketches::SketchPatternDistance::Spacing { .. }
     ));
-    assert!(directions[0].count_parameter.is_some());
+    assert!(directions[0].count.parameter().is_some());
     assert_eq!([pattern.rows().len(), pattern.rows()[0].len()], [3, 1]);
 }
 
@@ -299,12 +351,18 @@ fn rectangular_pattern_projects_total_span_and_keeps_span_parameter() {
         panic!("total-span rectangular pattern did not resolve");
     };
     let directions = pattern.directions();
-    assert_eq!(directions[0].spacing().get(), 15.0);
+    assert_eq!(
+        directions[0]
+            .spacing(&rectangular_parameter_document(&parameters))
+            .expect("retained test source")
+            .get(),
+        15.0
+    );
     assert!(matches!(
         directions[0].distance,
-        Some(cadmpeg_ir::sketches::SketchPatternDistance::Span { .. })
+        cadmpeg_ir::sketches::SketchPatternDistance::Span { .. }
     ));
-    assert!(directions[0].count_parameter.is_some());
+    assert!(directions[0].count.parameter().is_some());
 }
 
 #[test]
@@ -357,18 +415,24 @@ fn rectangular_pattern_transfers_two_instances_in_both_distance_forms() {
             panic!("two-instance rectangular pattern did not resolve");
         };
         let directions = pattern.directions();
-        assert_eq!(directions[0].spacing().get(), 15.0);
+        assert_eq!(
+            directions[0]
+                .spacing(&rectangular_parameter_document(&parameters))
+                .expect("retained test source")
+                .get(),
+            15.0
+        );
         match distance_form {
             RectangularPatternDistanceForm::AdjacentSpacing => {
                 assert!(matches!(
                     directions[0].distance,
-                    Some(cadmpeg_ir::sketches::SketchPatternDistance::Spacing { .. })
+                    cadmpeg_ir::sketches::SketchPatternDistance::Spacing { .. }
                 ));
             }
             RectangularPatternDistanceForm::SeedToFinalSpan => {
                 assert!(matches!(
                     directions[0].distance,
-                    Some(cadmpeg_ir::sketches::SketchPatternDistance::Span { .. })
+                    cadmpeg_ir::sketches::SketchPatternDistance::Span { .. }
                 ));
             }
         }

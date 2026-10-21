@@ -61,11 +61,9 @@ fn locus_pair_derives_each_form_and_preserves_its_smallest_extent() {
         assert_eq!(boundary.paired_byte_offset(), Some(u64::MAX));
         let mut overflow = boundary.into_draft().unwrap();
         overflow.frame_length += 1;
-        assert!(
-            Pair::try_new(overflow)
-                .unwrap_err()
-                .contains("paired_byte_offset")
-        );
+        assert!(Pair::try_new(overflow)
+            .unwrap_err()
+            .contains("paired_byte_offset"));
     }
 }
 
@@ -87,40 +85,32 @@ fn locus_pair_rejects_stale_wire_offsets_and_missing_geometry() {
             }
             let mut invalid = wire.clone();
             invalid[field] = 0.into();
-            assert!(
-                serde_json::from_value::<Pair>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
-            );
+            assert!(serde_json::from_value::<Pair>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
         }
         let mut invalid = wire;
         invalid["second_geometry_record_index"] = 0.into();
-        assert!(
-            serde_json::from_value::<Pair>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("second_geometry_record_index")
-        );
+        assert!(serde_json::from_value::<Pair>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("second_geometry_record_index"));
         let mut missing_second = pair.into_draft().unwrap();
         missing_second.loci[1].geometry_record_index = None;
         assert!(Pair::try_new(missing_second).is_err());
     }
     let mut missing_opaque = draft(NonZeroU32::new(40), 100, 80);
     missing_opaque.opaque_index = None;
-    assert!(
-        Pair::try_new(missing_opaque)
-            .unwrap_err()
-            .contains("opaque_index")
-    );
+    assert!(Pair::try_new(missing_opaque)
+        .unwrap_err()
+        .contains("opaque_index"));
     let mut stray_opaque = draft(None, 100, 80);
     stray_opaque.opaque_index = Some(Located {
         value: 4,
         offset: 135,
     });
-    assert!(
-        Pair::try_new(stray_opaque)
-            .unwrap_err()
-            .contains("opaque_index")
-    );
+    assert!(Pair::try_new(stray_opaque)
+        .unwrap_err()
+        .contains("opaque_index"));
 }

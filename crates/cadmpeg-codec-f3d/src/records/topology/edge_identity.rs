@@ -6,8 +6,8 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 use super::edge_recipe::DesignEdgeRecipeSelectorContext;
 use super::edge_recipe::DesignEdgeRecipeStructure;
 use super::edge_recipe::DesignSurfacePatchRecipeStructure;
-use super::fillet::HistoricalBinding;
 use super::fillet::deserialize_historical_binding;
+use super::fillet::HistoricalBinding;
 use super::historical_context::DesignEdgeRecipeReferenceContext;
 use super::historical_context::DesignHistoricalEdgeContext;
 use crate::records::dimensions::DesignRecipeReference;
@@ -246,6 +246,14 @@ impl DesignEdgeIdentityOperand {
             resolved_edge_slot: self.resolved_edge_slot,
             resolution_identity_id: self.resolution_identity_id,
         })
+    }
+    #[cfg(test)]
+    pub(crate) fn asset_id(&self) -> &DesignRelaxedGuidText {
+        &self.asset_id
+    }
+    #[cfg(test)]
+    pub(crate) fn context_id(&self) -> &DesignRelaxedGuidText {
+        &self.context_id
     }
     pub(crate) fn record_index(&self) -> u32 {
         self.record_index

@@ -174,7 +174,12 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         .copied()
         .chain([crate::records::identity::Located {
             value: 110,
-            offset: repeated_child[0].members().last().unwrap().offset + 11,
+            offset: repeated_child[0]
+                .members()
+                .last()
+                .unwrap()
+                .offset
+                .map(|offset| offset + 11),
         }])
         .collect();
     repeated_child[0].try_set_members(repeated_members).unwrap();

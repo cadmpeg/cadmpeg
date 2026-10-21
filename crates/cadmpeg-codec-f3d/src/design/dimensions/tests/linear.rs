@@ -514,7 +514,7 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
     assert!(matches!(
         crate::design::dimensions::symmetric_parallel_line_dimension_definition(&first, &second, (1, 1), &parameter, parameter_id.clone(), 1.0e-6),
         Some(SketchConstraintDefinitionInput::Distance { entities, parameter: actual })
-            if entities == vec![first.id().clone(), second.id().clone()] && actual == parameter_id
+            if entities == vec![first.id().clone(), second.id().clone()] && actual == cadmpeg_ir::Dimension::Parameter(parameter_id)
     ));
 
     let mut direct_parameter = parameter.clone();
@@ -565,7 +565,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             first: cadmpeg_ir::sketches::SketchLocus::Entity(ref first_id),
             second: cadmpeg_ir::sketches::SketchLocus::Entity(ref second_id),
             parameter: ref parameter_id,
-        } if first_id == first.id() && second_id == second.id() && parameter_id == &parameter
+        } if first_id == first.id() && second_id == second.id() && parameter_id.parameter() == Some(&parameter)
     ));
     assert!(directional_point_dimension(&[&first, &second], 3.0, parameter, 0.0).is_none());
 
@@ -624,7 +624,7 @@ fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
         Some(SketchConstraintDefinitionInput::Distance {
             ref entities,
             parameter: ref actual_parameter,
-        }) if entities == &[point.id().clone(), line.id().clone()] && actual_parameter == &parameter
+        }) if entities == &[point.id().clone(), line.id().clone()] && actual_parameter.parameter() == Some(&parameter)
     ));
 }
 
@@ -1012,7 +1012,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             definition,
             ..
         } if matches!(definition.kind(), SpatialSketchConstraintDefinitionInput::PointDistance { first, second, parameter: actual_parameter } if actual_sketch == &spatial_sketch.id
-            && actual_parameter == &neutral_parameter_id_parts(stream, 20)
+            && actual_parameter.parameter() == Some(&neutral_parameter_id_parts(stream, 20))
             && first == spatial_entities[0].id()
             && second == spatial_entities[1].id())
     ));
@@ -1099,7 +1099,12 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             crate::records::parameters::DesignParameterSource::new(
                 "Linear Dimension-6".into(),
                 symmetry_parameter.owner_record_index(),
-                symmetry_parameter.family_discriminator(),
+                symmetry_parameter.family_discriminator().map(|located| {
+                    crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }
+                }),
             )
             .unwrap(),
         )
@@ -1145,7 +1150,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
 
     let mut zero_parameter = parameter;
     zero_parameter.try_set_evaluated_value(0.0).unwrap();
-    let mut duplicate_pair = pair.clone().into_draft();
+    let mut duplicate_pair = pair.clone().into_draft().unwrap();
     duplicate_pair.loci[1].geometry_record_index = duplicate_pair.loci[0].geometry_record_index;
     let duplicate_pair = DesignDimensionLocusPair::try_new(duplicate_pair).unwrap();
     let duplicate = project_dimension_constraints(
@@ -1179,7 +1184,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let mut group_owner = owner.clone();
     {
         let mut wire =
-            crate::records::parameters::DesignParameterOwnerWire::from(group_owner.clone());
+            crate::records::parameters::DesignParameterOwnerWire::try_from(group_owner.clone())
+                .unwrap();
         wire.companion_record_index = group.companion_record_index;
         wire.record_index = group.companion_record_index - 1;
         wire.parameter_record_index = group.companion_record_index - 2;
@@ -1194,7 +1200,12 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             crate::records::parameters::DesignParameterSource::new(
                 zero_parameter.source_kind_str().into(),
                 Some(group_owner.record_index()),
-                zero_parameter.family_discriminator(),
+                zero_parameter.family_discriminator().map(|located| {
+                    crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }
+                }),
             )
             .unwrap(),
         )
@@ -1301,7 +1312,7 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     else {
         panic!("expected repeated distance")
     };
-    assert_eq!(actual, parameter);
+    assert_eq!(actual, cadmpeg_ir::Dimension::Parameter(parameter));
     assert!(matches!(
         measurements.as_slice(),
         [

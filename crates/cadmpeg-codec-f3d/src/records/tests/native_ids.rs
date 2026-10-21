@@ -41,7 +41,7 @@ fn timeline_id_binds_a_design_stream_and_frame_offset() {
     let mut wire = serde_json::to_value(source).unwrap();
     wire["id"] = "f3d:Design/BulkStream.dat:design-feature-timeline#authored".into();
     let document: DesignFeatureTimeline = serde_json::from_value(wire.clone()).unwrap();
-    assert!(document.byte_offset().is_none());
+    assert!(document.frame().byte_offset().is_none());
     assert_eq!(serde_json::to_value(document).unwrap(), wire);
 }
 

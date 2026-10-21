@@ -44,7 +44,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     pair.id = "f3d:Design/BulkStream.dat:design-dimension-locus-pair#0".into();
     assert_eq!(pair.companion_record_index, 228);
     assert_eq!(pair.record_index, 233);
-    assert_eq!(pair.frame_length(), 80);
+    assert_eq!(pair.frame_length(), Some(80));
     assert_eq!(pair.loci()[0].geometry_index(), 192);
     assert_eq!(pair.loci()[0].role, 0);
     assert_eq!(pair.loci()[1].geometry_index(), 194);
@@ -64,7 +64,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     let owner =
         DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
             id: "f3d:Design/BulkStream.dat:design-parameter-owner#300".into(),
-            byte_offset: pair.paired_byte_offset() + 59,
+            byte_offset: pair.paired_byte_offset().unwrap() + 59,
             frame_length: 104,
             class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
                 .unwrap(),
@@ -72,7 +72,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
             scope_record_index: 10,
             local_ordinal: 0,
             evaluated_value: 4.0,
-            evaluated_value_offset: pair.paired_byte_offset() + 99,
+            evaluated_value_offset: pair.paired_byte_offset().unwrap() + 99,
             parameter_record_index: 301,
             owned_ordinal: 3,
             variant: Some(0),
@@ -82,7 +82,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     assert_eq!(
         crate::design::decode::dimension_frames::following_dimension_companion_record_index(
             &pair.id,
-            pair.paired_byte_offset(),
+            pair.paired_byte_offset().expect("retained test source"),
             std::slice::from_ref(&owner),
             std::slice::from_ref(&parameter),
         ),
@@ -91,7 +91,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     assert_eq!(
         crate::design::decode::dimension_frames::following_dimension_companion_record_index(
             &pair.id,
-            pair.paired_byte_offset(),
+            pair.paired_byte_offset().expect("retained test source"),
             &[owner.clone(), owner],
             std::slice::from_ref(&parameter),
         ),
@@ -106,8 +106,8 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     let nested_end = nested.len();
     let nested = find_dimension_locus_pair(&nested, 0, nested_end, 228, &HashSet::from([192, 194]))
         .expect("nested paired dimension locus frame");
-    assert_eq!(nested.byte_offset(), 11);
-    assert_eq!(nested.paired_byte_offset(), 91);
+    assert_eq!(nested.byte_offset(), Some(11));
+    assert_eq!(nested.paired_byte_offset(), Some(91));
 
     let mut competing = bytes.clone();
     competing.extend_from_slice(&bytes);
@@ -143,7 +143,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     assert_eq!(pair.companion_record_index, 1290);
     assert_eq!(pair.governing_companion_record_index, 1290);
     assert_eq!(pair.record_index, 1394);
-    assert_eq!(pair.frame_length(), 74);
+    assert_eq!(pair.frame_length(), Some(74));
     assert_eq!(pair.loci()[0].role, 10);
     assert_eq!(pair.loci()[1].geometry_index(), 1109);
     assert_eq!(pair.loci()[1].role, 7);
@@ -160,10 +160,10 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     let nested =
         find_dimension_null_locus_pair(&nested, 0, nested_end, 1290, &HashSet::from([1109]))
             .expect("null-locus frame following another indexed frame");
-    assert_eq!(nested.byte_offset(), 11);
-    assert_eq!(nested.paired_byte_offset(), 85);
+    assert_eq!(nested.byte_offset(), Some(11));
+    assert_eq!(nested.paired_byte_offset(), Some(85));
 
-    let mut axis_pair = pair.clone().into_draft();
+    let mut axis_pair = pair.clone().into_draft().unwrap();
     axis_pair.loci[0].role = 14;
     axis_pair.loci[1].role = 3;
     let mut axis_pair =
@@ -185,7 +185,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             entity: ref actual_entity,
             axis: SketchAxis::Horizontal,
             parameter: ref actual_parameter,
-        }) if actual_entity == entity.id() && actual_parameter == &parameter
+        }) if actual_entity == entity.id() && actual_parameter.parameter() == Some(&parameter)
     ));
     assert!(null_locus_dimension_definition(
         &axis_pair,
@@ -196,7 +196,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         TEST_LINEAR_TOLERANCE
     )
     .is_none());
-    let mut draft = axis_pair.into_draft();
+    let mut draft = axis_pair.into_draft().unwrap();
     draft.loci[0].role = 13;
     axis_pair = crate::records::dimensions::DesignDimensionLocusPair::try_new(draft).unwrap();
     assert!(null_locus_dimension_definition(
@@ -223,7 +223,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual_entity,
             parameter: ref actual_parameter,
-        }) if actual_entity == radial_entity.id() && actual_parameter == &parameter
+        }) if actual_entity == radial_entity.id() && actual_parameter.parameter() == Some(&parameter)
     ));
     assert!(null_locus_dimension_definition(
         &pair,
@@ -272,7 +272,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     .expect("counted dimension locus frame");
     assert_eq!(group.companion_record_index, 240);
     assert_eq!(group.record_index, 249);
-    assert_eq!(group.frame_length, 101);
+    assert_eq!(group.frame_length, Some(101));
     assert_eq!(group.owner_reference, 172);
     assert_eq!(group.owner_role, 1);
     assert_eq!(group.state, 0);
@@ -310,7 +310,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
                         reference: crate::records::sketch_relations::SketchRelationReference::Index(
                             record_index,
                         ),
-                        offset,
+                        offset: Some(offset),
                         relation_ordinal: Some(0),
                     }
                 })
@@ -328,7 +328,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
                         reference: crate::records::sketch_relations::SketchRelationReference::Index(
                             record_index,
                         ),
-                        offset,
+                        offset: Some(offset),
                     }
                 })
                 .collect::<Vec<_>>())

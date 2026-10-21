@@ -60,7 +60,6 @@ fn offset_binding_fixture() -> (Vec<SketchConstraint>, Vec<DesignParameter>) {
             source_reversed: false,
         }],
         distance: (cadmpeg_ir::scalar::Length::new(5.0).unwrap()).into(),
-        parameter: None,
     };
     let constraint = |ordinal, definition| SketchConstraint {
         id: cadmpeg_ir::sketches::SketchConstraintId::mint(format!(
@@ -92,6 +91,6 @@ fn offset_dimension_binding_preserves_parameter_and_removes_annotation() {
     bind_offset_dimension_parameters(&mut constraints, &parameters);
     assert_eq!(constraints.len(), 1);
     assert!(matches!(constraints[0].definition.kind(),
-        SketchConstraintDefinitionInput::Offset { parameter: Some(driving), .. }
-            if driving.id == neutral_parameter_id(&parameters[0]) && !driving.negated));
+        SketchConstraintDefinitionInput::Offset { distance, pairs }
+            if distance.parameter() == Some(&neutral_parameter_id(&parameters[0])) && pairs.iter().all(|pair| !pair.source_reversed)));
 }

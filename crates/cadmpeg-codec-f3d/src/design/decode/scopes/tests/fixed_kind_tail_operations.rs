@@ -621,7 +621,7 @@ pub(super) fn fixed_kind_tail_operations(
             faces: cadmpeg_ir::features::FaceSelection::Native(native),
             thickness: Some(actual_thickness),
             side: Some(cadmpeg_ir::features::ThickenSide::Reverse),
-        })) if (native == "thicken-group") && actual_thickness.get() == 10.0
+        })) if (native == "thicken-group") && actual_thickness.literal().unwrap().get() == 10.0
     ));
     let mut bounded_face_thicken_group = thicken_group.clone();
     bounded_face_thicken_group.operand_role =
@@ -724,7 +724,7 @@ pub(super) fn fixed_kind_tail_operations(
             thickness: Some(actual_thickness),
             outward: Some(true),
             ..
-        })) if (native == "shell-group") && actual_thickness.get() == 5.0
+        })) if (native == "shell-group") && actual_thickness.literal().unwrap().get() == 5.0
     ));
     let compact_shell_at = bytes.len();
     let mut compact_shell = vec![0; 268];
@@ -856,7 +856,7 @@ pub(super) fn fixed_kind_tail_operations(
             thickness: Some(actual_thickness),
             outward: Some(true),
             ..
-        })) if (body == "shell-group" && removed.is_empty()) && actual_thickness.get() == 2.5
+        })) if (body == "shell-group" && removed.is_empty()) && actual_thickness.literal().unwrap().get() == 2.5
     ));
     {
         let construction = exact_direct_face_operation(
@@ -900,7 +900,7 @@ pub(super) fn fixed_kind_tail_operations(
             motion: cadmpeg_ir::features::FaceMotion::Offset {
                 distance: actual_distance
             },
-        })) if (native == "offset-group") && actual_distance.get() == 2.54
+        })) if (native == "offset-group") && actual_distance.literal().unwrap().get() == 2.54
     ));
     bytes[compact_thicken_at + 46] = 0;
     assert_eq!(
@@ -1193,7 +1193,7 @@ pub(super) fn fixed_kind_tail_operations(
                 faces: FaceSelection::Native(native),
                 distance: Some(distance),
                 method: cadmpeg_ir::features::SurfaceExtension::Linear,
-            }),) if native.ends_with(":design-record#500") && distance.get() == 0.4)));
+            }),) if native.ends_with(":design-record#500") && distance.literal().unwrap().get() == 0.4)));
 
     bytes[extend_distance_at + 40..extend_distance_at + 48]
         .copy_from_slice(&(-0.4f64).to_le_bytes());
@@ -1263,7 +1263,7 @@ pub(super) fn fixed_kind_tail_operations(
         }] if matches!((evaluation.definition(),), (FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
                 faces: FaceSelection::Native(native),
                 distance: Some(distance),
-            }),) if native.ends_with(":design-record#500") && distance.get() == -4.0)));
+            }),) if native.ends_with(":design-record#500") && distance.literal().unwrap().get() == -4.0)));
 
     let grouped_record_index = 600u32;
     let grouped_member_record_index = 601u32;

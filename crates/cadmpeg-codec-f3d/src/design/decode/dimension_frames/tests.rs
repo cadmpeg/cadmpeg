@@ -160,35 +160,35 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         { crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000) };
     assert_eq!(references.len(), 3);
     assert_eq!(references[0].selector, 1);
-    assert_eq!(references[0].selector_offset, 1_022);
+    assert_eq!(references[0].selector_offset, Some(1_022));
     assert_eq!(references[0].token, "13");
     assert_eq!(
         references[0].token_offset,
-        1_000 + u64_from_index(first_token_at)
+        Some(1_000 + u64_from_index(first_token_at))
     );
     assert_eq!(references[0].design_reference, 331);
     assert_eq!(
         references[0].design_reference_offset,
-        1_000 + u64_from_index(first_reference_at)
+        Some(1_000 + u64_from_index(first_reference_at))
     );
     assert_eq!(references[1].selector, 2);
-    assert_eq!(references[1].selector_offset, 1_048);
+    assert_eq!(references[1].selector_offset, Some(1_048));
     assert_eq!(references[1].token, "9");
     assert_eq!(
         references[1].token_offset,
-        1_000 + u64_from_index(second_token_at)
+        Some(1_000 + u64_from_index(second_token_at))
     );
     assert_eq!(references[1].design_reference, 303);
     assert_eq!(
         references[1].design_reference_offset,
-        1_000 + u64_from_index(second_reference_at)
+        Some(1_000 + u64_from_index(second_reference_at))
     );
     assert_eq!(references[2].selector, 2);
     assert_eq!(references[2].token, "9");
     assert_eq!(references[2].design_reference, 304);
     assert_eq!(
         references[2].design_reference_offset,
-        1_000 + u64_from_index(third_reference_at)
+        Some(1_000 + u64_from_index(third_reference_at))
     );
     let suffix_at = prefix.len() - 4;
     prefix.splice(
@@ -394,11 +394,11 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
     );
     assert_eq!(
         references[0].design_reference_offset,
-        1_000 + u64_from_index(reference_offsets[0])
+        Some(1_000 + u64_from_index(reference_offsets[0]))
     );
     assert_eq!(
         references[2].design_reference_offset,
-        1_000 + u64_from_index(reference_offsets[1])
+        Some(1_000 + u64_from_index(reference_offsets[1]))
     );
 
     let second_operand_at = reference_offsets[0] + 8;
@@ -501,10 +501,10 @@ fn face_recipe_decodes_five_group_reference_sequence() {
             (7, "0", 901),
         ]
     );
-    assert_eq!(references[0].selector_offset, 1_022);
-    assert_eq!(references[0].token_offset, 1_026);
-    assert_eq!(references[0].design_reference_offset, 1_036);
-    assert_eq!(references[1].design_reference_offset, 1_040);
+    assert_eq!(references[0].selector_offset, Some(1_022));
+    assert_eq!(references[0].token_offset, Some(1_026));
+    assert_eq!(references[0].design_reference_offset, Some(1_036));
+    assert_eq!(references[1].design_reference_offset, Some(1_040));
 
     let mut wrong_first_group_count = prefix.clone();
     wrong_first_group_count[18..22].copy_from_slice(&3u32.to_le_bytes());
@@ -680,10 +680,10 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     assert_eq!(frame.entity_genesis, 0x202);
     assert_eq!(
         frame.annotation_byte_offset(),
-        u64_from_index(annotation_byte_offset)
+        Some(u64_from_index(annotation_byte_offset))
     );
     assert_eq!(
-        frame.clone().into_draft().annotation_bytes,
+        frame.clone().into_draft().unwrap().annotation_bytes,
         [0xaa, 0xbb, 0xcc]
     );
     assert_eq!(frame.operands()[0].geometry_record_index, None);
@@ -691,6 +691,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
         frame
             .clone()
             .into_draft()
+            .unwrap()
             .return_members
             .iter()
             .map(|member| member.value.get())
@@ -699,7 +700,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     );
     assert_eq!(
         frame.paired_byte_offset(),
-        u64_from_index(paired_byte_offset)
+        Some(u64_from_index(paired_byte_offset))
     );
     assert_eq!(frame.owner_reference, 201);
 
@@ -753,12 +754,15 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     .expect("direct dimension presentation frame");
     assert_eq!(frame.class_tag.as_str(), "314");
     assert_eq!(frame.record_index, 332);
-    assert_eq!(frame.frame_length, u64_from_index(paired_offset));
+    assert_eq!(frame.frame_length, Some(u64_from_index(paired_offset)));
     assert_eq!(
         frame.presentation_byte_offset,
-        u64_from_index(presentation_offset)
+        Some(u64_from_index(presentation_offset))
     );
-    assert_eq!(frame.presentation_bytes, [0xaa, 0xbb, 0xcc]);
+    assert_eq!(
+        frame.presentation_bytes.as_ref().unwrap().data(),
+        Some([0xaa, 0xbb, 0xcc].as_slice())
+    );
     assert_eq!(frame.operands[0].geometry_record_index.get(), 306);
     assert_eq!(frame.operands[1].geometry_record_index.get(), 331);
     assert_eq!(frame.owner_reference, 270);

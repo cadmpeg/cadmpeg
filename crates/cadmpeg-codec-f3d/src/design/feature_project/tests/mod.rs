@@ -46,5 +46,5 @@ fn audit_regression_near_half_turn_retains_negative_axis() {
     ];
     let rotation = super::matrix_axis_angle(&matrix).unwrap();
     assert!(rotation.direction.z < 0.0);
-    assert!((rotation.angle.get() - theta).abs() <= 4.0 * f64::EPSILON);
+    assert!((rotation.angle.literal().unwrap().get() - theta).abs() <= 4.0 * f64::EPSILON);
 }

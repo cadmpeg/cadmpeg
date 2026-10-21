@@ -370,14 +370,14 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
                 value: "body".into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: None,
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 103,
-            offset: 0,
+            offset: Some(0),
         }),
     }];
     (bytes, scope, recipes)
@@ -765,7 +765,7 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
                 .try_into()
                 .expect("GUID"),
             recipe_record_index: 103,
-            recipe_record_byte_offset: recipes[0].byte_offset - 15,
+            recipe_record_byte_offset: recipes[0].byte_offset.unwrap() - 15,
             recipe_id: recipes[0].id.clone(),
             recipe_kind: crate::records::feature::scope::DesignFaceRecipeKind::Face,
             design: Some(crate::records::recipes::ConstructionRecipeDesign {

@@ -215,7 +215,10 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     else {
         panic!("expected a typed Draft definition");
     };
-    assert_eq!(angle.as_ref().map(|angle| angle.get()), Some(-0.25));
+    assert_eq!(
+        angle.as_ref().map(|angle| angle.literal().unwrap().get()),
+        Some(-0.25)
+    );
     assert_eq!(*outward, Some(true));
     assert!(pull.is_none());
     let FaceSelection::Historical {
@@ -304,20 +307,20 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
         [
             cadmpeg_ir::features::edge_treatments::VariableRadius {
                 parameter: 0.0,
-                radius: Length::ZERO,
+                radius: cadmpeg_ir::Dimension::Literal(Length::ZERO),
             },
             cadmpeg_ir::features::edge_treatments::VariableRadius {
                 parameter: 0.25,
-                radius: Length::new(4.0).unwrap(),
+                radius: cadmpeg_ir::Dimension::Literal(Length::new(4.0).unwrap()),
             },
             cadmpeg_ir::features::edge_treatments::VariableRadius {
                 parameter: 1.0,
-                radius: Length::ZERO,
+                radius: cadmpeg_ir::Dimension::Literal(Length::ZERO),
             },
         ]
     );
     assert_eq!(
-        tangency_weight.map(cadmpeg_ir::scalar::FiniteReal::get),
+        tangency_weight.map(|dimension| dimension.literal().unwrap().get()),
         Some(0.75)
     );
 }
@@ -353,11 +356,11 @@ fn variable_fillet_law_accepts_omitted_tangency_weight() {
         [
             cadmpeg_ir::features::edge_treatments::VariableRadius {
                 parameter: 0.0,
-                radius: Length::new(2.0).unwrap(),
+                radius: cadmpeg_ir::Dimension::Literal(Length::new(2.0).unwrap()),
             },
             cadmpeg_ir::features::edge_treatments::VariableRadius {
                 parameter: 1.0,
-                radius: Length::new(4.0).unwrap(),
+                radius: cadmpeg_ir::Dimension::Literal(Length::new(4.0).unwrap()),
             },
         ]
     );
@@ -513,7 +516,7 @@ fn localized_fillet_owner(
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
     {
-        let mut wire = DesignParameterOwnerWire::from(owner.clone());
+        let mut wire = DesignParameterOwnerWire::try_from(owner.clone()).unwrap();
         wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
         wire.record_index = record_index;
         wire.scope_record_index = 12;
@@ -720,7 +723,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                     },
                     tangency_weight: Some(weight),
                     ..
-                }] if weight.get() == 1.0 && actual_chord_length.get() == 2.5
+                }] if weight.literal().unwrap().get() == 1.0 && actual_chord_length.literal().unwrap().get() == 2.5
             )
     ));
     let chord_only_parameters = [parameter(120, 121, "ChordLen", Some("in"), 0.25)];
@@ -773,7 +776,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                     },
                     tangency_weight: None,
                     ..
-                }] if actual_chord_length.get() == 2.5
+                }] if actual_chord_length.literal().unwrap().get() == 2.5
             )
     ));
     let asymmetric_parameters = [
@@ -828,7 +831,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                     },
                     tangency_weight: Some(weight),
                     ..
-                }] if weight.get() == 1.0 && actual_offset_one.get() == 2.0 && actual_offset_two.get() == 7.0
+                }] if weight.literal().unwrap().get() == 1.0 && actual_offset_one.literal().unwrap().get() == 2.0 && actual_offset_two.literal().unwrap().get() == 7.0
             )
     ));
     operand_groups[0]
@@ -867,7 +870,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 radius: actual_radius,
             },
             tangency_weight: Some(weight),
-        } if weight.get() == 1.0 && actual_radius.get() == 5.0
+        } if weight.literal().unwrap().get() == 1.0 && actual_radius.literal().unwrap().get() == 5.0
     ));
     assert!(matches!(
         &groups[1],
@@ -877,7 +880,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 radius: actual_radius,
             },
             tangency_weight: Some(weight),
-        } if weight.get() == 0.75 && (selection == &operand_groups[1].id) && actual_radius.get() == 3.0
+        } if weight.literal().unwrap().get() == 0.75 && (selection == &operand_groups[1].id) && actual_radius.literal().unwrap().get() == 3.0
     ));
 
     let mut patch_scope = scope.clone();
@@ -1234,7 +1237,7 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
     assert_eq!(
         groups[0]
             .tangency_weight
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
+            .map(|dimension| dimension.literal().unwrap().get()),
         Some(0.75)
     );
     assert!(matches!(
@@ -1249,7 +1252,7 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
         points
             .as_slice()
             .iter()
-            .map(|point| (point.parameter.get(), point.radius.get()))
+            .map(|point| (point.parameter.get(), point.radius.literal().unwrap().get()))
             .collect::<Vec<_>>(),
         vec![(0.0, 2.0), (0.25, 4.0), (1.0, 6.0)]
     );

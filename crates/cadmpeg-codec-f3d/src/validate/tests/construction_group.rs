@@ -123,22 +123,22 @@ fn tail_findings(byte_offset: u64, flag: bool) -> Vec<cadmpeg_ir::report::check:
             frame
                 .try_set_trailing_flags(vec![DesignConstructionOperandFlag {
                     record_index: 102,
-                    byte_offset,
+                    byte_offset: Some(byte_offset),
                     class_tag: class_tag.clone(),
                     value: true,
-                    value_offset: byte_offset.saturating_add(22),
+                    value_offset: Some(byte_offset.saturating_add(22)),
                 }])
                 .unwrap();
         } else {
             frame
                 .try_set_trailing_dual_transforms(vec![DesignConstructionOperandDualTransform {
                     record_index: 102,
-                    byte_offset,
+                    byte_offset: Some(byte_offset),
                     class_tag: class_tag.clone(),
                     first_transform: SketchPlacementMatrix::IDENTITY,
-                    first_transform_offset: byte_offset.saturating_add(21),
+                    first_transform_offset: Some(byte_offset.saturating_add(21)),
                     second_transform: SketchPlacementMatrix::IDENTITY,
-                    second_transform_offset: byte_offset.saturating_add(149),
+                    second_transform_offset: Some(byte_offset.saturating_add(149)),
                 }])
                 .unwrap();
         }

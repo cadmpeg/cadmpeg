@@ -153,6 +153,7 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
     let id = FeatureId::mint("f3d:model:feature#extrude").unwrap();
     let topology = input(&id, 2);
     let mut features = [Feature {
+        needs_recompute: false,
         id,
         ordinal: 0,
         name: None,
@@ -241,6 +242,7 @@ fn feature_gate_changes_hole_namespace() {
     let id = FeatureId::mint("f3d:model:feature#hole").unwrap();
     let topology = input(&id, 2);
     let original = Feature {
+        needs_recompute: false,
         id,
         ordinal: 0,
         name: None,
@@ -263,7 +265,9 @@ fn feature_gate_changes_hole_namespace() {
                         cadmpeg_ir::features::holes::HoleKind::Simple,
                     ),
                     None,
-                    Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
+                    Some(cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                    )),
                 )
                 .unwrap(),
                 extent: None,

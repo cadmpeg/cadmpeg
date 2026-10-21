@@ -121,12 +121,15 @@ fn source_draft() -> super::DesignSketchProfileOperandDraft {
         scope_reference_ordinal: 0,
         record_index: 7,
         byte_offset: 0,
-        class_tag: "300".try_into().unwrap(),
-        paired_class_tag: "301".try_into().unwrap(),
+        class_tag: "300".to_owned().try_into().unwrap(),
+        paired_class_tag: "301".to_owned().try_into().unwrap(),
         paired_byte_offset: 160,
-        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".try_into().unwrap(),
+        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+            .to_owned()
+            .try_into()
+            .unwrap(),
         asset_id_offset: 32,
-        entity_id: "Sketch_1".try_into().unwrap(),
+        entity_id: "Sketch_1".to_owned().try_into().unwrap(),
         entity_reference_offset: 80,
         region_selection: Some(selection),
     }
@@ -149,7 +152,8 @@ fn sketch_profile_document_has_ordered_region_members_without_source_positions()
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
     source.retain_source(&mut fidelity, "scope", "extrude_profile");
     assert_eq!(
-        fidelity.metadata["scope.extrude_profile.region_selection.regions.0.members.0.incidence_words_offset"],
+        fidelity.metadata
+            ["scope.extrude_profile.region_selection.regions.0.members.0.incidence_words_offset"],
         "252"
     );
     let mut restored_fidelity = cadmpeg_ir::SourceFidelity::default();
