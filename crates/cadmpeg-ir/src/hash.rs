@@ -600,7 +600,7 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
-            "224e96104fea391ebe17d8c507a485d8f1cdf55d32cd079624246bec39ae1b72"
+            "ab279134669e6a3d2a46d3f06a7885d8bd8c496ea6063fc25f1d6218d3ccd287"
         );
         assert_eq!(
             document_local_sha256(
@@ -611,7 +611,7 @@ mod tests {
                 "pin:test:source-image#0"
             )
             .unwrap(),
-            "ab55b3269d93d9cf9a76ba6b0ffe0166598d143349b52f545569bfe77768366b"
+            "f7e3c741c5340b0d21cffef31e21089912d46c1a252aa3bb48cedf547f73d4fa"
         );
     }
 
@@ -697,7 +697,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "28da9611ed9814d3fcd50f95d90199f4dfa0bf578a430e8356d735a428539cb8"
+            "d5eac1dd4e3334e168e07e143f0061ad393f4f5739304cad716a0f1d8648ab66"
         );
         assert_eq!(
             document_local_sha256(

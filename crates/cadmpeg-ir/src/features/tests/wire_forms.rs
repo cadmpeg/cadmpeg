@@ -1600,3 +1600,21 @@ fn the_extrude_start_and_termination_unit_forms_reject_an_unknown_key() {
         assert!(error.contains("zz_bogus"), "angular {kind}: {error}");
     }
 }
+
+#[test]
+fn sheet_metal_thickness_sides_name_themselves_on_the_wire() {
+    use crate::features::SheetMetalThicknessSide;
+
+    for (side, wire) in [
+        (SheetMetalThicknessSide::Forward, "forward"),
+        (SheetMetalThicknessSide::Reverse, "reverse"),
+        (SheetMetalThicknessSide::Symmetric, "symmetric"),
+    ] {
+        assert_eq!(serde_json::to_value(side).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<SheetMetalThicknessSide>(serde_json::json!(wire)).unwrap(),
+            side
+        );
+    }
+    assert!(serde_json::from_value::<SheetMetalThicknessSide>(serde_json::json!("both")).is_err());
+}

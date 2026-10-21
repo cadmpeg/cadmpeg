@@ -95,8 +95,8 @@ def load_decode_refusal(report_path: Path) -> tuple[dict[str, object] | None, st
         return None, f"decode refusal report is unavailable or invalid: {error}"
     if not isinstance(payload, dict):
         return None, "decode refusal report is not a JSON object"
-    if payload.get("ir_version") != "6":
-        return None, 'decode refusal report does not use ir_version "6"'
+    if payload.get("ir_version") != "7":
+        return None, 'decode refusal report does not use ir_version "7"'
     if payload.get("command") != "dump":
         return None, "decode refusal report command is not dump"
     if payload.get("status") != "refused":
