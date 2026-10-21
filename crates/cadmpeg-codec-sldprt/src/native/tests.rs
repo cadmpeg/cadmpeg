@@ -581,14 +581,16 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     );
     let lane = &mut native.feature_input_lanes[0];
     for (index, local_id) in [(1, 7u32), (2, 8u32)] {
-        let offset = usize::try_from(lane.sketch_entities[index].offset()).unwrap() + 88;
+        let offset = usize::try_from(lane.sketch_entities[index].offset().expect("source offset"))
+            .unwrap()
+            + 88;
         lane.native_payload[offset..offset + 4].copy_from_slice(&local_id.to_le_bytes());
     }
     for entity in &mut lane.sketch_entities {
         *entity = entity.with_test_identity(
             crate::resolved_features::markers::marker_object_index(
                 &lane.native_payload,
-                usize::try_from(entity.offset()).unwrap(),
+                usize::try_from(entity.offset().expect("source offset")).unwrap(),
             ),
             entity.local_id(),
         );
@@ -803,7 +805,8 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
         .with_test_identity(lane.sketch_entities[1].object_index(), Some(local_id));
     let local_id_offset = crate::resolved_features::markers::marker_local_id_offset(
         &lane.native_payload,
-        usize::try_from(lane.sketch_entities[1].offset()).expect("marker offset"),
+        usize::try_from(lane.sketch_entities[1].offset().expect("source offset"))
+            .expect("marker offset"),
     )
     .expect("local id offset");
     lane.native_payload[local_id_offset..local_id_offset + 4]
@@ -1060,7 +1063,13 @@ fn native_load_refuses_a_forged_object_name_length_byte_after_a_store() {
 
     // Byte five of an object-name record is its UTF-16 length; the name's own
     // `value` and every later record's offset derive from it.
-    let length_byte = usize::try_from(typed.feature_input_lanes[0].names[0].offset).unwrap() + 5;
+    let length_byte = usize::try_from(
+        typed.feature_input_lanes[0].names[0]
+            .offset
+            .expect("source offset"),
+    )
+    .unwrap()
+        + 5;
     let stated = typed.feature_input_lanes[0].native_payload[length_byte];
     typed.feature_input_lanes[0].native_payload[length_byte] = stated + 1;
 

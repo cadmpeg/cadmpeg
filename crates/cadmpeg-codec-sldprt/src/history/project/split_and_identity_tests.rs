@@ -362,7 +362,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "3deg".into());
 
-    let projected = project_features(&[FeatureHistory {
+    let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
@@ -381,8 +381,8 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
             extend_surface,
             draft,
         ],
-    }])
-    .unwrap();
+    };
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
 
     assert!(matches!(
         projected[0].evaluation.definition(),

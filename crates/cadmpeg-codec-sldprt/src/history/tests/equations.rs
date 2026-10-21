@@ -8,13 +8,13 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::SldprtCodec;
 use crate::test_support::container::make_block;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::history::resolved_features_payload_with_names;
 use crate::test_support::history::resolved_features_payload_with_names_relation_and_scalar;
 use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
+use crate::SldprtCodec;
 
 const EPS_PARAMETER_VALUE: f64 = 1.0e-12;
 
@@ -129,11 +129,9 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             cadmpeg_ir::scalar::FiniteReal::new(1.25).unwrap()
         ))
     );
-    assert!(
-        parameters
-            .iter()
-            .all(|parameter| parameter.owner.as_ref() == Some(&decoded.ir().model.features[0].id))
-    );
+    assert!(parameters
+        .iter()
+        .all(|parameter| parameter.owner.as_ref() == Some(&decoded.ir().model.features[0].id)));
 
     {
         let mut ir = decoded.ir_mut();
@@ -193,7 +191,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             .iter()
             .find(|parameter| parameter.name == "Radius")
             .and_then(|parameter| parameter.value.as_ref()),
-        Some(ParameterValue::Length(actual_length)) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 2.0
+        Some(ParameterValue::Length(actual_length)) if actual_length.get() == 2.0
     ));
     assert_eq!(
         regenerated
@@ -414,13 +412,11 @@ fn decode_evaluates_parameter_dependency_expressions() {
             .ordinal
     };
     assert!(ordinal("Later") < ordinal("Forward"));
-    assert!(
-        !cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-            .expect("validate the neutral model")
-            .findings
-            .iter()
-            .any(|finding| finding.message.contains("parameter dependency"))
-    );
+    assert!(!cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("validate the neutral model")
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("parameter dependency")));
 }
 
 #[test]
@@ -783,7 +779,7 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
 
 #[test]
 fn configuration_local_modeling_edits_without_brep_are_synthesized() {
-    use cadmpeg_ir::codec::write::{EncodeInput, Encoder, WritePath, target::TargetRequest};
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, WritePath};
     use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -878,13 +874,11 @@ fn configuration_local_modeling_edits_without_brep_are_synthesized() {
             Some(ParameterValue::Length(Length::new(150.0).unwrap())),
         )
         .unwrap();
-    assert!(
-        edited
-            .model
-            .features
-            .iter()
-            .any(|feature| feature.needs_recompute)
-    );
+    assert!(edited
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.needs_recompute));
     let inactive = edited
         .model
         .configurations
@@ -912,12 +906,11 @@ fn configuration_local_modeling_edits_without_brep_are_synthesized() {
         plan.report().write_path(),
         WritePath::Synthesized { .. }
     ));
-    assert!(
-        plan.report()
-            .losses
-            .iter()
-            .any(|loss| loss.code.local_code() == "evaluation.stale")
-    );
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "evaluation.stale"));
     let mut encoded = Vec::new();
     plan.write_to(&mut encoded).unwrap();
     let regenerated = SldprtCodec
@@ -1007,7 +1000,7 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
             },
             op: BooleanOp::Join,
             ..
-        }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 25.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 25.0
     ));
     let parameter = decoded
         .ir()

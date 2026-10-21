@@ -437,22 +437,22 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     );
     let mut curve = marker("curve", Some([0.003, 0.004]));
     curve.feature_ref = Some("sketch-native".into());
-    curve = curve.with_test_position(1, curve.offset());
+    curve = curve.with_test_position(1, curve.offset().expect("source offset"));
     curve = curve.with_test_position(curve.ordinal(), 200);
     curve.reclassify(SketchInputKind::LineOrCircle);
     let mut endpoint = marker("endpoint", Some([0.005, 0.006]));
     endpoint.feature_ref = Some("sketch-native".into());
-    endpoint = endpoint.with_test_position(2, endpoint.offset());
+    endpoint = endpoint.with_test_position(2, endpoint.offset().expect("source offset"));
     endpoint = endpoint.with_test_position(endpoint.ordinal(), 2);
     endpoint.links = point.links.clone();
     let mut arc = marker("arc", None);
     arc.feature_ref = Some("sketch-native".into());
-    arc = arc.with_test_position(3, arc.offset());
+    arc = arc.with_test_position(3, arc.offset().expect("source offset"));
     arc = arc.with_test_position(arc.ordinal(), 3);
     arc.reclassify(SketchInputKind::Arc);
     let mut arc_start = marker("arc-start", Some([0.001, 0.0]));
     arc_start.feature_ref = Some("sketch-native".into());
-    arc_start = arc_start.with_test_position(4, arc_start.offset());
+    arc_start = arc_start.with_test_position(4, arc_start.offset().expect("source offset"));
     arc_start = arc_start.with_test_position(arc_start.ordinal(), 4);
     arc_start.links = crate::records::SketchInputLinks::new(
         0,
@@ -463,17 +463,17 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     );
     let mut arc_end = marker("arc-end", Some([0.0, 0.001]));
     arc_end.feature_ref = Some("sketch-native".into());
-    arc_end = arc_end.with_test_position(5, arc_end.offset());
+    arc_end = arc_end.with_test_position(5, arc_end.offset().expect("source offset"));
     arc_end = arc_end.with_test_position(arc_end.ordinal(), 5);
     arc_end.links = arc_start.links.clone();
     let mut arc_center = marker("arc-center", Some([0.0, 0.0]));
     arc_center.feature_ref = Some("sketch-native".into());
-    arc_center = arc_center.with_test_position(6, arc_center.offset());
+    arc_center = arc_center.with_test_position(6, arc_center.offset().expect("source offset"));
     arc_center = arc_center.with_test_position(arc_center.ordinal(), 6);
     let triangle_point = |id: &str, ordinal, offset, coordinates_m| {
         let mut point = marker(id, Some(coordinates_m));
         point.feature_ref = Some("sketch-native".into());
-        point = point.with_test_position(ordinal, point.offset());
+        point = point.with_test_position(ordinal, point.offset().expect("source offset"));
         point = point.with_test_position(point.ordinal(), offset);
         point
     };
@@ -485,7 +485,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     let triangle_line = |id: &str, ordinal, offset, first: &str, second: &str| {
         let mut line = marker(id, Some([0.0, 0.0]));
         line.feature_ref = Some("sketch-native".into());
-        line = line.with_test_position(ordinal, line.offset());
+        line = line.with_test_position(ordinal, line.offset().expect("source offset"));
         line = line.with_test_position(line.ordinal(), offset);
         line.reclassify(SketchInputKind::LineOrCircle);
         line.links = crate::records::SketchInputLinks::new(
@@ -510,7 +510,8 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     ];
     let mut display_handle = marker("display-handle", Some([0.030, 0.030]));
     display_handle.feature_ref = Some("sketch-native".into());
-    display_handle = display_handle.with_test_position(13, display_handle.offset());
+    display_handle =
+        display_handle.with_test_position(13, display_handle.offset().expect("source offset"));
     display_handle = display_handle.with_test_position(display_handle.ordinal(), 300);
     display_handle.reclassify(SketchInputKind::Arc);
     payload.resize(400, 0);

@@ -266,7 +266,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         Some(
             cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Diameter {
                 entity: circle.id().clone(),
-                parameter: parameter.id,
+                parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
             }
         )
     );
@@ -354,7 +354,7 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(second_line.id().clone()),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -416,7 +416,7 @@ fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(intended_line.id().clone()),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -456,7 +456,9 @@ fn dynamic_point_line_relation_uses_unique_complete_roster_line() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }
@@ -603,7 +605,7 @@ fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -669,7 +671,9 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
         .unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first_line.id().clone(), second_line.id().clone()],
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
     assert_eq!(
@@ -735,7 +739,7 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(second.id().clone()),
-            parameter: parameter.id.clone(),
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
         })
     );
 
@@ -759,7 +763,7 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
         second: SketchLocus::Entity(
             SketchEntityId::mint("synthetic:test:id#second-point").unwrap(),
         ),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     assert!(!relation_constraint_is_inactive(
         Some(&parameter),
@@ -885,7 +889,9 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: first_locus.clone(),
             second: second_locus.clone(),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 
@@ -907,7 +913,9 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
         Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: first_locus.clone(),
             second: second_locus.clone(),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 
@@ -929,7 +937,9 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
         Some(SketchConstraintDefinitionInput::VerticalDistance {
             first: first_locus,
             second: second_locus,
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }
@@ -966,7 +976,7 @@ fn dynamic_point_distance_uses_unique_complete_roster() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
             second: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap()),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -1006,7 +1016,7 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
         Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
             second: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap()),
-            parameter: parameter.id.clone(),
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
         })
     );
 
@@ -1040,7 +1050,9 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
             second: SketchLocus::Entity(
                 SketchEntityId::mint("synthetic:test:id#vertical-second").unwrap()
             ),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }
@@ -1130,7 +1142,7 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
         Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(second.id().clone()),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -1203,7 +1215,7 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Center(arc.id().clone()),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -1364,7 +1376,9 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(alternate_line.id().clone()),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }
@@ -1465,7 +1479,9 @@ fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
         .unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first_alternate.id().clone(), second_line.id().clone()],
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
     assert_eq!(
@@ -1519,7 +1535,9 @@ fn dynamic_line_distance_uses_unique_complete_roster() {
         .unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }

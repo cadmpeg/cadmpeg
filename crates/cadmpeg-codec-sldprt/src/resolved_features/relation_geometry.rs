@@ -2462,7 +2462,7 @@ fn declared_entity_handle_declared_child_pairs<'a>(
         if !lane.classes.iter().any(|class| {
             class.name == class_name
                 && class.offset > radial.offset()
-                && next_marker_offset.is_none_or(|end| class.offset < end)
+                && next_marker_offset.is_none_or(|end| class.offset < Some(end))
         }) {
             continue;
         }
@@ -3254,7 +3254,7 @@ mod relation_geometry_tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            driving: true,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -3450,7 +3450,7 @@ mod relation_geometry_tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            driving: true,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -3915,7 +3915,7 @@ mod relation_geometry_tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            driving: true,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -3965,7 +3965,7 @@ mod relation_geometry_tests {
             panic!("tagged marker roster has a unique point-line witness");
         };
         assert_eq!(
-            parameter,
+            parameter.parameter().expect("canonical relation parameter"),
             &ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
         );
         let point_entity = entities

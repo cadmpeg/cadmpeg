@@ -638,7 +638,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         ref shape,
-        extent: Some(LinearTermination::Blind { length }),
+        extent: Some(LinearTermination::Blind { ref length }),
         ..
     }) = projected
     else {

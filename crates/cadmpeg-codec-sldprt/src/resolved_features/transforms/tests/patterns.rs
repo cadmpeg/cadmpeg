@@ -661,7 +661,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             seeds: Vec::new(),
             pattern: PatternKind::new(PatternTransform::Linear {
                 direction: None,
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                distance: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap().into(),
                 count: cadmpeg_ir::Dimension::Literal(3),
                 second: None,
             })
@@ -752,7 +752,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             seeds: Vec::new(),
             pattern: PatternKind::new(PatternTransform::Linear {
                 direction: None,
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                distance: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap().into(),
                 count: cadmpeg_ir::Dimension::Literal(3),
                 second: None,
             })
@@ -820,11 +820,11 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             pattern: admitted_pattern,
         }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
                 direction: Some(actual_direction),
-                spacing: actual_spacing,
-                count: 3,
+                distance: actual_spacing,
+                count: cadmpeg_ir::Dimension::Literal(3),
                 ..
             } if (seeds == &[PatternSeed::Feature(features[2].id.clone())]
-            && *actual_direction == Vector3::new(-1.0, 0.0, 0.0)) && actual_spacing.get() == 19.0)
+            && *actual_direction == Vector3::new(-1.0, 0.0, 0.0)) && crate::history::project::source_dimension_value(actual_spacing.dimension(), std::slice::from_ref(&derived_history)).unwrap().get() == 19.0)
     ));
 
     let mut mirror_history = history.clone();
@@ -1488,7 +1488,12 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         &SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#bound-point-0").unwrap())
     );
     assert_eq!(second, &SketchLocus::Entity(solver_line_id));
-    assert_eq!(parameter_ref, &parameter.id);
+    assert_eq!(
+        parameter_ref
+            .parameter()
+            .expect("canonical relation parameter"),
+        &parameter.id
+    );
 }
 
 #[test]

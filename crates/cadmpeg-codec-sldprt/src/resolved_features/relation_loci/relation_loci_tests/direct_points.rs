@@ -96,7 +96,9 @@ fn dynamic_point_distance_uses_direct_point_roster_when_ordinal_pair_misses() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(target.id().clone()),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }
@@ -141,7 +143,9 @@ fn dynamic_point_line_uses_roster_line_when_point_is_explicit() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }
@@ -235,7 +239,9 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }

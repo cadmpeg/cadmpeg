@@ -73,7 +73,7 @@ fn id_prefix_positions_match_the_prefix_filter() {
 #[test]
 fn empty_swift_pattern_uses_one_native_hole_join() {
     let features = pattern_hole_features();
-    let context = pattern_hole_nominal_context(&features);
+    let context = pattern_hole_nominal_context(&features, &[]);
     assert_eq!(
         context.get("Hole Pattern6").copied().map(PositiveReal::get),
         Some(6.1468)
@@ -127,7 +127,7 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         vec![FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar")],
         simple_hole_definition(6.1468),
     ));
-    assert!(pattern_hole_nominal_context(&ambiguous).is_empty());
+    assert!(pattern_hole_nominal_context(&ambiguous, &[]).is_empty());
 
     let mut unresolved = features;
     let mut unresolved_hole = neutral_feature(
@@ -144,7 +144,7 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         shape.try_edit(|_, _, diameter| *diameter = None).unwrap();
     });
     unresolved.push(unresolved_hole);
-    assert!(pattern_hole_nominal_context(&unresolved).is_empty());
+    assert!(pattern_hole_nominal_context(&unresolved, &[]).is_empty());
 }
 
 #[test]
@@ -193,9 +193,13 @@ fn pattern_hole_index_matches_the_feature_scans() {
                         && native(candidate)
                 })
                 .filter_map(|candidate| match candidate.evaluation.definition() {
-                    FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) => {
-                        Some(shape.diameter().map(PositiveReal::from_assigned_length))
-                    }
+                    FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) => Some(
+                        shape
+                            .diameter()
+                            .and_then(cadmpeg_ir::Dimension::literal)
+                            .copied()
+                            .map(PositiveReal::from_assigned_length),
+                    ),
                     _ => None,
                 })
                 .take(2)
@@ -288,7 +292,7 @@ fn pattern_hole_index_matches_the_feature_scans() {
         }
         let expected = linear(&features);
         found += expected.len();
-        assert_eq!(pattern_hole_nominal_context(&features), expected);
+        assert_eq!(pattern_hole_nominal_context(&features, &[]), expected);
     }
     assert!(found > 0);
 }

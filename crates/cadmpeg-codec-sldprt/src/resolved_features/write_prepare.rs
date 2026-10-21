@@ -1509,9 +1509,9 @@ mod source_less_lane_tests {
 
         assert_eq!(lanes.len(), 2);
         assert_eq!(lanes[0].configuration.as_deref(), Some("0"));
-        assert_eq!(lanes[0].native_payload, [9]);
+        assert_eq!(lanes[0].native_payload.as_slice(), [9]);
         assert_eq!(lanes[1].configuration.as_deref(), Some("1"));
-        assert_eq!(lanes[1].native_payload, [1, 2]);
+        assert_eq!(lanes[1].native_payload.as_slice(), [1, 2]);
     }
 
     #[test]

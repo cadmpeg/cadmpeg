@@ -2,7 +2,7 @@ use super::{planar_fixture, project_relation_bindings};
 use crate::records::{FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId, ParameterValue};
+use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchLocus,
@@ -53,7 +53,7 @@ fn project_roster_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
     let expected = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Entity(entities[0].id().clone()),
         second: SketchLocus::Entity(entities[1].id().clone()),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -126,7 +126,7 @@ fn project_roster_point_line_with_policy(policy: &DecodePolicy) -> Result<(), Co
     let expected = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Entity(point.id().clone()),
         second: SketchLocus::Entity(line.id().clone()),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;

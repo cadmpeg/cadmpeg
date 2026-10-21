@@ -365,13 +365,18 @@ fn indexed_feature_objects_match_the_linear_scans() {
     }
     assert!(found > 0 && found < 300);
     let probes = (0..200).map(|_| u64::from(next(2_100))).collect::<Vec<_>>();
-    for start in lane.names.iter().map(|name| name.offset).chain(probes) {
+    for start in lane
+        .names
+        .iter()
+        .filter_map(|name| name.offset)
+        .chain(probes)
+    {
         let linear = histories
             .iter()
             .flat_map(|history| &history.features)
             .filter_map(|feature| feature_object_name(feature, &lane))
-            .filter(|candidate| candidate.offset > start)
-            .map(|candidate| candidate.offset)
+            .filter(|candidate| candidate.offset.is_some_and(|offset| offset > start))
+            .filter_map(|candidate| candidate.offset)
             .min()
             .and_then(|offset| usize::try_from(offset).ok())
             .unwrap_or(PAYLOAD_LEN);
