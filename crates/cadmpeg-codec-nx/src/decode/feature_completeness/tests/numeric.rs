@@ -12,3 +12,25 @@ fn expression_completeness_refuses_inexact_integer_value() {
         super::super::incomplete_expression_parameters(&ir).expect("expression check is admitted");
     assert_eq!(incomplete, [ir.model.parameters[0].id.clone()].into());
 }
+
+#[test]
+fn unbound_source_text_cannot_resolve_through_an_evaluator_internal_name() {
+    let mut ir = super::one_incomplete_expression_parameter();
+    ir.model.parameters[0].expression = "1".into();
+    ir.model.parameters[0].value = Some(cadmpeg_ir::features::ParameterValue::Real(
+        cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+    ));
+    let mut unresolved = ir.model.parameters[0].clone();
+    unresolved.id =
+        cadmpeg_ir::features::ParameterId::mint("test:model:parameter#unbound").unwrap();
+    unresolved.expression = "p0 + 1".into();
+    unresolved.value = Some(cadmpeg_ir::features::ParameterValue::Real(
+        cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
+    ));
+    let unresolved_id = unresolved.id.clone();
+    ir.model.parameters.push(unresolved);
+    assert_eq!(
+        super::super::incomplete_expression_parameters(&ir).unwrap(),
+        [unresolved_id].into()
+    );
+}
