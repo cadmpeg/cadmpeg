@@ -149,8 +149,10 @@ fn design_operand_and_sheet_ownership_is_independent_of_delivery_depth() {
         r#"<Cells Count="1"><Cell address="A1" content="12"/></Cells>"#,
     ] {
         let document = format!(
-            r#"<Document SchemaVersion="4"><Objects Count="2"><Object name="Feature" type="PartDesign::Feature"/><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects><ObjectData Count="2">
-<Object name="Feature"><Properties Count="3">
+            r#"<Document SchemaVersion="4"><Objects Count="3"><Object name="Body" type="PartDesign::Body"/><Object name="Feature" type="PartDesign::Feature"/><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects><ObjectData Count="3">
+<Object name="Body"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Feature"/></LinkList></Property></Properties></Object>
+<Object name="Feature"><Properties Count="4">
+<Property name="BaseFeature" type="App::PropertyLink"><Link value=""/></Property>
 <Property name="Depth" type="App::PropertyLength"><Float value="6"/></Property>
 <Property name="Length2" type="App::PropertyLength"><Float value="5"/></Property>
 <Property name="UserNote" type="App::PropertyString"><String value="keep this extra"/></Property>
@@ -208,5 +210,32 @@ fn design_operand_and_sheet_ownership_is_independent_of_delivery_depth() {
                 )
             );
         }
+    }
+}
+
+#[test]
+fn dynamic_numeric_application_extras_keep_model_ownership_at_geometry_depth() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="Application" type="App::FeaturePython"/></Objects><ObjectData Count="1"><Object name="Application"><Properties Count="2">
+<Property name="AngleMax" type="App::PropertyAngle" group="Assembly"><Float value="90"/></Property>
+<Property name="AngleMin" type="App::PropertyAngle" group="Assembly"><Float value="-90"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let full = decode(document, DecodeDepth::Full);
+    let geometry = decode(document, DecodeDepth::Geometry);
+    assert!(full.ir().model.parameters.is_empty());
+    assert!(geometry.ir().model.parameters.is_empty());
+    assert_eq!(geometry.ir().model.attributes, full.ir().model.attributes);
+    assert_eq!(geometry.report().losses, full.report().losses);
+    for (name, expected) in [("AngleMax", 90.0), ("AngleMin", -90.0)] {
+        let attribute = full
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .find(|attribute| attribute.name == name)
+            .unwrap();
+        assert_eq!(
+            attribute.values,
+            vec![cadmpeg_ir::attributes::AttributeValue::float(expected).unwrap()]
+        );
     }
 }

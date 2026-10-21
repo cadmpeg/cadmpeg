@@ -75,6 +75,8 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
                 PropertyBody::Persisted {dynamic:Some(dynamic),..} if dynamic.group != "CADIR")
                 || object.type_name == "App::VarSet";
             if dynamic_parameter
+                && (crate::design::is_design_object(&object.type_name)
+                    || object.type_name == "App::VarSet")
                 && !matches!(
                     property.name.as_str(),
                     "Label" | "Label2" | "Visibility" | "Suppressed"
@@ -90,10 +92,10 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
                 ) {
                     return true;
                 }
-                let native_only = matches!(
-                    object.type_name.as_str(),
-                    "PartDesign::Feature" | "PartDesign::FeatureBase"
-                );
+                // PartDesign::Feature is always StoredGeometry, including
+                // inside a Body where it has no separate product projection.
+                // FeatureBase can instead fall back to a Native operation.
+                let native_only = object.type_name == "PartDesign::FeatureBase";
                 let scalar_operand = !matches!(property.name.as_str(), "Depth" | "Length2")
                     || crate::persistence::scalar_value_tag(&property.type_name).is_some();
                 if crate::property_policy::has_neutral_form(&property.name)
