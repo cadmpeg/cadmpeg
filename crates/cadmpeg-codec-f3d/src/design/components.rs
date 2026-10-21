@@ -871,19 +871,20 @@ mod tests {
     }
 
     fn binding(offset: u64, entity_suffix: u64, body: &str) -> DesignBodyBinding {
-        serde_json::from_value(serde_json::json!({
-            "id": format!("{STREAM}:design-body-binding#{offset}"),
-            "stream": "Design/BulkStream.dat",
-            "pair_count": 1,
-            "pair_ordinal": 0,
-            "asm_body_key": 11,
-            "asm_body_key_offset": offset,
-            "entity_suffix": entity_suffix,
-            "entity_suffix_offset": offset + 8,
-            "blob_name": "BREP.",
-            "blob_name_offset": offset + 32,
-            "body": body,
-        }))
+        DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
+            id: format!("{STREAM}:design-body-binding#{offset}"),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            map_ordinal: 0,
+            asm_body_key: 11,
+            asm_body_key_offset: offset,
+            entity_suffix,
+            entity_suffix_offset: offset + 8,
+            blob_name: "BREP.".into(),
+            blob_name_offset: offset + 32,
+            body: Some(body.try_into().unwrap()),
+        })
         .unwrap()
     }
 
