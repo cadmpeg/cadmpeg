@@ -403,6 +403,43 @@ pub(crate) fn write_semantic(
             .clone_from(&target_native.wire_topologies);
         supported.store(&encode_ctx, supported_target.native.namespace_mut("f3d"))?;
     }
+    // Timestamp edits update the canonical attribute as well as the native
+    // carrier. Carry only the exact scalar changes validated for that carrier;
+    // all other attribute edits remain outside this patch's support proof.
+    for attribute in &mut supported_target.model.attributes {
+        let Some(before_value) = crate::brep::creation_timestamp_value(attribute) else {
+            continue;
+        };
+        let Some(after) = target
+            .model
+            .attributes
+            .iter()
+            .find(|after| after.id == attribute.id)
+        else {
+            continue;
+        };
+        let Some(after_value) = crate::brep::creation_timestamp_value(after) else {
+            continue;
+        };
+        if !target_native.as_ref().is_some_and(|native| {
+            native.creation_timestamps.iter().any(|timestamp| {
+                timestamp.target == after.target && timestamp.unix_microseconds == after_value
+            })
+        }) {
+            continue;
+        }
+        let mut normalized = after.clone();
+        for value in &mut normalized.values {
+            if let cadmpeg_ir::attributes::AttributeValue::Float(value) = value {
+                if *value == after_value {
+                    *value = before_value;
+                }
+            }
+        }
+        if &normalized == attribute {
+            *attribute = after.clone();
+        }
+    }
     if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
         return Err(CodecError::UnsupportedContent(
             "modified F3D IR contains edits beyond supported point, line, and plane carriers"
