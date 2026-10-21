@@ -160,7 +160,7 @@ fn axial_profile_resolves_counterbore_roles() {
         }
     );
     assert_eq!(
-        &construction.kind,
+        construction.kind,
         HoleKind::Counterbore {
             diameter: cadmpeg_ir::Dimension::Literal(
                 cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap()
@@ -225,7 +225,7 @@ fn axial_profile_resolves_counterdrill_roles() {
     );
     assert_eq!(construction.extent, LinearTermination::ThroughAll {});
     assert_eq!(
-        &construction.kind,
+        construction.kind,
         HoleKind::Counterdrill {
             diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
                 cadmpeg_ir::Dimension::Literal(
@@ -664,7 +664,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
         );
         assert_eq!(construction.extent, LinearTermination::ThroughAll {});
         assert_eq!(
-            &construction.kind,
+            construction.kind,
             HoleKind::Countersink {
                 diameter: cadmpeg_ir::Dimension::Literal(
                     cadmpeg_ir::scalar::PositiveLength::new(13.2).unwrap()
