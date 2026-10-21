@@ -146,7 +146,7 @@ enum StructuredMapVariant {
 
 #[test]
 fn populated_structured_enum_and_nonempty_array_maps_are_detected() {
-    fn check<T: serde::de::DeserializeOwned>(value: Value) {
+    fn check<T: serde::de::DeserializeOwned>(value: &Value) {
         let document = json!({"parameters": {"depth": value}});
         assert!(StructuredMapDocument::<T>::deserialize(&document).is_ok());
         for baseline in super::probe_values() {
@@ -161,9 +161,9 @@ fn populated_structured_enum_and_nonempty_array_maps_are_detected() {
         assert_eq!(swept.accepting, BTreeSet::from(["/parameters".to_owned()]));
     }
 
-    check::<StructuredMapValue>(json!({"required": {"value": 12}}));
-    check::<StructuredMapVariant>(json!({"kind": "bound", "target": {"value": 12}}));
-    check::<[StrictValue; 1]>(json!([{"value": 12}]));
+    check::<StructuredMapValue>(&json!({"required": {"value": 12}}));
+    check::<StructuredMapVariant>(&json!({"kind": "bound", "target": {"value": 12}}));
+    check::<[StrictValue; 1]>(&json!([{"value": 12}]));
 }
 
 #[test]
@@ -173,9 +173,9 @@ fn structured_map_owners_and_children_still_deny_unknown_fields() {
         let mut probe = document.clone();
         probe
             .pointer_mut(path)
-            .unwrap()
+            .expect("the authored fixture contains every strict parent and child")
             .as_object_mut()
-            .unwrap()
+            .expect("each strict probe target is an authored object")
             .insert(UNKNOWN_KEY.to_owned(), json!({"required": {"value": 12}}));
         assert!(StructuredMapDocument::<StructuredMapValue>::deserialize(&probe).is_err());
     }
