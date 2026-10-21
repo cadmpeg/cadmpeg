@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -61,8 +60,7 @@
             "current_material_source": null,
             "current_wire_density": null,
             "id": "rhino:document:settings#current",
-            "model_url": null,
-            "writer_version": null
+            "model_url": null
           }
         ],
         "embedded_images": [],
@@ -94,11 +92,12 @@
         "windows_bitmaps": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
-      "attributes": {
-        "archive_version": "4",
-        "container_kind": "3dm-chunks"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -198,11 +197,21 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
     "annotations": {},
+    "metadata": {
+      "rhino.history_layout": "[]",
+      "rhino.object_layout": "[{\"start\":87,\"end\":196}]",
+      "rhino.source.archive_version": "4",
+      "rhino.source.container_kind": "3dm-chunks",
+      "rhino.table_layout": "[[268435476,[]],[268435477,[]],[268435475,[[536903792,87,196]]]]"
+    },
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
@@ -210,8 +219,14 @@
           "retention": "inline"
         },
         "offset": 87,
-        "stream": ""
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

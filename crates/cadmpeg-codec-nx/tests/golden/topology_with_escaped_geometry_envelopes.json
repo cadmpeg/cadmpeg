@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -179,6 +178,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -186,7 +189,6 @@
           "file_size": "360",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "346",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -275,7 +277,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -394,6 +399,9 @@
           }
         }
       },
+      "metadata": {
+        "source.footer_offset": "346"
+      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -401,9 +409,20 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAABaAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAOAQAAAAAAAHgBdVA9TwJBEH2rwqmg+FUZJVsqxKiYmGizMQSVRI16Z3055QoSFHO5RmnhH1DT01Dzd6Cl4R/AO+4gmwCzuzNv3szszs6rCeD8Vlrvdy/mc9GS98Wngjz5dTy/7JerP6fyy3Md3y3Jzz/5XS25lYrrsSRl5h9tq2Ba9qV9QwGSWCE/v7ewOiEF4wJrEFxJnm1iBKIy1/3BUf6MnECM2fFsQEcnRSqEBgsEdmHQjVEb2ITAOjaALHYIEIi6amcuPnIOE0BhkBrIjRCfgJnSH5mRi4AahuzUhp6m06OgB41gP7qn4aV37PEzWh4S6jCaCrDP2eqxYyR0V9X/ew+dg5pqRrbVfRs00t0xTzgwl0ZPT1RFUgAAAAAAAAAA",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

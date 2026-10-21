@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -28,11 +27,6 @@
             "definition": "creo:model:product_definition#root",
             "scope": "local"
           },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
           "transform": [
             [
               1.0,
@@ -88,6 +82,10 @@
       "view_presentations": []
     },
     "native": {},
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "expanded_section_byte_count": "0",
@@ -571,7 +569,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -598,6 +599,22 @@
           "tag": "part_product"
         }
       }
-    }
+    },
+    "retained_records": {
+      "creo:source:image#whole": {
+        "bytes": {
+          "data": "I1VHQzoyIFBBUlQgdGVzdCBcCiMtIENNTk0gMDBid2lkZ2V0LnBydCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgXAojLUVORF9PRl9VR0NfSEVBREVSCg==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "creo:source",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

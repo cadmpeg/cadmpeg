@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -16,7 +15,40 @@
       "faces": [],
       "features": [],
       "loops": [],
-      "occurrences": [],
+      "occurrences": [
+        {
+          "id": "rhino:model:occurrence#0",
+          "native_ref": "rhino:product:occurrence#record-000000",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "rhino:model:product#61616161-6161-6161-6161-616161616161",
+            "scope": "local"
+          },
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              10.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
       "parameters": [],
       "pcurves": [],
       "pmi": [],
@@ -25,7 +57,15 @@
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "description": "description",
+          "id": "rhino:model:product#61616161-6161-6161-6161-616161616161",
+          "kind": "part",
+          "native_ref": "rhino:product:definition#61616161-6161-6161-6161-616161616161",
+          "source_name": "modern definition"
+        }
+      ],
       "regions": [],
       "semantic_annotations": [],
       "shells": [],
@@ -61,8 +101,7 @@
             "current_material_source": null,
             "current_wire_density": null,
             "id": "rhino:document:settings#current",
-            "model_url": null,
-            "writer_version": null
+            "model_url": null
           }
         ],
         "embedded_images": [],
@@ -90,7 +129,9 @@
             "member_object_ids": [],
             "meters_per_unit": 0.0254,
             "name": "modern definition",
-            "source_offset": 159,
+            "neutral_refs": [
+              "rhino:model:product#61616161-6161-6161-6161-616161616161"
+            ],
             "source_uuid": "61616161-6161-6161-6161-616161616161",
             "unit_system": 8,
             "url": "https://example.test",
@@ -106,8 +147,10 @@
               "rhino:product:definition#61616161-6161-6161-6161-616161616161"
             ],
             "name": "",
+            "neutral_refs": [
+              "rhino:model:occurrence#0"
+            ],
             "parent_definition_uuids": [],
-            "source_offset": 582,
             "source_uuid": "00000000-0000-0000-0000-000000000000",
             "transform": [
               [
@@ -154,18 +197,12 @@
         "windows_bitmaps": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
-      "attributes": {
-        "absolute_tolerance_millimeters": "0.01",
-        "absolute_tolerance_native": "0.01",
-        "angular_tolerance": "0.1",
-        "archive_version": "60",
-        "container_kind": "3dm-chunks",
-        "millimeters_per_unit": "1",
-        "relative_tolerance": "0.001",
-        "unit_system": "standard:2",
-        "unit_value": "2"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -260,18 +297,40 @@
         },
         "message": "object at 582 has nil object UUID",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "record.neutral-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "rhino:object:record#record-000000-offset-582: layer index -1 is absent or ambiguous",
+        "severity": "warning"
       }
     ],
     "notes": [
       "decoded 1/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
     ],
     "transfer": {
-      "geometry_transferred": true,
-      "transfer": "full"
+      "geometry_transferred": false,
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
     "annotations": {},
+    "metadata": {
+      "rhino.history_layout": "[]",
+      "rhino.object_layout": "[{\"start\":582,\"end\":887}]",
+      "rhino.source.archive_version": "60",
+      "rhino.source.container_kind": "3dm-chunks",
+      "rhino.source.millimeters_per_unit": "1",
+      "rhino.source.unit_code": "2",
+      "rhino.table_layout": "[[268435476,[]],[268435477,[[536903729,87,135]]],[268435489,[[536903798,159,558]]],[268435475,[[536903792,582,887]]]]"
+    },
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
@@ -279,8 +338,10 @@
           "retention": "inline"
         },
         "offset": 582,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

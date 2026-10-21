@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -141,8 +140,7 @@
           },
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -169,8 +167,7 @@
             "current_material_source": null,
             "current_wire_density": null,
             "id": "rhino:document:settings#current",
-            "model_url": null,
-            "writer_version": null
+            "model_url": null
           }
         ],
         "embedded_images": [],
@@ -205,18 +202,12 @@
         "windows_bitmaps": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
-      "attributes": {
-        "absolute_tolerance_millimeters": "0.01",
-        "absolute_tolerance_native": "0.01",
-        "angular_tolerance": "0.1",
-        "archive_version": "60",
-        "container_kind": "3dm-chunks",
-        "millimeters_per_unit": "1",
-        "relative_tolerance": "0.001",
-        "unit_system": "standard:2",
-        "unit_value": "2"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -304,6 +295,16 @@
         },
         "message": "rhino:object:record#record-000000-offset-177: ON_Mesh dropped 246 bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "record.neutral-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -311,7 +312,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -323,6 +327,15 @@
         }
       }
     },
+    "metadata": {
+      "rhino.history_layout": "[]",
+      "rhino.object_layout": "[{\"start\":177,\"end\":986}]",
+      "rhino.source.archive_version": "60",
+      "rhino.source.container_kind": "3dm-chunks",
+      "rhino.source.millimeters_per_unit": "1",
+      "rhino.source.unit_code": "2",
+      "rhino.table_layout": "[[268435476,[]],[268435477,[[536903729,105,153]]],[268435475,[[536903792,177,986]]]]"
+    },
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
@@ -330,8 +343,10 @@
           "retention": "inline"
         },
         "offset": 177,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

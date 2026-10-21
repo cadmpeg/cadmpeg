@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -49,7 +48,6 @@
               "id": "nx:segment-index:row#0",
               "ordinal": 0,
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 76,
               "subtype_code": 9,
               "type_code": 7,
               "value": 11
@@ -58,13 +56,16 @@
               "id": "nx:segment-index:row#1",
               "ordinal": 1,
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 88,
               "subtype_code": 1,
               "type_code": 1,
               "value": 28
             }
           ]
         }
+      },
+      "scope": {
+        "design": false,
+        "model": false
       },
       "source": {
         "attributes": {
@@ -73,7 +74,6 @@
           "file_size": "118",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "104",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -126,6 +126,17 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -134,7 +145,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": false,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
@@ -151,7 +165,24 @@
             "tag": "UG_PART_SEGMENT_INDEX_ROW"
           }
         }
-      }
+      },
+      "metadata": {
+        "native.nx.segment_index_rows.nx:segment-index:row#0.source_offset": "76",
+        "native.nx.segment_index_rows.nx:segment-index:row#1.source_offset": "88",
+        "source.footer_offset": "104"
+      },
+      "retained_records": {
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAABoAAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAcAAAAAAAAAAcAAAAJAAAACwAAAAEAAAABAAAAHAAAAKq7zN1GT09URVIAAAAAAAAAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
+        }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

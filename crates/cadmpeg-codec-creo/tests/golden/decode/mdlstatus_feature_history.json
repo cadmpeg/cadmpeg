@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -21,6 +20,7 @@
             "kind": "Native Feature"
           },
           "id": "creo:model:feature#40",
+          "needs_recompute": false,
           "ordinal": 0,
           "suppressed": false
         },
@@ -40,6 +40,7 @@
           },
           "id": "creo:model:feature#41",
           "name": "Round id 41",
+          "needs_recompute": false,
           "ordinal": 1,
           "suppressed": false
         },
@@ -50,6 +51,7 @@
           },
           "id": "creo:model:feature#42",
           "name": "Future Feature id 42",
+          "needs_recompute": false,
           "ordinal": 2,
           "suppressed": false
         },
@@ -60,6 +62,7 @@
           },
           "id": "creo:model:feature#43",
           "name": "Datum Plane id 43",
+          "needs_recompute": false,
           "ordinal": 3,
           "suppressed": false
         },
@@ -80,6 +83,7 @@
           },
           "id": "creo:model:feature#44",
           "name": "Draft id 44",
+          "needs_recompute": false,
           "ordinal": 4,
           "suppressed": false
         },
@@ -90,6 +94,7 @@
           },
           "id": "creo:model:feature#45",
           "name": "Surface id 45",
+          "needs_recompute": false,
           "ordinal": 5,
           "source_properties": {
             "mdl_stored_name_prefix": "y"
@@ -249,6 +254,10 @@
           }
         ]
       }
+    },
+    "scope": {
+      "design": true,
+      "model": true
     },
     "source": {
       "attributes": {
@@ -766,7 +775,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -844,6 +856,22 @@
           "tag": "feature_operation_name"
         }
       }
-    }
+    },
+    "retained_records": {
+      "creo:source:image#whole": {
+        "bytes": {
+          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNNZGxTdGF0dXMKbm9pc2UAeFByb3RydXNpb24gaWQgNDAAUm91bmQgaWQgNDEARnV0dXJlIEZlYXR1cmUgaWQgNDIARGF0dW0gUGxhbmUgaWQgNDMARHJhZnQgaWQgNDQASG9sZSBpZCA0MAB5U3VyZmFjZSBpZCA0NQA=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "creo:source",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

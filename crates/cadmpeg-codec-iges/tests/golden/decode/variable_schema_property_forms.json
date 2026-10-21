@@ -1,12 +1,184 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:application:attribute#D1:0:0",
+          "name": "name",
+          "target": {
+            "id": "iges:model:point#D1",
+            "kind": "point"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OWNER"
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D3:0:0",
+          "name": "META",
+          "target": {
+            "id": "iges:model:point#D1",
+            "kind": "point"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 42
+            },
+            {
+              "kind": "float",
+              "value": 3.5
+            },
+            {
+              "kind": "string",
+              "value": "STEEL"
+            },
+            {
+              "kind": "reference",
+              "value": "iges:entity:directory#1"
+            },
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D5:0:0",
+          "name": "iges.property.tabular_data.property_type",
+          "target": {
+            "id": {
+              "source_id": "iges:entity:directory#5"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D5:1:0",
+          "name": "iges.property.tabular_data.declared_dependent_count",
+          "target": {
+            "id": {
+              "source_id": "iges:entity:directory#5"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D5:2:0",
+          "name": "iges.property.tabular_data.independent_variables.0.variable_type",
+          "target": {
+            "id": {
+              "source_id": "iges:entity:directory#5"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D5:3:0",
+          "name": "iges.property.tabular_data.independent_variables.0.declared_value_count",
+          "target": {
+            "id": {
+              "source_id": "iges:entity:directory#5"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D5:4:0",
+          "name": "iges.property.tabular_data.independent_variables.0.values.0",
+          "target": {
+            "id": {
+              "source_id": "iges:entity:directory#5"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 50.0
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D5:5:0",
+          "name": "iges.property.tabular_data.independent_variables.0.values.1",
+          "target": {
+            "id": {
+              "source_id": "iges:entity:directory#5"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 25.0
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D5:6:0",
+          "name": "iges.property.tabular_data.dependent_values.0",
+          "target": {
+            "id": {
+              "source_id": "iges:entity:directory#5"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 33.0
+            }
+          ]
+        },
+        {
+          "id": "iges:application:attribute#D5:7:0",
+          "name": "iges.property.tabular_data.dependent_values.1",
+          "target": {
+            "id": {
+              "source_id": "iges:entity:directory#5"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 46.0
+            }
+          ]
+        }
+      ],
       "bodies": [
         {
           "id": "iges:model:body#free-geometry",
@@ -40,15 +212,23 @@
           "source_object": {
             "format": "iges",
             "geometry_role": "independent",
-            "layer": "0",
-            "name": "OWNER",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         }
       ],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:presentation:level#0",
+          "items": [
+            {
+              "kind": "point",
+              "point": "iges:model:point#D1"
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "procedural_curves": [],
       "procedural_surfaces": [],
       "product_definitions": [],
@@ -101,107 +281,55 @@
         "cards": [
           {
             "id": "iges:physical:card#1",
-            "line_ending": "0a",
-            "offset": 0,
-            "payload": "6f726967696e616c206669787475726520202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020205320202020202031",
-            "section": "start",
-            "sequence": 1
+            "section": "start"
           },
           {
             "id": "iges:physical:card#10",
-            "line_ending": "0a",
-            "offset": 729,
-            "payload": "3131362c302c302c302c302c302c312c333b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020315020202020202031",
-            "section": "parameter",
-            "sequence": 1
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#11",
-            "line_ending": "0a",
-            "offset": 810,
-            "payload": "3430362c31342c34484d4554412c362c302c2c312c34322c322c332e352c332c3548535445454c2c342c312c362c313b2020202020202020202020202020202020202020202020335020202020202032",
-            "section": "parameter",
-            "sequence": 2
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#12",
-            "line_ending": "0a",
-            "offset": 891,
-            "payload": "3430362c392c352c312c312c322c322c35302c32352c33332c34363b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020355020202020202033",
-            "section": "parameter",
-            "sequence": 3
+            "section": "parameter"
           },
           {
             "id": "iges:physical:card#13",
-            "line_ending": "0a",
-            "offset": 972,
-            "payload": "5330303030303031473030303030303244303030303030365030303030303033202020202020202020202020202020202020202020202020202020202020202020202020202020205420202020202031",
-            "section": "terminate",
-            "sequence": 1
+            "section": "terminate"
           },
           {
             "id": "iges:physical:card#2",
-            "line_ending": "0a",
-            "offset": 81,
-            "payload": "31482c2c31483b2c374870726f647563742c3848706172742e6967732c37486361646d7065672c3348302e312c33322c33382c362c3330382c31352c30482c312e302c322c32484d4720202020202031",
-            "section": "global",
-            "sequence": 1
+            "section": "global"
           },
           {
             "id": "iges:physical:card#3",
-            "line_ending": "0a",
-            "offset": 162,
-            "payload": "4d2c312c312e302c31354832303236303731342e3030303030302c302e3030312c313030302e302c3648617574686f722c33486f72672c31312c302c30482c30483b2020202020204720202020202032",
-            "section": "global",
-            "sequence": 2
+            "section": "global"
           },
           {
             "id": "iges:physical:card#4",
-            "line_ending": "0a",
-            "offset": 243,
-            "payload": "2020202020313136202020202020203120202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303030303030304420202020202031",
-            "section": "directory",
-            "sequence": 1
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#5",
-            "line_ending": "0a",
-            "offset": 324,
-            "payload": "20202020203131362020202020202030202020202020203020202020202020312020202020202030202020202020202020202020202020202020204f574e455220202020202020304420202020202032",
-            "section": "directory",
-            "sequence": 2
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#6",
-            "line_ending": "0a",
-            "offset": 405,
-            "payload": "2020202020343036202020202020203220202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303031303030304420202020202033",
-            "section": "directory",
-            "sequence": 3
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#7",
-            "line_ending": "0a",
-            "offset": 486,
-            "payload": "20202020203430362020202020202030202020202020203020202020202020312020202020203237202020202020202020202020202020202047454e4552494320202020202020304420202020202034",
-            "section": "directory",
-            "sequence": 4
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#8",
-            "line_ending": "0a",
-            "offset": 567,
-            "payload": "2020202020343036202020202020203320202020202020302020202020202030202020202020203020202020202020302020202020202030202020202020203030303030303030304420202020202035",
-            "section": "directory",
-            "sequence": 5
+            "section": "directory"
           },
           {
             "id": "iges:physical:card#9",
-            "line_ending": "0a",
-            "offset": 648,
-            "payload": "202020202034303620202020202020302020202020202030202020202020203120202020202031312020202020202020202020202020202020544142554c415220202020202020304420202020202036",
-            "section": "directory",
-            "sequence": 6
+            "section": "directory"
           }
         ],
         "circular_arrays": [],
@@ -274,71 +402,54 @@
             "links": [
               "iges:entity:directory#3"
             ],
-            "parameter_bytes": "3131362c302c302c302c302c302c312c333b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
+            "neutral_label": [
+              "iges:application:attribute#D1:0:0"
+            ],
             "parameter_line_count": 1,
-            "parameter_line_end": 2,
-            "parameter_line_start": 1,
-            "parameter_start": 1,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 116
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 11,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 13,
-                "start": 12,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 15,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 17,
-                "start": 16,
                 "value": {
                   "kind": "integer",
                   "value": 3
@@ -385,134 +496,98 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3430362c31342c34484d4554412c362c302c2c312c34322c322c332e352c332c3548535445454c2c342c312c362c313b20202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 3,
-            "parameter_line_start": 2,
-            "parameter_start": 2,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 406
                 }
               },
               {
-                "end": 6,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 14
                 }
               },
               {
-                "end": 13,
-                "start": 7,
                 "value": {
                   "kind": "string",
                   "value": "4d455441"
                 }
               },
               {
-                "end": 15,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": 6
                 }
               },
               {
-                "end": 17,
-                "start": 16,
                 "value": {
                   "kind": "integer",
                   "value": 0
                 }
               },
               {
-                "end": 18,
-                "start": 18,
                 "value": {
                   "kind": "omitted"
                 }
               },
               {
-                "end": 20,
-                "start": 19,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 23,
-                "start": 21,
                 "value": {
                   "kind": "integer",
                   "value": 42
                 }
               },
               {
-                "end": 25,
-                "start": 24,
                 "value": {
                   "kind": "integer",
                   "value": 2
                 }
               },
               {
-                "end": 29,
-                "start": 26,
                 "value": {
                   "kind": "real",
                   "value": 3.5
                 }
               },
               {
-                "end": 31,
-                "start": 30,
                 "value": {
                   "kind": "integer",
                   "value": 3
                 }
               },
               {
-                "end": 39,
-                "start": 32,
                 "value": {
                   "kind": "string",
                   "value": "535445454c"
                 }
               },
               {
-                "end": 41,
-                "start": 40,
                 "value": {
                   "kind": "integer",
                   "value": 4
                 }
               },
               {
-                "end": 43,
-                "start": 42,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 45,
-                "start": 44,
                 "value": {
                   "kind": "integer",
                   "value": 6
                 }
               },
               {
-                "end": 47,
-                "start": 46,
                 "value": {
                   "kind": "integer",
                   "value": 1
@@ -548,95 +623,69 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "parameter_bytes": "3430362c392c352c312c312c322c322c35302c32352c33332c34363b202020202020202020202020202020202020202020202020202020202020202020202020",
             "parameter_line_count": 1,
-            "parameter_line_end": 4,
-            "parameter_line_start": 3,
-            "parameter_start": 3,
             "parameters": [
               {
-                "end": 3,
-                "start": 0,
                 "value": {
                   "kind": "integer",
                   "value": 406
                 }
               },
               {
-                "end": 5,
-                "start": 4,
                 "value": {
                   "kind": "integer",
                   "value": 9
                 }
               },
               {
-                "end": 7,
-                "start": 6,
                 "value": {
                   "kind": "integer",
                   "value": 5
                 }
               },
               {
-                "end": 9,
-                "start": 8,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 11,
-                "start": 10,
                 "value": {
                   "kind": "integer",
                   "value": 1
                 }
               },
               {
-                "end": 13,
-                "start": 12,
                 "value": {
                   "kind": "integer",
                   "value": 2
                 }
               },
               {
-                "end": 15,
-                "start": 14,
                 "value": {
                   "kind": "integer",
                   "value": 2
                 }
               },
               {
-                "end": 18,
-                "start": 16,
                 "value": {
                   "kind": "integer",
                   "value": 50
                 }
               },
               {
-                "end": 21,
-                "start": 19,
                 "value": {
                   "kind": "integer",
                   "value": 25
                 }
               },
               {
-                "end": 24,
-                "start": 22,
                 "value": {
                   "kind": "integer",
                   "value": 33
                 }
               },
               {
-                "end": 27,
-                "start": 25,
                 "value": {
                   "kind": "integer",
                   "value": 46
@@ -685,6 +734,11 @@
             "form": 27,
             "id": "iges:application:property#D3",
             "name": "4d455441",
+            "neutral_values": {
+              "": [
+                "iges:application:attribute#D3:0:0"
+              ]
+            },
             "owners": [
               "iges:entity:directory#1"
             ],
@@ -753,6 +807,32 @@
                 "variable_type": 2
               }
             ],
+            "neutral_values": {
+              "declared_dependent_count": [
+                "iges:application:attribute#D5:1:0"
+              ],
+              "dependent_values.0": [
+                "iges:application:attribute#D5:6:0"
+              ],
+              "dependent_values.1": [
+                "iges:application:attribute#D5:7:0"
+              ],
+              "independent_variables.0.declared_value_count": [
+                "iges:application:attribute#D5:3:0"
+              ],
+              "independent_variables.0.values.0": [
+                "iges:application:attribute#D5:4:0"
+              ],
+              "independent_variables.0.values.1": [
+                "iges:application:attribute#D5:5:0"
+              ],
+              "independent_variables.0.variable_type": [
+                "iges:application:attribute#D5:2:0"
+              ],
+              "property_type": [
+                "iges:application:attribute#D5:0:0"
+              ]
+            },
             "owners": [],
             "property_kind": "tabular_data",
             "property_type": 5,
@@ -776,14 +856,14 @@
         "views": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "native_file_name": "part.igs",
         "native_units": "MM",
-        "parameter_delimiter": ",",
-        "record_delimiter": ";",
-        "representation": "fixed-ascii",
         "sender_product": "product"
       },
       "identity": {
@@ -839,7 +919,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     },
     "transfer_ledger": {
       "entries": [
@@ -872,6 +955,15 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "metadata": {
+      "document_local_sha256": "38e63ba2c6ee9defae21bf842837920ecebcbf121471ab6c551fc66328f691cb",
+      "iges.card_layout": "[[1,0,80,1],[2,81,80,1],[3,162,80,1],[4,243,80,1],[5,324,80,1],[6,405,80,1],[7,486,80,1],[8,567,80,1],[9,648,80,1],[10,729,80,1],[11,810,80,1],[12,891,80,1],[13,972,80,1]]",
+      "iges.entity_layout": "[[1,1,1],[3,2,1],[5,3,1]]",
+      "iges.parameter_delimiter": ",",
+      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":17}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":6},{\"start\":7,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":18},{\"start\":19,\"end\":20},{\"start\":21,\"end\":23},{\"start\":24,\"end\":25},{\"start\":26,\"end\":29},{\"start\":30,\"end\":31},{\"start\":32,\"end\":39},{\"start\":40,\"end\":41},{\"start\":42,\"end\":43},{\"start\":44,\"end\":45},{\"start\":46,\"end\":47}]],[5,{\"start\":3,\"end\":4},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":18},{\"start\":19,\"end\":21},{\"start\":22,\"end\":24},{\"start\":25,\"end\":27}]]]",
+      "iges.record_delimiter": ";",
+      "iges.representation": "fixed-ascii"
+    },
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
@@ -879,8 +971,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

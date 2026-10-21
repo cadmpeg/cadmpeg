@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -3745,17 +3744,18 @@
                 "nx:rmfastload:object-id#0000000049"
               ],
               "raw_count": "32000000",
-              "registry_source_offset": 3179,
-              "source_entry": "/Root/FastLoad/RMFastLoad",
-              "source_offset": 3196
+              "source_entry": "/Root/FastLoad/RMFastLoad"
             }
           ],
           "rmfastload_object_ids": [
             {
               "id": "nx:rmfastload:object-id#0000000000",
               "ordinal": 0,
-              "raw": "e8030000",
-              "source_offset": 3200,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#567d644e1be2a0750f7184b1e0d6c2096b97cd25254e77aa599da6d9a2c258bd",
+                "sha256": "79ff7fbc96a0a6111e3c2706d61deb84c7c8e5a137b776f34a7dc3775f3652de"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#1000",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 1000
@@ -3763,8 +3763,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000001",
               "ordinal": 1,
-              "raw": "e9030000",
-              "source_offset": 3204,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#8595602331020dd74726874817012a53f208e8043551bd7dbdca5b926a7e0a43",
+                "sha256": "7fab10fa7e3cd00c4264fde9ee7402cc249e8028eb6f76ff1418941a755eddb9"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#1001",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 1001
@@ -3772,8 +3775,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000002",
               "ordinal": 2,
-              "raw": "ea030000",
-              "source_offset": 3208,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#f5e8873e13a65e64059b05f7d1026a9a33b7e9a4fea93cce2a851debeb104fce",
+                "sha256": "bbf3950c60f3f38f5bd05bef5c81c85b1ee3b32896506adcfa29eb712b81a16c"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#1002",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 1002
@@ -3781,8 +3787,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000003",
               "ordinal": 3,
-              "raw": "eb030000",
-              "source_offset": 3212,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#eb856f30262ca4dd68afb4c1e9ca8563b3dd4fe5b0b8ba867dbb3191bb29c843",
+                "sha256": "ec22e423fa90e55e2390c5402e3cff3800c2d9200793c3deb18fe07835852f90"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#1003",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 1003
@@ -3790,8 +3799,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000004",
               "ordinal": 4,
-              "raw": "ec030000",
-              "source_offset": 3216,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#61c9511b9b939646a189b577850914e236b0c2f7918f54a0aaf6b697aa865be4",
+                "sha256": "b28f1dddd409cd93deaba5c28ad1532a767eae03db78358becddd7b0b8e0e754"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#1004",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 1004
@@ -3799,8 +3811,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000005",
               "ordinal": 5,
-              "raw": "15270000",
-              "source_offset": 3220,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#2ea744e228bd7913ecc1a759ad6e8433a807f4aa92cbef5c95c2d691bbff8ee6",
+                "sha256": "8700a06f5113bd5fda59e3335c4c70b6eccea8efbb623f54d8c943606638a642"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10005",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10005
@@ -3808,8 +3823,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000006",
               "ordinal": 6,
-              "raw": "16270000",
-              "source_offset": 3224,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#6563ba341881cf50b0bf9e762ce0743c3f6326deedcb850422c023af61440963",
+                "sha256": "b1d9ae45707c9938fe400f00a1d142830f92cf8a81f9ec7fd5fd8e753ab87017"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10006",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10006
@@ -3817,8 +3835,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000007",
               "ordinal": 7,
-              "raw": "17270000",
-              "source_offset": 3228,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#2653cfec68a5f7cac91c794db33cc4e81fbed20e42baef7b153dbcea7cff6b52",
+                "sha256": "69b15e39d220557706f1f57a20e9f0be93e8522fb88f498a997df3a4568ee8a0"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10007",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10007
@@ -3826,8 +3847,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000008",
               "ordinal": 8,
-              "raw": "18270000",
-              "source_offset": 3232,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#7600f6ae269bf983502159f01a3f7b3ad9616ec02628834ee5cfe6ab1e4652a6",
+                "sha256": "6de9a2bb7ea8dbb69f1b56c543907a15f6761acfc4c36aa8c1b9c13d57b58cd1"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10008",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10008
@@ -3835,8 +3859,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000009",
               "ordinal": 9,
-              "raw": "19270000",
-              "source_offset": 3236,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#e278a77f7043c652023fdff6401087570f9dd0174c8fef41a14ee963281fa0a9",
+                "sha256": "94009e1354c8636a5f5cc8065128818f982d3ad9b7973abde6133583fa83e301"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10009",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10009
@@ -3844,8 +3871,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000010",
               "ordinal": 10,
-              "raw": "1a270000",
-              "source_offset": 3240,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#76d0196ce9b96520185e9576635afe692feb6a3ce11d516108510f6c6f19fae1",
+                "sha256": "c1c35c10ce808e4f14772e26dce83ee40486246811b4e7ac33d6e9b1903a23d8"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10010",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10010
@@ -3853,8 +3883,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000011",
               "ordinal": 11,
-              "raw": "1b270000",
-              "source_offset": 3244,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#15f438ee13a31b5572b45932fc7b14310cc2202cc97f78521f2ca795a4caf388",
+                "sha256": "cce843f7b3acf8144b49f766ea04d629d47cd86d2db7669eefe8b1de51d7b469"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10011",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10011
@@ -3862,8 +3895,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000012",
               "ordinal": 12,
-              "raw": "1c270000",
-              "source_offset": 3248,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#9e7b2ff584ccf62275c33a351e29cacc797672c641ef4a84804d6f622ca5c544",
+                "sha256": "0d529ea5d40acefe86be78234014d48a1f868c06052d1e33a5375ba32d695384"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10012",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10012
@@ -3871,8 +3907,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000013",
               "ordinal": 13,
-              "raw": "1d270000",
-              "source_offset": 3252,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#5b5e078e54a7e4c1578a858b400109e0fec41ca3324f815cc0ace88fc4ccac03",
+                "sha256": "3aeb79fb8773cc3bd5aa1567c6ad6b181c2df4601c98cb5919523437d19e5aec"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10013",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10013
@@ -3880,8 +3919,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000014",
               "ordinal": 14,
-              "raw": "1e270000",
-              "source_offset": 3256,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#d58d91f74e803a2cafe890bf6f5936c57c484325e68319da7cd57a395ec54d5f",
+                "sha256": "a34863294f879786f7f8e95c1116fa0878c3114021700adde47ff060d87f856f"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10014",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10014
@@ -3889,8 +3931,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000015",
               "ordinal": 15,
-              "raw": "1f270000",
-              "source_offset": 3260,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#aa522a78dd960e9e8042e03ebed55abb2811d6760cdc90e17fde2d45c21a6204",
+                "sha256": "6cce4b41c3b62eae85bcdbf62f8fe89422a32b01aa8182f2d0ff24b3eb748117"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10015",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10015
@@ -3898,8 +3943,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000016",
               "ordinal": 16,
-              "raw": "20270000",
-              "source_offset": 3264,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#23764c742fcdc2af4b9a4dbf7cdb90623af95a30998cbfeb294d28592908c01e",
+                "sha256": "39f0099b5d508c2537963ee0dc0eea30518bb1a18e6faf5ec3dd763e24ef6907"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10016",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10016
@@ -3907,8 +3955,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000017",
               "ordinal": 17,
-              "raw": "21270000",
-              "source_offset": 3268,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#cd31269501af74d2baa4d95b0a2f32c40d50e28043637373402d437b0544d08d",
+                "sha256": "a7386905ff07dcc1c4dd7150ce852a62e31c2107a1320aae0a0e8410acec70b3"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10017",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10017
@@ -3916,8 +3967,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000018",
               "ordinal": 18,
-              "raw": "22270000",
-              "source_offset": 3272,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#179063dc41e9527e8f3114706227ba38d727263bcf67c52ede9db024e2e1af0d",
+                "sha256": "469e0e0a602f59bf82b531ce33fed8918d3fb3293744c028fbc31dee3baaf595"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10018",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10018
@@ -3925,8 +3979,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000019",
               "ordinal": 19,
-              "raw": "23270000",
-              "source_offset": 3276,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#ad82340a84d5a9720f276cf90ff7cf9beee4137e43b9e171fe8600efef110d10",
+                "sha256": "0d7d2dbd163a100bb3feed13f109bce43224e9436508e6fc01f6c33ea3e832e5"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10019",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10019
@@ -3934,8 +3991,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000020",
               "ordinal": 20,
-              "raw": "24270000",
-              "source_offset": 3280,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#07721554d089bc05621965f10b0ac9e8325c223d27181a672361f77f77fb4826",
+                "sha256": "204b5d3b17faf32115dc63ace12394daa8815f1450cdae36f8405cc8e90b3a4b"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10020",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10020
@@ -3943,8 +4003,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000021",
               "ordinal": 21,
-              "raw": "25270000",
-              "source_offset": 3284,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#3a3801d6e6cf5410adcac4afbdab0ea697b2bb447ee11f39e31ebd9c23370a03",
+                "sha256": "f9804d8c665c8b9f1119c099351027fec9b649c5621a3c39e1e0306b63a91d61"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10021",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10021
@@ -3952,8 +4015,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000022",
               "ordinal": 22,
-              "raw": "26270000",
-              "source_offset": 3288,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#85931a75cc8597f78e2a2414e36f98c62130c475c10788408b932a93c4de9d48",
+                "sha256": "88a370633c0cab188c2d5deb3b3311f477b5ced661920ee79c5215abe36a3bfd"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10022",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10022
@@ -3961,8 +4027,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000023",
               "ordinal": 23,
-              "raw": "27270000",
-              "source_offset": 3292,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#c95050e386a4844c43dd91f731d21c16e200bc34fb2683f21c5273eff1b68d6f",
+                "sha256": "270a5e111712aa1c09a51a1d66b817c4a4eac292c7ec1cc2bb230d997a509c27"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10023",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10023
@@ -3970,8 +4039,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000024",
               "ordinal": 24,
-              "raw": "28270000",
-              "source_offset": 3296,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#dc77ce28dfcf730f54cd50583b25f156954a73131a2e5bb47d0916fdab3ee207",
+                "sha256": "3be5827da6b51aee887532230d48d6e4be7596e9ba660bb37a4a4f7fa44b295e"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10024",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10024
@@ -3979,8 +4051,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000025",
               "ordinal": 25,
-              "raw": "29270000",
-              "source_offset": 3300,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#a178bcd7961d2226f755ad33eea2892f530d09afc060996dd3f97b1667f97ca2",
+                "sha256": "08a3d466fd9704e03149d4e6ec797ca8160fd39f9ee718baa08f753b366a8aa0"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10025",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10025
@@ -3988,8 +4063,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000026",
               "ordinal": 26,
-              "raw": "2a270000",
-              "source_offset": 3304,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#a2174c4be8309c6a39fa9bf102f62eadd6509909373a494786a5670aa1615069",
+                "sha256": "c697c056a0cb57d5d6446fc472ef1a12769b97de2902c3b254c73f530b4fc62e"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10026",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10026
@@ -3997,8 +4075,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000027",
               "ordinal": 27,
-              "raw": "2b270000",
-              "source_offset": 3308,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#99a451f870810f2b0f8d61d402c7174879093b816ff5c00a743143965d36ce16",
+                "sha256": "e16d6eb5f22fe6af8d6536782b70e858fd1efa362ff2a5d83adf81ed589dbced"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10027",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10027
@@ -4006,8 +4087,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000028",
               "ordinal": 28,
-              "raw": "2c270000",
-              "source_offset": 3312,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#58d70d8309914d08c1d29e7aac4a1a4b50c68368207665dcae4d27969f49d171",
+                "sha256": "b95de5cfbd3ee47a6ec355b27d35b4700a37f735847c660500d596bc8746a429"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10028",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10028
@@ -4015,8 +4099,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000029",
               "ordinal": 29,
-              "raw": "2d270000",
-              "source_offset": 3316,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#8e3bc7983eed9ec06e3f926875ec792c3f27094cf36bc4dc4d8d2d860ff27857",
+                "sha256": "709a9a4e908ce73f91f3880396fabb4894f3de79345eac278092f112635b1fea"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10029",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10029
@@ -4024,8 +4111,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000030",
               "ordinal": 30,
-              "raw": "2e270000",
-              "source_offset": 3320,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#6e8a5c8cc912327b3d26ad2df19eb7cd0ed8a584e63f2ad36f1c13b8e42e2987",
+                "sha256": "f6c0607f6edbfa4a7eb03f481123fa4ba7bac6099dcb9ebc7770832affe5ef8e"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10030",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10030
@@ -4033,8 +4123,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000031",
               "ordinal": 31,
-              "raw": "2f270000",
-              "source_offset": 3324,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#77e4ff3817ee45096b6ce1403051491d5487337bf1749c34c857f0f082b3903e",
+                "sha256": "67dd5a79f3b53a5ff3eda724398d0506a8ee68833dc3015427924c46947731c6"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10031",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10031
@@ -4042,8 +4135,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000032",
               "ordinal": 32,
-              "raw": "30270000",
-              "source_offset": 3328,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#86d34a19f59dc0120f9b69b7fb1b52cf7a251571e1a223f04157be9f9db6d700",
+                "sha256": "02010eb915b931ce26409183bff3af7b024084e80d7a55635cd7d8aaf1ce5c02"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10032",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10032
@@ -4051,8 +4147,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000033",
               "ordinal": 33,
-              "raw": "31270000",
-              "source_offset": 3332,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#32bc564a577e1d333854eca44b86480829f8019a0e67235be140b9822d91e361",
+                "sha256": "c6d2e576c5a98b8f550367b06c4785e000bed788c5aab7ff0d8ccfb287479bf1"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10033",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10033
@@ -4060,8 +4159,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000034",
               "ordinal": 34,
-              "raw": "32270000",
-              "source_offset": 3336,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#d9e59d3877450f2b0bfde6dd99c8408aa5717265f1701db4c47fc74e7e3ec41a",
+                "sha256": "eaefc723d3e13ea2a76d71d2c32861849309f6ff38985f489dcbb7585f29cc7c"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10034",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10034
@@ -4069,8 +4171,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000035",
               "ordinal": 35,
-              "raw": "33270000",
-              "source_offset": 3340,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#b2162027f0c01351c41a7d031476225fe7be85e1992f2c0f2eb9f7be65eb845f",
+                "sha256": "e759fa8c786c0d29d54adeeb8ec8009e665bd41169fe5d39b093876e84f6f22b"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10035",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10035
@@ -4078,8 +4183,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000036",
               "ordinal": 36,
-              "raw": "34270000",
-              "source_offset": 3344,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#a69b4271bc89ce19d84f4f42220e551508cf087e576babd294bdf9c5debfd13b",
+                "sha256": "9cd3987e443da1d323962fca9845b5ad9a8cf6662d53b24b53409ddbfd2c7d69"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10036",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10036
@@ -4087,8 +4195,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000037",
               "ordinal": 37,
-              "raw": "35270000",
-              "source_offset": 3348,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#ac756f1013da1741888d34a4378644ef77659003cf721945b3fa015178b4075f",
+                "sha256": "4913513e260b76dcac1fa25c90ea3d547bfdb1f24802039457bc2589f21af42e"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10037",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10037
@@ -4096,8 +4207,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000038",
               "ordinal": 38,
-              "raw": "36270000",
-              "source_offset": 3352,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#aa808a24d72c5902f0f2e985826eaf8c896e661764ebcbfad6bd0d6ae156e093",
+                "sha256": "cef67a1efcb1d89e3825d16e0cf5ab2aab38c4d50b98fdbff35cefc781658a39"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10038",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10038
@@ -4105,8 +4219,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000039",
               "ordinal": 39,
-              "raw": "37270000",
-              "source_offset": 3356,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#7979bcb865955c3403f56c176b1f807add8483d3d9c4418e9890c943840a6845",
+                "sha256": "6c45cd962d5eed8851c348b7c80af3b5f19549c4226dcdb8f36949d2c10303da"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10039",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10039
@@ -4114,8 +4231,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000040",
               "ordinal": 40,
-              "raw": "38270000",
-              "source_offset": 3360,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#aa98590e71ecebb7dc665feb3335ffc48ee59a3ecf0215e860f2d013dbee73b0",
+                "sha256": "6ed38725006380f0c2b0585bb6c83166629477fc8d7ca4a818145f23c2041366"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10040",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10040
@@ -4123,8 +4243,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000041",
               "ordinal": 41,
-              "raw": "39270000",
-              "source_offset": 3364,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#bbc0d29dd85ecf38ec480d8a740fac7b395e0b723b2c562dbf1e6a89a7a3c244",
+                "sha256": "f94e392340306f6b267cb6519d6f4fa0cb0e893da53358c2d820958ae83711d7"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10041",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10041
@@ -4132,8 +4255,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000042",
               "ordinal": 42,
-              "raw": "3a270000",
-              "source_offset": 3368,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#e8c423041133d23b35952dd5cc84c32820b6423ff78994adf9f067e901794f05",
+                "sha256": "31ada0a92d47f43c9000c22bd747be75e7f12217a7cbeeaa7504c61a9b916eb9"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10042",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10042
@@ -4141,8 +4267,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000043",
               "ordinal": 43,
-              "raw": "3b270000",
-              "source_offset": 3372,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#2b017f49056c15dc7c21cff90586dfb3ac048308d8965dcfcacce45ead4029fd",
+                "sha256": "583cdf6302c26925e46bda1b57d9272d7b00358461b4e5212449d55e19a27167"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10043",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10043
@@ -4150,8 +4279,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000044",
               "ordinal": 44,
-              "raw": "3c270000",
-              "source_offset": 3376,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#dcb80c3e7a24f9222ec94f49c0842226b425076b1b854fad702f26690f54c2b9",
+                "sha256": "97ddb39d4fcb22c8e27615ab9c722db4b6a10467039cdecdf7a0a42a2a7ff59f"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10044",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10044
@@ -4159,8 +4291,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000045",
               "ordinal": 45,
-              "raw": "3d270000",
-              "source_offset": 3380,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#4b45fa46b83480b6815bf3852c79e4cf1db797d4a6bb27ed3e22fc10f10326b1",
+                "sha256": "251578aac70e168555a263d77dcdb0ce91551697e1cabd68a53d0f5be7c9af65"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10045",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10045
@@ -4168,8 +4303,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000046",
               "ordinal": 46,
-              "raw": "3e270000",
-              "source_offset": 3384,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#93be08179654e73bc55c182c9fc8bda6a8f4ea58edbc36881dfdb0633af53036",
+                "sha256": "d5d2196d9f2b0193e3a8436ad299aa7b95d1fe147e77b044f85ee2f6590738eb"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10046",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10046
@@ -4177,8 +4315,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000047",
               "ordinal": 47,
-              "raw": "3f270000",
-              "source_offset": 3388,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#e1fc8c3c6f3fcc8ba9e3f416211087a0c8b9bb18b6a66ea8cf7146e72a4cf3e8",
+                "sha256": "758d66dd733c136f79644d9bba1abd920c18a558d6e42265893d5da56aca17e1"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10047",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10047
@@ -4186,8 +4327,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000048",
               "ordinal": 48,
-              "raw": "40270000",
-              "source_offset": 3392,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#796db44734091841b62ec55094c72c78785216e3c074a191d11201ac5bddeb3b",
+                "sha256": "f44a9bc12acdb35feebc56042e0cdff898dca5ba64f5e763e5be025514352518"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10048",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10048
@@ -4195,8 +4339,11 @@
             {
               "id": "nx:rmfastload:object-id#0000000049",
               "ordinal": 49,
-              "raw": "41270000",
-              "source_offset": 3396,
+              "raw": {
+                "byte_len": 4,
+                "record_id": "nx:source:evidence#2518e2fecf0eefbec9910e69283e08927386927131b08088eac6f752a3b21abe",
+                "sha256": "61a827995b69e4ebfcbe945e31b56f0976a21f907658303becd320cb992743b0"
+              },
               "stable_identity": "nx:rmfastload:object-id-table#0:value#10049",
               "table": "nx:rmfastload:object-id-table#0",
               "value": 10049
@@ -4316,6 +4463,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -4323,7 +4474,6 @@
           "file_size": "3430",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "3416",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "partition_streams": "2",
@@ -4454,7 +4604,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -6730,6 +6883,61 @@
           }
         }
       },
+      "metadata": {
+        "native.nx.rmfastload_object_id_tables.nx:rmfastload:object-id-table#0.registry_source_offset": "3179",
+        "native.nx.rmfastload_object_id_tables.nx:rmfastload:object-id-table#0.source_offset": "3196",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000000.source_offset": "3200",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000001.source_offset": "3204",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000002.source_offset": "3208",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000003.source_offset": "3212",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000004.source_offset": "3216",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000005.source_offset": "3220",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000006.source_offset": "3224",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000007.source_offset": "3228",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000008.source_offset": "3232",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000009.source_offset": "3236",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000010.source_offset": "3240",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000011.source_offset": "3244",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000012.source_offset": "3248",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000013.source_offset": "3252",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000014.source_offset": "3256",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000015.source_offset": "3260",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000016.source_offset": "3264",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000017.source_offset": "3268",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000018.source_offset": "3272",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000019.source_offset": "3276",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000020.source_offset": "3280",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000021.source_offset": "3284",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000022.source_offset": "3288",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000023.source_offset": "3292",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000024.source_offset": "3296",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000025.source_offset": "3300",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000026.source_offset": "3304",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000027.source_offset": "3308",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000028.source_offset": "3312",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000029.source_offset": "3316",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000030.source_offset": "3320",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000031.source_offset": "3324",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000032.source_offset": "3328",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000033.source_offset": "3332",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000034.source_offset": "3336",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000035.source_offset": "3340",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000036.source_offset": "3344",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000037.source_offset": "3348",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000038.source_offset": "3352",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000039.source_offset": "3356",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000040.source_offset": "3360",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000041.source_offset": "3364",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000042.source_offset": "3368",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000043.source_offset": "3372",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000044.source_offset": "3376",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000045.source_offset": "3380",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000046.source_offset": "3384",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000047.source_offset": "3388",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000048.source_offset": "3392",
+        "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000049.source_offset": "3396",
+        "source.footer_offset": "3416"
+      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -6737,7 +6945,8 @@
             "retention": "inline"
           },
           "offset": 121,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:container:parasolid#1": {
           "bytes": {
@@ -6745,9 +6954,470 @@
             "retention": "inline"
           },
           "offset": 1657,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:evidence#07721554d089bc05621965f10b0ac9e8325c223d27181a672361f77f77fb4826": {
+          "bytes": {
+            "data": "JCcAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000020.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#15f438ee13a31b5572b45932fc7b14310cc2202cc97f78521f2ca795a4caf388": {
+          "bytes": {
+            "data": "GycAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000011.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#179063dc41e9527e8f3114706227ba38d727263bcf67c52ede9db024e2e1af0d": {
+          "bytes": {
+            "data": "IicAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000018.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#23764c742fcdc2af4b9a4dbf7cdb90623af95a30998cbfeb294d28592908c01e": {
+          "bytes": {
+            "data": "ICcAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000016.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#2518e2fecf0eefbec9910e69283e08927386927131b08088eac6f752a3b21abe": {
+          "bytes": {
+            "data": "QScAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000049.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#2653cfec68a5f7cac91c794db33cc4e81fbed20e42baef7b153dbcea7cff6b52": {
+          "bytes": {
+            "data": "FycAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000007.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#2b017f49056c15dc7c21cff90586dfb3ac048308d8965dcfcacce45ead4029fd": {
+          "bytes": {
+            "data": "OycAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000043.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#2ea744e228bd7913ecc1a759ad6e8433a807f4aa92cbef5c95c2d691bbff8ee6": {
+          "bytes": {
+            "data": "FScAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000005.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#32bc564a577e1d333854eca44b86480829f8019a0e67235be140b9822d91e361": {
+          "bytes": {
+            "data": "MScAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000033.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#3a3801d6e6cf5410adcac4afbdab0ea697b2bb447ee11f39e31ebd9c23370a03": {
+          "bytes": {
+            "data": "JScAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000021.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#4b45fa46b83480b6815bf3852c79e4cf1db797d4a6bb27ed3e22fc10f10326b1": {
+          "bytes": {
+            "data": "PScAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000045.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#567d644e1be2a0750f7184b1e0d6c2096b97cd25254e77aa599da6d9a2c258bd": {
+          "bytes": {
+            "data": "6AMAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000000.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#58d70d8309914d08c1d29e7aac4a1a4b50c68368207665dcae4d27969f49d171": {
+          "bytes": {
+            "data": "LCcAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000028.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#5b5e078e54a7e4c1578a858b400109e0fec41ca3324f815cc0ace88fc4ccac03": {
+          "bytes": {
+            "data": "HScAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000013.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#61c9511b9b939646a189b577850914e236b0c2f7918f54a0aaf6b697aa865be4": {
+          "bytes": {
+            "data": "7AMAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000004.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#6563ba341881cf50b0bf9e762ce0743c3f6326deedcb850422c023af61440963": {
+          "bytes": {
+            "data": "FicAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000006.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#6e8a5c8cc912327b3d26ad2df19eb7cd0ed8a584e63f2ad36f1c13b8e42e2987": {
+          "bytes": {
+            "data": "LicAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000030.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#7600f6ae269bf983502159f01a3f7b3ad9616ec02628834ee5cfe6ab1e4652a6": {
+          "bytes": {
+            "data": "GCcAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000008.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#76d0196ce9b96520185e9576635afe692feb6a3ce11d516108510f6c6f19fae1": {
+          "bytes": {
+            "data": "GicAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000010.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#77e4ff3817ee45096b6ce1403051491d5487337bf1749c34c857f0f082b3903e": {
+          "bytes": {
+            "data": "LycAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000031.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#796db44734091841b62ec55094c72c78785216e3c074a191d11201ac5bddeb3b": {
+          "bytes": {
+            "data": "QCcAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000048.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#7979bcb865955c3403f56c176b1f807add8483d3d9c4418e9890c943840a6845": {
+          "bytes": {
+            "data": "NycAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000039.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#85931a75cc8597f78e2a2414e36f98c62130c475c10788408b932a93c4de9d48": {
+          "bytes": {
+            "data": "JicAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000022.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#8595602331020dd74726874817012a53f208e8043551bd7dbdca5b926a7e0a43": {
+          "bytes": {
+            "data": "6QMAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000001.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#86d34a19f59dc0120f9b69b7fb1b52cf7a251571e1a223f04157be9f9db6d700": {
+          "bytes": {
+            "data": "MCcAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000032.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#8e3bc7983eed9ec06e3f926875ec792c3f27094cf36bc4dc4d8d2d860ff27857": {
+          "bytes": {
+            "data": "LScAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000029.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#93be08179654e73bc55c182c9fc8bda6a8f4ea58edbc36881dfdb0633af53036": {
+          "bytes": {
+            "data": "PicAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000046.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#99a451f870810f2b0f8d61d402c7174879093b816ff5c00a743143965d36ce16": {
+          "bytes": {
+            "data": "KycAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000027.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#9e7b2ff584ccf62275c33a351e29cacc797672c641ef4a84804d6f622ca5c544": {
+          "bytes": {
+            "data": "HCcAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000012.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#a178bcd7961d2226f755ad33eea2892f530d09afc060996dd3f97b1667f97ca2": {
+          "bytes": {
+            "data": "KScAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000025.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#a2174c4be8309c6a39fa9bf102f62eadd6509909373a494786a5670aa1615069": {
+          "bytes": {
+            "data": "KicAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000026.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#a69b4271bc89ce19d84f4f42220e551508cf087e576babd294bdf9c5debfd13b": {
+          "bytes": {
+            "data": "NCcAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000036.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#aa522a78dd960e9e8042e03ebed55abb2811d6760cdc90e17fde2d45c21a6204": {
+          "bytes": {
+            "data": "HycAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000015.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#aa808a24d72c5902f0f2e985826eaf8c896e661764ebcbfad6bd0d6ae156e093": {
+          "bytes": {
+            "data": "NicAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000038.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#aa98590e71ecebb7dc665feb3335ffc48ee59a3ecf0215e860f2d013dbee73b0": {
+          "bytes": {
+            "data": "OCcAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000040.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#ac756f1013da1741888d34a4378644ef77659003cf721945b3fa015178b4075f": {
+          "bytes": {
+            "data": "NScAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000037.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#ad82340a84d5a9720f276cf90ff7cf9beee4137e43b9e171fe8600efef110d10": {
+          "bytes": {
+            "data": "IycAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000019.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#b2162027f0c01351c41a7d031476225fe7be85e1992f2c0f2eb9f7be65eb845f": {
+          "bytes": {
+            "data": "MycAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000035.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#bbc0d29dd85ecf38ec480d8a740fac7b395e0b723b2c562dbf1e6a89a7a3c244": {
+          "bytes": {
+            "data": "OScAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000041.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#c95050e386a4844c43dd91f731d21c16e200bc34fb2683f21c5273eff1b68d6f": {
+          "bytes": {
+            "data": "JycAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000023.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#cd31269501af74d2baa4d95b0a2f32c40d50e28043637373402d437b0544d08d": {
+          "bytes": {
+            "data": "IScAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000017.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#d58d91f74e803a2cafe890bf6f5936c57c484325e68319da7cd57a395ec54d5f": {
+          "bytes": {
+            "data": "HicAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000014.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#d9e59d3877450f2b0bfde6dd99c8408aa5717265f1701db4c47fc74e7e3ec41a": {
+          "bytes": {
+            "data": "MicAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000034.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#dc77ce28dfcf730f54cd50583b25f156954a73131a2e5bb47d0916fdab3ee207": {
+          "bytes": {
+            "data": "KCcAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000024.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#dcb80c3e7a24f9222ec94f49c0842226b425076b1b854fad702f26690f54c2b9": {
+          "bytes": {
+            "data": "PCcAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000044.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#e1fc8c3c6f3fcc8ba9e3f416211087a0c8b9bb18b6a66ea8cf7146e72a4cf3e8": {
+          "bytes": {
+            "data": "PycAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000047.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#e278a77f7043c652023fdff6401087570f9dd0174c8fef41a14ee963281fa0a9": {
+          "bytes": {
+            "data": "GScAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000009.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#e8c423041133d23b35952dd5cc84c32820b6423ff78994adf9f067e901794f05": {
+          "bytes": {
+            "data": "OicAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000042.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#eb856f30262ca4dd68afb4c1e9ca8563b3dd4fe5b0b8ba867dbb3191bb29c843": {
+          "bytes": {
+            "data": "6wMAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000003.raw",
+          "untyped": []
+        },
+        "nx:source:evidence#f5e8873e13a65e64059b05f7d1026a9a33b7e9a4fea93cce2a851debeb104fce": {
+          "bytes": {
+            "data": "6gMAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "native.nx.rmfastload_object_ids.nx:rmfastload:object-id#0000000002.raw",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "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",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

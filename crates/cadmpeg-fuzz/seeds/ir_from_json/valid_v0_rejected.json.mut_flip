@@ -1,6 +1,9 @@
 {
   "ir_version": "0",
-  "decode_depth": "full",
+  "scope": {
+    "model": true,
+    "design": true
+  },
   "units": {
     "length": "millimeter"
   },
@@ -26,7 +29,7 @@
     "procedural_curves": [],
     "features": [],
     "configurations": [],
-    "parameters": ¤],
+   ß"parameters": [],
     "sketches": [],
     "sketch_entities": [],
     "sketch_constraints": [],

@@ -1,6 +1,9 @@
 {
   "ir_version": "0",
-  "decode_depth": "full",
+  "scope": {
+    "model": true,
+    "design": true
+  },
   "units": {
     "length": "millimeter"
   },
@@ -13,8 +16,8 @@
     "regions": [],
     "shells": [],
     "faces": [],
-    "loops": [],
-    "cÿÿÿÿes": [],
+ÿÿÿÿ"loops": [],
+    "coedges": [],
     "edges": [],
     "vertices": [],
     "points": [],

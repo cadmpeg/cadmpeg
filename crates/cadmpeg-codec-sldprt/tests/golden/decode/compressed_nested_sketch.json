@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -368,40 +367,41 @@
     "native": {
       "sldprt": {
         "configurations": [],
+        "document_metadata": [],
         "feature_histories": [],
         "feature_input_body_selections": [],
         "feature_input_classes": [
           {
             "id": "sldprt:feature-input:class#247:0",
             "name": "sgPointHandle",
-            "offset": 0,
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#247",
-            "role": "sketch_entity"
+            "role": "sketch_entity",
+            "sequence": 0
           },
           {
             "id": "sldprt:feature-input:class#247:106",
             "name": "sgPntPntDist",
-            "offset": 106,
             "ordinal": 3,
             "parent": "sldprt:feature-input:resolved-features#247",
-            "role": "sketch_constraint"
+            "role": "sketch_constraint",
+            "sequence": 5
           },
           {
             "id": "sldprt:feature-input:class#247:19",
             "name": "sgLineHandle",
-            "offset": 19,
             "ordinal": 1,
             "parent": "sldprt:feature-input:resolved-features#247",
-            "role": "sketch_entity"
+            "role": "sketch_entity",
+            "sequence": 1
           },
           {
             "id": "sldprt:feature-input:class#247:37",
             "name": "sgArcHandle",
-            "offset": 37,
             "ordinal": 2,
             "parent": "sldprt:feature-input:resolved-features#247",
-            "role": "sketch_entity"
+            "role": "sketch_entity",
+            "sequence": 2
           }
         ],
         "feature_input_edge_selections": [],
@@ -415,7 +415,10 @@
             "generated_surface_identities": [],
             "id": "sldprt:feature-input:resolved-features#247",
             "names": [],
-            "native_payload": "ffff01000d007367506f696e7448616e646c65ffff01000c0073674c696e6548616e646c65ffff01000b00736741726348616e646c650480fffeff0753006b00650074006300680031000480fffeff0d42006f00730073002d0045007800740072007500640065003100ffff01000c007367506e74506e74446973740480fffeff02440031000000000000000040ffffffff00000000fffeff0000009a9999999999993f0000000100000000000000000000000000000000000000010000000200000000000000d6800000ffffffff00000000d6800200ffffffff00000000ffff1f0003ffffffffffffffff000080bf0000000000000400020001000000000080bf00000400000000000000000000000000000000f03f00000000000000000000000000000000000000000000f0bf000000000000000001000000ffff1f0003ffffffffffffffff000080bf0100000000000400020001000000000080bf00000400000000000000000000000000000000004000000000000000000000000000000000000000000000f0bf000000000000000002000000ffff1f0003ffffffffffffffff000080bf0100000000000400020001000000000080bf00000400000000000000000000000000000000084000000000000000000000000000000000000000000000f0bf000000000000000003000000ffff1f0003ffffffffffffffff000080bf0100000000000400020001000000000080bf00000400000000000000000000000000000000104000000000000000000000000000000000000000000000f0bf000000000000000004000000231dd571da8148a2a85898b21b89ef9900000000789c0b08666060904f4b4d2c292d4a55c8cc2b282d5148cecf2d284a2d2e4e4d5128ce4e2d49ce6060100a76f6880f0e8f37363634308e373434303060306248614001da0c4402fb0fa83406e063e082300eed99d43f330f2a2ac2c0c090826c093f580804e4c01a0419e4a0cae4198c1818183420ae126490870a2b301833303068c28415a0c2720c260c0c0c5a106101883634bb614000a21ba72cd8101cb242604721800d5c9510d85d08608b2403721a02d8c16564196c70841e2a9065b045e6e20c7359063b6cc2e8ea0138b737a3",
+            "payload_evidence": {
+              "byte_len": 820,
+              "sha256": "3ffa8c09acb1c2354b5fc7692c1cd3796c09986fe1c88c7f4d4f2fcbbaa6f621"
+            },
             "references": [],
             "relation_bindings": [],
             "relation_instances": [],
@@ -428,25 +431,25 @@
           {
             "id": "sldprt:feature-input:name#247:124",
             "object_id": 4294967295,
-            "offset": 124,
             "ordinal": 2,
             "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 6,
             "value": "D1"
           },
           {
             "id": "sldprt:feature-input:name#247:54",
             "object_id": 7536751,
-            "offset": 54,
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 3,
             "value": "Sketch1"
           },
           {
             "id": "sldprt:feature-input:name#247:74",
             "object_id": 1349807696,
-            "offset": 74,
             "ordinal": 1,
             "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 4,
             "value": "Boss-Extrude1"
           }
         ],
@@ -455,28 +458,28 @@
             "id": "sldprt:feature-input:reference#247:199",
             "kind": "d6",
             "object_index": 0,
-            "offset": 199,
             "ordinal": 0,
-            "parent": "sldprt:feature-input:resolved-features#247"
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 8
           },
           {
             "id": "sldprt:feature-input:reference#247:211",
             "kind": "d6",
             "object_index": 2,
-            "offset": 211,
             "ordinal": 1,
-            "parent": "sldprt:feature-input:resolved-features#247"
+            "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 9
           }
         ],
         "feature_input_relation_bindings": [
           {
             "class_ref": "sldprt:feature-input:class#247:106",
             "family": "point_point_distance",
-            "id": "sldprt:feature-input:relation-binding#247:106",
-            "offset": 106,
+            "id": "sldprt:feature-input:relation-binding#247:3",
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#247",
-            "scalar_ref": "sldprt:feature-input:scalar#247:156"
+            "scalar_ref": "sldprt:feature-input:scalar#247:156",
+            "sequence": 5
           }
         ],
         "feature_input_relation_instances": [],
@@ -489,24 +492,22 @@
             "id": "sldprt:feature-input:scalar#247:156",
             "name": "sldprt:feature-input:name#247:124",
             "object_id": 1,
-            "offset": 156,
             "operands": [
               {
                 "entity_index": 0,
                 "kind": "d6",
-                "offset": 199,
                 "reference_ref": "sldprt:feature-input:reference#247:199"
               },
               {
                 "entity_index": 2,
                 "kind": "d6",
-                "offset": 211,
                 "reference_ref": "sldprt:feature-input:reference#247:211"
               }
             ],
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#247",
             "role": "driving",
+            "sequence": 7,
             "value": 0.025
           }
         ],
@@ -519,9 +520,9 @@
             "kind": "point",
             "local_id": 1,
             "object_index": 0,
-            "offset": 223,
             "ordinal": 0,
             "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 10,
             "state_value": 1.0
           },
           {
@@ -531,9 +532,9 @@
             },
             "local_id": 2,
             "object_index": 1,
-            "offset": 315,
             "ordinal": 1,
             "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 11,
             "state_value": 2.0
           },
           {
@@ -543,9 +544,9 @@
             },
             "local_id": 3,
             "object_index": 2,
-            "offset": 407,
             "ordinal": 2,
             "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 12,
             "state_value": 3.0
           },
           {
@@ -555,9 +556,9 @@
             },
             "local_id": 4,
             "object_index": 3,
-            "offset": 499,
             "ordinal": 3,
             "parent": "sldprt:feature-input:resolved-features#247",
+            "sequence": 13,
             "state_value": 4.0
           }
         ],
@@ -571,30 +572,16 @@
         ]
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
-        "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "2",
         "bmp_thumbnail_count": "0",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "compound_stream_count": "0",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "png_preview_count": "0",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#partition:0",
-        "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "6eb96a5161dd48a614d2ae41a75bafd6f42fcc6077badcd365f8266b83a1dd7a",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+        "png_preview_count": "0"
       },
       "identity": {
         "classification": "classified",
@@ -695,6 +682,46 @@
         },
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "sketch.native-geometry",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt",
+          "scope": "namespaced"
+        },
+        "message": "sketch-input entity sldprt:feature-input:sketch-entity#247:223 has no neutral geometry or constraint projection; its typed native marker is retained",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "sketch.native-geometry",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt",
+          "scope": "namespaced"
+        },
+        "message": "sketch-input entity sldprt:feature-input:sketch-entity#247:315 has no neutral geometry or constraint projection; its typed native marker is retained",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "sketch.native-geometry",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt",
+          "scope": "namespaced"
+        },
+        "message": "sketch-input entity sldprt:feature-input:sketch-entity#247:407 has no neutral geometry or constraint projection; its typed native marker is retained",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "sketch.native-geometry",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt",
+          "scope": "namespaced"
+        },
+        "message": "sketch-input entity sldprt:feature-input:sketch-entity#247:499 has no neutral geometry or constraint projection; its typed native marker is retained",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -704,7 +731,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -922,8 +952,24 @@
           "offset": 0,
           "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_profile_edge"
+        },
+        "sldprt:source:feature-input#3be6fff622b1f76a2eeb17d2418afcbff4036306c78274c4b250c6fe57c92342": {
+          "offset": 0,
+          "stream": "ResolvedFeatures",
+          "tag": "feature_input_layout"
         }
       }
+    },
+    "metadata": {
+      "active_parasolid_block": "Contents/Config-0-Partition",
+      "block_count": "2",
+      "brep_local_sha256": "99515efff73d48415f7fadfea5439d9758fdc4538ace29a4f2e41e397705b946",
+      "compound_stream_count": "0",
+      "document_local_sha256": "66268c48f08dacca54ba67ba731e0aa170809dbebc556e1f20f514d3ed3c01cb",
+      "outer_version": "0x00000004",
+      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
+      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "retained_records": {
       "sldprt:file:block#247": {
@@ -932,7 +978,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-ResolvedFeatures"
+        "stream": "Contents/Config-0-ResolvedFeatures",
+        "untyped": []
       },
       "sldprt:file:block#8": {
         "bytes": {
@@ -940,7 +987,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": []
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -948,8 +996,19 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
+      },
+      "sldprt:source:feature-input#3be6fff622b1f76a2eeb17d2418afcbff4036306c78274c4b250c6fe57c92342": {
+        "bytes": {
+          "data": "//8BAA0Ac2dQb2ludEhhbmRsZf//AQAMAHNnTGluZUhhbmRsZf//AQALAHNnQXJjSGFuZGxlBID//v8HUwBrAGUAdABjAGgAMQAEgP/+/w1CAG8AcwBzAC0ARQB4AHQAcgB1AGQAZQAxAP//AQAMAHNnUG50UG50RGlzdASA//7/AkQAMQAAAAAAAAAAQP////8AAAAA//7/AAAAmpmZmZmZmT8AAAABAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAACAAAAAAAAANaAAAD/////AAAAANaAAgD/////AAAAAP//HwAD//////////8AAIC/AAAAAAAABAACAAEAAAAAAIC/AAAEAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAABAAAA//8fAAP//////////wAAgL8BAAAAAAAEAAIAAQAAAAAAgL8AAAQAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAAAAAAIAAAD//x8AA///////////AACAvwEAAAAAAAQAAgABAAAAAACAvwAABAAAAAAAAAAAAAAAAAAAAAAIQAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAAAAAAAAwAAAP//HwAD//////////8AAIC/AQAAAAAABAACAAEAAAAAAIC/AAAEAAAAAAAAAAAAAAAAAAAAABBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAAEAAAAIx3VcdqBSKKoWJiyG4nvmQAAAAB4nAsIZmBgkE9LTSwpLUpVyMwrKC1RSM7PLShKLS5OTVEozk4tSc5gYBAKdvaIDw6PNzY2NDCONzQ0MDBgMGJIYUAB2gxEAvsPqDQG4GPggjAO7ZnUPzMPKirCwMCQgmwJP1gIBOTAGgQZ5KDK5BmMGBgYNCCuEmSQhworMBgzMDBowoQVoMJyDCYMDAxaEGEBiDY0u2FAAKIbpyzYEByyQmBHIYANXJUQ2F0IYIskA3IaAtjBZWQZbHCEHiqQZbBF5uIMc1kGO2zC6OoBOLc3ow==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "sldprt",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

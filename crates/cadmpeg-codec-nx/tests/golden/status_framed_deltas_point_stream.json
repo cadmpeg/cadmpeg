@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -42,7 +41,13 @@
         "vertices": [],
         "view_presentations": []
       },
-      "native": {},
+      "native": {
+        "nx": {}
+      },
+      "scope": {
+        "design": false,
+        "model": false
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -50,7 +55,6 @@
           "file_size": "128",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "114",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -113,6 +117,17 @@
           },
           "message": "Non-Parasolid preview stream #0 was classified but not transferred.",
           "severity": "info"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -121,11 +136,33 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": false,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
-      "annotations": {}
+      "annotations": {},
+      "metadata": {
+        "source.footer_offset": "114"
+      },
+      "retained_records": {
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAAByAAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAmAAAAAAAAAHgBY5BlMGJgYG5hYGSEI/vOmSAwa39Cku+ljyv/2BdAaADJdA86Rk9PVEVSAAAAAAAAAAA=",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": [
+            "model"
+          ]
+        }
+      },
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

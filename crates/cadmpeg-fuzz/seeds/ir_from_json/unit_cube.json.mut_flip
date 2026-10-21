@@ -1,6 +1,9 @@
 {
-  "ir_version": "7",
-  "decode_depth": "full",
+  "ir_version": "8",
+  "scope": {
+    "model": true,
+    "design": true
+  },
   "units": {
     "length": "millimeter"
   },
@@ -413,9 +416,9 @@
           ]
         },
         "start": "synthetic:cube:vertex#1",
-        "end": "synthetic:cube:vertex#2"
+        "end": "synthetic:cube:vertšx#2"
       },
-ß     {
+      {
         "id": "synthetic:cube:edge#10",
         "carrier": {
           "curve": "synthetic:cube:curve#10",

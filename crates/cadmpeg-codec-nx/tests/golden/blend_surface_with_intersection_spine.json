@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -227,7 +226,6 @@
           "parasolid_blend_surface_records": [
             {
               "id": "nx:s0:blend-surface-record#12",
-              "inflated_offset": 473,
               "offsets": [
                 -3.0,
                 3.0
@@ -263,7 +261,6 @@
                 0
               ],
               "id": "nx:s0:intersection-record#18",
-              "inflated_offset": 539,
               "sense": true,
               "stream_ordinal": 0,
               "xmt": 18
@@ -282,6 +279,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -289,7 +290,6 @@
           "file_size": "401",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "387",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -388,7 +388,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -547,6 +550,11 @@
           }
         }
       },
+      "metadata": {
+        "native.nx.parasolid_blend_surface_records.nx:s0:blend-surface-record#12.inflated_offset": "473",
+        "native.nx.parasolid_intersection_records.nx:s0:intersection-record#18.inflated_offset": "539",
+        "source.footer_offset": "387"
+      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -554,9 +562,24 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAACDAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAA3AQAAAAAAAHgBdVHPLwNREP4e2qJLWU5CsyehG0ElgsuLNEUThO46b5ZuolIqm70gceIv4Ozu4tyDxN/CtRdnJ9/+aPNSOrvzzcw3M+/HvCMLwPKWYVe3D62Dim3sVPbLxsK16wf1oN68WjTOfM8NvJpxemNcNmteo+H5bMlZpT3HLlu2s+psUgANA+T//mMYjEjBvMAQBD+NOk4focjC+ld7trRETiDFas0M6URzpGI3wwaBSWQYpogZjEJgGCOAiQk6CEWuvRZWToouC0BhkggUkY5sF9Q9uuR/jvyO2Y6NIwXz4QmUmKdRI8Xvu4TOqyh1yMqZZCbAFCer5uaQVUP5cPu5+zZ9J58T+9I6bj/mW9jo6YNZ5QzS0D/On4L3i/sf2bG9FwxfKNR56NFOIkKCGS0gOHUB8QtKXztsRk9PVEVSAAAAAAAAAAA=",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": [
+            "model"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {
