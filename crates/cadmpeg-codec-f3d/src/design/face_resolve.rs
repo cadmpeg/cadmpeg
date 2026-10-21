@@ -3084,7 +3084,7 @@ mod tests {
                 .collect(),
             lost_edge_references: Vec::new(),
             operand_role: DesignConstructionOperandRole::Other(SourceOperandRole::from_raw(
-                287_762_808_832_i64,
+                287_762_808_832_u64,
             )),
             frame: DesignConstructionOperandGroupFrame::try_from(
                 DesignConstructionOperandGroupFrameDraft {

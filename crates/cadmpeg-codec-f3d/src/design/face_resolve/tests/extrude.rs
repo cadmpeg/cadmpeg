@@ -14,8 +14,7 @@ use crate::records::topology::construction::{
 use crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding;
 use crate::records::topology::extrude_selection::DesignExtrudeFaceRole;
 use crate::records::topology::{
-    construction::DesignConstructionOperandGroup, extrude_selection::DesignOperandRole,
-    face::DesignFaceOperand,
+    construction::DesignConstructionOperandGroup, face::DesignFaceOperand,
 };
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
