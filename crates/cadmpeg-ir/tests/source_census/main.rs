@@ -358,7 +358,7 @@ fn compiled_hand_readers_keep_their_admission_boundaries() {
         }));
     assert!(
         unknown_feature
-            .unwrap_err()
+            .expect_err("the feature fixture contains an unknown field")
             .to_string()
             .contains("unexpected"),
         "the compiled local wire adapter rejects an unknown object key"
