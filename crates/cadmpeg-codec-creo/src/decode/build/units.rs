@@ -373,7 +373,18 @@ fn scale_feature_operation(
         FeatureOperation::SketchBlockInstance {
             placement: None, ..
         } => {}
-        FeatureOperation::Primitive { solid, .. } => scale_primitive_solid(solid, scale)?,
+        FeatureOperation::Primitive {
+            solid, placement, ..
+        } => {
+            scale_primitive_solid(solid, scale)?;
+            if let Some(placement) = placement {
+                *placement = placement.scaled_translation(scale).ok_or_else(|| {
+                    CodecError::malformed(
+                        "Creo scaled primitive placement must remain finite and rigid",
+                    )
+                })?;
+            }
+        }
         FeatureOperation::Sweep { shape, .. } => {
             for generated in shape.generated_sections_mut() {
                 scale_sweep_section(generated, scale)?;
