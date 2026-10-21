@@ -41,6 +41,8 @@ pub(super) struct ProductPrereqs {
     /// Scopes after history-bound variant admission, before design-intent
     /// binding.
     pub(super) design_parameter_scopes: Vec<DesignParameterScope>,
+    /// Freedoms and limits of the joints whose motion records carry them.
+    pub(super) design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
     /// Authored feature order, which tells top-level `Component Insert`
     /// scopes from internal operands. A decode failure that does not refuse
     /// the document stays here; design intent then does not run.
@@ -89,6 +91,7 @@ impl ProductPrereqs {
             design_parameter_owners,
             design_component_occurrences,
             design_parameter_scopes,
+            design_joint_motions,
             design_feature_timelines,
             design_component_naming_spaces,
             design_body_bindings,
@@ -109,6 +112,7 @@ impl ProductPrereqs {
         native.design_parameter_owners = design_parameter_owners;
         native.design_component_occurrences = design_component_occurrences;
         native.design_parameter_scopes = design_parameter_scopes;
+        native.design_joint_motions = design_joint_motions;
         native.design_component_naming_spaces = design_component_naming_spaces;
         native.design_body_bindings = design_body_bindings;
         native.design_body_members = design_body_members;
@@ -175,6 +179,8 @@ pub(super) fn decode(
         &mut design_parameter_scopes,
         &history_index,
     )?;
+    let design_joint_motions =
+        crate::design::decode::joint_motion::decode_joint_motions(scan, &design_parameter_scopes)?;
     let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(scan)
     {
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -201,6 +207,7 @@ pub(super) fn decode(
         design_parameter_owners,
         design_component_occurrences,
         design_parameter_scopes,
+        design_joint_motions,
         design_feature_timelines,
         design_component_naming_spaces,
         design_body_bindings,

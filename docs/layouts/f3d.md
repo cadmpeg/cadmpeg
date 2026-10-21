@@ -5018,6 +5018,25 @@ Unstated regions:
 
 - `0..11` (11 B): Indexed header.
 
+## `assembly_wide_operand_path_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: not stated
+
+This size-less byte record describes the fixed prefix through the optional transform. The scope backlink, wrapper reference, constant 2 and zero tail follow one zero byte after the identity flag or the transform.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its eleven-byte header is followed by 28 zero bytes |
+| 11 | 28 | `zero_run_28` | `bytes[28]` | little | spec | header is followed by 28 zero bytes |
+| 39 | 4 | `constant_three` | `u32` | little | spec | u32 value 3 at offset 39 |
+| 43 | 13 | `zero_run_13` | `bytes[13]` | little | spec | 13 zero bytes |
+| 56 | 11 | `nonzero_record_reference` | `bytes[11]` | little | spec | a nonzero marked same-segment reference at offset 56 |
+| 67 | 1 | `identity_flag` | `u8` | little | spec | an identity flag byte at offset 67 |
+| 68 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid 4×4 transform at offset 68 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

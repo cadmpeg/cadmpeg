@@ -174,9 +174,9 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 
 **Question.** Which typed records define history order, feature operands, suppression, and result-body transitions?
 
-**Known.** Numeric PmDc parameters, planar sketches, generic feature records, rectangular-pattern records, mirror records, and end-of-features records have stable carrier-qualified identities. Generic, rectangular-pattern, and mirror records supply ordered property-reference vectors. Pattern records also supply ordered participant references. Typed feature properties identify part-operation, extent, hole, fillet, chamfer, Boolean, boundary-patch, feature-dimension, object-collection, fillet-edge-set, edge-collection, edge-item, body, profile-selection, and placement records. Closed extrusion, drilled/countersink/counterbore hole, constant-radius edge-fillet, and equal-distance edge-chamfer branches have exact dimensions, native selections, placements, and native result-body identities. Feature-label records supply an owner, a label, a class identifier, and ordered participant references. Entity-style links retain associative entity identifiers and entity types. Planar point, line, circle, ellipse, placement, geometric-constraint, and dimensional-constraint graphs have exact record references and neutral identities. Exact RSe frames provide type identifiers and record ranges for the remaining design records.
+**Known.** Model roots, root labels, and group labels define the browser history order, the end-of-part position, and the flat-pattern history. Content-header flag bits define suppression and the below-end-of-part state. Feature labels identify consumed sketches, and pattern-feature participants identify seed features. Numeric PmDc parameters, planar sketches, generic feature records, rectangular-pattern records, mirror records, and end-of-features records have stable carrier-qualified identities. Generic, rectangular-pattern, and mirror records supply ordered property-reference vectors. Pattern records also supply ordered participant references. Typed feature properties identify part-operation, extent, hole, fillet, chamfer, Boolean, boundary-patch, feature-dimension, object-collection, fillet-edge-set, edge-collection, edge-item, body, profile-selection, and placement records. Closed one-sided, symmetric, two-sided, to, and from-to extrusion, drilled/countersink/counterbore hole, constant-radius edge-fillet, and equal-distance edge-chamfer branches have exact dimensions, native selections, placements, and native result-body identities. Feature-label records supply an owner, a label, a class identifier, and ordered participant references. Entity-style links retain associative entity identifiers and entity types. Planar point, line, circle, ellipse, placement, geometric-constraint, and dimensional-constraint graphs have exact record references and neutral identities. Exact RSe frames provide type identifiers and record ranges for the remaining design records.
 
-**Need.** Suppression state, authoritative evaluation dependencies, current-model body joins, pattern and mirror transforms, revolve operands, two-sided and face-terminated extents, non-default fillet laws, oriented chamfers, and the remaining operation families require exact record joins before transfer. These fields must resolve before the score advances to L4.
+**Need.** Body-level evaluation dependencies, current-model body joins, pattern and mirror transforms, revolve operands, extrusion targets other than work planes and plane faces, the meaning of the termination flag, non-default fillet laws, oriented chamfers, and the remaining operation families require exact record joins before transfer. These fields must resolve before the score advances to L4.
 
 ### DE-02. Compound parameter units and function expressions
 
@@ -193,6 +193,22 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 **Known.** The `count_value` is the u32 field between sketch state and the type-8 reference array. Point, bounded-line, circle, and ellipse entities form closed planar sketch graphs. Coincident, parallel, perpendicular, tangent, horizontal, vertical, circle-center, equal-radius, radius, diameter, horizontal-distance, and vertical-distance relations with empty constraint maps have exact operands.
 
 **Need.** The count requires an exact referent before validation uses it. Nonempty constraint maps require exact locus semantics before neutral transfer. Each additional entity and relation requires its complete solved geometry, ordered operands, parameter role, and profile-boundary semantics.
+
+### DE-04. Parameter tables without a model owner
+
+**Question.** Which record owns a PmDc parameter table whose context reference is null, and what scope applies to its parameters?
+
+**Known.** These tables have flags `0x20` and two-entry member lists. No record references the table. Their parameters are referenced by records of type `b038b999d211c35b6000b3856c2387b0`. Their parameters remain native with a parameter-scope loss.
+
+**Need.** The owning record and its feature or sketch identity must be exact before these parameters can enter a neutral scope.
+
+### DE-05. Model-root and parameter-table fields
+
+**Question.** What do the model-root flags, the model-root values other than values 3 and 9, the model-root `scale` and `terminal_value`, the parameter-table member list, and the parameter-table suffix encode?
+
+**Known.** Value 3 references the root's parameter table and value 9 is null or repeats it. Value 12 is 1 in document model roots and 7 in flat-pattern model roots. The member list and the name map contain every parameter of the table and also other records. The suffix is retained by length.
+
+**Need.** The model graph, the flat-pattern definition operands, and the table membership rule must be exact before the flat-pattern model can transfer more than its parameter scope.
 
 ## 5. Adjacent envelopes
 
