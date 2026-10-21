@@ -608,7 +608,7 @@ impl SldprtNative {
             .collect::<HashMap<_, _>>();
         let ids = RecordIds::new(&classes, &scalars, &names);
         if let Some(record) = relation_bindings.iter().find(|record| {
-            !ids.classes.contains_key(record.class_ref.as_str())
+            !relation_binding_family_valid(record, &ids)
                 || !ids.scalars.contains_key(record.scalar_ref.as_str())
                 || record
                     .feature_ref
@@ -616,7 +616,7 @@ impl SldprtNative {
                     .is_some_and(|feature| !feature_ids.contains(feature))
         }) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "feature-input relation binding {} has an unresolved class or scalar",
+                "feature-input relation binding {} has an unresolved or inconsistent relation class or scalar",
                 record.id
             )));
         }
@@ -904,7 +904,7 @@ impl SldprtNative {
             }
             if let Some(record) = lane.relation_bindings.iter().find(|record| {
                 record.parent != lane.id
-                    || !ids.classes.contains_key(record.class_ref.as_str())
+                    || !relation_binding_family_valid(record, &ids)
                     || !ids.scalars.contains_key(record.scalar_ref.as_str())
                     || record
                         .feature_ref
@@ -1105,6 +1105,21 @@ impl<'a> RecordIds<'a> {
         }
         ids
     }
+}
+
+fn relation_binding_family_valid(
+    record: &FeatureInputRelationBinding,
+    ids: &RecordIds<'_>,
+) -> bool {
+    ids.classes
+        .get(record.class_ref.as_str())
+        .is_some_and(|class| {
+            matches!(
+                crate::classification::native_object_class(&class.name),
+                crate::classification::NativeClassKind::SketchRelation(family)
+                    if family == record.family
+            )
+        })
 }
 
 fn relation_instance_shape_valid(

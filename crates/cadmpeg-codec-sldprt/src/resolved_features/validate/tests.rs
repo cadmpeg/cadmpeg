@@ -226,22 +226,36 @@ fn native_validation_rejects_edited_relation_binding() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_input_lanes[0].relation_bindings[0].family =
-            crate::records::FeatureInputRelationFamily::LineLineDistance;
-    });
-
+    let mut native = crate::test_support::native::sldprt_native(decoded.ir());
+    native.feature_input_lanes[0].relation_bindings[0].family =
+        crate::records::FeatureInputRelationFamily::LineLineDistance;
+    // #209 Rule W1/P: this remains malformed document content independently of
+    // source positions: the edited family disagrees with its declared class.
+    let mut namespace = decoded.ir().native.namespace("sldprt").unwrap().clone();
+    let original = namespace.clone();
+    let error = native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("relation binding")
+            && error.to_string().contains("inconsistent ownership")
+    );
+    assert_eq!(namespace, original, "malformed store must be atomic");
+    let mut wire = serde_json::to_value(original).unwrap();
+    wire["feature_input_relation_bindings"][0]["family"] = serde_json::json!("line_line_distance");
+    *decoded.ir_mut().native.namespace_mut("sldprt") = serde_json::from_value(wire).unwrap();
     assert!(crate::resolved_features::validate::validate_native(
         &cadmpeg_test_support::service_decode_context(),
         decoded.ir()
     )
     .unwrap()
     .iter()
-    .any(|finding| {
-        finding
-            .message
-            .contains("relation bindings do not match the native payload")
-    }));
+    .any(|finding| finding
+        .message
+        .contains("inconsistent relation class or scalar")));
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
@@ -250,7 +264,7 @@ fn native_validation_rejects_edited_relation_binding() {
     .unwrap_err();
     assert!(error
         .to_string()
-        .contains("relation bindings do not match the native payload"));
+        .contains("inconsistent relation class or scalar"));
 }
 
 #[test]
