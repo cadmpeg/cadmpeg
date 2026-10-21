@@ -489,9 +489,14 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .find(|body| body.id.as_str() == "iges:model:body#D11")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(
-        body.color,
+        result
+            .ir()
+            .effective_display_color(&cadmpeg_ir::appearance::AppearanceTarget::Body(
+                body.id.clone()
+            )),
         Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
     );
+    assert_eq!(body.color, None, "the appearance owns the source colour");
     assert_eq!(body.visible, Some(true));
     let face = result
         .ir()
@@ -501,9 +506,14 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .find(|face| face.id.as_str() == "iges:model:face#D11:D9")
         .unwrap();
     assert_eq!(
-        face.color,
+        result
+            .ir()
+            .effective_display_color(&cadmpeg_ir::appearance::AppearanceTarget::Face(
+                face.id.clone()
+            )),
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0).expect("valid color"))
     );
+    assert_eq!(face.color, None, "the appearance owns the source colour");
     assert!(result
         .ir()
         .model

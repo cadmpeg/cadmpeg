@@ -163,6 +163,42 @@ fn decode_types_all_csg_primitive_solids_and_defaults() {
             .map(str::to_owned)
         )
     );
+    let feature = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some("iges:solid:primitive#D5"))
+        .unwrap();
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Primitive { solid, .. },
+    ) = feature.evaluation.definition()
+    else {
+        panic!("the IGES wedge has a typed primitive construction");
+    };
+    let cadmpeg_ir::features::PrimitiveSolidKind::Wedge {
+        xmin,
+        ymin,
+        zmin,
+        x2min,
+        z2min,
+        xmax,
+        ymax,
+        zmax,
+        x2max,
+        z2max,
+    } = solid.kind()
+    else {
+        panic!("Type 152 maps to the wedge variant");
+    };
+    assert_eq!(
+        [xmin, ymin, zmin, x2min, z2min, xmax, ymax, zmax, x2max, z2max].map(|dimension| result
+            .ir()
+            .dimension_value(dimension)
+            .unwrap()
+            .get()),
+        [0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 3.0, 2.0, 1.0, 2.0]
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
