@@ -71,7 +71,10 @@ struct EvaluatedFeatureState<'a> {
 /// modeling operation. Operation evidence is carried by the state edges,
 /// source content, or source properties; without it, a native record is only
 /// a retained tree item and must not create an operation-completeness loss.
-fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> bool {
+fn native_feature_has_operation_evidence(
+    state: &EvaluatedFeatureState<'_>,
+    native: Option<&crate::native::SldprtNative>,
+) -> bool {
     matches!(
         state.definition,
         cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -80,7 +83,15 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
     ) && (!state.dependencies.is_empty()
         || !state.outputs.is_empty()
         || !state.feature.source_content.is_empty()
-        || !state.feature.source_properties.is_empty())
+        || !state.feature.source_properties.is_empty()
+        || native.is_some_and(|native| {
+            native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|record| state.feature.native_ref.as_deref() == Some(record.id.as_str()))
+                .is_some_and(|record| !record.content.is_empty() || !record.properties.is_empty())
+        }))
 }
 
 /// Decode one seekable `.sldprt` stream into IR and diagnostics.
@@ -1061,7 +1072,7 @@ fn append_design_losses(
     }
     let native_features = evaluated_feature_states
         .iter()
-        .filter(|state| native_feature_has_operation_evidence(state))
+        .filter(|state| native_feature_has_operation_evidence(state, native.as_ref()))
         .count();
     if native_features > 0 {
         report.losses.push(SldprtLossCode::FeatureNativeKindRetained.note(format!(
