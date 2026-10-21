@@ -558,14 +558,13 @@ fn semantic_writer_round_trips_typed_rib() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let profile_ref = decoded.ir().model.features[0].id.clone();
-    let draft_id = decoded
+    let draft_before = decoded
         .ir()
         .model
         .parameters
         .iter()
         .find(|parameter| parameter.name == "Draft")
         .unwrap()
-        .id
         .clone();
     assert!(matches!(
     decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Rib {
@@ -612,38 +611,144 @@ fn semantic_writer_round_trips_typed_rib() {
         });
     }
 
+    let owner = decoded.ir().model.features[1].id.clone();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.design-reduced"
+            && loss.severity == cadmpeg_ir::report::Severity::Error
+            && loss.message.contains(owner.as_str())
+            && loss.message.contains(
+                "cannot retain independent parameter Draft without reactivating its rib draft",
+            )
+    }));
+    assert!(matches!(plan.report().coverage,
+        cadmpeg_ir::codec::write::ArenaCoverage::Declared(coverage)
+            if coverage.features == cadmpeg_ir::codec::write::ArenaDisposition::Reported
+    ));
     let mut encoded = Vec::new();
-    crate::test_support::serialize_edited_history(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+    plan.write_to(&mut encoded).unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[1];
-    assert_eq!(feature.properties["Profile"], "41");
-    assert_eq!(feature.properties["Direction"], "1,0,0");
-    assert_eq!(feature.properties["BothSides"], "true");
-    assert_eq!(feature.properties["Operation"], "NewBody");
-    assert_eq!(feature.parameters["Thickness"], "3mm");
-    // D1: removing the operation use does not delete its authored parameter.
-    assert!(feature.parameters.contains_key("Draft"));
+    // D1/S-entity: this native form cannot carry an independent Draft while
+    // also representing RibDraft::None. Retain the parameter and solved model,
+    // and report the lost construction instead of reactivating its old angle.
     let draft = regenerated
         .ir()
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.id == draft_id)
+        .find(|parameter| parameter.id == draft_before.id)
         .expect("same independent draft parameter");
-    assert_eq!(draft.name, "Draft");
-    assert_eq!(
-        draft.value,
-        Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::scalar::Angle::new(5f64.to_radians()).unwrap()
-        ))
-    );
+    assert_eq!(draft.name, draft_before.name);
+    assert_eq!(draft.owner, draft_before.owner);
+    assert_eq!(draft.expression, draft_before.expression);
+    assert_eq!(draft.value, draft_before.value);
+    assert!(matches!(
+        regenerated.ir().model.features[1].definition().operation(),
+        FeatureOperation::StoredGeometry {}
+    ));
+    let expected_model = serde_json::to_value(&decoded.ir().model).unwrap();
+    let actual_model = serde_json::to_value(&regenerated.ir().model).unwrap();
+    for arena in [
+        "bodies",
+        "regions",
+        "shells",
+        "faces",
+        "loops",
+        "coedges",
+        "edges",
+        "vertices",
+        "points",
+        "surfaces",
+        "curves",
+        "pcurves",
+        "tessellations",
+    ] {
+        assert_eq!(
+            actual_model[arena], expected_model[arena],
+            "held solved arena {arena}"
+        );
+    }
+}
+
+#[test]
+fn semantic_writer_round_trips_rib_without_an_independent_draft() {
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation, RibDraft, RibSide};
+    use cadmpeg_ir::math::Vector3;
+
+    // A separately authored control has no Draft parameter. It can represent
+    // the same no-draft operation without discarding independent content.
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="RibProfile" Type="Sketch" id="41"/><Rib Name="Web" Type="Rib" id="42" Profile="41" Direction="0,1,0" BothSides="false" Operation="Join"><Dimension Name="Thickness">2mm</Dimension></Rib></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    assert!(decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .all(|parameter| parameter.name != "Draft"));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let owner = ir_edit.model.features[1].id.clone();
+        ir_edit
+            .set_dimension(
+                &owner,
+                "/construction/thickness",
+                cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
+            )
+            .unwrap();
+        ir_edit.model.features[1].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Rib { construction, op }) =
+                definition
+            else {
+                panic!("typed rib");
+            };
+            construction.direction = Some(
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+            );
+            construction.side = Some(RibSide::Centered);
+            construction.draft = RibDraft::None;
+            *op = BooleanOp::NewBody;
+        });
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "writer.design-reduced"));
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(regenerated.ir());
+    let feature = &native.feature_histories[0].features[1];
+    assert_eq!(feature.properties["Profile"], "41");
+    assert_eq!(feature.properties["Direction"], "1,0,0");
+    assert_eq!(feature.properties["BothSides"], "true");
+    assert_eq!(feature.properties["Operation"], "NewBody");
+    assert_eq!(feature.parameters["Thickness"], "3mm");
+    assert!(!feature.parameters.contains_key("Draft"));
     assert!(matches!(
         regenerated.ir().model.features[1].definition().operation(),
         FeatureOperation::Rib {
