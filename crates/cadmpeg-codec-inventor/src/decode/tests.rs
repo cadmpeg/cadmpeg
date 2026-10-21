@@ -608,8 +608,35 @@ fn unclosed_parameter_reference_keeps_typed_source_semantics() {
             "semantic inventory {arena} survives"
         );
     }
-    assert!(!result
+    let parameters = namespace
+        .arena_as::<crate::design::PmDcParameter>("pm_dc_parameters")
+        .expect("typed native parameters");
+    let ratio = parameters
+        .iter()
+        .find(|parameter| parameter.name == "ratio")
+        .expect("original named parameter survives");
+    assert_eq!(ratio.formula.index(), 99);
+    assert_eq!(ratio.nominal_value.get(), 1.0);
+    assert_eq!(ratio.model_value.get(), 1.0);
+    assert!(!namespace.arenas()["segment_pairs"].is_empty());
+    let source_record = result
         .source_fidelity()
-        .unrepresented()
-        .contains(&cadmpeg_ir::ArenaClass::Design));
+        .retained_record("inventor:source:image#whole")
+        .expect("unprojected segment evidence");
+    assert_eq!(source_record.byte_len(), u64::try_from(source.len()).unwrap());
+    assert_eq!(source_record.sha256(), cadmpeg_ir::hash::sha256_hex(&source));
+    assert_eq!(
+        source_record.untyped(),
+        &cadmpeg_ir::ArenaClasses::from([
+            cadmpeg_ir::ArenaClass::Model,
+            cadmpeg_ir::ArenaClass::Design,
+        ])
+    );
+    let retained_classes = result
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .flat_map(|record| record.untyped().iter().copied())
+        .collect::<cadmpeg_ir::ArenaClasses>();
+    assert_eq!(result.source_fidelity().unrepresented(), retained_classes);
 }
