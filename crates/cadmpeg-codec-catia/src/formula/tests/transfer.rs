@@ -1471,7 +1471,7 @@ fn decode_does_not_infer_a_fallback_from_conflicting_formula_input_types() {
 }
 
 #[test]
-fn decode_rejects_a_cyclic_formula_component() {
+fn decode_retains_a_cyclic_formula_component() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_formula_chain(
@@ -1481,7 +1481,43 @@ fn decode_rejects_a_cyclic_formula_component() {
         )
         .expect("decode cyclic formula component");
 
-    assert!(decoded.ir().model.parameters.is_empty());
+    // #209 D3 preserves readable identity references, including cycles.
+    let [input, intermediate, output] = decoded.ir().model.parameters.as_slice() else {
+        panic!("independent scalar and both typed cyclic formula outputs");
+    };
+    assert_eq!(
+        [
+            input.name.as_str(),
+            intermediate.name.as_str(),
+            output.name.as_str()
+        ],
+        ["Input", "Intermediate", "Final"]
+    );
+    for (parameter, value) in [(input, 1.0), (intermediate, 3.0), (output, 3.0)] {
+        assert_eq!(
+            parameter.value,
+            Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(value).unwrap()
+            ))
+        );
+    }
+    assert_eq!(
+        intermediate
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![output.id.clone()]
+    );
+    assert_eq!(
+        output
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![intermediate.id.clone()]
+    );
+    assert!(input.expression.dependencies().next().is_none());
 }
 
 #[test]

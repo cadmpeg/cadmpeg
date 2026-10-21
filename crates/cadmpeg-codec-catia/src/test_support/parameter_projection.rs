@@ -64,7 +64,14 @@ pub(crate) fn expression_text_with_native(
                     .parameters
                     .iter()
                     .find(|parameter| &parameter.id == id)
-                    .map(|parameter| parameter.name.clone())
+                    .map(|parameter| {
+                        parameter
+                            .properties
+                            .get("catia_binding")
+                            .filter(|binding| !binding.is_empty())
+                            .cloned()
+                            .unwrap_or_else(|| parameter.name.clone())
+                    })
             })
         })
         .expect("all expression references resolve")

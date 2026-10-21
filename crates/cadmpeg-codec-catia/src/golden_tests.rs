@@ -98,11 +98,18 @@ fn geometry_depth_agrees_with_full_depth() {
         &CatiaCodec,
         &inputs(),
         |result| {
-            let expected = crate::loss::unrepresented(
-                &result.report().losses,
-                result.ir().native.namespace("catia"),
-            );
-            assert!(expected.iter().all(|class| result.source_fidelity().unrepresented().contains(class)), "every source-only loss must have retained source evidence carrying its arena class");
+            // #209 §1.3: B1 is concrete retained source state, independent of losses.
+            let fidelity = result.source_fidelity();
+            let expected: cadmpeg_ir::ArenaClasses = fidelity
+                .retained_records()
+                .values()
+                .flat_map(|record| record.untyped().iter().copied())
+                .collect();
+            assert_eq!(fidelity.unrepresented(), expected);
+            let restored: cadmpeg_ir::SourceFidelity =
+                serde_json::from_value(serde_json::to_value(fidelity).unwrap()).unwrap();
+            assert_eq!(restored.retained_records(), fidelity.retained_records());
+            assert_eq!(restored.unrepresented(), fidelity.unrepresented());
         },
     );
     assert_eq!(summary.cut, 0, "{summary:?}");
