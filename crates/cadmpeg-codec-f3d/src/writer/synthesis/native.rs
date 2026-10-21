@@ -309,6 +309,12 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
             )
             .chain(
                 native
+                    .design_dimension_recipe_records
+                    .iter()
+                    .map(|record| record.record_index),
+            )
+            .chain(
+                native
                     .design_parameters
                     .iter()
                     .map(|parameter| parameter.record_index),

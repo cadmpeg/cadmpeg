@@ -1895,28 +1895,31 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         })
         .expect("project the extrude feature")
         .expect("typed selected-face-start two-sided Extrude");
-        assert!(matches!(
-            from_face_two_sided,
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                start: ExtrudeStart::FromFace {
-                    face: FaceSelection::Native(ref id),
-                    offset: Some(ref offset),
-                },
-                extent: ExtrudeExtent::TwoSided {
-                    first: ExtrudeSide {
-                        termination: LinearTermination::Blind { length: actual_length },
-                        ..
+        assert!(
+            matches!(
+                from_face_two_sided.clone(),
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    start: ExtrudeStart::FromFace {
+                        face: FaceSelection::Native(ref id),
+                        offset: Some(ref offset),
                     },
-                    second: ExtrudeSide {
-                        termination: LinearTermination::Blind { length: actual_length_2 },
-                        ..
+                    extent: ExtrudeExtent::TwoSided {
+                        first: ExtrudeSide {
+                            termination: LinearTermination::Blind { length: actual_length },
+                            ..
+                        },
+                        second: ExtrudeSide {
+                            termination: LinearTermination::Blind { length: actual_length_2 },
+                            ..
+                        },
                     },
-                },
-                ..
-            }) if (id == &start_group.id)
-                && offset == &cadmpeg_ir::Dimension::Parameter(two_sided_profile_offset_id)
-                && super::dimension_value(offset, &native_parameters.borrow()).get() == 0.0
-                && super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(&actual_length_2, &native_parameters.borrow()).get() == 0.5
-        ));
+                    ..
+                }) if (id == &start_group.id)
+                    && offset == &cadmpeg_ir::Dimension::Parameter(two_sided_profile_offset_id)
+                    && super::dimension_value(offset, &native_parameters.borrow()).get() == 0.0
+                    && super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(&actual_length_2, &native_parameters.borrow()).get() == 0.5
+            ),
+            "{from_face_two_sided:#?}"
+        );
     });
 }
