@@ -111,4 +111,154 @@ fn source_less_signed_thickness_keeps_raw_value_formula_and_magnitude_driver() {
     assert!(objects
         .iter()
         .any(|object| object.name() == "Thickness" && object.type_name == "Part::Thickness"));
+
+    // Replacing the canonical operand must take precedence over the original
+    // signed source control, while that authored driver's formula stays held.
+    let mut edited = plain.clone();
+    let feature = edited
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Thickness"))
+        .unwrap();
+    let owner = feature.id.clone();
+    let mut definition = feature.definition().clone();
+    let operation = match &mut definition {
+        cadmpeg_ir::features::FeatureDefinition::Operation(operation)
+        | cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. } => operation,
+    };
+    let independent_id =
+        cadmpeg_ir::features::ParameterId::mint("test:parameter:independent#0").unwrap();
+    let FeatureOperation::Shell { thickness, .. } = operation else {
+        panic!("shell");
+    };
+    *thickness = Some(cadmpeg_ir::Dimension::Parameter(independent_id.clone()));
+    let value = ParameterValue::Length(cadmpeg_ir::scalar::Length::new(3.0).unwrap());
+    let ordinal = edited
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.as_ref() == Some(&owner))
+        .map(|parameter| parameter.ordinal)
+        .max()
+        .unwrap()
+        + 1;
+    edited
+        .model
+        .parameters
+        .push(cadmpeg_ir::features::DesignParameter {
+            id: independent_id,
+            owner: Some(owner.clone()),
+            ordinal,
+            name: "Independent".into(),
+            expression: cadmpeg_ir::features::Expression::literal(&value),
+            driving: true,
+            display: None,
+            value: Some(value),
+            properties: Default::default(),
+            pmi: None,
+            native_ref: None,
+        });
+    edited.set_feature_definition(&owner, definition).unwrap();
+    let plan = FcstdCodec
+        .plan(
+            EncodeInput::new(&edited, None),
+            TargetRequest::Explicit("fcstd:schema-4"),
+        )
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let reread = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let feature = reread
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Thickness"))
+        .unwrap();
+    assert!(
+        matches!(feature.definition().operation(), FeatureOperation::Shell { thickness: Some(dimension), outward: Some(false), .. }
+        if reread.ir().dimension_value(dimension).unwrap().get() == 3.0)
+    );
+    let raw = reread
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "Value"
+        })
+        .unwrap();
+    assert!(matches!(raw.value, Some(ParameterValue::Length(value)) if value.get() == -2.0));
+    assert_eq!(raw.expression.dependencies().count(), 1);
+    let driver = reread
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "Driver"
+        })
+        .unwrap();
+    assert_eq!(
+        raw.expression.tokens,
+        vec![
+            ExpressionToken::Text("-2 mm * ".into()),
+            ExpressionToken::Parameter(driver.id.clone())
+        ]
+    );
+
+    let mut literal = edited.clone();
+    let mut definition = literal
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id == owner)
+        .unwrap()
+        .definition()
+        .clone();
+    let operation = match &mut definition {
+        cadmpeg_ir::features::FeatureDefinition::Operation(operation)
+        | cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. } => operation,
+    };
+    let FeatureOperation::Shell { thickness, .. } = operation else {
+        panic!("shell");
+    };
+    *thickness = Some(cadmpeg_ir::Dimension::Literal(
+        cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+    ));
+    literal.set_feature_definition(&owner, definition).unwrap();
+    let plan = FcstdCodec
+        .plan(
+            EncodeInput::new(&literal, None),
+            TargetRequest::Explicit("fcstd:schema-4"),
+        )
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let reread = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let feature = reread
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Thickness"))
+        .unwrap();
+    assert!(
+        matches!(feature.definition().operation(), FeatureOperation::Shell { thickness: Some(dimension), outward: Some(false), .. }
+        if reread.ir().dimension_value(dimension).unwrap().get() == 4.0)
+    );
+    assert!(reread
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.owner.as_ref() == Some(&feature.id)
+            && parameter.name == "Value"
+            && matches!(parameter.value, Some(ParameterValue::Length(value)) if value.get() == -2.0)
+            && parameter.expression.dependencies().count() == 1));
 }
