@@ -8,6 +8,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{ArenaName, CadIr};
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 mod payloads;
 
@@ -44,7 +45,7 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         .and_then(|document| document.program_version.as_deref());
     let mut projected = CadIr::empty();
     projected.scope = ir.scope;
-    projected.native = ir.native.clone();
+    projected.native.clone_from(&ir.native);
     projected.source = ir.source.clone();
     let mut curves = brep::transfer_text_curves(ctx, &payloads, &properties)?;
     let surfaces = brep::transfer_text_surfaces(ctx, &payloads, &properties, &mut curves)?;
@@ -216,7 +217,8 @@ fn gui_xml_impl(
             };
             encoded_properties.push(value);
         }
-        output.push_str(&format!(
+        let _ = write!(
+            output,
             "<ViewProvider name=\"{}\"{}><Properties Count=\"{}\">",
             xml::escaped(&provider.name),
             provider.expanded.map_or_else(String::new, |value| format!(
@@ -224,7 +226,7 @@ fn gui_xml_impl(
                 u8::from(value)
             )),
             encoded_properties.len(),
-        ));
+        );
         for value in encoded_properties {
             output.push_str(&value);
         }

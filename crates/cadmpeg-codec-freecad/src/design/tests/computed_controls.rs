@@ -10,7 +10,7 @@ pub(super) fn assert_computed_control<Q: DimensionValue + Serialize + Deserializ
     feature_name: &str,
     path: &str,
     source_name: &str,
-    raw_value: ParameterValue,
+    raw_value: &ParameterValue,
     prefix: &str,
     semantic_value: Q,
 ) {
@@ -28,8 +28,8 @@ pub(super) fn assert_computed_control<Q: DimensionValue + Serialize + Deserializ
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&owner) && parameter.name == source_name)
         .unwrap();
-    assert_eq!(raw.value.as_ref(), Some(&raw_value));
-    assert_eq!(raw.expression, Expression::literal(&raw_value));
+    assert_eq!(raw.value.as_ref(), Some(raw_value));
+    assert_eq!(raw.expression, Expression::literal(raw_value));
     assert!(raw.driving);
     assert!(raw.native_ref.is_some());
     let definition = serde_json::to_value(

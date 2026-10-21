@@ -139,7 +139,7 @@ fn through_schema(
                 }
                 None
             }
-            _ => return Ok(None),
+            AttributeValue::Vector(_) => return Ok(None),
         };
         if let Some(scalar) = scalar {
             value

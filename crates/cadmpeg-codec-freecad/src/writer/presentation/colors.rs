@@ -26,7 +26,7 @@ fn packed(color: Color) -> u32 {
     byte(color.r()) << 24 | byte(color.g()) << 16 | byte(color.b()) << 8 | byte(color.a())
 }
 
-fn object_color(provider: &mut Provider, color: Color) -> Result<(), CodecError> {
+fn object_color(provider: &mut Provider, color: Color) {
     provider.set(
         "ShapeColor",
         "App::PropertyColor",
@@ -39,7 +39,6 @@ fn object_color(provider: &mut Provider, color: Color) -> Result<(), CodecError>
         "Integer",
         ((1.0 - color.a()) * 100.0).round(),
     );
-    Ok(())
 }
 
 // App::Material's native constructor defaults (the required fields are
@@ -195,7 +194,7 @@ pub(super) fn write(
             provider.visible(visible);
         }
         if let Some(color) = ir.effective_display_color(&target) {
-            object_color(provider, color)?;
+            object_color(provider, color);
             defaults.insert(name.clone(), packed(color));
         }
     }
@@ -253,7 +252,7 @@ pub(super) fn write(
                     );
                 }
             } else {
-                object_color(provider, color)?;
+                object_color(provider, color);
                 defaults.insert(name.clone(), packed(color));
             }
         }

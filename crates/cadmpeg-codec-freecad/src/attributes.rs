@@ -29,8 +29,9 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
     }
     // Cells belong to the spreadsheet even when the sheet is empty and has
     // no parameter whose native_ref would otherwise consume the property.
-    if property.name == "cells" && property.type_name == "Spreadsheet::PropertySheet" {
-        if ir
+    if property.name == "cells"
+        && property.type_name == "Spreadsheet::PropertySheet"
+        && (ir
             .model
             .spreadsheets
             .iter()
@@ -39,10 +40,9 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
                 && objects.iter().any(|object| {
                     object.id().as_str() == property.owner
                         && object.type_name == "Spreadsheet::Sheet"
-                }))
-        {
-            return true;
-        }
+                })))
+    {
+        return true;
     }
     if ir.model.drawings.iter().any(|record| {
         record.object == property.owner

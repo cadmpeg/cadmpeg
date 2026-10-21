@@ -2,7 +2,7 @@
 //! Current expression links between native controls and canonical parameters.
 //!
 //! A row declares a control's role. Its target is always read from the current
-//! typed ExpressionEngine expression; the row contains no identity, value,
+//! typed `ExpressionEngine` expression; the row contains no identity, value,
 //! cached definition, source digest, or historical authority.
 
 use crate::native::{PropertyBody, PropertyRecord};
@@ -39,7 +39,7 @@ fn target(expression: &Expression, measurement: Measurement) -> Option<&Paramete
                 text.push('\0');
             }
             ExpressionToken::Text(value) => {
-                text.extend(value.chars().filter(|c| !c.is_whitespace()))
+                text.extend(value.chars().filter(|c| !c.is_whitespace()));
             }
             ExpressionToken::Parameter(_) => return None,
         }
@@ -105,33 +105,34 @@ fn cache_quantity_matches(
     parameter: Option<&ParameterValue>,
     measurement: Measurement,
 ) -> bool {
-    match (control, parameter, measurement) {
-        (Some(ParameterValue::Length(_)), Some(ParameterValue::Length(_)), _) => true,
+    matches!(
+        (control, parameter, measurement),
         (
+            Some(ParameterValue::Length(_)),
+            Some(ParameterValue::Length(_)),
+            _
+        ) | (
             Some(ParameterValue::Angle(_)),
             Some(ParameterValue::Angle(_)),
             Measurement::Direct | Measurement::Negated,
-        )
-        | (
+        ) | (
             Some(ParameterValue::Real(_)),
             Some(ParameterValue::Real(_)),
             Measurement::Direct | Measurement::Negated,
-        )
-        | (
+        ) | (
             Some(ParameterValue::Integer(_)),
             Some(ParameterValue::Integer(_)),
             Measurement::Direct,
-        )
-        | (
+        ) | (
             Some(ParameterValue::Boolean(_)),
             Some(ParameterValue::Boolean(_)),
             Measurement::Direct,
+        ) | (
+            Some(ParameterValue::String(_)),
+            Some(ParameterValue::String(_)),
+            Measurement::Direct
         )
-        | (Some(ParameterValue::String(_)), Some(ParameterValue::String(_)), Measurement::Direct) => {
-            true
-        }
-        _ => false,
-    }
+    )
 }
 
 /// Reconstruct bindings only from a verified current expression. Unverified

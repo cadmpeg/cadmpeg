@@ -120,8 +120,8 @@ pub(in crate::writer) fn render_expression(
         .render_with(|id| parameter_reference(ir, id, current.map(String::as_str), names))
 }
 
-/// Allocate each ownerless parameter once. Existing typed VarSets remain the
-/// same owners; authored globals share one deterministic new VarSet.
+/// Allocate each ownerless parameter once. Existing typed `VarSets` remain the
+/// same owners; authored globals share one deterministic new `VarSet`.
 pub(super) fn prepare(
     ir: &CadIr,
     objects: &mut Vec<Object>,
@@ -167,7 +167,7 @@ pub(super) fn prepare(
 
 pub(super) fn write(
     ir: &CadIr,
-    objects: &mut Vec<Object>,
+    objects: &mut [Object],
     names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
@@ -244,8 +244,7 @@ pub(super) fn write(
         }
         let property_name = names
             .get(&format!("parameter-path:{}", parameter.id))
-            .map(String::as_str)
-            .unwrap_or(&parameter.name);
+            .map_or(&parameter.name, String::as_str);
         let property = match &parameter.value {
             Some(ParameterValue::Length(value)) => {
                 xml::scalar(property_name, "App::PropertyLength", "Float", value.get())

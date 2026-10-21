@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Geometry held only in typed native BRep records still belongs to CADIR.
+//! Geometry held only in typed native `BRep` records still belongs to CADIR.
 //!
 //! This temporary projection is used only when the neutral Model class is not
 //! held. It consumes typed records, never archive entries or retained bytes.

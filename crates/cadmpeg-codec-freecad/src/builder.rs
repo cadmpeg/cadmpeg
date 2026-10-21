@@ -2,6 +2,7 @@
 //! Source-less schema-4 document construction.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 
 use cadmpeg_core::CodecError;
@@ -311,11 +312,12 @@ pub(crate) fn document_xml(
     let mut result = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document SchemaVersion=\"{schema}\" FileVersion=\"1\" ProgramVersion=\"cadmpeg\" StringHasher=\"1\"><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>{}<{objects_tag} Count=\"{}\"{}>", properties_xml(properties), objects.len(), if schema == "2" { "" } else { " Dependencies=\"1\"" });
     if schema != "2" {
         for object in objects {
-            result.push_str(&format!(
+            let _ = write!(
+                result,
                 "<ObjectDeps Name=\"{}\" Count=\"{}\">",
                 crate::writer::xml::escaped(&object.name),
                 object.dependencies.len()
-            ));
+            );
             for dependency in &object.dependencies {
                 result.push_str(&crate::writer::xml::element(
                     "Dep",
@@ -326,28 +328,26 @@ pub(crate) fn document_xml(
         }
     }
     for (index, object) in objects.iter().enumerate() {
-        result.push_str(&format!(
-            "<{object_tag} name=\"{}\" type=\"{}\" id=\"{}\"{}/>",
+        let _ = write!(
+            result,
+            "<{object_tag} name=\"{}\" type=\"{}\" id=\"{}\"",
             crate::writer::xml::escaped(&object.name),
             crate::writer::xml::escaped(&object.kind),
-            index + 1,
-            object
-                .declaration_attributes
-                .iter()
-                .map(|(name, value)| format!(
-                    " {}=\"{}\"",
-                    name,
-                    crate::writer::xml::escaped(value)
-                ))
-                .collect::<String>()
-        ));
+            index + 1
+        );
+        for (name, value) in &object.declaration_attributes {
+            let _ = write!(result, " {name}=\"{}\"", crate::writer::xml::escaped(value));
+        }
+        result.push_str("/>");
     }
-    result.push_str(&format!(
+    let _ = write!(
+        result,
         "</{objects_tag}><{data_tag} Count=\"{}\">",
         objects.len()
-    ));
+    );
     for object in objects {
-        result.push_str(&format!(
+        let _ = write!(
+            result,
             "<{object_tag} name=\"{}\"{}>{}{}</{object_tag}>",
             crate::writer::xml::escaped(&object.name),
             if object.extensions.is_empty() {
@@ -365,8 +365,8 @@ pub(crate) fn document_xml(
                 )
             },
             properties_xml(&object.properties)
-        ));
+        );
     }
-    result.push_str(&format!("</{data_tag}></Document>"));
+    let _ = write!(result, "</{data_tag}></Document>");
     result
 }

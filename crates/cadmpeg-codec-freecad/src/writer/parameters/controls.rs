@@ -63,8 +63,7 @@ pub(super) fn write(
             if *measurement == Measurement::Direct
                 && names
                     .get(&format!("parameter-path:{}", parameter.id))
-                    .map(String::as_str)
-                    .unwrap_or(&parameter.name)
+                    .map_or(&parameter.name, String::as_str)
                     == control.as_str()
                 && owner == Some(name)
             {

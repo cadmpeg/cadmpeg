@@ -155,7 +155,7 @@ fn source_less_signed_thickness_keeps_raw_value_formula_and_magnitude_driver() {
             driving: true,
             display: None,
             value: Some(value),
-            properties: Default::default(),
+            properties: std::collections::BTreeMap::default(),
             pmi: None,
             native_ref: None,
         });

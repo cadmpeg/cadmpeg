@@ -1226,7 +1226,7 @@ fn append_custom_parameters(
             owner: owner.cloned(),
             ordinal: u32::try_from(property.order).map_err(CodecError::malformed)?,
             name: property.name.clone(),
-            expression: expression.into(),
+            expression,
             display: None,
             value: Some(value),
             driving: true,
@@ -1411,7 +1411,7 @@ fn append_operation_parameters(
                 ))
             })?,
             name: property.name.clone(),
-            expression: expression.into(),
+            expression,
             display: None,
             value: Some(value),
             driving: true,
@@ -2318,7 +2318,7 @@ fn parse_constraints(
                             ))
                         })?,
                         name: format!("Constraint{}", index + 1),
-                        expression: expression.into(),
+                        expression,
                         display: None,
                         value: Some(value),
                         driving: node
@@ -2717,11 +2717,7 @@ fn bind_parameter_dependencies(
         if parameter.expression.dependencies().next().is_some() {
             continue;
         }
-        let text = parameter
-            .expression
-            .literal_text()
-            .unwrap_or_default()
-            .to_owned();
+        let text = parameter.expression.literal_text().unwrap_or_default();
         let mut spans = Vec::new();
         for (span, identifier) in expression_identifiers(&text) {
             let dependency = qualified
@@ -6706,7 +6702,7 @@ fn hole_definition(
             },
             None,
             Some(cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(diameter).into()
+                cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(diameter)
             )),
         )
         .ok()),
@@ -7020,7 +7016,7 @@ fn binder_definition(
             make_face,
             partial_load,
             refine,
-            offset: offset.map(Into::into),
+            offset,
             context,
         }
     };

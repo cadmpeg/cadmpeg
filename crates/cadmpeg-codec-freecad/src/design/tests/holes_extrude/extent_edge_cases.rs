@@ -73,5 +73,5 @@ fn implicit_extrusion_length_preserves_a_large_finite_direction() {
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided { side: ExtrudeSide {
                 termination: LinearTermination::Blind { length }, .. } }, ..
-        }) if result.ir().dimension_value(&length).expect("resolved dimension").get() == 1e200));
+        }) if result.ir().dimension_value(length).expect("resolved dimension").get() == 1e200));
 }

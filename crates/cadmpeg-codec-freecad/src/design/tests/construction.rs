@@ -68,7 +68,7 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
             operation,
             refine: false,
             fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(tolerance),
-        } if result.ir().dimension_value(&tolerance).expect("resolved dimension").get() == 0.01 && matches!(operation, cadmpeg_ir::features::FeatureOperation::Primitive { .. })
+        } if result.ir().dimension_value(tolerance).expect("resolved dimension").get() == 0.01 && matches!(operation, cadmpeg_ir::features::FeatureOperation::Primitive { .. })
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -162,7 +162,7 @@ fn retains_native_for_malformed_post_process_controls() {
             operation,
             refine: false,
             fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(value),
-        } if (result.ir().dimension_value(&value).expect("resolved dimension").get() - 0.01).abs() < f64::EPSILON
+        } if (result.ir().dimension_value(value).expect("resolved dimension").get() - 0.01).abs() < f64::EPSILON
             && matches!(operation, FeatureOperation::Primitive { .. })
     ));
     assert!(matches!(
@@ -270,14 +270,14 @@ pub(crate) fn transfers_part_construction_geometry_features() {
         FeatureDefinition::Operation(FeatureOperation::RegularPolygonCurve {
             sides,
             circumradius: actual_circumradius
-        }) if result.ir().dimension_value(sides) == cadmpeg_ir::features::PolygonSideCount::new(7) && result.ir().dimension_value(&actual_circumradius).expect("resolved dimension").get() == 8.0
+        }) if result.ir().dimension_value(sides) == cadmpeg_ir::features::PolygonSideCount::new(7) && result.ir().dimension_value(actual_circumradius).expect("resolved dimension").get() == 8.0
     ));
     assert!(matches!(
         feature("Plane").evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::PlanarPatch {
             length: actual_length,
             width: actual_width
-        }) if result.ir().dimension_value(&actual_length).expect("resolved dimension").get() == 9.0 && result.ir().dimension_value(&actual_width).expect("resolved dimension").get() == 10.0
+        }) if result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 9.0 && result.ir().dimension_value(actual_width).expect("resolved dimension").get() == 10.0
     ));
     assert!(
         matches!(feature("Face").evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::FaceFromShapes { sources: cadmpeg_ir::features::BodySelection::Native(source), face_maker }) if source.ends_with(":Sources") && *face_maker == cadmpeg_ir::features::FaceMaker::Unified)
@@ -450,7 +450,7 @@ fn transfers_uniform_and_anisotropic_part_scale() {
             center: Some(cadmpeg_ir::features::ScaleCenter::ModelOrigin),
             factors: cadmpeg_ir::features::ScaleFactors::Uniform { factor },
             ..
-        }) if result.ir().dimension_value(&factor).expect("resolved dimension").get() == -2.0
+        }) if result.ir().dimension_value(factor).expect("resolved dimension").get() == -2.0
     ));
     assert!(matches!(
         definition("Anisotropic"),
@@ -496,7 +496,7 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
         FeatureDefinition::Operation(FeatureOperation::Scale {
             factors: cadmpeg_ir::features::ScaleFactors::Uniform { factor },
             ..
-        }) if absent.ir().dimension_value(&factor).expect("resolved dimension").get() == 2.0
+        }) if absent.ir().dimension_value(factor).expect("resolved dimension").get() == 2.0
     ));
     assert_valid_document(absent.ir());
 
@@ -757,7 +757,7 @@ fn transfers_part_projection_on_surface_construction() {
             height: actual_height,
             offset: actual_offset,
         }) if ( (sources.ends_with(":Projection")
-            && support.ends_with(":SupportFace")) && result.ir().dimension_value(&actual_height).expect("resolved dimension").get() == 8.0 && result.ir().dimension_value(&actual_offset).expect("resolved dimension").get() == -1.5) && matches!(*geometry_1.as_raw(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
+            && support.ends_with(":SupportFace")) && result.ir().dimension_value(actual_height).expect("resolved dimension").get() == 8.0 && result.ir().dimension_value(actual_offset).expect("resolved dimension").get() == -1.5) && matches!(*geometry_1.as_raw(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert_eq!(feature.dependencies.len(), 3);
     assert!(result.report().losses.is_empty());
@@ -852,7 +852,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             max_degree: Some(degree),
             op: cadmpeg_ir::features::BooleanOp::NewBody,
             ..
-        }) if result.ir().dimension_value(&degree).expect("resolved dimension").get() == 7
+        }) if result.ir().dimension_value(degree).expect("resolved dimension").get() == 7
     ));
     let native_properties = result
         .ir()
@@ -1475,7 +1475,7 @@ fn transfers_complete_thickness_construction_controls() {
             resolve_intersections: Some(true),
             allow_self_intersections: Some(true),
             ..
-        }) if (selection.ends_with(":Base")) && result.ir().dimension_value(&actual_thickness).expect("resolved dimension").get() == 2.5
+        }) if (selection.ends_with(":Base")) && result.ir().dimension_value(actual_thickness).expect("resolved dimension").get() == 2.5
     ));
     assert_eq!(wall.dependencies.len(), 1);
     assert!(result.report().losses.is_empty());
@@ -1549,7 +1549,7 @@ fn transfers_part_thickness_and_shape_offset_construction() {
             resolve_intersections: Some(true),
             allow_self_intersections: Some(true),
             ..
-        }) if result.ir().dimension_value(&actual_thickness).expect("resolved dimension").get() == 2.0
+        }) if result.ir().dimension_value(actual_thickness).expect("resolved dimension").get() == 2.0
     ));
     assert!(matches!(
         definition("Offset"),
@@ -1562,7 +1562,7 @@ fn transfers_part_thickness_and_shape_offset_construction() {
             fill: true,
             planar: false,
             ..
-        }) if result.ir().dimension_value(&actual_distance).expect("resolved dimension").get() == -1.5
+        }) if result.ir().dimension_value(actual_distance).expect("resolved dimension").get() == -1.5
     ));
     assert!(matches!(
         definition("Offset2D"),
@@ -1573,14 +1573,14 @@ fn transfers_part_thickness_and_shape_offset_construction() {
             fill: true,
             planar: true,
             ..
-        }) if result.ir().dimension_value(&actual_distance).expect("resolved dimension").get() == 3.0
+        }) if result.ir().dimension_value(actual_distance).expect("resolved dimension").get() == 3.0
     ));
     super::computed_controls::assert_computed_control(
         result.ir(),
         "Thickness",
         "/thickness",
         "Value",
-        cadmpeg_ir::features::ParameterValue::Length(
+        &cadmpeg_ir::features::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(-2.0).unwrap(),
         ),
         "abs(",
@@ -1834,7 +1834,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             && (pull_direction.x - 0.0).abs() < 1.0e-12
             && (pull_direction.y + 1.0).abs() < 1.0e-12
             && pull_direction.z.abs() < 1.0e-12
-            && (result.ir().dimension_value(&angle).expect("resolved dimension").get() + 5f64.to_radians()).abs() < 1.0e-12
+            && (result.ir().dimension_value(angle).expect("resolved dimension").get() + 5f64.to_radians()).abs() < 1.0e-12
     ));
     // D26: the operation references Base and NeutralPlane. Its pull is a
     // resolved direction value; retain the original line link in typed native
@@ -1883,7 +1883,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
         "Draft",
         "/angle",
         "Angle",
-        cadmpeg_ir::features::ParameterValue::Angle(
+        &cadmpeg_ir::features::ParameterValue::Angle(
             cadmpeg_ir::scalar::Angle::new(5f64.to_radians()).unwrap(),
         ),
         "-(",

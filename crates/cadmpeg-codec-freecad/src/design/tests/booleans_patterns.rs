@@ -364,7 +364,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::LinearOffsets { direction: Some(direction), offsets } if direction.x == 1.0 && offsets.iter().map(|offset| result.ir().dimension_value(&offset).expect("resolved dimension").get()).collect::<Vec<_>>() == [0.0, 2.0, 9.0])
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::LinearOffsets { direction: Some(direction), offsets } if direction.x == 1.0 && offsets.iter().map(|offset| result.ir().dimension_value(offset).expect("resolved dimension").get()).collect::<Vec<_>>() == [0.0, 2.0, 9.0])
     ));
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Pattern {
@@ -387,7 +387,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     ));
     assert!(matches!(stages[1].pattern.definition(),
         cadmpeg_ir::features::patterns::PatternTransform::LinearOffsets { direction: Some(direction), offsets }
-            if direction.y == -1.0 && offsets.iter().map(|offset| result.ir().dimension_value(&offset).expect("resolved dimension").get()).collect::<Vec<_>>() == [0.0, 1.0, 5.0]
+            if direction.y == -1.0 && offsets.iter().map(|offset| result.ir().dimension_value(offset).expect("resolved dimension").get()).collect::<Vec<_>>() == [0.0, 1.0, 5.0]
     ));
     assert!(matches!(
         feature("PolarCustom").evaluation.definition(),
@@ -395,7 +395,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             pattern: admitted_pattern,
             ..
         }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CircularAngles { angles, .. } if angles.iter().zip([0.0, 10.0, 30.0, 40.0]).all(|(angle, expected)|
-            (result.ir().dimension_value(&angle).expect("resolved dimension").get().to_degrees() - expected).abs() < EPS_PATTERN_ANGLE_DEGREES))
+            (result.ir().dimension_value(angle).expect("resolved dimension").get().to_degrees() - expected).abs() < EPS_PATTERN_ANGLE_DEGREES))
     ));
     assert!(matches!(
         feature("NativeDirection").evaluation.definition(),
@@ -1335,7 +1335,7 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
                 center: cadmpeg_ir::features::patterns::PatternScaleCenter::FirstSeedCentroid,
                 final_factor,
                 count: count_value,
-            } if result.ir().dimension_value(count_value) == Some(3) && result.ir().dimension_value(&final_factor).expect("resolved dimension").get() == 2.5)
+            } if result.ir().dimension_value(count_value) == Some(3) && result.ir().dimension_value(final_factor).expect("resolved dimension").get() == 2.5)
     ));
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Pattern {

@@ -195,8 +195,10 @@ pub(crate) fn transfer(
 }
 
 fn source_only_graph(schema_declaration: Option<&str>, error: &CodecError) -> Graph {
-    let mut graph = Graph::default();
-    graph.untyped = true;
+    let mut graph = Graph {
+        untyped: true,
+        ..Graph::default()
+    };
     graph.documents.push(GuiDocumentRecord {
         id: ("fcstd:gui:document#0").to_owned(),
         schema_version: schema_declaration.map(ToOwned::to_owned),

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Persistence keys consumed by typed neutral FreeCAD projections.
+//! Persistence keys consumed by typed neutral `FreeCAD` projections.
 
 /// A neutral operation owns these persistence controls, including absence.
 /// Extra typed application properties have no neutral form and remain content.

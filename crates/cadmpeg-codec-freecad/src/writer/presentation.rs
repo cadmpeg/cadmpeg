@@ -13,6 +13,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write as _;
 
 pub(super) struct Provider {
     name: String,
@@ -331,7 +332,7 @@ pub(super) fn write(
         let expanded = provider.expanded.map_or(String::new(), |value| {
             format!(" expanded=\"{}\"", u8::from(value))
         });
-        content.push_str(&format!("<ViewProvider name=\"{}\"{expanded}><Properties Count=\"{}\">{}</Properties></ViewProvider>",xml::escaped(&provider.name),provider.properties.len(),provider.properties.values().cloned().collect::<String>()));
+        let _ = write!(content, "<ViewProvider name=\"{}\"{expanded}><Properties Count=\"{}\">{}</Properties></ViewProvider>",xml::escaped(&provider.name),provider.properties.len(),provider.properties.values().cloned().collect::<String>());
     }
     let (schema, attributes, states) = document::write(ir, losses)?;
     Ok(format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><GuiDocument SchemaVersion=\"{schema}\"{attributes}>{states}<ViewProviderData Count=\"{}\">{content}</ViewProviderData></GuiDocument>",providers.len()))
