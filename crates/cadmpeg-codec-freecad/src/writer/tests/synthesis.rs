@@ -157,12 +157,18 @@ fn effective_appearance_preserves_independent_body_style() {
         .bodies
         .iter()
         .any(|body| body.color == Some(fallback) && body.visible == Some(false)));
-    assert!(output
-        .ir()
-        .model
-        .appearances
-        .iter()
-        .any(|appearance| appearance.base_color == Some(effective)));
+    assert!(
+        output
+            .ir()
+            .model
+            .appearances
+            .iter()
+            .any(|appearance| appearance.base_color == Some(effective)),
+        "independent material {effective:?}; output appearances: {:#?}; losses: {:#?}",
+        output.ir().model.appearances,
+        report.losses
+    );
+
     assert!(report
         .losses
         .iter()
@@ -383,6 +389,14 @@ fn exact_editor_feature_expression_constraint_and_appearance_edits_survive() {
                 })
             })
             .unwrap()["expression"] = json!(cadmpeg_ir::features::Expression::text("37 mm"));
+        parameters
+            .iter_mut()
+            .find(|parameter| {
+                parameter["id"].as_str().is_some_and(|id| {
+                    id.ends_with("#Pad:Length") || id.ends_with("#DesignedFeature:Length")
+                })
+            })
+            .unwrap()["value"] = json!({"kind":"length","value":37.0});
         let dimensional = parameters
             .iter_mut()
             .find(|parameter| {
@@ -405,7 +419,30 @@ fn exact_editor_feature_expression_constraint_and_appearance_edits_survive() {
             value["model"]["appearances"].as_array_mut().unwrap().push(json!({"id":"cadir:model:appearance#authored","name":"Authored appearance","base_color":color}));
             value["model"]["appearance_bindings"].as_array_mut().unwrap().push(json!({"id":"cadir:model:appearance-binding#authored","target":{"kind":"body","id":body},"appearance":"cadir:model:appearance#authored"}));
         }
-        let edited = cadmpeg_ir::CadIr::from_json(&value.to_string()).unwrap();
+        let mut edited = cadmpeg_ir::CadIr::from_json(&value.to_string()).unwrap();
+        let changed = edited
+            .model
+            .parameters
+            .iter()
+            .filter(|parameter| {
+                matches!(
+                    parameter.expression.literal_text().as_deref(),
+                    Some("37 mm" | "31 mm")
+                )
+            })
+            .map(|parameter| {
+                (
+                    parameter.id.clone(),
+                    parameter.expression.clone(),
+                    parameter.value.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        for (id, expression, value) in changed {
+            edited
+                .set_parameter_expression(&id, expression, value)
+                .unwrap();
+        }
         let plan = FcstdCodec
             .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
             .unwrap();
