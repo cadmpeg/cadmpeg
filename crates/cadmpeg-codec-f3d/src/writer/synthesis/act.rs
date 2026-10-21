@@ -19,12 +19,7 @@ pub(super) fn reconcile(
         .iter()
         .map(|record| record.id.clone())
         .chain(native.act_types.iter().map(|record| record.id().to_owned()))
-        .chain(
-            native
-                .act_entities
-                .iter()
-                .map(|record| record.id().to_string()),
-        )
+        .chain(native.act_entities.iter().map(|record| record.id().clone()))
         .chain(native.act_guids.iter().map(|record| record.id().to_owned()))
         .chain(
             native
