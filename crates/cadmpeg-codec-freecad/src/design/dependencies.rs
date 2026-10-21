@@ -78,6 +78,28 @@ pub(super) fn structural(
                 }
                 Ok(())
             })?;
+        let definition =
+            serde_json::to_value(feature.definition()).map_err(CodecError::malformed)?;
+        native_operand_references(ctx, &definition, &mut |reference| {
+            for property in properties.iter().filter(|property| {
+                reference == property.id
+                    || reference.strip_prefix(&property.id).is_some_and(|suffix| {
+                        suffix.starts_with(":link:") || suffix.starts_with(":links:")
+                    })
+            }) {
+                for target in property
+                    .links()
+                    .iter()
+                    .flatten()
+                    .filter_map(|link| link.object())
+                {
+                    if let Some(id) = owners.get(target) {
+                        explicit.insert(id.clone());
+                    }
+                }
+            }
+            Ok(())
+        })?;
         let native = matches!(
             feature.evaluation.definition().operation(),
             FeatureOperation::Native { .. }
@@ -116,6 +138,38 @@ pub(super) fn structural(
             .cloned()
             .collect::<Vec<_>>();
         feature.dependencies = retained.try_into().map_err(CodecError::malformed)?;
+    }
+    Ok(())
+}
+
+/// String-based native selectors still name typed persistence records. Restrict
+/// traversal to the selector grammar so authored expression text is not an edge.
+fn native_operand_references(
+    ctx: &DecodeContext<'_>,
+    value: &serde_json::Value,
+    visit: &mut impl FnMut(&str) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("visit FCStd native operand")?;
+    match value {
+        serde_json::Value::Object(object) => {
+            if object.get("kind").and_then(serde_json::Value::as_str) == Some("native") {
+                if let Some(reference) = object.get("value").and_then(serde_json::Value::as_str) {
+                    visit(reference)?;
+                }
+            }
+            if let Some(reference) = object.get("native").and_then(serde_json::Value::as_str) {
+                visit(reference)?;
+            }
+            for child in object.values() {
+                native_operand_references(ctx, child, visit)?;
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for child in values {
+                native_operand_references(ctx, child, visit)?;
+            }
+        }
+        _ => {}
     }
     Ok(())
 }
