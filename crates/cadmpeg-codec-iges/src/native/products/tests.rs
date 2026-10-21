@@ -34,10 +34,7 @@ fn nested_subfigures_project_names_and_local_placements() {
         .find(|definition| definition.label.as_deref() == Some("CHILD"))
         .unwrap();
     assert_eq!(child_definition.bodies.len(), 1);
-    assert_eq!(
-        child_definition.bodies[0].as_str(),
-        "iges:model:body#free-geometry"
-    );
+    assert_eq!(child_definition.bodies[0].as_str(), "iges:model:body#D3:D1");
     assert_eq!(ir.model.occurrences.len(), 2);
     let root = ir
         .model
