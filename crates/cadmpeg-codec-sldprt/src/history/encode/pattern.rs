@@ -197,6 +197,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             let mut parameters = self.base_parameters();
             let mut properties = self.base_properties();
+            if existing.is_some_and(|record| record.properties.contains_key("PatternType")) {
+                if let Some(form) = expected_form {
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("PatternType"),
+                        match form {
+                            NativePatternClass::Linear => "Linear",
+                            NativePatternClass::Circular => "Circular",
+                            NativePatternClass::CurveDriven => "CurveDriven",
+                            NativePatternClass::Mirror => "Mirror",
+                        }
+                        .into(),
+                    );
+                }
+            }
             if !seed_sources.is_empty() {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Seeds"),
