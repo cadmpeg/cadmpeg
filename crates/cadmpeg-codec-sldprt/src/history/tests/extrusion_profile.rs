@@ -15,6 +15,43 @@ use crate::test_support::history::resolved_feature_classes_with_ids;
 use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
+fn assert_active_config0_base(source: &[u8], ir: &cadmpeg_ir::CadIr) {
+    let scan = crate::test_support::container::scan(source);
+    assert_eq!(
+        crate::container::select_active_parasolid_site(&scan)
+            .unwrap()
+            .section
+            .name(),
+        Some("Contents/Config-0-Partition")
+    );
+    assert_eq!(
+        ir.model
+            .configurations
+            .iter()
+            .filter(|row| row.active)
+            .count(),
+        1
+    );
+    let active = &ir.model.configurations[0];
+    assert!(active.active);
+    assert_eq!(active.source_index, Some(0));
+    assert!(active.feature_states.is_empty());
+    assert!(active.parameter_overrides.is_empty());
+    assert!(active.parameter_values.is_empty());
+    assert!(!ir.model.configurations[1].active);
+}
+
+fn with_missing_active_selector(source: &[u8]) -> Vec<u8> {
+    let mut unknown = source.to_vec();
+    unknown.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swName="Part" swConfigurationName="Missing"/></swSolidWorks>"#,
+    ));
+    assert!(unknown.starts_with(source));
+    unknown
+}
+
 #[test]
 fn decode_projects_cut_extrude_with_canonical_length() {
     let mut source = sldprt_with_body(&triangle_body());
@@ -141,9 +178,10 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
 
     let decoded = EditableDecodeResult::from(
         SldprtCodec
-            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
             .unwrap(),
     );
+    assert_active_config0_base(&source, decoded.ir());
     let feature = decoded
         .ir()
         .model
@@ -156,7 +194,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved {},
+                    termination: LinearTermination::ThroughAll {},
                     ..
                 }
             },
@@ -235,8 +273,82 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
             .get(&feature_id)
     );
 
+    let unknown = SldprtCodec
+        .decode(
+            &mut Cursor::new(with_missing_active_selector(&source)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(unknown
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .all(|row| !row.active));
+    let unknown_feature = unknown
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .unwrap();
+    assert!(matches!(
+        unknown_feature.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::Unresolved {},
+                    ..
+                }
+            },
+            ..
+        })
+    ));
+    assert!(matches!(
+        super::effective_definition(
+            unknown.ir(),
+            &unknown.ir().model.configurations[0],
+            &unknown_feature.id
+        )
+        .unwrap(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::ThroughAll {},
+                    ..
+                }
+            },
+            ..
+        })
+    ));
+    assert!(matches!(
+        super::effective_definition(
+            unknown.ir(),
+            &unknown.ir().model.configurations[1],
+            &unknown_feature.id
+        )
+        .unwrap(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::Unresolved {},
+                    ..
+                }
+            },
+            ..
+        })
+    ));
+
     let mut edited = decoded.ir().clone();
-    let replacement = edited.model.configurations[0].feature_states[&feature_id].clone();
+    let replacement = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
+        definition: super::effective_definition(
+            decoded.ir(),
+            &decoded.ir().model.configurations[0],
+            &feature_id,
+        )
+        .unwrap()
+        .clone(),
+    };
     if edited.model.configurations[1].active {
         edited
             .set_feature_definition(&feature_id, replacement.definition().unwrap().clone())
@@ -333,8 +445,9 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
+    assert_active_config0_base(&source, decoded.ir());
     let extrusion = decoded
         .ir()
         .model
@@ -342,13 +455,6 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Boss"))
         .unwrap();
-    assert!(matches!(
-        extrusion.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)),
-            ..
-        }) if owner == extrusion.native_ref.as_deref().unwrap()
-    ));
     let extrusion_id = extrusion.id.clone();
     let profile_a = decoded
         .ir()
@@ -364,17 +470,33 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Profile B"))
         .unwrap();
-    let state_a = &decoded.ir().model.configurations[0].feature_states[&extrusion_id];
-    let state_b = &decoded.ir().model.configurations[1].feature_states[&extrusion_id];
+    assert!(matches!(extrusion.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)), ..
+        }) if profile == &profile_a.id
+    ));
+    assert_eq!(extrusion.dependencies.as_slice(), [profile_a.id.clone()]);
+    let state_a = super::effective_definition(
+        decoded.ir(),
+        &decoded.ir().model.configurations[0],
+        &extrusion_id,
+    )
+    .unwrap();
+    let state_b = super::effective_definition(
+        decoded.ir(),
+        &decoded.ir().model.configurations[1],
+        &extrusion_id,
+    )
+    .unwrap();
     assert!(matches!(
-        state_a.definition().expect("structural override"),
+        state_a,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
             ..
         }) if profile == &profile_a.id
     ));
     assert!(matches!(
-        state_b.definition().expect("structural override"),
+        state_b,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
             ..
@@ -382,14 +504,11 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
     ));
     use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
     let ctx = cadmpeg_test_support::service_decode_context();
-    let feature_references = |state: &cadmpeg_ir::features::ConfigurationFeatureState| {
+    let feature_references = |ir: &cadmpeg_ir::CadIr, state: &FeatureDefinition| {
         let mut references = Vec::new();
         state
-            .definition()
-            .unwrap()
             .visit_identity_references(&ctx, &mut |reference| {
-                if let Some(feature) = decoded
-                    .ir()
+                if let Some(feature) = ir
                     .model
                     .features
                     .iter()
@@ -402,8 +521,63 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
             .unwrap();
         references
     };
-    assert_eq!(feature_references(state_a), vec![profile_a.id.clone()]);
-    assert_eq!(feature_references(state_b), vec![profile_b.id.clone()]);
+    assert_eq!(
+        feature_references(decoded.ir(), state_a),
+        vec![profile_a.id.clone()]
+    );
+    assert_eq!(
+        feature_references(decoded.ir(), state_b),
+        vec![profile_b.id.clone()]
+    );
+
+    let unknown = SldprtCodec
+        .decode(
+            &mut Cursor::new(with_missing_active_selector(&source)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(unknown
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .all(|row| !row.active));
+    let unknown_extrusion = unknown
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .unwrap();
+    assert!(matches!(unknown_extrusion.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)), ..
+        }) if owner == unknown_extrusion.native_ref.as_deref().unwrap()
+    ));
+    for (slot, name) in [(0, "Profile A"), (1, "Profile B")] {
+        let profile = unknown
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap();
+        let definition = super::effective_definition(
+            unknown.ir(),
+            &unknown.ir().model.configurations[slot],
+            &unknown_extrusion.id,
+        )
+        .unwrap();
+        assert!(matches!(definition,
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::Feature(id)), ..
+            }) if id == &profile.id
+        ));
+        assert_eq!(
+            feature_references(unknown.ir(), definition),
+            vec![profile.id.clone()]
+        );
+    }
 }
 
 #[test]
