@@ -3314,6 +3314,8 @@ mod relation_geometry_tests {
             .unwrap(),
             operands: vec![operand(40, 12), operand(52, 13)],
         };
+        assert_eq!(relation.ordinal, 0);
+        assert_eq!(relation.offset, Some(30));
         let lane = FeatureInputLane {
             id: "lane#test".into(),
             configuration: None,
@@ -3422,9 +3424,9 @@ mod relation_geometry_tests {
             constraint.definition.kind(),
             SketchConstraintDefinitionInput::DistanceLoci { first, second, .. }
                 if first == &SketchLocus::Entity(
-                    SketchEntityId::mint("sldprt:model:sketch-entity#solver-point:test:30:0").unwrap()
+                    SketchEntityId::mint("sldprt:model:sketch-entity#solver-point:test:0:0").unwrap()
                 ) && second == &SketchLocus::Entity(
-                    SketchEntityId::mint("sldprt:model:sketch-entity#solver-point:test:30:1").unwrap()
+                    SketchEntityId::mint("sldprt:model:sketch-entity#solver-point:test:0:1").unwrap()
                 )
         ));
     }

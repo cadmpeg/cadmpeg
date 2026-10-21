@@ -188,6 +188,16 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         self_linked_curve.clone(),
         forward_linked_curve.clone(),
     ]);
+    // Source order is independent of retained byte positions. Preserve every
+    // original offset, link, and coordinate while giving each marker its row.
+    for (ordinal, marker) in markers.iter_mut().enumerate() {
+        *marker = marker.with_test_position(
+            u32::try_from(ordinal).expect("fixture marker ordinal"),
+            marker.offset().expect("original source marker position"),
+        );
+    }
+    assert_eq!(markers[6].id(), "relation-line");
+    assert_eq!(markers[6].offset(), Some(84));
     let mut native_payload = vec![0; 181];
     for offset in [0, 27, 54] {
         native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
@@ -469,7 +479,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     assert_eq!(
         loci["sldprt:feature-input:sketch-entity#qualified-curve:qualified-point"],
         vec![SketchLocus::End(
-            SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:84",).unwrap()
+            SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:6",).unwrap()
         )]
     );
     let markers = lane
@@ -486,7 +496,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         )
         .unwrap(),
         Some(SketchLocus::End(
-            SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:84",).unwrap()
+            SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:6",).unwrap()
         ))
     );
 }
