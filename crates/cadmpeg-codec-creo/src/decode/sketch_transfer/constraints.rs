@@ -262,9 +262,13 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
     emitted: &BTreeSet<ParameterId>,
 ) -> bool {
     if let SketchConstraintDefinitionInput::Native { parameter, .. } = definition {
-        return parameter
+        if parameter
             .as_ref()
-            .is_none_or(|parameter| emitted.contains(parameter));
+            .is_some_and(|parameter| !emitted.contains(parameter))
+        {
+            *parameter = None;
+        }
+        return true;
     }
     definition.dimension_parameters().is_ok_and(|parameters| {
         parameters

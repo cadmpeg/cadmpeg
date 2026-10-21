@@ -100,10 +100,11 @@ pub(crate) fn model_state_envelope_fixture() -> Vec<u8> {
             },
         );
     }
-    // RSeStorage and UFRxDoc are siblings in the root directory.
+    // CFB directory names compare by UTF-16 length before text. UFRxDoc is
+    // shorter than RSeStorage, so it is the left sibling in the root tree.
     put_u32(
         &mut file,
-        SECTOR_SIZE + 128 + 72,
+        SECTOR_SIZE + 128 + 68,
         u32::try_from(DIRECTORY_INDEX).unwrap(),
     );
     directory_node(
