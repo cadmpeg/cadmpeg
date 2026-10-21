@@ -3,7 +3,9 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    ProceduralSurfaceDefinition, RevisionCacheForm, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::F3dLossCode;
@@ -34,7 +36,27 @@ pub(super) fn prepare(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<
                 .position(|row| row.id == *construction)
                 .ok_or_else(|| CodecError::malformed("cache construction disappeared"))?;
             let mut generated_contract = procedural.clone();
-            let contract_added = generated_contract.cache_fit_tolerance().is_none();
+            let revision_form = match generated_contract.definition() {
+                ProceduralSurfaceDefinition::Extrusion(payload) => payload.revision_form(),
+                ProceduralSurfaceDefinition::Sum(payload) => payload.revision_form(),
+                ProceduralSurfaceDefinition::Revolution(payload) => payload.revision_form(),
+                _ => None,
+            };
+            let contract_added = revision_form
+                .is_some_and(|form| matches!(form.cache, RevisionCacheForm::Absent {}));
+            if generated_contract.cache_fit_tolerance().is_none() && !contract_added {
+                // Legacy extrusion, sum and ruled forms have a genuine native
+                // cacheless encoding. Parameterization retains its own enums.
+                // Legacy revolution needs a cache, but its fit field is optional.
+                let legacy_revolution = matches!(
+                    generated_contract.definition(),
+                    ProceduralSurfaceDefinition::Revolution(payload)
+                        if payload.revision_form().is_none()
+                );
+                if !legacy_revolution {
+                    continue;
+                }
+            }
             if contract_added {
                 // A target cache gets a new contract from the current document,
                 // never from a rejected source cache or an invented native form.
