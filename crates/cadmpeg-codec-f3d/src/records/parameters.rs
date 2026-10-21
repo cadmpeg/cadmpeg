@@ -383,6 +383,11 @@ impl DesignParameter {
     }
 
     #[cfg(test)]
+    pub(crate) fn source(&self) -> &DesignParameterSource {
+        &self.source
+    }
+
+    #[cfg(test)]
     /// Checked replacement of a present unit token.
     pub(crate) fn try_set_unit_value(&mut self, value: String) -> Result<(), String> {
         let value = NonBlankString::new(value).ok_or("unit must not be empty")?;
