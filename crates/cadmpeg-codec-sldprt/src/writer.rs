@@ -2054,7 +2054,9 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
 fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribute> {
     let mut positioned = Vec::new();
     for attribute in &ir.model.attributes {
-        if attribute.id.as_str().starts_with("sldprt:") && !custom_properties::represents(attribute)
+        if attribute.id.as_str().starts_with("sldprt:")
+            && !custom_properties::represents(attribute)
+            && !crate::pmi::write::attribute_supported(attribute)
         {
             let position = metadata_source_position(attribute.id.as_str());
             positioned.push(((position.is_none(), position), attribute));
