@@ -558,6 +558,15 @@ fn semantic_writer_round_trips_typed_rib() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let profile_ref = decoded.ir().model.features[0].id.clone();
+    let draft_id = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Draft")
+        .unwrap()
+        .id
+        .clone();
     assert!(matches!(
     decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Rib {
         construction: cadmpeg_ir::features::RibConstruction {
@@ -619,5 +628,30 @@ fn semantic_writer_round_trips_typed_rib() {
     assert_eq!(feature.properties["BothSides"], "true");
     assert_eq!(feature.properties["Operation"], "NewBody");
     assert_eq!(feature.parameters["Thickness"], "3mm");
-    assert!(!feature.parameters.contains_key("Draft"));
+    // D1: removing the operation use does not delete its authored parameter.
+    assert!(feature.parameters.contains_key("Draft"));
+    let draft = regenerated
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == draft_id)
+        .expect("same independent draft parameter");
+    assert_eq!(draft.name, "Draft");
+    assert_eq!(
+        draft.value,
+        Some(cadmpeg_ir::features::ParameterValue::Angle(
+            cadmpeg_ir::scalar::Angle::new(5f64.to_radians()).unwrap()
+        ))
+    );
+    assert!(matches!(
+        regenerated.ir().model.features[1].definition().operation(),
+        FeatureOperation::Rib {
+            construction: cadmpeg_ir::features::RibConstruction {
+                draft: RibDraft::None,
+                ..
+            },
+            ..
+        }
+    ));
 }
