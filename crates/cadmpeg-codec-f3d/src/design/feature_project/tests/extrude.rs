@@ -1335,11 +1335,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 slot.get_or_insert_with(Default::default).extrude_profile = value;
             }
         }
+        let reversed_along = parameter("AlongDistance", "mm", -0.2);
         let reversed_native_profile = crate::test_support::with_decode_context(|decode_ctx| {
             project_extrude(
                 decode_ctx,
                 &native_profile_scope,
-                &[(0, &parameter("AlongDistance", "mm", -0.2)), (1, &taper)],
+                &[(0, &reversed_along), (1, &taper)],
                 &[body_group.clone(), profile_group.clone()],
                 &[],
                 &[],
@@ -1348,23 +1349,51 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         })
         .expect("project the extrude feature")
         .expect("typed reversed Extrude with a native profile");
-        assert!(matches!(
-            reversed_native_profile,
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: ProfileRef::Planar(PlanarProfileRef::Native(ref native)),
-                direction: ExtrudeDirection::ReversedProfileNormal {},
-                extent: ExtrudeExtent::OneSided {
-                    side: ExtrudeSide {
-                        termination: LinearTermination::Blind {
-                            length: actual_length
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Native(native)),
+            direction: ExtrudeDirection::ProfileNormal {},
+            extent:
+                ExtrudeExtent::OneSided {
+                    side:
+                        ExtrudeSide {
+                            termination:
+                                LinearTermination::Blind {
+                                    length: actual_length,
+                                },
+                            ..
                         },
-                        ..
-                    },
                 },
-                op: BooleanOp::Join,
-                ..
-            }) if (native == &profile_group.id) && super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 2.0
-        ));
+            op: BooleanOp::Join,
+            ..
+        }) = reversed_native_profile
+        else {
+            panic!("expected a signed native-profile Extrude");
+        };
+        assert_eq!(native, profile_group.id);
+        assert!(!native_profile_scope
+            .extrude_prologue()
+            .unwrap()
+            .direction_reversed());
+        assert_eq!(reversed_along.evaluated_value().get(), -0.2);
+        let parameter_id = crate::ids::neutral_parameter_id(&reversed_along);
+        assert_eq!(actual_length.parameter(), Some(&parameter_id));
+        let ir = super::parameter_document(&native_parameters.borrow());
+        let bound = ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == parameter_id)
+            .unwrap();
+        assert_eq!(bound.expression.literal_text().as_deref(), Some("value"));
+        assert_eq!(
+            bound.value,
+            Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(-2.0).unwrap()
+            ))
+        );
+        let signed_sweep = ir.dimension_value(&actual_length).unwrap().get();
+        assert_eq!(signed_sweep, -2.0);
+        assert_eq!(signed_sweep.abs(), 2.0);
 
         let mut face_group = body_group.clone();
         face_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
