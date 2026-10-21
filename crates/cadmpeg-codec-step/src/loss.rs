@@ -215,6 +215,9 @@ pub(crate) enum StepLossCode {
     GeometryCarrierNotWritten,
     /// Coedge pcurve carriers use unwritable geometry or surface references.
     PcurveCarrierUnwritable,
+    /// Pcurves on helix surfaces written as fitted B-spline surfaces, whose
+    /// parameters differ from the native ones.
+    PcurveOnFittedHelixSurface,
     /// Assembly occurrences were omitted because the parent has no local product.
     AssemblyOccurrenceOmittedNoParentProduct,
     /// Regions have no shell list and were not written.
@@ -456,6 +459,7 @@ impl StepLossCode {
         Self::UnknownSurfaceFaceOmitted,
         Self::GeometryCarrierNotWritten,
         Self::PcurveCarrierUnwritable,
+        Self::PcurveOnFittedHelixSurface,
         Self::AssemblyOccurrenceOmittedNoParentProduct,
         Self::RegionNoShellList,
         Self::WireRegionNoConnectedEdgeSet,
@@ -638,6 +642,7 @@ impl StepLossCode {
             Self::UnknownSurfaceFaceOmitted => "geometry.unknown-surface-face-omitted",
             Self::GeometryCarrierNotWritten => "geometry.carrier-not-written",
             Self::PcurveCarrierUnwritable => "pcurve.carrier-unwritable",
+            Self::PcurveOnFittedHelixSurface => "pcurve.on-fitted-helix-surface",
             Self::AssemblyOccurrenceOmittedNoParentProduct => {
                 "assembly.occurrence-omitted-no-parent-product"
             }
@@ -887,6 +892,7 @@ impl StepLossCode {
             Self::PcurveEndpointsDiscontinuous
             | Self::PcurveLocusDiscontinuous
             | Self::PcurveCarrierUnwritable
+            | Self::PcurveOnFittedHelixSurface
             | Self::CoedgePcurveNoGeometry
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata => LossTaxonomy::PcurveOmitted,
@@ -1056,6 +1062,7 @@ mod tests {
                 "geometry.unknown-surface-face-omitted",
                 "geometry.carrier-not-written",
                 "pcurve.carrier-unwritable",
+                "pcurve.on-fitted-helix-surface",
                 "assembly.occurrence-omitted-no-parent-product",
                 "topology.region-no-shell-list",
                 "topology.wire-region-no-connected-edge-set",

@@ -7,11 +7,11 @@ use std::io::Write;
 use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
 #[cfg(test)]
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::eval::helix_nurbs::helix_nurbs;
+use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
 use cadmpeg_ir::geometry::{
     analytic::TorusSurface, pcurve::Pcurve, Curve, CurveGeometry, HelixCurveConstruction,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    HelixSurfaceConstruction, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{AppearanceBindingId, OccurrenceId, ProductDefinitionId, ShellId};
 use cadmpeg_ir::pmi::{
@@ -306,6 +306,11 @@ pub(crate) struct Builder<'a> {
     /// Helix constructions written as fitted B-splines because they carry no
     /// solved carrier.
     fitted_helix_curves: BTreeSet<String>,
+    /// Helix surface constructions written as fitted B-spline surfaces
+    /// because they carry no solved carrier.
+    fitted_helix_surfaces: BTreeSet<String>,
+    /// Pcurves omitted because their surface is a fitted helix surface.
+    fitted_surface_pcurves: BTreeSet<String>,
     /// Analytic surface records the writer put in the file, in emission order.
     written_analytic_surfaces: Vec<WrittenAnalyticSurface<'a>>,
 
@@ -524,6 +529,8 @@ impl<'a> Builder<'a> {
             written_procedural_surfaces: BTreeSet::new(),
             written_procedural_curves: BTreeSet::new(),
             fitted_helix_curves: BTreeSet::new(),
+            fitted_helix_surfaces: BTreeSet::new(),
+            fitted_surface_pcurves: BTreeSet::new(),
             written_analytic_surfaces: Vec::new(),
             curveless_edges: BTreeSet::new(),
             point_loop_curves: BTreeSet::new(),
@@ -2984,6 +2991,8 @@ impl<'a> Builder<'a> {
             let face_id = use_.face;
             if let Some(pcurve) = self.emit_pcurve(use_, edge) {
                 pcurve_refs.push(pcurve);
+            } else if self.surface_is_fitted_helix(surface_id) {
+                self.fitted_surface_pcurves.insert(pcurve_id.to_string());
             } else if self.surface_chart_reversed(surface_id) {
                 self.loss(
                     StepLossCode::PcurveCarrierUnwritable,
@@ -3023,6 +3032,9 @@ impl<'a> Builder<'a> {
             &carrier.geometry,
         );
         let surface = self.emit_surface(surface_id)?;
+        if self.surface_is_fitted_helix(surface_id) {
+            return None;
+        }
         let reversed_cone = self.surface_chart_reversed(surface_id);
         let curve = if reversed_cone {
             geometry::pcurve_on_reversed_cone(&mut self.emitter, &aligned)?
@@ -3100,6 +3112,12 @@ impl<'a> Builder<'a> {
             let (r, reversed) = if let Some((id, reference, reversed)) = emitted {
                 self.written_procedural_surfaces.insert(id);
                 (reference, reversed)
+            } else if let Some((id, helix)) = self.unsolved_helix_surface(surface_id) {
+                let fitted = helix_surface_nurbs(helix, self.ir.tolerances.linear).ok()?;
+                let reference =
+                    geometry::surface(&mut self.emitter, &SolvedSurfaceGeometry::Nurbs(fitted))?;
+                self.fitted_helix_surfaces.insert(id.to_owned());
+                (reference, false)
             } else {
                 let solved = solved?;
                 if !geometry::surface_is_supported(solved) {
@@ -3382,6 +3400,32 @@ impl<'a> Builder<'a> {
             ProceduralCurveDefinition::Helix(helix) => Some((procedural.id.as_str(), helix)),
             _ => None,
         }
+    }
+
+    /// The construction id and helix of a surface whose helix construction
+    /// carries no solved carrier.
+    fn unsolved_helix_surface(
+        &self,
+        surface_id: &str,
+    ) -> Option<(&'a str, &'a HelixSurfaceConstruction)> {
+        let surface = self.surfaces.get(surface_id)?;
+        if surface.geometry.solved().is_some() {
+            return None;
+        }
+        let procedural = self.procedural_surfaces.get(surface_id)?;
+        match procedural.definition() {
+            ProceduralSurfaceDefinition::Helix { construction } => {
+                Some((procedural.id.as_str(), construction))
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether the writer wrote `surface_id` as a fitted helix surface.
+    fn surface_is_fitted_helix(&self, surface_id: &str) -> bool {
+        self.procedural_surfaces
+            .get(surface_id)
+            .is_some_and(|procedural| self.fitted_helix_surfaces.contains(procedural.id.as_str()))
     }
 
     fn emit_procedural_curve(&mut self, definition: &ProceduralCurveDefinition) -> Option<Ref> {
@@ -5122,6 +5166,7 @@ impl<'a> Builder<'a> {
                     && !self
                         .written_procedural_surfaces
                         .contains(procedural.id.as_str())
+                    && !self.fitted_helix_surfaces.contains(procedural.id.as_str())
             })
             .map(|(_, procedural)| procedural.id.as_str())
             .collect();
@@ -5146,6 +5191,7 @@ impl<'a> Builder<'a> {
                 !self
                     .written_procedural_surfaces
                     .contains(procedural.id.as_str())
+                    && !self.fitted_helix_surfaces.contains(procedural.id.as_str())
                     && !reduced_surfaces.contains(procedural.id.as_str())
             })
             .count();
@@ -5172,12 +5218,22 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.fitted_helix_curves.is_empty() {
+        if !self.fitted_helix_curves.is_empty() || !self.fitted_helix_surfaces.is_empty() {
             self.loss(
                 StepLossCode::HelixFittedToBspline,
                 format!(
-                    "{} helix definition(s) without a solved carrier were written as cubic B-splines within the linear tolerance",
-                    self.fitted_helix_curves.len()
+                    "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance",
+                    self.fitted_helix_curves.len(),
+                    self.fitted_helix_surfaces.len()
+                ),
+            );
+        }
+        if !self.fitted_surface_pcurves.is_empty() {
+            self.loss(
+                StepLossCode::PcurveOnFittedHelixSurface,
+                format!(
+                    "{} pcurve(s) on fitted helix surfaces were not written; the fitted surface does not keep the native profile parameter",
+                    self.fitted_surface_pcurves.len()
                 ),
             );
         }

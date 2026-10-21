@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Helix curve carriers at STEP export.
+//! Helix curve and surface carriers at STEP export.
 #![allow(clippy::unwrap_used)]
 
 use super::reports::edgeless_doc;
 use crate::{export::write_step, loss::StepLossCode, StepSchema, StepWriteOptions};
 use cadmpeg_ir::{
     geometry::{
-        Curve, CurveGeometry, HelixCurveConstruction, HelixFrame, ProceduralCurve,
-        ProceduralCurveDefinition,
+        Curve, CurveGeometry, HelixCircleProfile, HelixCurveConstruction, HelixFrame,
+        HelixPathConstruction, HelixSurfaceConstruction, HelixSurfaceProfile, ProceduralCurve,
+        ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
     },
-    ids::{CurveId, ProceduralCurveId},
+    ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId},
     math::{Point3, Vector3},
     topology::{EdgeCarrier, Point},
     CadIr,
@@ -106,4 +107,68 @@ fn an_edge_on_a_cached_helix_is_written_on_its_cache() {
     let codes: Vec<_> = report.losses.iter().map(|loss| loss.code.clone()).collect();
     assert!(!codes.contains(&StepLossCode::HelixFittedToBspline.kind()));
     assert!(codes.contains(&StepLossCode::ProceduralReducedToCarrier.kind()));
+}
+
+/// The uncached helix edge document with its face on an uncached
+/// spring-wire surface.
+fn helix_surface_doc() -> CadIr {
+    let mut ir = helix_edge_doc(false);
+    let construction = HelixSurfaceConstruction::try_new(
+        [-std::f64::consts::PI, std::f64::consts::PI],
+        [0.0, std::f64::consts::TAU],
+        HelixPathConstruction::try_new(
+            [0.0, std::f64::consts::TAU],
+            HelixFrame {
+                center: Point3::new(0.0, 0.0, 0.0),
+                major: Vector3::new(6.0, 0.0, 0.0),
+                minor: Vector3::new(0.0, 6.0, 0.0),
+                pitch: Vector3::new(0.0, 0.0, 2.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            0.0,
+        )
+        .unwrap(),
+        HelixSurfaceProfile::Circle(HelixCircleProfile::try_new(0.0, 0.5).unwrap()),
+    )
+    .unwrap();
+    let owner = ir.model.surfaces[0].id.clone();
+    ir.model
+        .add_procedural_surface(
+            &owner,
+            ProceduralSurface::new(
+                ProceduralSurfaceId::mint("test:model:procedural_surface#wire").unwrap(),
+                ProceduralSurfaceDefinition::Helix {
+                    construction: Box::new(construction),
+                },
+                None,
+            ),
+        )
+        .unwrap();
+    let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[0].geometry else {
+        panic!("construction owner")
+    };
+    *cache = None;
+    ir
+}
+
+#[test]
+fn a_face_on_an_uncached_helix_surface_is_written_on_a_fitted_bspline_surface() {
+    let ir = helix_surface_doc();
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+
+    assert_eq!(entity_count(&bytes, "ADVANCED_FACE"), 1);
+    assert_eq!(entity_count(&bytes, "B_SPLINE_SURFACE_WITH_KNOTS"), 1);
+    assert_eq!(entity_count(&bytes, "RATIONAL_B_SPLINE_SURFACE"), 1);
+    let codes: Vec<_> = report.losses.iter().map(|loss| loss.code.clone()).collect();
+    assert!(codes.contains(&StepLossCode::HelixFittedToBspline.kind()));
+    assert!(!codes.contains(&StepLossCode::UnknownSurfaceFaceOmitted.kind()));
+    assert!(!codes.contains(&StepLossCode::ProceduralReducedToCarrier.kind()));
+    assert!(!codes.contains(&StepLossCode::ProceduralDefinitionNotWritten.kind()));
 }
