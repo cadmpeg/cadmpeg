@@ -34,7 +34,7 @@ pub(super) fn project(
     };
     let mut endpoints = Vec::new();
     for parameter in range.endpoints() {
-        match cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter) {
+        match cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, parameter) {
             Ok(point) => endpoints.push(point),
             Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()),
             Err(
