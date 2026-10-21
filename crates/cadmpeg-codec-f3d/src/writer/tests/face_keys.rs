@@ -114,9 +114,8 @@ fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
             .face_native_keys
             .push(record(face.clone(), 1, Some(8)));
     }
-    let error = match F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) {
-        Ok(_) => panic!("one face has only one native key slot"),
-        Err(error) => error,
+    let Err(error) = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) else {
+        panic!("one face has only one native key slot")
     };
     assert!(
         error
@@ -128,9 +127,8 @@ fn native_face_key_slot_refuses_duplicate_targets_and_capacity_overflow() {
         let mut native = f3d_native_mut(&mut ir);
         native.face_native_keys = vec![record(face, 0, Some(u64::MAX))];
     }
-    let error = match F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) {
-        Ok(_) => panic!("the signed native field cannot hold u64::MAX"),
-        Err(error) => error,
+    let Err(error) = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit) else {
+        panic!("the signed native field cannot hold u64::MAX")
     };
     assert!(
         error.to_string().contains("signed 64-bit native slot"),

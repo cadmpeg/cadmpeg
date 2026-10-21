@@ -603,7 +603,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         relation_ordinal: None,
     });
     curve_point_coincidence.edit_content(|draft| {
-        draft.members = members.try_into().expect("uniform member resolution")
+        draft.members = members.try_into().expect("uniform member resolution");
     });
     let mut returned = curve_point_coincidence.return_members().to_vec();
     returned.push(SketchRelationReturnMember::from_index(175));

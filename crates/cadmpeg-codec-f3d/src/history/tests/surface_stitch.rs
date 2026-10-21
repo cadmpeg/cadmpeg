@@ -207,8 +207,9 @@ fn surface_stitch_fixture() -> StitchFixture {
                 faces: FaceSelection::Native(scope_id.clone()),
                 merge_entities: Some(true),
                 create_solid: Some(true),
-                gap_tolerance: (Some(cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()))
-                    .map(Into::into),
+                gap_tolerance: Some(Into::into(
+                    cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap(),
+                )),
             }),
         ),
         native_ref: None,

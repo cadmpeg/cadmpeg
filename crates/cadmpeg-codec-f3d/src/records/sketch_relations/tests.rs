@@ -173,7 +173,7 @@ fn source_admission_bounds_every_reference_and_preserves_failed_edits() {
                 "member_offsets" => draft.members.0[0].offset = Some(offset),
                 "auxiliary_reference_offsets" => {
                     draft.auxiliary_references =
-                        super::ReferenceRun::located(vec![super::Located { value: 1, offset }])
+                        super::ReferenceRun::located(vec![super::Located { value: 1, offset }]);
                 }
                 "owner_reference_offset" => draft.owner_reference_offset = offset,
                 _ => draft.return_members.0[0].offset = Some(offset),

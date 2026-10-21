@@ -254,12 +254,12 @@ fn body_recipe_source_admission_checks_real_frame_positions() {
         |draft: &mut DesignBodyRecipeOperandDraft| draft.context_id_offset = 0,
         |draft: &mut DesignBodyRecipeOperandDraft| draft.next_byte_offset = 0,
         |draft: &mut DesignBodyRecipeOperandDraft| {
-            draft.references[0].design_reference_offset = Some(0)
+            draft.references[0].design_reference_offset = Some(0);
         },
         |draft: &mut DesignBodyRecipeOperandDraft| draft.references[0].form_offset = None,
         |draft: &mut DesignBodyRecipeOperandDraft| draft.references.clear(),
         |draft: &mut DesignBodyRecipeOperandDraft| {
-            draft.selector_tail.as_mut().unwrap().offset = 239
+            draft.selector_tail.as_mut().unwrap().offset = 239;
         },
         |draft: &mut DesignBodyRecipeOperandDraft| draft.record_index = u32::MAX,
     ] {

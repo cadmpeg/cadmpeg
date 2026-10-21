@@ -119,125 +119,6 @@ pub(super) fn missing_feature_scopes<'a>(
     }).map(|scope| scope.id.as_str()).collect())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn omission_names_only_missing_records_in_source_order() {
-        let projected = HashSet::from(["native:held"]);
-        let source = ["native:missing-first", "native:held", "native:missing-last"];
-        assert_eq!(
-            Names::new(source.into_iter(), &projected).to_string(),
-            "native:missing-first, native:missing-last"
-        );
-        assert_eq!(
-            Names::all(source.into_iter()).to_string(),
-            source.join(", ")
-        );
-        assert_eq!(
-            Names::new(["native:held"].into_iter(), &projected).to_string(),
-            ""
-        );
-    }
-
-    #[test]
-    fn input_topology_omission_report_names_the_typed_operand_record() {
-        let mut native = crate::native::F3dNative::default();
-        let scope = crate::records::feature::scope::DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:scope#7",
-            crate::records::feature::scope::DesignFeatureKind::WorkPoint,
-            7,
-        );
-        native.design_parameter_scopes.push(scope);
-        let id = "f3d:Design/BulkStream.dat:construction-group#9";
-        native.design_construction_operand_groups.push(
-            serde_json::from_value(serde_json::json!({
-                "id": id,
-                "scope_record_index": 7,
-                "scope_reference_ordinal": 0,
-                "record_index": 9,
-                "class_tag": "300",
-                "members": [10],
-                "frame": {"opaque_index": 1, "opaque_scalar": 1.0, "variant": false},
-                "role": 0x10_0000_0000u64,
-                "paired_class_tag": "258"
-            }))
-            .unwrap(),
-        );
-        let ir = CadIr::empty();
-        assert_eq!(
-            missing_input_topology_records(&ir, &native),
-            vec![("design_construction_operand_groups", id)]
-        );
-        let mut report =
-            cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
-                scope: ir.scope,
-                geometry_transferred: false,
-            });
-        super::super::report_design_projection_gaps(
-            &mut report,
-            &cadmpeg_test_support::service_decode_context(),
-            &ir,
-            &native,
-        )
-        .unwrap();
-        assert!(report.losses.iter().any(|loss| {
-            loss.code == crate::loss::F3dLossCode::FeatureDefinitionIncomplete.kind()
-                && loss.message.contains(id)
-                && loss.message.contains("feature-input topology")
-        }));
-    }
-
-    #[test]
-    fn unprojected_parameter_report_names_the_typed_source_record() {
-        use crate::records::parameters::{
-            DesignParameter, DesignParameterContent, DesignParameterDiscriminator,
-            DesignParameterSource,
-        };
-        let id = "f3d:design:design-parameter#7";
-        let mut native = crate::native::F3dNative::default();
-        native.design_parameters.push(
-            DesignParameter::authored(DesignParameterContent {
-                id: id.into(),
-                class_tag: "305".to_owned().try_into().unwrap(),
-                record_index: 7,
-                source_ordinal: 0,
-                source: DesignParameterSource::authored(
-                    "User Parameter".into(),
-                    None,
-                    Some(DesignParameterDiscriminator::Code0),
-                )
-                .unwrap(),
-                expression: "1 mm".into(),
-                unit: Some("mm".into()),
-                name: "d1".into(),
-                evaluated_value: 0.1,
-            })
-            .unwrap(),
-        );
-        let ir = CadIr::empty();
-        let mut report =
-            cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
-                scope: ir.scope,
-                geometry_transferred: false,
-            });
-        super::super::report_design_projection_gaps(
-            &mut report,
-            &cadmpeg_test_support::service_decode_context(),
-            &ir,
-            &native,
-        )
-        .unwrap();
-        let loss = report
-            .losses
-            .iter()
-            .find(|loss| loss.code == crate::loss::F3dLossCode::ParameterUnprojected.kind())
-            .unwrap();
-        assert!(loss.message.contains(id), "{}", loss.message);
-    }
-}
-
 /// Native operand records whose owning feature has no delivered input topology.
 /// A typed operand remains document content, but its references must not be
 /// mistaken for a completed neutral historical-topology projection.
@@ -383,5 +264,124 @@ pub(super) fn assert_projected_or_reported(
     }
     for (_, id) in missing_input_topology_records(ir, native) {
         reported(id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn omission_names_only_missing_records_in_source_order() {
+        let projected = HashSet::from(["native:held"]);
+        let source = ["native:missing-first", "native:held", "native:missing-last"];
+        assert_eq!(
+            Names::new(source.into_iter(), &projected).to_string(),
+            "native:missing-first, native:missing-last"
+        );
+        assert_eq!(
+            Names::all(source.into_iter()).to_string(),
+            source.join(", ")
+        );
+        assert_eq!(
+            Names::new(["native:held"].into_iter(), &projected).to_string(),
+            ""
+        );
+    }
+
+    #[test]
+    fn input_topology_omission_report_names_the_typed_operand_record() {
+        let mut native = crate::native::F3dNative::default();
+        let scope = crate::records::feature::scope::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:scope#7",
+            crate::records::feature::scope::DesignFeatureKind::WorkPoint,
+            7,
+        );
+        native.design_parameter_scopes.push(scope);
+        let id = "f3d:Design/BulkStream.dat:construction-group#9";
+        native.design_construction_operand_groups.push(
+            serde_json::from_value(serde_json::json!({
+                "id": id,
+                "scope_record_index": 7,
+                "scope_reference_ordinal": 0,
+                "record_index": 9,
+                "class_tag": "300",
+                "members": [10],
+                "frame": {"opaque_index": 1, "opaque_scalar": 1.0, "variant": false},
+                "role": 0x10_0000_0000u64,
+                "paired_class_tag": "258"
+            }))
+            .unwrap(),
+        );
+        let ir = CadIr::empty();
+        assert_eq!(
+            missing_input_topology_records(&ir, &native),
+            vec![("design_construction_operand_groups", id)]
+        );
+        let mut report =
+            cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+                scope: ir.scope,
+                geometry_transferred: false,
+            });
+        super::super::report_design_projection_gaps(
+            &mut report,
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &native,
+        )
+        .unwrap();
+        assert!(report.losses.iter().any(|loss| {
+            loss.code == crate::loss::F3dLossCode::FeatureDefinitionIncomplete.kind()
+                && loss.message.contains(id)
+                && loss.message.contains("feature-input topology")
+        }));
+    }
+
+    #[test]
+    fn unprojected_parameter_report_names_the_typed_source_record() {
+        use crate::records::parameters::{
+            DesignParameter, DesignParameterContent, DesignParameterDiscriminator,
+            DesignParameterSource,
+        };
+        let id = "f3d:design:design-parameter#7";
+        let mut native = crate::native::F3dNative::default();
+        native.design_parameters.push(
+            DesignParameter::authored(DesignParameterContent {
+                id: id.into(),
+                class_tag: "305".to_owned().try_into().unwrap(),
+                record_index: 7,
+                source_ordinal: 0,
+                source: DesignParameterSource::authored(
+                    "User Parameter".into(),
+                    None,
+                    Some(DesignParameterDiscriminator::Code0),
+                )
+                .unwrap(),
+                expression: "1 mm".into(),
+                unit: Some("mm".into()),
+                name: "d1".into(),
+                evaluated_value: 0.1,
+            })
+            .unwrap(),
+        );
+        let ir = CadIr::empty();
+        let mut report =
+            cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+                scope: ir.scope,
+                geometry_transferred: false,
+            });
+        super::super::report_design_projection_gaps(
+            &mut report,
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &native,
+        )
+        .unwrap();
+        let loss = report
+            .losses
+            .iter()
+            .find(|loss| loss.code == crate::loss::F3dLossCode::ParameterUnprojected.kind())
+            .unwrap();
+        assert!(loss.message.contains(id), "{}", loss.message);
     }
 }

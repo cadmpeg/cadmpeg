@@ -2493,6 +2493,8 @@ fn native_law_formula(
     target: &CadIr,
     formula: &cadmpeg_ir::geometry::LawFormula,
 ) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+
     // The native stream spells the null law with its own token; the IR states
     // the variant and knows no such text. The match is exhaustive so a third
     // variant is a compile error here, not a silently written token.
@@ -4900,7 +4902,7 @@ mod native_interval_curve_tests {
         let (mut target, _, _) = decoded.into_parts();
         target.source = None;
         target.native = cadmpeg_ir::native::Native::default();
-        use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+
         let held = cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),

@@ -302,8 +302,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         FeatureDefinition::Operation(FeatureOperation::Shell {
             bodies,
             removed_faces,
-            thickness: (Some(cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()))
-                .map(Into::into),
+            thickness: Some(Into::into(
+                cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+            )),
             outward: Some(true),
             mode: None,
             join: None,

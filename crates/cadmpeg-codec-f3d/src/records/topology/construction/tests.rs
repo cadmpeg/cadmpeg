@@ -475,7 +475,7 @@ fn construction_path_native_retained_limit_refuses_before_clone() {
     );
 }
 
-fn identity_wire(indices: Vec<u32>, tags: Vec<&str>) -> serde_json::Value {
+fn identity_wire(indices: &[u32], tags: &[&str]) -> serde_json::Value {
     json!({"id":"f3d:native:construction-identity#0","ordinal":0,"group_record_index":200,
         "wrapper_record_indices":indices,"wrapper_class_tags":tags,"following_record_index":310,"following_class_tag":"304"})
 }
@@ -483,10 +483,7 @@ fn identity_wire(indices: Vec<u32>, tags: Vec<&str>) -> serde_json::Value {
 fn identity_wrapper_rows_keep_order_and_reject_unequal_semantic_columns() {
     for count in 0..=2 {
         for tags in 0..=2 {
-            let wire = identity_wire(
-                [300, 305][..count].to_vec(),
-                ["384", "289"][..tags].to_vec(),
-            );
+            let wire = identity_wire(&[300, 305][..count], &["384", "289"][..tags]);
             let result =
                 serde_json::from_value::<super::DesignConstructionOperandIdentity>(wire.clone());
             if count == tags {
@@ -502,7 +499,7 @@ fn identity_wrapper_rows_keep_order_and_reject_unequal_semantic_columns() {
             }
         }
     }
-    let mut duplicate = identity_wire(vec![300, 300], vec!["384", "289"]);
+    let mut duplicate = identity_wire(&[300, 300], &["384", "289"]);
     assert!(
         serde_json::from_value::<super::DesignConstructionOperandIdentity>(duplicate.clone())
             .is_err()
@@ -514,12 +511,10 @@ fn identity_wrapper_rows_keep_order_and_reject_unequal_semantic_columns() {
 #[test]
 fn construction_identity_borrowed_wire_matches_owned_wire_bytes() {
     for count in 0..=2 {
-        let identity: super::DesignConstructionOperandIdentity =
-            serde_json::from_value(identity_wire(
-                [300, 305][..count].to_vec(),
-                ["384", "289"][..count].to_vec(),
-            ))
-            .unwrap();
+        let identity: super::DesignConstructionOperandIdentity = serde_json::from_value(
+            identity_wire(&[300, 305][..count], &["384", "289"][..count]),
+        )
+        .unwrap();
         let owned = super::DesignConstructionOperandIdentityWire::from(identity.clone());
         assert_eq!(
             serde_json::to_vec(&identity).unwrap(),
@@ -530,7 +525,7 @@ fn construction_identity_borrowed_wire_matches_owned_wire_bytes() {
 #[test]
 fn construction_identity_native_retained_limit_refuses_before_clone() {
     let identity: super::DesignConstructionOperandIdentity =
-        serde_json::from_value(identity_wire(vec![300, 305], vec!["384", "289"])).unwrap();
+        serde_json::from_value(identity_wire(&[300, 305], &["384", "289"])).unwrap();
     crate::test_support::native_test::assert_borrowed_native_retained_limit(
         &identity,
         "design_construction_operand_identities",

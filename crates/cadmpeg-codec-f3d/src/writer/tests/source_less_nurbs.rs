@@ -1004,6 +1004,8 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
 
 #[test]
 fn generated_source_less_writes_translational_extrusion_definition() {
+    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+
     let source = f3d_with_smbh(&synthetic_cyl_spl_sur_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1055,7 +1057,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     let actual = &round_trip.ir().model.procedural_surfaces[0];
     // Omitting the independently invalid source face changes native record
     // positions. Compare every definition field under its actual typed owner.
-    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(payload) = actual.definition()
     else {
         panic!("expected extrusion definition")

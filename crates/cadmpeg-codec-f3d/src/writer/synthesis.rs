@@ -55,7 +55,7 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
         }
         Err(error) => return Err(error),
     };
-    let native_dispositions = native::coverage(target, &prepared, &mut losses)?;
+    let native_dispositions = native::coverage(target, &prepared, &mut losses);
     let coverage = prepare::dispositions(target, &prepared, coverage, &mut losses);
     if prepared.model.bodies.is_empty()
         && prepared.model.surfaces.is_empty()

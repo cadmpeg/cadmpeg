@@ -205,7 +205,7 @@ impl<'a> NativeRecordPlan<'a> {
 }
 
 /// Top-level carriers exclude supports serialized inline through another
-/// current geometry owner. EntitySchema excludes each entity's declaration.
+/// current geometry owner. `EntitySchema` excludes each entity's declaration.
 fn saved_free_surface_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     model: &cadmpeg_ir::document::Model,

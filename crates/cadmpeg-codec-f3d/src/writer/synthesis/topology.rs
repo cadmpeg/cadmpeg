@@ -179,7 +179,7 @@ fn admit_faces(
                 losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
                     "face {} is omitted from its open shell: {error}",
                     face.id
-                )))
+                )));
             }
             Err(error) => return Err(error),
         }

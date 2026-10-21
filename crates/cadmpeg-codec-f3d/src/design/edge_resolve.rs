@@ -540,16 +540,15 @@ struct EdgeGroupTransition<'a> {
     feature_id: &'a cadmpeg_ir::features::FeatureId,
 }
 
+type EdgeMemberOverride<'a> = Option<&'a [crate::records::identity::Located<u32, Option<u64>>]>;
+
 fn resolved_edge_group_with_transition_chain(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
     transition: EdgeGroupTransition<'_>,
-    (proof, members_override): (
-        EdgeGroupProof,
-        Option<&[crate::records::identity::Located<u32, Option<u64>>]>,
-    ),
+    (proof, members_override): (EdgeGroupProof, EdgeMemberOverride<'_>),
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;

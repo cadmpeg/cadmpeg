@@ -103,7 +103,7 @@ fn face_source_rows_preserve_wire_and_reject_unequal_offsets() {
         );
         let error = source_group(&invalid)
             .expect_err("unequal source arrays")
-            .to_string();
+            .clone();
         assert!(error.contains("source_members"));
         assert!(error.contains("source_reference_offsets"));
     }

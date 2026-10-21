@@ -798,7 +798,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 ":design-record#",
                                 u64::from(operation.boundary_record_index)
                             )),
-                            distance: (Some(distance)).map(Into::into),
+                            distance: Some(Into::into(distance)),
                             method,
                         })
                     } else {
@@ -1015,7 +1015,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 .find(|(ordinal, _)| *ordinal == 1)
                                 .and_then(|(_, parameter)| design_positive_length(parameter))
                                 .map(|length| cadmpeg_ir::features::CosmeticThreadExtent::Blind {
-                                    length: (length).into(),
+                                    length: length,
                                 })
                                 .or_else(|| {
                                     full_face_extent.then_some(
@@ -1025,7 +1025,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             Ok(FeatureDefinition::Operation(
                                 FeatureOperation::CosmeticThread {
                                     face,
-                                    diameter: (Some(nominal_size)).map(Into::into),
+                                    diameter: Some(Into::into(nominal_size)),
                                     extent,
                                 },
                             ))
@@ -1654,7 +1654,7 @@ fn project_solid_primitive(
                 [0.0, 0.0, 1.0, 0.0],
             ])?;
             FeatureDefinition::Operation(FeatureOperation::Block {
-                dimensions: (Some([
+                dimensions: Some([
                     dimension_bindings::owner(
                         parameters,
                         *length_record_index,
@@ -1670,7 +1670,7 @@ fn project_solid_primitive(
                         *height_record_index,
                         cadmpeg_ir::scalar::PositiveLength::new(height.get() * 10.0)?,
                     ),
-                ])),
+                ]),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::new(placement)?),
                 op: operation(*result),
             })
@@ -2207,7 +2207,7 @@ fn project_fillet_arm(
             groups.push(FilletGroup {
                 edges,
                 radius: resolved.radius,
-                tangency_weight: (resolved.tangency_weight),
+                tangency_weight: resolved.tangency_weight,
             });
         }
         let groups = groups.try_into().ok();
@@ -2249,7 +2249,7 @@ fn project_fillet_arm(
         groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
             edges: EdgeSelection::Native(scope.id.clone()),
             radius: RadiusSpec::Constant {
-                radius: (dimension_bindings::parameter(parameter)),
+                radius: dimension_bindings::parameter(parameter),
             },
             tangency_weight: None,
         }),
@@ -2309,19 +2309,19 @@ fn resolved_fillet_assignments<'a>(
             DesignFilletRadiusLaw::Constant {
                 radius_parameter_record_index,
             } => RadiusSpec::Constant {
-                radius: (length(*radius_parameter_record_index, "Radius")?),
+                radius: length(*radius_parameter_record_index, "Radius")?,
             },
             DesignFilletRadiusLaw::Chordal {
                 chord_length_parameter_record_index,
             } => RadiusSpec::Chordal {
-                chord_length: (length(*chord_length_parameter_record_index, "ChordLen")?),
+                chord_length: length(*chord_length_parameter_record_index, "ChordLen")?,
             },
             DesignFilletRadiusLaw::Asymmetric {
                 offset_one_parameter_record_index,
                 offset_two_parameter_record_index,
             } => RadiusSpec::Asymmetric {
-                offset_one: (length(*offset_one_parameter_record_index, "EdgeOffset1")?),
-                offset_two: (length(*offset_two_parameter_record_index, "EdgeOffset2")?),
+                offset_one: length(*offset_one_parameter_record_index, "EdgeOffset1")?,
+                offset_two: length(*offset_two_parameter_record_index, "EdgeOffset2")?,
             },
             DesignFilletRadiusLaw::Variable {
                 start_radius_parameter_record_index,
@@ -2936,7 +2936,7 @@ fn project_surface_offset(
                     ":design-record#",
                     u64::from(*boundary_record_index)
                 )),
-                distance: (Some(distance)).map(Into::into),
+                distance: Some(Into::into(distance)),
             },
         )));
     };
@@ -2974,7 +2974,7 @@ fn project_surface_offset(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::OffsetSurface {
             faces: FaceSelection::Resolved { faces, native },
-            distance: (Some(distance)).map(Into::into),
+            distance: Some(Into::into(distance)),
         },
     )))
 }
@@ -3474,11 +3474,10 @@ pub(super) fn project_offset_faces(
         FeatureOperation::MoveFace {
             faces,
             motion: FaceMotion::Offset {
-                distance: (parameters.first().map_or_else(
+                distance: parameters.first().map_or_else(
                     || distance.into(),
                     |(_, source)| dimension_bindings::parameter(source),
-                ))
-                .into(),
+                ),
             },
         },
     )))
@@ -4195,10 +4194,9 @@ pub(super) fn project_surface_stitch(
             faces: FaceSelection::Native(scope.id.clone()),
             merge_entities: Some(true),
             create_solid: Some(true),
-            gap_tolerance: (Some(cadmpeg_ir::scalar::NonNegativeLength::new(
+            gap_tolerance: Some(Into::into(cadmpeg_ir::scalar::NonNegativeLength::new(
                 operation.gap_tolerance.get() * 10.0,
-            )?))
-            .map(Into::into),
+            )?)),
         },
     ))
 }
@@ -4300,7 +4298,7 @@ fn project_ruled_surface(
             edges,
             support_faces: FaceSelection::Native(support_native),
             mode,
-            angle: (Some(angle)).map(Into::into),
+            angle: Some(Into::into(angle)),
             alternate_face: Some(operation.alternate_face),
             corner: Some(match operation.corner {
                 DesignRuledSurfaceCorner::Rounded => RuledSurfaceCorner::Rounded,
@@ -4910,19 +4908,19 @@ fn variable_fillet_law(
     let mut points = Vec::new();
     points.push(VariableRadius {
         parameter: 0.0,
-        radius: (dimension_bindings::parameter(start)),
+        radius: dimension_bindings::parameter(start),
     });
     for ((_, radius), (_, parameter)) in middle_radii.into_iter().zip(middle_parameters) {
         design_length(radius)?;
         let parameter = parameter.evaluated_value().get();
         points.push(VariableRadius {
             parameter,
-            radius: (dimension_bindings::parameter(radius)),
+            radius: dimension_bindings::parameter(radius),
         });
     }
     points.push(VariableRadius {
         parameter: 1.0,
-        radius: (dimension_bindings::parameter(end)),
+        radius: dimension_bindings::parameter(end),
     });
     cadmpeg_ir::features::edge_treatments::VariableRadii::new(points)
         .ok()
@@ -5112,14 +5110,14 @@ fn project_chamfer(
         let spec = match lanes {
             Lanes::Distance(distance) => {
                 design_positive_length(distance[ordinal]).map(|_| ChamferSpec::Distance {
-                    distance: (dimension_bindings::parameter(distance[ordinal])),
+                    distance: dimension_bindings::parameter(distance[ordinal]),
                 })
             }
             Lanes::TwoDistances(first, second) => design_positive_length(first[ordinal])
                 .zip(design_positive_length(second[ordinal]))
                 .map(|_| ChamferSpec::TwoDistances {
-                    first: (dimension_bindings::parameter(first[ordinal])),
-                    second: (dimension_bindings::parameter(second[ordinal])),
+                    first: dimension_bindings::parameter(first[ordinal]),
+                    second: dimension_bindings::parameter(second[ordinal]),
                 }),
             Lanes::DistanceAngle(distance, angle) => design_positive_length(distance[ordinal])
                 .zip(
@@ -5127,8 +5125,8 @@ fn project_chamfer(
                         .and_then(|value| cadmpeg_ir::scalar::InteriorAngle::try_from(value).ok()),
                 )
                 .map(|_| ChamferSpec::DistanceAngle {
-                    distance: (dimension_bindings::parameter(distance[ordinal])),
-                    angle: (dimension_bindings::parameter(angle[ordinal])),
+                    distance: dimension_bindings::parameter(distance[ordinal]),
+                    angle: dimension_bindings::parameter(angle[ordinal]),
                 }),
         };
         let spec = or_none!(spec);
@@ -6999,24 +6997,22 @@ fn project_hole(
         (None, None) => (HoleKind::Simple, Some(HoleBottom::Flat)),
         (None, Some(_drill_point_angle)) => (
             HoleKind::SimpleDrilled {
-                drill_point_angle: (dimension_bindings::parameter(or_none!(parameter("TipAngle"))))
-                    .into(),
+                drill_point_angle: (dimension_bindings::parameter(or_none!(parameter("TipAngle")))),
             },
             None,
         ),
         (Some((_diameter, _depth)), None) => (
             HoleKind::Counterbore {
-                diameter: (dimension_bindings::parameter(or_none!(parameter("CBDiameter")))),
-                depth: (dimension_bindings::parameter(or_none!(parameter("CBDepth")))),
+                diameter: dimension_bindings::parameter(or_none!(parameter("CBDiameter"))),
+                depth: dimension_bindings::parameter(or_none!(parameter("CBDepth"))),
             },
             Some(HoleBottom::Flat),
         ),
         (Some((_diameter, _depth)), Some(_drill_point_angle)) => (
             HoleKind::CounterboreDrilled {
-                diameter: (dimension_bindings::parameter(or_none!(parameter("CBDiameter")))),
-                depth: (dimension_bindings::parameter(or_none!(parameter("CBDepth")))),
-                drill_point_angle: (dimension_bindings::parameter(or_none!(parameter("TipAngle"))))
-                    .into(),
+                diameter: dimension_bindings::parameter(or_none!(parameter("CBDiameter"))),
+                depth: dimension_bindings::parameter(or_none!(parameter("CBDepth"))),
+                drill_point_angle: (dimension_bindings::parameter(or_none!(parameter("TipAngle")))),
             },
             None,
         ),
@@ -7060,7 +7056,7 @@ fn project_hole(
         .ok()),
 
         extent: Some(LinearTermination::Blind {
-            length: (dimension_bindings::parameter(or_none!(parameter("HoleDepth")))),
+            length: dimension_bindings::parameter(or_none!(parameter("HoleDepth"))),
         }),
         bottom,
         taper_angle: None,

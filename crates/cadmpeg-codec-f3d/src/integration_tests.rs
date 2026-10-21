@@ -418,7 +418,7 @@ fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
 }
 
 /// Fully typed geometry can replay its original off-catalog dialect. The bare
-/// EOF delta_state boundary contains no omitted history/design record.
+/// EOF ``delta_state`` boundary contains no omitted history/design record.
 #[test]
 fn inherit_replays_a_fully_typed_off_catalog_dialect() {
     let source = f3d_with_smbh_and_manifest_version(&synthetic_geometry_smbh(), "3-3-0-0");

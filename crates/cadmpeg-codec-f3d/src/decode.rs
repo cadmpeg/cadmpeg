@@ -2565,15 +2565,13 @@ impl<'a> F3dDecodeSession<'a> {
         path: &FinalizePath,
         prereqs: &prereqs::ProductPrereqs,
     ) -> Result<DesignState, CodecError> {
-        if self.ctx.depth() < DecodeDepth::Full {
-            if self.cuts_design_intent(path, prereqs) {
-                self.ir.scope.design = false;
-                if source_has_design_records(self.scan)? {
-                    self.untyped
-                        .insert(cadmpeg_ir::document::ArenaClass::Design);
-                }
-                return Ok(DesignState::Absent);
+        if self.ctx.depth() < DecodeDepth::Full && self.cuts_design_intent(path, prereqs) {
+            self.ir.scope.design = false;
+            if source_has_design_records(self.scan)? {
+                self.untyped
+                    .insert(cadmpeg_ir::document::ArenaClass::Design);
             }
+            return Ok(DesignState::Absent);
         }
         let failure = match &prereqs.design_feature_timelines {
             Ok(timelines) => match self.decode_design_intent(path, prereqs, timelines) {
@@ -3213,7 +3211,7 @@ fn decode_scanned_document<'a>(
             if part.asm.surfaces.is_empty()
                 && part.asm.points.is_empty()
                 && part.asm.faces.is_empty()
-                && !(empty_model && !selected_body_keys.contains_key(blob_name))
+                && (!empty_model || selected_body_keys.contains_key(blob_name))
             {
                 continue;
             }
