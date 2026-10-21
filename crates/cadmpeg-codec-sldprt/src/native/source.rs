@@ -180,6 +180,18 @@ pub(crate) fn validate(native: &SldprtNative) -> Result<(), CodecError> {
         ) {
             return mismatch("scalar index");
         }
+        if lane.body_selections != expected.body_selections {
+            let id = lane
+                .body_selections
+                .iter()
+                .zip(&expected.body_selections)
+                .find(|(actual, source)| actual != source)
+                .map(|(actual, _)| actual.id.as_str())
+                .unwrap_or(lane.id.as_str());
+            return Err(CodecError::malformed(format_args!(
+                "feature-input body selection {id} has inconsistent ownership"
+            )));
+        }
         if lane.relation_bindings != expected.relation_bindings {
             return mismatch("relation bindings");
         }
