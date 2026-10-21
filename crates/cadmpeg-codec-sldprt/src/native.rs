@@ -331,7 +331,7 @@ pub(crate) struct DocumentMetadata {
 
 pub(crate) mod source;
 
-pub(crate) mod lanes;
+mod lanes;
 
 impl SldprtNative {
     pub(crate) fn load(
