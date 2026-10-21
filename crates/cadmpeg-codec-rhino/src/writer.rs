@@ -14,6 +14,7 @@ mod reduce;
 mod scopes;
 mod tables;
 pub(crate) mod target;
+mod trim_iso;
 mod trims;
 use model::{
     WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel, WritableObjectCurve,
@@ -33,6 +34,7 @@ use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
 use crate::RhinoArchiveVersion;
 
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
+const PLANE_PARAMETER_DOMAIN: [f64; 2] = [-1.0, 1.0];
 
 /// Return the exact IR-stated linear tolerance; no implementation floor applies.
 /// An absent entity tolerance uses the document's stated linear tolerance.
@@ -837,7 +839,7 @@ fn brep_payload(
             let same_loop = edge.uses.len() == 2
                 && model.coedges[edge.uses[0]].owner_loop == model.coedges[edge.uses[1]].owner_loop;
             record.extend(brep_trim_type(edge.uses.len(), same_loop).to_le_bytes());
-            record.extend(0_i32.to_le_bytes());
+            record.extend(trim_iso::classify(model, coedge)?.to_le_bytes());
             record.extend(wire_index(coedge.owner_loop)?.to_le_bytes());
             record.extend(
                 [coedge.fit_tolerance, 0.0_f64]
@@ -1921,11 +1923,11 @@ fn plane_surface_payload(
         normal.y,
         normal.z,
         d.get(),
-        -1.0,
-        1.0,
-        -1.0,
-        1.0,
-    ] {
+    ]
+    .into_iter()
+    .chain(PLANE_PARAMETER_DOMAIN)
+    .chain(PLANE_PARAMETER_DOMAIN)
+    {
         payload.extend(value.to_le_bytes());
     }
     Ok(payload)

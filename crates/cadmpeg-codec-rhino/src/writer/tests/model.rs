@@ -138,3 +138,54 @@ fn multi_face_resolves_domains_and_incidence_in_arena_order() {
         ));
     }
 }
+
+#[test]
+fn planar_brep_serializes_trim_iso_without_changing_its_topology_or_curves() {
+    use crate::brep::{BrepParse, RawTrimIso};
+    use crate::chunks::ArchiveVersion;
+
+    let ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(0.5, 0.0, 0.0),
+        Point3::new(0.5, 0.5, 0.0),
+        Point3::new(0.0, 0.5, 0.0),
+    ]);
+    let model = WritableModel::try_new(&ir).expect("independent valid planar square");
+    for (version, archive) in [
+        (crate::RhinoArchiveVersion::V5, ArchiveVersion::V5),
+        (crate::RhinoArchiveVersion::V8, ArchiveVersion::V8),
+    ] {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let payload = super::super::brep_payload(&ctx, &model, version).unwrap();
+        let BrepParse::Valid(brep) = crate::brep::parse(
+            &ctx,
+            &payload.body,
+            0..payload.body.len(),
+            archive,
+            Some(super::super::OPENNURBS_WRITER_VERSION),
+            &[],
+        )
+        .expect("native Brep grammar") else {
+            panic!("square Brep topology must remain valid")
+        };
+        let raw = brep.raw();
+        assert_eq!(
+            raw.trims.iter().map(|trim| trim.iso).collect::<Vec<_>>(),
+            [RawTrimIso::Y, RawTrimIso::X, RawTrimIso::Y, RawTrimIso::X]
+        );
+        assert_eq!(raw.trims.len(), 4);
+        assert_eq!(raw.edges.len(), 4);
+        assert_eq!(raw.vertices.len(), 4);
+        assert_eq!(raw.loops.len(), 1);
+        assert_eq!(raw.faces.len(), 1);
+        for (index, trim) in raw.trims.iter().enumerate() {
+            assert_eq!(trim.edge, Some(i32::try_from(index).unwrap()));
+            assert!(!trim.reversed_3d);
+            assert_eq!(trim.loop_index, 0);
+            assert_eq!(
+                trim.domain.0.get(),
+                model.edges[index].domain.map(|value| value.get())
+            );
+        }
+    }
+}
