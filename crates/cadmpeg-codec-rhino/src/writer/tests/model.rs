@@ -184,7 +184,9 @@ fn planar_brep_serializes_trim_iso_without_changing_its_topology_or_curves() {
             assert_eq!(trim.loop_index, 0);
             assert_eq!(
                 trim.domain.0.get(),
-                model.edges[index].domain.map(|value| value.get())
+                model.edges[index]
+                    .domain
+                    .map(cadmpeg_ir::scalar::FiniteReal::get)
             );
         }
     }
