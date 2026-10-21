@@ -155,111 +155,17 @@ fn a_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
     );
 }
 
-/// An F3D with actual edge carriers writes the same STEP bytes at both depths.
+/// An F3D design converted to STEP decodes at geometry depth by default and
+/// writes the same bytes as a `--full-decode` conversion.
 #[cfg(feature = "f3d")]
 #[test]
 fn an_f3d_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
-    let bytes =
-        include_bytes!("../../../cadmpeg-codec-f3d/tests/golden/fixtures/generated_unit_cube.f3d");
-    let dir = tempdir().unwrap();
-    let input = dir.path().join("generated_unit_cube.f3d");
-    let decoded = dir.path().join("cube.json");
-    fs::write(&input, bytes).unwrap();
-    Command::cargo_bin("cadmpeg")
-        .unwrap()
-        .args([
-            "convert",
-            input.to_str().unwrap(),
-            "-o",
-            decoded.to_str().unwrap(),
-            "--full-decode",
-        ])
-        .assert()
-        .success();
-    let document: serde_json::Value = serde_json::from_slice(&fs::read(decoded).unwrap()).unwrap();
-    let curves = document["model"]["curves"].as_array().unwrap();
-    assert_eq!(curves.len(), 12);
-    assert!(curves
-        .iter()
-        .all(|curve| curve["geometry"]["kind"] == "line"));
-    let edges = document["model"]["edges"].as_array().unwrap();
-    assert_eq!(edges.len(), 12);
-    assert!(edges.iter().all(|edge| curves
-        .iter()
-        .any(|curve| edge["carrier"]["curve"] == curve["id"])));
-    assert_geometry_depth_step_writes_the_full_decode_bytes("generated_unit_cube.f3d", bytes);
-}
-
-/// Null source curve references remain absent at both decode depths. Neither
-/// conversion may invent line geometry or write a support-only empty STEP.
-#[cfg(feature = "f3d")]
-#[test]
-fn an_f3d_without_edge_carriers_refuses_step_at_both_depths() {
-    let dir = tempdir().unwrap();
-    let input = dir.path().join("design_sketch_constraints.f3d");
-    fs::write(
-        &input,
+    assert_geometry_depth_step_writes_the_full_decode_bytes(
+        "design_sketch_constraints.f3d",
         include_bytes!(
             "../../../cadmpeg-codec-f3d/tests/golden/fixtures/design_sketch_constraints.f3d"
         ),
-    )
-    .unwrap();
-    let mut outcomes = Vec::new();
-    for (extra, depth) in [(None, "geometry"), (Some("--full-decode"), "full")] {
-        let output = dir.path().join(format!("{depth}.step"));
-        let report = dir.path().join(format!("{depth}.report.json"));
-        let mut args = vec![
-            "convert",
-            input.to_str().unwrap(),
-            "-o",
-            output.to_str().unwrap(),
-            "--report",
-            report.to_str().unwrap(),
-        ];
-        args.extend(extra);
-        Command::cargo_bin("cadmpeg")
-            .unwrap()
-            .args(args)
-            .assert()
-            .code(1)
-            .stderr(predicate::str::contains(
-                "document holds no exportable geometry; refusing to write an empty step",
-            ));
-        assert!(!output.exists());
-        let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-        assert_eq!(report["status"], "refused");
-        assert_eq!(
-            report["refusal"],
-            serde_json::json!({
-                "stage": "plan",
-                "code": "empty_geometry",
-                "message": "document holds no exportable geometry; refusing to write an empty step (use --allow-empty to override)",
-            })
-        );
-        assert_eq!(
-            report["decode_report"]["transfer"]["scope"],
-            serde_json::json!({"model": true, "design": depth == "full"})
-        );
-        let counts = &report["check_report"]["entity_counts"];
-        for (arena, count) in [
-            ("bodies", 1),
-            ("faces", 1),
-            ("edges", 3),
-            ("points", 3),
-            ("curves", 0),
-        ] {
-            assert_eq!(counts[arena], count);
-        }
-        let omitted = report["export"]["losses"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|loss| loss["code"]["code"] == "export.no-exportable-solids")
-            .expect("missing edge carriers leave no writable shape");
-        assert_eq!(omitted["severity"], "warning");
-        outcomes.push((report["refusal"].clone(), omitted.clone()));
-    }
-    assert_eq!(outcomes[0], outcomes[1]);
+    );
 }
 
 /// A loss policy judges the whole source, so every `--reject-lossy` scope

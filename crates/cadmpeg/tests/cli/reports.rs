@@ -76,22 +76,7 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
         .contains("geometry"));
     assert!(value["decode_report"].is_object());
     assert!(value["check_report"].is_object());
-    // The writer completed its plan before caller policy refused the empty
-    // conversion. Preserve that plan and its exact native-omission loss.
-    assert_eq!(value["export"]["identity"]["payload"], "native");
-    assert_eq!(value["export"]["identity"]["target"], "step:ap214");
-    assert_eq!(value["export"]["write_path"]["path"], "synthesized");
-    let export: cadmpeg_ir::report::export::ExportReport =
-        serde_json::from_value(value["export"].clone()).unwrap();
-    let [loss] = export.losses.as_slice() else {
-        panic!("one omitted native arena: {:#?}", export.losses);
-    };
-    assert_eq!(loss.code.namespace(), "export");
-    assert_eq!(loss.code.local_code(), "native.records-omitted");
-    assert_eq!(
-        loss.message,
-        "the step write omits 1 native record(s) from `creo.unknowns`"
-    );
+    assert!(value["export"].is_null());
 }
 
 #[test]

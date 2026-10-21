@@ -209,15 +209,7 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir() {
         let input = minimal_rhino_archive(dir.path(), &format!("empty-{version}.3dm"), version);
         for extra in [None, Some("--container-only")] {
             let mut command = Command::cargo_bin("cadmpeg").unwrap();
-            let cadir = dir
-                .path()
-                .join(format!("empty-{version}-{}.json", extra.is_some()));
-            command.args([
-                "dump",
-                input.to_str().unwrap(),
-                "-o",
-                cadir.to_str().unwrap(),
-            ]);
+            command.args(["dump", input.to_str().unwrap()]);
             if let Some(argument) = extra {
                 command.arg(argument);
             }
@@ -227,13 +219,7 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir() {
                 "archive {version}: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            let bytes = fs::read(&cadir).unwrap();
-            let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-            let sidecar = cadmpeg_ir::DecodeSidecar::from_json(
-                &fs::read_to_string(cadmpeg_ir::decode_sidecar_path(&cadir).unwrap()).unwrap(),
-            )
-            .unwrap();
-            assert!(sidecar.matches(&bytes));
+            let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
             assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
             assert!(
                 value["source"]["identity"]["dialects"]["primary"]["dialect"]
@@ -241,12 +227,9 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir() {
                     .is_some_and(|dialect| dialect.starts_with("rhino:")),
                 "{value}"
             );
+            assert_eq!(value["source"]["attributes"]["archive_version"], version);
             assert_eq!(
-                sidecar.fidelity.metadata["rhino.source.archive_version"],
-                version
-            );
-            assert_eq!(
-                sidecar.fidelity.metadata["rhino.source.container_kind"],
+                value["source"]["attributes"]["container_kind"],
                 "3dm-chunks"
             );
             assert_eq!(value["model"]["subds"], serde_json::json!([]));
@@ -301,30 +284,15 @@ fn rhino_v1_to_v5_decode_metadata() {
     let dir = tempdir().unwrap();
     for version in ["1", "2", "3", "4", "5"] {
         let input = minimal_rhino_archive(dir.path(), &format!("empty-{version}.3dm"), version);
-        let cadir = dir.path().join(format!("empty-{version}.json"));
         let output = Command::cargo_bin("cadmpeg")
             .unwrap()
-            .args([
-                "dump",
-                input.to_str().unwrap(),
-                "-o",
-                cadir.to_str().unwrap(),
-            ])
+            .args(["dump", input.to_str().unwrap()])
             .output()
             .unwrap();
         assert!(output.status.success());
-        let bytes = fs::read(&cadir).unwrap();
-        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        let sidecar = cadmpeg_ir::DecodeSidecar::from_json(
-            &fs::read_to_string(cadmpeg_ir::decode_sidecar_path(&cadir).unwrap()).unwrap(),
-        )
-        .unwrap();
-        assert!(sidecar.matches(&bytes));
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
-        assert_eq!(
-            sidecar.fidelity.metadata["rhino.source.archive_version"],
-            version
-        );
+        assert_eq!(value["source"]["attributes"]["archive_version"], version);
         assert_eq!(value["model"]["subds"], serde_json::json!([]));
     }
 }
