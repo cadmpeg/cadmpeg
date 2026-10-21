@@ -1135,16 +1135,23 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         .retained_records()
         .values()
         .any(|record| record.data() == Some(source.as_slice())));
-    assert!(decoded
+    let rejected = decoded
         .ir()
         .model
         .surfaces
         .iter()
-        .filter(|surface| surface.id.as_str() == "f3d:brep:entity#9")
-        .all(|surface| matches!(
-            surface.geometry,
-            cadmpeg_ir::geometry::SurfaceGeometry::Procedural { cache: None, .. }
-        )));
+        .find(|surface| surface.id.as_str() == "f3d:brep:entity#9")
+        .expect("retain the true procedural carrier");
+    assert!(matches!(
+        rejected.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Procedural { cache: None, .. }
+    ));
+    assert_eq!(
+        decoded.ir().model.procedural_surfaces[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.02)
+    );
     let canonical_source =
         f3d_with_smbh(&crate::test_support::procedural_test::exact_nurbs_edit_control(false));
     let decoded = F3dCodec
@@ -1299,16 +1306,23 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         .retained_records()
         .values()
         .any(|record| record.data() == Some(source.as_slice())));
-    assert!(decoded
+    let rejected = decoded
         .ir()
         .model
         .surfaces
         .iter()
-        .filter(|surface| surface.id.as_str() == "f3d:brep:entity#9")
-        .all(|surface| matches!(
-            surface.geometry,
-            cadmpeg_ir::geometry::SurfaceGeometry::Procedural { cache: None, .. }
-        )));
+        .find(|surface| surface.id.as_str() == "f3d:brep:entity#9")
+        .expect("retain the true procedural carrier");
+    assert!(matches!(
+        rejected.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Procedural { cache: None, .. }
+    ));
+    assert_eq!(
+        decoded.ir().model.procedural_surfaces[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.02)
+    );
     let canonical_source =
         f3d_with_smbh(&crate::test_support::procedural_test::exact_nurbs_edit_control(true));
     let decoded = F3dCodec
