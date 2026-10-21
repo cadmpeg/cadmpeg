@@ -135,6 +135,11 @@ pub(super) fn validate(
         } else if payload.get("post_branch_references").is_some() {
             return Err(fail(&payload, "SKIN cannot own post_branch_references"));
         }
+        // Envelope slots can surround branch and post-branch slots in the
+        // operation. The admitted allocation is a consecutive object-index
+        // run; those typed indices determine its document order. Physical
+        // source order and adjacency are checked before layout is moved.
+        rows.sort_by_key(|(_, object_index)| *object_index);
         let ids = array(&payload, "data_blocks")?;
         let lengths: Vec<u64> = field(&payload, "block_byte_lengths")?;
         if ids.len() != rows.len() || lengths.len() != rows.len() {
