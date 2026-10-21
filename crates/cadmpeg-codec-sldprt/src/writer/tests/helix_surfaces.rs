@@ -590,7 +590,17 @@ fn semantic_writer_synthesizes_embedded_helix_geometry_edits() {
                 plan.report().write_path(),
                 WritePath::Synthesized { .. }
             ));
-            assert!(plan.report().synthesis_cause().is_some());
+            // The public cause field describes a declined patch or an
+            // unrepresented class. Missing image is its dedicated loss.
+            assert_eq!(plan.report().synthesis_cause(), None);
+            let missing_image = crate::loss::SldprtLossCode::SourcePreservedImageUnavailable
+                .note("")
+                .code;
+            assert!(plan
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == missing_image));
         }
         assert!(!plan.report().losses.is_empty());
         let mut bytes = Vec::new();
