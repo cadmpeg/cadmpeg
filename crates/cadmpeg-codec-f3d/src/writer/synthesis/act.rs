@@ -54,6 +54,26 @@ pub(super) fn reconcile(
         roots.push(root);
     }
     native.act_root_components = roots;
+    // Appearance channel values have a canonical neutral binding home. If
+    // preparation omitted that binding, its native carrier cannot provide the
+    // omitted fact or resurrect a stale channel value.
+    native.act_entities.retain(|record| {
+        let appearance = record.channel_group().channels().contains_key("Appearance");
+        let has_binding = ir
+            .model
+            .appearance_bindings
+            .iter()
+            .any(|binding| binding.source_entity_id.as_deref() == Some(record.entity_id()));
+        if appearance && !has_binding {
+            losses.push(F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                "ACT entity {} is omitted with its unsupported canonical appearance binding",
+                record.id(),
+            )));
+            false
+        } else {
+            true
+        }
+    });
     let mut tables = Vec::new();
     for table in std::mem::take(&mut native.act_tables) {
         let Some(scope) = crate::ids::native_stream(&table.id) else {
