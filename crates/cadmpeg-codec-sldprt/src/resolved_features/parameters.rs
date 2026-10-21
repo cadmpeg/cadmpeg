@@ -413,23 +413,12 @@ pub(crate) fn enrich_history_parameters<'a>(
                 )
             }
             ScalarUnit::Length => cadmpeg_ir::scalar::Length::new(first * 1000.0)
-                .map(cadmpeg_ir::features::ParameterValue::Length)
-                .and_then(|value| value.literal_expression().literal_text()),
+                .map(crate::history::literals::format_length_mm),
             ScalarUnit::Angle => cadmpeg_ir::scalar::Angle::new(first)
-                .map(cadmpeg_ir::features::ParameterValue::Angle)
-                .and_then(|value| value.literal_expression().literal_text()),
+                .map(crate::history::literals::format_angle_rad),
         };
         let Some(expression) = expression else {
             continue;
-        };
-        // A missing Keywords dimension has no authored expression to preserve.
-        // Its admitted scalar/operation role authors a canonical typed literal.
-        let expression = if feature.parameters.contains_key(name.as_str()) {
-            expression
-        } else {
-            crate::history::parameters::parse_native_parameter_literal(feature, &name, &expression)
-                .and_then(|value| value.literal_expression().literal_text())
-                .unwrap_or(expression)
         };
         let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
             continue;

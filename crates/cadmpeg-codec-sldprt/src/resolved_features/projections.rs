@@ -49,7 +49,8 @@ fn set_typed_parameter_cache(parameter: &mut DesignParameter, value: ParameterVa
     let literal = parameter
         .value
         .as_ref()
-        .is_some_and(|old| parameter.expression.literal_value_as(old).is_some());
+        .is_some_and(|old| parameter.expression.literal_value_as(old).is_some())
+        || parameter.expression.literal_value_as(&value).is_some();
     let same_quantity = parameter
         .value
         .as_ref()
@@ -421,6 +422,16 @@ pub(crate) fn bind_parameter_scalars<'a>(
                         }
                     };
                     if let Some(evaluated) = evaluated {
+                        if !native_feature
+                            .parameters
+                            .contains_key(parameter.name.as_str())
+                        {
+                            // This parameter is inferred from a scalar, rather
+                            // than an authored Keywords/equation expression.
+                            // Canonical units belong in the neutral parameter;
+                            // native history helpers keep their native spelling.
+                            parameter.expression = evaluated.literal_expression();
+                        }
                         set_typed_parameter_cache(parameter, evaluated);
                     }
                 }
