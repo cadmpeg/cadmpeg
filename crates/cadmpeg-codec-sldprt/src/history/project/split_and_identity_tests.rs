@@ -7,7 +7,6 @@ use crate::test_support::dimensions::source_value;
 use crate::history::bind::bind_definition_sketch;
 use crate::history::bind::derive_feature_outputs;
 use crate::history::project::modify::project_fillet;
-use crate::history::project::neutral_feature_id;
 use crate::history::project::project_configurations;
 use crate::history::project::project_features;
 use crate::history::project::project_semantic_notes;
@@ -63,7 +62,11 @@ fn split_face_path_uses_the_prebound_source_sketch() {
         features: vec![split.clone(), sketch.clone()],
     };
 
-    let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(
+        &cadmpeg_test_support::service_decode_context(),
+        std::slice::from_ref(&history),
+    )
+    .unwrap();
     let split_feature = projected
         .iter()
         .find(|candidate| candidate.native_ref.as_deref() == Some(split.id.as_str()))
@@ -75,10 +78,9 @@ fn split_face_path_uses_the_prebound_source_sketch() {
             tool: SplitFaceTool::Path(PathRef::Native(sketch.id.clone())),
         })
     );
-    assert_eq!(
-        split_feature.dependencies.as_slice(),
-        vec![neutral_feature_id(&sketch.id).unwrap()]
-    );
+    // D26: the exact native path above is retained without inventing a
+    // canonical FeatureId reference to its associated source sketch.
+    assert!(split_feature.dependencies.is_empty());
 }
 
 #[test]
@@ -125,7 +127,11 @@ fn standalone_history_note_projects_as_text_annotation_not_feature() {
 
     let annotations =
         project_semantic_notes(std::slice::from_ref(&history)).expect("semantic note projection");
-    assert!(project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap().is_empty());
+    assert!(
+        project_features(&cadmpeg_test_support::service_decode_context(), &[history])
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
         annotations[0].id.as_str(),
         "sldprt:semantic-annotation:note#7:3"
@@ -216,7 +222,11 @@ fn source_less_offset_plane_resolves_a_native_feature_reference() {
         features: vec![principal, offset],
     };
 
-    let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(
+        &cadmpeg_test_support::service_decode_context(),
+        std::slice::from_ref(&history),
+    )
+    .unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -242,7 +252,8 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
         configurations: Vec::new(),
         features: vec![first, second],
     }];
-    let mut projected = project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    let mut projected =
+        project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
     let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
 
     derive_feature_outputs(
@@ -285,7 +296,8 @@ fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
             features: vec![feature("b", None, 0), feature("b-next", None, 1)],
         },
     ];
-    let mut projected = project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    let mut projected =
+        project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
     let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
 
     derive_feature_outputs(
@@ -382,7 +394,11 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
             draft,
         ],
     };
-    let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(
+        &cadmpeg_test_support::service_decode_context(),
+        std::slice::from_ref(&history),
+    )
+    .unwrap();
 
     assert!(matches!(
         projected[0].evaluation.definition(),
