@@ -1153,10 +1153,11 @@ fn neutralizes_line_midpoint_coincidence() {
     assert_eq!(constraints.len(), 2);
     assert!(matches!(
         constraints[1].definition.kind(),
-        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Coincident {
-            first: cadmpeg_ir::sketches::SketchLocus::End(_),
-            second: cadmpeg_ir::sketches::SketchLocus::Entity(_),
-        }
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::CoincidentLoci { loci }
+            if matches!(loci.as_slice(), [
+                cadmpeg_ir::sketches::SketchLocus::End(_),
+                cadmpeg_ir::sketches::SketchLocus::Entity(_),
+            ])
     ));
     let errors = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .unwrap()
