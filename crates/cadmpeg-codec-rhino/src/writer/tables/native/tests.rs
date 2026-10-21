@@ -19,7 +19,11 @@ fn typed_group_name_and_uuid_are_authored_without_source_bytes() {
     // Read the authored class payload through the real table parser.
     let archive = crate::test_support::test_dump::minimal_document(
         "80",
-        &[super::super::super::table(TCODE_GROUP_TABLE, &records).expect("table")],
+        &[
+            crate::writer::table(crate::writer::TCODE_SETTINGS_TABLE, &[]).expect("settings"),
+            super::super::super::table(TCODE_GROUP_TABLE, &records).expect("table"),
+            crate::writer::table(crate::writer::TCODE_OBJECT_TABLE, &[]).expect("objects"),
+        ],
     );
     let arena = DecodeArena::new();
     let (ctx, view) = DecodeContext::from_root_bytes(&archive, &arena, &DecodePolicy::default())

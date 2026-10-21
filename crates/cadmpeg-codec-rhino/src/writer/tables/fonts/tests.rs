@@ -31,7 +31,11 @@ fn source_free_text_style_retains_font_names_weight_and_panose() {
     let authored = styles(&ir).expect("typed font inverse");
     let archive = crate::test_support::test_dump::minimal_document(
         "80",
-        &[super::super::super::table(TCODE_FONT_TABLE, &authored).unwrap()],
+        &[
+            crate::writer::table(crate::writer::TCODE_SETTINGS_TABLE, &[]).expect("settings"),
+            super::super::super::table(TCODE_FONT_TABLE, &authored).unwrap(),
+            crate::writer::table(crate::writer::TCODE_OBJECT_TABLE, &[]).expect("objects"),
+        ],
     );
     let arena = DecodeArena::new();
     let (ctx, view) =

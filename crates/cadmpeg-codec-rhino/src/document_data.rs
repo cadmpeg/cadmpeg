@@ -75,7 +75,6 @@ struct DocumentSettingsRecord {
     current_layer_index: Option<i64>,
     current_material_index: Option<i32>,
     current_material_source: Option<i32>,
-    #[serde(serialize_with = "crate::wire::serialize_optional_color")]
     current_color: Option<NativeBytes<[u8; 4]>>,
     current_color_source: Option<i32>,
     current_wire_density: Option<i64>,
@@ -159,12 +158,9 @@ struct RenderSettingsRecord {
     image_height_pixels: i32,
     image_dpi: Option<f64>,
     image_unit_system: Option<u32>,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     ambient_light: NativeBytes<[u8; 4]>,
     background_style: i32,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     background_color: NativeBytes<[u8; 4]>,
-    #[serde(serialize_with = "crate::wire::serialize_optional_color")]
     background_bottom_color: Option<NativeBytes<[u8; 4]>>,
     background_bitmap_path: String,
     #[serde(flatten)]

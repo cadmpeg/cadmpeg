@@ -61,7 +61,10 @@ fn current_neutral_pose_and_name_regenerate_saved_view_without_source_bytes() {
     settings.extend(exported.settings);
     let archive = crate::test_support::test_dump::minimal_document(
         "80",
-        &[crate::writer::table(TCODE_SETTINGS_TABLE, &settings).unwrap()],
+        &[
+            crate::writer::table(TCODE_SETTINGS_TABLE, &settings).unwrap(),
+            crate::writer::table(crate::writer::TCODE_OBJECT_TABLE, &[]).unwrap(),
+        ],
     );
     let arena = DecodeArena::new();
     let (ctx, _) =

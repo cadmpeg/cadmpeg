@@ -100,10 +100,6 @@ pub(super) fn project(
                 assets: Vec::new(),
                 native_ref: native_id.clone(),
             });
-            for key in text_keys {
-                fields.remove(*key);
-            }
-            fields.remove(position_key);
             fields.insert("neutral_ref".to_owned(), Value::String(id.to_string()));
             replacements.push(NativeRecord::new(
                 Identity::new(native_id).map_err(CodecError::malformed)?,

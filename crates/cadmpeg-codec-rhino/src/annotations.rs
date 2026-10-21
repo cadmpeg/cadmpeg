@@ -119,7 +119,6 @@ struct V5TextExtraRecord {
     parent_text_uuid: Option<String>,
     draw_mask: bool,
     mask_color_source: i32,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     mask_color: NativeBytes<[u8; 4]>,
     border_offset_factor: FiniteReal,
 }

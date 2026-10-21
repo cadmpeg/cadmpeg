@@ -391,6 +391,7 @@ impl<'a> DecodeContext<'a> {
 
         let value = apply(&mut candidate, &mut annotations).map_err(Into::into)?;
         let entity_count = candidate.model.entity_count();
+        session.charge_entities(u64_from_index(entity_count), "rhino_object_entities")?;
         let appended = self.session.try_admit_append(
             candidate,
             annotations,
@@ -405,7 +406,6 @@ impl<'a> DecodeContext<'a> {
                         validation,
                     ))));
                 }
-                session.charge_entities(u64_from_index(entity_count), "rhino_object_entities")?;
                 let annotations = annotations.prepare();
                 Ok(Ok((value, annotations)))
             },
