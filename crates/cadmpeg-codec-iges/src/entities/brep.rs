@@ -194,7 +194,7 @@ fn topology_vertex(
 
     let point_id = crate::ids::point(&stem.child(list).slot(index + 1));
     let point = Point::new(point_id.clone(), position, None);
-    sequences.record_point(&point_id, stem);
+    sequences.record_point(&point_id, &crate::ids::Stem::directory(list));
     let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
     ctx.charge_entities(1, "iges_geometry_brep")?;
     candidate.model_mut().points.push(point);
