@@ -3,7 +3,11 @@
 
 use super::*;
 
-fn encode(arena: &str, record: &NativeRecord, targets: &Targets) -> Result<Entity, String> {
+fn encode(
+    arena: &str,
+    record: &NativeRecord,
+    targets: &Targets,
+) -> Result<(Entity, Vec<usize>), String> {
     let (type_code, form) = shape(arena, record)?;
     let mut fields = Fields {
         values: record.fields().map_err(|error| error.to_string())?,
@@ -40,6 +44,21 @@ fn encode(arena: &str, record: &NativeRecord, targets: &Targets) -> Result<Entit
         }
         _ => return Err("record has no native writer".into()),
     };
+    let mut owners = Vec::new();
+    if let Some(value) = fields.value("owners") {
+        for owner in value
+            .as_array()
+            .ok_or("owners have no typed identity list")?
+        {
+            let owner = owner.as_str().ok_or("owner has no typed identity")?;
+            let [index] = targets.get(owner).map(Vec::as_slice).unwrap_or(&[]) else {
+                return Err(format!(
+                    "current owner {owner} has no unique emitted target"
+                ));
+            };
+            owners.push(*index);
+        }
+    }
     result.source_targets.push(record.id().to_owned());
     if let Some(source) = fields.value("source_entity").and_then(Value::as_str) {
         result.source_targets.push(source.to_owned());
@@ -56,7 +75,7 @@ fn encode(arena: &str, record: &NativeRecord, targets: &Targets) -> Result<Entit
     if matches!(type_code, 304 | 310 | 312) {
         result.status = EntityStatus::Definition;
     }
-    Ok(result)
+    Ok((result, owners))
 }
 
 fn line_fonts(ir: &CadIr, entities: &mut [Entity], targets: &Targets) {
@@ -136,7 +155,7 @@ pub(in crate::writer) fn append(
         let before = pending.len();
         let mut deferred = Vec::new();
         for (arena, record) in pending {
-            let Ok(entity) = encode(arena, record, &targets) else {
+            let Ok((entity, owners)) = encode(arena, record, &targets) else {
                 deferred.push((arena, record));
                 continue;
             };
@@ -147,6 +166,9 @@ pub(in crate::writer) fn append(
             let index = entities.len();
             for id in &entity.source_targets {
                 targets.entry(id.clone()).or_default().push(index);
+            }
+            for owner in owners {
+                entities[owner].property_links.push(index);
             }
             entities.push(entity);
             result.regenerated.insert(record.id().to_owned());
