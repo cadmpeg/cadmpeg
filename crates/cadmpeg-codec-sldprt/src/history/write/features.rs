@@ -38,6 +38,12 @@ fn synchronize_feature_input_names(
     features: &[cadmpeg_ir::features::Feature],
     native: &crate::native::SldprtNative,
 ) -> Result<Vec<FeatureInputRename>, CodecError> {
+    // A history-only document has no serialized feature-input names to
+    // synchronize. Its current history name is still authored below, without
+    // turning an unrelated metadata edit into a refusal of retained B-rep.
+    if native.feature_input_lanes.is_empty() {
+        return Ok(Vec::new());
+    }
     let renames = features
         .iter()
         .filter_map(|feature| {
@@ -914,6 +920,47 @@ mod tests {
 
         let error = sync_neutral_features(&model, &[], &[], &mut Some(native))
             .expect_err("two lanes state the same object name");
+        assert_eq!(
+            error.to_string(),
+            "unsupported writer content: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
+        );
+    }
+
+    #[test]
+    fn a_history_only_rename_requires_no_feature_input_name_patch() {
+        let source = crate::test_support::history::sldprt_with_body_and_history(&triangle_body());
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("history-only fixture decodes");
+        let mut model = decoded.ir().model.clone();
+        let mut native = Some(sldprt_native(decoded.ir()));
+        assert!(native.as_ref().unwrap().feature_input_lanes.is_empty());
+        model.features[0].name = Some("RenamedBoss".into());
+
+        let renames = sync_neutral_features(&model, &model.parameters, &model.bodies, &mut native)
+            .expect("no absent feature-input lane requires a name patch");
+        assert!(renames.is_empty());
+        assert_eq!(
+            native.unwrap().feature_histories[0].features[0].name,
+            "RenamedBoss"
+        );
+    }
+
+    #[test]
+    fn an_existing_feature_input_lane_still_requires_its_name_binding() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("linked fixture decodes");
+        let mut model = decoded.ir().model.clone();
+        model.features[0].name = Some("PatternRenamed".into());
+        let mut native = sldprt_native(decoded.ir());
+        native.feature_input_lanes[0].names.clear();
+
+        let error = sync_neutral_features(&model, &[], &[], &mut Some(native))
+            .expect_err("an existing lane with a missing name binding cannot be patched");
         assert_eq!(
             error.to_string(),
             "unsupported writer content: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
