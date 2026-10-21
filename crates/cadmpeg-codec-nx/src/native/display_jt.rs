@@ -38,7 +38,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteBinary32, UnitBinary32};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::units::UnitVector3;
-use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
+use cadmpeg_ir::{SourceObjectAssociation, topology::Color};
 
 use std::num::NonZeroU64;
 
@@ -442,7 +442,19 @@ struct DisplayJtCompressionWire {
     compressed_data_byte_len: u32,
     algorithm: u8,
     compressed_byte_len: u32,
+    #[serde(deserialize_with = "deserialize_compression_digest")]
     inflated_sha256: Sha256Digest,
+}
+
+fn deserialize_compression_digest<'de, D>(deserializer: D) -> Result<Sha256Digest, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Sha256Digest::deserialize(deserializer).map_err(|error| {
+        serde::de::Error::custom(format_args!(
+            "DisplayJtCompression.inflated_sha256: {error}"
+        ))
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -816,7 +828,9 @@ impl TryFrom<DisplayJtPolygonMeshWire> for DisplayJtPolygonMesh {
             || wire.polygon_groups.len() != count
             || wire.polygon_flags.len() != count
         {
-            return Err("polygons/vertex_attribute_indices/polygon_groups/polygon_flags: lengths must agree");
+            return Err(
+                "polygons/vertex_attribute_indices/polygon_groups/polygon_flags: lengths must agree",
+            );
         }
         let polygons = wire
             .polygons
@@ -1020,7 +1034,9 @@ impl TryFrom<(u16, Option<u64>)> for JtVertexVersion {
         match (version, bindings) {
             (1, None) => Ok(Self::One),
             (2, Some(bindings)) => Ok(Self::Two(bindings)),
-            _ => Err("vertex_version/version_2_vertex_bindings: version 1 has no repeated bindings and version 2 requires them"),
+            _ => Err(
+                "vertex_version/version_2_vertex_bindings: version 1 has no repeated bindings and version 2 requires them",
+            ),
         }
     }
 }
@@ -1045,8 +1061,13 @@ impl TryFrom<(u16, Option<f32>)> for JtMaterialVersion {
     fn try_from((version, reflectivity): (u16, Option<f32>)) -> Result<Self, Self::Error> {
         match (version, reflectivity) {
             (1, None) => Ok(Self::One),
-            (2, Some(value)) => Ok(Self::Two(UnitBinary32::try_from(value).map_err(|_| "reflectivity: expected a finite fraction in 0..=1")?)),
-            _ => Err("version/reflectivity: version 1 has no reflectivity and version 2 requires a finite fraction in 0..=1"),
+            (2, Some(value)) => Ok(Self::Two(
+                UnitBinary32::try_from(value)
+                    .map_err(|_| "reflectivity: expected a finite fraction in 0..=1")?,
+            )),
+            _ => Err(
+                "version/reflectivity: version 1 has no reflectivity and version 2 requires a finite fraction in 0..=1",
+            ),
         }
     }
 }
@@ -1619,7 +1640,9 @@ impl TryFrom<DisplayJtCompressedElementSequenceWire> for DisplayJtCompressedElem
             .and_then(|count| count.checked_mul(25))
             .and_then(|bytes| bytes.checked_add(20));
         if minimum.is_none_or(|minimum| minimum > u64::from(wire.framed_byte_len)) {
-            return Err("DisplayJtCompressedElementSequence.framed_byte_len cannot contain its elements and end marker");
+            return Err(
+                "DisplayJtCompressedElementSequence.framed_byte_len cannot contain its elements and end marker",
+            );
         }
         Ok(Self {
             id: wire.id,
@@ -3043,7 +3066,21 @@ pub(super) fn display_jt_documents(
             else {
                 return Ok(Vec::new());
             };
-            let [segment_id @ .., o0, o1, o2, o3, l0, l1, l2, l3, a0, a1, a2, a3] = bytes;
+            let [
+                segment_id @ ..,
+                o0,
+                o1,
+                o2,
+                o3,
+                l0,
+                l1,
+                l2,
+                l3,
+                a0,
+                a1,
+                a2,
+                a3,
+            ] = bytes;
             let segment_offset = assemble_u32_le([o0, o1, o2, o3]);
             let segment_byte_len = assemble_u32_le([l0, l1, l2, l3]);
             let attributes = [a0, a1, a2, a3];
@@ -5542,19 +5579,27 @@ pub(super) fn display_jt_tessellations(
                 }
             };
         }
-        let coordinate_header = required!(coordinate_headers
-            .get(mesh.coordinate_header.as_str())
-            .copied());
+        let coordinate_header = required!(
+            coordinate_headers
+                .get(mesh.coordinate_header.as_str())
+                .copied()
+        );
         let coordinates = required!(coordinates.get(coordinate_header.id.as_str()).copied());
-        let shape_element = required!(shape_elements
-            .get(coordinate_header.element.as_str())
-            .copied());
-        let binding = required!(required!(bindings
-            .get(&(shape_element.segment.as_str(), shape_element.object_id))
-            .copied()));
-        let (shape_node, _) = required!(required!(shape_nodes
-            .get(&(binding.shape_node_object_id, binding.scene_segment.as_str()))
-            .copied()));
+        let shape_element = required!(
+            shape_elements
+                .get(coordinate_header.element.as_str())
+                .copied()
+        );
+        let binding = required!(required!(
+            bindings
+                .get(&(shape_element.segment.as_str(), shape_element.object_id))
+                .copied()
+        ));
+        let (shape_node, _) = required!(required!(
+            shape_nodes
+                .get(&(binding.shape_node_object_id, binding.scene_segment.as_str()))
+                .copied()
+        ));
         let shape_node_key = (shape_node.object_id, binding.scene_segment.as_str());
         if bounded_shape_nodes.contains(&shape_node_key) {
             continue;
@@ -5620,9 +5665,11 @@ pub(super) fn display_jt_tessellations(
         for channel in (0..8_u8)
             .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
         {
-            let array = required!(texture_coordinates
-                .get(&(vertex_header.id.as_str(), channel))
-                .copied());
+            let array = required!(
+                texture_coordinates
+                    .get(&(vertex_header.id.as_str(), channel))
+                    .copied()
+            );
             texture_arrays.push(array);
         }
         let vertex_flag_array = (vertex_header.vertex_bindings & 0x40 != 0)
@@ -5714,14 +5761,18 @@ pub(super) fn display_jt_tessellations(
                 }
                 let mut channels = Vec::new();
                 if color_array.is_some() {
-                    channels.push(required!(TessellationChannel::new(
-                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                        16,
-                        DISPLAY_JT_COLOR_CHANNEL,
-                        required!(u32::try_from((vertex_header.vertex_bindings >> 4) & 0x3).ok()),
-                        color_data,
-                    )
-                    .ok()));
+                    channels.push(required!(
+                        TessellationChannel::new(
+                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                            16,
+                            DISPLAY_JT_COLOR_CHANNEL,
+                            required!(
+                                u32::try_from((vertex_header.vertex_bindings >> 4) & 0x3).ok()
+                            ),
+                            color_data,
+                        )
+                        .ok()
+                    ));
                 }
                 for (((array, component_count), data), ordinal) in texture_arrays
                     .iter()
@@ -5729,29 +5780,37 @@ pub(super) fn display_jt_tessellations(
                     .zip(texture_data)
                     .zip(0_u32..)
                 {
-                    channels.push(required!(TessellationChannel::new(
-                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                        required!(u32::try_from(required!(component_count.checked_mul(4))).ok()),
-                        required!(DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)),
-                        u32::from(array.channel)
-                            | required!(u32::try_from(
-                                (vertex_header.vertex_bindings >> (8 + 4 * array.channel)) & 0xf
-                            )
-                            .ok())
-                                << 8,
-                        data,
-                    )
-                    .ok()));
+                    channels.push(required!(
+                        TessellationChannel::new(
+                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                            required!(
+                                u32::try_from(required!(component_count.checked_mul(4))).ok()
+                            ),
+                            required!(DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)),
+                            u32::from(array.channel)
+                                | required!(
+                                    u32::try_from(
+                                        (vertex_header.vertex_bindings >> (8 + 4 * array.channel))
+                                            & 0xf
+                                    )
+                                    .ok()
+                                ) << 8,
+                            data,
+                        )
+                        .ok()
+                    ));
                 }
                 if vertex_flag_array.is_some() {
-                    channels.push(required!(TessellationChannel::new(
-                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                        4,
-                        DISPLAY_JT_VERTEX_FLAG_CHANNEL,
-                        0,
-                        vertex_flag_data,
-                    )
-                    .ok()));
+                    channels.push(required!(
+                        TessellationChannel::new(
+                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                            4,
+                            DISPLAY_JT_VERTEX_FLAG_CHANNEL,
+                            0,
+                            vertex_flag_data,
+                        )
+                        .ok()
+                    ));
                 }
                 (vertices, triangles, normal_vectors, channels)
             } else {
