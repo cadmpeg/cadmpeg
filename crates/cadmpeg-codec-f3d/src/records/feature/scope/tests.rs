@@ -299,10 +299,10 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
         token_offset: Some(2),
         design_reference: 1,
         design_reference_offset: Some(3),
-        candidate_faces: vec!["f3d:model:face#one".into()],
-        candidate_edges: vec!["f3d:model:edge#one".into()],
-        alternate_selector_faces: vec!["f3d:model:face#one".into()],
-        alternate_selector_edges: vec!["f3d:model:edge#one".into()],
+        candidate_faces: vec![cadmpeg_ir::ids::FaceId::mint("f3d:model:face#one").unwrap()],
+        candidate_edges: vec![cadmpeg_ir::ids::EdgeId::mint("f3d:model:edge#one").unwrap()],
+        alternate_selector_faces: vec![cadmpeg_ir::ids::FaceId::mint("f3d:model:face#one").unwrap()],
+        alternate_selector_edges: vec![cadmpeg_ir::ids::EdgeId::mint("f3d:model:edge#one").unwrap()],
     };
     let recipe = DesignVertexRecipe::try_new(
         crate::records::feature::work_geometry::DesignVertexRecipeDraft {
