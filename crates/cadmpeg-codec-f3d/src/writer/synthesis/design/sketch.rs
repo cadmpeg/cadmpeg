@@ -161,12 +161,19 @@ pub(in crate::writer::synthesis) fn retain_graph(native: &mut F3dNative, origina
                 || original.sketch_relations.iter().any(|relation| {
                     relation
                         .all_member_indices()
+                        .chain(relation.auxiliary_references().values().copied())
                         .any(|index| index == curve.record_index)
                 })
                 || original.design_entity_headers.iter().any(|header| {
                     header
                         .reference_values()
+                        .chain(header.member_values())
                         .any(|index| *index == curve.record_index)
+                })
+                || original.sketch_curve_identities.iter().any(|other| {
+                    matches!(&other.geometry,
+                        Some(crate::records::sketch_geometry::SketchCurveGeometry::Nurbs { carrier_reference: Some(reference), .. })
+                            if *reference == u64::from(curve.record_index))
                 })
                 || original.design_parameter_scopes.iter().any(|scope| {
                     scope
