@@ -406,8 +406,9 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
         SketchConstraintDefinitionInput::Radius {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#40:13")
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#40:100")
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#40:100").expect("identity grammar")
+            ),
         }
     );
 
@@ -544,9 +545,12 @@ fn equation_function_zero_emits_polar_distance_constraint() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:11",)
                     .expect("valid test fixture")
             ),
-            distance: Length::new(2.0).expect("finite length fixture"),
-            angle: Some(Angle::new(std::f64::consts::FRAC_PI_2).expect("finite angle fixture")),
-            distance_parameter: None,
+            distance: cadmpeg_ir::Dimension::Literal(
+                Length::new(2.0).expect("finite length fixture")
+            ),
+            angle: Some(cadmpeg_ir::Dimension::Literal(
+                Angle::new(std::f64::consts::FRAC_PI_2).expect("finite angle fixture")
+            )),
         }
     );
 
@@ -581,9 +585,12 @@ fn equation_function_zero_emits_polar_distance_constraint() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:11",)
                     .expect("valid test fixture")
             ),
-            distance: Length::new(2.0).expect("finite length fixture"),
-            angle: Some(Angle::new(std::f64::consts::FRAC_PI_2).expect("finite angle fixture")),
-            distance_parameter: None,
+            distance: cadmpeg_ir::Dimension::Literal(
+                Length::new(2.0).expect("finite length fixture")
+            ),
+            angle: Some(cadmpeg_ir::Dimension::Literal(
+                Angle::new(std::f64::consts::FRAC_PI_2).expect("finite angle fixture")
+            )),
         }
     );
     let mut conflicting_equality_polar = propagated_polar.clone();
@@ -737,7 +744,9 @@ fn equation_function_six_emits_fixed_distance_constraint() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:11")
                     .expect("valid test fixture")
             ),
-            distance: Length::new(5.0).expect("finite length fixture"),
+            distance: cadmpeg_ir::Dimension::Literal(
+                Length::new(5.0).expect("finite length fixture")
+            ),
             parameter: None,
         }
     );
@@ -1047,8 +1056,8 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
                     .expect("valid test fixture")
             ),
             values: [
-                Length::new(2.0).expect("finite length fixture"),
-                Length::new(1.0).expect("finite length fixture")
+                cadmpeg_ir::Dimension::Literal(Length::new(2.0).expect("finite length fixture")),
+                cadmpeg_ir::Dimension::Literal(Length::new(1.0).expect("finite length fixture"))
             ],
         }
     );
@@ -1081,8 +1090,8 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
                     .expect("valid test fixture")
             ),
             values: [
-                Length::new(2.0).expect("finite length fixture"),
-                Length::new(1.0).expect("finite length fixture")
+                cadmpeg_ir::Dimension::Literal(Length::new(2.0).expect("finite length fixture")),
+                cadmpeg_ir::Dimension::Literal(Length::new(1.0).expect("finite length fixture"))
             ],
         }
     );
@@ -1554,8 +1563,9 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
                     .expect("valid test fixture")
             ),
-            parameter: ParameterId::mint("creo:featdefs:parameter#40:27")
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#40:27").expect("identity grammar")
+            ),
         }
     );
 
@@ -1721,8 +1731,9 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#40:10")
                     .expect("valid test fixture")
             ),
-            parameter: ParameterId::mint("creo:featdefs:parameter#40:27")
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#40:27").expect("identity grammar")
+            ),
         }
     );
 

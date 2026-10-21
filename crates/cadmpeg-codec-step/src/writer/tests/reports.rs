@@ -297,9 +297,13 @@ fn writer_reports_root_occurrence_scale() {
         },
         parent: cadmpeg_ir::products::OccurrenceParent::Root {},
         ordinal: 0,
-        transform: Transform::identity(),
+        transform: Transform::affine([
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("finite scaling"),
         linked_prototype: None,
-        scale: [2.0, 1.0, 1.0].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()),
         name: Some("Scaled root".into()),
         visible: None,
         link: None,

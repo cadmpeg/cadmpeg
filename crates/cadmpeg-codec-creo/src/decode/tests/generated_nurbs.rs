@@ -164,8 +164,10 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                 ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(2.0)
-                                .expect("nonzero length fixture"),
+                            length: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::NonZeroLength::new(2.0)
+                                    .expect("nonzero length fixture")
+                            ),
                         },
                         draft: None,
                     },

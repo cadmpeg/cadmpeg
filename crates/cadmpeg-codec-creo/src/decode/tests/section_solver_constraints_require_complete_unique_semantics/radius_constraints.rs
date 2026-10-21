@@ -215,8 +215,10 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Radius {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     assert_eq!(
@@ -243,8 +245,10 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Diameter {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     assert_eq!(
@@ -272,8 +276,10 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
             SketchConstraintDefinitionInput::Radius {
                 entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                     .expect("valid test fixture"),
-                parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                    .expect("identity grammar"),
+                parameter: cadmpeg_ir::Dimension::Parameter(
+                    ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                        .expect("identity grammar")
+                ),
             }
         );
         assert_eq!(
@@ -356,8 +362,10 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Radius {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     assert_eq!(
@@ -393,8 +401,10 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Radius {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     type6_radius_definition
@@ -416,8 +426,10 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Diameter {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     assert_eq!(
@@ -519,8 +531,10 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Radius {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     let mut noncircular_dimension = radius_definition.clone();
@@ -544,8 +558,10 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
             SketchConstraintDefinitionInput::Radius {
                 entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                     .expect("valid test fixture"),
-                parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                    .expect("identity grammar"),
+                parameter: cadmpeg_ir::Dimension::Parameter(
+                    ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                        .expect("identity grammar")
+                ),
             }
         );
         assert_eq!(
@@ -583,8 +599,10 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Radius {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     let mut incomplete_radius_segments = radius_definition.clone();
@@ -606,8 +624,10 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Radius {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     let mut relation_orientation = definition.clone();
@@ -705,8 +725,10 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         SketchConstraintDefinitionInput::Diameter {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:42".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     radius_definition

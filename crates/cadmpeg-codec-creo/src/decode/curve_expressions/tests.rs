@@ -283,11 +283,11 @@ fn curve_expression_native_fallback_keeps_kind_and_values() {
     assert_eq!(kind.as_str(), "CurveFromEquation");
     assert_eq!(
         parameters[&cadmpeg_core::nonblank_literal!("entity_id")],
-        "7"
+        cadmpeg_ir::Dimension::Literal(cadmpeg_ir::features::Expression::text("7"))
     );
     assert_eq!(
         parameters[&cadmpeg_core::nonblank_literal!("assignment_count")],
-        "1"
+        cadmpeg_ir::Dimension::Literal(cadmpeg_ir::features::Expression::text("1"))
     );
 }
 

@@ -2252,7 +2252,10 @@ mod tests {
         let admitted = render_graph(&DecodePolicy::service(), vec![reference_leaf()], 1)
             .expect("graph is admitted")
             .expect("graph is closed");
-        assert_eq!(admitted.0, "x");
+        assert_eq!(
+            admitted.0.render_with(|_| Some("x".to_owned())).as_deref(),
+            Some("x")
+        );
         assert_eq!(admitted.1.len(), 1);
     }
 

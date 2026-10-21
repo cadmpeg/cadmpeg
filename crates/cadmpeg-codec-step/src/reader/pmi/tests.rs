@@ -56,7 +56,10 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     let Some(DimensionTolerance::PlusMinusFit { lower, upper, fit }) = relation.tolerance() else {
         panic!("width tolerance")
     };
-    assert_eq!(nominal.value.get(), 12.0);
+    assert_eq!(
+        nominal.literal().expect("literal nominal").value.get(),
+        12.0
+    );
     assert_eq!(lower.value.get(), -0.1);
     assert_eq!(upper.value.get(), 0.2);
     assert_eq!(fit.form_variance, "H");
@@ -156,7 +159,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::Dimension(relation)
-            if relation.nominal().is_some_and(|nominal| nominal.quantity == PmiQuantity::Length && nominal.value.get() == 12.0)
+            if relation.nominal().is_some_and(|nominal| nominal.literal().expect("literal nominal").quantity == PmiQuantity::Length && nominal.literal().expect("literal nominal").value.get() == 12.0)
                 && matches!(relation.tolerance(), Some(DimensionTolerance::PlusMinusFit { lower, upper, .. })
                     if lower.value.get() == -0.1 && upper.value.get() == 0.2)
     )));
@@ -297,7 +300,7 @@ fn complex_dimension_inherits_kind_targets_and_nominal_value() {
         &dimension.definition,
         PmiDefinition::Dimension(relation)
             if matches!(relation.kind(), DimensionKind::Location)
-                && relation.nominal().is_some_and(|value| value.quantity == PmiQuantity::Length && value.value.get() == 5.0)
+                && relation.nominal().is_some_and(|value| value.literal().expect("literal nominal").quantity == PmiQuantity::Length && value.literal().expect("literal nominal").value.get() == 5.0)
     ));
     assert_eq!(
         dimension.targets,
@@ -333,7 +336,7 @@ fn dimensional_characteristic_selects_the_named_nominal_measure() {
         &annotation.definition,
         PmiDefinition::Dimension(relation)
             if matches!(relation.kind(), DimensionKind::Size)
-                && relation.nominal().is_some_and(|value| value.quantity == PmiQuantity::Length && (value.value.get() - 12.0).abs() < EPS_PMI_NUMERIC)
+                && relation.nominal().is_some_and(|value| value.literal().expect("literal nominal").quantity == PmiQuantity::Length && (value.literal().expect("literal nominal").value.get() - 12.0).abs() < EPS_PMI_NUMERIC)
     )));
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message
@@ -376,7 +379,9 @@ fn dimensional_nominal_selection_ignores_set_order_and_rejects_ambiguity() {
             let PmiDefinition::Dimension(relation) = &annotation.definition else {
                 return None;
             };
-            relation.nominal().map(|value| value.value.get())
+            relation
+                .nominal()
+                .map(|value| value.literal().expect("literal nominal").value.get())
         })
     };
 
@@ -1122,7 +1127,7 @@ pub(crate) fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
     assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::Dimension(relation)
-            if relation.nominal().is_some_and(|value| (value.value.get() - 127.0).abs() < EPS_PMI_NUMERIC)
+            if relation.nominal().is_some_and(|value| (value.literal().expect("literal nominal").value.get() - 127.0).abs() < EPS_PMI_NUMERIC)
     )));
 }
 
@@ -1160,7 +1165,7 @@ fn deep_pmi_measure_branches_follow_the_session_depth() {
     assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::Dimension(relation)
-            if relation.nominal().is_some_and(|value| (value.value.get() - 0.4).abs() < EPS_PMI_NUMERIC)
+            if relation.nominal().is_some_and(|value| (value.literal().expect("literal nominal").value.get() - 0.4).abs() < EPS_PMI_NUMERIC)
     )));
     assert!(matches!(
         decode(256),

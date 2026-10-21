@@ -411,10 +411,10 @@ fn complex_geometric_set_representation_uses_its_named_items() {
         .find(|curve| curve.id.as_str() == "step:data:curve#14")
         .expect("free complex representation member");
     assert_eq!(
-        free_circle
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::geometry_name(
+            result.ir(),
+            &cadmpeg_ir::attributes::AttributeTarget::Curve(free_circle.id.clone())
+        ),
         Some("free circle")
     );
     assert!(result.report().losses.iter().any(|loss| {

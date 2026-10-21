@@ -487,7 +487,12 @@ mod tests {
                 1,
             );
             assert!(matches!(
-                push_coverage_drop_losses(&mut Vec::new(), &coverage, &[]),
+                push_coverage_drop_losses(
+                    &mut cadmpeg_ir::ArenaClasses::default(),
+                    &mut Vec::new(),
+                    &coverage,
+                    &[]
+                ),
                 Err(CodecError::Malformed(_))
             ));
         });
@@ -502,7 +507,12 @@ mod tests {
                 1,
             );
             assert!(matches!(
-                push_coverage_drop_losses(&mut Vec::new(), &coverage, &[]),
+                push_coverage_drop_losses(
+                    &mut cadmpeg_ir::ArenaClasses::default(),
+                    &mut Vec::new(),
+                    &coverage,
+                    &[]
+                ),
                 Err(CodecError::Malformed(_))
             ));
         });

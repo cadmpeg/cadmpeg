@@ -1020,7 +1020,7 @@ mod tests {
         else {
             panic!("distance constraint changed family");
         };
-        assert_eq!(distance.get(), 50.8);
+        assert_eq!(distance.literal().expect("literal dimension").get(), 50.8);
         let SketchGeometryDefinition::Line { start, .. } = carriers
             .sketch_geometry(&ir.model.sketch_entities[0])
             .definition()
@@ -1087,7 +1087,7 @@ mod tests {
         else {
             panic!("datum offset feature changed family");
         };
-        assert_eq!(distance.get(), 50.8);
+        assert_eq!(distance.literal().expect("literal dimension").get(), 50.8);
     }
 
     #[test]
@@ -1101,10 +1101,10 @@ mod tests {
                 source_feature(FeatureDefinition::PostProcess {
                     operation: FeatureOperation::StoredGeometry {},
                     refine: false,
-                    fuzzy_tolerance: FuzzyTolerance::Explicit(
+                    fuzzy_tolerance: FuzzyTolerance::Explicit(cadmpeg_ir::Dimension::Literal(
                         cadmpeg_ir::scalar::PositiveLength::new(0.5)
                             .expect("positive source tolerance"),
-                    ),
+                    )),
                 }),
             )
         })
@@ -1116,7 +1116,7 @@ mod tests {
         else {
             panic!("post process feature changed family");
         };
-        assert_eq!(tolerance.get(), 12.7);
+        assert_eq!(tolerance.literal().expect("literal dimension").get(), 12.7);
     }
 
     #[test]
@@ -1173,7 +1173,6 @@ mod tests {
             ordinal: 0,
             transform,
             linked_prototype,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,

@@ -270,8 +270,9 @@ fn section_solver_projected_arc_and_mixed_constraints() {
             SketchConstraintDefinitionInput::ArcAngle {
                 entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string())
                     .expect("valid test fixture"),
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(angle)
-                    .expect("positive angle fixture"),
+                angle: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::PositiveAngle::new(angle).expect("positive angle fixture")
+                ),
             }
         );
         fixed_arc

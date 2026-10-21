@@ -157,8 +157,10 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(6.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(6.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },

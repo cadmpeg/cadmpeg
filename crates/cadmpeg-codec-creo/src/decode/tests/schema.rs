@@ -1292,7 +1292,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
                     termination: cadmpeg_ir::features::AngularTermination::Angle {
                         angle
                     }
-                }) if (angle.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN_REVOLUTION)
+                }) if (angle.literal().expect("literal dimension").get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN_REVOLUTION)
     ));
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_revolution_extents"];

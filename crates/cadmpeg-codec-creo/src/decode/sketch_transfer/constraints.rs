@@ -2645,7 +2645,9 @@ mod tests {
                 first: 10,
                 second: 11,
                 difference: 20,
-                value: cadmpeg_ir::scalar::Angle::new(1.5).expect("finite angle fixture"),
+                value: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::Angle::new(1.5).expect("finite angle fixture")
+                ),
             }
         );
     }

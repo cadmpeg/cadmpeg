@@ -98,7 +98,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
+            let result = cadmpeg_test_support::EditableDecodeResult::from(result);
             serde_json::json!({
                 "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
                 "report": serde_json::to_value(result.report()).expect("serialize report"),
@@ -200,7 +200,7 @@ fn geometry_depth_agrees_with_full_depth() {
                 result.ir().native.namespace("step"),
             );
             assert_eq!(
-                result.source_fidelity().unrepresented,
+                result.source_fidelity().unrepresented(),
                 expected,
                 "every source-only loss must declare its arena class"
             );
