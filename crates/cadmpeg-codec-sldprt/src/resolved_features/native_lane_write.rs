@@ -429,6 +429,18 @@ fn authored_owners<'a>(
     histories: &'a [crate::records::FeatureHistory],
 ) -> Result<Vec<AuthoredOwner<'a>>, CodecError> {
     let names = super::scalars::FeatureObjectNames::new(&lane.names);
+    let mut first_classes = BTreeMap::<&str, usize>::new();
+    for class in &lane.classes {
+        if let (Some(owner), Some(offset)) = (
+            class.feature_ref.as_deref(),
+            class.offset.and_then(|offset| usize::try_from(offset).ok()),
+        ) {
+            first_classes
+                .entry(owner)
+                .and_modify(|first| *first = (*first).min(offset))
+                .or_insert(offset);
+        }
+    }
     let mut owners = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         let Some(name) = names.of(feature) else {
@@ -440,13 +452,10 @@ fn authored_owners<'a>(
             .ok_or_else(|| {
                 CodecError::malformed("authored native object has no target position")
             })?;
-        let start = lane
-            .classes
-            .iter()
-            .filter(|class| class.feature_ref.as_deref() == Some(feature.id.as_str()))
-            .filter_map(|class| class.offset.and_then(|offset| usize::try_from(offset).ok()))
+        let start = first_classes
+            .get(feature.id.as_str())
+            .copied()
             .filter(|offset| *offset < name_start)
-            .min()
             .unwrap_or(name_start);
         let name_end = name
             .value
@@ -485,7 +494,23 @@ fn combine_authored_owners(
 ) -> Result<Vec<u8>, CodecError> {
     let current = authored_owners(previous, histories)?;
     let extra = authored_owners(generated, histories)?;
+    let extra_by_owner = extra
+        .iter()
+        .map(|owner| (owner.id, owner))
+        .collect::<BTreeMap<_, _>>();
+    let current_ids = current
+        .iter()
+        .map(|owner| owner.id)
+        .collect::<BTreeSet<_>>();
+    let capacity = previous
+        .native_payload
+        .len()
+        .checked_add(generated.native_payload.len())
+        .ok_or_else(|| CodecError::malformed("authored configuration lane size overflows"))?;
     let mut payload = Vec::new();
+    payload
+        .try_reserve_exact(capacity)
+        .map_err(|_| CodecError::malformed("authored configuration lane allocation failed"))?;
     let prefix_end = current
         .first()
         .map_or(previous.native_payload.len(), |owner| owner.start);
@@ -496,7 +521,7 @@ fn combine_authored_owners(
     payload.extend_from_slice(&generated.native_payload[..extra_prefix_end]);
     for owner in &current {
         payload.extend_from_slice(&previous.native_payload[owner.start..owner.end]);
-        if let Some(addition) = extra.iter().find(|addition| addition.id == owner.id) {
+        if let Some(addition) = extra_by_owner.get(owner.id) {
             // The target already carries this exact native object identity
             // and name. Retain its other statements inside the same owner.
             payload
@@ -504,10 +529,7 @@ fn combine_authored_owners(
             payload.extend_from_slice(&generated.native_payload[addition.name_end..addition.end]);
         }
     }
-    for owner in extra
-        .iter()
-        .filter(|owner| !current.iter().any(|current| current.id == owner.id))
-    {
+    for owner in extra.iter().filter(|owner| !current_ids.contains(owner.id)) {
         payload.extend_from_slice(&generated.native_payload[owner.start..owner.end]);
     }
     Ok(payload)
