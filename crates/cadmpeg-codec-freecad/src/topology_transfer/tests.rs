@@ -1157,7 +1157,7 @@ Co 1001000 +2 0 *
     assert_eq!(
         result
             .ir()
-            .effective_visibility(&cadmpeg_ir::AppearanceTarget::Body(
+            .effective_visibility(&cadmpeg_ir::appearance::AppearanceTarget::Body(
                 result.ir().model.bodies[0].id.clone(),
             )),
         Some(false),
@@ -1174,7 +1174,7 @@ Co 1001000 +2 0 *
     );
     let color = result
         .ir()
-        .effective_display_color(&cadmpeg_ir::AppearanceTarget::Body(
+        .effective_display_color(&cadmpeg_ir::appearance::AppearanceTarget::Body(
             result.ir().model.bodies[0].id.clone(),
         ))
         .expect("shape color");
