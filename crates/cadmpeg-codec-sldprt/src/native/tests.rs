@@ -842,8 +842,26 @@ fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
         let ordinal = record["ordinal"].as_u64().unwrap();
         record["ordinal"] = serde_json::json!(ordinal + 100);
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
-        let error = crate::native::source::load(&namespace, decoded.source_fidelity()).unwrap_err();
-        assert!(error.to_string().contains(message), "{arena}: {error}");
+        if arena == "feature_input_scalars" {
+            // #209 Rule W1/P: ordering can invalidate a document relation before
+            // source comparison. Keep that structural check and test the exact
+            // ordinal forgery independently at the fidelity boundary.
+            let error = SldprtNative::load(&namespace).unwrap_err();
+            assert!(
+                error.to_string().contains("relation instance")
+                    && error.to_string().contains("inconsistent ownership"),
+                "{error}"
+            );
+            let mut native = sldprt_native_with_source(decoded.ir(), decoded.source_fidelity());
+            native.feature_input_lanes[0].scalars[0].ordinal =
+                u32::try_from(ordinal + 100).unwrap();
+            let error = crate::native::source::validate(&native).unwrap_err();
+            assert!(error.to_string().contains(message), "{arena}: {error}");
+        } else {
+            let error =
+                crate::native::source::load(&namespace, decoded.source_fidelity()).unwrap_err();
+            assert!(error.to_string().contains(message), "{arena}: {error}");
+        }
     }
     let mut wire = serde_json::to_value(original).unwrap();
     assert!(!wire["sketch_input_entities"].as_array().unwrap().is_empty());
@@ -899,7 +917,8 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
     let original = serde_json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
 
     let control: cadmpeg_ir::NativeNamespace = serde_json::from_value(original.clone()).unwrap();
-    crate::native::source::load(&control, decoded.source_fidelity()).expect("the unedited namespace loads");
+    crate::native::source::load(&control, decoded.source_fidelity())
+        .expect("the unedited namespace loads");
 
     let stated = original["feature_input_names"][0]["value"]
         .as_str()
@@ -986,8 +1005,12 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
         let mut native = crate::native::SldprtNative::load(&namespace).unwrap();
         crate::native::source::attach(&mut native, |id| {
-            decoded.source_fidelity().retained_record(id.as_str())?.data()
-        }).unwrap();
+            decoded
+                .source_fidelity()
+                .retained_record(id.as_str())?
+                .data()
+        })
+        .unwrap();
         if field == "offset" {
             native.feature_input_lanes[0].sketch_entities[0].attach_source_position(Some(u64::MAX));
         }
@@ -1009,8 +1032,12 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
         let mut native = crate::native::SldprtNative::load(&namespace).unwrap();
         crate::native::source::attach(&mut native, |id| {
-            decoded.source_fidelity().retained_record(id.as_str())?.data()
-        }).unwrap();
+            decoded
+                .source_fidelity()
+                .retained_record(id.as_str())?
+                .data()
+        })
+        .unwrap();
         if field == "offset" {
             let position = native.feature_input_lanes[0].sketch_entities[0].offset();
             native.feature_input_lanes[0].sketch_entities[1].attach_source_position(position);
@@ -1161,7 +1188,9 @@ fn native_load_refuses_an_object_name_offset_the_payload_does_not_state() {
         edit.feature_input_lanes[0].names[0].offset = Some(forged);
         let error = crate::native::source::validate(&edit).unwrap_err();
         assert!(
-            error.to_string().contains("name structure does not match its native payload"),
+            error
+                .to_string()
+                .contains("name structure does not match its native payload"),
             "an object name offset outside the payload was admitted: {error}"
         );
     }
