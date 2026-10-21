@@ -1039,10 +1039,11 @@ fn geometry_depth_agrees_with_full_depth() {
             // Actual opaque geometry records and historical payloads are
             // source content. Diagnostics about typed values are not an
             // independent source record (#209 section 1.3).
-            if result
+            if !result
                 .ir()
                 .native_unknowns("f3d")
-                .is_some_and(|records| !records.is_empty())
+                .expect("valid typed native unknown stubs")
+                .is_empty()
             {
                 assert!(
                     result

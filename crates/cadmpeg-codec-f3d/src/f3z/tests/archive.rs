@@ -345,7 +345,7 @@ fn fully_typed_f3z_archive_replays_or_synthesizes_the_resolved_target() {
         .expect("a complete root document can replay its outer archive");
     assert!(matches!(
         replay.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::VerbatimReplay
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
     ));
     let mut replayed = Vec::new();
     replay.write_to(&mut replayed).unwrap();
