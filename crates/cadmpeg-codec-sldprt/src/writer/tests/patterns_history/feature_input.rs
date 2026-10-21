@@ -852,7 +852,7 @@ fn semantic_writer_types_resolved_relation_scalar() {
         .unwrap();
     assert!(
         plan.report().losses.iter().any(|loss| {
-            loss.code.local_code() == "native.records-omitted"
+            loss.code == crate::loss::SldprtLossCode::WriterNativeRecordsOmitted.kind()
             && loss.message.contains(&scalar_id)
             && loss.message.contains(
                 "canonical parameter quantity does not match the retained native scalar quantity",
