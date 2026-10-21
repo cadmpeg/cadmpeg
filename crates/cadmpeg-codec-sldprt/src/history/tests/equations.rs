@@ -595,6 +595,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .iter()
         .position(|feature| feature.name.as_deref() == Some("Equation boss"))
         .expect("extrusion");
+    decoded.ir_mut().model.features[extrusion].name = Some("Renamed equation boss".into());
     {
         let width = decoded
             .ir()
