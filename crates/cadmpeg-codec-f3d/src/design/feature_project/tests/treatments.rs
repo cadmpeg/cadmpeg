@@ -298,11 +298,34 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
         (4, &weight),
     ])
     .expect("complete variable Fillet law");
+    let parameter_ir = super::parameter_document(&[
+        start.clone(),
+        end.clone(),
+        radius.clone(),
+        position.clone(),
+        weight.clone(),
+    ]);
+    assert_eq!(
+        points.as_slice()[0].radius.parameter(),
+        Some(&crate::ids::neutral_parameter_id(&start))
+    );
+    assert_eq!(
+        points.as_slice()[1].radius.parameter(),
+        Some(&crate::ids::neutral_parameter_id(&radius))
+    );
+    assert_eq!(
+        points.as_slice()[2].radius.parameter(),
+        Some(&crate::ids::neutral_parameter_id(&end))
+    );
     assert_eq!(
         points
             .as_slice()
             .iter()
-            .map(cadmpeg_ir::features::edge_treatments::VariableRadius::to_raw)
+            .map(|point| {
+                let mut raw = point.to_raw();
+                raw.radius = parameter_ir.dimension_value(&raw.radius).unwrap().into();
+                raw
+            })
             .collect::<Vec<_>>(),
         [
             cadmpeg_ir::features::edge_treatments::VariableRadius {
@@ -320,7 +343,7 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
         ]
     );
     assert_eq!(
-        tangency_weight.map(|dimension| dimension.literal().unwrap().get()),
+        tangency_weight.map(|dimension| parameter_ir.dimension_value(&dimension).unwrap().get()),
         Some(0.75)
     );
 }
@@ -347,11 +370,24 @@ fn variable_fillet_law_accepts_omitted_tangency_weight() {
     let (points, tangency_weight) =
         crate::design::feature_project::variable_fillet_law(&[(0, &start), (1, &end)])
             .expect("variable Fillet law without an explicit weight");
+    let parameter_ir = super::parameter_document(&[start.clone(), end.clone()]);
+    assert_eq!(
+        points.as_slice()[0].radius.parameter(),
+        Some(&crate::ids::neutral_parameter_id(&start))
+    );
+    assert_eq!(
+        points.as_slice()[1].radius.parameter(),
+        Some(&crate::ids::neutral_parameter_id(&end))
+    );
     assert_eq!(
         points
             .as_slice()
             .iter()
-            .map(cadmpeg_ir::features::edge_treatments::VariableRadius::to_raw)
+            .map(|point| {
+                let mut raw = point.to_raw();
+                raw.radius = parameter_ir.dimension_value(&raw.radius).unwrap().into();
+                raw
+            })
             .collect::<Vec<_>>(),
         [
             cadmpeg_ir::features::edge_treatments::VariableRadius {
@@ -1238,7 +1274,7 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
         groups[0]
             .tangency_weight
             .as_ref()
-            .map(|dimension| dimension.literal().unwrap().get()),
+            .map(|dimension| super::dimension_value(dimension, &variable_parameters).get()),
         Some(0.75)
     );
     assert!(matches!(
@@ -1253,7 +1289,10 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
         points
             .as_slice()
             .iter()
-            .map(|point| (point.parameter.get(), point.radius.literal().unwrap().get()))
+            .map(|point| (
+                point.parameter.get(),
+                super::dimension_value(&point.radius, &variable_parameters).get()
+            ))
             .collect::<Vec<_>>(),
         vec![(0.0, 2.0), (0.25, 4.0), (1.0, 6.0)]
     );
