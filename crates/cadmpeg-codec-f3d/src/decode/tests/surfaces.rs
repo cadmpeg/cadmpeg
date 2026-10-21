@@ -244,8 +244,13 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
             procedural
                 .cache_fit_tolerance()
                 .map(cadmpeg_ir::geometry::FitTolerance::get),
-            Some(0.025)
+            None
         );
+        // The rejected source cache's fit is reported, not held by the exact construction.
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == crate::loss::F3dLossCode::SurfaceCacheRejected.kind()
+                && loss.message.contains("fit tolerance Some(0.025)")
+        }));
         let ProceduralSurfaceDefinition::Ruled { first, second, .. } = procedural.definition()
         else {
             panic!("expected ruled surface construction")

@@ -923,8 +923,13 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
         procedural
             .cache_fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get),
-        Some(0.02)
+        None
     );
+    // The original cache-only fit is decode evidence after its cache is rejected.
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == F3dLossCode::SurfaceCacheRejected.kind()
+            && loss.message.contains("fit tolerance Some(0.02)")
+    }));
     let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
         panic!("expected extrusion")
     };
@@ -972,8 +977,13 @@ fn decode_retains_versioned_nested_translational_extrusion() {
         procedural
             .cache_fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get),
-        Some(0.02)
+        None
     );
+    // The original cache-only fit is decode evidence after its cache is rejected.
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == F3dLossCode::SurfaceCacheRejected.kind()
+            && loss.message.contains("fit tolerance Some(0.02)")
+    }));
     let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
         panic!("expected versioned extrusion")
     };
@@ -1150,8 +1160,13 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         decoded.ir().model.procedural_surfaces[0]
             .cache_fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get),
-        Some(0.02)
+        None
     );
+    // The original cache-only fit is decode evidence after its cache is rejected.
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == F3dLossCode::SurfaceCacheRejected.kind()
+            && loss.message.contains("fit tolerance Some(0.02)")
+    }));
     let canonical_source =
         f3d_with_smbh(&crate::test_support::procedural_test::exact_nurbs_edit_control(false));
     let decoded = F3dCodec
@@ -1321,8 +1336,13 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         decoded.ir().model.procedural_surfaces[0]
             .cache_fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get),
-        Some(0.02)
+        None
     );
+    // The original cache-only fit is decode evidence after its cache is rejected.
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == F3dLossCode::SurfaceCacheRejected.kind()
+            && loss.message.contains("fit tolerance Some(0.02)")
+    }));
     let canonical_source =
         f3d_with_smbh(&crate::test_support::procedural_test::exact_nurbs_edit_control(true));
     let decoded = F3dCodec
@@ -1483,8 +1503,13 @@ fn decode_resolves_generated_ref_translational_extrusion() {
         result.ir().model.procedural_surfaces[0]
             .cache_fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get),
-        Some(0.02)
+        None
     );
+    // The original cache-only fit is decode evidence after its cache is rejected.
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == F3dLossCode::SurfaceCacheRejected.kind()
+            && loss.message.contains("fit tolerance Some(0.02)")
+    }));
 }
 
 #[test]
