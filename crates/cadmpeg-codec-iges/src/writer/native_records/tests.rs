@@ -144,20 +144,7 @@ fn units_data_preserves_its_current_owner_link() {
     assert!(exported.regenerated.contains(id));
     assert_eq!(entities[0].property_links, [1]);
     assert_eq!(entities[1].type_code, 316);
-    let parameters = std::str::from_utf8(&entities[1].parameter_body)
-        .expect("units-data parameter body is UTF-8");
-    let scale = parameters
-        .strip_prefix("1,6HLENGTH,2HMM,")
-        .expect("units-data retains LENGTH and MM headers")
-        .strip_suffix(';')
-        .expect("units-data parameter body ends with a semicolon");
-    assert_eq!(
-        scale
-            .replace('D', "e")
-            .parse::<f64>()
-            .expect("units-data scale is a finite numeric token"),
-        1.0
-    );
+    assert_eq!(&entities[1].parameter_body, b"1,6HLENGTH,2HMM,1;");
 }
 
 #[test]

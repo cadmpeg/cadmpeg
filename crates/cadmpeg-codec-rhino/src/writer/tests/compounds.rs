@@ -193,36 +193,6 @@ fn assert_compound_class_checksum(
     compounds
 }
 
-/// Follow the construction's ordered children, independent of arena ordering.
-fn compound_geometry(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::geometry::SolvedCurveGeometry> {
-    let children = crate::writer::compounds::children(ir);
-    let root = ir
-        .model
-        .curves
-        .iter()
-        .find(|curve| {
-            curve.geometry.procedural_construction().is_some() && !children.contains(&curve.id)
-        })
-        .expect("one compound root");
-    let mut pending = vec![root];
-    let mut geometry = Vec::new();
-    while let Some(curve) = pending.pop() {
-        let mut carrier = curve.geometry.solved().expect("held carrier").clone();
-        if let cadmpeg_ir::geometry::SolvedCurveGeometry::Unknown { record } = &mut carrier {
-            // The enclosing physical source record is reminted with its archive.
-            // All typed leaf coordinates, poles, weights and domains stay exact.
-            *record = None;
-        }
-        geometry.push(carrier);
-        pending.extend(
-            crate::writer::compounds::components(ir, curve)
-                .into_iter()
-                .rev(),
-        );
-    }
-    geometry
-}
-
 #[test]
 fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() {
     let inputs: [(&str, &[u8]); 2] = [
@@ -239,7 +209,13 @@ fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() 
         let source = RhinoCodec
             .decode(&mut Cursor::new(input), &DecodeOptions::default())
             .expect("frozen compound source is admitted");
-        let expected = compound_geometry(source.ir());
+        let expected = source
+            .ir()
+            .model
+            .curves
+            .iter()
+            .map(|curve| curve.geometry.solved().cloned())
+            .collect::<Vec<_>>();
         for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
             let mut bytes = Vec::new();
             RhinoCodec
@@ -267,7 +243,13 @@ fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() 
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("compound geometry decodes");
-            let actual = compound_geometry(decoded.ir());
+            let actual = decoded
+                .ir()
+                .model
+                .curves
+                .iter()
+                .map(|curve| curve.geometry.solved().cloned())
+                .collect::<Vec<_>>();
             assert_eq!(
                 actual, expected,
                 "{name} {version:?}: curve geometry and order"

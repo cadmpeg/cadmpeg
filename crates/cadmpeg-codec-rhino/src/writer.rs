@@ -696,16 +696,6 @@ fn native_dispositions(
             }
         }
     }
-    for record in tables::records(ir, "document_settings") {
-        if tables::document::settings_complete(ir, record)? {
-            dispositions.set_record(
-                "rhino",
-                "document_settings",
-                record.id(),
-                NativeDisposition::Regenerated,
-            );
-        }
-    }
     let properties = tables::document::properties(ir)?;
     for arena in ["revisions", "document_notes", "applications"] {
         for record in ir

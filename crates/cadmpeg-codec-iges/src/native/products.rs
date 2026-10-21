@@ -15,8 +15,6 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
-mod carrier;
-
 fn source_sequence(source: &str) -> Result<u32, CodecError> {
     source
         .strip_prefix("iges:entity:directory#")
@@ -128,17 +126,12 @@ pub(super) fn project(
             continue;
         };
         for link in &record.neutral_links {
-            let mut bodies =
+            let bodies =
                 if let Some(body) = ir.model.bodies.iter().find(|body| body.id.as_str() == link) {
                     vec![body.id.clone()]
                 } else {
                     carrier_bodies(ir, link)
                 };
-            if bodies.is_empty() {
-                if let Some(body) = carrier::project(ir, &record.definition, member, link, ctx)? {
-                    bodies.push(body);
-                }
-            }
             if bodies.is_empty() {
                 losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
                     "{} member {member}: product membership of carrier {link} has no neutral body owner", record.id

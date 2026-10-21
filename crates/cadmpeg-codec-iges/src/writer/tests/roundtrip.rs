@@ -55,39 +55,6 @@ fn surface_construction<'a>(ir: &'a CadIr, surface: &SurfaceId) -> Option<&'a Pr
         .find(|construction| construction_owns_surface(ir, construction, surface))
 }
 
-fn directrix_interval(ir: &CadIr, construction: &ProceduralSurface) -> [f64; 2] {
-    let directrix = match construction.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition) => {
-            definition.directrix()
-        }
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition) => {
-            definition.directrix()
-        }
-        _ => panic!("expected a line construction"),
-    };
-    ir.model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *directrix)
-        .expect("physical directrix")
-        .parameter_range
-        .expect("physical line interval")
-        .endpoints()
-}
-
-fn physical_parameter_in_chart(ir: &CadIr, construction: &ProceduralSurface, physical: f64) -> f64 {
-    let [start, end] = directrix_interval(ir, construction);
-    let bounds = construction
-        .record_bounds()
-        .expect("procedural construction has a current record chart")
-        .get();
-    let [chart_start, chart_end] = [
-        bounds[0].expect("record chart has a lower directrix bound"),
-        bounds[1].expect("record chart has an upper directrix bound"),
-    ];
-    (physical - start) / (end - start) * (chart_end - chart_start) + chart_start
-}
-
 fn try_lossless_round_trip(
     stem: &str,
     original: &CadIr,
@@ -230,13 +197,17 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
                     })
             })
             .expect("source line revolution surface");
-        let source_procedural = surface_construction(original.ir(), &source_surface.id)
-            .expect("source revolution has its owned procedural construction");
-        let source_interval = directrix_interval(original.ir(), source_procedural);
-        let round_interval = directrix_interval(round_trip.ir(), procedural);
-        for (source, round) in source_interval.into_iter().zip(round_interval) {
-            assert!((source - round).abs() < EPS_LINE_REVOLUTION_ROUND_TRIP);
-        }
+        let source_carrier_end = surface_construction(original.ir(), &source_surface.id)
+            .and_then(cadmpeg_ir::geometry::ProceduralSurface::record_bounds)
+            .map(cadmpeg_ir::geometry::RecordBounds::get)
+            .and_then(|bounds| bounds[1])
+            .expect("source line carrier interval");
+        let round_carrier_end = procedural
+            .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get)
+            .and_then(|bounds| bounds[1])
+            .expect("round-trip line carrier interval");
+        assert!((source_carrier_end - round_carrier_end).abs() < EPS_LINE_REVOLUTION_ROUND_TRIP);
         let round_surface = round_trip
             .ir()
             .model
@@ -250,7 +221,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &source_index,
             &source_surface.id,
-            physical_parameter_in_chart(original.ir(), source_procedural, 1.0),
+            1.0,
             0.7,
         )
         .expect("source line revolution evaluates")
@@ -259,7 +230,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &round_index,
             &round_surface.id,
-            physical_parameter_in_chart(round_trip.ir(), procedural, 1.0),
+            1.0,
             0.7,
         )
         .expect("round-trip line revolution evaluates")
@@ -350,11 +321,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .map(cadmpeg_ir::geometry::RecordBounds::get)
             .and_then(|bounds| bounds[1])
             .expect("round-trip line carrier interval");
-        let source_interval = directrix_interval(original.ir(), source_procedural);
-        let round_interval = directrix_interval(round_trip.ir(), round_procedural);
-        for (source, round) in source_interval.into_iter().zip(round_interval) {
-            assert!((source - round).abs() < EPS_LINE_EXTRUSION_ROUND_TRIP);
-        }
+        assert!((source_carrier_end - round_carrier_end).abs() < EPS_LINE_EXTRUSION_ROUND_TRIP);
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload_0) =
             round_procedural.definition()
         else {

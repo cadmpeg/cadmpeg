@@ -480,11 +480,21 @@ fn empty_global_record_retains_independent_directory_and_source() {
     let namespace = recovered.ir().native.namespace("iges").unwrap();
     assert_eq!(namespace.arenas()["entities"].len(), 1);
     assert_eq!(
-        recovered.source_fidelity().metadata["iges.parameter_delimiter"],
+        recovered
+            .ir()
+            .source
+            .as_ref()
+            .expect("IGES source metadata")
+            .attributes["parameter_delimiter"],
         ","
     );
     assert_eq!(
-        recovered.source_fidelity().metadata["iges.record_delimiter"],
+        recovered
+            .ir()
+            .source
+            .as_ref()
+            .expect("IGES source metadata")
+            .attributes["record_delimiter"],
         ";"
     );
 }

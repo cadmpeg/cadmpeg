@@ -3043,7 +3043,6 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     for id in untyped_ids {
         source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;
     }
-    crate::container::move_source_metadata(&mut ir, &mut source_fidelity);
     Ok(Decoded {
         ir,
         body: DecodeBody {
@@ -3097,7 +3096,6 @@ fn container_result(
         crate::container::SourceMetaDetail::FlatLegacyArchive,
     )?);
     ir.scope = cadmpeg_ir::ContentScope::container();
-    crate::container::move_source_metadata(&mut ir, &mut source_fidelity);
     Ok(Decoded {
         ir,
         body: DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {

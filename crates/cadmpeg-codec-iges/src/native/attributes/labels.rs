@@ -64,7 +64,7 @@ pub(super) fn project(
         };
         let assigned: Vec<_> = assigned
             .iter()
-            .filter(|target| carrier(target) || matches!(target, AttributeTarget::Body(_)))
+            .filter(|target| carrier(target))
             .cloned()
             .collect();
         if assigned.is_empty() {
@@ -99,7 +99,7 @@ pub(super) fn project(
                 .map(|attribute| attribute.id.clone())
                 .collect();
         } else {
-            let name = if current.is_empty() && assigned.iter().all(carrier) {
+            let name = if current.is_empty() {
                 "name"
             } else {
                 "iges.directory_label"

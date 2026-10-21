@@ -2164,7 +2164,6 @@ impl<'a> DecodeContext<'a> {
                 attributes,
             },
         )?);
-        crate::container::move_source_metadata(&mut ir, &mut source_fidelity);
         source_fidelity
             .metadata
             .extend(crate::container::source_layout(self.scan)?);

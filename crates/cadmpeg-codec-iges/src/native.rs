@@ -440,7 +440,7 @@ enum NativeLineFontDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-struct NativeBytesDisplayTemplate {
+struct NativeTextDisplayTemplate {
     id: String,
     source_entity: String,
     form: i64,
@@ -469,7 +469,7 @@ struct NativeGlyph {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-struct NativeBytesFontDefinition {
+struct NativeTextFontDefinition {
     id: String,
     source_entity: String,
     font_code: Option<i64>,
@@ -1180,10 +1180,10 @@ enum NativePropertyValue {
         revision: Option<NativeBytes<Vec<u8>>>,
     },
     Underscore {
-        ranges: Vec<NativeBytesScoreRange>,
+        ranges: Vec<NativeTextScoreRange>,
     },
     Overscore {
-        ranges: Vec<NativeBytesScoreRange>,
+        ranges: Vec<NativeTextScoreRange>,
     },
     Closure {
         u: Option<i64>,
@@ -1192,7 +1192,7 @@ enum NativePropertyValue {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-struct NativeBytesScoreRange {
+struct NativeTextScoreRange {
     text_index: Option<i64>,
     first_character: Option<i64>,
     last_character: Option<i64>,
@@ -2774,7 +2774,7 @@ pub(crate) fn store(
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let font_code = record.and_then(|record| record.integer(3));
-            Ok(NativeBytesDisplayTemplate {
+            Ok(NativeTextDisplayTemplate {
                 id: format!("iges:presentation:text-template#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 form: entry.form,
@@ -2872,7 +2872,7 @@ pub(crate) fn store(
             if malformed {
                 characters.clear();
             }
-            Ok(NativeBytesFontDefinition {
+            Ok(NativeTextFontDefinition {
                 id: format!("iges:presentation:text-font#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 font_code: record.and_then(|record| record.integer(1)),
@@ -4985,7 +4985,7 @@ pub(crate) fn store(
                 let ranges = (0..range_count)
                     .map(|offset| {
                         let start = 3 + offset * 3;
-                        NativeBytesScoreRange {
+                        NativeTextScoreRange {
                             text_index: record.integer(start),
                             first_character: record.integer(start + 1),
                             last_character: record.integer(start + 2),
