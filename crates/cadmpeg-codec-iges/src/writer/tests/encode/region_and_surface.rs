@@ -149,7 +149,8 @@ fn synthesized_solid_preserves_long_name_color_and_visibility() {
         .bodies
         .first()
         .expect("round-trip body");
-    assert_eq!(emitted_label(round_trip.ir(), 186), "SOLID");
+    assert_eq!(emitted_label(decoded.ir(), 186), "VOIDBODY");
+    assert_eq!(emitted_label(round_trip.ir(), 186), "VOIDBODY");
     assert_eq!(body.name.as_deref(), Some("Hidden Red Body"));
     assert_eq!(
         display_color(round_trip.ir(), body),
@@ -238,7 +239,11 @@ fn decoded_body_name_edit_writes_updated_property() {
         .expect("updated IGES decodes");
     assert_eq!(
         round_trip.ir().model.bodies[0].name.as_deref(),
-        Some("SECOND NAME")
+        Some("SECOND NAME"),
+        "synthesis losses={:#?}; decode losses={:#?}; attributes={:#?}",
+        updated.losses,
+        round_trip.report().losses,
+        round_trip.ir().model.attributes
     );
 }
 
