@@ -406,7 +406,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let points = decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
         .expect("indexed sketch points");
     assert_eq!(points.len(), 1);
-    assert_eq!(points[0].byte_offset, u64_from_index(live_point_at));
+    assert_eq!(points[0].byte_offset, Some(u64_from_index(live_point_at)));
     assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
     meta.types[1].type_guid = "00000000-0000-0000-0000-000000000002"
         .to_owned()
