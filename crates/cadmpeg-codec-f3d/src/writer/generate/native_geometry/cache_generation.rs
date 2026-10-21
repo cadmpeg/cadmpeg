@@ -106,7 +106,7 @@ pub(super) fn generate(
         ProceduralSurfaceDefinition::Sum(payload) => tensor(
             &profile(target, payload.first())?,
             &profile(target, payload.second())?,
-            *payload.basepoint(),
+            payload.basepoint().get(),
         )?,
         ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
             let first = profile(target, first)?;
