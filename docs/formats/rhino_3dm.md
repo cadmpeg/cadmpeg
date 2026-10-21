@@ -2091,7 +2091,8 @@ trim count × {
   2 × i32 vertex indices
   i32 reversed-3D flag
   i32 trim type (1 boundary, 2 mated, 3 seam, 4 singular)
-  i32 legacy isocurve flag
+  i32 isocurve flag (0 none, 1 constant U interior, 2 constant V interior,
+                    3 west, 4 south, 5 east, 6 north)
   i32 loop index
   2 × f64 tolerances
   2 × 3 × f64 old trim points

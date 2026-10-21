@@ -79,6 +79,7 @@ pub(super) struct WritableCoedge<'a> {
     pub(super) owner_loop: usize,
     radial_next: usize,
     pub(super) c2: ([u8; 16], Vec<u8>),
+    pub(super) explicit_pcurve: Option<&'a Pcurve>,
     pub(super) fit_tolerance: f64,
 }
 
@@ -695,6 +696,7 @@ impl<'a> WritableModel<'a> {
                         )));
                     }
                 };
+                let explicit_pcurve = pcurve.as_ref().map(|pcurve| pcurve.source);
                 let fit_tolerance = pcurve
                     .as_ref()
                     .and_then(|pcurve| pcurve.source.fit_tolerance())
@@ -754,6 +756,7 @@ impl<'a> WritableModel<'a> {
                     owner_loop,
                     radial_next: resolve(&coedge_positions, coedge.radial_next.as_str())?,
                     c2,
+                    explicit_pcurve,
                     fit_tolerance,
                 })
             })
