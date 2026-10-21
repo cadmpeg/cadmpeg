@@ -831,10 +831,10 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        let namespace = (&crate::test_support::source_fidelity::native_namespace(
+        let namespace = &crate::test_support::source_fidelity::native_namespace(
             result.ir(),
             result.source_fidelity(),
-        ));
+        );
         let rows = namespace
             .arena_as::<super::SegmentIndexRow>("segment_index_rows")
             .expect("required invariant");
@@ -1088,10 +1088,10 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        let namespace = (&crate::test_support::source_fidelity::native_namespace(
+        let namespace = &crate::test_support::source_fidelity::native_namespace(
             result.ir(),
             result.source_fidelity(),
-        ));
+        );
         let links = namespace
             .arena_as::<super::SegmentStreamLink>("segment_stream_links")
             .expect("required invariant");
@@ -1116,10 +1116,10 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        let namespace = (&crate::test_support::source_fidelity::native_namespace(
+        let namespace = &crate::test_support::source_fidelity::native_namespace(
             result.ir(),
             result.source_fidelity(),
-        ));
+        );
         let links = namespace
             .arena_as::<super::SegmentStreamLink>("segment_stream_links")
             .expect("required invariant");

@@ -101,10 +101,10 @@ fn decode_joins_qaf_material_names_to_texture_assets() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
-    let namespace = (&crate::test_support::source_fidelity::native_namespace(
+    let namespace = &crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ));
+    );
     let assets = namespace
         .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>(
             "material_texture_assets",
@@ -647,10 +647,10 @@ fn decode_selects_dominant_rmfastload_body() {
     let result = NxCodec
         .decode(&mut cur, &DecodeOptions::default())
         .expect("required invariant");
-    let namespace = (&crate::test_support::source_fidelity::native_namespace(
+    let namespace = &crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ));
+    );
     let tables = namespace
         .arena_as::<super::super::RmFastLoadObjectIdTable>("rmfastload_object_id_tables")
         .expect("RMFastLoad tables");

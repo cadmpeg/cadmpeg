@@ -405,10 +405,10 @@ fn decode_orders_and_deduplicates_linked_feature_history_sections() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
-    let namespace = (&crate::test_support::source_fidelity::native_namespace(
+    let namespace = &crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ));
+    );
     let links = namespace
         .arena_as::<crate::native::segments::SegmentOmLink>("segment_om_links")
         .expect("required invariant");

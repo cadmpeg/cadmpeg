@@ -33,13 +33,12 @@ fn decode_persists_external_references_in_native_namespace() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode external-reference fixture");
-    let native = crate::native::CatiaNative::load(
-        (&crate::test_support::source_fidelity::native_namespace(
+    let native =
+        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
             decoded.ir(),
             decoded.source_fidelity(),
-        )),
-    )
-    .expect("load CATIA native namespace");
+        ))
+        .expect("load CATIA native namespace");
     let [reference] = native.external_references.as_slice() else {
         panic!("one external reference");
     };
@@ -265,13 +264,12 @@ fn decode_retains_outer_object_graph_order_and_references() {
             &DecodeOptions::default(),
         )
         .expect("decode generated object graph part");
-    let native = crate::native::CatiaNative::load(
-        (&crate::test_support::source_fidelity::native_namespace(
+    let native =
+        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
             decoded.ir(),
             decoded.source_fidelity(),
-        )),
-    )
-    .expect("load CATIA native records");
+        ))
+        .expect("load CATIA native records");
 
     assert_eq!(native.object_graphs.len(), 1);
     let graph = &native.object_graphs[0];
@@ -474,13 +472,12 @@ fn decode_retains_catalog_schema_names_without_promoting_features() {
             &DecodeOptions::default(),
         )
         .expect("decode generated catalog part");
-    let native = crate::native::CatiaNative::load(
-        (&crate::test_support::source_fidelity::native_namespace(
+    let native =
+        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
             decoded.ir(),
             decoded.source_fidelity(),
-        )),
-    )
-    .expect("load CATIA native records");
+        ))
+        .expect("load CATIA native records");
 
     assert_eq!(native.catalogs.len(), 1);
     assert_eq!(native.catalogs[0].entries[4].value, "Sketch");
@@ -499,13 +496,12 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
             &DecodeOptions::default(),
         )
         .expect("decode generated value block part");
-    let native = crate::native::CatiaNative::load(
-        (&crate::test_support::source_fidelity::native_namespace(
+    let native =
+        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
             decoded.ir(),
             decoded.source_fidelity(),
-        )),
-    )
-    .expect("load CATIA native records");
+        ))
+        .expect("load CATIA native records");
 
     assert_eq!(native.value_blocks.len(), 1);
     assert_eq!(

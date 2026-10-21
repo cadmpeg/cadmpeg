@@ -320,10 +320,10 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
             &DecodeOptions::default(),
         )
         .expect("native decode");
-    let namespace = (&crate::test_support::source_fidelity::native_namespace(
+    let namespace = &crate::test_support::source_fidelity::native_namespace(
         result.ir(),
         result.source_fidelity(),
-    ));
+    );
     let emitted_statuses = namespace
         .arena_as::<OmOperationStateStatus>("om_operation_state_statuses")
         .expect("state-status arena");
