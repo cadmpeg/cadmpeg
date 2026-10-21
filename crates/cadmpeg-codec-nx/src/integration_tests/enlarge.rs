@@ -27,7 +27,10 @@ fn decode(selector: u8) -> cadmpeg_ir::codec::DecodeResult {
 #[test]
 fn enlarge_pipeline_resolves_the_owning_class_without_inventing_face_roles() {
     let result = decode(3);
-    let namespace = result.ir().native.namespace("nx").unwrap();
+    let namespace = crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    );
     let records = &namespace.arenas()["feature_enlarge_construction_envelopes"];
     assert_eq!(records.len(), 1);
     let wire = serde_json::to_value(&records[0]).unwrap();
