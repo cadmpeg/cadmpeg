@@ -29,7 +29,7 @@ fn check_with(
 ) -> Option<&'static str> {
     let geometry = BorrowedIdentities::build(|add| {
         for (id, geometry) in entities {
-            add(id.as_str(), *geometry);
+            add(id.as_str(), geometry);
         }
     });
     check(ir, &definition, &geometry)

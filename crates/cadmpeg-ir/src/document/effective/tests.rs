@@ -14,7 +14,7 @@ fn binding(target: AppearanceTarget) -> AppearanceBinding {
         source_entity_id: None,
         object_type: None,
         visible: None,
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     }
 }
 
@@ -65,7 +65,7 @@ fn display_colour_wins_without_modifying_the_independent_material() {
         schema: None,
         category: None,
         base_color: Some(material),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         textures: vec![],
     });
     ir.model.appearance_bindings.push(binding(target.clone()));

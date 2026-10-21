@@ -44,7 +44,7 @@ fn parameter(
         driving: true,
         display: None,
         value: Some(ParameterValue::Length(Length::new(value).unwrap())),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
     }
@@ -60,19 +60,19 @@ fn primitive(id: &str, ordinal: u64, length: Dimension<Length>) -> crate::featur
         name: None,
         suppressed: None,
         needs_recompute: false,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
         native_ref: None,
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::Primitive {
                 placement: None,
                 solid: PrimitiveSolid::new(PrimitiveSolidKind::Box {
                     length,
-                    width: crate::features::Dimension::Literal(Length::new(2.0).unwrap().into()),
-                    height: crate::features::Dimension::Literal(Length::new(3.0).unwrap().into()),
+                    width: crate::features::Dimension::Literal(Length::new(2.0).unwrap()),
+                    height: crate::features::Dimension::Literal(Length::new(3.0).unwrap()),
                 })
                 .unwrap(),
                 op: crate::features::BooleanOp::NewBody,

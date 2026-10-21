@@ -34,11 +34,11 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         name: None,
         suppressed: Some(false),
         needs_recompute: false,
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
         native_ref: None,
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::StoredGeometry {},
@@ -311,8 +311,8 @@ fn inactive_dimension_resolution_uses_its_override_cache_and_never_the_base_cach
             placement: None,
             solid: PrimitiveSolid::new(PrimitiveSolidKind::Box {
                 length: Dimension::Parameter(id.clone()),
-                width: crate::features::Dimension::Literal(Length::new(3.0).unwrap().into()),
-                height: crate::features::Dimension::Literal(Length::new(4.0).unwrap().into()),
+                width: crate::features::Dimension::Literal(Length::new(3.0).unwrap()),
+                height: crate::features::Dimension::Literal(Length::new(4.0).unwrap()),
             })
             .unwrap(),
             op: BooleanOp::NewBody,

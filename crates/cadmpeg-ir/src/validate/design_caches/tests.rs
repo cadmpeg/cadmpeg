@@ -29,7 +29,7 @@ fn sketch_document() -> (CadIr, SketchId, SketchEntityId) {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: crate::sketches::SketchProfiles::default(),
         native_ref: None,
     });
     ir.model.sketch_entities.push(SketchEntity::new(
@@ -49,11 +49,11 @@ fn feature(operation: FeatureOperation) -> Feature {
         name: None,
         suppressed: None,
         needs_recompute: false,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation)),
         native_ref: None,
     }

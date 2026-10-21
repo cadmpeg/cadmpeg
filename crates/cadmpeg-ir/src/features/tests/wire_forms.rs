@@ -170,8 +170,9 @@ fn feature_extents_round_trip_through_json() {
                     face: FaceSelection::Faces(vec![
                         FaceId::mint("synthetic:test:face#0").expect("valid identity")
                     ]),
-                    offset: (Some(Length::new(-2.0).unwrap()))
-                        .map(crate::features::Dimension::Literal),
+                    offset: Some(crate::features::Dimension::Literal(
+                        Length::new(-2.0).unwrap(),
+                    )),
                 },
                 draft: None,
             },
