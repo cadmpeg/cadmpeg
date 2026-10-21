@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
+mod computed_controls;
 mod content_scope;
 mod metadata_recovery;
 
