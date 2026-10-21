@@ -170,7 +170,7 @@ class ScopeTests(unittest.TestCase):
                 self.assertTrue(scope['static'])
 
     def test_workflows_outside_the_gate_skip_rust(self):
-        for name in ('release.yml', 'cut-release.yml', 'audit.yml', 'dco.yml'):
+        for name in ('release.yml', 'cut-release.yml', 'audit.yml', 'codeql.yml', 'dco.yml'):
             with self.subTest(name=name):
                 self.assertFalse(select(ROOT, [f'.github/workflows/{name}'])['rust'])
 

@@ -36,7 +36,7 @@ STATIC_ONLY = {
 }
 
 NON_GATE_WORKFLOWS = {
-    'audit.yml', 'cut-release.yml', 'dco.yml', 'fuzz-smoke.yml', 'interop.yml',
+    'audit.yml', 'codeql.yml', 'cut-release.yml', 'dco.yml', 'fuzz-smoke.yml', 'interop.yml',
     'prefill-pr-description.yml', 'publish-crates.yml', 'release.yml',
 }
 
