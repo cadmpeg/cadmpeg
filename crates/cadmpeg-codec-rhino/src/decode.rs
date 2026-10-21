@@ -2684,6 +2684,19 @@ impl<'a> DecodeContext<'a> {
                     key.clone(),
                 ))
             }?;
+            let bounds = cadmpeg_ir::geometry::RecordBounds::try_new([
+                Some(
+                    geometry.u_knots()[usize::try_from(geometry.u_degree())
+                        .map_err(|error| error.to_string())?],
+                ),
+                Some(
+                    geometry.v_knots()[usize::try_from(geometry.v_degree())
+                        .map_err(|error| error.to_string())?],
+                ),
+                Some(geometry.u_knots()[geometry.u_count()]),
+                Some(geometry.v_knots()[geometry.v_count()]),
+            ])
+            .map_err(|error| error.to_string())?;
             candidate.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
@@ -2699,7 +2712,7 @@ impl<'a> DecodeContext<'a> {
                 .model
                 .add_procedural_surface(
                     &surface_id,
-                    ProceduralSurface::new(procedural_id.clone(), ir_definition, None),
+                    ProceduralSurface::new(procedural_id.clone(), ir_definition, Some(bounds)),
                 )
                 .map_err(|error| error.to_string())?;
             for id in [surface_id.to_string(), procedural_id.to_string()] {
