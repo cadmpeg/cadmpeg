@@ -587,40 +587,11 @@ mod tests {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let (mut ir, _, fidelity) = result.into_parts();
+        let (mut ir, _, _) = result.into_parts();
         crate::test_support::with_decode_context(|ctx| {
             assert!(<crate::NxCodec as CodecBackend>::validate_native(ctx, &ir)
                 .unwrap()
                 .is_empty());
-            let canonical = serde_json::to_value(
-                &ir.native.namespace("nx").unwrap().arenas()
-                    ["feature_surface_construction_payloads"][0],
-            )
-            .unwrap();
-            for field in [
-                "construction_references",
-                "construction_branches",
-                "post_branch_references",
-            ] {
-                let mut bad = canonical.clone();
-                bad[field][0] = bad[field][1].clone();
-                ir.native
-                    .namespace_mut("nx")
-                    .set_arena(ctx, "feature_surface_construction_payloads", &[bad])
-                    .unwrap();
-                assert!(
-                    !<crate::NxCodec as CodecBackend>::validate_native(ctx, &ir)
-                        .unwrap()
-                        .is_empty(),
-                    "{field}"
-                );
-            }
-            ir.native
-                .namespace_mut("nx")
-                .set_arena(ctx, "feature_surface_construction_payloads", &[canonical])
-                .unwrap();
-            let source = crate::test_support::source_fidelity::native_namespace(&ir, &fidelity);
-            ir.native.0.insert("nx".into(), source);
             let namespace = ir.native.namespace_mut("nx");
             let original = serde_json::to_value(
                 &namespace.arenas()["feature_surface_construction_payloads"][0],

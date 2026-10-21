@@ -327,12 +327,15 @@ fn native_design_objects_preserve_relations_to_unowned_fields() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode relation to unowned field");
-    let native =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            decoded.ir(),
-            decoded.source_fidelity(),
-        ))
-        .expect("load relation to unowned field");
+    let native = crate::native::CatiaNative::load(
+        &decoded
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load relation to unowned field");
     let graph = &native.object_graphs[0];
 
     assert_eq!(native.design_objects.len(), 1);
@@ -371,12 +374,15 @@ fn native_design_objects_preserve_reflexive_field_relations() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode reflexive field relation");
-    let native =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            decoded.ir(),
-            decoded.source_fidelity(),
-        ))
-        .expect("load reflexive field relation");
+    let native = crate::native::CatiaNative::load(
+        &decoded
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load reflexive field relation");
     let field = &native.object_graphs[0].records[0];
 
     assert_eq!(
@@ -889,12 +895,15 @@ fn decode_links_design_objects_through_their_owner_record_group() {
             &DecodeOptions::default(),
         )
         .expect("decode nested design objects");
-    let native =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            decoded.ir(),
-            decoded.source_fidelity(),
-        ))
-        .expect("load CATIA native records");
+    let native = crate::native::CatiaNative::load(
+        &decoded
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load CATIA native records");
 
     assert_eq!(native.design_objects.len(), 2);
     assert_eq!(native.design_objects[0].owner_entity_id, 2);

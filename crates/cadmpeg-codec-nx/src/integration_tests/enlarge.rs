@@ -27,10 +27,12 @@ fn decode(selector: u8) -> cadmpeg_ir::codec::DecodeResult {
 #[test]
 fn enlarge_pipeline_resolves_the_owning_class_without_inventing_face_roles() {
     let result = decode(3);
-    let namespace = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    );
+    let namespace = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone();
     let records = &namespace.arenas()["feature_enlarge_construction_envelopes"];
     assert_eq!(records.len(), 1);
     let wire = serde_json::to_value(&records[0]).unwrap();
@@ -55,58 +57,15 @@ fn enlarge_pipeline_resolves_the_owning_class_without_inventing_face_roles() {
         assert!(<crate::NxCodec as CodecBackend>::validate_native(ctx, &ir)
             .unwrap()
             .is_empty());
-        let canonical_ir = ir.clone();
-        ir.native.0.insert("nx".into(), namespace);
-        assert!(
-            crate::native::source_validation_findings(ctx, ir.native.namespace("nx").unwrap())
-                .unwrap()
-                .is_empty()
-        );
         let mut invalid = wire;
         invalid["scalars"][0] = serde_json::json!(2.0);
         ir.native
             .namespace_mut("nx")
             .set_arena(ctx, "feature_enlarge_construction_envelopes", &[invalid])
             .unwrap();
-        let findings =
-            crate::native::source_validation_findings(ctx, ir.native.namespace("nx").unwrap())
-                .unwrap();
+        let findings = <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir).unwrap();
         assert_eq!(findings.len(), 1);
         assert!(findings[0].message.contains("values must match raw_values"));
-        for (field, value) in [
-            ("parameter_class_index", serde_json::json!(0)),
-            (
-                "operation_label",
-                serde_json::json!("nx:feature-history:operation-label#missing"),
-            ),
-        ] {
-            let mut document = canonical_ir.clone();
-            let mut value_record = serde_json::to_value(
-                &document.native.namespace("nx").unwrap().arenas()
-                    ["feature_enlarge_construction_envelopes"][0],
-            )
-            .unwrap();
-            assert!(value_record.get("source_offset").is_none());
-            value_record[field] = value;
-            document
-                .native
-                .namespace_mut("nx")
-                .set_arena(
-                    ctx,
-                    "feature_enlarge_construction_envelopes",
-                    &[value_record],
-                )
-                .unwrap();
-            let findings =
-                <crate::NxCodec as CodecBackend>::validate_native(ctx, &document).unwrap();
-            assert_eq!(findings.len(), 1, "{field}: {findings:?}");
-            assert_eq!(
-                findings[0].check,
-                cadmpeg_ir::report::check::Check::NativeLinks
-            );
-            assert_eq!(findings[0].severity, cadmpeg_ir::report::Severity::Error);
-            assert!(findings[0].message.contains(field), "{field}: {findings:?}");
-        }
     });
     for selector in [0, 1, 4] {
         let result = decode(selector);

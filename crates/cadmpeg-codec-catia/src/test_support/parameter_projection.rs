@@ -8,17 +8,17 @@ pub(crate) fn dependencies(parameter: &DesignParameter) -> DistinctMembers<Param
     parameter.expression.dependencies().cloned().collect()
 }
 
-pub(crate) fn expression_text(
-    ir: &CadIr,
-    fidelity: &cadmpeg_ir::SourceFidelity,
-    parameter: &DesignParameter,
-) -> String {
+pub(crate) fn expression_text(ir: &CadIr, parameter: &DesignParameter) -> String {
     if let Some(text) = parameter.expression.literal_text() {
         return text;
     }
-    let native =
-        crate::native::CatiaNative::load(&super::source_fidelity::native_namespace(ir, fidelity))
-            .expect("typed CATIA namespace");
+    let native = crate::native::CatiaNative::load(
+        &ir.native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("typed CATIA namespace");
     expression_text_with_native(ir, parameter, &native)
 }
 

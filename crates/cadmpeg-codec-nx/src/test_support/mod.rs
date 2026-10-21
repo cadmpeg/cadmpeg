@@ -10,7 +10,6 @@ pub(crate) mod final_member_registry;
 pub(crate) mod move_face;
 pub(crate) mod native_references;
 pub(crate) mod rmfastload;
-pub(crate) mod source_fidelity;
 pub(crate) mod studio_surface;
 pub(crate) mod test_bytes;
 pub(crate) mod test_cfb;

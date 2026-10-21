@@ -193,12 +193,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         ),
         0
     );
-    let native =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            decoded.ir(),
-            decoded.source_fidelity(),
-        ))
-        .expect("load generic entity suffix");
+    let native = crate::native::CatiaNative::load(
+        &decoded
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load generic entity suffix");
 
     assert_eq!(native.entity_records[0].parameter_value(), None);
     assert_eq!(
@@ -251,12 +254,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         ),
         1
     );
-    let wide_scalar =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            wide_scalar.ir(),
-            wide_scalar.source_fidelity(),
-        ))
-        .expect("load wide-prefix scalar suffix");
+    let wide_scalar = crate::native::CatiaNative::load(
+        &wide_scalar
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load wide-prefix scalar suffix");
     assert_eq!(
         wide_scalar.entity_records[0]
             .suffix_value()
@@ -390,12 +396,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         ),
         0
     );
-    let control =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            control.ir(),
-            control.source_fidelity(),
-        ))
-        .expect("load generic control suffix");
+    let control = crate::native::CatiaNative::load(
+        &control
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load generic control suffix");
     assert!(matches!(
         control.entity_records[0]
             .suffix_value()
@@ -434,12 +443,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         ),
         1
     );
-    let control_e9 =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            control_e9.ir(),
-            control_e9.source_fidelity(),
-        ))
-        .expect("load E9 control suffix");
+    let control_e9 = crate::native::CatiaNative::load(
+        &control_e9
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load E9 control suffix");
     assert!(matches!(
         control_e9.entity_records[0]
             .suffix_value()
@@ -488,12 +500,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         ),
         1
     );
-    let separator =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            separator.ir(),
-            separator.source_fidelity(),
-        ))
-        .expect("load generic separator suffix");
+    let separator = crate::native::CatiaNative::load(
+        &separator
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load generic separator suffix");
     assert!(matches!(
         separator.entity_records[0]
             .suffix_value()
@@ -525,7 +540,12 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         1
     );
     let atom = crate::native::CatiaNative::load(
-        &crate::test_support::source_fidelity::native_namespace(atom.ir(), atom.source_fidelity()),
+        &atom
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
     )
     .expect("load generic atom suffix");
     assert!(matches!(
@@ -581,12 +601,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         ),
         1
     );
-    let schema_selected_atom =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            schema_selected_atom.ir(),
-            schema_selected_atom.source_fidelity(),
-        ))
-        .expect("load schema-selected atom suffix");
+    let schema_selected_atom = crate::native::CatiaNative::load(
+        &schema_selected_atom
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load schema-selected atom suffix");
     assert!(matches!(
         schema_selected_atom.entity_records[0]
             .suffix_value()
@@ -656,12 +679,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         ),
         1
     );
-    let selected_scalar =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            selected_scalar.ir(),
-            selected_scalar.source_fidelity(),
-        ))
-        .expect("load schema-selected scalar suffix");
+    let selected_scalar = crate::native::CatiaNative::load(
+        &selected_scalar
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load schema-selected scalar suffix");
     assert!(matches!(
         selected_scalar.entity_records[0]
             .suffix_schema_selection
@@ -737,12 +763,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         ),
         1
     );
-    let selected_control =
-        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
-            selected_control.ir(),
-            selected_control.source_fidelity(),
-        ))
-        .expect("load schema-selected control suffix");
+    let selected_control = crate::native::CatiaNative::load(
+        &selected_control
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load schema-selected control suffix");
     assert!(matches!(
         selected_control.entity_records[0]
             .suffix_value()

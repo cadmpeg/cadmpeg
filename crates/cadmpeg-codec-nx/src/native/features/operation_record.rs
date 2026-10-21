@@ -271,6 +271,8 @@ mod tests {
 
     #[test]
     fn operation_record_core_is_admitted_by_native_check() {
+        use cadmpeg_ir::codec::CodecBackend;
+
         let bytes = crate::test_support::move_face::core(2);
         let length = bytes.len();
         let wire = serde_json::json!({
@@ -292,12 +294,9 @@ mod tests {
                     std::slice::from_ref(&wire),
                 )
                 .unwrap();
-            assert!(crate::native::source_validation_findings(
-                ctx,
-                ir.native.namespace("nx").unwrap()
-            )
-            .unwrap()
-            .is_empty());
+            assert!(crate::NxCodec::validate_native(ctx, &ir)
+                .unwrap()
+                .is_empty());
             for (field, value) in [
                 (
                     "core",
@@ -315,11 +314,7 @@ mod tests {
                     .namespace_mut("nx")
                     .set_arena(ctx, "feature_operation_records", &[bad])
                     .unwrap();
-                let findings = crate::native::source_validation_findings(
-                    ctx,
-                    ir.native.namespace("nx").unwrap(),
-                )
-                .unwrap();
+                let findings = crate::NxCodec::validate_native(ctx, &ir).unwrap();
                 assert_eq!(findings.len(), 1, "{field}");
                 assert!(findings[0].message.contains(field), "{field}: {findings:?}");
             }

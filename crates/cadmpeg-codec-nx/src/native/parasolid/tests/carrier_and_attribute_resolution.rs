@@ -169,14 +169,16 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
                 .expect("offset carrier");
             assert_ne!(owner, support);
             assert_eq!(&result.ir().model.faces[0].surface, owner);
-            let records = crate::test_support::source_fidelity::native_namespace(
-                result.ir(),
-                result.source_fidelity(),
-            )
-            .arena_as::<super::super::ParasolidOffsetSurfaceRecord>(
-                "parasolid_offset_surface_records",
-            )
-            .expect("required invariant");
+            let records = result
+                .ir()
+                .native
+                .namespace("nx")
+                .expect("nx namespace")
+                .clone()
+                .arena_as::<super::super::ParasolidOffsetSurfaceRecord>(
+                    "parasolid_offset_surface_records",
+                )
+                .expect("required invariant");
             assert_eq!(records.len(), 1);
             assert_eq!(char::from(records[0].discriminator), discriminator);
             assert_eq!(records[0].true_offset, true_offset);
@@ -218,12 +220,14 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
         .expect("required invariant");
 
     assert_eq!(result.ir().model.edges.len(), 1);
-    let records = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::super::ParasolidSurfaceCurveRecord>("parasolid_surface_curve_records")
-    .expect("required invariant");
+    let records = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::super::ParasolidSurfaceCurveRecord>("parasolid_surface_curve_records")
+        .expect("required invariant");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].state.surface(), 6);
     assert_eq!(records[0].state.pcurve(), 9);
@@ -275,12 +279,14 @@ fn decode_emits_rolling_ball_blend_surface() {
         .procedural_surface_owner(&procedural.id)
         .expect("blend carrier");
     assert_eq!(&result.ir().model.faces[0].surface, owner);
-    let records = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::super::ParasolidBlendSurfaceRecord>("parasolid_blend_surface_records")
-    .expect("required invariant");
+    let records = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::super::ParasolidBlendSurfaceRecord>("parasolid_blend_surface_records")
+        .expect("required invariant");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].state.support_xmts(), [6, 6]);
     assert_eq!(records[0].state.spine_xmt(), 1);
@@ -327,12 +333,14 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
         curve.geometry.solved_cache(),
         Some(SolvedCurveGeometry::Unknown { .. })
     ));
-    let records = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::super::ParasolidIntersectionRecord>("parasolid_intersection_records")
-    .expect("required invariant");
+    let records = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::super::ParasolidIntersectionRecord>("parasolid_intersection_records")
+        .expect("required invariant");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].header_references[0], 1);
     assert_eq!(records[0].construction_references, [6, 6, 1, 1, 1, 1]);
@@ -400,12 +408,14 @@ fn decode_emits_charted_surface_intersection_construction() {
         .decode(&mut cur, &DecodeOptions::default())
         .expect("required invariant");
 
-    let terms = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::super::ParasolidTermUseRecord>("parasolid_term_use_records")
-    .expect("required invariant");
+    let terms = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::super::ParasolidTermUseRecord>("parasolid_term_use_records")
+        .expect("required invariant");
     assert_eq!(terms.len(), 2);
     assert_eq!(terms[0].form.count(), 1);
     assert_eq!(serde_json::to_value(terms[0].form).unwrap(), "L?");
@@ -414,12 +424,14 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert!(terms
         .iter()
         .all(|term| matches!(term.framing, crate::intersection::TermUseFraming::Direct)));
-    let support_uv = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::super::ParasolidSupportUvRecord>("parasolid_support_uv_records")
-    .expect("required invariant");
+    let support_uv = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::super::ParasolidSupportUvRecord>("parasolid_support_uv_records")
+        .expect("required invariant");
     assert_eq!(support_uv.len(), 1);
     assert_eq!(support_uv[0].values.count(), 4);
     assert_eq!(support_uv[0].values.marker(), 2);
@@ -436,12 +448,14 @@ fn decode_emits_charted_surface_intersection_construction() {
         support_uv[0].framing,
         crate::intersection::SupportUvFraming::Direct
     ));
-    let charts = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::super::ParasolidChartRecord>("parasolid_chart_records")
-    .expect("required invariant");
+    let charts = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::super::ParasolidChartRecord>("parasolid_chart_records")
+        .expect("required invariant");
     assert_eq!(charts.len(), 1);
     assert_eq!(charts[0].data.count(), 2);
     assert_eq!(charts[0].preamble.base_parameter(), 0.0);
@@ -515,12 +529,14 @@ fn decode_resolves_intersection_second_support_through_blend_bound() {
         .decode(&mut cur, &DecodeOptions::default())
         .expect("required invariant");
 
-    let records = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::super::ParasolidBlendBoundRecord>("parasolid_blend_bound_records")
-    .expect("required invariant");
+    let records = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::super::ParasolidBlendBoundRecord>("parasolid_blend_bound_records")
+        .expect("required invariant");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].state.header_references(), [1; 5]);
     assert!(records[0].state.sense());
@@ -556,12 +572,14 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
         edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.25, 0.75])
     );
-    let records = crate::test_support::source_fidelity::native_namespace(
-        result.ir(),
-        result.source_fidelity(),
-    )
-    .arena_as::<super::super::ParasolidTrimmedCurveRecord>("parasolid_trimmed_curve_records")
-    .expect("required invariant");
+    let records = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<super::super::ParasolidTrimmedCurveRecord>("parasolid_trimmed_curve_records")
+        .expect("required invariant");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].state.basis(), 9);
     assert_eq!(records[0].state.points(), [[0.0; 3]; 2]);
