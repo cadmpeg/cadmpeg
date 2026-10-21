@@ -1154,7 +1154,14 @@ Co 1001000 +2 0 *
         .is_some_and(|id| id.ends_with("Shape")));
     assert_eq!(view.order, 0);
     assert_eq!(view.expanded, Some(true));
-    assert_eq!(view.visible, Some(false));
+    assert_eq!(
+        result
+            .ir()
+            .effective_visibility(&cadmpeg_ir::AppearanceTarget::Body(
+                result.ir().model.bodies[0].id.clone(),
+            )),
+        Some(false),
+    );
     assert_eq!(
         view.line_width
             .map(cadmpeg_ir::scalar::NonNegativeReal::get),
@@ -1165,7 +1172,12 @@ Co 1001000 +2 0 *
             .map(cadmpeg_ir::scalar::NonNegativeReal::get),
         Some(4.0)
     );
-    let color = result.ir().model.bodies[0].color.expect("shape color");
+    let color = result
+        .ir()
+        .effective_display_color(&cadmpeg_ir::AppearanceTarget::Body(
+            result.ir().model.bodies[0].id.clone(),
+        ))
+        .expect("shape color");
     assert!((color.r() - f32::from(0x33_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
     assert!((color.g() - f32::from(0x66_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
     assert!((color.b() - f32::from(0x99_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
