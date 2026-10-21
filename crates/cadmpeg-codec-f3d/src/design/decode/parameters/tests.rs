@@ -1528,7 +1528,9 @@ fn wide_discriminated_parameter_stores_four_zero_bytes_before_its_discriminator(
     narrow[tail] = 0x10;
     let expected = parse_design_parameter_record(&narrow).expect("narrow discriminated parameter");
     assert_eq!(
-        expected.family_discriminator().map(|field| field.offset),
+        expected
+            .family_discriminator()
+            .and_then(|field| field.offset),
         Some(22)
     );
 
@@ -1540,7 +1542,10 @@ fn wide_discriminated_parameter_stores_four_zero_bytes_before_its_discriminator(
     assert_eq!(parameter.name(), "d3");
     assert_eq!(parameter.evaluated_value().get(), 1.0);
     let discriminator = parameter.family_discriminator().expect("discriminator");
-    assert_eq!((discriminator.value.code(), discriminator.offset), (6, 26));
+    assert_eq!(
+        (discriminator.value.code(), discriminator.offset),
+        (6, Some(26))
+    );
 
     // The four bytes before the discriminator are zero.
     let mut nonzero = wide.clone();
