@@ -30,6 +30,48 @@ the table says `unstated` and says so in the field note.
 | `00 12` | vertex-use | 24 B | sequence u32 BE at body +2; magic at body +16 | §4 |
 | `00 1d` | world point | 38 B | no magic; four references at body +6 and xyz as three f64 BE at body +14 | §4 |
 
+## `feature_input_class_declaration_prefix`
+
+Spec §2 · layout: byte offsets · size: 6 B
+
+The counted ASCII class name follows this fixed prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `bytes[4]` | little | spec | A feature-input class declaration is `ff ff 01 00` · value `[255, 255, 1, 0]` |
+| 4 | 2 | `name_length` | `u16` | little | spec | byte length at prefix +4 |
+
+## `current_coordinate_marker_identity`
+
+Spec §2 · layout: byte offsets · size: 142 B
+
+The complete zero-tail coordinate form carries its own local identity before the lane end or a complete class declaration.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | `ResolvedFeatures` sketch entities begin with `ff ff 1f 00 03` · value `[255, 255, 31, 0, 3]` |
+| 5 | 12 | `geometry_prefix` | `bytes[12]` | little | spec | 12-byte prefix `ff ff ff ff ff ff ff ff 00 00 80 bf` at marker +5 · value `[255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 128, 191]` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | A little-endian u32 at marker +17 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` · value `[5, 0, 1, 0]` |
+| 48 | 8 | `state` | `f64` | little | spec | Marker +48 stores a finite little-endian f64 state value |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | `1e 00` at marker +64 · value `[30, 0]` |
+| 66 | 8 | `coordinate_first` | `f64` | little | spec | coordinate fields at marker +66 and +74 |
+| 74 | 8 | `coordinate_second` | `f64` | little | spec | coordinate fields at marker +66 and +74 |
+| 82 | 56 | `zero_tail` | `bytes[56]` | little | spec | The 56-byte tail after the coordinate pair is zero · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 138 | 4 | `local_id` | `u32` | little | spec | object identifier is layout-selected at marker +138 |
+
+Unstated regions:
+
+- `21..23` (2 B): Reserved zero bytes before the state or coordinate tag.
+- `27..48` (21 B): Reserved zero bytes before the state or coordinate tag.
+- `56..64` (8 B): Reserved zero bytes before the state or coordinate tag.
+
 ## `feature_input_shifted_scalar_trailer`
 
 Spec §2 · layout: byte offsets · size: 35 B
