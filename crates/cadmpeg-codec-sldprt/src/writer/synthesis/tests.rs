@@ -36,7 +36,15 @@ fn unrepresented_source_content_never_reaches_patch_or_replay() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("fixture decodes");
     let (ir, _, mut fidelity) = decoded.into_parts();
-    fidelity.unrepresented.insert(ArenaClass::Design);
+    let retained = fidelity
+        .retained_records()
+        .keys()
+        .next()
+        .expect("retained source record")
+        .to_string();
+    fidelity
+        .mark_untyped(&retained, [ArenaClass::Design])
+        .expect("mark retained source");
     for (edited, declined_path) in [(false, "verbatim_replay"), (true, "patched")] {
         let mut document = ir.clone();
         if edited {

@@ -795,7 +795,7 @@ fn encoder_writes_source_less_neutral_parameters() {
                 kind: "EquationDriven".into(),
                 parameters: BTreeMap::from([(
                     cadmpeg_core::nonblank_literal!("Pitch"),
-                    "D1@Sketch1 * 2".into(),
+                    cadmpeg_ir::features::Expression::from("D1@Sketch1 * 2").into(),
                 )]),
             }),
         ),
@@ -808,7 +808,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         owner: Some(feature_id),
         ordinal: 0,
         name: "Pitch".into(),
-        expression: "D1@Sketch1 * 2".into(),
+        expression: cadmpeg_ir::features::Expression::from("D1@Sketch1 * 2").into(),
         display: None,
         value: None,
         properties: BTreeMap::new(),

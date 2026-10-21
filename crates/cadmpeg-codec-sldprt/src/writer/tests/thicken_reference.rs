@@ -312,7 +312,7 @@ fn semantic_writer_round_trips_typed_scale() {
             ));
             *factors = ScaleFactors::PerAxis {
                 factors: [1.5, 2.0, 2.5]
-                    .map(|value| cadmpeg_ir::scalar::NonZeroReal::new(value).unwrap()),
+                    .map(|value| cadmpeg_ir::scalar::NonZeroReal::new(value).unwrap().into()),
             };
         });
     }
@@ -347,7 +347,7 @@ fn semantic_writer_round_trips_typed_scale() {
             center: Some(ScaleCenter::Point(checked_geometry_1)),
             factors: ScaleFactors::PerAxis { factors },
             ..
-        }) if (factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [1.5, 2.0, 2.5]) && matches!(checked_geometry_1.get(), Point3 {
+        }) if (std::array::from_fn::<_, 3, _>(|index| regenerated.ir().dimension_value(&factors[index]).unwrap().get()) == [1.5, 2.0, 2.5]) && matches!(checked_geometry_1.get(), Point3 {
                 x: 4.0,
                 y: 5.0,
                 z: 6.0
