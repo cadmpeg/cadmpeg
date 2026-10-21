@@ -220,6 +220,11 @@ pub(crate) fn validate(native: &SldprtNative) -> Result<(), CodecError> {
 }
 
 fn mismatch<T>(family: &str) -> Result<T, CodecError> {
+    if matches!(family, "relation bindings" | "relation instances") {
+        return Err(CodecError::malformed(format_args!(
+            "SolidWorks feature-input {family} do not match the native payload"
+        )));
+    }
     Err(CodecError::malformed(format_args!(
         "SolidWorks feature-input {family} does not match its native payload"
     )))
