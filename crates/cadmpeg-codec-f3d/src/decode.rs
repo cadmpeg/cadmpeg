@@ -4127,6 +4127,12 @@ fn decode_result(
             )));
     }
     let mut untyped = retained.untyped;
+    // The manifest selector remains usable when an authored metadata field
+    // cannot be read, but that field has no typed document value. Retaining
+    // its original container bytes cannot authorize replay of that content.
+    if !scan.manifest_diagnostics.is_empty() {
+        untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
+    }
     if missing_images != 0 {
         untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
     }

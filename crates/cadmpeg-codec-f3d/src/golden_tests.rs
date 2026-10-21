@@ -1036,11 +1036,43 @@ fn geometry_depth_agrees_with_full_depth() {
         |result| {
             crate::decode::assert_projection_records_are_reported(result);
             let native = crate::test_support::native_test::f3d_native(result.ir());
-            let expected = crate::loss::unrepresented(&result.report().losses, &native);
-            for class in expected {
+            // Actual opaque geometry records and historical payloads are
+            // source content. Diagnostics about typed values are not an
+            // independent source record (#209 section 1.3).
+            if result
+                .ir()
+                .native_unknowns("f3d")
+                .is_some_and(|records| !records.is_empty())
+            {
                 assert!(
-                    result.source_fidelity().unrepresented().contains(&class),
-                    "F3D report has a source-only {class} record without declaring its class"
+                    result
+                        .source_fidelity()
+                        .unrepresented()
+                        .contains(&cadmpeg_ir::ArenaClass::Model),
+                    "opaque ASM records must declare omitted model content"
+                );
+            }
+            if native
+                .asm_histories
+                .iter()
+                .flat_map(crate::history_records::AsmHistory::states)
+                .flat_map(|state| &state.records)
+                .any(|record| !record.raw_bytes.is_empty())
+                || native
+                    .design_parameter_scopes
+                    .iter()
+                    .any(|scope| scope.payload().is_uninterpreted())
+                || native
+                    .sketch_curve_identities
+                    .iter()
+                    .any(|curve| curve.geometry.is_none())
+            {
+                assert!(
+                    result
+                        .source_fidelity()
+                        .unrepresented()
+                        .contains(&cadmpeg_ir::ArenaClass::Design),
+                    "uninterpreted design payload must declare omitted design content"
                 );
             }
         },
