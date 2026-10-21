@@ -37,6 +37,13 @@ fn roster_hoists_each_legal_form_and_preserves_row_json() {
             namespace.admit::<FastLoadOccurrences>().unwrap(),
             occurrences
         );
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| FastLoadOccurrences::from_namespace(
+                ctx, &namespace
+            ))
+            .unwrap(),
+            occurrences
+        );
         assert_eq!(serde_json::to_value(namespace).unwrap(), namespace_wire);
     }
 }

@@ -49,7 +49,8 @@ pub(crate) struct Scan<'a> {
     pub(crate) container: Container<'a>,
     /// Located and inflated Parasolid or preview streams.
     pub(crate) streams: Vec<Stream>,
-    source_untyped: std::cell::RefCell<cadmpeg_ir::ArenaClasses>,
+    /// Source classes retained without a typed representation during this scan.
+    pub(crate) source_untyped: std::cell::RefCell<cadmpeg_ir::ArenaClasses>,
 }
 
 impl Scan<'_> {
