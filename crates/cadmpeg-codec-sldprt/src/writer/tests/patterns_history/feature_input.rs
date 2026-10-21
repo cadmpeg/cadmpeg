@@ -763,6 +763,46 @@ fn semantic_writer_types_resolved_relation_scalar() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let native = sldprt_native(decoded.ir());
+    let lane = &native.feature_input_lanes[0];
+    assert_eq!(lane.sketch_entities.len(), 1);
+    assert_eq!(lane.sketch_entities[0].ordinal(), 0);
+    let relation = &lane.relation_instances[0];
+    assert_eq!(
+        relation.family,
+        crate::records::FeatureInputRelationFamily::PointPointDistance
+    );
+    assert_eq!(
+        relation
+            .operands
+            .iter()
+            .map(|operand| operand.entity_index)
+            .collect::<Vec<_>>(),
+        [0, 2]
+    );
+    // Operand 2 has no authored marker. This source relation does not create a
+    // typed length use that could prohibit changing the independent parameter.
+    assert!(
+        decoded
+            .ir()
+            .model
+            .sketch_constraints
+            .iter()
+            .all(|constraint| {
+                matches!(
+                    constraint.definition.kind(),
+                    cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { .. }
+                ) && constraint
+                    .definition
+                    .kind()
+                    .dimension_parameters()
+                    .unwrap()
+                    .is_empty()
+            }),
+        "constraints={:#?}",
+        decoded.ir().model.sketch_constraints
+    );
+    let scalar_id = relation.parameter_scalar_ref().unwrap().to_owned();
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = ir_edit
@@ -785,12 +825,28 @@ fn semantic_writer_types_resolved_relation_scalar() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_edited_history(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "native.records-omitted"
+            && loss.message.contains(&scalar_id)
+            && loss.message.contains(
+                "canonical parameter quantity does not match the retained native scalar quantity",
+            )
+    }));
+    assert_eq!(
+        plan.report().native_dispositions.record_disposition(
+            "sldprt",
+            "feature_input_scalars",
+            &scalar_id,
+        ),
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+    );
+    plan.write_to(&mut encoded).unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
