@@ -289,7 +289,12 @@ fn fixtures_replay_verbatim() {
 #[test]
 fn fixtures_survive_the_semantic_write_path() {
     let mut written_count = 0usize;
+    let mut unresolved_selection_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+            .unwrap();
+        let configurations = &decoded.ir().model.configurations;
         let expected = neutral_document(&bytes);
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
@@ -304,9 +309,47 @@ fn fixtures_survive_the_semantic_write_path() {
                     }
                 }
             }
-            SemanticOutcome::Refused { error } => panic!("fixture {name}: {error}"),
+            SemanticOutcome::Refused { error } => {
+                // C: both frozen source partitions are held, but neither is
+                // selected. A writer must not invent an active configuration.
+                assert_eq!(configurations.len(), 2, "fixture {name}: {error}");
+                assert!(
+                    configurations
+                        .iter()
+                        .all(|configuration| !configuration.active),
+                    "fixture {name}: {error}"
+                );
+                let slots = configurations
+                    .iter()
+                    .filter_map(|configuration| configuration.source_index)
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(
+                    slots,
+                    BTreeSet::from([0, 1]),
+                    "fixture {name}: exact source partition slots"
+                );
+                let bodies = configurations
+                    .iter()
+                    .flat_map(|configuration| configuration.bodies.iter().flatten())
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(
+                    bodies.len(),
+                    2,
+                    "fixture {name}: distinct source bodies stay held"
+                );
+                assert!(
+                    matches!(&error, cadmpeg_core::CodecError::Malformed(message)
+                    if message == "SLDPRT writing requires exactly one active configuration"),
+                    "fixture {name}: {error}"
+                );
+                unresolved_selection_count += 1;
+            }
         });
     }
+    assert_eq!(
+        unresolved_selection_count, 1,
+        "exactly the unresolved two-partition source is refused"
+    );
     assert!(
         written_count > 0,
         "no fixture reached the semantic writer, so this test exercised nothing; \
@@ -439,7 +482,9 @@ fn edited_blind_depth_writes_design_and_reports_stale_brep() {
             .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
         assert!(
             matches!(plan.report().write_path(), WritePath::Synthesized { .. }),
-            "fixture {name}"
+            "fixture {name}: path={:?}; losses={:?}",
+            plan.report().write_path(),
+            plan.report().losses,
         );
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();
