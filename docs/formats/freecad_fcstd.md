@@ -463,8 +463,9 @@ an expression alias only when that label is unique in the sketch. A one-entity a
 entity from the horizontal sketch axis. In a two-operand angle, negative geometry indices identify
 the horizontal or vertical sketch axis independently of their position field. A one-locus
 horizontal or vertical distance measures the
-locus from the sketch root point. The persisted endpoint-one selector of an isolated point resolves
-to the point entity, not to a nonexistent curve endpoint. Negative indices resolve through the
+locus from the sketch root point. For an isolated `Part::GeomPoint`, position codes `1` (start),
+`2` (end), and `3` (mid) all select the same point entity. They do not define distinct curve
+endpoints or a second center position. Negative indices resolve through the
 ordered external-reference entities. Invalid indices, unresolved operands, and future family codes
 remain explicit native relations rather than being guessed.
 CADIR decision: a missing or malformed `Type` is retained as a native constraint with kind
