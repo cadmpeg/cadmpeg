@@ -10,7 +10,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     pcurve::{PcurveGeometry, PcurveMetadata},
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::topology::Sense;
