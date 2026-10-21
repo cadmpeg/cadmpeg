@@ -575,7 +575,16 @@ fn an_edited_off_catalog_document_synthesizes_the_explicit_target() {
         inherited.report().write_path(),
         cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
-    assert_eq!(named_target(&inherited), "f3d:manifest-3-3-0-0");
+    assert_eq!(
+        named_target(&inherited),
+        result
+            .report()
+            .dialects()
+            .unwrap()
+            .primary()
+            .dialect()
+            .as_str()
+    );
     let mut inherited_bytes = Vec::new();
     inherited.write_to(&mut inherited_bytes).unwrap();
     let inherited_output = decode(inherited_bytes);
@@ -583,15 +592,14 @@ fn an_edited_off_catalog_document_synthesizes_the_explicit_target() {
         inherited_output.ir().model.points[0].position().get().x,
         moved.x + 1.0
     );
+    let inherited_layers = inherited_output.report().dialects().unwrap();
     assert_eq!(
-        inherited_output
-            .report()
-            .dialects()
-            .unwrap()
-            .primary()
-            .dialect()
-            .as_str(),
-        "f3d:manifest-3-3-0-0"
+        inherited_layers.primary().dialect(),
+        result.report().dialects().unwrap().primary().dialect()
+    );
+    assert_eq!(
+        inherited_layers.primary().declared()["top_level_manifest_version"],
+        "3-3-0-0"
     );
 
     // A real unsupported edit still requires synthesis, which has no target
