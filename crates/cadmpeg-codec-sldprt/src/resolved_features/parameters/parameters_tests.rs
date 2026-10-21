@@ -340,6 +340,26 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
     .expect("explicit scalar owner is writable");
     assert_eq!(lane.scalars[0].value.get(), 0.008);
     assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
+
+    // An unmatched native configuration does not inherit the global cache.
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut model = cadmpeg_ir::document::Model::default();
+    model.features = crate::history::project::project_features(&ctx, &histories).unwrap();
+    model.parameters = crate::history::parameters::project_parameters(&ctx, &histories).unwrap();
+    assert_eq!(model.parameters.len(), 1);
+    model.parameters[0].value = Some(cadmpeg_ir::features::ParameterValue::Length(
+        cadmpeg_ir::scalar::Length::new(99.0).unwrap(),
+    ));
+    lane.configuration = Some("99".into());
+    sync_feature_scalars(&model, &histories, std::slice::from_mut(&mut lane)).unwrap();
+    assert_eq!(lane.scalars[0].value.get(), 0.008);
+    assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
+    assert_eq!(
+        model.parameters[0].value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(99.0).unwrap(),
+        ))
+    );
 }
 
 #[test]
