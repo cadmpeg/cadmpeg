@@ -1160,6 +1160,21 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
                    z: 0.0,
                })));
 
+    let removed_use_parameters = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.as_ref() == Some(&decoded.ir().model.features[3].id))
+        .map(|parameter| {
+            (
+                parameter.id.clone(),
+                parameter.name.clone(),
+                parameter.value.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(removed_use_parameters.len(), 2);
     {
         let mut ir_edit = decoded.ir_mut();
         let blind = ir_edit.model.features[1].id.clone();
@@ -1249,8 +1264,31 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert_eq!(native[1].parameters["Depth2"], "9mm");
     assert_eq!(native[1].parameters["Draft"], "0.1rad");
     assert_eq!(native[3].properties["EndCondition"], "ThroughAll");
-    assert!(!native[3].parameters.contains_key("Depth"));
-    assert!(!native[3].parameters.contains_key("Depth2"));
+    // D1: ThroughAll removes both operation uses; independent parameters remain.
+    for (id, name, value) in removed_use_parameters {
+        assert!(native[3].parameters.contains_key(name.as_str()));
+        let parameter = regenerated
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == id)
+            .expect("same independent extrusion parameter");
+        assert_eq!(parameter.name, name);
+        assert_eq!(parameter.value, value);
+    }
+    assert!(matches!(
+        regenerated.ir().model.features[3].definition().operation(),
+        FeatureOperation::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::ThroughAll {},
+                    ..
+                }
+            },
+            ..
+        }
+    ));
     assert!(!native[3].properties.contains_key("Direction"));
 }
 
