@@ -541,23 +541,22 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(ledger.iter().any(|span| {
         span.entry == "Document.xml" && span.classification.as_str() == "structural"
     }));
-    let coverage: Vec<crate::native::ByteCoverageRecord> =
+    let coverage: crate::native::ByteCoverageRecord =
         crate::test_support::source_fidelity::layout(result.source_fidelity(), "byte-coverage");
-    assert_eq!(coverage.len(), 1);
-    assert!(coverage[0].exact);
-    assert_eq!(coverage[0].logical_entry_count, entries.len());
+    assert!(coverage.exact);
+    assert_eq!(coverage.logical_entry_count, entries.len());
     assert_eq!(
-        coverage[0].logical_byte_len,
+        coverage.logical_byte_len,
         entries
             .iter()
             .map(super::super::native::EntryRecord::byte_len)
             .sum::<u64>()
     );
     assert_eq!(
-        coverage[0].classification_bytes.values().sum::<u64>(),
-        coverage[0].logical_byte_len
+        coverage.classification_bytes.values().sum::<u64>(),
+        coverage.logical_byte_len
     );
-    assert!(coverage[0]
+    assert!(coverage
         .named_opaque_entries
         .contains(&"Payload.bin".to_owned()));
     let findings = crate::test_support::validate_native(result.ir());

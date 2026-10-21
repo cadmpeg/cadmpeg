@@ -286,13 +286,9 @@ fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
         .expect("container-only FCStd decode");
     assert!(result.report().container_only());
     assert!(result.ir().model.features.is_empty());
-    assert!(result
-        .ir()
-        .native
-        .namespace("fcstd")
-        .unwrap()
-        .arenas()
-        .contains_key("physical_ledger"));
+    let physical: Vec<crate::native::ArchiveSpan> =
+        crate::test_support::source_fidelity::layout(result.source_fidelity(), "physical-ledger");
+    assert!(!physical.is_empty());
     assert_valid(&result);
 }
 
