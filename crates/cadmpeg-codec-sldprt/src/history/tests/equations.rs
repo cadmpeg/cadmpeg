@@ -974,7 +974,11 @@ fn configuration_local_modeling_edits_without_brep_are_synthesized() {
         .unwrap();
     assert_eq!(
         inactive.parameter_value(regenerated.ir(), &regenerated_parameter.id),
-        Some(&ParameterValue::Length(Length::new(50.0).unwrap()))
+        Some(&ParameterValue::Length(Length::new(50.0).unwrap())),
+        "written configurations={:#?}; parameters={:#?}; native lanes={:#?}",
+        regenerated.ir().model.configurations,
+        regenerated.ir().model.parameters,
+        sldprt_native(regenerated.ir()).feature_input_lanes,
     );
     assert_eq!(
         inactive.parameter_value(regenerated.ir(), &regenerated_dependent.id),
