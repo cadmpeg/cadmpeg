@@ -2,7 +2,7 @@
 //! Record shadow-layer structs and their `ContainerScan` mappers, moved
 //! verbatim from `decode.rs`.
 
-use crate::source_bytes::SourceBytes as NativeBytes;
+use cadmpeg_ir::native::bytes::NativeBytes;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
@@ -405,7 +405,7 @@ pub(super) struct CreoLoopArrayRecord<'a> {
     attributes: u8,
     direction: u32,
     next_lo_ptr: u32,
-    body: crate::source_bytes::SourceBytes<&'a [u8]>,
+    body: cadmpeg_ir::native::bytes::NativeBytes<&'a [u8]>,
     pub(super) offset: usize,
     body_offset: usize,
     pub(super) source_section: &'a str,
@@ -2812,14 +2812,10 @@ pub(super) fn feature_operation_state_records<'a>(
                 .name
                 .stored_name_bytes()
                 .map(|bytes| String::from_utf8_lossy(bytes).into_owned()),
-            stored_name_bytes: state.name.stored_name_bytes().map(|bytes| {
-                let record = NativeBytes::from(bytes);
-                if std::str::from_utf8(bytes).is_err() {
-                    record.with_untyped(cadmpeg_ir::ArenaClass::Design)
-                } else {
-                    record
-                }
-            }),
+            stored_name_bytes: state
+                .name
+                .stored_name_bytes()
+                .map(|bytes| NativeBytes::from(bytes)),
             identifier_keyword: state.name.identifier_keyword(),
             stored_name_prefix: state
                 .name
@@ -3922,7 +3918,7 @@ mod tests {
     fn native_feature_reference_row_preserves_name_bytes() {
         let records = reference_name_records();
         assert_eq!(records[0].name, "A\u{fffd}");
-        assert_eq!(records[0].name_bytes, b"A\xff");
+        assert_eq!(records[0].name_bytes.as_ref(), b"A\xff");
     }
 
     #[test]
@@ -3934,7 +3930,7 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].owner_feature_id, 2);
         assert_eq!(records[0].header, [0, 0]);
-        assert_eq!(records[0].body, (&payload[3..]));
+        assert_eq!(records[0].body.as_ref(), &payload[3..]);
     }
     mod projection_admission;
 }
