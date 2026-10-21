@@ -1974,6 +1974,23 @@ fn compact_wide_assemble_scope_reads_owners_frames_and_wide_operand_paths() {
     assert!(alignment.operand_path_refs().is_none());
 }
 
+#[test]
+fn compact_wide_operand_flag_is_zero_or_one() {
+    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    let types = std::collections::HashMap::new();
+    let frames = |flag: u8| {
+        let (mut bytes, scope, owners) = compact_wide_scope_fixture(true);
+        bytes[21] = flag;
+        let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+        exact_assembly_alignment_with_types(&bytes, &records, &scope, &owners, &types)
+            .unwrap()
+            .and_then(|alignment| alignment.operand_frames())
+    };
+    assert!(frames(0).is_some());
+    assert!(frames(1).is_some());
+    assert!(frames(2).is_none());
+}
+
 mod axial;
 
 mod legacy_alignment;

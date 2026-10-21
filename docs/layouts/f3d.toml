@@ -16760,11 +16760,25 @@ source = "spec"
 anchor = "The 806-, 850- and 861-byte `Assemble` scopes use the compact wide"
 
 [[record.field]]
-name = "zero_run_21"
+name = "zero_run_11"
 offset = 11
-type = "bytes[21]"
+type = "bytes[10]"
 source = "spec"
-anchor = "Bytes 11 through 31 are zero"
+anchor = "Bytes 11 through 20 are zero"
+
+[[record.field]]
+name = "operand_flag"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "byte 21 is `0` or `1`"
+
+[[record.field]]
+name = "zero_run_22"
+offset = 22
+type = "bytes[10]"
+source = "spec"
+anchor = "bytes 22 through 31 are zero"
 
 [[record.field]]
 name = "first_operand_reference"
