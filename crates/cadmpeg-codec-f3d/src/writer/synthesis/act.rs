@@ -124,6 +124,42 @@ pub(super) fn reconcile(
             continue;
         };
         let meta_scope = format!("{prefix}MetaStream.dat");
+        // A root's current index and dynamic class are typed content. An
+        // explicit index edit does not require a caller to edit the redundant
+        // MetaStream membership list too. Register that actual root in its
+        // declared class, without reassigning an index held by another class.
+        for root in native
+            .act_root_components
+            .iter()
+            .filter(|record| record.stream() == scope)
+        {
+            if native.act_types.iter().any(|record| {
+                crate::ids::native_stream(record.id()) == Some(meta_scope.as_str())
+                    && record
+                        .entities
+                        .values()
+                        .any(|index| *index == u64::from(root.record_index))
+            }) {
+                continue;
+            }
+            let mut owners = native.act_types.iter_mut().filter(|record| {
+                crate::ids::native_stream(record.id()) == Some(meta_scope.as_str())
+                    && &record.class_tag == root.class_tag()
+            });
+            let Some(owner) = owners.next() else {
+                continue;
+            };
+            if owners.next().is_some() {
+                continue;
+            }
+            let entities = owner
+                .entities
+                .values()
+                .copied()
+                .chain([u64::from(root.record_index)])
+                .collect();
+            owner.set_entities(crate::records::identity::ReferenceRun::unlocated(entities));
+        }
         let types = native
             .act_types
             .iter()
@@ -151,9 +187,17 @@ pub(super) fn reconcile(
         native
             .act_entities
             .retain(|record| record.stream() != scope || registered(record.record_index()));
-        native
-            .act_root_components
-            .retain(|record| record.stream() != scope || registered(record.record_index));
+        native.act_root_components.retain(|record| {
+            record.stream() != scope
+                || (registered(record.record_index)
+                    && types.iter().any(|owner| {
+                        &owner.class_tag == record.class_tag()
+                            && owner
+                                .entities
+                                .values()
+                                .any(|index| *index == u64::from(record.record_index))
+                    }))
+        });
         if native
             .act_root_components
             .iter()
@@ -183,14 +227,20 @@ pub(super) fn reconcile(
             )
             .chain([table.record_index])
             .collect::<BTreeSet<_>>();
-        native
-            .act_table_references
-            .retain(|record| record.stream() != scope || known.contains(&record.target_record));
-        for record in native
-            .act_types
-            .iter_mut()
-            .filter(|record| crate::ids::native_stream(record.id()) == Some(meta_scope.as_str()))
-        {
+        native.act_table_references.retain(|record| {
+            if record.stream() != scope || known.contains(&record.target_record) {
+                return true;
+            }
+            losses.push(F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                "ACT table reference {} omits unresolved current record index {}",
+                record.id(),
+                record.target_record
+            )));
+            false
+        });
+        for record in native.act_types.iter_mut().filter(|record| {
+            ir.scope.model && crate::ids::native_stream(record.id()) == Some(meta_scope.as_str())
+        }) {
             let entities = record
                 .entities
                 .values()
