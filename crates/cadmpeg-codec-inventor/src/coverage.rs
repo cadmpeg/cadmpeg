@@ -36,6 +36,8 @@ pub(crate) const PRESENTATION_RECORD_ISSUES: CoverageKey =
 pub(crate) const PM_DC_PARAMETERS: CoverageKey = CoverageKey::new("pm_dc_parameters");
 pub(crate) const PM_DC_EXPRESSIONS: CoverageKey = CoverageKey::new("pm_dc_expressions");
 pub(crate) const PM_DC_UNITS: CoverageKey = CoverageKey::new("pm_dc_units");
+pub(crate) const PM_DC_PARAMETER_TABLES: CoverageKey = CoverageKey::new("pm_dc_parameter_tables");
+pub(crate) const PM_DC_MODEL_ROOTS: CoverageKey = CoverageKey::new("pm_dc_model_roots");
 pub(crate) const DESIGN_PARAMETERS_TRANSFERRED: CoverageKey =
     CoverageKey::new("design_parameters_transferred");
 pub(crate) const DESIGN_RECORD_ISSUES: CoverageKey = CoverageKey::new("design_record_issues");

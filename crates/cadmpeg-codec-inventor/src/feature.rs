@@ -1959,6 +1959,9 @@ mod tests {
             parameters: Vec::new(),
             expressions: Vec::new(),
             units: Vec::new(),
+            parameter_tables: Vec::new(),
+            model_roots: Vec::new(),
+            brep_segments: Vec::new(),
             issues: Vec::new(),
         };
         let sketch = crate::sketch::SketchInventory {

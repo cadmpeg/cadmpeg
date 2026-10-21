@@ -194,6 +194,22 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 
 **Need.** The count requires an exact referent before validation uses it. Nonempty constraint maps require exact locus semantics before neutral transfer. Each additional entity and relation requires its complete solved geometry, ordered operands, parameter role, and profile-boundary semantics.
 
+### DE-04. Parameter tables without a model owner
+
+**Question.** Which record owns a PmDc parameter table whose context reference is null, and what scope applies to its parameters?
+
+**Known.** These tables have flags `0x20` and two-entry member lists. No record references the table. Their parameters are referenced by records of type `b038b999d211c35b6000b3856c2387b0`. Their parameters remain native with a parameter-scope loss.
+
+**Need.** The owning record and its feature or sketch identity must be exact before these parameters can enter a neutral scope.
+
+### DE-05. Model-root and parameter-table fields
+
+**Question.** What do the model-root flags, the model-root values other than values 3 and 9, the model-root `scale` and `terminal_value`, the parameter-table member list, and the parameter-table suffix encode?
+
+**Known.** Value 3 references the root's parameter table and value 9 is null or repeats it. Value 12 is 1 in document model roots and 7 in flat-pattern model roots. The member list and the name map contain every parameter of the table and also other records. The suffix is retained by length.
+
+**Need.** The model graph, the flat-pattern definition operands, and the table membership rule must be exact before the flat-pattern model can transfer more than its parameter scope.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

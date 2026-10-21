@@ -231,11 +231,46 @@ A numeric expression record starts with `header_value:u32`, `header_id:u16`, and
 
 A unit definition record with type identifier `fd79a7f8d2118f09c0005a9a2378d04f` starts with `header_value:u32` and `header_id:u16`. It then stores numerator and denominator reference arrays, a Boolean visibility byte, and a derived-unit reference. Each reference array starts with u16 values `3, 0x3000` and a u32 count. A nonempty array then stores two u16 metadata values and the counted record references. An empty array ends after the count.
 
-One base-unit record selected by a unit definition's sole numerator supplies its dimension and display scale. Base-unit records contain `header_value:u32`, `header_id:u16`, `magnitude:f64`, and `factor:f64`. The supported scalar base units are millimetres (`bc204162d2119b0b60006ab760fec3b0`), metres (`f579a7f8d2118f09c0005a9a2378d04f`), inches (`f679a7f8d2118f09c0005a9a2378d04f`), feet (`f779a7f8d2118f09c0005a9a2378d04f`), radians (`f2cd305cd2113f0d60006ab760fec3b0`), degrees (`f0cd305cd2113f0d60006ab760fec3b0`), degree-equivalent grad units (`f6cd305cd2113f0d60006ab760fec3b0`), and dimensionless values (`23009d5fd2118e09c0005a9a2378d04f`). A transferable scalar unit has one numerator, no denominator, and no derived-unit reference.
+One base-unit record selected by a unit definition's sole numerator supplies its dimension and display scale. Base-unit records contain `header_value:u32`, `header_id:u16`, `magnitude:f64`, and `factor:f64`. The supported scalar base units are millimetres (`bc204162d2119b0b60006ab760fec3b0`), metres (`f579a7f8d2118f09c0005a9a2378d04f`), inches (`f679a7f8d2118f09c0005a9a2378d04f`), feet (`f779a7f8d2118f09c0005a9a2378d04f`), radians (`f2cd305cd2113f0d60006ab760fec3b0`), degrees (`f0cd305cd2113f0d60006ab760fec3b0`), degree-equivalent grad units (`f6cd305cd2113f0d60006ab760fec3b0`), dimensionless values (`23009d5fd2118e09c0005a9a2378d04f`), and unitless values (`22009d5fd2118e09c0005a9a2378d04f`). Unitless values are dimensionless and display the symbol `ul`. A transferable scalar unit has one numerator, no denominator, and no derived-unit reference.
 
 Length expression values and parameter model values use internal centimetres. Neutral evaluated lengths multiply the parameter model value by 10 to obtain millimetres. A displayed literal divides its internal value by the base-unit scale: 0.1 for millimetres, 100 for metres, 2.54 for inches, and 30.48 for feet. Angular model values use radians. A displayed degree literal divides its radian value by `pi/180`. Dimensionless values are unchanged.
 
 A neutral parameter transfers only when its unit definition, base unit, and complete expression graph resolve uniquely in the same segment. Parameter-reference expression nodes supply ordered dependency identities. Cyclic, null, cross-segment, ambiguous, non-finite, compound-unit, power-identity, and unresolved expression graphs remain native.
+
+A parameter's `context_reference` selects the parameter table that owns it. A parameter table is a PmDc record with type identifier `634d8790d011f8d10008cabc0663dc09`. Its payload contains:
+
+```text
+header_value u32
+header_id u16
+next_reference u32
+flags u32
+context_reference u32
+members type-2 reference list
+names type-6 name map
+suffix bytes[]
+```
+
+A type-6 name map starts with u16 values `6, 0x3000` and a u32 count. A nonempty map then stores two u32 metadata values. Each entry is a counted UTF-16LE parameter name followed by one PmDc reference. The member list and the name map both contain every parameter of the table. The suffix is retained.
+
+The table's `context_reference` selects the model root that owns the table. A null table context selects no model. A model root is a PmDc record with type identifier `164d8790d011f8d10008cabc0663dc09`. Its payload contains:
+
+```text
+header_value u32
+header_id u16
+next_reference u32
+flags u32
+identifier bytes[16]
+name counted UTF-16LE
+members type-2 reference list
+values u32[15]
+brep_segment counted UTF-16LE
+scale f64
+terminal_value u32
+```
+
+The payload ends after `terminal_value`. Value 3 is the PmDc reference to the root's parameter table. Value 9 is null or the same reference. `brep_segment` is the display name of the segment that stores the model's body. The document model root names the `PmBrepSegmentType` segment. The flat-pattern model root names the `MbBrepSegmentType` segment; the flat-pattern model and its `MbBrepSegmentType` and `MbGRxSegmentType` segments are present only when the part has a flat pattern.
+
+Parameter ownership requires exactly one document model root in the segment, exactly one segment with the display name the root names, and a name-map entry that references the parameter record under the parameter's own name. Parameters in a table whose context is the document model root are document parameters. Parameters in the parameter table of a flat-pattern model root belong to that flat-pattern model, which is one native feature after every document feature. The flat-pattern table repeats the names of the document sheet-metal parameters. Parameters in a table with a null context, or in a table whose model root does not resolve, have no established owner and remain native.
 
 ## 12. Planar sketches
 
