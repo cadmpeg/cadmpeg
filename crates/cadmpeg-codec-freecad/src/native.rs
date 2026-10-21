@@ -1271,12 +1271,6 @@ impl RetainedXml {
     pub(crate) fn end(&self) -> u64 {
         self.span.end()
     }
-    pub(crate) fn length(&self) -> u64 {
-        self.length
-    }
-    pub(crate) fn sha256(&self) -> &str {
-        &self.sha256
-    }
 }
 
 #[derive(Deserialize)]
