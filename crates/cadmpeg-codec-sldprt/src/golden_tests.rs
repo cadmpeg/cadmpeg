@@ -597,7 +597,7 @@ fn depths(ir: &mut cadmpeg_ir::CadIr) -> Vec<f64> {
     ir.model
         .features
         .iter()
-        .map(|feature| feature.definition())
+        .map(cadmpeg_ir::Feature::definition)
         .chain(
             ir.model
                 .configurations

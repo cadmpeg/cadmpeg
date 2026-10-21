@@ -85,7 +85,7 @@ fn semantic_writer_round_trips_typed_shell() {
             thickness: Some(actual_thickness),
             outward: Some(true),
             ..
-        }) if regenerated.ir().dimension_value(&actual_thickness).unwrap().get() == 3.0
+        }) if regenerated.ir().dimension_value(actual_thickness).unwrap().get() == 3.0
     ));
 }
 
@@ -158,7 +158,7 @@ fn semantic_writer_round_trips_typed_thicken() {
             thickness: Some(actual_thickness),
             side: Some(ThickenSide::Both),
             ..
-        }) if regenerated.ir().dimension_value(&actual_thickness).unwrap().get() == 3.0
+        }) if regenerated.ir().dimension_value(actual_thickness).unwrap().get() == 3.0
     ));
 }
 
@@ -192,7 +192,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
             faces: FaceSelection::Unresolved,
             thickness: Some(actual_thickness),
             side: Some(ThickenSide::Forward),
-        }) if decoded.ir().dimension_value(&actual_thickness).unwrap().get() == 6.0
+        }) if decoded.ir().dimension_value(actual_thickness).unwrap().get() == 6.0
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
@@ -210,9 +210,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
             )
             .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Thicken { thickness: _, .. }) =
-                definition
-            else {
+            let FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) = definition else {
                 panic!("typed positional thicken");
             };
         });
@@ -239,7 +237,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
             thickness: Some(actual_thickness),
             side: Some(ThickenSide::Forward),
             ..
-        }) if regenerated.ir().dimension_value(&actual_thickness).unwrap().get() == 8.5
+        }) if regenerated.ir().dimension_value(actual_thickness).unwrap().get() == 8.5
     ));
 }
 
@@ -272,7 +270,7 @@ fn semantic_writer_round_trips_typed_scale() {
             bodies: BodySelection::Native(selection),
             center: Some(ScaleCenter::Point(checked_geometry_1)),
             factors: ScaleFactors::Uniform { factor },
-        }) if (selection == "body:1" && decoded.ir().dimension_value(&factor).unwrap().get() == 2.0) && matches!(checked_geometry_1.get(), Point3 { x: 1.0, y: 2.0, z: 3.0 })
+        }) if (selection == "body:1" && decoded.ir().dimension_value(factor).unwrap().get() == 2.0) && matches!(checked_geometry_1.get(), Point3 { x: 1.0, y: 2.0, z: 3.0 })
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
@@ -824,9 +822,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
             )
             .unwrap();
         ir_edit.model.features[1].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Shell { thickness: _, .. }) =
-                definition
-            else {
+            let FeatureDefinition::Operation(FeatureOperation::Shell { .. }) = definition else {
                 panic!("typed shell");
             };
         });
@@ -839,8 +835,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
             )
             .unwrap();
         ir_edit.model.features[2].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Draft { angle: _, .. }) = definition
-            else {
+            let FeatureDefinition::Operation(FeatureOperation::Draft { .. }) = definition else {
                 panic!("typed draft");
             };
         });
@@ -1258,7 +1253,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
                 distance: actual_distance
             },
             ..
-        }) if decoded.ir().dimension_value(&actual_distance).unwrap().get() == 2.0
+        }) if decoded.ir().dimension_value(actual_distance).unwrap().get() == 2.0
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
@@ -1268,7 +1263,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
                 distance: actual_distance,
             },
             ..
-        }) if ( decoded.ir().dimension_value(&actual_distance).unwrap().get() == 3.0) && matches!(geometry_1.get(), Vector3 {
+        }) if ( decoded.ir().dimension_value(actual_distance).unwrap().get() == 3.0) && matches!(geometry_1.get(), Vector3 {
                     x: 1.0,
                     y: 0.0,
                     z: 0.0
@@ -1461,7 +1456,7 @@ fn semantic_writer_round_trips_typed_dome() {
             height: Some(actual_height),
             elliptical: Some(true),
             reverse: Some(true),
-        }) if (faces == "face:10,face:11") && regenerated.ir().dimension_value(&actual_height).unwrap().get() == 8.0
+        }) if (faces == "face:10,face:11") && regenerated.ir().dimension_value(actual_height).unwrap().get() == 8.0
     ));
 }
 
@@ -1744,7 +1739,7 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
             distance: actual_distance,
-        }) if decoded.ir().dimension_value(&actual_distance).unwrap().get() == 3.0
+        }) if decoded.ir().dimension_value(actual_distance).unwrap().get() == 3.0
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
@@ -1758,10 +1753,8 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
             .set_dimension(&feature_id, "/distance", Length::new(-4.5).unwrap())
             .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                distance: _,
-                ..
-            }) = definition
+            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. }) =
+                definition
             else {
                 panic!("localized offset plane");
             };
@@ -1788,7 +1781,7 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
             distance: actual_distance,
-        }) if regenerated.ir().dimension_value(&actual_distance).unwrap().get() == -4.5
+        }) if regenerated.ir().dimension_value(actual_distance).unwrap().get() == -4.5
     ));
 }
 

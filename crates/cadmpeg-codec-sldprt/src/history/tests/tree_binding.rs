@@ -75,7 +75,7 @@ fn decode_extracts_parametric_history() {
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        }) if (profile == &history.features[0].id) && result.ir().dimension_value(&actual_length).unwrap().get() == 12.5
+        }) if (profile == &history.features[0].id) && result.ir().dimension_value(actual_length).unwrap().get() == 12.5
     ));
     assert_eq!(
         result

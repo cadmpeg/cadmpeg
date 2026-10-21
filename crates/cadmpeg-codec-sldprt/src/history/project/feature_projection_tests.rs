@@ -687,18 +687,15 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let Some(diameter) = &shape.diameter() else {
         panic!("expected canonical threaded hole: {projected:?}");
     };
+    assert!((source_value(diameter, std::slice::from_ref(&canonical)).get() - 4.2).abs() < 1.0e-12);
     assert!(
-        (source_value(&diameter, std::slice::from_ref(&canonical)).get() - 4.2).abs() < 1.0e-12
-    );
-    assert!(
-        (source_value(&major_diameter, std::slice::from_ref(&canonical)).get() - 5.0).abs()
+        (source_value(major_diameter, std::slice::from_ref(&canonical)).get() - 5.0).abs()
             < 1.0e-12
     );
     assert!(
-        (source_value(&thread_depth, std::slice::from_ref(&canonical)).get() - 10.0).abs()
-            < 1.0e-12
+        (source_value(thread_depth, std::slice::from_ref(&canonical)).get() - 10.0).abs() < 1.0e-12
     );
-    assert!((source_value(&length, std::slice::from_ref(&canonical)).get() - 12.4).abs() < 1.0e-12);
+    assert!((source_value(length, std::slice::from_ref(&canonical)).get() - 12.4).abs() < 1.0e-12);
 }
 
 #[test]

@@ -229,7 +229,7 @@ fn semantic_writer_round_trips_helix() {
             shape: HelixShape::Cylindrical { law: cadmpeg_ir::features::HelixLaw::PitchRevolutions { pitch, revolutions } },
             clockwise: true,
             ..
-        }) if (decoded.ir().dimension_value(revolutions).unwrap().get() == 3.5 && (decoded.ir().dimension_value(pitch).unwrap().get() == -2.0) && decoded.ir().dimension_value(&actual_radius).unwrap().get() == 4.0) && matches!(checked_geometry_1.get(), Point3 {
+        }) if (decoded.ir().dimension_value(revolutions).unwrap().get() == 3.5 && (decoded.ir().dimension_value(pitch).unwrap().get() == -2.0) && decoded.ir().dimension_value(actual_radius).unwrap().get() == 4.0) && matches!(checked_geometry_1.get(), Point3 {
                 x: 1.0,
                 y: 2.0,
                 z: 3.0
@@ -303,7 +303,7 @@ fn semantic_writer_round_trips_helix() {
             shape: HelixShape::Cylindrical { law: cadmpeg_ir::features::HelixLaw::PitchRevolutions { pitch, revolutions } },
             clockwise: false,
             ..
-        }) if (regenerated.ir().dimension_value(revolutions).unwrap().get() == 9.25 && (regenerated.ir().dimension_value(pitch).unwrap().get() == 8.0) && regenerated.ir().dimension_value(&actual_radius).unwrap().get() == 7.0) && matches!(checked_geometry_1.get(), Point3 {
+        }) if (regenerated.ir().dimension_value(revolutions).unwrap().get() == 9.25 && (regenerated.ir().dimension_value(pitch).unwrap().get() == 8.0) && regenerated.ir().dimension_value(actual_radius).unwrap().get() == 7.0) && matches!(checked_geometry_1.get(), Point3 {
                 x: 4.0,
                 y: 5.0,
                 z: 6.0
@@ -344,7 +344,7 @@ fn semantic_writer_round_trips_slash_named_helix() {
             radius: actual_radius,
             shape: HelixShape::Cylindrical { law: cadmpeg_ir::features::HelixLaw::PitchRevolutions { pitch, revolutions } },
             ..
-        }) if decoded.ir().dimension_value(revolutions).unwrap().get() == 3.5 && (decoded.ir().dimension_value(pitch).unwrap().get() == 2.0) && decoded.ir().dimension_value(&actual_radius).unwrap().get() == 4.0
+        }) if decoded.ir().dimension_value(revolutions).unwrap().get() == 3.5 && (decoded.ir().dimension_value(pitch).unwrap().get() == 2.0) && decoded.ir().dimension_value(actual_radius).unwrap().get() == 4.0
     ));
 
     let id = decoded.ir().model.features[0].id.clone();
@@ -696,7 +696,7 @@ fn semantic_writer_round_trips_wrap() {
                 && targets == std::slice::from_ref(&face_id)
                 && native == &face
             )
-            && decoded.ir().dimension_value(&actual_depth).unwrap().get() == 2.0
+            && decoded.ir().dimension_value(actual_depth).unwrap().get() == 2.0
     )));
 
     {
@@ -746,7 +746,7 @@ fn semantic_writer_round_trips_wrap() {
         FeatureDefinition::Operation(FeatureOperation::Wrap {
             mode: WrapMode::Deboss { depth: actual_depth },
             ..
-        }) if regenerated.ir().dimension_value(&actual_depth).unwrap().get() == 3.5
+        }) if regenerated.ir().dimension_value(actual_depth).unwrap().get() == 3.5
     ));
 
     let scribed = regenerated;
@@ -845,7 +845,7 @@ fn semantic_writer_round_trips_move_copy_body() {
             }),
             copies: copy_count,
         }) if ( bodies.as_slice() == std::slice::from_ref(&body_id) && native == &body
-            && (decoded.ir().dimension_value(&angle).unwrap().get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12)
+            && (decoded.ir().dimension_value(angle).unwrap().get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12)
             && geometry_1.iter().map(|value| decoded.ir().dimension_value(value).unwrap().get()).collect::<Vec<_>>() == [1.0, 2.0, 3.0]
             && decoded.ir().dimension_value(copy_count) == Some(2)
             && matches!(geometry_2.get(), Point3 { x: 4.0, y: 5.0, z: 6.0 })
@@ -975,7 +975,7 @@ fn semantic_writer_round_trips_offset_surface() {
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: FaceSelection::Resolved { faces, native },
             distance: Some(actual_distance),
-        }) if (faces == std::slice::from_ref(&face_id) && native == &face) && decoded.ir().dimension_value(&actual_distance).unwrap().get() == 2.0
+        }) if (faces == std::slice::from_ref(&face_id) && native == &face) && decoded.ir().dimension_value(actual_distance).unwrap().get() == 2.0
     ));
 
     {
@@ -1013,7 +1013,7 @@ fn semantic_writer_round_trips_offset_surface() {
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             distance: Some(actual_distance),
             ..
-        }) if regenerated.ir().dimension_value(&actual_distance).unwrap().get() == -3.5
+        }) if regenerated.ir().dimension_value(actual_distance).unwrap().get() == -3.5
     ));
 }
 
@@ -1555,7 +1555,7 @@ fn semantic_writer_round_trips_extend_surface() {
             faces: FaceSelection::Resolved { faces, native },
             distance: Some(actual_distance),
             method: SurfaceExtension::Natural,
-        }) if (faces == std::slice::from_ref(&face_id) && native == &face) && decoded.ir().dimension_value(&actual_distance).unwrap().get() == 2.0
+        }) if (faces == std::slice::from_ref(&face_id) && native == &face) && decoded.ir().dimension_value(actual_distance).unwrap().get() == 2.0
     ));
 
     {
@@ -1601,7 +1601,7 @@ fn semantic_writer_round_trips_extend_surface() {
             distance: Some(actual_distance),
             method: SurfaceExtension::Linear,
             ..
-        }) if regenerated.ir().dimension_value(&actual_distance).unwrap().get() == 4.5
+        }) if regenerated.ir().dimension_value(actual_distance).unwrap().get() == 4.5
     ));
 }
 
@@ -1644,7 +1644,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
             ..
         }) if ( (edges == std::slice::from_ref(&edge_id) && edge_native == &edge
             && faces == std::slice::from_ref(&face_id) && face_native == &face)
-            && decoded.ir().dimension_value(&actual_distance).unwrap().get() == 2.0)
+            && decoded.ir().dimension_value(actual_distance).unwrap().get() == 2.0)
             && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
 
@@ -1737,7 +1737,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
                 distance: actual_distance
             },
             ..
-        }) if tangent.ir().dimension_value(&actual_distance).unwrap().get() == 4.0
+        }) if tangent.ir().dimension_value(actual_distance).unwrap().get() == 4.0
     ));
 }
 

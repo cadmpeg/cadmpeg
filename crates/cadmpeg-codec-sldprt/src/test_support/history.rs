@@ -19,7 +19,7 @@ use super::parasolid::triangle_body;
 use super::parasolid::vertex_use;
 use super::parasolid::world_point;
 
-/// Render canonical identities through the current SolidWorks name resolver.
+/// Render canonical identities through the current `SolidWorks` name resolver.
 pub(crate) fn rendered_parameter(
     ir: &cadmpeg_ir::CadIr,
     parameter: &cadmpeg_ir::features::DesignParameter,

@@ -2780,7 +2780,8 @@ mod tests {
             #[allow(dead_code)]
             value: Option<super::SketchInputLinks>,
         }
-        for key in ["display_text"] {
+        {
+            let key = "display_text";
             states_the_key(key, &refusal::<Display>(key));
         }
         for key in ["tree_parent", "parent_source_id"] {

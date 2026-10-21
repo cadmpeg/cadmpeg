@@ -40,7 +40,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
-            }, Some(actual_diameter),) if (placements.is_none()) && decoded.ir().dimension_value(&actual_diameter).unwrap().get() == 6.35 && decoded.ir().dimension_value(&actual_length).unwrap().get() == 12.0)));
+            }, Some(actual_diameter),) if (placements.is_none()) && decoded.ir().dimension_value(actual_diameter).unwrap().get() == 6.35 && decoded.ir().dimension_value(actual_length).unwrap().get() == 12.0)));
 
     {
         let mut ir = decoded.ir_mut();
@@ -114,7 +114,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
                     cadmpeg_ir::features::holes::PartialPair::First(actual_diameter),
                 ),
                 ..
-            }, Some(actual_diameter_2),) if decoded.ir().dimension_value(&actual_diameter).unwrap().get() == 10.0 && decoded.ir().dimension_value(&actual_diameter_2).unwrap().get() == 6.0)));
+            }, Some(actual_diameter_2),) if decoded.ir().dimension_value(actual_diameter).unwrap().get() == 10.0 && decoded.ir().dimension_value(actual_diameter_2).unwrap().get() == 6.0)));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             ref placements,
@@ -124,7 +124,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Unresolved(None),
                 ..
-            }, Some(actual_diameter),) if (placements.is_none()) && decoded.ir().dimension_value(&actual_diameter).unwrap().get() == 5.0)));
+            }, Some(actual_diameter),) if (placements.is_none()) && decoded.ir().dimension_value(actual_diameter).unwrap().get() == 5.0)));
 
     for index in 0..2 {
         let mut detached = decoded.ir().clone();
@@ -321,7 +321,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
                     depth: actual_depth,
                 },
                 ..
-            },) if decoded.ir().dimension_value(&actual_diameter).unwrap().get() == 10.0 && decoded.ir().dimension_value(&actual_depth).unwrap().get() == 4.0 && decoded.ir().dimension_value(&actual_length).unwrap().get() == 20.0)));
+            },) if decoded.ir().dimension_value(actual_diameter).unwrap().get() == 10.0 && decoded.ir().dimension_value(actual_depth).unwrap().get() == 4.0 && decoded.ir().dimension_value(actual_length).unwrap().get() == 20.0)));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
@@ -333,7 +333,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
                     angle: value,
                 },
                 ..
-            },) if ((decoded.ir().dimension_value(&value).unwrap().get() - 82f64.to_radians()).abs() < 1.0e-12) && decoded.ir().dimension_value(&actual_diameter).unwrap().get() == 9.0)));
+            },) if ((decoded.ir().dimension_value(value).unwrap().get() - 82f64.to_radians()).abs() < 1.0e-12) && decoded.ir().dimension_value(actual_diameter).unwrap().get() == 9.0)));
 
     let depth_id = decoded
         .ir()

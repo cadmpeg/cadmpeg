@@ -43,9 +43,9 @@ fn semantic_writer_round_trips_typed_sweep() {
                     op: cadmpeg_ir::features::SolidSweepOperation::NewBody
                 },
             )
-                if decoded.ir().dimension_value(&scale).unwrap().get() == 1.5 && profile == &profile_a
+                if decoded.ir().dimension_value(scale).unwrap().get() == 1.5 && profile == &profile_a
             && path_ref == &path
-            && (decoded.ir().dimension_value(&twist).unwrap().get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12)));
+            && (decoded.ir().dimension_value(twist).unwrap().get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12)));
 
     {
         let mut ir_edit = decoded.ir_mut();
@@ -192,7 +192,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
             scale: None,
             ..
         }) if shape.section_is_unresolved()
-            && matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::Surface {},) if regenerated.ir().dimension_value(&actual_twist).unwrap().get() == 0.5)));
+            && matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::Surface {},) if regenerated.ir().dimension_value(actual_twist).unwrap().get() == 0.5)));
 }
 
 #[test]
@@ -581,7 +581,7 @@ fn semantic_writer_round_trips_typed_rib() {
         (Some(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)),)
             if (
                 (profile == &profile_ref && (decoded.ir().dimension_value(value).unwrap().get() - 5f64.to_radians()).abs() < 1.0e-12)
-                && decoded.ir().dimension_value(&actual_thickness).unwrap().get() == 2.0
+                && decoded.ir().dimension_value(actual_thickness).unwrap().get() == 2.0
             )
             && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 1.0, z: 0.0 })
     )));

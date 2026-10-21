@@ -1526,8 +1526,8 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
             ] if first_parameter.get() == 0.0
             && second_parameter.get() == 1.0
-            && source_value(&actual_radius, &history.features).get() == 2.0
-            && source_value(&actual_radius_2, &history.features).get() == 3.0) && selections.len() == 1
+            && source_value(actual_radius, &history.features).get() == 2.0
+            && source_value(actual_radius_2, &history.features).get() == 3.0) && selections.len() == 1
     ));
     lane.edge_selections.push(selection);
     let mut projected = [cadmpeg_ir::features::Feature {
@@ -1722,8 +1722,8 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
             ] if first_parameter.get() == 0.0
             && second_parameter.get() == 1.0
-            && source_value(&actual_radius, &history.features).get() == 2.0
-            && source_value(&actual_radius_2, &history.features).get() == 3.0) && selections.len() == 1
+            && source_value(actual_radius, &history.features).get() == 2.0
+            && source_value(actual_radius_2, &history.features).get() == 3.0) && selections.len() == 1
     ));
 }
 
@@ -1795,8 +1795,8 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
             ] if first_parameter.get() == 0.0
             && second_parameter.get() == 1.0
-            && source_value(&actual_radius, &history.features).get() == 50.0
-            && source_value(&actual_radius_2, &history.features).get() == 4.0) && selections.len() == 1
+            && source_value(actual_radius, &history.features).get() == 50.0
+            && source_value(actual_radius_2, &history.features).get() == 4.0) && selections.len() == 1
     ));
 
     let mut collision = selection;

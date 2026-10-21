@@ -587,7 +587,7 @@ fn semantic_writer_uses_neutral_dimension_properties_over_native_edits() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("written dimension properties decode");
-    assert_eq!(regenerated.ir().model.parameters[0].driving, false);
+    assert!(!regenerated.ir().model.parameters[0].driving);
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_histories[0].features[0].dimension_properties
             ["Depth"]["Driven"],
@@ -634,7 +634,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
                 },
                 op: BooleanOp::Unresolved,
                 ..
-            }) if decoded.ir().dimension_value(&actual_length).unwrap().get() == 200.0
+            }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 200.0
         ),
         "{first_definition:?}"
     );
@@ -651,7 +651,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        }) if decoded.ir().dimension_value(&actual_length).unwrap().get() == 3.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 3.0
     ));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
@@ -666,7 +666,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        }) if decoded.ir().dimension_value(&actual_length).unwrap().get() == 4.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 4.0
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
@@ -728,7 +728,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        }) if regenerated.ir().dimension_value(&actual_length).unwrap().get() == 250.0
+        }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 250.0
     ));
     assert!(matches!(
         regenerated.ir().model.features[1].evaluation.definition(),
@@ -743,7 +743,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        }) if regenerated.ir().dimension_value(&actual_length).unwrap().get() == 4.5
+        }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 4.5
     ));
     assert!(matches!(
         regenerated.ir().model.features[2].evaluation.definition(),
@@ -758,7 +758,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        }) if regenerated.ir().dimension_value(&actual_length).unwrap().get() == 4.0
+        }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 4.0
     ));
 
     regenerated.ir_mut().model.parameters[0].expression = "225".into();
@@ -909,7 +909,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             },
             op: BooleanOp::Join,
             ..
-        }) if (profile == &profile_feature) && decoded.ir().dimension_value(&actual_length).unwrap().get() == 2.0
+        }) if (profile == &profile_feature) && decoded.ir().dimension_value(actual_length).unwrap().get() == 2.0
     ));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
@@ -927,7 +927,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             },
             op: BooleanOp::NewBody,
             ..
-        }) if ( ((decoded.ir().dimension_value(value).unwrap().get() - 5f64.to_radians()).abs() < 1.0e-12) && decoded.ir().dimension_value(&actual_length).unwrap().get() == 4.0)
+        }) if ( ((decoded.ir().dimension_value(value).unwrap().get() - 5f64.to_radians()).abs() < 1.0e-12) && decoded.ir().dimension_value(actual_length).unwrap().get() == 4.0)
         && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert!(matches!(
@@ -949,7 +949,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             },
             op: BooleanOp::Cut,
             ..
-        }) if decoded.ir().dimension_value(&actual_length).unwrap().get() == 3.0 && decoded.ir().dimension_value(&actual_length_2).unwrap().get() == 7.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 3.0 && decoded.ir().dimension_value(actual_length_2).unwrap().get() == 7.0
     ));
     assert!(matches!(
        decoded.ir().model.features[4].evaluation.definition(),
@@ -1280,7 +1280,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
                 radius: actual_radius,
             },
             ..
-        }] if (selection == "edge:1,edge:2") && decoded.ir().dimension_value(&actual_radius).unwrap().get() == 2.0)
+        }] if (selection == "edge:1,edge:2") && decoded.ir().dimension_value(actual_radius).unwrap().get() == 2.0)
     ));
 
     {
@@ -1331,7 +1331,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
                 radius: actual_radius,
             },
             ..
-        }] if regenerated.ir().dimension_value(&actual_radius).unwrap().get() == 3.5)
+        }] if regenerated.ir().dimension_value(actual_radius).unwrap().get() == 3.5)
     ));
 }
 
@@ -1376,7 +1376,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
             radius: RadiusSpec::Constant {
                 radius: actual_radius
             }, ..
-        }] if decoded.ir().dimension_value(&actual_radius).unwrap().get() == 1.0)
+        }] if decoded.ir().dimension_value(actual_radius).unwrap().get() == 1.0)
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
@@ -1389,7 +1389,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
                 distance: actual_distance,
                 angle,
             },
-        }] if ((decoded.ir().dimension_value(&angle).unwrap().get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12) && decoded.ir().dimension_value(&actual_distance).unwrap().get() == 0.3)
+        }] if ((decoded.ir().dimension_value(angle).unwrap().get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12) && decoded.ir().dimension_value(actual_distance).unwrap().get() == 0.3)
     ));
     assert_eq!(
         decoded.ir().model.parameters[1].value,
@@ -1450,7 +1450,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
                 radius: actual_radius
             },
             ..
-        }] if regenerated.ir().dimension_value(&actual_radius).unwrap().get() == 2.5)
+        }] if regenerated.ir().dimension_value(actual_radius).unwrap().get() == 2.5)
     ));
     assert!(matches!(
         regenerated.ir().model.features[1].evaluation.definition(),
@@ -1463,7 +1463,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
                 angle,
             },
             ..
-        }] if ((regenerated.ir().dimension_value(&angle).unwrap().get() - 30.0_f64.to_radians()).abs() < 1.0e-12) && regenerated.ir().dimension_value(&actual_distance).unwrap().get() == 0.6)
+        }] if ((regenerated.ir().dimension_value(angle).unwrap().get() - 30.0_f64.to_radians()).abs() < 1.0e-12) && regenerated.ir().dimension_value(actual_distance).unwrap().get() == 0.6)
     ));
 }
 
@@ -1693,7 +1693,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
                 distance: actual_distance,
             },
             ..
-        }] if (edges == "edge:1") && decoded.ir().dimension_value(&actual_distance).unwrap().get() == 2.0)
+        }] if (edges == "edge:1") && decoded.ir().dimension_value(actual_distance).unwrap().get() == 2.0)
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
@@ -1706,7 +1706,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
                 second: actual_second,
             },
             ..
-        }] if decoded.ir().dimension_value(&actual_first).unwrap().get() == 3.0 && decoded.ir().dimension_value(&actual_second).unwrap().get() == 6.35)
+        }] if decoded.ir().dimension_value(actual_first).unwrap().get() == 3.0 && decoded.ir().dimension_value(actual_second).unwrap().get() == 6.35)
     ));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
@@ -1719,7 +1719,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
                 angle,
             },
             ..
-        }] if ((decoded.ir().dimension_value(&angle).unwrap().get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12) && decoded.ir().dimension_value(&actual_distance).unwrap().get() == 4.0)
+        }] if ((decoded.ir().dimension_value(angle).unwrap().get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12) && decoded.ir().dimension_value(actual_distance).unwrap().get() == 4.0)
     ));
 
     {

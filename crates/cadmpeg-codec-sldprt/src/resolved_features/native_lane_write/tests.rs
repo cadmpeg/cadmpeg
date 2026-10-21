@@ -252,7 +252,7 @@ fn native_configuration_statements_join_the_authored_scalar_lane() {
             lane.names
                 .iter()
                 .filter(|name| {
-                    name.object_id.and_then(|id| id.value()) == owner.source_value()
+                    name.object_id.and_then(crate::records::ObjectId::value) == owner.source_value()
                         && name.value == owner.name
                 })
                 .count(),
