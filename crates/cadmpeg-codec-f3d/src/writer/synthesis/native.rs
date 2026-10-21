@@ -410,7 +410,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     super::body_keys::reconcile(target, &mut native)?;
     super::geometry::reconcile(target, &mut native);
     super::design::regenerate(target, &mut native, losses)?;
-    super::design::sketch::report_constraint_reductions(target, &native, losses)?;
+    super::design::sketch::reduce_constraint_fields(target, &native, losses)?;
     target.model.assembly_joints.clear();
     target.native.0.remove("f3d");
     super::design::with_context(|ctx| {
