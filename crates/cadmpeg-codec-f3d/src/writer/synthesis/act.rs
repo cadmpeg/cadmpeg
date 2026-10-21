@@ -187,3 +187,6 @@ pub(super) fn reconcile(
     });
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
