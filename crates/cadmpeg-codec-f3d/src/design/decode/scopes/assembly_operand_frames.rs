@@ -56,6 +56,7 @@ pub(super) fn exact_assembly_operand_frames(
         crate::design::assembly::AssemblyOperandFrameVariant::Standard => (28, 40, 168, 180),
         crate::design::assembly::AssemblyOperandFrameVariant::Compact => (24, 36, 164, 176),
         crate::design::assembly::AssemblyOperandFrameVariant::Axial => (28, 39, 167, 178),
+        crate::design::assembly::AssemblyOperandFrameVariant::Wide => (37, 55, 259, 277),
     };
     if usize::try_from(scope.paired_byte_offset()).ok()?
         != start.checked_add(usize::try_from(scope.frame_length()).ok()?)?
@@ -105,6 +106,18 @@ pub(super) fn exact_assembly_operand_frames(
             ) && bytes
                 .get(start + standard_tail_marker_offset..start + standard_tail_marker_offset + 4)?
                 != [0; 4]
+        {
+            return None;
+        }
+    } else if matches!(
+        frame_variant,
+        crate::design::assembly::AssemblyOperandFrameVariant::Wide
+    ) {
+        if bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
+            || !matches!(bytes.get(start + 25), Some(0 | 1))
+            || bytes.get(start + 26..start + 37)? != [0; 11]
+            || bytes.get(start + 48..start + 55)? != [0; 7]
+            || bytes.get(start + 270..start + 277)? != [0; 7]
         {
             return None;
         }

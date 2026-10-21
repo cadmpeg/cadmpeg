@@ -16671,3 +16671,61 @@ offset = 37
 type = "u64"
 source = "spec"
 anchor = "a marked u64 component-definition reference"
+
+[[record]]
+name = "assembly_wide_operand_path_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A wide operand-path locator is the locator of the 945-byte `Assemble` scope."
+note = "This size-less byte record describes the fixed prefix through the optional transform. The scope backlink, wrapper reference, constant 2 and zero tail follow one zero byte after the identity flag or the transform."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its eleven-byte\nheader is followed by 28 zero bytes"
+
+[[record.field]]
+name = "zero_run_28"
+offset = 11
+type = "bytes[28]"
+source = "spec"
+anchor = "header is followed by 28 zero bytes"
+
+[[record.field]]
+name = "constant_three"
+offset = 39
+type = "u32"
+source = "spec"
+anchor = "u32 value 3 at offset 39"
+
+[[record.field]]
+name = "zero_run_13"
+offset = 43
+type = "bytes[13]"
+source = "spec"
+anchor = "13 zero bytes"
+
+[[record.field]]
+name = "nonzero_record_reference"
+offset = 56
+type = "bytes[11]"
+source = "spec"
+anchor = "a nonzero marked same-segment reference at offset 56"
+
+[[record.field]]
+name = "identity_flag"
+offset = 67
+type = "u8"
+source = "spec"
+anchor = "an identity flag byte\nat offset 67"
+
+[[record.field]]
+name = "transform"
+offset = 68
+type = "f64[16]"
+source = "spec"
+anchor = "a row-major rigid 4×4 transform at offset\n68"
+

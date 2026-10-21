@@ -240,6 +240,19 @@ pub(super) fn exact_assembly_alignment_with_types(
                 {
                     return None;
                 }
+            } else if matches!(
+                generation.operand_frame_variant(),
+                Some(crate::design::assembly::AssemblyOperandFrameVariant::Wide)
+            ) {
+                // The wide scope lists its four owners first in its reference table.
+                if !scope
+                    .reference_members()
+                    .values()
+                    .take(owners.len())
+                    .eq(owners.iter().map(|owner| &owner.value))
+                {
+                    return None;
+                }
             } else if !scope
                 .reference_members()
                 .values()

@@ -4915,3 +4915,25 @@ pub(crate) mod root_instance_prefix {
     /// Offset of `component_reference` (`u64`, little-endian). Spec §3.1.
     pub(crate) const COMPONENT_REFERENCE: usize = 37;
 }
+
+/// Byte offsets for the `assembly_wide_operand_path_locator` record.
+///
+/// Spec §Assembly operands.
+///
+/// ```text
+/// This size-less byte record describes the fixed prefix through the optional transform. The scope backlink, wrapper reference, constant 2 and zero tail follow one zero byte after the identity flag or the transform.
+/// ```
+pub(crate) mod assembly_wide_operand_path_locator {
+    /// Offset of `zero_run_28` (`bytes[28]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_28: usize = 11;
+    /// Offset of `constant_three` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const CONSTANT_THREE: usize = 39;
+    /// Offset of `zero_run_13` (`bytes[13]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_13: usize = 43;
+    /// Offset of `nonzero_record_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const NONZERO_RECORD_REFERENCE: usize = 56;
+    /// Offset of `identity_flag` (`u8`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_FLAG: usize = 67;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const TRANSFORM: usize = 68;
+}

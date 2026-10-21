@@ -103,36 +103,54 @@ fn valid_assembly_operand_path_link(
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     );
-    let locator_length = if variable_reference {
-        variable_path_locator::LEN
+    let wide = matches!(
+        design::assembly::AssemblyScopeGeneration::new(
+            scope.frame_length(),
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
+        )
+        .operand_frame_variant(),
+        Some(design::assembly::AssemblyOperandFrameVariant::Wide)
+    );
+    // A wide locator is 97 bytes without its transform and 225 with it; its
+    // backlink and wrapper reference are 28 and 17 bytes before its end.
+    let locator_length = if wide {
+        match path.byte_offset().checked_sub(link.locator_byte_offset) {
+            Some(length @ (97 | 225)) => length,
+            _ => return false,
+        }
     } else {
-        path_locator::LEN
-    };
-    let Ok(locator_length) = u64::try_from(locator_length) else {
-        return false;
+        let length = if variable_reference {
+            variable_path_locator::LEN
+        } else {
+            path_locator::LEN
+        };
+        let Ok(length) = u64::try_from(length) else {
+            return false;
+        };
+        length
     };
     let Some(path_byte_offset) = link.locator_byte_offset.checked_add(locator_length) else {
         return false;
     };
-    let scope_backlink = if variable_reference {
-        variable_path_locator::SCOPE_BACKLINK + 1
+    let (scope_backlink, wrapper_reference) = if wide {
+        (locator_length - 28 + 1, locator_length - 17 + 1)
+    } else if variable_reference {
+        (
+            u64_from_index(variable_path_locator::SCOPE_BACKLINK + 1),
+            u64_from_index(variable_path_locator::WRAPPER_REFERENCE + 1),
+        )
     } else {
-        path_locator::SCOPE_BACKLINK + 1
+        (
+            u64_from_index(path_locator::SCOPE_BACKLINK + 1),
+            u64_from_index(path_locator::WRAPPER_REFERENCE + 1),
+        )
     };
-    let Some(locator_scope_reference_offset) = link
-        .locator_byte_offset
-        .checked_add(u64_from_index(scope_backlink))
+    let Some(locator_scope_reference_offset) = link.locator_byte_offset.checked_add(scope_backlink)
     else {
         return false;
     };
-    let wrapper_reference = if variable_reference {
-        variable_path_locator::WRAPPER_REFERENCE + 1
-    } else {
-        path_locator::WRAPPER_REFERENCE + 1
-    };
-    let Some(wrapper_reference_offset) = link
-        .locator_byte_offset
-        .checked_add(u64_from_index(wrapper_reference))
+    let Some(wrapper_reference_offset) = link.locator_byte_offset.checked_add(wrapper_reference)
     else {
         return false;
     };
@@ -2169,6 +2187,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     operand_frame_variant,
                     Some(design::assembly::AssemblyOperandFrameVariant::Axial)
                 );
+                let wide_frames = matches!(
+                    operand_frame_variant,
+                    Some(design::assembly::AssemblyOperandFrameVariant::Wide)
+                );
                 let as_built_frames = scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::AsBuilt
                     && scope.frame_length() == 399;
@@ -2179,14 +2201,18 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 );
                 let as_built_421 = as_built_421_generation.is_some();
                 let operand_paths = alignment.operand_path_refs();
-                let frame_reference_offsets = if axial_frames {
+                let frame_reference_offsets = if wide_frames {
+                    [38, 260]
+                } else if axial_frames {
                     [29, 168]
                 } else if compact_frames {
                     [25, 165]
                 } else {
                     [29, 169]
                 };
-                let frame_transform_offsets = if axial_frames {
+                let frame_transform_offsets = if wide_frames {
+                    [55, 277]
+                } else if axial_frames {
                     [39, 178]
                 } else if compact_frames {
                     [36, 176]
@@ -2526,6 +2552,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 .take(2)
                                 .eq(limit_reference_indices.iter())
                     })
+                } else if wide_frames {
+                    // The wide scope lists its four owners first.
+                    scope
+                        .reference_members()
+                        .values()
+                        .take(alignment.owners.len())
+                        .eq(alignment.owners.iter().map(|owner| &owner.value))
                 } else if design::assembly::variable_reference_assembly_generation(
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),

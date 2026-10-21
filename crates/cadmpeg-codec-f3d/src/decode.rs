@@ -2751,6 +2751,7 @@ impl<'a> F3dDecodeSession<'a> {
             &prereqs.design_parameter_scopes,
             &prereqs.design_component_occurrences,
             &component_inserts,
+            &prereqs.design_joint_motions,
         );
         self.ir.model.assembly_joints = joints.joints;
         self.report.losses.extend(joints.losses);
