@@ -45,6 +45,17 @@ pub(crate) enum AssemblyOperandFrameVariant {
     /// Operand references 18 bytes before their transforms, each transform
     /// followed by an LP-UTF16 GUID (the 945-byte `Assemble` scope).
     Wide,
+    /// The wide operand form five bytes earlier (the 806-, 850- and 861-byte
+    /// `Assemble` scopes).
+    CompactWide,
+}
+
+impl AssemblyOperandFrameVariant {
+    /// Whether the scope lists its owners first and uses the wide
+    /// operand-path locator.
+    pub(crate) fn is_wide_family(self) -> bool {
+        matches!(self, Self::Wide | Self::CompactWide)
+    }
 }
 
 /// Whether a scope belongs to the variable-reference `Assemble` generation.
@@ -79,7 +90,9 @@ enum AssemblyAlignmentLanes {
 impl AssemblyScopeGeneration {
     /// Classify the scope's three coupled layout projections.
     pub(crate) fn new(frame_length: u64, class_tag: &str, paired_class_tag: &str) -> Self {
-        use AssemblyOperandFrameVariant::{Axial, Compact, LegacyClass388, Standard, Wide};
+        use AssemblyOperandFrameVariant::{
+            Axial, Compact, CompactWide, LegacyClass388, Standard, Wide,
+        };
         let (operand_frame, lanes, locator_offsets) = match frame_length {
             399 => (None, Some((4, 0, 4)), Some([51, 62])),
             604 => (None, Some((8, 4, 8)), None),
@@ -94,6 +107,8 @@ impl AssemblyScopeGeneration {
             744 => ((class_tag == "430" && paired_class_tag == "262").then_some(Compact), Some((8, 4, 8)), Some([362, 373])),
             748 => ((class_tag == "430" && paired_class_tag == "262").then_some(Standard), Some((8, 4, 8)), Some([366, 377])),
             772 => (Some(Axial), Some((10, 8, 10)), None),
+            806 | 861 => (Some(CompactWide), Some((4, 0, 4)), Some([534, 545])),
+            850 => (Some(CompactWide), Some((4, 0, 4)), Some([530, 541])),
             945 => (Some(Wide), Some((4, 0, 4)), Some([541, 552])),
             length if length == u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
                 (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
@@ -1282,6 +1297,9 @@ mod tests {
             (744, 8, (4, 8)),
             (748, 8, (4, 8)),
             (705, 6, (4, 6)),
+            (806, 4, (0, 4)),
+            (850, 4, (0, 4)),
+            (861, 4, (0, 4)),
             (945, 4, (0, 4)),
             (671, 6, (4, 6)),
             (772, 10, (8, 10)),

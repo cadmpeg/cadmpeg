@@ -1501,6 +1501,18 @@ order, and they are the first four entries of its reference table. The
 operand-path-locator count is at offset 537 and the two marked locator
 references are at offsets 541 and 552.
 
+The 806-, 850- and 861-byte `Assemble` scopes use the compact wide
+operand-frame form. Bytes 11 through 31 are zero, the operand references are
+at offsets 32 and 254, seven zero bytes follow each reference, rigid
+row-major transforms start at offsets 50 and 272, and an LP-UTF16 GUID follows
+each transform. The four parameter owners are the angle, X, Y, and Z alignment
+lanes in owner-local order and are the first four entries of the reference
+table. The two operand-path locators are wide operand-path locators; their
+marked references are at offsets 534 and 545 in the 806- and 861-byte scopes
+and at offsets 530 and 541 in the 850-byte scope, after the count 2. A wide or
+compact wide scope whose operand paths do not read keeps its two frames
+without qualifiers.
+
 A wide operand-path locator is the locator of the 945-byte `Assemble` scope.
 Its record type GUID is `2E3AC990-483D-4A55-8662-C064B976A957`. Its eleven-byte
 header is followed by 28 zero bytes, u32 value 3 at offset 39, 13 zero bytes,

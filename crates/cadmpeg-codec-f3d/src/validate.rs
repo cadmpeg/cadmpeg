@@ -103,15 +103,13 @@ fn valid_assembly_operand_path_link(
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     );
-    let wide = matches!(
-        design::assembly::AssemblyScopeGeneration::new(
-            scope.frame_length(),
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        )
-        .operand_frame_variant(),
-        Some(design::assembly::AssemblyOperandFrameVariant::Wide)
-    );
+    let wide = design::assembly::AssemblyScopeGeneration::new(
+        scope.frame_length(),
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
+    )
+    .operand_frame_variant()
+    .is_some_and(design::assembly::AssemblyOperandFrameVariant::is_wide_family);
     // A wide locator is 97 bytes without its transform and 225 with it; its
     // backlink and wrapper reference are 28 and 17 bytes before its end.
     let locator_length = if wide {
@@ -2191,6 +2189,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     operand_frame_variant,
                     Some(design::assembly::AssemblyOperandFrameVariant::Wide)
                 );
+                let compact_wide_frames = matches!(
+                    operand_frame_variant,
+                    Some(design::assembly::AssemblyOperandFrameVariant::CompactWide)
+                );
                 let as_built_frames = scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::AsBuilt
                     && scope.frame_length() == 399;
@@ -2203,6 +2205,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 let operand_paths = alignment.operand_path_refs();
                 let frame_reference_offsets = if wide_frames {
                     [38, 260]
+                } else if compact_wide_frames {
+                    [33, 255]
                 } else if axial_frames {
                     [29, 168]
                 } else if compact_frames {
@@ -2212,6 +2216,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 };
                 let frame_transform_offsets = if wide_frames {
                     [55, 277]
+                } else if compact_wide_frames {
+                    [50, 272]
                 } else if axial_frames {
                     [39, 178]
                 } else if compact_frames {
@@ -2407,9 +2413,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             _ => false,
                         }
                     }
+                    // Frames without qualifiers: an axial scope, or a wide scope
+                    // whose operand paths do not read.
                     Some(records::feature::assembly::DesignAssemblyAlignmentForm::Frames {
                         ..
-                    }) => axial_frames,
+                    }) => axial_frames || wide_frames || compact_wide_frames,
                     Some(records::feature::assembly::DesignAssemblyAlignmentForm::LimitsOnly {
                         ..
                     }) => as_built_421,
@@ -2552,7 +2560,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 .take(2)
                                 .eq(limit_reference_indices.iter())
                     })
-                } else if wide_frames {
+                } else if wide_frames || compact_wide_frames {
                     // The wide scope lists its four owners first.
                     scope
                         .reference_members()

@@ -1784,3 +1784,63 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
 mod axial;
 
 mod legacy_alignment;
+
+#[test]
+fn compact_wide_assemble_scope_reads_its_two_operand_frames() {
+    // An 806-byte scope: references at 32 and 254, transforms at 50 and 272.
+    let mut bytes = vec![0_u8; 806 + 11];
+    bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"285");
+    bytes[7..11].copy_from_slice(&10_u32.to_le_bytes());
+    for (reference_at, transform_at, target, z) in [(32, 50, 17_u32, 0.0), (254, 272, 45, 1.7)] {
+        bytes[reference_at] = 1;
+        bytes[reference_at + 1..reference_at + 5].copy_from_slice(&target.to_le_bytes());
+        let rows: [[f64; 4]; 4] = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, 0.0],
+            [0.0, 1.0, 0.0, z],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        for (ordinal, value) in rows.iter().flatten().enumerate() {
+            let at = transform_at + ordinal * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes[806..810].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[810..813].copy_from_slice(b"262");
+    bytes[813..817].copy_from_slice(&10_u32.to_le_bytes());
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+        DesignFeatureKind::Assemble,
+        10,
+    );
+    scope.class_tag = DesignClassTag::try_from("285".to_owned()).unwrap();
+    scope.paired_class_tag = DesignClassTag::try_from("262".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 806;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let read = |bytes: &[u8]| {
+        crate::design::decode::scopes::assembly_operand_frames::exact_assembly_operand_frames(
+            bytes, &scope,
+        )
+    };
+    let [first, second] = read(&bytes).expect("compact wide frames");
+    assert_eq!(
+        (first.reference_record_index, first.transform_offset),
+        (17, 50)
+    );
+    assert_eq!(
+        (second.reference_record_index, second.transform_offset),
+        (45, 272)
+    );
+    assert_eq!(second.transform.rows()[2][3], 1.7);
+
+    // The prologue before the first reference is zero.
+    bytes[25] = 1;
+    assert!(read(&bytes).is_none());
+}
