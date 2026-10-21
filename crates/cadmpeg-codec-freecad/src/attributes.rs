@@ -198,7 +198,20 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<AttributeValue>> {
         }
         return Some(vec![AttributeValue::Reference(property.id.clone())]);
     }
-    if property.family == crate::native::PropertyFamily::Map {
+    if matches!(
+        property.family,
+        crate::native::PropertyFamily::Map
+            | crate::native::PropertyFamily::List
+            | crate::native::PropertyFamily::Placement
+            | crate::native::PropertyFamily::Matrix
+            | crate::native::PropertyFamily::Expression
+            | crate::native::PropertyFamily::Link
+    ) || matches!(
+        property.type_name.as_str(),
+        "Materials::PropertyMaterial"
+            | "Spreadsheet::PropertyColumnWidths"
+            | "Spreadsheet::PropertyRowHeights"
+    ) {
         return Some(vec![AttributeValue::Reference(property.id.clone())]);
     }
     let mut projected = Vec::new();
@@ -221,11 +234,13 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<AttributeValue>> {
         }
         let scalar = attributes.get("value").or_else(|| attributes.get("Value"));
         let item = match value.tag.as_str() {
-            "String" | "Unicode" => scalar.map(|value| AttributeValue::String(value.clone())),
+            "String" | "Unicode" | "Uuid" => {
+                scalar.map(|value| AttributeValue::String(value.clone()))
+            }
             "Bool" => scalar
                 .and_then(|value| crate::native::parse_bool(value))
                 .map(AttributeValue::Boolean),
-            "Integer" | "Int" | "Unsigned" => scalar
+            "Integer" | "Int" | "Unsigned" | "PropertyColor" => scalar
                 .and_then(|value| value.parse().ok())
                 .map(AttributeValue::Integer),
             "Float" | "Double" | "Quantity" | "PropertyFloat" => scalar
@@ -242,7 +257,14 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<AttributeValue>> {
                     _ => None,
                 }
             }
-            _ if scalar.is_none() && value.text.as_deref().is_none_or(str::is_empty) => continue,
+            _ if scalar.is_none()
+                && value
+                    .text
+                    .as_deref()
+                    .is_none_or(|text| text.trim().is_empty()) =>
+            {
+                continue;
+            }
             _ => return None,
         }?;
         projected.push(item);

@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::native::{PropertyFamily, RetainedXml, ValueRecord};
+use cadmpeg_ir::Codec;
 use std::collections::BTreeMap;
 
 #[test]
@@ -143,5 +144,131 @@ fn complex_links_reference_their_complete_ordered_typed_property() {
     assert_eq!(
         serde_json::to_value(&stored[0]).unwrap(),
         serde_json::to_value(&property).unwrap()
+    );
+}
+
+#[test]
+fn readable_registered_structures_keep_their_typed_property_authority() {
+    for (type_name, tag, attrs) in [
+        (
+            "App::PropertyExpressionEngine",
+            "ExpressionEngine",
+            vec![("count", "0")],
+        ),
+        (
+            "App::PropertyLinkSubList",
+            "LinkSubList",
+            vec![("count", "0")],
+        ),
+        (
+            "App::PropertyIntegerList",
+            "IntegerList",
+            vec![("count", "0")],
+        ),
+        ("App::PropertyBoolList", "BoolList", vec![("value", "")]),
+        (
+            "App::PropertyPlacement",
+            "PropertyPlacement",
+            vec![("Px", "40")],
+        ),
+        (
+            "Materials::PropertyMaterial",
+            "PropertyMaterial",
+            vec![("uuid", "material-id")],
+        ),
+        (
+            "Spreadsheet::PropertyColumnWidths",
+            "ColumnInfo",
+            vec![("Count", "0")],
+        ),
+        (
+            "Spreadsheet::PropertyRowHeights",
+            "RowInfo",
+            vec![("Count", "0")],
+        ),
+    ] {
+        let property = PropertyRecord {
+            id: "fcstd:native:property#Owner:Extra".into(),
+            owner: "fcstd:native:object#Owner".into(),
+            name: "Extra".into(),
+            type_name: type_name.into(),
+            family: crate::persistence::property_family(type_name),
+            status: None,
+            order: 0,
+            body: PropertyBody::Persisted {
+                values: vec![ValueRecord {
+                    tag: tag.into(),
+                    order: 0,
+                    parent: None,
+                    attributes: attrs
+                        .into_iter()
+                        .map(|(key, value)| (key.into(), value.into()))
+                        .collect(),
+                    decoded_json: None,
+                    text: Some("\n  ".into()),
+                    raw_xml: "unused source evidence".into(),
+                }],
+                links: Vec::new(),
+                side_entries: Vec::new(),
+                dynamic: None,
+            },
+            xml: RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
+        };
+        let before = property.clone();
+        assert_eq!(
+            values(&property),
+            Some(vec![AttributeValue::Reference(property.id.clone())]),
+            "{type_name}"
+        );
+        assert_eq!(
+            property, before,
+            "{type_name}: ordered typed values stay authoritative"
+        );
+    }
+}
+
+#[test]
+fn formatting_whitespace_does_not_hide_an_enumeration_index() {
+    let source = r#"<Document SchemaVersion="4"><Objects Count="0"/><ObjectData Count="0"/><Properties Count="1"><Property name="UnitSystem" type="App::PropertyEnumeration"><Integer value="1"/><CustomEnumList count="2">
+      <Enum value="First"/><Enum value="Second"/>
+    </CustomEnumList></Property></Properties></Document>"#;
+    let decoded = crate::FcstdCodec
+        .decode(
+            &mut std::io::Cursor::new(crate::test_support::test_archive::archive(source)),
+            &cadmpeg_ir::DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(
+        decoded.report().losses.is_empty(),
+        "{:?}",
+        decoded.report().losses
+    );
+    let attribute = decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "UnitSystem")
+        .unwrap();
+    assert_eq!(attribute.values, vec![AttributeValue::Integer(1)]);
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<PropertyRecord>("properties")
+        .unwrap();
+    let property = properties
+        .iter()
+        .find(|property| property.name == "UnitSystem")
+        .unwrap();
+    assert_eq!(
+        property
+            .values()
+            .iter()
+            .filter(|value| value.tag == "Enum")
+            .map(|value| value.attributes["value"].as_str())
+            .collect::<Vec<_>>(),
+        vec!["First", "Second"]
     );
 }
