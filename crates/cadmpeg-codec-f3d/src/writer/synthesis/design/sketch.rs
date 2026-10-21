@@ -214,6 +214,33 @@ fn constraints(
     Ok(constraints)
 }
 
+fn matching_constraint<'a>(
+    stated: &cadmpeg_ir::sketches::SketchConstraint,
+    projected: &'a [cadmpeg_ir::sketches::SketchConstraint],
+    consumed: &std::collections::HashSet<cadmpeg_ir::SketchConstraintId>,
+) -> Option<&'a cadmpeg_ir::sketches::SketchConstraint> {
+    if let Some(exact) = projected
+        .iter()
+        .find(|candidate| candidate.id == stated.id && !consumed.contains(&candidate.id))
+    {
+        return Some(exact);
+    }
+    let mut matches = projected.iter().filter(|candidate| {
+        if consumed.contains(&candidate.id) {
+            return false;
+        }
+        // A different supported native carrier can project the same canonical
+        // constraint. Compare every document field under that identity mapping;
+        // source carrier bindings do not supply constraint content.
+        let mut mapped = (*candidate).clone();
+        mapped.id.clone_from(&stated.id);
+        mapped.native_ref.clone_from(&stated.native_ref);
+        mapped == *stated
+    });
+    let candidate = matches.next()?;
+    matches.next().is_none().then_some(candidate)
+}
+
 pub(in crate::writer::synthesis) fn reduce_constraint_fields(
     target: &mut CadIr,
     native: &F3dNative,
@@ -228,8 +255,9 @@ pub(in crate::writer::synthesis) fn reduce_constraint_fields(
         target.tolerances.linear.get(),
     )?;
     let mut omitted = std::collections::HashSet::new();
+    let mut consumed = std::collections::HashSet::new();
     for stated in &mut target.model.sketch_constraints {
-        let Some(written) = projected.iter().find(|written| written.id == stated.id) else {
+        let Some(written) = matching_constraint(stated, &projected, &consumed) else {
             let definition = serde_json::to_string(&stated.definition)
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
             losses.push(
@@ -241,6 +269,7 @@ pub(in crate::writer::synthesis) fn reduce_constraint_fields(
             omitted.insert(stated.id.clone());
             continue;
         };
+        consumed.insert(written.id.clone());
         if stated.definition != written.definition {
             use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
             let mut entity_only = false;
@@ -288,3 +317,6 @@ pub(in crate::writer::synthesis) fn reduce_constraint_fields(
         .retain(|constraint| !omitted.contains(&constraint.id));
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
