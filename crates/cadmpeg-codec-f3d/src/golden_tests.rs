@@ -1052,12 +1052,25 @@ fn geometry_depth_agrees_with_full_depth() {
                     "opaque ASM records must declare omitted model content"
                 );
             }
-            if native
-                .asm_histories
-                .iter()
-                .flat_map(crate::history_records::AsmHistory::states)
-                .flat_map(|state| &state.records)
-                .any(|record| !record.raw_bytes.is_empty())
+            let raw_recipe = native.design_edge_operands.iter().any(|operand| {
+                !operand.recipe_program.is_empty()
+                    && operand.recipe_structure.is_none()
+                    && operand.surface_patch_recipe_structure.is_none()
+            }) || native.design_face_operands.iter().any(|operand| {
+                !operand.recipe_program.is_empty()
+                    && (operand.recipe_nodes.is_empty()
+                        || operand
+                            .recipe_nodes
+                            .iter()
+                            .any(|node| node.recipe_structure.is_none()))
+            });
+            if raw_recipe
+                || native
+                    .asm_histories
+                    .iter()
+                    .flat_map(crate::history_records::AsmHistory::states)
+                    .flat_map(|state| &state.records)
+                    .any(|record| !record.raw_bytes.is_empty())
                 || native
                     .design_parameter_scopes
                     .iter()

@@ -4136,12 +4136,26 @@ fn decode_result(
     if missing_images != 0 {
         untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
     }
+    // Indexed recipe envelopes do not supply their construction semantics.
+    let raw_recipe = native.design_edge_operands.iter().any(|operand| {
+        !operand.recipe_program.is_empty()
+            && operand.recipe_structure.is_none()
+            && operand.surface_patch_recipe_structure.is_none()
+    }) || native.design_face_operands.iter().any(|operand| {
+        !operand.recipe_program.is_empty()
+            && (operand.recipe_nodes.is_empty()
+                || operand
+                    .recipe_nodes
+                    .iter()
+                    .any(|node| node.recipe_structure.is_none()))
+    });
     // These typed source envelopes explicitly contain uninterpreted payloads;
     // their raw frames travel in fidelity, never as synthesized content.
-    if native
-        .design_parameter_scopes
-        .iter()
-        .any(|scope| scope.payload().is_uninterpreted())
+    if raw_recipe
+        || native
+            .design_parameter_scopes
+            .iter()
+            .any(|scope| scope.payload().is_uninterpreted())
         || native
             .sketch_curve_identities
             .iter()
