@@ -1799,7 +1799,6 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     .iter()
     .any(invalid_identity));
 
-    let mut native = crate::native::F3dNative::load(ir.native.namespace("f3d").unwrap()).unwrap();
     native.design_record_headers.push(DesignRecordHeader {
         id: format!("{stream}:record-header#1315"),
         record_index: 103,
@@ -1812,8 +1811,12 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
+    assert!(crate::test_support::with_decode_context(|decode| {
+        let ctx = super::Ctx::new(&ir, &native, decode);
+        let mut findings = Vec::new();
+        let groups = super::validate_construction_operand_identities(&ctx, &mut findings);
+        assert!(groups.is_empty());
+        findings
     })
     .iter()
     .any(invalid_identity));
