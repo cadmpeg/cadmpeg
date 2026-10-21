@@ -1031,16 +1031,21 @@ fn semantic_writer_round_trips_cut_with_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_edited_history(
+    let write_path = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
     )
     .unwrap();
+    let synthesized = matches!(
+        write_path,
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    );
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let emitted_face = selections::triangle_face(decoded.ir(), regenerated.ir(), &face_id);
+    let emitted_face =
+        selections::triangle_face(decoded.ir(), regenerated.ir(), &face_id, synthesized);
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(regenerated.ir().model.bodies.len(), 1);
     assert_eq!(
@@ -1199,17 +1204,23 @@ fn filled_surface_round_trip(
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_edited_history(
+    let write_path = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
     )
     .unwrap();
+    let synthesized = matches!(
+        write_path,
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    );
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let emitted_face = selections::triangle_face(decoded.ir(), regenerated.ir(), &face_id);
-    let emitted_edge = selections::line_edge(decoded.ir(), regenerated.ir(), &edge_id);
+    let emitted_face =
+        selections::triangle_face(decoded.ir(), regenerated.ir(), &face_id, synthesized);
+    let emitted_edge =
+        selections::topology_edge(decoded.ir(), regenerated.ir(), &edge_id, synthesized);
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Boundary"], emitted_edge.as_str());
     assert_eq!(native.properties["SupportFaces"], emitted_face.as_str());
@@ -1333,17 +1344,23 @@ fn semantic_writer_round_trips_trim_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_edited_history(
+    let write_path = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
     )
     .unwrap();
+    let synthesized = matches!(
+        write_path,
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    );
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let emitted_face = selections::triangle_face(decoded.ir(), regenerated.ir(), &face_id);
-    let emitted_edge = selections::line_edge(decoded.ir(), regenerated.ir(), &edge_id);
+    let emitted_face =
+        selections::triangle_face(decoded.ir(), regenerated.ir(), &face_id, synthesized);
+    let emitted_edge =
+        selections::topology_edge(decoded.ir(), regenerated.ir(), &edge_id, synthesized);
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Faces"], emitted_face.as_str());
     assert_eq!(native.properties["Tool"], emitted_edge.as_str());
@@ -1639,17 +1656,23 @@ fn semantic_writer_round_trips_projected_curve() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_edited_history(
+    let write_path = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
     )
     .unwrap();
+    let synthesized = matches!(
+        write_path,
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    );
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let emitted_face = selections::triangle_face(decoded.ir(), regenerated.ir(), &face_id);
-    let emitted_edge = selections::line_edge(decoded.ir(), regenerated.ir(), &edge_id);
+    let emitted_face =
+        selections::triangle_face(decoded.ir(), regenerated.ir(), &face_id, synthesized);
+    let emitted_edge =
+        selections::topology_edge(decoded.ir(), regenerated.ir(), &edge_id, synthesized);
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Source"], emitted_edge.as_str());
     assert_eq!(native.properties["TargetFaces"], emitted_face.as_str());
