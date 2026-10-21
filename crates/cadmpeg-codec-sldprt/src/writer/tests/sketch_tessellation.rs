@@ -335,11 +335,14 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::Malformed(message)
-            if message.contains("conflicting positions")
-    ));
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_core::CodecError::Malformed(message)
+                if message.contains("conflicting positions")
+        ),
+        "{error}"
+    );
 }
 
 #[test]
@@ -721,6 +724,36 @@ fn synthesis_writes_supported_lanes_from_neutral_content() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
+    // The source names Default but its BREP partition names Config1. Retain
+    // that ambiguity as a negative control before explicitly selecting the
+    // intended authored configuration for this document-edit writer fixture.
+    assert!(decoded
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .all(|configuration| !configuration.active));
+    let error = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .err()
+        .expect("source does not choose an active configuration");
+    assert!(
+        error
+            .to_string()
+            .contains("requires exactly one active configuration"),
+        "{error}"
+    );
+    let selected = decoded
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .position(|configuration| configuration.name == "Default")
+        .unwrap();
+    decoded.ir_mut().model.configurations[selected].active = true;
     let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
