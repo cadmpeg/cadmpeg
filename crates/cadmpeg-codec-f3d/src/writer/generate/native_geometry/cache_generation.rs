@@ -56,6 +56,14 @@ fn chart_matches(construction: &ProceduralSurface, cache: &NurbsSurface) -> bool
     let Some(bounds) = construction.record_bounds() else {
         return true;
     };
+    // Native extrusion/revolution interpret the first pair as an external U
+    // chart. A generic four-corner interpretation cannot prove that chart.
+    if matches!(
+        construction.definition(),
+        ProceduralSurfaceDefinition::Extrusion(_) | ProceduralSurfaceDefinition::Revolution(_)
+    ) {
+        return false;
+    }
     let [Some(u0), Some(v0), Some(u1), Some(v1)] = bounds.get() else {
         return false;
     };
