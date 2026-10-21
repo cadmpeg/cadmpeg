@@ -187,7 +187,7 @@ fn author_one_box(ir: &CadIr) -> CadIr {
     let mut value = serde_json::to_value(ir).unwrap();
     value["model"]["features"] = json!([{
         "id": "cadir:design:feature#OnlyBox", "ordinal": 0, "name": "OnlyBox", "suppressed": false, "needs_recompute": false,
-        "source_tag": "Part::Box", "definition": {"definition": "primitive", "op": "new_body", "solid": {"kind": "box", "length": {"kind":"literal","value":2.0}, "width": {"kind":"literal","value":3.0}, "height": {"kind":"literal","value":4.0}}}
+        "source_tag": "Part::Box", "definition": {"definition": "primitive", "placement": null, "op": "new_body", "solid": {"kind": "box", "length": {"kind":"literal","value":2.0}, "width": {"kind":"literal","value":3.0}, "height": {"kind":"literal","value":4.0}}}
     }]);
     CadIr::from_json(&value.to_string()).unwrap()
 }

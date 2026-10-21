@@ -7,7 +7,7 @@ use std::fs;
 #[cfg(feature = "fcstd")]
 use cadmpeg_ir::document::DimensionEditError;
 #[cfg(any(feature = "fcstd", feature = "sldprt"))]
-use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{Dimension, FeatureOperation};
 use cadmpeg_ir::features::{Expression, FeatureId, ParameterId, ParameterValue};
 use cadmpeg_ir::report::{
     export::{ExportReport, WritePath},
@@ -40,8 +40,8 @@ fn extrusion_length(ir: &CadIr) -> BoundLength {
         .iter()
         .find_map(|feature| {
             if !matches!(
-                feature.definition(),
-                FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+                feature.definition().operation(),
+                FeatureOperation::Extrude { .. }
             ) {
                 return None;
             }
