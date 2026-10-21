@@ -182,6 +182,14 @@ pub(crate) fn incomplete_expression_parameters(
             let unit = parameter.properties.get("unit").map(String::as_str);
             if parameter.value.is_none()
                 || unit.is_some_and(|unit| !matches!(unit, "millimeter" | "inch" | "degree"))
+                || parameter.expression.tokens.iter().any(|token| match token {
+                    cadmpeg_ir::features::ExpressionToken::Text(text) => {
+                        crate::native::om::expression_parameter_names(text)
+                            .next()
+                            .is_some()
+                    }
+                    cadmpeg_ir::features::ExpressionToken::Parameter(_) => false,
+                })
                 || parameter
                     .expression
                     .dependencies()
