@@ -801,6 +801,10 @@ fn version_prefix_route_proves_the_complete_delegate_and_map_forwarding() {
             "access.next_element::<serde_json::Value>()?",
         ),
         (
+            "MapAccessDeserializer::new(\n            access,",
+            "MapAccessDeserializer::new(\n            (access,),",
+        ),
+        (
             "super::CadIrReadWire::deserialize(",
             "OpenWire::deserialize(",
         ),

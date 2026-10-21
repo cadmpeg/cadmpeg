@@ -235,7 +235,7 @@ fn prefix_preserves_keys(symbol: &SymbolKey, index: &SourceIndex) -> bool {
         return false;
     }
     same(source, read.block.span(), "{ deserializer.deserialize_any(self) }")
-        && same(source, map.block.span(), "{ cadmpeg_core::distinct_keys::json_object(serde::de::value::MapAccessDeserializer::new(access)).map(Value::Object) }")
+        && same(source, map.block.span(), "{ cadmpeg_core::distinct_keys::json_object(serde::de::value::MapAccessDeserializer::new(access,)).map(Value::Object) }")
         && same(source, sequence.block.span(), "{ let mut values = Vec::new(); while let Some(value) = access.next_element_seed(Self)? { values.push(value); } Ok(Value::Array(values)) }")
         && matches!(resolve_receiver_path(&context(&prefix), &PathShape {
             segments: vec!["cadmpeg_core".into(), "distinct_keys".into(), "json_object".into()], absolute: false,
