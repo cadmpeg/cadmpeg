@@ -12,6 +12,25 @@ use cadmpeg_ir::features::ConfigurationId;
 use cadmpeg_ir::features::DesignConfiguration;
 use std::collections::BTreeMap;
 
+/// Resolve structural configuration differences against the canonical base.
+fn effective_definition<'a>(
+    ir: &'a cadmpeg_ir::CadIr,
+    configuration: &'a DesignConfiguration,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+) -> Option<&'a cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::ConfigurationFeatureState;
+    match configuration.feature_states.get(feature_id) {
+        Some(ConfigurationFeatureState::Suppressed {}) => None,
+        Some(ConfigurationFeatureState::Definition { definition }) => Some(definition),
+        Some(ConfigurationFeatureState::Active {}) | None => ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id == *feature_id)
+            .map(|feature| feature.evaluation.definition()),
+    }
+}
+
 #[test]
 fn history_from_nameless_block_keeps_annotation_owner() {
     let payload = br#"<Keywords Name="Part"><Configuration Name="Default"/><Feature id="1" Name="Boss"/></Keywords>"#;
