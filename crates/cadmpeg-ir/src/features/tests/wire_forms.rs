@@ -640,7 +640,7 @@ fn an_unknown_key_beside_the_hole_shape_is_rejected_by_name() {
 
 #[test]
 fn hole_wire_rejects_cross_form_thread_fields() {
-    use crate::features::{holes::HoleSpecification, FeatureDefinition};
+    use crate::features::{holes::HoleSpecification, FeatureDefinition, FeatureOperation};
 
     let specification = |kind| {
         serde_json::json!({
@@ -688,16 +688,22 @@ fn hole_wire_rejects_cross_form_thread_fields() {
     let mut native_with_standard = serde_json::json!({
         "definition": "hole",
         "shape": {
-            "kind": {
-                "kind": "threaded",
+            "construction": {
+                "construction": "native_thread",
                 "major_diameter": {"kind":"literal","value":8.0},
                 "thread_depth": {"kind":"literal","value":12.0},
                 "drill_point_angle": {"kind":"literal","value":2.0}
-            }
+            },
+            "diameter": {"kind":"literal","value":6.0}
         }
     });
-    native_with_standard["shape"]["specification"] = specification("threaded");
-    assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard).is_err());
+    assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard.clone()).is_ok());
+    native_with_standard["shape"]["construction"]["specification"] = specification("threaded");
+    assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard.clone()).is_err());
+    let error = serde_json::from_value::<FeatureOperation>(native_with_standard)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown field `specification`"), "{error}");
 }
 
 #[test]
