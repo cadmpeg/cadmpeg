@@ -204,7 +204,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         "2 typed feature(s) retain native or unresolved required operation operands.",
         "1 body delete/keep feature(s) retain selected native body identities without a decoded retention mode.",
     ] {
-        assert!(report.losses.iter().any(|loss| loss.message == expected));
+        assert!(report.losses.iter().any(|loss| loss.message == expected), "expected {expected}; actual losses: {:?}", report.losses);
     }
     // #209 D20 removed per-configuration outputs/dependencies. Preserve the
     // exact identities deleted by WIP 8702b20bd in their canonical base homes;
