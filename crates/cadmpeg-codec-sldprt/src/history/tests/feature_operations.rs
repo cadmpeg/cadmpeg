@@ -398,7 +398,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         ]
     );
     assert_eq!(
-        decoded.ir().model.features[2].source_properties["Algorithm"],
+        sldprt_native(decoded.ir()).feature_histories[0].features[2].properties["Algorithm"],
         "RollingBall"
     );
     assert!(matches!(
@@ -424,23 +424,20 @@ fn decode_dispatches_typed_features_by_xml_family() {
 
     {
         let mut ir = decoded.ir_mut();
-        let updated_ir_evaluation = &mut ir.model.features[2].evaluation;
-        let mut updated_ir_definition = updated_ir_evaluation.definition().clone();
-        let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
-            &mut updated_ir_definition
-        else {
-            panic!("typed custom fillet");
-        };
-        let RadiusSpec::Constant { radius } = &mut groups[0].radius else {
-            panic!("constant fillet");
-        };
-        *radius =
-            cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap());
-        updated_ir_evaluation.set_definition(updated_ir_definition);
-        ir.model.features[2].source_properties.insert(
-            cadmpeg_core::nonblank_literal!("Algorithm"),
-            "FaceBlend".into(),
-        );
+        let feature_id = ir.model.features[2].id.clone();
+        ir.set_dimension(
+            &feature_id,
+            "/groups/0/radius/radius",
+            cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
+        )
+        .unwrap();
+        assert!(ir.model.features[2].needs_recompute);
+        crate::test_support::native::update_sldprt_native(&mut ir, |native| {
+            native.feature_histories[0].features[2].properties.insert(
+                cadmpeg_core::nonblank_literal!("Algorithm"),
+                "FaceBlend".into(),
+            );
+        });
     }
     let mut encoded = Vec::new();
     crate::test_support::serialize_edited_history(
@@ -457,10 +454,9 @@ fn decode_dispatches_typed_features_by_xml_family() {
     assert_eq!(native[2].kind, "CustomFillet");
     assert_eq!(native[2].parameters["Radius"], "2.5mm");
     assert_eq!(native[2].properties["Algorithm"], "FaceBlend");
-    assert_eq!(
-        regenerated.ir().model.features[2].source_properties["Algorithm"],
-        "FaceBlend"
-    );
+    assert!(regenerated.ir().model.features[2]
+        .source_properties
+        .is_empty());
     assert_eq!(
         regenerated.ir().model.features[2].dependencies.as_slice(),
         vec![
