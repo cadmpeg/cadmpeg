@@ -25,6 +25,7 @@ mod replace_face;
 mod revolve;
 mod scope_properties;
 mod sheet_metal;
+mod sketch_dependencies;
 mod spatial_profiles;
 mod split;
 mod surface;
