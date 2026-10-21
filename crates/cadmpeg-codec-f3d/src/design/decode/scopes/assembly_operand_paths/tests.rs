@@ -159,3 +159,74 @@ fn typed_path_record_reads_whatever_its_class_tag() {
         .expect("class 390 path");
     assert!(!path.admitted_by_type());
 }
+
+/// A wide locator (record 64) with or without its transform, then the path
+/// (65), its wrapper (66) and the next header.
+fn wide_envelope_bytes(scope_record_index: u32, transform: bool) -> Vec<u8> {
+    let mut locator = vec![0; 68];
+    locator[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    locator[4..7].copy_from_slice(b"337");
+    locator[7..11].copy_from_slice(&64_u32.to_le_bytes());
+    locator[39..43].copy_from_slice(&3_u32.to_le_bytes());
+    write_reference(&mut locator, 56, 164);
+    if transform {
+        for ordinal in 0..16 {
+            let value = if ordinal % 5 == 0 { 1.0_f64 } else { 0.0 };
+            locator.extend_from_slice(&value.to_le_bytes());
+        }
+    } else {
+        locator[67] = 1;
+    }
+    let backlink = locator.len() + 1;
+    locator.resize(backlink + 28, 0);
+    write_reference(&mut locator, backlink, scope_record_index);
+    write_reference(&mut locator, backlink + 11, 66);
+    locator[backlink + 22..backlink + 26].copy_from_slice(&2_u32.to_le_bytes());
+    locator.extend_from_slice(&path_bytes());
+
+    let mut wrapper = vec![0; 37];
+    wrapper[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    wrapper[4..7].copy_from_slice(b"341");
+    wrapper[7..11].copy_from_slice(&66_u32.to_le_bytes());
+    wrapper[21] = 1;
+    wrapper[22..26].copy_from_slice(&1_u32.to_le_bytes());
+    write_reference(&mut wrapper, 26, 65);
+    locator.extend_from_slice(&wrapper);
+    locator.extend_from_slice(&3_u32.to_le_bytes());
+    locator.extend_from_slice(b"396");
+    locator.extend_from_slice(&67_u32.to_le_bytes());
+    locator
+}
+
+#[test]
+fn wide_scope_locator_is_admitted_by_its_record_type() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+        DesignFeatureKind::Assemble,
+        10,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 945;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let typed = std::collections::HashMap::from([(64, (super::WIDE_PATH_LOCATOR_TYPE_GUID, 5))]);
+    for transform in [true, false] {
+        let bytes = wide_envelope_bytes(scope.record_index, transform);
+        let locator_length = if transform { 225 } else { 97 };
+        assert_eq!(bytes.len(), locator_length + path_bytes().len() + 37 + 11);
+        let path = exact_assembly_operand_path_envelope(&bytes, &scope, &typed, 64, 0, 0)
+            .unwrap()
+            .expect("wide locator");
+        assert_eq!(path.record_index, 65);
+        let untyped = std::collections::HashMap::new();
+        assert!(
+            exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0)
+                .unwrap()
+                .is_none()
+        );
+    }
+}

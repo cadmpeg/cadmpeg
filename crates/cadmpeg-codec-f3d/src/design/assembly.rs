@@ -42,6 +42,9 @@ pub(crate) enum AssemblyOperandFrameVariant {
     Compact,
     Axial,
     LegacyClass388,
+    /// Operand references 18 bytes before their transforms, each transform
+    /// followed by an LP-UTF16 GUID (the 945-byte `Assemble` scope).
+    Wide,
 }
 
 /// Whether a scope belongs to the variable-reference `Assemble` generation.
@@ -76,7 +79,7 @@ enum AssemblyAlignmentLanes {
 impl AssemblyScopeGeneration {
     /// Classify the scope's three coupled layout projections.
     pub(crate) fn new(frame_length: u64, class_tag: &str, paired_class_tag: &str) -> Self {
-        use AssemblyOperandFrameVariant::{Axial, Compact, LegacyClass388, Standard};
+        use AssemblyOperandFrameVariant::{Axial, Compact, LegacyClass388, Standard, Wide};
         let (operand_frame, lanes, locator_offsets) = match frame_length {
             399 => (None, Some((4, 0, 4)), Some([51, 62])),
             604 => (None, Some((8, 4, 8)), None),
@@ -91,6 +94,7 @@ impl AssemblyScopeGeneration {
             744 => ((class_tag == "430" && paired_class_tag == "262").then_some(Compact), Some((8, 4, 8)), Some([362, 373])),
             748 => ((class_tag == "430" && paired_class_tag == "262").then_some(Standard), Some((8, 4, 8)), Some([366, 377])),
             772 => (Some(Axial), Some((10, 8, 10)), None),
+            945 => (Some(Wide), Some((4, 0, 4)), Some([541, 552])),
             length if length == u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
                 (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
                     crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES,
@@ -993,6 +997,7 @@ mod tests {
             (744, 8, (4, 8)),
             (748, 8, (4, 8)),
             (705, 6, (4, 6)),
+            (945, 4, (0, 4)),
             (671, 6, (4, 6)),
             (772, 10, (8, 10)),
         ] {

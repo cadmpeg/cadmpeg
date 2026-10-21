@@ -1491,6 +1491,27 @@ placement lanes; ordinals 4 through 7 are angle, X, Y, and Z alignment lanes.
 The class pair is part of the admission key because the same frame lengths
 occur in other scope families.
 
+The 945-byte `Assemble` scope uses the wide operand-frame form. It stores
+`u8 1` at offset 20, four zero bytes, a byte `0` or `1` at offset 25, and zero
+bytes at offsets 26 through 36. Its operand references are at offsets 37 and
+259. Seven zero bytes follow each reference, rigid row-major transforms start
+at offsets 55 and 277, and an LP-UTF16 GUID follows each transform. Its four
+parameter owners are the angle, X, Y, and Z alignment lanes in owner-local
+order, and they are the first four entries of its reference table. The
+operand-path-locator count is at offset 537 and the two marked locator
+references are at offsets 541 and 552.
+
+A wide operand-path locator is the locator of the 945-byte `Assemble` scope.
+Its record type GUID is `2E3AC990-483D-4A55-8662-C064B976A957`. Its eleven-byte
+header is followed by 28 zero bytes, u32 value 3 at offset 39, 13 zero bytes,
+a nonzero marked same-segment reference at offset 56, and an identity flag byte
+at offset 67. Flag `0` is followed by a row-major rigid 4×4 transform at offset
+68; flag `1` stores no transform. One zero byte follows the flag or the
+transform, then a marked backlink to the assembly-operation scope, a marked
+reference to record index `N+2`, u32 value 2, and two zero bytes. The locator
+is 97 bytes with flag `1` and 225 bytes with flag `0`. Its path record and
+wrapper follow it as in the common locator.
+
 The class-283/264 and class-347/260 `Assemble` generations use class-289
 parameter-owner records with 103-byte owner frames. Both use the standard
 operand-frame prefix: operand references are at offsets 28 and 168, rigid
