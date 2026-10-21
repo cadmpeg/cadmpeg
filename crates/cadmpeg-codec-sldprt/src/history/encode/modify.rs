@@ -727,12 +727,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     cadmpeg_core::nonblank_literal!("Elliptical"),
                     elliptical.to_string(),
                 );
+            } else if let Some(value) =
+                existing.and_then(|record| record.properties.get("Elliptical"))
+            {
+                properties.insert(cadmpeg_core::nonblank_literal!("Elliptical"), value.clone());
             }
             if let Some(reverse) = reverse {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Reverse"),
                     reverse.to_string(),
                 );
+            } else if let Some(value) = existing.and_then(|record| record.properties.get("Reverse"))
+            {
+                properties.insert(cadmpeg_core::nonblank_literal!("Reverse"), value.clone());
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Dome".into(), |record| record.kind.clone()),
@@ -771,9 +778,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     format_vector3((*axis).into()),
                 );
                 properties.remove("AxisDirection");
+            } else if let Some(record) = existing {
+                for key in ["Axis", "AxisDirection"] {
+                    if let Some((name, value)) = record.properties.get_key_value(key) {
+                        properties.insert(name.clone(), value.clone());
+                    }
+                }
             }
             match mode {
-                FlexMode::Unresolved { .. } => {}
+                FlexMode::Unresolved { .. } => {
+                    if let Some(value) = existing.and_then(|record| record.properties.get("Mode")) {
+                        properties.insert(cadmpeg_core::nonblank_literal!("Mode"), value.clone());
+                    }
+                }
                 FlexMode::Bending { angle } => {
                     parameters.remove("Factor");
                     parameters.remove("Distance");
@@ -924,7 +941,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         reference.clone(),
                     );
                 }
-                None => {}
+                None => {
+                    if let Some(record) = existing {
+                        for key in ["Center", "CenterType", "CenterRef"] {
+                            if let Some((name, value)) = record.properties.get_key_value(key) {
+                                properties.insert(name.clone(), value.clone());
+                            }
+                        }
+                    }
+                }
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Scale".into(), |record| record.kind.clone()),
