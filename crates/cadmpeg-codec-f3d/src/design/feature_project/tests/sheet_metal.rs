@@ -198,16 +198,19 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let cadmpeg_ir::features::SheetMetalFlangeHeight::Distance(height) = height else {
         panic!("expected a distance flange height");
     };
-    assert!((height.literal().unwrap().get() - 25.0).abs() < 1.0e-12);
-    assert!((angle.literal().unwrap().get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!((super::dimension_value(&height, &parameters).get() - 25.0).abs() < 1.0e-12);
+    assert!(
+        (super::dimension_value(&angle, &parameters).get() - std::f64::consts::FRAC_PI_2).abs()
+            < 1.0e-12
+    );
     assert_eq!(height_datum, SheetMetalHeightDatum::InnerFaces);
     assert_eq!(bend_position, SheetMetalBendPosition::Adjacent);
-    assert!((bend_radius.literal().unwrap().get() - 2.5).abs() < 1.0e-12);
+    assert!((super::dimension_value(&bend_radius, &parameters).get() - 2.5).abs() < 1.0e-12);
     let SheetMetalFlangeWidth::TwoSides { first, second } = width else {
         panic!("expected a two-sided flange width");
     };
-    assert!((first.literal().unwrap().get() - 30.0).abs() < 1.0e-12);
-    assert!((second.literal().unwrap().get() - 15.0).abs() < 1.0e-12);
+    assert!((super::dimension_value(&first, &parameters).get() - 30.0).abs() < 1.0e-12);
+    assert!((super::dimension_value(&second, &parameters).get() - 15.0).abs() < 1.0e-12);
 
     let mut offset_scope = scope.clone();
     let mut offset_operation = offset_scope
@@ -847,7 +850,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         target,
         SheetMetalFlangeHeightTarget::Feature(crate::ids::neutral_feature_id(&target_scope))
     );
-    assert_eq!(offset.literal().unwrap().get(), 15.0);
+    assert_eq!(super::dimension_value(&offset, &parameters).get(), 15.0);
 }
 
 #[test]
