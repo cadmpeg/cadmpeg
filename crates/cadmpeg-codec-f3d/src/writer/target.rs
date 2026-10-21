@@ -105,10 +105,11 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
             "retained F3D source image has no bytes".into(),
         ));
     };
-    let Some(expected) = input
-        .fidelity
-        .and_then(|fidelity| fidelity.metadata.get(cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY))
-    else {
+    let Some(expected) = input.fidelity.and_then(|fidelity| {
+        fidelity
+            .metadata
+            .get(cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY)
+    }) else {
         return Ok(Preservation::PatchDeclined {
             reason: "retained F3D layout has no bound document digest".into(),
         });

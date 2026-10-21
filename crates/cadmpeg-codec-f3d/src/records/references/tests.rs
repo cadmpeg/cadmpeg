@@ -1,6 +1,6 @@
 use super::{
-    DESIGN_MATERIAL_ASSIGNMENT_CLONE_COUNT, DesignMaterialAssignment, DesignMaterialAssignmentWire,
-    LOST_EDGE_REFERENCE_CLONE_COUNT, LostEdgeReference, LostEdgeReferenceWire,
+    DesignMaterialAssignment, DesignMaterialAssignmentWire, LostEdgeReference,
+    LostEdgeReferenceWire, DESIGN_MATERIAL_ASSIGNMENT_CLONE_COUNT, LOST_EDGE_REFERENCE_CLONE_COUNT,
 };
 
 fn lost_edge() -> LostEdgeReference {
@@ -127,11 +127,9 @@ fn material_assignment_walks_semantic_binding_identity_without_source_locations(
             Ok(())
         })
         .unwrap();
-    assert!(
-        references
-            .iter()
-            .any(|id| id == "f3d:native:design-body-binding#0")
-    );
+    assert!(references
+        .iter()
+        .any(|id| id == "f3d:native:design-body-binding#0"));
     let mut map = IdentityMap::new(|id: &str| {
         Ok(if id == "f3d:native:design-body-binding#0" {
             "f3d:native:design-body-binding#authored".to_owned()

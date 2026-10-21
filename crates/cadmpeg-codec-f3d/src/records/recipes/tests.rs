@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{CONSTRUCTION_RECIPE_CLONE_COUNT, ConstructionRecipe, ConstructionRecipeWire};
+use super::{ConstructionRecipe, ConstructionRecipeWire, CONSTRUCTION_RECIPE_CLONE_COUNT};
 
 fn recipe(with_design: bool) -> ConstructionRecipe {
     let suffix = if with_design {

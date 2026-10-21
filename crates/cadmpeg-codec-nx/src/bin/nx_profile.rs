@@ -1043,7 +1043,7 @@ mod tests {
             visible: None,
         });
         ir.model.features.push(Feature {
-needs_recompute: false,
+            needs_recompute: false,
             id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
@@ -1060,7 +1060,8 @@ needs_recompute: false,
                         cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("valid block fixture"),
                         cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("valid block fixture"),
                         cadmpeg_ir::scalar::PositiveLength::new(3.0).expect("valid block fixture"),
-                    ])).map(|values| values.map(Into::into)),
+                    ]))
+                    .map(|values| values.map(Into::into)),
                     placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                     op: cadmpeg_ir::features::BooleanOp::NewBody,
                 }),
@@ -1082,7 +1083,7 @@ needs_recompute: false,
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-needs_recompute: false,
+            needs_recompute: false,
             id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 17,
             name: Some("BLOCK".to_string()),
@@ -1168,7 +1169,7 @@ needs_recompute: false,
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-needs_recompute: false,
+            needs_recompute: false,
             id: FeatureId::mint("synthetic:test:id#feature".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,

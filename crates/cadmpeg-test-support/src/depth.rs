@@ -273,8 +273,8 @@ fn first_difference(left: &Value, right: &Value) -> Option<String> {
 mod tests {
     use std::collections::BTreeMap;
 
-    use cadmpeg_core::CodecError;
     use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded, FormatId};
     use cadmpeg_ir::examples::{directed_subd_sum, unit_cube};
     use cadmpeg_ir::features::{DesignParameter, ParameterId};
@@ -282,7 +282,7 @@ mod tests {
     use cadmpeg_ir::report::loss::{LossKind, LossNote, LossTaxonomy};
     use cadmpeg_ir::{CadIr, ContainerSummary, SourceFidelity};
 
-    use super::{DepthSummary, assert_geometry_agrees_with_full};
+    use super::{assert_geometry_agrees_with_full, DepthSummary};
 
     /// A backend whose decode at each requested depth is scripted by the test.
     struct ScriptedCodec(fn(DecodeDepth) -> Decoded);

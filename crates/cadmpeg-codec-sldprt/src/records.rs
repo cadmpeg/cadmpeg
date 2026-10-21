@@ -1694,7 +1694,8 @@ impl SketchInputEntity {
         payload[position..position + 5].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
         payload[position + 5..position + 13].fill(0xff);
         payload[position + 13..position + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-        let mut entity = Self::try_new(id.into(), parent.into(), ordinal, offset, kind, &payload).unwrap();
+        let mut entity =
+            Self::try_new(id.into(), parent.into(), ordinal, offset, kind, &payload).unwrap();
         entity.sequence = u32::try_from(offset).expect("fixture source order fits u32");
         entity
     }
@@ -2578,7 +2579,8 @@ mod tests {
         let mut moved = lane.clone();
         moved.sketch_entities[0].attach_source_position(Some(3));
         let error = moved.sketch_entities[0]
-            .validate_against_payload(&lane.native_payload).unwrap_err();
+            .validate_against_payload(&lane.native_payload)
+            .unwrap_err();
         assert!(error
             .to_string()
             .contains("is not a marker in native_payload"));
@@ -2597,10 +2599,11 @@ mod tests {
             "an entity with no links round-trips with both keys absent"
         );
 
-        let renamed = lane.sketch_entities[0].with_test_identity(
-            lane.sketch_entities[0].object_index(), Some(4_242),
-        );
-        let error = renamed.validate_against_payload(&lane.native_payload).unwrap_err();
+        let renamed = lane.sketch_entities[0]
+            .with_test_identity(lane.sketch_entities[0].object_index(), Some(4_242));
+        let error = renamed
+            .validate_against_payload(&lane.native_payload)
+            .unwrap_err();
         assert!(error.to_string().contains("local object id does not match"));
         assert!(SketchInputLinks::new(3, Vec::new()).is_none());
     }

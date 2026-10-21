@@ -471,7 +471,12 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
         sketch_entities: Vec::new(),
     };
 
-    super::enrich_history_reference_axes(&cadmpeg_test_support::service_decode_context(), &mut histories, &[lane]).unwrap();
+    super::enrich_history_reference_axes(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut histories,
+        &[lane],
+    )
+    .unwrap();
 
     assert_eq!(
         histories[0].features[0].properties.get("Origin"),

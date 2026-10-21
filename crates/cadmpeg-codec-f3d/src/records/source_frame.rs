@@ -144,10 +144,8 @@ mod tests {
         let record = fidelity.retained_record("f3d:source:frame#one").unwrap();
         assert_eq!(record.data(), Some(&[1, 2, 3][..]));
         assert_eq!(record.offset(), 7);
-        assert!(
-            fidelity
-                .unrepresented()
-                .contains(&cadmpeg_ir::document::ArenaClass::Design)
-        );
+        assert!(fidelity
+            .unrepresented()
+            .contains(&cadmpeg_ir::document::ArenaClass::Design));
     }
 }
