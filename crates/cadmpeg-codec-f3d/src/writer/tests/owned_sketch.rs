@@ -161,6 +161,13 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
         .sketch_curve_identities
         .iter()
         .any(|curve| curve.record_index == 800));
+    assert!(
+        !native
+            .design_types
+            .iter()
+            .any(|record| record.entities.values().any(|entity| *entity == 800)),
+        "an omitted auxiliary curve must not leave a dangling type registration"
+    );
     assert_eq!(native.design_parameters.len(), 2);
     assert!(native
         .design_parameters
