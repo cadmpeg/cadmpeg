@@ -29,13 +29,10 @@ use cadmpeg_asm::nurbs::support_chart::NativeChart;
 
 const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
 
-/// Free current constructions are saved roots, rather than auxiliary carrier rows.
-pub(super) fn is_saved_free_surface(model: &Model, surface: &Surface) -> bool {
-    surface.geometry.procedural_construction().is_some()
-        && !model.faces.iter().any(|face| face.surface == surface.id)
-}
-
-pub(super) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
+pub(super) fn native_smbh_header(
+    target: &CadIr,
+    free_surface_count: usize,
+) -> Result<Vec<u8>, CodecError> {
     let mut bytes = b"ASM BinaryFile8".to_vec();
     // Release word matching the product string, the zero region, then the
     // entity-count and flags words (bit 0: history partition present).
@@ -43,12 +40,6 @@ pub(super) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> 
     bytes.extend_from_slice(&[0; 12]);
     // Current top-level bodies and free procedural surfaces follow asmheader;
     // their first owned record follows that saved-root prefix.
-    let free_surface_count = target
-        .model
-        .surfaces
-        .iter()
-        .filter(|surface| is_saved_free_surface(&target.model, surface))
-        .count();
     let first_owned = cadmpeg_core::decode::u64_from_index(target.model.bodies.len())
         .checked_add(cadmpeg_core::decode::u64_from_index(free_surface_count))
         .and_then(|count| count.checked_add(1))
