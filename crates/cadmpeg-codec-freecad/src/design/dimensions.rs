@@ -160,7 +160,10 @@ pub(super) fn bind(
         }
     }
     if tag == "native" {
-        if let Some(operands) = operation["parameters"].as_object_mut() {
+        if let Some(operands) = operation
+            .get_mut("parameters")
+            .and_then(Value::as_object_mut)
+        {
             for (name, value) in operands {
                 if let Some(id) = ids.get(name.as_str()) {
                     *value = serde_json::json!({"kind":"parameter","value":id});
