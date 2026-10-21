@@ -1481,26 +1481,40 @@ fn decode_retains_a_cyclic_formula_component() {
         )
         .expect("decode cyclic formula component");
 
-    // #209 D3 preserves readable identity references, including cycles.
-    let [input, intermediate, output] = decoded.ir().model.parameters.as_slice() else {
-        panic!("independent scalar and both typed cyclic formula outputs");
+    // #209 D3 preserves both typed cyclic outputs. In this source the
+    // signatures name #3_ and #2_, so the unused #1_ scalar has no declared
+    // quantity to infer; its original native evaluation still remains held.
+    let [intermediate, output] = decoded.ir().model.parameters.as_slice() else {
+        panic!("both typed cyclic formula outputs");
     };
     assert_eq!(
-        [
-            input.name.as_str(),
-            intermediate.name.as_str(),
-            output.name.as_str()
-        ],
-        ["Input", "Intermediate", "Final"]
+        [intermediate.name.as_str(), output.name.as_str()],
+        ["Intermediate", "Final"]
     );
-    for (parameter, value) in [(input, 1.0), (intermediate, 3.0), (output, 3.0)] {
+    for parameter in [intermediate, output] {
         assert_eq!(
             parameter.value,
             Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::scalar::Length::new(value).unwrap()
+                cadmpeg_ir::scalar::Length::new(3.0).unwrap()
             ))
         );
     }
+    let native =
+        crate::native::CatiaNative::load(&crate::test_support::source_fidelity::native_namespace(
+            decoded.ir(),
+            decoded.source_fidelity(),
+        ))
+        .unwrap();
+    let unused = native
+        .entity_records
+        .iter()
+        .find(|entity| entity.entity_id == 3)
+        .and_then(|entity| entity.parameter_value())
+        .expect("unused source scalar remains typed native");
+    assert!(
+        matches!(unused.evaluation, crate::native::CatiaEntityEvaluation::Scalar { bits }
+        if bits == 1.0_f64.to_bits())
+    );
     assert_eq!(
         intermediate
             .expression
@@ -1517,7 +1531,6 @@ fn decode_retains_a_cyclic_formula_component() {
             .collect::<Vec<_>>(),
         vec![intermediate.id.clone()]
     );
-    assert!(input.expression.dependencies().next().is_none());
 }
 
 #[test]

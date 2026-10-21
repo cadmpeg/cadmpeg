@@ -112,7 +112,8 @@ fn geometry_depth_agrees_with_full_depth() {
             assert_eq!(restored.unrepresented(), fidelity.unrepresented());
         },
     );
-    assert_eq!(summary.cut, 0, "{summary:?}");
+    // The external-preview source has model content and no design part (§1.1).
+    assert_eq!(summary.cut, 1, "{summary:?}");
 }
 
 #[test]
@@ -138,4 +139,5 @@ fn independently_decoded_preview_has_a_neutral_asset_home() {
         .get("external_references")
         .is_some_and(|records| !records.is_empty()));
     assert!(result.ir().scope.model);
+    assert!(!result.ir().scope.design);
 }
