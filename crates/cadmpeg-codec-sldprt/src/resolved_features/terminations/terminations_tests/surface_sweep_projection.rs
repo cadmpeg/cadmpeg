@@ -55,9 +55,10 @@ fn surface_sweep_projection_binds_the_helix_profile() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native =
-        crate::native::SldprtNative::load(decoded.ir().native.namespace("sldprt").unwrap())
-            .unwrap();
+    let native = crate::test_support::native::sldprt_native_with_source(
+        decoded.ir(),
+        decoded.source_fidelity(),
+    );
     let mut features = decoded.ir().model.features.clone();
     for feature in &mut features {
         if matches!(

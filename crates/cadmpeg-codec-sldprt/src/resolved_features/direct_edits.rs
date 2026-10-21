@@ -556,13 +556,17 @@ mod tests {
             true,
         );
         assert_eq!(histories[0].features[0].parameters["D1"], "5mm");
-        let projected = crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+        let projected = crate::history::project::project_features(
+            &cadmpeg_test_support::service_decode_context(),
+            &histories,
+        )
+        .unwrap();
         assert!(matches!(
             projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::MoveFace {
                 faces: FaceSelection::Unresolved,
                 motion: FaceMotion::Translate { direction, distance },
-            }) if *direction == Vector3::new(0.0, -1.0, 0.0) && *distance == cadmpeg_ir::Dimension::Literal(Length::new(5.0).unwrap())
+            }) if *direction == Vector3::new(0.0, -1.0, 0.0) && crate::test_support::dimensions::source_value(distance, &histories[0].features) == Length::new(5.0).unwrap()
         ));
 
         for lane in [
@@ -575,7 +579,11 @@ mod tests {
             let mut histories = vec![move_face_history()];
             enrich_history_move_face_translations_test(&mut histories, &[lane]);
             assert!(matches!(
-                crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap()[0]
+                crate::history::project::project_features(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &histories
+                )
+                .unwrap()[0]
                     .evaluation
                     .definition(),
                 FeatureDefinition::Operation(FeatureOperation::Native { .. })
@@ -591,7 +599,11 @@ mod tests {
             ],
         );
         assert!(matches!(
-            crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap()[0]
+            crate::history::project::project_features(
+                &cadmpeg_test_support::service_decode_context(),
+                &histories
+            )
+            .unwrap()[0]
                 .evaluation
                 .definition(),
             FeatureDefinition::Operation(FeatureOperation::Native { .. })
