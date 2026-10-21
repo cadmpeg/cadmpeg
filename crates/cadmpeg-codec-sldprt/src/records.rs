@@ -750,18 +750,6 @@ pub(crate) enum FeatureInputSurfaceSelectionKind {
     ExtrusionEndpoint { endpoint_selector: u32 },
 }
 
-#[cfg(test)]
-impl FeatureInputSurfaceSelection {
-    pub(crate) fn endpoint_selector(&self) -> Option<u32> {
-        match self.kind {
-            FeatureInputSurfaceSelectionKind::Component => None,
-            FeatureInputSurfaceSelectionKind::ExtrusionEndpoint { endpoint_selector } => {
-                Some(endpoint_selector)
-            }
-        }
-    }
-}
-
 mod surface_selection_kind_wire {
     use super::FeatureInputSurfaceSelectionKind;
     use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};

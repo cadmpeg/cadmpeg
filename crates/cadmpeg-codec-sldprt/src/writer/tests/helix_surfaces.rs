@@ -13,7 +13,6 @@ use crate::test_support::container::sldprt_with_body;
 use crate::test_support::history::resolved_feature_classes_with_ids;
 use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
-const EPS_SCALAR_ROUND_TRIP: f64 = 1.0e-12;
 
 use std::io::Cursor;
 
