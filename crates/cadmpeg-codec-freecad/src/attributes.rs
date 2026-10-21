@@ -236,6 +236,18 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<AttributeValue>> {
         if value.decoded_json.is_some() {
             return None;
         }
+        // An enumeration's choices describe its native grammar; the root
+        // Integer is the selected semantic value. Keep all labels in the typed
+        // property instead of treating each nested Enum as another operand.
+        if property.type_name == "App::PropertyEnumeration"
+            && value.tag == "Enum"
+            && value
+                .parent
+                .and_then(|parent| values.get(parent))
+                .is_some_and(|parent| parent.tag == "CustomEnumList" && parent.parent.is_none())
+        {
+            continue;
+        }
         let scalar = attributes.get("value").or_else(|| attributes.get("Value"));
         let item = match value.tag.as_str() {
             "String" | "Unicode" => scalar.map(|value| AttributeValue::String(value.clone())),
@@ -335,3 +347,6 @@ pub(crate) fn transfer(
     ir.model.attributes.extend(attributes);
     Ok(losses)
 }
+
+#[cfg(test)]
+mod tests;
