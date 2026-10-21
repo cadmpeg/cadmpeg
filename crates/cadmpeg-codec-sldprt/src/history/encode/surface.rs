@@ -368,6 +368,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         reverse.to_string(),
                     );
                 }
+            } else if let Some(record) = existing {
+                for key in ["BothSides", "Reverse"] {
+                    if let Some((name, value)) = record.properties.get_key_value(key) {
+                        properties.insert(name.clone(), value.clone());
+                    }
+                }
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Thicken".into(), |record| record.kind.clone()),
