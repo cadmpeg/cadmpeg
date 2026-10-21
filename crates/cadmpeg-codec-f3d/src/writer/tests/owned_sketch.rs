@@ -187,6 +187,13 @@ fn owned_sketch_parameter_synthesis_uses_the_canonical_cache_without_source_byte
         .any(|curve| curve.record_index == 800));
     assert!(
         !native
+            .design_entity_headers
+            .iter()
+            .any(|header| header.entity_id.suffix() == 800),
+        "an omitted auxiliary curve cannot leave its own orphan entity header"
+    );
+    assert!(
+        !native
             .design_types
             .iter()
             .any(|record| record.entities.values().any(|entity| *entity == 800)),

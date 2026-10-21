@@ -190,8 +190,27 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     if sketch_graph.is_some() {
         omitted_sketch_records.clear();
     }
+    let omitted_curve_indices = original
+        .sketch_curve_identities
+        .iter()
+        .filter(|before| {
+            !native
+                .sketch_curve_identities
+                .iter()
+                .any(|after| after.id == before.id)
+        })
+        .map(|curve| {
+            (
+                crate::ids::design_segment(&curve.id),
+                u64::from(curve.record_index),
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
     native.design_entity_headers.retain(|header| {
-        header.member_values().next().is_none()
+        !omitted_curve_indices.contains(&(
+            crate::ids::design_segment(&header.id),
+            header.entity_id.suffix(),
+        )) && header.member_values().next().is_none()
             && !original
                 .design_material_assignments
                 .iter()
@@ -209,21 +228,10 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 .iter()
                 .any(|after| after.entity_id == before.entity_id)
         })
-        .map(|header| header.entity_id.suffix())
-        .collect::<std::collections::BTreeSet<_>>();
-    let omitted_curve_indices = original
-        .sketch_curve_identities
-        .iter()
-        .filter(|before| {
-            !native
-                .sketch_curve_identities
-                .iter()
-                .any(|after| after.id == before.id)
-        })
-        .map(|curve| {
+        .map(|header| {
             (
-                crate::ids::design_segment(&curve.id),
-                u64::from(curve.record_index),
+                crate::ids::design_segment(&header.id),
+                header.entity_id.suffix(),
             )
         })
         .collect::<std::collections::BTreeSet<_>>();
@@ -234,7 +242,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
             .values()
             .copied()
             .filter(|id| {
-                !omitted_header_entities.contains(id)
+                !omitted_header_entities.contains(&(segment, *id))
                     && !omitted_curve_indices.contains(&(segment, *id))
             })
             .collect();
