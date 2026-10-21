@@ -410,6 +410,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         *ordinal += 1;
     }
     super::act::reconcile(target, &mut native, losses)?;
+    super::act::prepare_registrations(&mut native, losses);
     super::body_keys::reconcile(target, &mut native)?;
     super::geometry::reconcile(target, &mut native);
     super::design::regenerate(target, &mut native, losses)?;
