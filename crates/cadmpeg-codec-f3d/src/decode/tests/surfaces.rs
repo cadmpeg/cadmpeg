@@ -275,6 +275,19 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == profile)
+                .map(|curve| {
+                    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
+                        panic!("original finite ruled profile")
+                    };
+                    curve.parameter_range = Some(
+                        cadmpeg_ir::topology::IncreasingParameterInterval::new([
+                            nurbs.knots()[usize::try_from(nurbs.degree()).unwrap()],
+                            nurbs.knots()[nurbs.pole_count()],
+                        ])
+                        .unwrap(),
+                    );
+                    curve
+                })
                 .expect("ruled profile")
                 .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -366,6 +379,19 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == source)
+                .map(|curve| {
+                    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
+                        panic!("original finite sum profile")
+                    };
+                    curve.parameter_range = Some(
+                        cadmpeg_ir::topology::IncreasingParameterInterval::new([
+                            nurbs.knots()[usize::try_from(nurbs.degree()).unwrap()],
+                            nurbs.knots()[nurbs.pole_count()],
+                        ])
+                        .unwrap(),
+                    );
+                    curve
+                })
                 .expect("sum source curve")
                 .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
