@@ -91,7 +91,7 @@ fn triangle(ir: &CadIr, id: &FaceId) -> (Vec<[f64; 3]>, LoopBoundaryRole, [f64; 
         .map(|id| {
             let coedge = ir
                 .model
-                .coedges()
+                .coedges
                 .iter()
                 .find(|coedge| &coedge.id == id)
                 .unwrap();

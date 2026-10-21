@@ -762,5 +762,3 @@ fn semantic_writer_types_resolved_relation_scalar() {
     );
     assert!(parameter.native_ref.is_none());
 }
-
-mod renames;
