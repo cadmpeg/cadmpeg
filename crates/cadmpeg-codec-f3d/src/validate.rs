@@ -1256,7 +1256,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     // not conceal a cycle between otherwise unambiguous native state links.
     let mut settled = HashSet::new();
     for &start in history_predecessors.keys() {
-        let mut path = Vec::new();
+        let mut path = Vec::<&str>::new();
         let mut positions = HashMap::new();
         let mut current = start;
         while !settled.contains(current) {
