@@ -96,7 +96,10 @@ fn wire_records<'a>(
     let mut records = Vec::new();
     for object in objects {
         let mut owned = by_owner.remove(object.id().as_str()).unwrap_or_default();
-        owned.sort_by_key(|property| property.order);
+        // Transient declarations and persisted values have independent source
+        // order domains. Equal ordinals use the typed property identity so the
+        // census is identical before and after native arenas sort their rows.
+        owned.sort_by(|left, right| (left.order, &left.id).cmp(&(right.order, &right.id)));
         let property_ids = owned.iter().map(|property| property.id.as_str()).collect();
         let side_entries = owned
             .iter()
