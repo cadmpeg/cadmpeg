@@ -1035,8 +1035,8 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let selection = |record_index| {
-        crate::records::feature::assembly::DesignAssemblyLegacySelection {
+    let selection =
+        |record_index| crate::records::feature::assembly::DesignAssemblyLegacySelection {
             record_index,
             byte_offset: 400,
             class_tag: crate::records::references::DesignClassTag::try_from("307".to_owned())
@@ -1055,15 +1055,21 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
             recipe_record_byte_offset: 500,
             recipe_id: "recipe".into(),
             recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
-            recipe_references: vec![serde_json::from_value(serde_json::json!({
-                "selector": 1, "selector_offset": 1, "token": "f3d:model:face#one", "token_offset": 2,
-                "design_reference": 1, "design_reference_offset": 3,
-                "candidate_faces": ["f3d:model:face#one"], "candidate_edges": ["f3d:model:edge#one"],
-                "alternate_selector_faces": ["f3d:model:face#one"], "alternate_selector_edges": ["f3d:model:edge#one"]
-            })).unwrap()],
+            recipe_references: vec![crate::records::dimensions::DesignRecipeReference {
+                clause_index: 0,
+                selector: 1,
+                selector_offset: Some(1),
+                token: "f3d:model:face#one".into(),
+                token_offset: Some(2),
+                design_reference: 1,
+                design_reference_offset: Some(3),
+                candidate_faces: vec!["f3d:model:face#one".into()],
+                candidate_edges: vec!["f3d:model:edge#one".into()],
+                alternate_selector_faces: vec!["f3d:model:face#one".into()],
+                alternate_selector_edges: vec!["f3d:model:edge#one".into()],
+            }],
             next_byte_offset: 600,
-        }
-    };
+        };
     let carriers = crate::records::feature::assembly::DesignAssemblyLegacyOperands::new(
         crate::records::feature::assembly::DesignAssemblyLegacyOperand {
             construction_class_tag: crate::records::references::DesignClassTag::try_from(
