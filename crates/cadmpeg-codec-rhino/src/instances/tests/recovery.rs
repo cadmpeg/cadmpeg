@@ -283,7 +283,7 @@ fn bounded_definition_members_keep_local_geometry_after_metadata_failure() {
                     .iter()
                     .find(|point| {
                         point.source_object.as_ref().is_some_and(|source| {
-                            source.object_id == Uuid::from_wire(id).to_string()
+                            source.object_id.as_str() == Uuid::from_wire(id).to_string().as_str()
                         })
                     })
                     .expect("readable local point retained by source UUID");
@@ -393,7 +393,8 @@ fn nil_definition_identity_is_not_admitted_and_keeps_source_membership() {
                             .iter()
                             .find(|point| {
                                 point.source_object.as_ref().is_some_and(|source| {
-                                    source.object_id == Uuid::from_wire(id).to_string()
+                                    source.object_id.as_str()
+                                        == Uuid::from_wire(id).to_string().as_str()
                                 })
                             })
                             .expect("readable local point retained by source UUID");

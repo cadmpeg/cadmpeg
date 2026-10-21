@@ -104,7 +104,10 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
     assert_eq!(fields["section"], "directory-entry");
     assert_eq!(fields["sequence"], 3);
     let (retained_directory, _) = crate::test_support::retained_fixed_ascii(&result);
-    assert_eq!(retained_directory[0].source_offset, first_card);
+    assert_eq!(
+        retained_directory[0].source_offset,
+        u64::try_from(first_card).unwrap()
+    );
     assert_eq!(retained_directory[0].cards(), 2);
     assert_eq!(fields["defect"], "field-not-an-integer");
     assert_eq!(retained_directory[0].bytes, expected_bytes);
