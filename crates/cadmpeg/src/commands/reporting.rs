@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Human-readable and JSON command-report rendering.
 
+use std::collections::BTreeSet;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -55,29 +56,59 @@ pub(super) enum FidelitySummary {
     Both(FidelityDiff),
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum FidelitySection {
+    Annotations,
+    RetainedRecords,
+    Unrepresented,
+    Metadata,
+}
+
 pub(super) struct FidelityDiff {
-    annotations_changed: bool,
-    retained_records_changed: bool,
-    unrepresented_changed: bool,
-    metadata_changed: bool,
+    changed: BTreeSet<FidelitySection>,
 }
 
 impl FidelityDiff {
     fn between(left: &SourceFidelity, right: &SourceFidelity) -> Self {
         Self {
-            annotations_changed: left.annotations != right.annotations,
-            retained_records_changed: left.retained_records() != right.retained_records(),
-            unrepresented_changed: left.unrepresented() != right.unrepresented(),
-            metadata_changed: left.metadata != right.metadata,
+            changed: [
+                (
+                    FidelitySection::Annotations,
+                    left.annotations != right.annotations,
+                ),
+                (
+                    FidelitySection::RetainedRecords,
+                    left.retained_records() != right.retained_records(),
+                ),
+                (
+                    FidelitySection::Unrepresented,
+                    left.unrepresented() != right.unrepresented(),
+                ),
+                (FidelitySection::Metadata, left.metadata != right.metadata),
+            ]
+            .into_iter()
+            .filter_map(|(section, changed)| changed.then_some(section))
+            .collect(),
         }
     }
 
     fn is_empty(&self) -> bool {
-        !self.annotations_changed
-            && !self.retained_records_changed
-            && !self.unrepresented_changed
-            && !self.metadata_changed
+        self.changed.is_empty()
+    }
+}
+
+impl Serialize for FidelityDiff {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("FidelityDiff", 4)?;
+        for (name, section) in [
+            ("annotations_changed", FidelitySection::Annotations),
+            ("retained_records_changed", FidelitySection::RetainedRecords),
+            ("unrepresented_changed", FidelitySection::Unrepresented),
+            ("metadata_changed", FidelitySection::Metadata),
+        ] {
+            state.serialize_field(name, &self.changed.contains(&section))?;
+        }
+        state.end()
     }
 }
 
@@ -146,17 +177,18 @@ pub(super) fn print_fidelity_summary(summary: &FidelitySummary) {
         return;
     }
     println!("  source fidelity:");
-    if diff.annotations_changed {
-        println!("    annotations changed");
-    }
-    if diff.retained_records_changed {
-        println!("    retained records changed");
-    }
-    if diff.metadata_changed {
-        println!("    layout metadata changed");
-    }
-    if diff.unrepresented_changed {
-        println!("    unrepresented classes changed");
+    for (section, label) in [
+        (FidelitySection::Annotations, "annotations changed"),
+        (FidelitySection::RetainedRecords, "retained records changed"),
+        (FidelitySection::Metadata, "layout metadata changed"),
+        (
+            FidelitySection::Unrepresented,
+            "unrepresented classes changed",
+        ),
+    ] {
+        if diff.changed.contains(&section) {
+            println!("    {label}");
+        }
     }
 }
 
@@ -527,7 +559,8 @@ pub(super) fn print_check_report(
 
 #[cfg(test)]
 mod tests {
-    use super::{FidelityDiff, FidelitySummary};
+    use super::{FidelityDiff, FidelitySection, FidelitySummary};
+    use std::collections::BTreeSet;
 
     #[test]
     fn fidelity_summary_serializes_the_diff_shape_without_value_glue() {
@@ -545,10 +578,7 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(FidelitySummary::Both(FidelityDiff {
-                annotations_changed: false,
-                retained_records_changed: false,
-                unrepresented_changed: false,
-                metadata_changed: false,
+                changed: BTreeSet::new(),
             }))
             .unwrap(),
             serde_json::json!({
@@ -564,10 +594,7 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(FidelitySummary::Both(FidelityDiff {
-                annotations_changed: true,
-                retained_records_changed: false,
-                unrepresented_changed: false,
-                metadata_changed: false,
+                changed: BTreeSet::from([FidelitySection::Annotations]),
             }))
             .unwrap(),
             serde_json::json!({
@@ -578,6 +605,30 @@ mod tests {
                     "retained_records_changed": false,
                     "unrepresented_changed": false,
                     "metadata_changed": false
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn a_metadata_only_change_remains_visible_without_other_fidelity_changes() {
+        let left = cadmpeg_ir::SourceFidelity::default();
+        let mut right = left.clone();
+        right
+            .metadata
+            .insert("layout.offset".to_owned(), "42".to_owned());
+        let diff = super::fidelity_diff(Some(&left), Some(&right));
+        assert!(super::fidelity_differs(&diff));
+        assert_eq!(
+            serde_json::to_value(diff).expect("serialize metadata-only fidelity change"),
+            serde_json::json!({
+                "present": "both",
+                "different": true,
+                "diff": {
+                    "annotations_changed": false,
+                    "retained_records_changed": false,
+                    "unrepresented_changed": false,
+                    "metadata_changed": true
                 }
             })
         );
