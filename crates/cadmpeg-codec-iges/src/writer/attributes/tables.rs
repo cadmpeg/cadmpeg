@@ -2,9 +2,9 @@
 //! Exact Type 322/422 schema and row reconstruction from canonical attributes.
 
 use super::{
-    AttributeExport, AttributeValue, BTreeMap, BTreeSet, CadIr, Entity, EntityStatus, NativeRecord,
-    SourceAttribute, Targets, append_owned, entity, fields, fields::Fields, hollerith, omitted,
-    reference_marker, string_field, typed_value,
+    append_owned, entity, fields, fields::Fields, hollerith, omitted, reference_marker,
+    string_field, typed_value, AttributeExport, AttributeValue, BTreeMap, BTreeSet, CadIr, Entity,
+    EntityStatus, NativeRecord, SourceAttribute, Targets,
 };
 use cadmpeg_ir::native::NativeNamespace;
 use serde_json::Value;

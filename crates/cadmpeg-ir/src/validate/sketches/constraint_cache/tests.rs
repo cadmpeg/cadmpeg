@@ -47,67 +47,57 @@ fn concentric_coradial_and_tangent_constraints_measure_distinct_facts() {
     let crossing_line = line(Point2::new(-3.0, 1.0), Point2::new(3.0, 1.0));
     let operands = || (first.clone(), second.clone());
     let (first_id, second_id) = operands();
-    assert!(
-        check_with(
-            &ir,
-            &Constraint::Concentric {
-                first: first_id,
-                second: second_id
-            },
-            &[(&first, &outer), (&second, &inner)]
-        )
-        .is_none()
-    );
+    assert!(check_with(
+        &ir,
+        &Constraint::Concentric {
+            first: first_id,
+            second: second_id
+        },
+        &[(&first, &outer), (&second, &inner)]
+    )
+    .is_none());
     let (first_id, second_id) = operands();
-    assert!(
-        check_with(
-            &ir,
-            &Constraint::Coradial {
-                first: first_id,
-                second: second_id
-            },
-            &[(&first, &outer), (&second, &inner)]
-        )
-        .is_some()
-    );
+    assert!(check_with(
+        &ir,
+        &Constraint::Coradial {
+            first: first_id,
+            second: second_id
+        },
+        &[(&first, &outer), (&second, &inner)]
+    )
+    .is_some());
     for other in [&displaced, &tangent_line] {
         let (first_id, second_id) = operands();
-        assert!(
-            check_with(
-                &ir,
-                &Constraint::Tangent {
-                    first: first_id,
-                    second: second_id
-                },
-                &[(&first, &outer), (&second, other)]
-            )
-            .is_none()
-        );
-    }
-    let (first_id, second_id) = operands();
-    assert!(
-        check_with(
+        assert!(check_with(
             &ir,
             &Constraint::Tangent {
                 first: first_id,
                 second: second_id
             },
-            &[(&first, &outer), (&second, &crossing_line)]
+            &[(&first, &outer), (&second, other)]
         )
-        .is_some()
-    );
+        .is_none());
+    }
     let (first_id, second_id) = operands();
-    assert!(
-        check_with(
-            &ir,
-            &Constraint::Curvature {
-                first: first_id,
-                second: second_id
-            },
-            &[(&first, &outer), (&second, &tangent_line)]
-        )
-        .is_some()
-    );
+    assert!(check_with(
+        &ir,
+        &Constraint::Tangent {
+            first: first_id,
+            second: second_id
+        },
+        &[(&first, &outer), (&second, &crossing_line)]
+    )
+    .is_some());
+    let (first_id, second_id) = operands();
+    assert!(check_with(
+        &ir,
+        &Constraint::Curvature {
+            first: first_id,
+            second: second_id
+        },
+        &[(&first, &outer), (&second, &tangent_line)]
+    )
+    .is_some());
 }
 
 #[test]
@@ -190,16 +180,14 @@ fn cache_checks_use_the_declared_tolerance_and_do_not_measure_arc_chords_as_line
     }
     .try_into()
     .unwrap();
-    assert!(
-        check_with(
-            &ir,
-            &Constraint::Horizontal {
-                entity: entity.clone()
-            },
-            &[(&entity, &arc)]
-        )
-        .is_none()
-    );
+    assert!(check_with(
+        &ir,
+        &Constraint::Horizontal {
+            entity: entity.clone()
+        },
+        &[(&entity, &arc)]
+    )
+    .is_none());
 }
 
 #[test]
@@ -249,28 +237,24 @@ fn circular_pattern_distinguishes_periodic_span_from_inclusive_span_and_spacing(
         (&second, &second_point),
     ];
     let angle = Dimension::Literal(Angle::new(std::f64::consts::TAU).unwrap());
-    assert!(
-        check_with(
-            &ir,
-            &pattern(PatternAngle::Span {
-                angle: angle.clone(),
-                distribution: CircularPatternDistribution::Periodic,
-            }),
-            &geometry
-        )
-        .is_none()
-    );
-    assert!(
-        check_with(
-            &ir,
-            &pattern(PatternAngle::Span {
-                angle: angle.clone(),
-                distribution: CircularPatternDistribution::Inclusive,
-            }),
-            &geometry
-        )
-        .is_some()
-    );
+    assert!(check_with(
+        &ir,
+        &pattern(PatternAngle::Span {
+            angle: angle.clone(),
+            distribution: CircularPatternDistribution::Periodic,
+        }),
+        &geometry
+    )
+    .is_none());
+    assert!(check_with(
+        &ir,
+        &pattern(PatternAngle::Span {
+            angle: angle.clone(),
+            distribution: CircularPatternDistribution::Inclusive,
+        }),
+        &geometry
+    )
+    .is_some());
     assert!(check_with(&ir, &pattern(PatternAngle::Spacing { angle }), &geometry).is_some());
     let moved = point(0.0, 1.0);
     let wrong_geometry = [
@@ -279,15 +263,13 @@ fn circular_pattern_distinguishes_periodic_span_from_inclusive_span_and_spacing(
         (&first, &moved),
         (&second, &second_point),
     ];
-    assert!(
-        check_with(
-            &ir,
-            &pattern(PatternAngle::Span {
-                angle: Dimension::Literal(Angle::new(std::f64::consts::TAU).unwrap()),
-                distribution: CircularPatternDistribution::Periodic,
-            }),
-            &wrong_geometry
-        )
-        .is_some()
-    );
+    assert!(check_with(
+        &ir,
+        &pattern(PatternAngle::Span {
+            angle: Dimension::Literal(Angle::new(std::f64::consts::TAU).unwrap()),
+            distribution: CircularPatternDistribution::Periodic,
+        }),
+        &wrong_geometry
+    )
+    .is_some());
 }

@@ -8,11 +8,11 @@ use super::{
 use crate::entities::geometry::SourceSequences;
 use crate::loss::IgesLossCode;
 use crate::parameter::TokenValue;
-use cadmpeg_core::{CodecError, decode::DecodeContext};
-use cadmpeg_ir::CadIr;
+use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::{AttributeId, IdentityKey};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::CadIr;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 

@@ -2,8 +2,8 @@
 //! Typed wallpaper and trace-image settings, without retained source images.
 
 use super::{
-    CodecError, Map, Value, anonymous, anonymous_with_children, crc_chunk_with_direct, flag,
-    object, scalar, text, utf16, vector,
+    anonymous, anonymous_with_children, crc_chunk_with_direct, flag, object, scalar, text, utf16,
+    vector, CodecError, Map, Value,
 };
 
 fn reference(fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {

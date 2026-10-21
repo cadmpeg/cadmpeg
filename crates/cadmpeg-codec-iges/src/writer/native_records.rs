@@ -2,8 +2,8 @@
 //! Reconstruct typed native records without reading retained source bytes.
 
 use super::{
-    CadIr, DirectoryLineFont, Entity, EntityStatus, FiniteReal, IgesLossCode, LossNote, attributes,
-    number, reference_marker,
+    attributes, number, reference_marker, CadIr, DirectoryLineFont, Entity, EntityStatus,
+    FiniteReal, IgesLossCode, LossNote,
 };
 use cadmpeg_ir::native::NativeRecord;
 use serde_json::{Map, Value};

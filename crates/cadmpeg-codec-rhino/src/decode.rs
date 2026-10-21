@@ -3,23 +3,21 @@
 
 use crate::loss::Diagnostics;
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelDraft};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
+    nurbs::NurbsCurve,
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
     SurfaceGeometry,
-    nurbs::NurbsCurve,
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{Severity, loss::LossNote};
+use cadmpeg_ir::report::{loss::LossNote, Severity};
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -27,6 +25,8 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroUsize;

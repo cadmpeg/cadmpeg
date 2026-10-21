@@ -9,7 +9,7 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 
-use crate::chunks::{BoundedReader, FramingError, checked_count_bytes};
+use crate::chunks::{checked_count_bytes, BoundedReader, FramingError};
 use crate::curves::GeometryError;
 use crate::layout::uuid_wire_form as uuid_wire;
 use crate::settings::MillimeterScale;

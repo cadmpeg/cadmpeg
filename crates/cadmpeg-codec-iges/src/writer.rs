@@ -9,22 +9,21 @@ use crate::entities::affine_parameter_map;
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::entities::geometry::curve_is_line;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::CadIr;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody, WritePath,
 };
-use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::eval::model_surface_point;
+use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
     nurbs::{NurbsCurve, NurbsError, NurbsSurface},
     pcurve::{Pcurve, PcurveGeometry},
     sampled::{GeometryLayoutError, PolylineCurve},
+    CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -39,6 +38,7 @@ use cadmpeg_ir::topology::{
     Sense,
 };
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::TAU;
 use std::fmt::Write as _;

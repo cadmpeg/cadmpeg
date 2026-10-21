@@ -5,17 +5,17 @@ use std::collections::BTreeSet;
 use std::io::Write;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::CadIr;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Edge;
+use cadmpeg_ir::CadIr;
 
 use crate::loss::RhinoLossCode;
 
 use super::{
-    LINE_CLASS, NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS, WritableEdgeCurve,
     attributed_object_record, bounded_line_payload, check_nurbs_curve, close_point,
-    nurbs_curve_payload, point_cloud_payload,
+    nurbs_curve_payload, point_cloud_payload, WritableEdgeCurve, LINE_CLASS, NURBS_CURVE_CLASS,
+    POINT_CLASS, POINT_CLOUD_CLASS,
 };
 
 pub(super) fn write(

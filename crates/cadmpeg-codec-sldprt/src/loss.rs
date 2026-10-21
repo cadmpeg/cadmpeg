@@ -13,8 +13,8 @@
 //! leaves only the per-instance message to the caller.
 //!
 use cadmpeg_ir::report::{
-    Severity,
     loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
 };
 
 /// A stable, machine-readable identifier for one `.sldprt` transfer loss.

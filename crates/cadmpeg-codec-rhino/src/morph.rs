@@ -11,11 +11,11 @@ use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, NonZeroReal};
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::cage::Cage;
-use crate::chunks::{ArchiveVersion, BoundedReader, checked_count_bytes, chunk_at};
+use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
-use crate::settings::{MillimeterScale, interval, point, vector, xform};
-use crate::wire::{Uuid, scaled_coordinate, uuid};
+use crate::settings::{interval, point, vector, xform, MillimeterScale};
+use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const MAX_LOCALIZERS: usize = 1 << 16;
@@ -822,7 +822,7 @@ pub(crate) fn project(
 
 #[cfg(test)]
 mod tests {
-    use super::{ANONYMOUS, Control, LocalizerKind, decode, localizer, project};
+    use super::{decode, localizer, project, Control, LocalizerKind, ANONYMOUS};
     use crate::chunks::{ArchiveVersion, BoundedReader};
     use crate::curves::GeometryError;
     use crate::settings::MillimeterScale;

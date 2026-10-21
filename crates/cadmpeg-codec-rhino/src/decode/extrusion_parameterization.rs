@@ -5,7 +5,7 @@ use super::{
     CandidateError, Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
     SolvedCurveGeometry,
 };
-use cadmpeg_ir::geometry::{RecordBounds, nurbs::NurbsCurve};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, RecordBounds};
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{CadIr, SourceObjectAssociation};

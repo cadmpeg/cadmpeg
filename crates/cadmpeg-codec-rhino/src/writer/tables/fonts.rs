@@ -2,9 +2,9 @@
 //! Text styles authored from typed font characteristics.
 
 use super::{
-    CadIr, CodecError, Map, Value, anonymous_with_children, class_wrapper_with_direct, component,
-    crc_chunk, crc_chunk_with_direct, integer, native_count_limit, records, utf16, uuid,
-    wire_index,
+    anonymous_with_children, class_wrapper_with_direct, component, crc_chunk,
+    crc_chunk_with_direct, integer, native_count_limit, records, utf16, uuid, wire_index, CadIr,
+    CodecError, Map, Value,
 };
 
 const TEXT_STYLE_CLASS: [u8; 16] = [

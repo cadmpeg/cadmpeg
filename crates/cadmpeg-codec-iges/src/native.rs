@@ -9,24 +9,24 @@ use crate::card::{CardScan, ScannedLine, Section};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
 use crate::entities::geometry::{
-    BoundaryEndpoint, BoundaryVertexDerivation, TransformResolutionError, resolve_transform,
+    resolve_transform, BoundaryEndpoint, BoundaryVertexDerivation, TransformResolutionError,
 };
 use crate::entities::structure::{
-    PlacementRejection, array_base_type, flow_join_target_valid, placement_affine,
-    signal_string_geometry_target,
+    array_base_type, flow_join_target_valid, placement_affine, signal_string_geometry_target,
+    PlacementRejection,
 };
 use crate::global::{RealPrecision, ResolvedGlobal};
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
-    DefaultTailCount, MacroDataError, OverdeclaredCount, ParameterRecord,
-    QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout, Token, TokenValue,
-    TrailingPointerAnalysis, connect_node_layout, signal_string_layout, text_node_layout,
+    connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount, MacroDataError,
+    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout,
+    Token, TokenValue, TrailingPointerAnalysis,
 };
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_core::decode::{DecodeContext, u64_from_index};
-use cadmpeg_ir::CadIr;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::CadIr;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -3813,7 +3813,11 @@ pub(crate) fn store(
                     });
                     cursor = next;
                 }
-                if complete { classes } else { Vec::new() }
+                if complete {
+                    classes
+                } else {
+                    Vec::new()
+                }
             } else {
                 Vec::new()
             };

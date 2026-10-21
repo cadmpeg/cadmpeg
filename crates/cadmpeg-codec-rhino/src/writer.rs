@@ -21,16 +21,16 @@ use model::{
 };
 
 use crate::loss::RhinoLossCode;
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
-use crate::RhinoArchiveVersion;
 use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
+use crate::RhinoArchiveVersion;
 
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 

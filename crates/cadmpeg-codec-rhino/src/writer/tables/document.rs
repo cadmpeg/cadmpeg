@@ -2,8 +2,8 @@
 //! Properties regenerated through their current neutral attribute links.
 
 use super::{
-    CadIr, CodecError, LossNote, Map, RhinoLossCode, Value, color, crc_chunk, integer, records,
-    short_chunk, utf16, wire_index,
+    color, crc_chunk, integer, records, short_chunk, utf16, wire_index, CadIr, CodecError,
+    LossNote, Map, RhinoLossCode, Value,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 

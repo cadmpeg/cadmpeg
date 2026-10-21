@@ -4,9 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::CadIr;
 use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::CadIr;
 
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;

@@ -2,8 +2,8 @@
 //! Embedded resources are authored from the current asset bytes.
 
 use super::{
-    CadIr, CodecError, Value, class_wrapper, crc_chunk_with_direct, native_count_limit, records,
-    utf16, uuid,
+    class_wrapper, crc_chunk_with_direct, native_count_limit, records, utf16, uuid, CadIr,
+    CodecError, Value,
 };
 use cadmpeg_ir::assets::AssetContent;
 

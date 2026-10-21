@@ -224,12 +224,10 @@ pub(crate) fn complete_marker_source() -> crate::native::SldprtNative {
     .unwrap();
     assert_eq!(lane.sketch_entities.len(), 3);
     assert_eq!(lane.scalars.len(), 1);
-    assert!(
-        lane.scalars[0]
-            .operands
-            .iter()
-            .all(|operand| operand.entity_ref.is_some())
-    );
+    assert!(lane.scalars[0]
+        .operands
+        .iter()
+        .all(|operand| operand.entity_ref.is_some()));
     assert_eq!(
         lane.scalars[0].operands[0].entity_ref.as_deref(),
         Some(lane.sketch_entities[0].id())

@@ -2,17 +2,17 @@
 //! Constructive-solid primitive validation and native semantic ownership.
 
 use super::geometry::{
-    ProjectionOutcome, declared_orthogonal_vectors, declared_unit_vector, resolve_transform,
+    declared_orthogonal_vectors, declared_unit_vector, resolve_transform, ProjectionOutcome,
 };
 use super::pointer;
 
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::CadIr;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod primitives;

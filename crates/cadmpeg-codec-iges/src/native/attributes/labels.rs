@@ -2,8 +2,8 @@
 //! Directory labels and carrier name properties have editable neutral homes.
 
 use super::{
-    AttributeTarget, AttributeValue, BTreeMap, CadIr, CodecError, DecodeContext, IgesLossCode,
-    LossNote, NativeProperty, NativePropertyValue, project_fields,
+    project_fields, AttributeTarget, AttributeValue, BTreeMap, CadIr, CodecError, DecodeContext,
+    IgesLossCode, LossNote, NativeProperty, NativePropertyValue,
 };
 
 fn carrier(target: &AttributeTarget) -> bool {

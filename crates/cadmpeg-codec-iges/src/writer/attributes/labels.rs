@@ -2,7 +2,7 @@
 //! Consume current carrier names exactly once, using short Directory labels.
 
 use super::{
-    AttributeExport, AttributeTarget, AttributeValue, BTreeSet, CadIr, Entity, Targets, target_id,
+    target_id, AttributeExport, AttributeTarget, AttributeValue, BTreeSet, CadIr, Entity, Targets,
 };
 
 fn carrier(target: &AttributeTarget) -> bool {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Camera frame reconstruction from the current neutral axis-angle pose.
 
-use super::{CadIr, CodecError, Map, Value, crc_chunk_with_direct, flag, integer, vector};
+use super::{crc_chunk_with_direct, flag, integer, vector, CadIr, CodecError, Map, Value};
 use cadmpeg_ir::presentation::PresentationStateKind;
 
 type CameraPose = ([f64; 3], [[f64; 3]; 3]);

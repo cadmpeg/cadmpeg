@@ -576,14 +576,12 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
     // is checked only for a fidelity-backed patch, whose refusal selects synthesis.
     let namespace = decoded.ir().native.namespace("sldprt").unwrap();
     let edited = crate::native::SldprtNative::load(namespace).unwrap();
-    assert!(
-        crate::resolved_features::validate::validate_native(
-            &cadmpeg_test_support::service_decode_context(),
-            decoded.ir(),
-        )
-        .unwrap()
-        .is_empty()
-    );
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir(),
+    )
+    .unwrap()
+    .is_empty());
     let error = crate::native::source::load(namespace, decoded.source_fidelity()).unwrap_err();
     assert!(error.to_string().contains("scalar index does not match"));
     let plan = SldprtCodec
@@ -925,14 +923,25 @@ fn semantic_writer_types_resolved_relation_scalar() {
 #[test]
 fn complete_typed_marker_content_keeps_the_patch_payload_path() {
     let native = crate::test_support::native::complete_marker_source();
-    let [lane] = native.feature_input_lanes.as_slice() else { panic!("one complete source lane"); };
-    crate::resolved_features::native_lane_write::require_reconstructible_content(lane, &native.feature_histories)
-        .expect("all actual marker bodies and scalar operands are representable");
+    let [lane] = native.feature_input_lanes.as_slice() else {
+        panic!("one complete source lane");
+    };
+    crate::resolved_features::native_lane_write::require_reconstructible_content(
+        lane,
+        &native.feature_histories,
+    )
+    .expect("all actual marker bodies and scalar operands are representable");
     let payload = crate::writer::resolved_feature_payload(lane, &native.feature_histories, &[])
         .expect("the supported actual typed-marker patch path remains available");
     assert_eq!(payload, lane.native_payload.to_vec());
     assert_eq!(lane.scalars[0].value.get(), 0.025);
     assert_eq!(lane.scalars[0].entity_indices(), [0, 2]);
-    assert_eq!(lane.scalars[0].operands[0].entity_ref.as_deref(), Some(lane.sketch_entities[0].id()));
-    assert_eq!(lane.scalars[0].operands[1].entity_ref.as_deref(), Some(lane.sketch_entities[2].id()));
+    assert_eq!(
+        lane.scalars[0].operands[0].entity_ref.as_deref(),
+        Some(lane.sketch_entities[0].id())
+    );
+    assert_eq!(
+        lane.scalars[0].operands[1].entity_ref.as_deref(),
+        Some(lane.sketch_entities[2].id())
+    );
 }

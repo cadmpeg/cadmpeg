@@ -2,8 +2,8 @@
 //! Material tables use current appearances; native-only optical settings survive.
 
 use super::{
-    CadIr, CodecError, Map, Value, anonymous, anonymous_with_children, class_wrapper_with_direct,
-    color, component, crc_chunk_with_direct, records, unit_color_channel, wire_index,
+    anonymous, anonymous_with_children, class_wrapper_with_direct, color, component,
+    crc_chunk_with_direct, records, unit_color_channel, wire_index, CadIr, CodecError, Map, Value,
 };
 use cadmpeg_ir::appearance::Appearance;
 

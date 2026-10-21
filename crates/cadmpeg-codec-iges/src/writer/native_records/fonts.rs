@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Types 304, 310 and 312 are rebuilt from typed font and glyph records.
 
-use super::{Entity, Fields, Value, boolean, coordinates, count, entity, integer, real};
+use super::{boolean, coordinates, count, entity, integer, real, Entity, Fields, Value};
 
 fn font_reference(fields: &mut Fields<'_>, code: &str, definition: &str) -> Result<String, String> {
     if fields.value(definition).is_some() {

@@ -4,18 +4,18 @@
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, native, parameter};
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::ContainerSummary;
+use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::hash::{DOCUMENT_FINGERPRINT_METADATA_KEY, document_local_sha256};
+use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_FINGERPRINT_METADATA_KEY};
 use cadmpeg_ir::report::{
-    Severity,
     decode::{TransferLedger, TransferOutcome},
     loss::LossNote,
+    Severity,
 };
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

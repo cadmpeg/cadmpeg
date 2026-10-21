@@ -2,8 +2,8 @@
 //! Type 406 field grammars, regenerated from current canonical values.
 
 use super::{
-    AttributeValue, BTreeSet, Entity, NativeRecord, Targets, entity, fields::Fields,
-    fields::collection_size, hollerith, typed_value,
+    entity, fields::collection_size, fields::Fields, hollerith, typed_value, AttributeValue,
+    BTreeSet, Entity, NativeRecord, Targets,
 };
 use serde_json::Value;
 

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Saved views expose their names and admitted camera poses as neutral state.
 
-use cadmpeg_core::{CodecError, decode::DecodeContext};
-use cadmpeg_ir::CadIr;
+use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::ids::{Identity, IdentityKey};
 use cadmpeg_ir::native::NativeRecord;
 use cadmpeg_ir::presentation::{
@@ -11,6 +10,7 @@ use cadmpeg_ir::presentation::{
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::units::{FiniteVector, NonzeroVector};
+use cadmpeg_ir::CadIr;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
