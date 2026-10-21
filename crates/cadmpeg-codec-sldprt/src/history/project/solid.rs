@@ -452,9 +452,7 @@ fn hole_profile_construction(
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
 ) -> Option<HoleProfileConstruction> {
-    let Some(children) = feature.properties.get("DissectableChildren") else {
-        return None;
-    };
+    let children = feature.properties.get("DissectableChildren")?;
     let constructions = children
         .split(',')
         .map(str::trim)
@@ -765,12 +763,11 @@ fn hole_sketch_construction_details(profile: &Feature) -> Option<HoleProfileDeta
             && recess_depth.value.get() < drill_depth.value.get()
             && entry_angle.value.get() < drill_point_angle.value.get() =>
         {
-            let Ok(diameters) = cadmpeg_ir::features::holes::CounterdrillDiameters::new(
+            let diameters = cadmpeg_ir::features::holes::CounterdrillDiameters::new(
                 recess_diameter.binding.clone(),
                 Some(entry_diameter.binding.clone()),
-            ) else {
-                return None;
-            };
+            )
+            .ok()?;
             Some(HoleProfileConstruction {
                 diameter: diameter.binding.clone(),
                 depth: Some(drill_depth.binding.clone()),
