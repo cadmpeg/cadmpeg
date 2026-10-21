@@ -10,6 +10,7 @@ use crate::native::F3dNative;
 
 mod configurations;
 mod parameters;
+pub(super) mod sketch;
 
 pub(super) fn regenerate(
     target: &mut CadIr,

@@ -160,7 +160,10 @@ pub(super) fn encode_design_bulkstream(
             "neutral F3D parameters must equal the projection of native Design parameters".into(),
         ));
     }
-    if !native.design_parameter_companions.is_empty()
+    if (native.design_parameter_scopes.is_empty()
+        && (!native.design_parameter_companions.is_empty()
+            || !native.design_parameter_owners.is_empty()
+            || !native.design_sketch_placements.is_empty()))
         || !native.design_dimension_annotation_frames.is_empty()
         || !native.design_dimension_presentation_frames.is_empty()
         || !native.design_face_source_groups.is_empty()
@@ -168,9 +171,6 @@ pub(super) fn encode_design_bulkstream(
         || !native.design_dimension_locus_groups.is_empty()
         || !native.design_dimension_null_locus_pairs.is_empty()
         || !native.design_dimension_recipe_records.is_empty()
-        || !native.design_parameter_owners.is_empty()
-        || !native.design_parameter_scopes.is_empty()
-        || !native.design_sketch_placements.is_empty()
         || native
             .design_entity_headers
             .iter()
@@ -198,6 +198,7 @@ pub(super) fn encode_design_bulkstream(
         && native.sketch_curve_identities.is_empty()
         && native.sketch_relations.is_empty()
         && native.sketch_texts.is_empty()
+        && native.design_parameter_scopes.is_empty()
         && !has_body_visibility
     {
         return Ok(None);
@@ -205,6 +206,7 @@ pub(super) fn encode_design_bulkstream(
 
     let mut out = parameter_bytes;
     let mut primary_records = Vec::new();
+    super::sketch_scopes::encode(&mut out, &mut primary_records, native)?;
     if let Some(body_map) = &registry.body_map {
         let class_tag = body_map.class_tag.as_str();
         let record_index = body_map.record_index;
@@ -366,6 +368,30 @@ pub(super) fn encode_design_bulkstream(
     for relation in &native.sketch_relations {
         primary_records.push(primary_record(relation.record_index, out.len())?);
         encode_sketch_relation(&mut out, relation)?;
+    }
+    if !native.design_parameter_scopes.is_empty() {
+        for parameter in &native.design_parameters {
+            primary_records.push(primary_record(parameter.record_index, out.len())?);
+            out.extend_from_slice(&super::parameters::encode_document_parameters(
+                std::slice::from_ref(parameter),
+            )?);
+            let owner = native
+                .design_parameter_owners
+                .iter()
+                .find(|owner| Some(owner.record_index()) == parameter.owner_record_index())
+                .ok_or_else(|| CodecError::malformed("generated owned parameter has no owner"))?;
+            primary_records.push(primary_record(owner.record_index(), out.len())?);
+            super::parameter_links::encode(&mut out, std::slice::from_ref(owner), &[])?;
+            let companion = native
+                .design_parameter_companions
+                .iter()
+                .find(|companion| companion.record_index() == owner.companion_record_index())
+                .ok_or_else(|| {
+                    CodecError::malformed("generated owned parameter has no companion")
+                })?;
+            primary_records.push(primary_record(companion.record_index(), out.len())?);
+            super::parameter_links::encode(&mut out, &[], std::slice::from_ref(companion))?;
+        }
     }
     for reference in &native.persistent_references {
         out.extend_from_slice(persistent_reference_name(reference.kind));

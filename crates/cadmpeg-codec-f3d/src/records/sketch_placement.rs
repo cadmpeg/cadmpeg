@@ -253,7 +253,7 @@ impl DesignSketchFrame {
         }
         Ok(value)
     }
-    fn canonical_transform(&self) -> [[f64; 4]; 4] {
+    pub(crate) fn canonical_transform(&self) -> [[f64; 4]; 4] {
         let mut rows = *self.transform();
         let scale = match self.form {
             DesignSketchFrameForm::ScopeGenesisCompact
