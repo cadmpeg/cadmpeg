@@ -12,8 +12,8 @@ use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
 const EPS_SCALAR_ROUND_TRIP: f64 = 1.0e-12;
 
-use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -594,50 +594,42 @@ fn encoder_writes_source_less_curved_sketches() {
         .unwrap();
     assert_eq!(decoded.ir().model.sketches.len(), 1);
     assert_eq!(decoded.ir().model.sketch_entities.len(), 29);
-    assert!(
-        decoded
-            .ir()
-            .model
-            .sketch_constraints
-            .iter()
-            .any(|constraint| matches!(
-                constraint.definition.kind(),
-                SketchConstraintDefinitionInput::Coradial { .. }
-            ))
-    );
-    assert!(
-        decoded
-            .ir()
-            .model
-            .sketch_constraints
-            .iter()
-            .any(|constraint| matches!(
-                constraint.definition.kind(),
-                SketchConstraintDefinitionInput::EllipseAngle { .. }
-            ))
-    );
-    assert!(
-        decoded
-            .ir()
-            .model
-            .sketch_constraints
-            .iter()
-            .any(|constraint| matches!(
-                constraint.definition.kind(),
-                SketchConstraintDefinitionInput::DistanceLoci { .. }
-            ))
-    );
-    assert!(
-        decoded
-            .ir()
-            .model
-            .sketch_constraints
-            .iter()
-            .any(|constraint| matches!(
-                constraint.definition.kind(),
-                SketchConstraintDefinitionInput::Radius { .. }
-            ))
-    );
+    assert!(decoded
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Coradial { .. }
+        )));
+    assert!(decoded
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::EllipseAngle { .. }
+        )));
+    assert!(decoded
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::DistanceLoci { .. }
+        )));
+    assert!(decoded
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Radius { .. }
+        )));
     assert!(decoded.ir().model.parameters.iter().any(|parameter| {
         parameter.name == "D10"
             && parameter.value == Some(ParameterValue::Length(Length::new(4.0).unwrap()))
@@ -680,20 +672,35 @@ fn encoder_writes_source_less_curved_sketches() {
             "missing regenerated {expected} dimension"
         );
     }
+    let diameter = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "DIA1")
+        .unwrap();
+    assert!(decoded
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| {
+            matches!(constraint.definition.kind(), SketchConstraintDefinitionInput::Diameter {
+            parameter: cadmpeg_ir::Dimension::Parameter(id), ..
+        } if id == &diameter.id)
+        }));
     let native = sldprt_native(decoded.ir());
-    let circle_relation = native.feature_input_lanes[0]
+    let lane = &native.feature_input_lanes[0];
+    let circle_relation = lane
         .relation_instances
         .iter()
         .find(|relation| {
             relation.family == crate::records::FeatureInputRelationFamily::CircleDiameter
-                && relation.parameter_scalar_ref()
-                    == decoded
-                        .ir()
-                        .model
-                        .parameters
-                        .iter()
-                        .find(|parameter| parameter.name == "DIA1")
-                        .and_then(|parameter| parameter.native_ref.as_deref())
+                && relation
+                    .parameter_scalar_ref()
+                    .and_then(|id| lane.scalars.iter().find(|scalar| scalar.id == id))
+                    .and_then(|scalar| lane.names.iter().find(|name| name.id == scalar.name))
+                    .is_some_and(|name| name.value == "DIA1")
         })
         .expect("diameter relation instance");
     let [operand] = circle_relation.operands.as_slice() else {
@@ -706,38 +713,32 @@ fn encoder_writes_source_less_curved_sketches() {
         .expect("resolved diameter marker");
     assert_eq!(marker.kind(), crate::records::SketchInputKind::LineOrCircle);
     assert_ne!(marker.local_id(), Some(u32::from(operand.entity_index)));
-    assert!(
-        native.feature_input_lanes[0]
-            .relation_instances
-            .iter()
-            .flat_map(|relation| &relation.operands)
-            .all(|operand| operand.entity_ref.is_some())
-    );
-    assert!(
-        native.feature_input_lanes[0]
-            .relation_instances
-            .iter()
-            .flat_map(|relation| &relation.operands)
-            .filter(|operand| {
-                matches!(
-                    operand.kind,
-                    crate::records::FeatureInputOperandKind::D6
-                        | crate::records::FeatureInputOperandKind::E1
-                        | crate::records::FeatureInputOperandKind::Native(
-                            NativeOperandTag::TAG_8DCB | NativeOperandTag::TAG_8DDA
-                        )
-                )
-            })
-            .any(|operand| {
-                native.feature_input_lanes[0]
-                    .sketch_entities
-                    .iter()
-                    .find(|marker| Some(marker.id()) == operand.entity_ref.as_deref())
-                    .is_some_and(|marker| {
-                        marker.local_id() != Some(u32::from(operand.entity_index))
-                    })
-            })
-    );
+    assert!(native.feature_input_lanes[0]
+        .relation_instances
+        .iter()
+        .flat_map(|relation| &relation.operands)
+        .all(|operand| operand.entity_ref.is_some()));
+    assert!(native.feature_input_lanes[0]
+        .relation_instances
+        .iter()
+        .flat_map(|relation| &relation.operands)
+        .filter(|operand| {
+            matches!(
+                operand.kind,
+                crate::records::FeatureInputOperandKind::D6
+                    | crate::records::FeatureInputOperandKind::E1
+                    | crate::records::FeatureInputOperandKind::Native(
+                        NativeOperandTag::TAG_8DCB | NativeOperandTag::TAG_8DDA
+                    )
+            )
+        })
+        .any(|operand| {
+            native.feature_input_lanes[0]
+                .sketch_entities
+                .iter()
+                .find(|marker| Some(marker.id()) == operand.entity_ref.as_deref())
+                .is_some_and(|marker| marker.local_id() != Some(u32::from(operand.entity_index)))
+        }));
     assert!(decoded
         .ir()
         .model
@@ -763,58 +764,48 @@ fn encoder_writes_source_less_curved_sketches() {
         crate::records::SketchRelationKind::Midpoint,
         crate::records::SketchRelationKind::Tangent,
     ] {
-        assert!(
-            sldprt_native(decoded.ir())
-                .feature_input_lanes
-                .iter()
-                .flat_map(|lane| &lane.sketch_entities)
-                .any(|marker| marker.kind() == crate::records::SketchInputKind::Relation(expected))
-        );
+        assert!(sldprt_native(decoded.ir())
+            .feature_input_lanes
+            .iter()
+            .flat_map(|lane| &lane.sketch_entities)
+            .any(|marker| marker.kind() == crate::records::SketchInputKind::Relation(expected)));
     }
-    assert!(
-        decoded
-            .ir()
-            .model
-            .sketch_constraints
-            .iter()
-            .any(|constraint| matches!(
-                constraint.definition.kind(),
-                SketchConstraintDefinitionInput::Parallel { .. }
-            ))
-    );
-    assert!(
-        decoded
-            .ir()
-            .model
-            .sketch_constraints
-            .iter()
-            .any(|constraint| matches!(
-                constraint.definition.kind(),
-                SketchConstraintDefinitionInput::Perpendicular { .. }
-            ))
-    );
-    assert!(
-        decoded
-            .ir()
-            .model
-            .sketch_constraints
-            .iter()
-            .any(|constraint| matches!(
-                constraint.definition.kind(),
-                SketchConstraintDefinitionInput::Collinear { .. }
-            ))
-    );
-    assert!(
-        decoded
-            .ir()
-            .model
-            .sketch_constraints
-            .iter()
-            .any(|constraint| matches!(
-                constraint.definition.kind(),
-                SketchConstraintDefinitionInput::Concentric { .. }
-            ))
-    );
+    assert!(decoded
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Parallel { .. }
+        )));
+    assert!(decoded
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Perpendicular { .. }
+        )));
+    assert!(decoded
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Collinear { .. }
+        )));
+    assert!(decoded
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Concentric { .. }
+        )));
     assert!(
         decoded
             .ir()
@@ -834,28 +825,26 @@ fn encoder_writes_source_less_curved_sketches() {
         "midpoint",
         "tangent",
     ] {
-        assert!(
-            decoded
-                .ir()
-                .model
-                .sketch_constraints
-                .iter()
-                .any(|constraint| {
-                    match (constraint.definition.kind(), definition) {
-                        (
-                            SketchConstraintDefinitionInput::SameCoordinate { relation },
-                            "horizontal_points",
-                        ) => relation.axis() == SketchCoordinateAxis::V,
-                        (
-                            SketchConstraintDefinitionInput::SameCoordinate { relation },
-                            "vertical_points",
-                        ) => relation.axis() == SketchCoordinateAxis::U,
-                        (SketchConstraintDefinitionInput::Midpoint { .. }, "midpoint")
-                        | (SketchConstraintDefinitionInput::Tangent { .. }, "tangent") => true,
-                        _ => false,
-                    }
-                })
-        );
+        assert!(decoded
+            .ir()
+            .model
+            .sketch_constraints
+            .iter()
+            .any(|constraint| {
+                match (constraint.definition.kind(), definition) {
+                    (
+                        SketchConstraintDefinitionInput::SameCoordinate { relation },
+                        "horizontal_points",
+                    ) => relation.axis() == SketchCoordinateAxis::V,
+                    (
+                        SketchConstraintDefinitionInput::SameCoordinate { relation },
+                        "vertical_points",
+                    ) => relation.axis() == SketchCoordinateAxis::U,
+                    (SketchConstraintDefinitionInput::Midpoint { .. }, "midpoint")
+                    | (SketchConstraintDefinitionInput::Tangent { .. }, "tangent") => true,
+                    _ => false,
+                }
+            }));
     }
     assert_eq!(
         decoded
@@ -883,28 +872,24 @@ fn encoder_writes_source_less_curved_sketches() {
             .count(),
         7
     );
-    assert!(
-        decoded
-            .ir()
-            .model
-            .sketch_entities
-            .iter()
-            .any(|entity| matches!(
-                *entity.geometry.definition(),
-                SketchGeometryDefinition::Ellipse { .. }
-            ))
-    );
-    assert!(
-        decoded
-            .ir()
-            .model
-            .sketch_entities
-            .iter()
-            .any(|entity| matches!(
-                *entity.geometry.definition(),
-                SketchGeometryDefinition::Nurbs { .. }
-            ))
-    );
+    assert!(decoded
+        .ir()
+        .model
+        .sketch_entities
+        .iter()
+        .any(|entity| matches!(
+            *entity.geometry.definition(),
+            SketchGeometryDefinition::Ellipse { .. }
+        )));
+    assert!(decoded
+        .ir()
+        .model
+        .sketch_entities
+        .iter()
+        .any(|entity| matches!(
+            *entity.geometry.definition(),
+            SketchGeometryDefinition::Nurbs { .. }
+        )));
 
     let parameter = ir
         .model
@@ -918,11 +903,9 @@ fn encoder_writes_source_less_curved_sketches() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("not satisfied by measured geometry")
-    );
+    assert!(error
+        .to_string()
+        .contains("not satisfied by measured geometry"));
 }
 
 #[test]
@@ -1032,11 +1015,11 @@ fn encoder_writes_source_less_native_features() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
         features::{
-            BodySelection, EdgeSelection, FaceMotion, FaceSelection, Feature, FeatureDefinition,
-            FeatureId, FeatureOperation, LinearTermination,
             edge_treatments::{ChamferSpec, RadiusSpec},
             holes::HoleKind,
             patterns::{PatternKind, PatternTransform},
+            BodySelection, EdgeSelection, FaceMotion, FaceSelection, Feature, FeatureDefinition,
+            FeatureId, FeatureOperation, LinearTermination,
         },
         scalar::Angle,
     };
@@ -1140,9 +1123,10 @@ fn encoder_writes_source_less_native_features() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
-                        ir.model.bodies[0].id.clone(),
-                    ])
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.model.bodies
+                        [0]
+                    .id
+                    .clone()])
                     .expect("distinct bodies"),
                     native: "body-a".into(),
                 },
