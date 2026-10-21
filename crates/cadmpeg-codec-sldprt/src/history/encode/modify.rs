@@ -195,15 +195,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                 }
                 ChamferSpec::Distance { distance } => {
-                    if existing.is_some()
-                        && if positional {
-                            parameters.contains_key("D2")
+                    if existing.is_some_and(|record| {
+                        if positional {
+                            record.parameters.contains_key("D2")
                         } else {
-                            parameters.contains_key("Distance1")
-                                || parameters.contains_key("Distance2")
-                                || parameters.contains_key("Angle")
+                            record.parameters.contains_key("Distance1")
+                                || record.parameters.contains_key("Distance2")
+                                || record.parameters.contains_key("Angle")
                         }
-                    {
+                    }) {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} changes chamfer form",
                             feature.id
@@ -223,15 +223,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(key, value);
                 }
                 ChamferSpec::TwoDistances { first, second } => {
-                    if existing.is_some()
-                        && if positional {
-                            !parameters.contains_key("D2") || positional_angle
+                    if existing.is_some_and(|record| {
+                        if positional {
+                            !record.parameters.contains_key("D2") || positional_angle
                         } else {
-                            !parameters.contains_key("Distance1")
-                                || !parameters.contains_key("Distance2")
-                                || parameters.contains_key("Angle")
+                            !record.parameters.contains_key("Distance1")
+                                || !record.parameters.contains_key("Distance2")
+                                || record.parameters.contains_key("Angle")
                         }
-                    {
+                    }) {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} changes chamfer form",
                             feature.id
@@ -268,16 +268,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                 }
                 ChamferSpec::DistanceAngle { distance, angle } => {
-                    if existing.is_some()
-                        && if positional {
+                    if existing.is_some_and(|record| {
+                        if positional {
                             !positional_angle
                         } else {
-                            !parameters.contains_key("Distance")
-                                || !parameters.contains_key("Angle")
-                                || parameters.contains_key("Distance1")
-                                || parameters.contains_key("Distance2")
+                            !record.parameters.contains_key("Distance")
+                                || !record.parameters.contains_key("Angle")
+                                || record.parameters.contains_key("Distance1")
+                                || record.parameters.contains_key("Distance2")
                         }
-                    {
+                    }) {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} changes chamfer form",
                             feature.id
