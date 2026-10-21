@@ -4366,25 +4366,25 @@ pub enum PrimitiveSolidKind {
     },
     /// General wedge defined by two x-z profiles across a y interval.
     Wedge {
-        /// Lower x bound.
+        /// Lower x coordinate of the profile at `ymin`.
         xmin: Dimension<Length>,
-        /// Lower y bound.
+        /// Y coordinate of the first profile.
         ymin: Dimension<Length>,
-        /// Lower z bound.
+        /// Lower z coordinate of the profile at `ymin`.
         zmin: Dimension<Length>,
-        /// Inner x coordinate on the lower-y profile.
+        /// Lower x coordinate of the profile at `ymax`.
         x2min: Dimension<Length>,
-        /// Inner z coordinate on the lower-y profile.
+        /// Lower z coordinate of the profile at `ymax`.
         z2min: Dimension<Length>,
-        /// Upper x bound.
+        /// Upper x coordinate of the profile at `ymin`.
         xmax: Dimension<Length>,
-        /// Upper y bound.
+        /// Y coordinate of the second profile.
         ymax: Dimension<Length>,
-        /// Upper z bound.
+        /// Upper z coordinate of the profile at `ymin`.
         zmax: Dimension<Length>,
-        /// Inner x coordinate on the upper-y profile.
+        /// Upper x coordinate of the profile at `ymax`.
         x2max: Dimension<Length>,
-        /// Inner z coordinate on the upper-y profile.
+        /// Upper z coordinate of the profile at `ymax`.
         z2max: Dimension<Length>,
     },
 }
