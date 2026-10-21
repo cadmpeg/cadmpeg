@@ -1611,7 +1611,41 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         .unwrap();
     let parameters = &sldprt_native(final_ir.ir()).feature_histories[0].features[0].parameters;
     assert_eq!(parameters["Radius"], "6mm");
-    let written_edge = &final_ir.ir().model.edges[0].id;
+    // Native record allocation can reorder edge identities. Match the actual
+    // selected physical segment rather than an arena position.
+    let endpoints = |ir: &cadmpeg_ir::CadIr, edge: &cadmpeg_ir::topology::Edge| {
+        let mut points = [&edge.start, &edge.end].map(|id| {
+            let vertex = ir.model.vertices.iter().find(|v| &v.id == id).unwrap();
+            let point = ir
+                .model
+                .points
+                .iter()
+                .find(|p| p.id == vertex.point)
+                .unwrap();
+            let position = point.position().get();
+            [position.x, position.y, position.z]
+        });
+        points.sort_by(|a, b| {
+            a[0].total_cmp(&b[0])
+                .then(a[1].total_cmp(&b[1]))
+                .then(a[2].total_cmp(&b[2]))
+        });
+        points
+    };
+    let expected_segment = endpoints(&positive, &positive.model.edges[0]);
+    let matching_edges = final_ir
+        .ir()
+        .model
+        .edges
+        .iter()
+        .filter(|edge| endpoints(final_ir.ir(), edge) == expected_segment)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matching_edges.len(),
+        1,
+        "one edge occupies the selected segment"
+    );
+    let written_edge = &matching_edges[0].id;
     assert_eq!(
         sldprt_native(final_ir.ir()).feature_histories[0].features[0].properties["Edges"],
         written_edge.as_str()
