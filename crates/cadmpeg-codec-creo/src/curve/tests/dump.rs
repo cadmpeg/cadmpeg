@@ -1401,8 +1401,21 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
         .properties
         .contains_key("external_dependencies"));
     assert_eq!(
-        result.ir().model.features[0].source_text.as_deref(),
-        Some("r=1\nR=2\ntheta=t*360\nz=r")
+        result
+            .ir()
+            .native
+            .namespace("creo")
+            .expect("Creo native data")
+            .arenas()["curve_expressions"][0]
+            .fields()
+            .expect("native fields")["lines"]
+            .as_array()
+            .expect("source lines")
+            .iter()
+            .map(|line| line["text"].as_str().expect("authored line"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        "r=1\nR=2\ntheta=t*360\nz=r"
     );
     assert_eq!(
         result

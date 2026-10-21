@@ -13,11 +13,6 @@ pub(super) fn move_layout(
     for (arena, records) in ir.native.namespace_mut("creo").arenas_mut() {
         for record in records {
             let mut fields = record.fields()?;
-            if arena == "curve_expressions" {
-                // Original NEUGEO lines are source payload. Canonical equation
-                // text and references live in parameter Expression tokens.
-                fields.remove("lines");
-            }
             fields.insert("id".into(), Value::String(record.id().to_owned()));
             let path = format!("native.creo.{arena}.{}", record.id());
             let mut value = Value::Object(fields);
