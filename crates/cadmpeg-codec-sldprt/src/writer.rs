@@ -130,18 +130,10 @@ pub(super) fn write_semantic_at(
         .map(|(ctx, root)| crate::container::scan(ctx, *root))
         .transpose()?;
     if let Some(native) = native.as_mut() {
-        for lane in &mut native.feature_input_lanes {
-            if lane.native_payload.is_empty() && lane.native_payload.byte_len() != 0 {
-                let id = crate::records::lane_payload::retained_id(&lane.id)?;
-                if let Some(bytes) = retained_records
-                    .iter()
-                    .find(|record| record.id == id)
-                    .and_then(|record| record.data)
-                {
-                    lane.native_payload.attach(bytes)?;
-                }
-            }
-        }
+        crate::native::source::attach(native, |id| {
+            retained_records.iter().find(|record| record.id == *id)
+                .and_then(|record| record.data)
+        })?;
     }
     let retained_partition = retained_partition(
         &normalized,
