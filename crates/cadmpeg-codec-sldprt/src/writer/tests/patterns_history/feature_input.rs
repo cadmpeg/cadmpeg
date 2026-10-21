@@ -415,26 +415,25 @@ fn semantic_writer_omits_marker_framing_without_typed_operands() {
         .any(|loss| loss.code.local_code() == "native.records-omitted"));
     let mut encoded = Vec::new();
     plan.write_to(&mut encoded).unwrap();
-    let scan = crate::test_support::container::scan(&encoded);
-    assert!(!scan
-        .blocks
-        .iter()
-        .any(|block| block.section.name() == Some("Contents/Config-0-ResolvedFeatures")));
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert!(sldprt_native(regenerated.ir())
-        .feature_input_lanes
-        .is_empty());
+    crate::test_support::native::assert_marker_framing_omission(
+        plan.report(),
+        &sldprt_native(decoded.ir()),
+        &sldprt_native(regenerated.ir()),
+    );
     assert_eq!(
         regenerated.ir().model.features.len(),
         decoded.ir().model.features.len()
     );
     let synthesized =
         crate::test_support::assert_source_free_synthesis_agrees(decoded.ir(), regenerated.ir());
-    assert!(sldprt_native(synthesized.ir())
-        .feature_input_lanes
-        .is_empty());
+    crate::test_support::native::assert_marker_framing_omission(
+        plan.report(),
+        &sldprt_native(decoded.ir()),
+        &sldprt_native(synthesized.ir()),
+    );
 }
 
 #[test]

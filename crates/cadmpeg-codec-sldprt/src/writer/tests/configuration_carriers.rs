@@ -1707,27 +1707,27 @@ fn untyped_feature_framing_is_not_written_as_content() {
             plan.report().write_path(),
             cadmpeg_ir::report::export::WritePath::Patched { .. }
         ));
-        assert!(plan
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code.namespace() == "export"
-                && loss.code.local_code() == "native.records-omitted"));
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.namespace() == "export"
+                    && loss.code.local_code() == "native.records-omitted")
+        );
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
-        let scan = crate::test_support::container::scan(&written);
-        assert!(!scan.blocks.iter().any(|block| block
-            .section
-            .name()
-            .is_some_and(|name| name.ends_with("ResolvedFeatures"))));
         let output = SldprtCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap();
         let synthesized =
             crate::test_support::assert_source_free_synthesis_agrees(&document, output.ir());
-        assert!(sldprt_native(synthesized.ir())
-            .feature_input_lanes
-            .is_empty());
+        for actual in [output.ir(), synthesized.ir()] {
+            crate::test_support::native::assert_marker_framing_omission(
+                plan.report(),
+                &sldprt_native(&document),
+                &sldprt_native(actual),
+            );
+        }
     }
 }
 
