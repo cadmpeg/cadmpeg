@@ -616,6 +616,17 @@ fn keeps_registered_non_presentation_properties_native() {
             .map(cadmpeg_ir::scalar::NonNegativeReal::get),
         Some(4.5)
     );
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    assert!(
+        view.properties.is_empty(),
+        "GUI source properties have their native records"
+    );
     for name in [
         "ShowInTree",
         "OnTopWhenSelected",
@@ -631,17 +642,13 @@ fn keeps_registered_non_presentation_properties_native() {
         "PointColor",
     ] {
         assert!(
-            view.properties.contains_key(name),
+            properties
+                .iter()
+                .any(|property| property.name == name && !property.values.is_empty()),
             "missing native property {name}"
         );
     }
-    let properties = result
-        .ir()
-        .native
-        .namespace("fcstd")
-        .expect("namespace")
-        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
-        .expect("GUI properties");
+
     assert_eq!(properties.len(), 20);
     for name in ["LineMaterial", "PointMaterial", "TransformOrigin"] {
         assert!(!view.properties.contains_key(name));
@@ -1879,7 +1886,20 @@ fn a_blank_gui_property_key_is_charged_and_the_presentation_graph_survives() {
         .first()
         .expect("the provider's view presentation survives");
     assert_eq!(view.visible, Some(true));
-    assert!(view.properties.contains_key("Visibility"));
+    let native = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("GUI native namespace")
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    assert!(native
+        .iter()
+        .any(|property| property.name == "Visibility" && !property.values.is_empty()));
+    assert!(
+        !view.properties.contains_key("Visibility"),
+        "the visibility field is canonical"
+    );
 }
 
 /// Decodes one shape whose view provider states `shininess` as its
