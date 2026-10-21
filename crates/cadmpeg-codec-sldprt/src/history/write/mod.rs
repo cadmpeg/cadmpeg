@@ -185,6 +185,9 @@ fn project_feature_model_with_native_inputs(
         &histories,
         &native.feature_input_lanes,
     );
+    // Later bindings replace provisional feature operands with their actual
+    // sketch or spatial carriers. Dependencies follow the final definition.
+    crate::history::project::refresh_definition_dependencies(&ctx, features)?;
     Ok(projection)
 }
 
