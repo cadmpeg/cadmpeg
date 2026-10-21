@@ -5,29 +5,20 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::{document::CadIr, native::NativeRecord, SourceFidelity};
 use serde_json::{json, Value};
 
-// NativeBytes fields of the CATIA scan records. A matching field is extracted
-// only when its value is a hexadecimal byte encoding; typed objects and
-// mathematical arrays continue through the normal traversal.
+// Source-layout byte fields only. Appendix B keep fields retain their exact
+// base typed serialization, including Binary64.bits and ValueField.bytes.
 const BYTE_FIELDS: &[&str] = &[
-    "bytes",
-    "controls",
     "data",
     "definition_prefix",
     "definition_suffix",
-    "f1",
     "header",
     "inline_body",
     "payload",
     "prefix",
-    "prefix_atom_widths",
     "program",
     "record_suffix",
-    "senses",
     "storage_prefix",
-    "tag",
     "tail",
-    "terminal",
-    "terminal_controls",
     "value_payload",
 ];
 
@@ -70,32 +61,6 @@ pub(super) fn move_layout(ir: &mut CadIr, fidelity: &mut SourceFidelity) -> Resu
 fn extract(value: &mut Value, path: &str, fidelity: &mut SourceFidelity) -> Result<(), CodecError> {
     match value {
         Value::Object(object) => {
-            if let Some(Value::Object(scalar)) = object.get_mut("Binary64") {
-                if let Some(bits) = scalar.get("bits").and_then(Value::as_u64) {
-                    fidelity
-                        .metadata
-                        .insert(format!("{path}.Binary64.bits"), bits.to_string());
-                    let number = f64::from_bits(bits);
-                    scalar.remove("bits");
-                    if let Some(value) = serde_json::Number::from_f64(number) {
-                        scalar.insert("value".into(), Value::Number(value));
-                    } else {
-                        scalar.insert(
-                            "non_finite".into(),
-                            Value::String(
-                                if number.is_nan() {
-                                    "nan"
-                                } else if number.is_sign_positive() {
-                                    "positive_infinity"
-                                } else {
-                                    "negative_infinity"
-                                }
-                                .into(),
-                            ),
-                        );
-                    }
-                }
-            }
             let keys = object.keys().cloned().collect::<Vec<_>>();
             for key in keys {
                 let child_path = format!("{path}.{key}");
