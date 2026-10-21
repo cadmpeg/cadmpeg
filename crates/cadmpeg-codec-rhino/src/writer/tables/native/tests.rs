@@ -2,6 +2,8 @@
 
 use super::*;
 use crate::chunks::ArchiveVersion;
+use crate::writer::TCODE_GROUP_TABLE;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
 fn typed_group_name_and_uuid_are_authored_without_source_bytes() {

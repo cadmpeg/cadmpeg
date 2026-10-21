@@ -2,8 +2,8 @@
 //! Text styles authored from typed font characteristics.
 
 use super::{
-    CadIr, CodecError, Digest, Map, Value, anonymous_with_children, class_wrapper_with_direct,
-    component, crc_chunk, crc_chunk_with_direct, integer, native_count_limit, records, utf16, uuid,
+    CadIr, CodecError, Map, Value, anonymous_with_children, class_wrapper_with_direct, component,
+    crc_chunk, crc_chunk_with_direct, integer, native_count_limit, records, utf16, uuid,
     wire_index,
 };
 

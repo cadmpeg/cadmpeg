@@ -2,7 +2,7 @@
 //! Source-free saved-view and construction-plane records.
 
 use super::{
-    CadIr, CodecError, Digest, Map, TCODE_ENDOFTABLE, Value, anonymous, anonymous_with_children,
+    CadIr, CodecError, Map, TCODE_ENDOFTABLE, Value, anonymous, anonymous_with_children,
     crc_chunk_with_direct, integer, records, short_chunk, utf16, wire_index,
 };
 use cadmpeg_ir::presentation::ViewPresentation;

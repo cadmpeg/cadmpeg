@@ -2,9 +2,8 @@
 //! Typed hatch lines are emitted in the archive's millimetre units.
 
 use super::{
-    CadIr, CodecError, Digest, Value, anonymous, anonymous_with_children,
-    class_wrapper_with_direct, component, crc_chunk_with_direct, integer, records, utf16,
-    wire_index,
+    CadIr, CodecError, Value, anonymous, anonymous_with_children, class_wrapper_with_direct,
+    component, crc_chunk_with_direct, integer, records, utf16, wire_index,
 };
 
 const PATTERN_CLASS: [u8; 16] = [

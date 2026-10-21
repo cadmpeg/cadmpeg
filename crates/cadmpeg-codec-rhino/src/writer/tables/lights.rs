@@ -2,8 +2,8 @@
 //! Light geometry and photometric controls have a native typed inverse.
 
 use super::{
-    CadIr, CodecError, Digest, Map, Value, class_wrapper, color, crc_chunk_with_direct, integer,
-    records, short_chunk, utf16, uuid, wire_index,
+    CadIr, CodecError, Map, Value, class_wrapper, color, crc_chunk_with_direct, integer, records,
+    short_chunk, utf16, uuid, wire_index,
 };
 
 const LIGHT_CLASS: [u8; 16] = [

@@ -2,9 +2,9 @@
 //! Source-free inverses for native presentation tables without neutral homes.
 
 use super::{
-    CadIr, CodecError, Digest, Value, anonymous_with_children, class_wrapper,
-    class_wrapper_with_direct, component, crc_chunk_with_direct, object_record, records,
-    source_record_resolves, utf16, uuid, wire_index,
+    CadIr, CodecError, Value, anonymous_with_children, class_wrapper, class_wrapper_with_direct,
+    component, crc_chunk_with_direct, object_record, records, source_record_resolves, utf16, uuid,
+    wire_index,
 };
 
 const GROUP_CLASS: [u8; 16] = [

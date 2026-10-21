@@ -2,8 +2,8 @@
 //! Properties regenerated through their current neutral attribute links.
 
 use super::{
-    CadIr, CodecError, Digest, LossNote, Map, RhinoLossCode, Value, color, crc_chunk, integer,
-    records, short_chunk, utf16, wire_index,
+    CadIr, CodecError, LossNote, Map, RhinoLossCode, Value, color, crc_chunk, integer, records,
+    short_chunk, utf16, wire_index,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 
@@ -236,7 +236,7 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError
             .is_some_and(|value| !value.is_null())
         {
             let mut body = color(Some(&fields), "current_color")?.to_vec();
-            body.extend(integer(Some(fields), "current_color_source", 0).to_le_bytes());
+            body.extend(integer(Some(&fields), "current_color_source", 0).to_le_bytes());
             output.push(crc_chunk(0x2000_803a, &body)?);
         }
         if let Some(index) = fields.get("current_layer_index").and_then(Value::as_i64) {
@@ -280,7 +280,7 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError
                     .position(|appearance| appearance.id.as_str() == id)
                 {
                     let mut body = wire_index(index)?.to_le_bytes().to_vec();
-                    body.extend(integer(Some(fields), "current_material_source", 0).to_le_bytes());
+                    body.extend(integer(Some(&fields), "current_material_source", 0).to_le_bytes());
                     output.push(crc_chunk(0x2000_8039, &body)?);
                 }
             }

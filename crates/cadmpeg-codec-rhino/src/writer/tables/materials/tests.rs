@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::writer::TCODE_MATERIAL_TABLE;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_ir::scalar::FiniteReal;
 
 #[test]
 fn current_material_values_override_native_copies_without_source_bytes() {
