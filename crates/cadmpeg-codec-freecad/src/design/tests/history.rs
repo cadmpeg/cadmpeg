@@ -837,10 +837,25 @@ fn preserves_forward_declared_feature_dependencies() {
         .find(|feature| feature.name.as_deref() == Some("Second"))
         .expect("second feature");
 
-    assert_eq!(
-        first.dependencies.as_slice(),
-        std::slice::from_ref(&second.id)
-    );
+    // #209 D26: scheduling declarations stay native; StoredGeometry has no
+    // construction reference that would restate this edge in dependencies.
+    assert!(first.dependencies.is_empty());
+    let objects = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap();
+    let native_first = objects
+        .iter()
+        .find(|object| object.name() == "First")
+        .unwrap();
+    let native_second = objects
+        .iter()
+        .find(|object| object.name() == "Second")
+        .unwrap();
+    assert_eq!(native_first.dependencies, vec![native_second.id().clone()]);
     assert!(second.ordinal < first.ordinal);
     assert_valid_document(result.ir());
 }
@@ -896,7 +911,7 @@ fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
     assert_eq!(features[1].ordinal, 1);
     assert!(features.iter().all(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
     )));
     assert!(features
         .iter()
@@ -1079,7 +1094,33 @@ fn retains_spreadsheet_cycles_in_canonical_tokens_and_native_records() {
             .iter()
             .filter(|loss| loss.code.local_code() == "feature.cyclic-history")
             .count(),
-        1
+        0
+    );
+    // D6/D26: the canonical token graph reports its own cycle exactly once;
+    // no feature scheduling edge or codec loss is inferred from those tokens.
+    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
+    let cycles = report
+        .findings
+        .iter()
+        .filter(|finding| finding.message.contains("parameter dependency cycle"))
+        .collect::<Vec<_>>();
+    assert_eq!(cycles.len(), 1, "{:?}", report.findings);
+    assert_eq!(
+        cycles[0].check,
+        cadmpeg_ir::report::check::Check::ReferentialIntegrity
+    );
+    assert_eq!(cycles[0].severity, cadmpeg_ir::report::Severity::Warning);
+    let related = cycles[0]
+        .related
+        .iter()
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        related,
+        parameters
+            .iter()
+            .map(|parameter| parameter.id.as_str())
+            .collect()
     );
     let properties = result
         .ir()

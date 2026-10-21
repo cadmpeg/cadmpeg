@@ -1835,7 +1835,48 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             && pull_direction.z.abs() < 1.0e-12
             && (result.ir().dimension_value(&angle).expect("resolved dimension").get() + 5f64.to_radians()).abs() < 1.0e-12
     ));
-    assert_eq!(draft.dependencies.len(), 3);
+    // D26: the operation references Base and NeutralPlane. Its pull is a
+    // resolved direction value; retain the original line link in typed native
+    // content instead of inventing a third construction reference.
+    let dependency_names = draft
+        .dependencies
+        .iter()
+        .map(|id| {
+            result
+                .ir()
+                .model
+                .features
+                .iter()
+                .find(|feature| feature.id == *id)
+                .unwrap()
+                .name
+                .as_deref()
+                .unwrap()
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        dependency_names,
+        std::collections::BTreeSet::from(["Base", "Neutral"])
+    );
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let pull = properties
+        .iter()
+        .find(|property| {
+            property.owner == draft.native_ref.as_deref().unwrap()
+                && property.name == "PullDirection"
+        })
+        .unwrap();
+    assert_eq!(pull.links().len(), 1);
+    assert_eq!(
+        pull.links()[0].as_ref().unwrap().object(),
+        Some("fcstd:native:object#Pull")
+    );
     super::computed_controls::assert_computed_control(
         result.ir(),
         "Draft",
