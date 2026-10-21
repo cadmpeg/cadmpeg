@@ -1916,11 +1916,17 @@ fn semantic_writer_preserves_dimension_attributes() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
+    let native = sldprt_native(decoded.ir());
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = &mut ir_edit.model.parameters[0];
-        assert_eq!(parameter.properties["Driven"], "true");
-        assert_eq!(parameter.properties["EquationId"], "D1@Boss");
+        // D1/D11: driving is canonical; EquationId is source spelling only.
+        assert!(!parameter.driving);
+        assert!(!parameter.properties.contains_key("Driven"));
+        assert!(!parameter.properties.contains_key("EquationId"));
+        let properties = &native.feature_histories[0].features[0].dimension_properties["Depth"];
+        assert_eq!(properties["Driven"], "true");
+        assert_eq!(properties["EquationId"], "D1@Boss");
         parameter.expression = "20mm".into();
         parameter.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
     }
@@ -1958,6 +1964,8 @@ fn semantic_writer_preserves_evaluated_equation_values() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
+    let native = sldprt_native(decoded.ir());
+    let source_properties = &native.feature_histories[0].features[0].dimension_properties["Depth"];
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = &mut ir_edit.model.parameters[0];
@@ -1966,7 +1974,11 @@ fn semantic_writer_preserves_evaluated_equation_values() {
             parameter.value,
             Some(ParameterValue::Length(Length::new(24.0).unwrap()))
         );
-        assert_eq!(parameter.properties["Value"], "24mm");
+        // D1: the typed cache owns Value; exact native spelling stays native.
+        assert!(!parameter.properties.contains_key("Value"));
+        assert!(!parameter.properties.contains_key("EquationId"));
+        assert_eq!(source_properties["Value"], "24mm");
+        assert_eq!(source_properties["EquationId"], "D1@Boss");
         parameter.expression = "Width * 3".into();
         parameter.value = Some(ParameterValue::Length(Length::new(36.0).unwrap()));
     }
@@ -1987,6 +1999,10 @@ fn semantic_writer_preserves_evaluated_equation_values() {
         parameter.value,
         Some(ParameterValue::Length(Length::new(36.0).unwrap()))
     );
-    assert_eq!(parameter.properties["Value"], "36mm");
-    assert_eq!(parameter.properties["EquationId"], "D1@Boss");
+    assert!(!parameter.properties.contains_key("Value"));
+    assert!(!parameter.properties.contains_key("EquationId"));
+    let native = sldprt_native(regenerated.ir());
+    let properties = &native.feature_histories[0].features[0].dimension_properties["Depth"];
+    assert_eq!(properties["Value"], "36mm");
+    assert_eq!(properties["EquationId"], "D1@Boss");
 }
