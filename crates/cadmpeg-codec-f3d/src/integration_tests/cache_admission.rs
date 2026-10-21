@@ -84,6 +84,26 @@ fn original_bad_cache_omits_only_proven_invalid_face_and_preserves_source() {
             "f3d:brep:entity#12"
         ]
     );
+    let plane_face = &ir.model.faces[0];
+    assert_eq!(plane_face.shell.as_str(), "f3d:brep:entity#3");
+    assert_eq!(plane_face.surface.as_str(), "f3d:brep:entity#8");
+    assert_eq!(plane_face.sense, cadmpeg_ir::topology::Sense::Forward);
+    assert_eq!(
+        ir.model
+            .surfaces
+            .iter()
+            .find(|row| row.id == plane_face.surface)
+            .unwrap()
+            .geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0)
+            )
+            .unwrap()
+        ))
+    );
     // The source shared edge16 remains owned by the unaffected plane; removal
     // of its opposite face legitimately closes its surviving radial ring.
     let shared = ir
