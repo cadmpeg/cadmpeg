@@ -749,10 +749,7 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
 
 #[test]
 fn semantic_writer_preserves_absent_feature_selections() {
-    use cadmpeg_ir::features::{
-        edge_treatments::ChamferSpec, EdgeSelection, FaceSelection, FeatureDefinition,
-        FeatureOperation,
-    };
+    use cadmpeg_ir::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -798,17 +795,14 @@ fn semantic_writer_preserves_absent_feature_selections() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) = definition
-            else {
-                panic!("typed chamfer");
-            };
-            groups[0].spec = ChamferSpec::Distance {
-                distance: cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
-                ),
-            };
-        });
+        let feature_id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &feature_id,
+                "/groups/0/spec/distance",
+                cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
+            )
+            .unwrap();
         let feature_id = ir_edit.model.features[1].id.clone();
         ir_edit
             .set_dimension(
@@ -1290,15 +1284,23 @@ fn semantic_writer_round_trips_all_move_face_forms() {
             else {
                 panic!("typed move face");
             };
+            let FaceMotion::Offset { distance } = motion else {
+                panic!("original offset motion");
+            };
+            let distance = distance.clone();
             *faces = FaceSelection::Native("face:8".into());
             *motion = FaceMotion::Translate {
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
                     0.0, 1.0, 0.0,
                 ))
                 .unwrap(),
-                distance: cadmpeg_ir::Dimension::Literal(Length::new(4.0).unwrap()),
+                distance,
             };
         });
+        let feature_id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(&feature_id, "/motion/distance", Length::new(4.0).unwrap())
+            .unwrap();
         ir_edit.model.features[1].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::MoveFace { motion, .. }) =
                 definition
@@ -1346,7 +1348,32 @@ fn semantic_writer_round_trips_all_move_face_forms() {
     assert_eq!(native[1].parameters["Angle"], "0.5rad");
     assert_eq!(native[2].properties["Mode"], "Offset");
     assert_eq!(native[2].parameters["Distance"], "-1mm");
-    assert!(!native[2].parameters.contains_key("Angle"));
+    // #209 D1: changing the motion removes its use of Angle, while the
+    // independently authored parameter remains held by the feature.
+    assert_eq!(native[2].parameters["Angle"], "15deg");
+    assert!(matches!(
+        regenerated.ir().model.features[2].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MoveFace {
+            motion: FaceMotion::Offset { distance },
+            ..
+        }) if regenerated.ir().dimension_value(distance).unwrap().get() == -1.0
+    ));
+    assert_eq!(
+        regenerated
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| {
+                parameter.owner.as_ref() == Some(&regenerated.ir().model.features[2].id)
+                    && parameter.name == "Angle"
+            })
+            .unwrap()
+            .value,
+        Some(cadmpeg_ir::features::ParameterValue::Angle(
+            Angle::new(15f64.to_radians()).unwrap()
+        ))
+    );
 }
 
 #[test]
