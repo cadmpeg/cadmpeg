@@ -265,7 +265,7 @@ pub(super) fn write(
             .and_then(|record| names.get(record.object()))
             .cloned();
         let name =
-            existing.unwrap_or_else(|| fresh_name(format!("Joint{}", objects.len()), &mut used));
+            existing.unwrap_or_else(|| fresh_name(&format!("Joint{}", objects.len()), &mut used));
         if !objects.iter().any(|object| object.name == name) {
             objects.push(Object::new(
                 name.clone(),

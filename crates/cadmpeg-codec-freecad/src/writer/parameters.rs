@@ -244,7 +244,7 @@ pub(super) fn write(
         }
         let property_name = names
             .get(&format!("parameter-path:{}", parameter.id))
-            .map_or(&parameter.name, String::as_str);
+            .map_or(parameter.name.as_str(), String::as_str);
         let property = match &parameter.value {
             Some(ParameterValue::Length(value)) => {
                 xml::scalar(property_name, "App::PropertyLength", "Float", value.get())
