@@ -808,6 +808,16 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             seeds: Vec::new(),
             pattern: PatternKind::UNRESOLVED_LINEAR,
         }));
+    // Apply the same source class proof that precedes pattern binding during
+    // decode. The authored z/e expressions remain exact; only typed caches
+    // receive the quantities established by the native dimension classes.
+    crate::resolved_features::parameters::enrich_history_parameters(
+        std::slice::from_mut(&mut derived_history),
+        [&derived_lane],
+        true,
+    );
+    assert_eq!(derived_history.features[2].parameters["z"], "3");
+    assert_eq!(derived_history.features[2].parameters["e"], "19");
     bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&derived_history),
