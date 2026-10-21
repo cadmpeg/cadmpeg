@@ -234,8 +234,11 @@ fn exact_assembly_operand_path_envelope(
         let (wrapper_record_index, wrapper_reference_offset) =
             exact_same_segment_record_reference(bytes, locator_at.checked_add(wrapper_reference)?)?;
         let path_record_index = locator_record_index.checked_add(1)?;
+        // A variable-reference or wide locator's path can continue over
+        // further path records before its wrapper.
+        let counted_wrapper = variable_reference || wide;
         if scope_record_index != scope.record_index
-            || if variable_reference {
+            || if counted_wrapper {
                 !(locator_record_index.checked_add(2)?..=locator_record_index.checked_add(65)?)
                     .contains(&wrapper_record_index)
             } else {
@@ -270,7 +273,7 @@ fn exact_assembly_operand_path_envelope(
         };
         let wrapper_class_tag = exact_indexed_header_at(bytes, wrapper_at, wrapper_record_index)?;
         let wrapper_end = next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)?;
-        let expected_wrapper_length = if variable_reference {
+        let expected_wrapper_length = if counted_wrapper {
             path_wrapper::LEN.checked_add(path_spans.len().checked_sub(1)?.checked_mul(11)?)?
         } else {
             path_wrapper::LEN
@@ -284,7 +287,7 @@ fn exact_assembly_operand_path_envelope(
             || View::u32_le_at(
                 bytes,
                 wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_WORD)?,
-            )? != if variable_reference {
+            )? != if counted_wrapper {
                 u32::try_from(path_spans.len()).ok()?
             } else {
                 1
@@ -301,7 +304,7 @@ fn exact_assembly_operand_path_envelope(
         if referenced_path_record_index != path_record_index {
             return None;
         }
-        if variable_reference
+        if counted_wrapper
             && path_spans
                 .iter()
                 .skip(1)
@@ -350,7 +353,12 @@ fn exact_assembly_operand_path_envelope(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            if !variable_reference || continuation.class_tag().as_str() != "330" {
+            let continues = if variable_reference {
+                continuation.class_tag().as_str() == "330"
+            } else {
+                wide && path.admitted_by_type() && continuation.admitted_by_type()
+            };
+            if !continues {
                 return None;
             }
             path = path.try_append(continuation)?;

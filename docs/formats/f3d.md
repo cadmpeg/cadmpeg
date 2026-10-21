@@ -1525,9 +1525,18 @@ a nonzero marked same-segment reference at offset 56, and an identity flag byte
 at offset 67. Flag `0` is followed by a row-major rigid 4×4 transform at offset
 68; flag `1` stores no transform. One zero byte follows the flag or the
 transform, then a marked backlink to the assembly-operation scope, a marked
-reference to record index `N+2`, u32 value 2, and two zero bytes. The locator
+reference to its wrapper record (`N+2`, or `N+n+1` when the path continues),
+u32 value 2, and two zero bytes. The locator
 is 97 bytes with flag `1` and 225 bytes with flag `0`. Its path record and
-wrapper follow it as in the common locator.
+wrapper follow it as in the common locator, or its typed path continues over
+further typed path records `N+2` through `N+n`: the wrapper is then record
+`N+n+1`, stores path count `n` at offset 22 and a marked reference to each
+path record in order from offset 26, and is `37 + 11(n-1)` bytes. The
+continuations' occurrence GUIDs extend the occurrence path in order. Each
+record keeps its own four identity GUIDs in record order, so a path over `n`
+records has `4n` identity GUIDs; when its root occurrence is not local, the
+first record's first identity GUID is the unresolved external-document
+identity. Each record's occurrence identity pairs are kept in record order.
 
 The class-283/264 and class-347/260 `Assemble` generations use class-289
 parameter-owner records with 103-byte owner frames. Both use the standard

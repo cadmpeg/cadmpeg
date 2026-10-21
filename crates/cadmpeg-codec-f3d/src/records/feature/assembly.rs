@@ -1371,8 +1371,10 @@ impl DesignAssemblyOperandPath {
         if occurrence_guids.is_empty() || (legacy_pair && occurrence_guids.len() != 1) {
             return Err("occurrence_guids has invalid assembly path arity".into());
         }
+        // A typed path continued over further typed records keeps the four
+        // identity GUIDs of each record.
         let identity_arity = if typed {
-            identity_guids.len() == 4
+            !identity_guids.is_empty() && identity_guids.len().is_multiple_of(4)
         } else if legacy_pair {
             identity_guids.len() == 1
         } else {
@@ -1470,8 +1472,12 @@ impl DesignAssemblyOperandPath {
         self.paired_occurrence_keys = keys;
         Ok(self)
     }
+    /// This path continued by a further path record of its own form: two
+    /// class-330 records, or two records admitted by the typed path type.
     pub(crate) fn try_append(self, continuation: Self) -> Option<Self> {
-        if self.class_tag.as_str() != "330" || continuation.class_tag.as_str() != "330" {
+        let typed = self.admitted_by_type() && continuation.admitted_by_type();
+        if !typed && (self.class_tag.as_str() != "330" || continuation.class_tag.as_str() != "330")
+        {
             return None;
         }
         let mut occurrences = self.occurrence_guids;
@@ -1480,10 +1486,11 @@ impl DesignAssemblyOperandPath {
         identities.extend(continuation.identity_guids);
         let mut pairs = self.paired_occurrence_keys;
         pairs.extend(continuation.paired_occurrence_keys);
-        Self::try_new(
+        Self::try_new_typed(
             self.link,
             self.record_index,
             self.class_tag,
+            self.type_guid,
             self.byte_offset,
             occurrences,
             identities,
