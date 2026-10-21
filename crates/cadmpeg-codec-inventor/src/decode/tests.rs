@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_test_support::{wire, EditableDecodeResult};
+use cadmpeg_test_support::{EditableDecodeResult, wire};
 
 use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
@@ -10,16 +10,16 @@ mod native_admission;
 mod presentation_admission;
 mod property_admission;
 
-use super::{built_in_property_name, known_property_set_fmtid, preview_bytes, MetadataProjection};
+use super::{MetadataProjection, built_in_property_name, known_property_set_fmtid, preview_bytes};
+use crate::InventorCodec;
 use crate::loss::InventorLossCode;
 use crate::native::{DatabaseIssueRecord, DatabaseRecord, VersionTupleRecord};
 use crate::property_set::PropertyValue;
 use crate::test_support::test_fixtures::{
-    acis_kernel_stream, acis_sphere_kernel_stream, fixture, primary_envelope_fixture,
-    primary_envelope_fixture_with_design, primary_envelope_fixture_with_kernel,
-    EnvelopeDeclarations,
+    EnvelopeDeclarations, acis_kernel_stream, acis_sphere_kernel_stream, fixture,
+    primary_envelope_fixture, primary_envelope_fixture_with_design,
+    primary_envelope_fixture_with_kernel,
 };
-use crate::InventorCodec;
 
 fn validation_findings(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
     let arena = DecodeArena::new();
@@ -140,11 +140,13 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         "the completed design projection holds an empty design"
     );
     assert_eq!(decoded.report().scope(), decoded.ir().scope);
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind())
+    );
     let native_findings = validation_findings(decoded.ir());
     assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
     // The structural fixture has no readable registry body. The schema-31
@@ -160,7 +162,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
     };
     let container_only = EditableDecodeResult::from(
         InventorCodec
-            .decode(&mut std::io::Cursor::new(source), &options)
+            .decode(&mut std::io::Cursor::new(&source), &options)
             .expect("container-only Inventor decode succeeds"),
     );
     assert_eq!(
@@ -189,10 +191,17 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             crate::native::SegmentBulkFrame::Unavailable { .. }
         )
     }));
-    assert!(container_only
+    // V8 moves source evidence out of typed native records. Container depth
+    // still retains the exact image extent and digest in SourceFidelity.
+    assert_eq!(container_only.source_fidelity().retained_records().len(), 1);
+    let image = container_only
         .source_fidelity()
-        .retained_records()
-        .is_empty());
+        .retained_record("inventor:source:image#whole")
+        .expect("whole source evidence survives the container cut");
+    assert_eq!(image.stream(), "inventor:source");
+    assert_eq!(image.offset(), 0);
+    assert_eq!(image.byte_len(), u64::try_from(source.len()).unwrap());
+    assert_eq!(image.sha256(), cadmpeg_ir::hash::sha256_hex(&source));
 }
 
 #[test]
@@ -304,10 +313,12 @@ fn database_record_projects_schema_and_creation_and_save_versions() {
     assert_eq!(record.created_filetime, 17);
     assert_eq!(record.saved_filetime, 18);
     assert_eq!(record.note, "synthetic primary document");
-    assert!(native
-        .arena_as::<DatabaseIssueRecord>("database_issues")
-        .expect("database native arena")
-        .is_empty());
+    assert!(
+        native
+            .arena_as::<DatabaseIssueRecord>("database_issues")
+            .expect("database native arena")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -322,10 +333,12 @@ fn database_issues_preserve_the_unframed_database_instead_of_a_database_record()
         .native
         .namespace("inventor")
         .expect("Inventor namespace");
-    assert!(native
-        .arena_as::<DatabaseRecord>("databases")
-        .expect("database native arena")
-        .is_empty());
+    assert!(
+        native
+            .arena_as::<DatabaseRecord>("databases")
+            .expect("database native arena")
+            .is_empty()
+    );
     let issues = native
         .arena_as::<DatabaseIssueRecord>("database_issues")
         .expect("database native arena");
@@ -360,11 +373,13 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         wire::coverage(decoded.report())["active_kernel_carriers"],
         1
     );
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind())
+    );
 
     let native = decoded
         .ir()
@@ -465,11 +480,13 @@ fn binary_kernel_metadata_recovery_preserves_geometry_and_valid_tolerance_peers(
         let recovered = decode(&bytes);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert_eq!(recovered.ir().tolerances, expected.ir().tolerances);
-        assert!(recovered
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == InventorLossCode::KernelHeaderMetadataUnresolved.kind()));
+        assert!(
+            recovered
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == InventorLossCode::KernelHeaderMetadataUnresolved.kind())
+        );
         assert!(validation_findings(recovered.ir()).is_empty());
     }
     for (offset, values) in [
@@ -495,11 +512,14 @@ fn binary_kernel_metadata_recovery_preserves_geometry_and_valid_tolerance_peers(
                     expected.ir().tolerances.linear
                 );
             }
-            assert!(recovered
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.code == InventorLossCode::KernelHeaderToleranceUnresolved.kind()));
+            assert!(
+                recovered
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code
+                        == InventorLossCode::KernelHeaderToleranceUnresolved.kind())
+            );
             assert!(validation_findings(recovered.ir()).is_empty());
         }
     }
@@ -592,11 +612,13 @@ fn unclosed_parameter_reference_keeps_typed_source_semantics() {
             &DecodeOptions::default(),
         )
         .expect("typed open formula graph remains a partial decode");
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == InventorLossCode::ParameterGraphOpen.kind()));
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == InventorLossCode::ParameterGraphOpen.kind())
+    );
     let namespace = result
         .ir()
         .native

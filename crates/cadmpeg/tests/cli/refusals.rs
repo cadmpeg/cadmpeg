@@ -5,7 +5,7 @@ use std::fs;
 
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::{predicate, PredicateBooleanExt};
+use predicates::prelude::{PredicateBooleanExt, predicate};
 use tempfile::tempdir;
 
 use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
@@ -134,14 +134,16 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
         let decode_report = value["decode_report"]
             .as_object()
             .expect("strict refusal keeps its completed decode report");
-        assert!(decode_report["losses"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|loss| {
-                loss["code"]["namespace"] == "rhino"
-                    && loss["code"]["code"] == "source.dialect-unverified"
-            }));
+        assert!(
+            decode_report["losses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|loss| {
+                    loss["code"]["namespace"] == "rhino"
+                        && loss["code"]["code"] == "source.dialect-unverified"
+                })
+        );
     }
 }
 
@@ -382,9 +384,11 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
     );
     assert_eq!(value["refusal"]["target"]["format"], "iges");
     assert_eq!(value["refusal"]["target"]["refusal"]["requested"], "9.9");
-    assert!(value["refusal"]["target"]["available"]
-        .as_array()
-        .is_some_and(|available| !available.is_empty()));
+    assert!(
+        value["refusal"]["target"]["available"]
+            .as_array()
+            .is_some_and(|available| !available.is_empty())
+    );
     assert!(value["decode_report"].is_object());
     assert!(value["decode_report"]["identity"]["dialects"].is_object());
     assert!(value["check_report"].is_object());
@@ -529,7 +533,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         .stderr(
             predicate::str::contains("export planning reported 1 loss(es)")
                 .and(predicate::str::contains(
-                    "uninterpreted passthrough record(s)",
+                    "omits 1 native record(s) from `creo.unknowns`",
                 ))
                 .and(predicate::str::contains("decode reported").not()),
         );
@@ -702,7 +706,7 @@ fn decode_loss_policy_treats_restored_sidecars_as_history() {
 
 #[test]
 fn edited_cadir_requires_rebinding_its_decode_sidecar() {
-    use cadmpeg_ir::{decode_sidecar_path, hash::digest::Sha256Digest, CadIr, DecodeSidecar};
+    use cadmpeg_ir::{CadIr, DecodeSidecar, decode_sidecar_path, hash::digest::Sha256Digest};
 
     let dir = tempdir().unwrap();
     let native = geometryless_creo(dir.path(), "lossy.prt");
@@ -829,7 +833,7 @@ fn decode_loss_floor_applies_to_native_input_and_never_to_history() {
 #[cfg(all(feature = "step", feature = "rhino"))]
 #[test]
 fn fine_native_tolerance_preserves_exact_rhino_geometry() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder, target::TargetRequest};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
     const FINE_STATED_TOLERANCE: f64 = 1e-12;
@@ -877,15 +881,17 @@ fn fine_native_tolerance_preserves_exact_rhino_geometry() {
         report["decode_report"]["transfer"]["geometry_transferred"],
         true
     );
-    assert!(!report["export"]["losses"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|loss| {
-            loss["code"]["code"]
-                .as_str()
-                .is_some_and(|code| code.contains("no-exportable-solids"))
-        }));
+    assert!(
+        !report["export"]["losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| {
+                loss["code"]["code"]
+                    .as_str()
+                    .is_some_and(|code| code.contains("no-exportable-solids"))
+            })
+    );
     let written = cadmpeg_codec_rhino::RhinoCodec
         .decode(
             &mut Cursor::new(fs::read(&output).unwrap()),
@@ -934,11 +940,13 @@ fn an_info_only_native_decode_is_rejected_at_info_and_passes_higher_floors() {
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
     assert!(!decoded.report().losses.is_empty());
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.severity == Severity::Info));
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.severity == Severity::Info)
+    );
     let dir = tempdir().unwrap();
     for (floor, refused) in [
         ("info", true),
@@ -973,10 +981,12 @@ fn an_info_only_native_decode_is_rejected_at_info_and_passes_higher_floors() {
         if refused {
             assert_eq!(report["refusal"]["code"], "decode_loss_rejected");
         }
-        assert!(report["decode_report"]["losses"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|loss| loss["severity"] == "info"));
+        assert!(
+            report["decode_report"]["losses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|loss| loss["severity"] == "info")
+        );
     }
 }
