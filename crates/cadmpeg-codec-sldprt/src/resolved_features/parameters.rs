@@ -254,13 +254,12 @@ pub(crate) fn enrich_history_parameters<'a>(
                 let object_end = object_starts
                     .iter()
                     .position(|(_, candidate)| candidate.id == feature.id)
-                    .map(|position| {
+                    .map_or(lane.native_payload.len(), |position| {
                         super::bindings::pattern_object_end(
                             object_starts.iter().skip(position + 1).copied(),
                             lane.native_payload.len(),
                         )
-                    })
-                    .unwrap_or(lane.native_payload.len());
+                    });
                 if let Some(dimensions) = object_start.and_then(|start| {
                     super::axes::typed_linear_pattern_dimensions(feature, lane, start, object_end)
                 }) {

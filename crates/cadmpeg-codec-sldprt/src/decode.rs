@@ -2367,6 +2367,14 @@ fn ensure_display_appearance(
     Ok(id)
 }
 
+type BuiltDocument = (
+    CadIr,
+    Annotations,
+    Vec<UnknownRecord>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+    retention::Retention,
+);
+
 fn build_geometry_ir(
     ctx: &DecodeContext<'_>,
     scan: &mut ContainerScan<'_>,
@@ -2374,16 +2382,7 @@ fn build_geometry_ir(
     decoded: DecodedBrep,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
-) -> Result<
-    (
-        CadIr,
-        Annotations,
-        Vec<UnknownRecord>,
-        Vec<cadmpeg_ir::report::loss::LossNote>,
-        retention::Retention,
-    ),
-    CodecError,
-> {
+) -> Result<BuiltDocument, CodecError> {
     let DecodedBrep {
         metadata_header,
         mut brep,
@@ -3525,16 +3524,7 @@ fn build_metadata_ir(
     classification: &crate::dialect::LayerClassification,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
-) -> Result<
-    (
-        CadIr,
-        Annotations,
-        Vec<UnknownRecord>,
-        Vec<cadmpeg_ir::report::loss::LossNote>,
-        retention::Retention,
-    ),
-    CodecError,
-> {
+) -> Result<BuiltDocument, CodecError> {
     let mut ir = CadIr::empty();
     let mut retention = retention::Retention::default();
     for section in scan.sections() {

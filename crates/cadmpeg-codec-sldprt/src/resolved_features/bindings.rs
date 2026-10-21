@@ -72,12 +72,9 @@ pub(super) fn pattern_object_end<'a>(
     if next.is_some_and(|(_, feature)| {
         feature.input_class.as_deref() == Some("moDerivedCosmeticThread_c")
     }) {
-        following
-            .next()
-            .map(|(offset, _)| offset)
-            .unwrap_or(payload_len)
+        following.next().map_or(payload_len, |(offset, _)| offset)
     } else {
-        next.map(|(offset, _)| offset).unwrap_or(payload_len)
+        next.map_or(payload_len, |(offset, _)| offset)
     }
 }
 

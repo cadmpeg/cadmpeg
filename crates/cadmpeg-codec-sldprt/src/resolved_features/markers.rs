@@ -318,9 +318,9 @@ fn spatial_line_vertices(
     (names, starts): &(FeatureObjectNames<'_>, FeatureObjectStarts),
 ) -> Option<SpatialLineVertices> {
     let name = names.of(record)?;
-    let Some(start) = name.offset.and_then(|offset| usize::try_from(offset).ok()) else {
-        return None;
-    };
+    let start = name
+        .offset
+        .and_then(|offset| usize::try_from(offset).ok())?;
     let end = starts.end(name.offset, lane.native_payload.len());
     let object = lane.native_payload.get(start..end)?;
     let offsets = spatial_vertex_offsets(object);
@@ -3299,12 +3299,9 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
         if marker.feature_ref != curve.feature_ref {
             continue;
         }
-        let Some(marker_offset) = marker
+        let marker_offset = marker
             .offset()
-            .and_then(|offset| usize::try_from(offset).ok())
-        else {
-            return None;
-        };
+            .and_then(|offset| usize::try_from(offset).ok())?;
         let Some((_, links)) = linked_profile_point(payload, marker_offset) else {
             continue;
         };

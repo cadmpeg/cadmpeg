@@ -1224,9 +1224,7 @@ pub(crate) fn project_profiled_hole_constructions(
     enrich_history_hole_constructions(&mut ownership_histories, lanes)?;
     let histories = enriched_histories.as_slice();
     let incomplete =
-        |diameter: &Option<
-            &cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveLength>,
-        >,
+        |diameter: Option<&cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveLength>>,
          extent: &Option<LinearTermination>,
          construction: &cadmpeg_ir::features::holes::HoleConstruction| {
             diameter.is_none()
@@ -1243,7 +1241,7 @@ pub(crate) fn project_profiled_hole_constructions(
         };
         match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. })
-                if !incomplete(&shape.diameter(), extent, shape.construction()) =>
+                if !incomplete(shape.diameter(), extent, shape.construction()) =>
             {
                 complete_native_holes.insert(native);
             }
@@ -1277,7 +1275,7 @@ pub(crate) fn project_profiled_hole_constructions(
         else {
             continue;
         };
-        if !incomplete(&shape.diameter(), extent, shape.construction()) {
+        if !incomplete(shape.diameter(), extent, shape.construction()) {
             continue;
         }
         let Some(native) = feature.native_ref.as_deref() else {
@@ -1353,7 +1351,7 @@ pub(crate) fn project_profiled_hole_constructions(
         else {
             continue;
         };
-        if !incomplete(&shape.diameter(), extent, shape.construction()) {
+        if !incomplete(shape.diameter(), extent, shape.construction()) {
             continue;
         }
         let Some(native_id) = feature.native_ref.as_deref() else {

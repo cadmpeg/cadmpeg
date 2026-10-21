@@ -1952,12 +1952,9 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
                 SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)
             )
     })?;
-    let Some(marker_offset) = marker
+    let marker_offset = marker
         .offset()
-        .and_then(|offset| usize::try_from(offset).ok())
-    else {
-        return None;
-    };
+        .and_then(|offset| usize::try_from(offset).ok())?;
     let (_, center_indices) = slot_curve_and_center_indices(&lane.native_payload, marker_offset)?;
     let class_ref = lane
         .references

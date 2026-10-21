@@ -87,15 +87,15 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             .attributes
             .iter()
             .filter(|attribute| {
-                !attribute.id.as_str().starts_with("sldprt:")
-                    && !super::custom_properties::represents(attribute)
-                    && !(matches!(
+                !(attribute.id.as_str().starts_with("sldprt:")
+                    || super::custom_properties::represents(attribute)
+                    || (matches!(
                         attribute.target,
                         cadmpeg_ir::attributes::AttributeTarget::Pmi(_)
                     ) && matches!(
                         attribute.name.as_str(),
                         "precision" | "basic" | "inspection" | "reference_only"
-                    ))
+                    )))
             })
             .count(),
         SldprtLossCode::WriterAttributesOmitted,
