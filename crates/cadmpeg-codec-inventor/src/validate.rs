@@ -17,7 +17,8 @@ use cadmpeg_ir::{
 use crate::design::{PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind};
 use crate::feature::{
     PmDcEntityStyleLink, PmDcFeature, PmDcFeatureLabel, PmDcFeatureProperty,
-    PmDcFeaturePropertyKind, PmDcFeatureTerminator, PmDcPatternFeature,
+    PmDcFeaturePropertyKind, PmDcFeatureTerminator, PmDcKernelEntityLink, PmDcPatternFeature,
+    PmDcWorkPlane,
 };
 use crate::sketch::{
     PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
@@ -65,6 +66,7 @@ const ARENAS: &[&str] = &[
     "pm_dc_feature_properties",
     "pm_dc_feature_terminators",
     "pm_dc_features",
+    "pm_dc_kernel_entity_links",
     "pm_dc_model_roots",
     "pm_dc_parameter_tables",
     "pm_dc_pattern_features",
@@ -76,6 +78,7 @@ const ARENAS: &[&str] = &[
     "pm_dc_sketches",
     "pm_dc_transforms",
     "pm_dc_units",
+    "pm_dc_work_planes",
     "pm_graphics_faces",
     "pm_graphics_style_collections",
     "pm_graphics_primary_color_styles",
@@ -941,7 +944,14 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             | PmDcFeaturePropertyKind::WideEnumeration { .. }
             | PmDcFeaturePropertyKind::Boolean { .. }
             | PmDcFeaturePropertyKind::RdxVariable { .. }
-            | PmDcFeaturePropertyKind::EdgeItem { .. } => {}
+            | PmDcFeaturePropertyKind::EdgeItem { .. }
+            | PmDcFeaturePropertyKind::TerminationFlag { .. } => {}
+            PmDcFeaturePropertyKind::PlaneSurface {
+                references: surface,
+                ..
+            } => {
+                references.extend(surface.iter().map(|reference| reference.index()));
+            }
         }
         if raw.get(&(
             property.identity.segment_token.as_str(),
@@ -1005,6 +1015,37 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 Check::NativeLinks,
                 "Inventor PmDc feature-label record or reference does not resolve".into(),
                 Some(label.id()),
+            ));
+        }
+    }
+    for link in &data.pm_dc_kernel_entity_links {
+        if raw.get(&(
+            link.identity.segment_token.as_str(),
+            link.identity.record_ordinal,
+        )) != Some(&link.identity.type_id.as_str())
+            || !resolves(link.identity.segment_token.as_str(), link.body.index())
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc kernel entity link record or reference does not resolve".into(),
+                Some(link.id()),
+            ));
+        }
+    }
+    for plane in &data.pm_dc_work_planes {
+        let references = [plane.header.next.index(), plane.header.context.index()];
+        if raw.get(&(
+            plane.identity.segment_token.as_str(),
+            plane.identity.record_ordinal,
+        )) != Some(&plane.identity.type_id.as_str())
+            || references
+                .into_iter()
+                .any(|reference| !resolves(plane.identity.segment_token.as_str(), reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc work plane record or reference does not resolve".into(),
+                Some(plane.id()),
             ));
         }
     }
@@ -1075,6 +1116,12 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .iter()
         .map(crate::record_identity::Located::id)
         .collect::<HashSet<_>>();
+    let history_records = data
+        .pm_dc_pattern_features
+        .iter()
+        .map(PmDcPatternFeature::id)
+        .chain(data.pm_dc_sketches.iter().map(PmDcSketch::id))
+        .collect::<HashSet<_>>();
     for feature in &ir.model.features {
         if is_flat_pattern_feature(feature)
             && feature
@@ -1084,11 +1131,14 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         {
             continue;
         }
-        let Some(raw_feature) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| raw_features.get(native).copied())
-        else {
+        let native = feature.native_ref.as_deref();
+        let Some(raw_feature) = native.and_then(|native| raw_features.get(native).copied()) else {
+            if native.is_some_and(|native| history_records.contains(native))
+                && crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())
+                    .is_none()
+            {
+                continue;
+            }
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral feature does not resolve to its PmDc source record".into(),
@@ -1513,6 +1563,8 @@ struct NativeData {
     pm_dc_feature_properties: Vec<PmDcFeatureProperty>,
     pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
+    pm_dc_kernel_entity_links: Vec<PmDcKernelEntityLink>,
+    pm_dc_work_planes: Vec<PmDcWorkPlane>,
     feature_record_issues: Vec<RecordIssue>,
     active_carrier: ActiveCarrierRecord,
     unknowns: Vec<NativeUnknownRecord>,
@@ -1583,6 +1635,9 @@ impl NativeData {
             pm_dc_feature_labels: namespace.arena_as_for_decode(ctx, "pm_dc_feature_labels")?,
             pm_dc_entity_style_links: namespace
                 .arena_as_for_decode(ctx, "pm_dc_entity_style_links")?,
+            pm_dc_kernel_entity_links: namespace
+                .arena_as_for_decode(ctx, "pm_dc_kernel_entity_links")?,
+            pm_dc_work_planes: namespace.arena_as_for_decode(ctx, "pm_dc_work_planes")?,
             feature_record_issues: namespace.arena_as_for_decode(ctx, "feature_record_issues")?,
             active_carrier: ActiveCarrierRecord::read(namespace)?,
             unknowns: namespace.arena_as_for_decode(ctx, "unknowns")?,
