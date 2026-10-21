@@ -204,13 +204,15 @@ fn keep_surface_carrier(
         kept_surfaces.insert(surf_ref);
         return Ok(());
     }
-    if !procedural_surface_defs.contains_key(&surf_ref) {
+    if let std::collections::hash_map::Entry::Vacant(entry) =
+        procedural_surface_defs.entry(surf_ref)
+    {
         if let Some(procedural) = nurbs::proc_surface::procedural_surface_resolving_refs(
             ctx,
             &surf_rec.tokens,
             token_table,
         ) {
-            procedural_surface_defs.insert(surf_ref, procedural?);
+            entry.insert(procedural?);
         }
     }
     if let Some(procedural) = procedural_surface_defs.get(&surf_ref) {
