@@ -949,7 +949,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         "direction": {"kind": "explicit", "source": {"kind": "custom"},
                       "vector": {"x": 0.0, "y": 0.0, "z": 1.0}},
         "extent": {"kind": "symmetric",
-                   "side": {"termination": {"kind": "blind", "length": 12.0}}},
+                   "side": {"termination": {"kind": "blind", "length": {"kind": "literal", "value": 12.0}}}},
         "face_maker": {"class": "Part::FaceMakerBullseye", "mode": "bullseye"},
         "inner_wire_taper": "inverted",
         "op": "new_body",
