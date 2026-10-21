@@ -62,7 +62,7 @@ fn decode_projects_owned_native_sketch_relation() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected relation parameter");
-    assert_eq!(parameter.expression, "25mm".into());
+    assert_eq!(parameter.expression, "25 mm".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -229,7 +229,7 @@ fn decode_groups_native_tagged_point_line_relations() {
         .iter()
         .find(|parameter| parameter.name == "D2")
         .expect("driving point-line parameter");
-    assert_eq!(parameter.expression, "25mm".into());
+    assert_eq!(parameter.expression, "25 mm".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -307,7 +307,11 @@ fn decode_uses_relation_units_for_bare_integer_dimensions() {
         .iter()
         .find(|parameter| parameter.name == "D2")
         .expect("driving vertical-distance parameter");
-    assert_eq!(parameter.expression, "25".into());
+    assert_eq!(parameter.expression, "25 mm".into());
+    assert_eq!(
+        sldprt_native(decoded.ir()).feature_histories[0].features[0].parameters["D2"],
+        "25"
+    );
     assert_eq!(
         parameter.value,
         Some(ParameterValue::Length(Length::new(25.0).unwrap()))
@@ -340,7 +344,11 @@ fn decode_uses_relation_units_for_boolean_shaped_dimensions() {
         .iter()
         .find(|parameter| parameter.name == "D2")
         .expect("driving distance parameter");
-    assert_eq!(parameter.expression, "1".into());
+    assert_eq!(parameter.expression, "1 mm".into());
+    assert_eq!(
+        sldprt_native(decoded.ir()).feature_histories[0].features[0].parameters["D2"],
+        "1"
+    );
     assert_eq!(
         parameter.value,
         Some(ParameterValue::Length(Length::new(1.0).unwrap()))
@@ -369,7 +377,11 @@ fn decode_uses_relation_units_for_bare_integer_angles() {
         .iter()
         .find(|parameter| parameter.name == "D2")
         .expect("driving angle parameter");
-    assert_eq!(parameter.expression, "25".into());
+    assert_eq!(parameter.expression, "0.025 rad".into());
+    assert_eq!(
+        sldprt_native(decoded.ir()).feature_histories[0].features[0].parameters["D2"],
+        "25"
+    );
     assert_eq!(
         parameter.value,
         Some(ParameterValue::Angle(Angle::new(0.025).unwrap()))
@@ -589,7 +601,7 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
                 ))
             );
         } else {
-            assert_eq!(parameter.expression, "25mm".into());
+            assert_eq!(parameter.expression, "25 mm".into());
             assert_eq!(
                 parameter.value,
                 Some(cadmpeg_ir::features::ParameterValue::Length(
