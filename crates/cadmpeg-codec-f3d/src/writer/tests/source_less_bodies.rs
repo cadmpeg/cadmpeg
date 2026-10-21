@@ -346,7 +346,30 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     let duplicate = f3d_native(&source_less).creation_timestamps[0].clone();
     f3d_native_mut(&mut source_less)
         .creation_timestamps
-        .push(duplicate);
+        .push(duplicate.clone());
+    let (canonical, _) = super::source_less_analytic::synthesize_document(&source_less, None);
+    let reconciled = f3d_native(canonical.ir());
+    assert_eq!(reconciled.creation_timestamps.len(), 5);
+    assert_eq!(
+        reconciled
+            .creation_timestamps
+            .iter()
+            .filter(|timestamp| {
+                timestamp.target == duplicate.target
+                    && timestamp.unix_microseconds == duplicate.unix_microseconds
+            })
+            .count(),
+        1,
+        "one canonical timestamp wins over duplicate native hints"
+    );
+    source_less
+        .model
+        .attributes
+        .push(crate::test_support::native_test::timestamp_attribute(
+            999,
+            duplicate.target,
+            duplicate.unix_microseconds,
+        ));
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))

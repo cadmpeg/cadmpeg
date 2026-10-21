@@ -28,6 +28,8 @@ pub(crate) enum F3dLossCode {
     DimensionCompanionUntyped,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
+    /// An active override has no evaluated cache for its changed expression.
+    ConfigurationActiveCacheUnavailable,
     /// Design configuration rules have no unambiguous activation target.
     ConfigurationRuleUnbound,
     /// Design configuration parameter overrides have no parameter identity.
@@ -259,6 +261,7 @@ impl F3dLossCode {
     const ALL: &'static [F3dLossCode] = &[
         Self::DimensionCompanionUntyped,
         Self::ConfigurationMemberUnassigned,
+        Self::ConfigurationActiveCacheUnavailable,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
         Self::ConfigurationFeatureSuppressionUnbound,
@@ -377,6 +380,7 @@ impl F3dLossCode {
         match self {
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
+            Self::ConfigurationActiveCacheUnavailable => "configuration.active-cache-unavailable",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
                 "configuration.parameter-override-unbound"
@@ -540,6 +544,7 @@ impl F3dLossCode {
             Self::DimensionCompanionUntyped
             | Self::RecipePrefixUntyped
             | Self::ConfigurationMemberUnassigned
+            | Self::ConfigurationActiveCacheUnavailable
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
@@ -642,6 +647,7 @@ impl F3dLossCode {
             | Self::KernelCarrierUnparseable
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
             Self::ConfigurationMemberUnassigned
+            | Self::ConfigurationActiveCacheUnavailable
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
@@ -799,6 +805,10 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
     (
         F3dLossCode::DimensionCompanionUntyped,
         Representation::Design,
+    ),
+    (
+        F3dLossCode::ConfigurationActiveCacheUnavailable,
+        Representation::Typed,
     ),
     (
         F3dLossCode::ConfigurationMemberUnassigned,

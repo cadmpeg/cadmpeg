@@ -193,5 +193,9 @@ pub(super) fn regenerate(
         &mut target.model.parameters,
         &mut target.model.features,
     )?;
+    // A changed active expression cannot borrow the base cache. Re-author
+    // parameters after canonicalization; the scalar writer can evaluate only
+    // constant current expressions, and otherwise reports its usual omission.
+    super::parameters::regenerate(target, native, losses)?;
     Ok(())
 }
