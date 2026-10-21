@@ -687,14 +687,12 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }];
     native.sketch_points =
         vec![
-            SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+            SketchPoint::authored(crate::records::sketch_geometry::SketchPointContent {
                 id: "f3d:generated:sketch-point#0".into(),
                 record_index: 100,
                 owner_reference: Some(277),
                 class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned())
                     .unwrap(),
-                byte_offset: 0,
-                coordinate_offset: 89,
                 companion: crate::records::sketch_geometry::SketchPointCompanion {
                     incident_curves: Vec::new(),
                 },
@@ -981,7 +979,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert_eq!(native.sketch_points.len(), 1);
     assert_eq!(native.sketch_points[0].persistent_id(), Some(500));
     assert_eq!(native.sketch_points[0].entity_genesis(), Some(900));
-    assert_eq!(native.sketch_points[0].coordinate_offset, 141);
+    assert_eq!(
+        round_trip.source_fidelity().metadata
+            [&format!("{}.coordinate_offset", native.sketch_points[0].id)],
+        "141"
+    );
     assert_eq!(native.sketch_points[0].owner_reference, Some(277));
     assert_eq!(native.sketch_points[0].depth(), 0.0);
     assert_eq!(

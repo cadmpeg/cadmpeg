@@ -1735,7 +1735,8 @@ fn preceding_incident_angular_dimension_definition(
         native_stream(&point.id) == Some(scope)
             && parameter
                 .byte_offset()
-                .is_some_and(|offset| point.byte_offset < offset)
+                .zip(point.byte_offset)
+                .is_some_and(|(parameter_offset, point_offset)| point_offset < parameter_offset)
     }) {
         let companion = point.companion();
         let [first_record, second_record] = companion.incident_curves else {
