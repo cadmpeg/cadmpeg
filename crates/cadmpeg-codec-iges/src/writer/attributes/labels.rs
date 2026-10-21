@@ -8,10 +8,7 @@ use super::{
 fn carrier(target: &AttributeTarget) -> bool {
     matches!(
         target,
-        AttributeTarget::Body(_)
-            | AttributeTarget::Point(_)
-            | AttributeTarget::Curve(_)
-            | AttributeTarget::Surface(_)
+        AttributeTarget::Point(_) | AttributeTarget::Curve(_) | AttributeTarget::Surface(_)
     )
 }
 
@@ -39,8 +36,6 @@ pub(super) fn apply(
         .collect();
     for attribute in &ir.model.attributes {
         if !carrier(&attribute.target)
-            || (matches!(attribute.target, AttributeTarget::Body(_))
-                && attribute.name != "iges.directory_label")
             || !matches!(attribute.name.as_str(), "name" | "iges.directory_label")
         {
             continue;

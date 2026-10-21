@@ -478,15 +478,6 @@ fn decode_with_occurrence_limits(
 
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut ir = CadIr::decoded(source_meta(&parse.global, representation, primary));
-    if let Some(source) = &mut ir.source {
-        for key in ["representation", "parameter_delimiter", "record_delimiter"] {
-            if let Some(value) = source.attributes.remove(key) {
-                source_fidelity
-                    .metadata
-                    .insert(format!("iges.{key}"), value);
-            }
-        }
-    }
     ir.scope = if ctx.container_only() {
         cadmpeg_ir::ContentScope::container()
     } else {

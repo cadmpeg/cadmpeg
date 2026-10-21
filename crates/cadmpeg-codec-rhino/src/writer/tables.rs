@@ -22,7 +22,7 @@ pub(super) mod native;
 pub(super) mod products;
 pub(super) mod views;
 
-pub(super) fn records<'a>(ir: &'a CadIr, arena: &str) -> &'a [cadmpeg_ir::NativeRecord] {
+fn records<'a>(ir: &'a CadIr, arena: &str) -> &'a [cadmpeg_ir::NativeRecord] {
     ir.native
         .namespace("rhino")
         .and_then(|namespace| namespace.arenas().get(arena))

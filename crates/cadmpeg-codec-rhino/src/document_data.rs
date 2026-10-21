@@ -797,12 +797,6 @@ pub(crate) fn install(
         }
     }
     let mut source_layout = std::collections::BTreeMap::new();
-    if let Some(version) = properties.writer_version {
-        source_layout.insert(
-            "rhino.source.writer_version".to_owned(),
-            version.to_string(),
-        );
-    }
     for record in &revisions {
         source_layout.insert(
             format!("rhino.layout.{}.offset", record.id),

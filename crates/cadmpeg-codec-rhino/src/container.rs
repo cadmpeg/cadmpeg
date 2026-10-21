@@ -1533,41 +1533,7 @@ fn chunked_source_attributes(
     Ok(())
 }
 
-/// Source layout is kept beside retained records, outside document content.
-pub(crate) fn move_source_metadata(ir: &mut CadIr, fidelity: &mut cadmpeg_ir::SourceFidelity) {
-    if let Some(source) = &mut ir.source {
-        for (key, value) in std::mem::take(&mut source.attributes) {
-            fidelity
-                .metadata
-                .insert(format!("rhino.source.{key}"), value);
-        }
-    }
-}
-
 pub(crate) fn source_layout(scan: &Scan<'_>) -> Result<BTreeMap<String, String>, CodecError> {
-    let mut unit_metadata = BTreeMap::new();
-    if let Some(units) = &scan.metadata.settings.units {
-        unit_metadata.insert(
-            "rhino.source.unit_code".to_owned(),
-            units.unit.value().to_string(),
-        );
-        if let Some(scale) = units.millimeters_per_unit() {
-            unit_metadata.insert(
-                "rhino.source.millimeters_per_unit".to_owned(),
-                scale.to_string(),
-            );
-        }
-        if let crate::settings::UnitSystem::Custom(custom) = &units.unit {
-            unit_metadata.insert(
-                "rhino.source.custom_unit_name".to_owned(),
-                custom.name().to_owned(),
-            );
-            unit_metadata.insert(
-                "rhino.source.meters_per_unit".to_owned(),
-                custom.meters_per_unit().get().to_string(),
-            );
-        }
-    }
     let tables = scan
         .tables
         .iter()
@@ -1592,7 +1558,7 @@ pub(crate) fn source_layout(scan: &Scan<'_>) -> Result<BTreeMap<String, String>,
         .iter()
         .map(|record| record.source_range.clone())
         .collect::<Vec<_>>();
-    unit_metadata.extend(BTreeMap::from([
+    Ok(BTreeMap::from([
         (
             "rhino.table_layout".to_owned(),
             serde_json::to_string(&tables).map_err(CodecError::malformed)?,
@@ -1605,8 +1571,7 @@ pub(crate) fn source_layout(scan: &Scan<'_>) -> Result<BTreeMap<String, String>,
             "rhino.history_layout".to_owned(),
             serde_json::to_string(&history).map_err(CodecError::malformed)?,
         ),
-    ]));
-    Ok(unit_metadata)
+    ]))
 }
 
 /// Build an empty current-version IR and a container-only report.
@@ -1668,7 +1633,6 @@ pub(crate) fn container_only_result(
                 .with_untyped(untyped),
         )?;
     }
-    move_source_metadata(&mut ir, &mut source_fidelity);
     source_fidelity.metadata.extend(source_layout(scan)?);
     Ok(Decoded {
         ir,

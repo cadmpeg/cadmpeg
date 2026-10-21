@@ -297,35 +297,6 @@ impl StandardUnit {
         })
     }
 
-    pub(crate) fn value(self) -> i32 {
-        match self {
-            Self::Microns => 1,
-            Self::Millimeters => 2,
-            Self::Centimeters => 3,
-            Self::Meters => 4,
-            Self::Kilometers => 5,
-            Self::Microinches => 6,
-            Self::Mils => 7,
-            Self::Inches => 8,
-            Self::Feet => 9,
-            Self::Miles => 10,
-            Self::Angstroms => 12,
-            Self::Nanometers => 13,
-            Self::Decimeters => 14,
-            Self::Dekameters => 15,
-            Self::Hectometers => 16,
-            Self::Megameters => 17,
-            Self::Gigameters => 18,
-            Self::Yards => 19,
-            Self::PrinterPoints => 20,
-            Self::PrinterPicas => 21,
-            Self::NauticalMiles => 22,
-            Self::AstronomicalUnits => 23,
-            Self::LightYears => 24,
-            Self::Parsecs => 25,
-        }
-    }
-
     const fn code(self) -> usize {
         match self {
             Self::Microns => 1,
@@ -414,16 +385,6 @@ pub(crate) struct CustomUnit {
     name: String,
 }
 
-impl CustomUnit {
-    pub(crate) fn meters_per_unit(&self) -> PositiveReal {
-        self.meters_per_unit
-    }
-
-    pub(crate) fn name(&self) -> &str {
-        &self.name
-    }
-}
-
 /// The standard and custom Rhino unit systems.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum UnitSystem {
@@ -441,15 +402,6 @@ impl UnitSystem {
             millimeters_per_unit,
             name,
         }))
-    }
-
-    pub(crate) fn value(&self) -> i32 {
-        match self {
-            Self::None => 0,
-            Self::Standard(unit) => unit.value(),
-            Self::Custom(_) => 11,
-            Self::Unset => 255,
-        }
     }
 
     fn millimeters_per_unit(&self) -> Option<f64> {
@@ -485,10 +437,6 @@ pub(crate) struct UnitsAndTolerances {
 }
 
 impl UnitsAndTolerances {
-    pub(crate) fn millimeters_per_unit(&self) -> Option<f64> {
-        self.unit.millimeters_per_unit()
-    }
-
     pub(crate) fn absolute_tolerance_millimeters(&self) -> Option<PositiveLength> {
         self.absolute_tolerance_millimeters
     }

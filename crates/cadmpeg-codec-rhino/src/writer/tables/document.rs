@@ -176,51 +176,6 @@ pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, CodecE
     Ok(output)
 }
 
-/// Whether synthesis emits every held setting, including an empty settings state.
-pub(in crate::writer) fn settings_complete(
-    ir: &CadIr,
-    record: &cadmpeg_ir::NativeRecord,
-) -> Result<bool, CodecError> {
-    let fields = record.fields()?;
-    let present = |key: &str| fields.get(key).is_some_and(|value| !value.is_null());
-    // Font and dimension-style selections need their corresponding table
-    // writer support; do not claim those settings were emitted yet.
-    if present("current_font_index") || present("current_dimension_style_index") {
-        return Ok(false);
-    }
-    for (field, arena, neutral) in [
-        ("current_layer_index", "layers", "presentation_layers"),
-        ("current_material_index", "materials", "appearances"),
-    ] {
-        let Some(index) = fields.get(field).filter(|value| !value.is_null()) else {
-            continue;
-        };
-        let Some(id) = records(ir, arena)
-            .iter()
-            .find(|record| record.field("archive_index").as_ref() == Some(index))
-            .and_then(|record| record.field("neutral_ref"))
-            .and_then(|value| value.as_str().map(str::to_owned))
-        else {
-            return Ok(false);
-        };
-        let resolves = if neutral == "presentation_layers" {
-            ir.model
-                .presentation_layers
-                .iter()
-                .any(|record| record.id.as_str() == id)
-        } else {
-            ir.model
-                .appearances
-                .iter()
-                .any(|record| record.id.as_str() == id)
-        };
-        if !resolves {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
 pub(in crate::writer) fn settings(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
     let mut output = Vec::new();
     for record in records(ir, "document_settings") {

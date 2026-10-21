@@ -201,7 +201,7 @@ pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
         &record,
     )
     .expect("required invariant");
-    assert_eq!(units.millimeters_per_unit(), Some(25.4));
+    assert_eq!(units.unit.millimeters_per_unit(), Some(25.4));
     assert_eq!(units.absolute_tolerance, crate::test_support::positive(0.5));
     assert_eq!(
         units
@@ -269,7 +269,7 @@ fn accepts_future_units_version_with_source_prefix_and_bounded_suffix() {
         units.distance_display.map(|display| display.precision),
         Some(6)
     );
-    assert_eq!(units.millimeters_per_unit(), Some(25.4));
+    assert_eq!(units.unit.millimeters_per_unit(), Some(25.4));
 }
 
 #[test]
@@ -346,7 +346,7 @@ fn discarded_page_units_keep_the_standard_scale() {
     let mut reader = BoundedReader::new(&data, 0, data.len()).expect("unit bounds");
     let units =
         settings::parse_units_reader(&ctx, &mut reader, false).expect("discarded custom name");
-    assert_eq!(units.millimeters_per_unit(), Some(1.0));
+    assert_eq!(units.unit.millimeters_per_unit(), Some(1.0));
 }
 
 #[test]

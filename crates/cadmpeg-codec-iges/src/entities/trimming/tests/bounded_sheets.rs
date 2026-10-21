@@ -551,39 +551,7 @@ fn decode_unscales_procedural_pcurve_coordinates_before_neutral_mapping() {
         .hypot(-6.969_522_429_f64 - -2.592_356_749_f64)
         * 0.5
         * 25.4;
-    let support = result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == face.surface)
-        .unwrap();
-    let procedural = result
-        .ir()
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|record| result.ir().model.procedural_surface_owner(&record.id) == Some(&support.id))
-        .unwrap();
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition) =
-        procedural.definition()
-    else {
-        panic!("expected revolution");
-    };
-    let directrix = result
-        .ir()
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *definition.directrix())
-        .unwrap();
-    assert!(
-        (directrix.parameter_range.unwrap().upper() * 0.5 - expected_u).abs()
-            <= EPS_BOUNDARY_ENDPOINT_MATCH
-    );
-    let bounds = procedural.record_bounds().unwrap().get();
-    let chart_midpoint = (bounds[0].unwrap() + bounds[1].unwrap()) * 0.5;
-    assert!((nurbs.control_points()[0].u - chart_midpoint).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!((nurbs.control_points()[0].u - expected_u).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
     assert!(nurbs.control_points()[0].v.abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
     assert!(
         result.report().losses.is_empty(),

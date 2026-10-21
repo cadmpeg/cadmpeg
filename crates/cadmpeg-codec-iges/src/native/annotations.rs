@@ -21,7 +21,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(super) struct NativeBytesRun {
+pub(super) struct NativeTextRun {
     declared_character_count: Option<i64>,
     text: Option<NativeBytes<Vec<u8>>>,
     box_size: [Option<f64>; 2],
@@ -43,7 +43,7 @@ pub(super) struct NativeNewTextRun {
     font_style: Option<i64>,
     character_angle: Option<f64>,
     control_codes: Option<NativeBytes<Vec<u8>>>,
-    text: NativeBytesRun,
+    text: NativeTextRun,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -54,7 +54,7 @@ pub(super) enum NativeAnnotation {
         source_entity: String,
         form: i64,
         declared_string_count: Option<i64>,
-        strings: Vec<NativeBytesRun>,
+        strings: Vec<NativeTextRun>,
         transformation: Option<String>,
     },
     NewGeneralNote {
@@ -248,7 +248,7 @@ impl Subject<'_> {
         )
     }
 
-    fn text_run(&self, start: usize) -> NativeBytesRun {
+    fn text_run(&self, start: usize) -> NativeTextRun {
         let record = self.record;
         let font_code = record.and_then(|record| record.integer(start + 3));
         let text = record.and_then(|record| record.string(start + 11));
@@ -263,7 +263,7 @@ impl Subject<'_> {
                 .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
             None => None,
         };
-        NativeBytesRun {
+        NativeTextRun {
             declared_character_count: record.and_then(|record| record.integer(start)),
             text: (!v5_null_string)
                 .then_some(text)
