@@ -766,6 +766,9 @@ fn version_prefix_route_proves_the_complete_delegate_and_map_forwarding() {
         ("remaining: map,", "remaining: replacement(),"),
         ("self.remaining.next_key_seed(seed)", "Ok(None)"),
         ("type Error = A::Error;", "type Error = serde_json::Error;"),
+        ("for VersionedFields<A>", "for hostile::VersionedFields<A>"),
+        ("for VersionedFields<A>", "for VersionedFields<Other>"),
+        ("remaining: A,", "remaining: Other,"),
         (
             "self.remaining.next_value_seed(seed)",
             "Err(serde::de::Error::custom(\"discarded\"))",

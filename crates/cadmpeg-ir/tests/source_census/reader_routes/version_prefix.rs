@@ -111,7 +111,14 @@ fn implementation<'a>(
         let syn::Type::Path(ty) = item.self_ty.as_ref() else {
             return None;
         };
-        (ty.path.is_ident(target) && item.trait_.as_ref()?.0.segments.last()?.ident == trait_name)
+        let segment = ty.path.segments.first()?;
+        (ty.qself.is_none()
+            && ty.path.leading_colon.is_none()
+            && ty.path.segments.len() == 1
+            && segment.ident == target
+            && (target == "VersionedFields"
+                || matches!(segment.arguments, syn::PathArguments::None))
+            && item.trait_.as_ref()?.0.segments.last()?.ident == trait_name)
             .then_some(item)
     })
 }
@@ -159,7 +166,13 @@ fn adapter_is_forwarding(items: &[syn::Item], source: &str) -> bool {
     let Some(value) = method(adapter, "next_value_seed") else {
         return false;
     };
-    adapter.items.len() == 3
+    let declaration = source_span_text(source, adapter.span());
+    let Some(header) = declaration.split('{').next() else {
+        return false;
+    };
+    tokens(header) == tokens("impl<'de, A: serde::de::MapAccess<'de>> serde::de::MapAccess<'de> for VersionedFields<A>")
+        && same(source, adapter.self_ty.span(), "VersionedFields<A>")
+        && adapter.items.len() == 3
         && adapter.items.iter().any(|item| matches!(item, syn::ImplItem::Type(item)
             if same(source, item.span(), "type Error = A::Error;")))
         && same(source, key.block.span(), NEXT_KEY)
