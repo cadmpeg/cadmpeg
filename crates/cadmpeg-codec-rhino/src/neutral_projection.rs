@@ -21,7 +21,6 @@ fn link_native_record(
     arena: &str,
     ordinal: usize,
     neutral: &str,
-    consumed: &[&str],
 ) -> Result<(), CodecError> {
     let Some(records) = ir.native.namespace_mut("rhino").arenas_mut().get_mut(arena) else {
         return Ok(());
@@ -30,9 +29,6 @@ fn link_native_record(
         return Ok(());
     };
     let mut fields = record.copy_fields(ctx)?;
-    for name in consumed {
-        fields.remove(*name);
-    }
     fields.insert(
         "id".to_owned(),
         serde_json::Value::String(record.id().to_owned()),
@@ -202,14 +198,7 @@ pub(crate) fn project(
             visible: Some(layer.visible),
             items: Vec::new(),
         });
-        link_native_record(
-            ctx,
-            ir,
-            "layers",
-            ordinal,
-            layer_id(ordinal).as_str(),
-            &["name", "parent_uuid", "description", "visible"],
-        )?;
+        link_native_record(ctx, ir, "layers", ordinal, layer_id(ordinal).as_str())?;
     }
     for (source_order, object) in scan.objects.iter().enumerate() {
         let Some(object) = object.framed() else {

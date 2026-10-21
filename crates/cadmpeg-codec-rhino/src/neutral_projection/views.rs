@@ -140,7 +140,7 @@ pub(super) fn project(
         let view_id = id("view", ordinal)?;
         let mut properties = BTreeMap::new();
         if let Some(name) = fields
-            .remove("name")
+            .get("name")
             .and_then(|value| value.as_str().map(str::to_owned))
             .filter(|name| !name.trim().is_empty())
         {
@@ -151,17 +151,17 @@ pub(super) fn project(
             "show_construction_axes",
             "show_world_axes",
         ] {
-            if let Some(value) = fields.remove(name).and_then(|value| value.as_bool()) {
+            if let Some(value) = fields.get(name).and_then(Value::as_bool) {
                 property(&mut properties, name, value.to_string())?;
             }
         }
         let legacy_mode = fields
-            .remove("legacy_display_mode")
+            .get("legacy_display_mode")
             .and_then(|value| value.as_i64());
         let modern_mode = fields
-            .get_mut("attributes")
-            .and_then(Value::as_object_mut)
-            .and_then(|attributes| attributes.remove("display"))
+            .get("attributes")
+            .and_then(Value::as_object)
+            .and_then(|attributes| attributes.get("display"))
             .and_then(|value| value.as_str().map(str::to_owned));
         if modern_mode.is_some() {
             if let Some(legacy) = legacy_mode {
@@ -211,16 +211,6 @@ pub(super) fn project(
                     .map_err(CodecError::malformed)?;
                 ctx.charge_entities(1, "Rhino neutral cameras")?;
                 ir.model.presentation_documents.push(document);
-                for key in [
-                    "camera_location_mm",
-                    "camera_direction",
-                    "camera_up",
-                    "camera_x_axis",
-                    "camera_y_axis",
-                    "camera_z_axis",
-                ] {
-                    viewport.remove(key);
-                }
                 viewport.insert(
                     "neutral_camera".into(),
                     Value::String(camera_id.to_string()),

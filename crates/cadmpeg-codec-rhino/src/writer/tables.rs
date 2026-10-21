@@ -148,7 +148,7 @@ fn color(fields: Option<&Map<String, Value>>, name: &str) -> Result<[u8; 4], Cod
         return Ok([0, 0, 0, 0]);
     };
     let color: cadmpeg_ir::topology::Color =
-        serde_json::from_value(value.clone()).map_err(CodecError::malformed)?;
+        crate::wire::native_color(value).map_err(CodecError::malformed)?;
     Ok([
         unit_color_channel(color.r())?,
         unit_color_channel(color.g())?,

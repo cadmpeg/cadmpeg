@@ -89,7 +89,6 @@ pub(super) fn project(
                     values,
                 });
                 links.insert((*field).to_owned(), Value::String(id.to_string()));
-                fields.remove(*field);
             }
             fields.insert("neutral_attributes".to_owned(), Value::Object(links));
             replacements.push(NativeRecord::new(

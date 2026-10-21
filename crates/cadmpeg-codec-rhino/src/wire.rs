@@ -19,28 +19,18 @@ pub(crate) fn packed_color(value: [u8; 4]) -> cadmpeg_ir::topology::Color {
     cadmpeg_ir::topology::Color::from_rgba8(value[0], value[1], value[2], value[3]).invert_alpha()
 }
 
-/// Typed colour serialization never exposes its source byte encoding.
-pub(crate) fn serialize_color<S: serde::Serializer>(
-    value: &cadmpeg_ir::native::bytes::NativeBytes<[u8; 4]>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::Serialize;
-    let bytes: &[u8] = value.as_ref();
-    packed_color([bytes[0], bytes[1], bytes[2], bytes[3]]).serialize(serializer)
-}
-
-pub(crate) fn serialize_optional_color<S: serde::Serializer>(
-    value: &Option<cadmpeg_ir::native::bytes::NativeBytes<[u8; 4]>>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::Serialize;
-    value
-        .as_ref()
-        .map(|value| {
-            let bytes: &[u8] = value.as_ref();
-            packed_color([bytes[0], bytes[1], bytes[2], bytes[3]])
-        })
-        .serialize(serializer)
+/// Decode a native packed colour, or an authored neutral colour value.
+pub(crate) fn native_color(
+    value: &serde_json::Value,
+) -> Result<cadmpeg_ir::topology::Color, serde_json::Error> {
+    if value.is_string() {
+        let value: cadmpeg_ir::native::bytes::NativeBytes<[u8; 4]> =
+            serde_json::from_value(value.clone())?;
+        let bytes: &[u8] = value.as_ref();
+        Ok(packed_color([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    } else {
+        serde_json::from_value(value.clone())
+    }
 }
 
 pub(crate) fn serialize_panose<S: serde::Serializer>(

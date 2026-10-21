@@ -360,20 +360,15 @@ pub(super) fn project(
     }
     ir.model.occurrences.extend(projection.occurrences);
     let namespace = ir.native.namespace_mut("rhino");
-    for (arena, targets, consumed) in [
+    for (arena, targets) in [
         (
             "product_definitions",
             native_definitions
                 .into_iter()
                 .map(|(id, target)| (id, vec![target]))
                 .collect::<BTreeMap<_, _>>(),
-            &["name", "description"][..],
         ),
-        (
-            "product_occurrences",
-            projection.native_occurrences,
-            &["name", "visible", "transform", "transform_units"][..],
-        ),
+        ("product_occurrences", projection.native_occurrences),
     ] {
         let Some(records) = namespace.arenas_mut().get_mut(arena) else {
             continue;
@@ -383,9 +378,6 @@ pub(super) fn project(
                 continue;
             };
             let mut fields = record.copy_fields(ctx)?;
-            for field in consumed {
-                fields.remove(*field);
-            }
             fields.insert(
                 "neutral_refs".into(),
                 serde_json::to_value(targets)

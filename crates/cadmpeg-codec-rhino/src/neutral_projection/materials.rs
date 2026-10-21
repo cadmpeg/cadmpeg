@@ -66,7 +66,7 @@ pub(super) fn project(
         let base_color = fields
             .get("diffuse")
             .filter(|value| !value.is_null())
-            .map(|value| serde_json::from_value(value.clone()).map_err(CodecError::malformed))
+            .map(|value| crate::wire::native_color(value).map_err(CodecError::malformed))
             .transpose()?;
         let mut properties = BTreeMap::new();
         for name in [

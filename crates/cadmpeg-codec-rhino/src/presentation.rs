@@ -159,17 +159,11 @@ struct MaterialRecord {
     source_uuid: Option<String>,
     name: String,
     plugin_uuid: String,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     ambient: NativeBytes<[u8; 4]>,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     diffuse: NativeBytes<[u8; 4]>,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     emission: NativeBytes<[u8; 4]>,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     specular: NativeBytes<[u8; 4]>,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     reflection: NativeBytes<[u8; 4]>,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     transparent: NativeBytes<[u8; 4]>,
     index_of_refraction: FiniteReal,
     reflectivity: FiniteReal,
@@ -321,14 +315,11 @@ struct TextureRecord {
     magnification_filter: u32,
     wrap: [u32; 3],
     uvw_transform: [[FiniteReal; 4]; 4],
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     border_color: NativeBytes<[u8; 4]>,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     transparent_color: NativeBytes<[u8; 4]>,
     transparency_texture_uuid: Option<String>,
     bump_scale: [FiniteReal; 2],
     alpha_blend: [FiniteReal; 5],
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     rgb_blend_constant: NativeBytes<[u8; 4]>,
     rgb_blend: [FiniteReal; 4],
     blend_order: i32,
@@ -348,11 +339,8 @@ struct LightRecord {
     style: i32,
     intensity: FiniteReal,
     watts: FiniteReal,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     ambient: NativeBytes<[u8; 4]>,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     diffuse: NativeBytes<[u8; 4]>,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     specular: NativeBytes<[u8; 4]>,
     direction: [FiniteReal; 3],
     location: [FiniteReal; 3],
@@ -669,7 +657,6 @@ struct V5DimensionStyleExtraRecord {
     baseline_spacing_mm: FiniteReal,
     draw_text_mask: bool,
     mask_color_source: i32,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     mask_color: NativeBytes<[u8; 4]>,
     dimension_scale: FiniteReal,
     dimension_scale_source: i32,
@@ -1164,7 +1151,6 @@ struct LayerPresentationRecord {
     iges_level: Option<i32>,
     visible: bool,
     locked: bool,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     color: NativeBytes<[u8; 4]>,
     material_index: i32,
     linetype_index: Option<i32>,
@@ -1187,7 +1173,6 @@ struct ObjectAttributesPresentation {
     layer_index: i32,
     material_index: i32,
     linetype_index: i32,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     color: NativeBytes<[u8; 4]>,
     visible: bool,
     object_mode: u8,
@@ -1198,7 +1183,6 @@ struct ObjectAttributesPresentation {
     material_source: u8,
     plot_color_source: u8,
     plot_weight_source: u8,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     plot_color: NativeBytes<[u8; 4]>,
     plot_weight_mm: FiniteReal,
     group_indexes: Vec<i32>,
@@ -1212,7 +1196,6 @@ struct ObjectAttributesPresentation {
     section_hatch_scale: FiniteReal,
     section_hatch_rotation: FiniteReal,
     linetype_pattern_scale: FiniteReal,
-    #[serde(serialize_with = "crate::wire::serialize_color")]
     hatch_background: NativeBytes<[u8; 4]>,
     hatch_boundary_visible: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
