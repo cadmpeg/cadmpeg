@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+mod reference_driving;
+
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
