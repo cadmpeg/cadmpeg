@@ -217,14 +217,18 @@ pub(in crate::writer::synthesis) fn reduce_constraint_fields(
         &target.model.sketch_entities,
         target.tolerances.linear.get(),
     )?;
+    let mut omitted = std::collections::HashSet::new();
     for stated in &mut target.model.sketch_constraints {
         let Some(written) = projected.iter().find(|written| written.id == stated.id) else {
+            let definition = serde_json::to_string(&stated.definition)
+                .map_err(|error| CodecError::Malformed(error.to_string()))?;
             losses.push(
                 crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(format!(
-                    "Sketch constraint {} has no exact regenerated dimensional definition",
-                    stated.id
+                    "Sketch constraint {} is omitted: no exact regenerated encoding for canonical definition {}",
+                    stated.id, definition
                 )),
             );
+            omitted.insert(stated.id.clone());
             continue;
         };
         if stated.definition != written.definition {
@@ -268,5 +272,9 @@ pub(in crate::writer::synthesis) fn reduce_constraint_fields(
             }
         }
     }
+    target
+        .model
+        .sketch_constraints
+        .retain(|constraint| !omitted.contains(&constraint.id));
     Ok(())
 }
