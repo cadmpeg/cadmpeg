@@ -167,6 +167,7 @@ fn face_colors_are_regenerated_as_complete_typed_binary_lists() {
         .concat()
     );
     assert!(providers["Shape"].properties["DiffuseColor"].contains("Shape.DiffuseColor"));
+    assert!(!providers["Shape"].properties.contains_key("ShapeMaterial"));
     assert!(losses.is_empty());
 }
 
