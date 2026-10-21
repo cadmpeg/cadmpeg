@@ -131,11 +131,6 @@ pub(crate) fn project_occurrences(
     assembly_occurrences: &[AssemblyOccurrenceRecord],
     assembly_placements: &[AssemblyPlacementRecord],
 ) -> Result<AssemblyProjection, CodecError> {
-    let references = unique_index(
-        external_references
-            .iter()
-            .map(|record| (record.reference_id, record)),
-    );
     let occurrence_records = unique_index(
         assembly_occurrences
             .iter()
@@ -151,9 +146,8 @@ pub(crate) fn project_occurrences(
     let mut unresolved_placements = BTreeMap::new();
 
     for source in ufrx_occurrences {
-        let Some(reference) = references
-            .get(&source.file_reference_id)
-            .and_then(Option::as_ref)
+        let Some(reference) =
+            crate::native::ufrx::resolve_occurrence_reference(source, external_references)
         else {
             count_unresolved(
                 &mut unresolved_placements,
@@ -880,12 +874,69 @@ mod tests {
     }
 
     #[test]
+    fn an_occurrence_joins_its_prototype_by_reference_id_and_document_id() {
+        let copies = [
+            external_reference_with_document_id(5, "b/other.ipt", [0, 0], &fixture_document_id(4)),
+            external_reference_with_document_id(4, "a\\Part.ipt", [0, 0], &fixture_document_id(4)),
+        ];
+        let projection = project_under_service(
+            &[ufrx_occurrence(4, 7, 0)],
+            &copies,
+            &[assembly_occurrence(7)],
+            &[assembly_placement(7)],
+        );
+        let [projected] = projection.occurrences.as_slice() else {
+            panic!("the referenced copy must be projected");
+        };
+        let PrototypeReference::External { document, .. } = &projected.prototype else {
+            panic!("the prototype must remain external");
+        };
+        assert_eq!(
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
+                _ => None,
+            }),
+            Some("a\\Part.ipt")
+        );
+
+        // A reference whose document identifier differs from the occurrence's
+        // first-section identifier, or no reference with the `reference_id`,
+        // leaves the occurrence unresolved.
+        for references in [
+            vec![external_reference_with_document_id(
+                4,
+                "a/part.ipt",
+                [0, 0],
+                &fixture_document_id(5),
+            )],
+            vec![external_reference_with_document_id(
+                5,
+                "b/other.ipt",
+                [0, 0],
+                &fixture_document_id(4),
+            )],
+        ] {
+            let projection = project_under_service(
+                &[ufrx_occurrence(4, 7, 0)],
+                &references,
+                &[assembly_occurrence(7)],
+                &[assembly_placement(7)],
+            );
+            assert!(projection.occurrences.is_empty());
+            assert_eq!(
+                projection.unresolved_placements,
+                BTreeMap::from([(super::UnresolvedCause::ExternalReference, NonZeroUsize::MIN)])
+            );
+        }
+    }
+
+    #[test]
     fn path_identity_takes_precedence_on_external_prototypes() {
         let reference = external_reference_with_document_id(
             4,
             "components/part.ipt",
             [0, 0],
-            "00112233445566778899aabbccddeeff",
+            &fixture_document_id(4),
         );
         let projection = project_under_service(
             &[ufrx_occurrence(4, 7, 0)],
@@ -920,7 +971,7 @@ mod tests {
     #[test]
     fn projects_suppressed_occurrence_without_graphics_placement() {
         let ufrx = ufrx_occurrence(4, 7, 0);
-        let expected_document_id = "00112233445566778899aabbccddeeff".to_owned();
+        let expected_document_id = fixture_document_id(4);
         let reference = external_reference_with_document_id(
             4,
             "",
@@ -989,20 +1040,38 @@ mod tests {
         );
     }
 
+    /// The synthetic document identifier of external reference `reference_id`.
+    fn fixture_document_id(reference_id: u32) -> String {
+        cadmpeg_ir::native::bytes::NativeBytes::from(fixture_document(reference_id)).to_string()
+    }
+
+    fn fixture_document(reference_id: u32) -> [u8; 16] {
+        let mut id = [
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0,
+            0,
+        ];
+        id[14..].copy_from_slice(&u16::try_from(reference_id).expect("small id").to_be_bytes());
+        id
+    }
+
+    /// A `UFRxDoc` occurrence of external reference `reference_id` whose
+    /// `AmDc`/`AmGraphics` key is `occurrence_id`.
     fn ufrx_occurrence(
-        file_reference_id: u32,
+        reference_id: u32,
         occurrence_id: u32,
         ordinal: u32,
     ) -> UfrxOccurrenceRecord {
         UfrxOccurrenceRecord::try_from(crate::native::ufrx::UfrxOccurrenceRecordWire {
             id: format!("inventor:ufrx:occurrence#{ordinal}"),
             ordinal,
-            end_string_flag: 0,
-            file_reference_id,
+            reference_id,
             occurrence_id,
+            occurrence_key: ordinal + 1,
             header_value: 0,
             title: Some("placed part".into()),
             header_padding_words: 0,
+            prototype_document_id: Some(fixture_document(reference_id).into()),
+            component_name: Some("part".into()),
             record_len: 1,
             record_sha256: "0".repeat(64),
         })
@@ -1014,7 +1083,12 @@ mod tests {
         path: &str,
         state: [u16; 2],
     ) -> ExternalReferenceRecord {
-        external_reference_with_document_id(reference_id, path, state, &"0".repeat(32))
+        external_reference_with_document_id(
+            reference_id,
+            path,
+            state,
+            &fixture_document_id(reference_id),
+        )
     }
 
     fn external_reference_with_document_id(
