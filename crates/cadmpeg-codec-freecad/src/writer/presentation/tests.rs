@@ -93,10 +93,28 @@ fn explicit_appearance_binding_overrides_body_and_native_color() {
             .find(|node| node.has_tag_name("PropertyColor"))
             .expect("color")
             .attribute("value"),
+        Some("4278190335")
+    );
+    // D19: the red display colour and blue material colour are distinct facts.
+    let material = roxmltree::Document::parse(&providers["Shape"].properties["ShapeMaterial"])
+        .expect("material XML");
+    assert_eq!(
+        material
+            .descendants()
+            .find(|node| node.has_tag_name("PropertyMaterial"))
+            .expect("material")
+            .attribute("diffuseColor"),
         Some("65535")
     );
     assert!(providers["Shape"].properties["Visibility"].contains("value=\"0\""));
-    assert!(losses.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "appearance.not-transferred");
+    assert!(losses[0]
+        .message
+        .contains("authored:model:appearance_binding#Blue"));
+    assert!(losses[0]
+        .message
+        .contains("independent visibility/channel gates"));
 }
 
 #[test]
