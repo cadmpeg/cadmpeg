@@ -107,16 +107,24 @@ pub(in crate::writer::synthesis) fn admit(
 }
 
 pub(in crate::writer::synthesis) fn retain_graph(native: &mut F3dNative, original: &F3dNative) {
-    clone_from();
-    clone_from();
-    clone_from();
-    clone_from();
+    native
+        .design_parameter_scopes
+        .clone_from(&original.design_parameter_scopes);
+    native
+        .design_sketch_placements
+        .clone_from(&original.design_sketch_placements);
+    native
+        .design_parameter_owners
+        .clone_from(&original.design_parameter_owners);
+    native
+        .design_dimension_recipe_records
+        .clone_from(&original.design_dimension_recipe_records);
     native.design_parameter_companions = original
         .design_parameter_companions
         .iter()
         .map(crate::records::parameters::DesignParameterCompanion::without_payload)
         .collect();
-    clone_from();
+    native.sketch_points.clone_from(&original.sketch_points);
     native.sketch_curve_identities = original
         .sketch_curve_identities
         .iter()
@@ -157,8 +165,10 @@ pub(in crate::writer::synthesis) fn retain_graph(native: &mut F3dNative, origina
         })
         .cloned()
         .collect();
-    clone_from();
-    clone_from();
+    native
+        .sketch_relations
+        .clone_from(&original.sketch_relations);
+    native.sketch_texts.clone_from(&original.sketch_texts);
 }
 
 fn constraints(

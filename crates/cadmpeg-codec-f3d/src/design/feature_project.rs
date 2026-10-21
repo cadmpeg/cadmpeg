@@ -1015,7 +1015,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 .find(|(ordinal, _)| *ordinal == 1)
                                 .and_then(|(_, parameter)| design_positive_length(parameter))
                                 .map(|length| cadmpeg_ir::features::CosmeticThreadExtent::Blind {
-                                    length: length,
+                                    length: length.into(),
                                 })
                                 .or_else(|| {
                                     full_face_extent.then_some(
