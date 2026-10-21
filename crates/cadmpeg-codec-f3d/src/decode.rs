@@ -1318,26 +1318,17 @@ fn design_projection_gaps(
         unprojected_sketch_points: native
             .sketch_points
             .iter()
-            .filter(|point| {
-                point.owner_reference.is_some()
-                    && !projected_sketch_entity_refs.contains(point.id.as_str())
-            })
+            .filter(|point| !projected_sketch_entity_refs.contains(point.id.as_str()))
             .count(),
         unprojected_sketch_curves: native
             .sketch_curve_identities
             .iter()
-            .filter(|curve| {
-                curve.owner_reference.is_some()
-                    && !projected_sketch_entity_refs.contains(curve.id.as_str())
-            })
+            .filter(|curve| !projected_sketch_entity_refs.contains(curve.id.as_str()))
             .count(),
         unprojected_sketch_surfaces: native
             .sketch_surfaces
             .iter()
-            .filter(|surface| {
-                surface.owner_reference.is_some()
-                    && !projected_sketch_entity_refs.contains(surface.id.as_str())
-            })
+            .filter(|surface| !projected_sketch_entity_refs.contains(surface.id.as_str()))
             .count(),
         unprojected_sketch_texts: native
             .sketch_texts
@@ -2047,11 +2038,7 @@ fn report_design_projection_gaps(
             "{} decoded sketch point(s) have no neutral sketch entity. Records: {}.",
             gaps.unprojected_sketch_points,
             projection_records::Names::new(
-                native
-                    .sketch_points
-                    .iter()
-                    .filter(|record| record.owner_reference.is_some())
-                    .map(|record| record.id.as_str()),
+                native.sketch_points.iter().map(|record| record.id.as_str()),
                 &projected_refs
             )
         ),
@@ -2060,13 +2047,13 @@ fn report_design_projection_gaps(
         F3dLossCode::SketchCurveUnprojected,
         gaps.unprojected_sketch_curves,
         format_args!(
-            "{} decoded sketch curve(s) have no neutral sketch entity. Records: {}.",
+            "{} decoded sketch curve(s) have no neutral sketch entity ({} have no stated Sketch owner). Records: {}.",
             gaps.unprojected_sketch_curves,
+            native.sketch_curve_identities.iter().filter(|curve| curve.owner_reference.is_none()).count(),
             projection_records::Names::new(
                 native
                     .sketch_curve_identities
                     .iter()
-                    .filter(|record| record.owner_reference.is_some())
                     .map(|record| record.id.as_str()),
                 &projected_refs
             )
@@ -2082,7 +2069,6 @@ fn report_design_projection_gaps(
                 native
                     .sketch_surfaces
                     .iter()
-                    .filter(|record| record.owner_reference.is_some())
                     .map(|record| record.id.as_str()),
                 &projected_refs
             )
