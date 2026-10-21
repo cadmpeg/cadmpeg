@@ -771,6 +771,73 @@ mod tests {
     }
 
     #[test]
+    fn canonical_occurrences_require_unsigned_ordinals_without_source_positions() {
+        use cadmpeg_ir::codec::CodecBackend;
+        let container = container(payload(&["plate", "bolt", "nut"], &[1, 2, 2, 3]));
+        let (prototypes, uuids, occurrences) = fast_load_component_roster(&container).unwrap();
+        crate::test_support::with_decode_context(|ctx| {
+            let mut ir = cadmpeg_ir::CadIr::empty();
+            let namespace = ir.native.namespace_mut("nx");
+            namespace
+                .set_arena(ctx, "fast_load_component_prototypes", &prototypes)
+                .unwrap();
+            namespace
+                .set_arena(ctx, "fast_load_component_uuids", &uuids)
+                .unwrap();
+            namespace
+                .set_arena(
+                    ctx,
+                    "fast_load_component_occurrences",
+                    &occurrences.wire_records().collect::<Vec<_>>(),
+                )
+                .unwrap();
+            crate::decode::source_layout::move_layout(
+                &mut ir,
+                &mut cadmpeg_ir::SourceFidelity::default(),
+            )
+            .unwrap();
+            assert!(crate::NxCodec::validate_native(ctx, &ir)
+                .unwrap()
+                .is_empty());
+            let original = ir.native.namespace("nx").unwrap().arenas()
+                ["fast_load_component_occurrences"]
+                .iter()
+                .map(|record| serde_json::to_value(record).unwrap())
+                .collect::<Vec<_>>();
+            assert!(original
+                .iter()
+                .all(|record| record.get("source_offset").is_none()));
+            for ordinal in [
+                None,
+                Some(serde_json::json!("zero")),
+                Some(serde_json::json!(-1)),
+                Some(serde_json::json!(u64::from(u32::MAX) + 1)),
+            ] {
+                let mut changed = ir.clone();
+                let mut rows = original.clone();
+                if let Some(ordinal) = ordinal {
+                    rows[0]["ordinal"] = ordinal;
+                } else {
+                    rows[0].as_object_mut().unwrap().remove("ordinal").unwrap();
+                }
+                changed
+                    .native
+                    .namespace_mut("nx")
+                    .set_arena(ctx, "fast_load_component_occurrences", &rows)
+                    .unwrap();
+                let findings = crate::NxCodec::validate_native(ctx, &changed).unwrap();
+                assert_eq!(findings.len(), 1, "{findings:?}");
+                assert!(findings[0].message.contains("ordinal"), "{findings:?}");
+                assert_eq!(
+                    findings[0].check,
+                    cadmpeg_ir::report::check::Check::NativeLinks
+                );
+                assert_eq!(findings[0].severity, cadmpeg_ir::report::Severity::Error);
+            }
+        });
+    }
+
+    #[test]
     fn extracts_roster_with_none_metadata() {
         let (prototypes, uuids, occurrences) = fast_load_component_roster(&container(
             payload_with_metadata("None", &["pin", "head"], &[1, 2], 0, b"99"),

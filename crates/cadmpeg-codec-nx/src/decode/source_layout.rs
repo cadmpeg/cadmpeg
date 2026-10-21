@@ -10,17 +10,10 @@ use serde_json::{json, Value};
 // mathematical arrays continue through the normal traversal.
 const BYTE_FIELDS: &[&str] = &[
     "body",
-    "discriminator",
-    "first_reference_prefix",
     "flags",
     "index_lane_raw_indices",
     "layout_prefix",
-    "lsg_segment_id",
-    "marker",
     "markers",
-    "object_type_id",
-    "opener",
-    "ordinals",
     "prefix",
     "payload",
     "raw",
@@ -32,7 +25,6 @@ const BYTE_FIELDS: &[&str] = &[
     "raw_color_index",
     "raw_components",
     "raw_continuation_index",
-    "raw_count",
     "raw_descriptor_indices",
     "raw_first",
     "raw_first_index",
@@ -68,19 +60,10 @@ const BYTE_FIELDS: &[&str] = &[
     "raw_value",
     "raw_values",
     "registry_suffix",
-    "row_schema_indices",
-    "schema_fingerprint",
-    "second_reference_prefix",
-    "segment_id",
-    "selector",
-    "split_tracking_data",
-    "state",
     "state_lane",
     "suffix",
     "table_trailing_bytes",
     "tail",
-    "trailer",
-    "trailing_value",
 ];
 
 pub(crate) fn move_layout(ir: &mut CadIr, fidelity: &mut SourceFidelity) -> Result<(), CodecError> {
@@ -131,7 +114,7 @@ fn extract(value: &mut Value, path: &str, fidelity: &mut SourceFidelity) -> Resu
                 let Some(child) = object.get_mut(&key) else {
                     continue;
                 };
-                if BYTE_FIELDS.contains(&key.as_str()) && !is_semantic_identity(&key) {
+                if BYTE_FIELDS.contains(&key.as_str()) {
                     if extract_bytes(child, &child_path, fidelity)? {
                         continue;
                     }
@@ -147,13 +130,6 @@ fn extract(value: &mut Value, path: &str, fidelity: &mut SourceFidelity) -> Resu
         _ => {}
     }
     Ok(())
-}
-
-fn is_semantic_identity(key: &str) -> bool {
-    matches!(
-        key,
-        "segment_id" | "lsg_segment_id" | "object_type_id" | "schema_fingerprint"
-    )
 }
 
 fn extract_bytes(
@@ -227,6 +203,42 @@ mod tests {
         assert_eq!(value["component_quantization_bits"], json!("080a0c"));
         assert_eq!(value["legal_owner_flags"], json!("000100"));
         assert!(fidelity.retained_records().is_empty());
+    }
+
+    #[test]
+    fn appendix_b_keep_byte_fields_are_not_source_payloads() {
+        // Each of these NX field names has only keep classifications in the
+        // immutable Appendix B inventory. Their typed owners admit the form;
+        // the layout pass must preserve even a short or empty byte value.
+        for field in [
+            "discriminator",
+            "first_reference_prefix",
+            "lsg_segment_id",
+            "marker",
+            "object_type_id",
+            "opener",
+            "ordinals",
+            "raw_count",
+            "row_schema_indices",
+            "schema_fingerprint",
+            "second_reference_prefix",
+            "segment_id",
+            "selector",
+            "split_tracking_data",
+            "state",
+            "trailer",
+            "trailing_value",
+        ] {
+            for bytes in ["", "0001ff"] {
+                let mut value = json!({"owner": {field: bytes}});
+                let original = value.clone();
+                let mut fidelity = SourceFidelity::default();
+                extract(&mut value, "native.nx.record", &mut fidelity).unwrap();
+                assert_eq!(value, original, "{field}");
+                assert!(fidelity.retained_records().is_empty(), "{field}");
+                assert!(fidelity.metadata.is_empty(), "{field}");
+            }
+        }
     }
 
     #[test]

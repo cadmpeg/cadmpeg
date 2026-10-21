@@ -71,6 +71,8 @@ pub(crate) fn validate(
     if let Some(occurrences) = arena("fast_load_component_occurrences") {
         for record in occurrences.values() {
             let fields = record.fields()?;
+            typed_field::<u32>(record, &fields, "ordinal")?;
+            typed_field::<String>(record, &fields, "source_entry")?;
             let form = number(record, &fields, "occurrence_lane_form")?;
             if form > 1 || lane_form.is_some_and(|previous| previous != form) {
                 return Err(invalid(
@@ -106,6 +108,7 @@ pub(crate) fn validate(
     if let Some(documents) = arena("display_jt_documents") {
         for document in documents.values() {
             let fields = document.fields()?;
+            super::display_jt::admission::admit_document_values(document.id(), &fields)?;
             let entries = fields
                 .get("toc_entries")
                 .and_then(Value::as_array)
@@ -125,6 +128,14 @@ pub(crate) fn validate(
     if let Some(segments) = arena("display_jt_segments") {
         for record in segments.values() {
             let fields = record.fields()?;
+            typed_field::<cadmpeg_ir::hash::digest::Sha256Digest>(
+                record,
+                &fields,
+                "payload_sha256",
+            )?;
+            if let Some(compression) = fields.get("compression").filter(|value| !value.is_null()) {
+                super::display_jt::admission::admit_compression_values(record.id(), compression)?;
+            }
             require_link(record, &fields, "document", arena("display_jt_documents"))?;
             let document = arena("display_jt_documents")
                 .and_then(|documents| documents.get(text(record, &fields, "document").ok()?))
@@ -202,7 +213,7 @@ pub(crate) fn validate(
                     if name == "display_jt_shape_lod_elements" && base != 4 {
                         return Err(invalid(record.id(), "object_base_type must be 4"));
                     }
-                    if name == "display_jt_compressed_elements" && length.checked_add(25).is_none()
+                    if name == "display_jt_compressed_elements" && length.checked_add(21).is_none()
                     {
                         return Err(invalid(
                             record.id(),
@@ -236,12 +247,6 @@ pub(crate) fn validate(
                     let Some(ids) = fields.get("elements").and_then(Value::as_array) else {
                         return Err(invalid(record.id(), "sequence elements are absent"));
                     };
-                    if ids.is_empty() {
-                        return Err(invalid(
-                            record.id(),
-                            "elements must contain at least one compressed element",
-                        ));
-                    }
                     let mut framed_length = 20_u64;
                     typed_field::<u32>(record, &fields, "framed_byte_len")?;
                     typed_field::<cadmpeg_ir::hash::digest::Sha256Digest>(
