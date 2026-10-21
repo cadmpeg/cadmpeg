@@ -6,20 +6,24 @@ use crate::scalar::{Angle, Length};
 use crate::sketches::SketchDistanceMeasurement;
 
 fn id(name: &str) -> SketchEntityId {
-    format!("test:model:entity#{name}").try_into().unwrap()
+    format!("test:model:entity#{name}")
+        .try_into()
+        .expect("valid test sketch entity identity")
 }
 
 fn line(start: Point2, end: Point2) -> SketchGeometry {
-    Geometry::Line { start, end }.try_into().unwrap()
+    Geometry::Line { start, end }
+        .try_into()
+        .expect("valid test line geometry")
 }
 
 fn circle(center: Point2, radius: f64) -> SketchGeometry {
     Geometry::Circle {
         center,
-        radius: Length::new(radius).unwrap(),
+        radius: Length::new(radius).expect("finite nonnegative test circle radius"),
     }
     .try_into()
-    .unwrap()
+    .expect("valid test circle geometry")
 }
 
 fn check_with(
@@ -107,12 +111,12 @@ fn tangent_loci_check_contact_position_and_local_direction() {
     let second = id("second");
     let arc: SketchGeometry = Geometry::Arc {
         center: Point2::new(0.0, 0.0),
-        radius: Length::new(1.0).unwrap(),
-        start_angle: Angle::new(0.0).unwrap(),
-        end_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+        radius: Length::new(1.0).expect("valid unit radius"),
+        start_angle: Angle::new(0.0).expect("valid zero start angle"),
+        end_angle: Angle::new(std::f64::consts::FRAC_PI_2).expect("valid quarter-turn end angle"),
     }
     .try_into()
-    .unwrap();
+    .expect("valid quarter-circle arc geometry");
     let tangent = line(Point2::new(1.0, 0.0), Point2::new(1.0, 2.0));
     let crossing = line(Point2::new(1.0, 0.0), Point2::new(2.0, 0.0));
     let definition = || Constraint::TangentLoci {
@@ -133,20 +137,25 @@ fn repeated_distance_reads_the_canonical_parameter_and_per_measurement_axis() {
             position: Point2::new(u, v),
         }
         .try_into()
-        .unwrap()
+        .expect("valid test point geometry")
     };
     let origin = point(0.0, 0.0);
     let end = point(3.0, 4.0);
-    let parameter = "test:model:parameter#distance".try_into().unwrap();
+    let parameter = "test:model:parameter#distance"
+        .try_into()
+        .expect("valid distance parameter identity");
     ir.model.parameters.push(DesignParameter {
         id: parameter,
         owner: None,
         ordinal: 0,
         name: "distance".into(),
-        expression: ParameterValue::Length(Length::new(5.0).unwrap()).literal_expression(),
+        expression: ParameterValue::Length(Length::new(5.0).expect("valid five-unit distance"))
+            .literal_expression(),
         driving: true,
         display: None,
-        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
+        value: Some(ParameterValue::Length(
+            Length::new(5.0).expect("valid five-unit distance"),
+        )),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
@@ -160,7 +169,9 @@ fn repeated_distance_reads_the_canonical_parameter_and_per_measurement_axis() {
     };
     let entities = [(&first, &origin), (&second, &end)];
     assert!(check_with(&ir, &definition, &entities).is_none());
-    ir.model.parameters[0].value = Some(ParameterValue::Length(Length::new(4.0).unwrap()));
+    ir.model.parameters[0].value = Some(ParameterValue::Length(
+        Length::new(4.0).expect("valid four-unit distance"),
+    ));
     assert!(check_with(&ir, &definition, &entities).is_some());
     ir.model.parameters[0].value = None;
     assert!(check_with(&ir, &definition, &entities).is_none());
@@ -169,17 +180,18 @@ fn repeated_distance_reads_the_canonical_parameter_and_per_measurement_axis() {
 #[test]
 fn cache_checks_use_the_declared_tolerance_and_do_not_measure_arc_chords_as_lines() {
     let mut ir = CadIr::empty();
-    ir.tolerances.linear = crate::scalar::PositiveLength::new(1.0e-12).unwrap();
+    ir.tolerances.linear =
+        crate::scalar::PositiveLength::new(1.0e-12).expect("positive test linear tolerance");
     assert!(!close(&ir, 1.0, 1.0 + 1.0e-10));
     let entity = id("arc");
     let arc: SketchGeometry = Geometry::Arc {
         center: Point2::new(0.0, 0.0),
-        radius: Length::new(1.0).unwrap(),
-        start_angle: Angle::new(0.0).unwrap(),
-        end_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+        radius: Length::new(1.0).expect("valid unit radius"),
+        start_angle: Angle::new(0.0).expect("valid zero start angle"),
+        end_angle: Angle::new(std::f64::consts::FRAC_PI_2).expect("valid quarter-turn end angle"),
     }
     .try_into()
-    .unwrap();
+    .expect("valid quarter-circle arc geometry");
     assert!(check_with(
         &ir,
         &Constraint::Horizontal {
@@ -204,7 +216,7 @@ fn circular_pattern_distinguishes_periodic_span_from_inclusive_span_and_spacing(
             position: Point2::new(u, v),
         }
         .try_into()
-        .unwrap()
+        .expect("valid test point geometry")
     };
     let origin = point(0.0, 0.0);
     let initial = point(1.0, 0.0);
@@ -212,11 +224,13 @@ fn circular_pattern_distinguishes_periodic_span_from_inclusive_span_and_spacing(
     let second_point = point(-0.5, -3.0_f64.sqrt() / 2.0);
     let instances = vec![
         SketchCircularPatternInstance {
-            angle: crate::scalar::NonZeroAngle::new(std::f64::consts::TAU / 3.0).unwrap(),
+            angle: crate::scalar::NonZeroAngle::new(std::f64::consts::TAU / 3.0)
+                .expect("nonzero first circular pattern angle"),
             entities: vec![first.clone()],
         },
         SketchCircularPatternInstance {
-            angle: crate::scalar::NonZeroAngle::new(2.0 * std::f64::consts::TAU / 3.0).unwrap(),
+            angle: crate::scalar::NonZeroAngle::new(2.0 * std::f64::consts::TAU / 3.0)
+                .expect("nonzero second circular pattern angle"),
             entities: vec![second.clone()],
         },
     ];
@@ -228,7 +242,7 @@ fn circular_pattern_distinguishes_periodic_span_from_inclusive_span_and_spacing(
             vec![seed.clone()],
             instances.clone(),
         )
-        .unwrap(),
+        .expect("valid three-instance circular pattern"),
     };
     let geometry = [
         (&center, &origin),
@@ -236,7 +250,9 @@ fn circular_pattern_distinguishes_periodic_span_from_inclusive_span_and_spacing(
         (&first, &first_point),
         (&second, &second_point),
     ];
-    let angle = Dimension::Literal(Angle::new(std::f64::consts::TAU).unwrap());
+    let angle = Dimension::Literal(
+        Angle::new(std::f64::consts::TAU).expect("valid full-turn pattern angle"),
+    );
     assert!(check_with(
         &ir,
         &pattern(PatternAngle::Span {
@@ -266,7 +282,9 @@ fn circular_pattern_distinguishes_periodic_span_from_inclusive_span_and_spacing(
     assert!(check_with(
         &ir,
         &pattern(PatternAngle::Span {
-            angle: Dimension::Literal(Angle::new(std::f64::consts::TAU).unwrap()),
+            angle: Dimension::Literal(
+                Angle::new(std::f64::consts::TAU).expect("valid full-turn pattern angle")
+            ),
             distribution: CircularPatternDistribution::Periodic,
         }),
         &wrong_geometry
