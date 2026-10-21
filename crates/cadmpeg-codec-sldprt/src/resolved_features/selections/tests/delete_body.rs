@@ -113,7 +113,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     let renamed = SldprtCodec
         .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
         .unwrap();
-    let renamed_native = sldprt_native(renamed.ir());
+    let renamed_native = crate::test_support::native::sldprt_native(renamed.ir());
     assert!(!renamed_native.feature_histories[0].features[0]
         .properties
         .contains_key("Bodies"));

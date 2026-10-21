@@ -118,7 +118,7 @@ fn a_retained_f3d_with_zstandard_members_patches() {
         ),
         "path {:?}; cause {:?}; losses {:?}",
         report.write_path(),
-        report.synthesis_cause,
+        report.synthesis_cause(),
         report.losses
     );
 

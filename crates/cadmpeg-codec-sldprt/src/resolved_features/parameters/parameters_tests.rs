@@ -56,7 +56,7 @@ fn fillet_display_placeholder_establishes_length_unit() {
         kind: "Fillet".into(),
         input_class: Some("Fillet_c".into()),
         suppressed: false,
-        parameters: BTreeMap::from([(cadmpeg_core::nonblank_literal!("D1"), "R0".into())]),
+        parameters: BTreeMap::from([("D1".to_owned(), "R0".into())]),
         dimension_properties: BTreeMap::default(),
         properties: BTreeMap::default(),
         text: None,
@@ -73,7 +73,7 @@ fn fillet_display_placeholder_establishes_length_unit() {
     let mut numeric = feature;
     numeric
         .parameters
-        .insert(cadmpeg_core::nonblank_literal!("D1"), "0".into());
+        .insert("D1".to_owned(), "0".into());
     assert_eq!(scalar_unit_from_feature_parameter(&numeric, "D1"), None);
 
     let mut cosmetic_thread = numeric.clone();
@@ -196,7 +196,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         input_class: Some("moProfileFeature_c".into()),
         suppressed: false,
         parameters: BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("D1"),
+            "D1".to_owned(),
             "<MOD-DIAM>0.281".into(),
         )]),
         dimension_properties: BTreeMap::default(),
@@ -289,7 +289,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
     }
     semantic_lane.scalars[0].offset = None;
     histories[0].features[0].dimension_properties.insert(
-        cadmpeg_core::nonblank_literal!("D1"),
+        "D1".to_owned(),
         BTreeMap::from([(
             cadmpeg_core::nonblank_literal!("Value"),
             "<MOD-DIAM>25".into(),
@@ -308,7 +308,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
     );
     histories[0].features[0]
         .parameters
-        .insert(cadmpeg_core::nonblank_literal!("D1"), "<MOD-DIAM>8".into());
+        .insert("D1".to_owned(), "<MOD-DIAM>8".into());
     sync_feature_scalars(&histories, std::slice::from_mut(&mut lane))
         .expect("explicit scalar owner is writable");
     assert_eq!(lane.scalars[0].value.get(), 0.008);
