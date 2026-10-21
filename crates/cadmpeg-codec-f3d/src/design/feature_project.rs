@@ -1726,6 +1726,7 @@ fn project_solid_primitive(
             crate::records::feature::primitives::DesignCylinderPrimitive {
                 height,
                 diameter,
+                transform,
                 operation: result,
                 ..
             },
@@ -1736,6 +1737,21 @@ fn project_solid_primitive(
                 angle: Angle::FULL_TURN,
             })
             .ok()?,
+            // The shifted form's frame places the zero-origin cylinder along
+            // its positive z axis; the named forms store no frame.
+            placement: match transform {
+                Some(frame) => {
+                    let rows = frame.value.rows();
+                    let row = |index: usize| {
+                        let [x, y, z, translation] = rows[index];
+                        [x, y, z, translation * 10.0]
+                    };
+                    Some(cadmpeg_ir::features::FeatureRigidPlacement::new(
+                        cadmpeg_ir::transform::Transform::affine([row(0), row(1), row(2)])?,
+                    )?)
+                }
+                None => None,
+            },
             op: operation(*result),
         }),
         crate::records::feature::scope::DesignScopePayload::SpherePrimitive(Some(

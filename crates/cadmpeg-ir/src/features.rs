@@ -3023,6 +3023,14 @@ pub enum FeatureOperation {
     Primitive {
         /// Primitive dimensions and angular bounds.
         solid: PrimitiveSolid,
+        /// Local-to-model placement of the primitive's feature frame, when
+        /// resolved. Without it the feature frame is unknown.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_primitive_placement"
+        )]
+        placement: Option<FeatureRigidPlacement>,
         /// Boolean combination with an existing `PartDesign` body.
         op: BooleanOp,
     },
@@ -9091,6 +9099,11 @@ cadmpeg_core::named_optional_field!(
     "construction"
 );
 cadmpeg_core::named_optional_field!(deserialize_bidirectional, bool, "bidirectional");
+cadmpeg_core::named_optional_field!(
+    deserialize_primitive_placement,
+    FeatureRigidPlacement,
+    "placement"
+);
 cadmpeg_core::named_optional_field!(deserialize_segment_turns, PositiveReal, "segment_turns");
 cadmpeg_core::named_optional_field!(
     deserialize_construction_style,

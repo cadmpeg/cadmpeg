@@ -266,6 +266,7 @@ fn design_completeness_audits_typed_construction_families() {
                 },
             )
             .unwrap(),
+            placement: None,
             op: BooleanOp::NewBody,
         }),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {

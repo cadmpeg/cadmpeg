@@ -5840,6 +5840,7 @@ fn primitive_definition(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Primitive {
             solid: required!(PrimitiveSolid::new(solid).ok()),
+            placement: None,
             op,
         },
     )))

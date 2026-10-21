@@ -226,7 +226,7 @@ rewrite_enum!(FeatureOperation, []; {
     ExtractBody { source },
     DerivedGeometry { source },
     ImportedGeometry { path, format },
-    Primitive { solid, op },
+    Primitive { solid, placement, op },
     Revolve { construction, op },
     Sweep { shape, path, orientation, transition, transformation, path_tangent, linearize, twist, path_extent, guide_rail, taper, scale, allow_multi_profile_faces },
     HelicalSweep { construction, op },
