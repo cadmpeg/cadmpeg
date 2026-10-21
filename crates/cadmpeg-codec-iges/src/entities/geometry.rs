@@ -2034,7 +2034,17 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
-            parameter_range: None,
+            parameter_range: if entry.form == 0 {
+                Some(
+                    IncreasingParameterInterval::new([0.0, length]).ok_or_else(|| {
+                        CodecError::malformed(
+                            "IGES finite line has no increasing physical interval",
+                        )
+                    })?,
+                )
+            } else {
+                None
+            },
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(start, direction),
@@ -2619,6 +2629,19 @@ pub(crate) fn project_geometry(
         free_geometry::retain_independent(ir, &shell, &entries, &mut sequences)?;
     }
 
+    let mut vertex_points = BTreeSet::new();
+    for vertex in &ir.model.vertices {
+        vertex_points.insert(&vertex.point);
+    }
+    ir.model.points.retain(|point| {
+        !sequences
+            .point(&point.id)
+            .is_some_and(|sequence| analytic_surface_locations.contains(&sequence))
+            || vertex_points.contains(&point.id)
+    });
+    let live_points: BTreeSet<_> = ir.model.points.iter().map(|point| &point.id).collect();
+    sequences.points.retain(|id, _| live_points.contains(id));
+
     super::presentation::project(
         ir,
         directory,
@@ -2643,16 +2666,6 @@ pub(crate) fn project_geometry(
     super::annotation::project(ir, directory, parameters, global, ctx)?
         .merge_into(&mut decoded, &mut losses);
 
-    let mut vertex_points = BTreeSet::new();
-    for vertex in &ir.model.vertices {
-        vertex_points.insert(&vertex.point);
-    }
-    ir.model.points.retain(|point| {
-        !sequences
-            .point(&point.id)
-            .is_some_and(|sequence| analytic_surface_locations.contains(&sequence))
-            || vertex_points.contains(&point.id)
-    });
     Ok(Projection {
         placement_rejections,
         decoded,

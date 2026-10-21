@@ -67,19 +67,15 @@ pub(super) fn project(
         if assigned.is_empty() {
             continue;
         }
-        let Some(label) = entity.label.as_ref() else {
-            continue;
-        };
-        let Some(label) = crate::text::decoded(label) else {
+        let Some(label) = crate::text::decoded(&entity.label) else {
             losses.push(
                 IgesLossCode::NeutralProjectionUnavailable
                     .note(format!("{}: directory label is not UTF-8", entity.id)),
             );
             continue;
         };
-        let label = label.trim_end_matches(' ');
+        let label = label.trim_matches(' ');
         if label.is_empty() {
-            entity.label = None;
             continue;
         }
         // A full Name property may coexist with a distinct short directory
@@ -120,7 +116,6 @@ pub(super) fn project(
             )?;
             entity.neutral_label = values.into_values().flatten().collect();
         }
-        entity.label = None;
     }
     Ok(losses)
 }

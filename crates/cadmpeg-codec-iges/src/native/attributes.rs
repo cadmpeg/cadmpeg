@@ -28,8 +28,7 @@ pub(super) fn serialize_product_property<S: Serializer>(
         source_entity: &'a str,
         form: i64,
         property_kind: ProductPropertyKind,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        value: Option<&'a Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>>,
+        value: &'a Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
         owners: &'a [String],
         #[serde(skip_serializing_if = "Option::is_none")]
         neutral_values: Option<&'a ProjectedValues>,
@@ -39,7 +38,7 @@ pub(super) fn serialize_product_property<S: Serializer>(
         source_entity: &record.source_entity,
         form: record.property_kind.form(),
         property_kind: record.property_kind,
-        value: record.neutral_values.is_none().then_some(&record.value),
+        value: &record.value,
         owners: &record.owners,
         neutral_values: record.neutral_values.as_ref(),
     }
@@ -51,7 +50,7 @@ pub(super) fn serialize_property<S: Serializer>(
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     #[derive(Serialize)]
-    struct Original<'a> {
+    struct Wire<'a> {
         id: &'a str,
         source_entity: &'a str,
         form: i64,
@@ -59,62 +58,19 @@ pub(super) fn serialize_property<S: Serializer>(
         owners: &'a [String],
         #[serde(flatten)]
         value: &'a NativePropertyValue,
-    }
-    #[derive(Serialize)]
-    struct Projected<'a> {
-        id: &'a str,
-        source_entity: &'a str,
-        form: i64,
-        declared_value_count: Option<i64>,
-        owners: &'a [String],
-        property_kind: &'static str,
-        neutral_values: &'a ProjectedValues,
-        collection_sizes: BTreeMap<String, usize>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        generic_types: Option<Vec<Option<i64>>>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        omitted_values: Option<Vec<usize>>,
+        neutral_values: Option<&'a ProjectedValues>,
     }
-    match &record.neutral_values {
-        Some(values) => Projected {
-            id: &record.id,
-            source_entity: &record.source_entity,
-            form: record.form,
-            declared_value_count: record.declared_value_count,
-            owners: &record.owners,
-            property_kind: property_kind(&record.value),
-            neutral_values: values,
-            collection_sizes: fields::collection_sizes(&record.value),
-            generic_types: match &record.value {
-                NativePropertyValue::GenericData { values, .. } => {
-                    Some(values.iter().map(|value| value.data_type).collect())
-                }
-                _ => None,
-            },
-            omitted_values: match &record.value {
-                NativePropertyValue::GenericData { values, .. } => Some(
-                    values
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(index, value)| {
-                            matches!(value.value, TokenValue::Omitted).then_some(index)
-                        })
-                        .collect(),
-                ),
-                _ => None,
-            },
-        }
-        .serialize(serializer),
-        None => Original {
-            id: &record.id,
-            source_entity: &record.source_entity,
-            form: record.form,
-            declared_value_count: record.declared_value_count,
-            owners: &record.owners,
-            value: &record.value,
-        }
-        .serialize(serializer),
+    Wire {
+        id: &record.id,
+        source_entity: &record.source_entity,
+        form: record.form,
+        declared_value_count: record.declared_value_count,
+        owners: &record.owners,
+        value: &record.value,
+        neutral_values: record.neutral_values.as_ref(),
     }
+    .serialize(serializer)
 }
 
 pub(super) fn serialize_definition<S: Serializer>(
@@ -122,70 +78,28 @@ pub(super) fn serialize_definition<S: Serializer>(
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     #[derive(Serialize)]
-    struct Schema<'a> {
-        attribute_type: Option<i64>,
-        value_data_type: Option<i64>,
-        declared_value_count: Option<i64>,
-        display_templates: Vec<Option<&'a str>>,
-    }
-    #[derive(Serialize)]
-    struct Projected<'a> {
+    struct Wire<'a> {
         id: &'a str,
         source_entity: &'a str,
         form: i64,
         name: &'a Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
         attribute_list_type: Option<i64>,
         declared_attribute_count: Option<i64>,
-        attributes: Vec<Schema<'a>>,
-        neutral_values: &'a ProjectedValues,
+        attributes: &'a [super::NativeAttributeDefinition],
+        #[serde(skip_serializing_if = "Option::is_none")]
+        neutral_values: Option<&'a ProjectedValues>,
     }
-    if let Some(values) = &record.neutral_values {
-        Projected {
-            id: &record.id,
-            source_entity: &record.source_entity,
-            form: record.form,
-            name: &record.name,
-            attribute_list_type: record.attribute_list_type,
-            declared_attribute_count: record.declared_attribute_count,
-            attributes: record
-                .attributes
-                .iter()
-                .map(|attribute| Schema {
-                    attribute_type: attribute.attribute_type,
-                    value_data_type: attribute.value_data_type,
-                    declared_value_count: attribute.declared_value_count,
-                    display_templates: attribute
-                        .values
-                        .iter()
-                        .map(|value| value.display_template.as_deref())
-                        .collect(),
-                })
-                .collect(),
-            neutral_values: values,
-        }
-        .serialize(serializer)
-    } else {
-        #[derive(Serialize)]
-        struct Original<'a> {
-            id: &'a str,
-            source_entity: &'a str,
-            form: i64,
-            name: &'a Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
-            attribute_list_type: Option<i64>,
-            declared_attribute_count: Option<i64>,
-            attributes: &'a [super::NativeAttributeDefinition],
-        }
-        Original {
-            id: &record.id,
-            source_entity: &record.source_entity,
-            form: record.form,
-            name: &record.name,
-            attribute_list_type: record.attribute_list_type,
-            declared_attribute_count: record.declared_attribute_count,
-            attributes: &record.attributes,
-        }
-        .serialize(serializer)
+    Wire {
+        id: &record.id,
+        source_entity: &record.source_entity,
+        form: record.form,
+        name: &record.name,
+        attribute_list_type: record.attribute_list_type,
+        declared_attribute_count: record.declared_attribute_count,
+        attributes: &record.attributes,
+        neutral_values: record.neutral_values.as_ref(),
     }
+    .serialize(serializer)
 }
 
 pub(super) fn serialize_instance<S: Serializer>(
@@ -199,10 +113,7 @@ pub(super) fn serialize_instance<S: Serializer>(
         form: i64,
         definition: &'a Option<String>,
         declared_row_count: Option<i64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        rows: Option<&'a [Vec<TokenValue>]>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        row_widths: Option<Vec<usize>>,
+        rows: &'a [Vec<TokenValue>],
         #[serde(skip_serializing_if = "Option::is_none")]
         neutral_values: Option<&'a ProjectedValues>,
     }
@@ -212,14 +123,7 @@ pub(super) fn serialize_instance<S: Serializer>(
         form: record.form,
         definition: &record.definition,
         declared_row_count: record.declared_row_count,
-        rows: record
-            .neutral_values
-            .is_none()
-            .then_some(record.rows.as_slice()),
-        row_widths: record
-            .neutral_values
-            .as_ref()
-            .map(|_| record.rows.iter().map(Vec::len).collect()),
+        rows: &record.rows,
         neutral_values: record.neutral_values.as_ref(),
     }
     .serialize(serializer)

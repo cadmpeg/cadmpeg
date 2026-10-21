@@ -1953,6 +1953,7 @@ struct NativeEntity<'a> {
     directory_sequence: u32,
     entity_type: i64,
     form: i64,
+    parameter_line_count: i64,
 
     structure: i64,
     line_font: Option<i64>,
@@ -1964,9 +1965,9 @@ struct NativeEntity<'a> {
     status: SourceStatus,
     line_weight: Option<i64>,
     color: Option<i64>,
+    reserved: [NativeBytes<[u8; 8]>; 2],
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    label: Option<NativeBytes<[u8; 8]>>,
+    label: NativeBytes<[u8; 8]>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     neutral_label: Vec<cadmpeg_ir::ids::AttributeId>,
     subscript: Option<i64>,
@@ -2543,6 +2544,7 @@ pub(crate) fn store(
                 directory_sequence: entry.sequence,
                 entity_type: entry.entity_type,
                 form: entry.form,
+                parameter_line_count: entry.parameter_line_count,
 
                 structure: entry.structure,
                 line_font: entry.line_font,
@@ -2553,8 +2555,9 @@ pub(crate) fn store(
                 status: entry.status,
                 line_weight: entry.line_weight,
                 color: entry.color,
+                reserved: entry.reserved.map(NativeBytes::from),
 
-                label: Some(NativeBytes::from(entry.label)),
+                label: NativeBytes::from(entry.label),
                 neutral_label: Vec::new(),
                 subscript: entry.subscript,
                 parameter_record: NativeParameterRecordSlot(parameters),
