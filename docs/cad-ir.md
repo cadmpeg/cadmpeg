@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"6"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"7"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -191,6 +191,8 @@ Ordered resolved and historical body sets store nonempty member rows. Each row p
 
 A configuration feature evaluation is `suppressed` or `active`. A suppressed evaluation has no outputs. An active evaluation owns its output list, which may be empty. Dependencies and the feature definition remain present independently of the evaluation state.
 
+A sheet-metal base flange places its thickness along the profile plane's positive normal (`forward`), along its negative normal (`reverse`), or split equally across both sides of the plane (`symmetric`).
+
 Loft guidance is a guide-path list or one centerline path. An empty guide-path list means unguided. Guide paths and a centerline cannot coexist.
 
 A sketch native operand has a nonempty native kind and an optional field. A present field has a nonempty name and an optional role. A role exists only within its field.
@@ -201,6 +203,14 @@ A sketch native operand has a nonempty native kind and an optional field. A pres
 reference entries in the document parameter arena. A referenced parameter may
 be owned by another feature, including a global equations node, and may occur
 more than once when the source serializes repeated consumption slots.
+
+## Assembly joints
+
+An assembly joint grounds one connector, or connects two connectors through a paired family. Each connector holds an operand and a frame. An operand container is the document root, a local occurrence, or an external document. An occurrence container optionally holds `occurrence_path`: the native keys of the nested occurrences, outermost first, that lead from the prototype of the occurrence to the document that owns the object. An absent path means that the prototype of the occurrence owns the object. The path identifies the placement of a part that is placed more than once; placement transforms stay on the occurrences.
+
+`plane_coincidence` makes the two connector planes coincident. The z axis of each connector frame is the outward normal of its plane, and the frame origin lies on the plane. `sense` is `opposed` (`z₁ = −z₀`) or `aligned` (`z₁ = z₀`). The optional `offset` is the signed separation `(origin₁ − origin₀) · z₀`. `axis_coincidence` makes the two connector axes coincident. The z axis of each connector frame is the axis direction, in either sense, and the frame origin lies on the axis. `insert` makes the two circle axes coincident. The z axis of each connector frame is the normal of its circle, and the frame origin is the circle centre; both origins lie on the line that the z axis of the first connector frame spans. `sense` is `opposed` or `aligned` as for a plane coincidence, and the optional `offset` is the signed separation `(origin₀ − origin₁) · z₀`. `tangent` makes a cylindrical face of the first connector touch the plane of the second connector. The z axis of the first connector frame is the cylinder axis and its origin lies on that axis; the z axis of the second connector frame is the outward plane normal and its origin lies on the plane. `contact` is `outside` (the cylinder lies on the side that the plane normal points to) or `inside` (the opposite side). The cylinder radius is the radius of the referenced face. `point_on_axis` puts the origin of the first connector frame at the optional `distance` from the axis that the z axis of the second connector frame spans.
+
+The optional `driving_parameter` names the design parameter whose value drives the offset, distance, or angle of the joint. It resolves in the `parameters` arena.
 
 ## Native namespaces
 
@@ -274,7 +284,7 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "6"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "7"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
@@ -288,7 +298,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "6",
+  "ir_version": "7",
   "decode_depth": "full",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },

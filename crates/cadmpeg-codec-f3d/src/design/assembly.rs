@@ -1162,7 +1162,8 @@ mod tests {
         assert_eq!(
             operands[0].container,
             cadmpeg_ir::OperandContainer::Occurrence {
-                occurrence: crate::ids::neutral_component_insert_occurrence_id(&component_scope)
+                occurrence: crate::ids::neutral_component_insert_occurrence_id(&component_scope),
+                occurrence_path: Vec::new(),
             }
         );
         assert!(operands[0]
