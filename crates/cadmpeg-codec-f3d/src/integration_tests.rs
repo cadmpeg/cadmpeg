@@ -547,7 +547,7 @@ fn a_same_dialect_request_replays_under_both_spellings() {
     }
 }
 
-/// An edited off-catalog archive needs an explicit resolvable synthesis target.
+/// An off-catalog edit patches when supported and needs an explicit target when synthesis is required.
 #[test]
 fn an_edited_off_catalog_document_synthesizes_the_explicit_target() {
     let result = decode(f3d_with_smbh_and_manifest_version(
@@ -564,9 +564,51 @@ fn an_edited_off_catalog_document_synthesizes_the_explicit_target() {
         ))
         .unwrap(),
     );
+    // This fully typed edit is patchable in its original dialect.
+    let inherited = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(result.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        inherited.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
+    assert_eq!(named_target(&inherited), "f3d:manifest-3-3-0-0");
+    let mut inherited_bytes = Vec::new();
+    inherited.write_to(&mut inherited_bytes).unwrap();
+    let inherited_output = decode(inherited_bytes);
+    assert_eq!(
+        inherited_output.ir().model.points[0].position().get().x,
+        moved.x + 1.0
+    );
+    assert_eq!(
+        inherited_output
+            .report()
+            .dialects()
+            .unwrap()
+            .primary()
+            .dialect()
+            .as_str(),
+        "f3d:manifest-3-3-0-0"
+    );
+
+    // A real unsupported edit still requires synthesis, which has no target
+    // for this off-catalog dialect. Source bytes cannot provide that content.
+    let mut unsupported = edited.clone();
+    unsupported
+        .model
+        .attributes
+        .push(cadmpeg_ir::attributes::SourceAttribute {
+            id: cadmpeg_ir::ids::AttributeId::mint("authored:attribute#unsupported").unwrap(),
+            target: cadmpeg_ir::attributes::AttributeTarget::Document,
+            name: "unsupported-attribute".into(),
+            values: Vec::new(),
+        });
     assert!(matches!(
         F3dCodec.plan(
-            EncodeInput::new(&edited, Some(result.source_fidelity())),
+            EncodeInput::new(&unsupported, Some(result.source_fidelity())),
             TargetRequest::Inherit
         ),
         Err(cadmpeg_core::CodecError::UnsupportedTarget(_))
