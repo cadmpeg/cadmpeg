@@ -78,6 +78,49 @@ fn configuration_partitions_require_explicit_source_identity() {
 }
 
 #[test]
+fn actual_partition_binds_the_unique_native_slot_before_inferred_configuration() {
+    let mut ir = CadIr::empty();
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("sldprt:test"),
+        )),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
+            "Contents/Config-0-Partition".into(),
+        )]),
+    ));
+    for (ordinal, name) in [(1, "Large"), (0, "Default")] {
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId::mint(format!("synthetic:test:id#{name}")).unwrap(),
+            ordinal,
+            active: false,
+            source_index: None,
+            name: Some(name.into()),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: None,
+            parameter_values: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: Some(format!("native:{name}")),
+        });
+    }
+    let body = BodyId::mint("test:model:entity#actual-slot-body").unwrap();
+    assign_configuration_bodies(&mut ir, vec![(0, vec![body.clone()])]).unwrap();
+    mark_active_configuration(&mut ir);
+    assert_eq!(ir.model.configurations.len(), 2);
+    assert!(!ir.model.configurations[0].active);
+    assert_eq!(ir.model.configurations[0].source_index, None);
+    assert!(ir.model.configurations[0].bodies.is_none());
+    assert!(ir.model.configurations[1].active);
+    assert_eq!(ir.model.configurations[1].source_index, Some(0));
+    assert_eq!(
+        ir.model.configurations[1].bodies.as_deref(),
+        Some([body].as_slice())
+    );
+}
+
+#[test]
 fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     let mut ir = CadIr::empty();
     for ordinal in 0..2 {
