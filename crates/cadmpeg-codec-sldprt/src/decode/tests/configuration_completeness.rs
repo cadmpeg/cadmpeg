@@ -425,7 +425,8 @@ fn active_configuration_inherits_late_feature_resolutions() {
         native_ref: None,
     });
 
-    normalize_configuration_differences(&mut ir);
+    normalize_configuration_differences(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
     assert!(ir.model.configurations[0].feature_states.is_empty());
     assert!(
         matches!(ir.model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), PatternTransform::Mirror { .. }))
@@ -612,7 +613,8 @@ fn active_configuration_uses_only_the_base_neutral_design_state() {
         });
     }
 
-    normalize_configuration_differences(&mut ir);
+    normalize_configuration_differences(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
     assert!(ir.model.configurations[0].parameter_values.is_empty());
     assert!(ir.model.configurations[0].parameter_overrides.is_empty());
     assert!(ir.model.configurations[0].feature_states.is_empty());
@@ -628,7 +630,8 @@ fn active_configuration_uses_only_the_base_neutral_design_state() {
     ir.model.configurations[1]
         .feature_states
         .insert(feature_id.clone(), ConfigurationFeatureState::Active {});
-    normalize_configuration_differences(&mut ir);
+    normalize_configuration_differences(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
     assert!(ir.model.configurations[0].parameter_values.is_empty());
     assert!(ir.model.configurations[0].feature_states.is_empty());
     assert_eq!(
@@ -715,7 +718,8 @@ fn sparse_configuration_values_inherit_without_copied_base_caches() {
         configuration("synthetic:test:id#unresolved", BTreeMap::new()),
     ];
 
-    normalize_configuration_differences(&mut ir);
+    normalize_configuration_differences(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
 
     assert_eq!(
         ir.model.configurations[0].parameter_values,

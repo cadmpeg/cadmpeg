@@ -308,11 +308,23 @@ pub(crate) fn project_feature_model(
     }
     bind_offset_plane_references(&mut features, histories);
     bind_native_construction_features(&mut features, histories);
+    refresh_definition_dependencies(ctx, &mut features)?;
+    Ok(FeatureProjection {
+        features,
+        regeneration_parents,
+    })
+}
+
+/// Rebuild the single dependency relation after canonical definitions change.
+pub(crate) fn refresh_definition_dependencies(
+    ctx: &DecodeContext<'_>,
+    features: &mut [cadmpeg_ir::features::Feature],
+) -> Result<(), CodecError> {
     let held = features
         .iter()
         .map(|feature| (feature.id.as_str().to_owned(), feature.id.clone()))
         .collect::<HashMap<_, _>>();
-    for feature in &mut features {
+    for feature in features {
         let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
         // Tree-node children express containment, not regeneration operands.
         if !matches!(
@@ -331,10 +343,7 @@ pub(crate) fn project_feature_model(
         }
         feature.dependencies = dependencies;
     }
-    Ok(FeatureProjection {
-        features,
-        regeneration_parents,
-    })
+    Ok(())
 }
 
 pub(crate) fn project_features(

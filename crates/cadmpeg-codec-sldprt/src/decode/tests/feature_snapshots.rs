@@ -97,7 +97,8 @@ fn run() {
         native_ref: None,
     });
     let features = ir.model.features.clone();
-    normalize_configuration_differences(&mut ir);
+    normalize_configuration_differences(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
     assert_eq!(ir.model.features, features);
     assert!(ir.model.configurations[0].feature_states.is_empty());
     assert!(ir.model.configurations[0].parameter_values.is_empty());

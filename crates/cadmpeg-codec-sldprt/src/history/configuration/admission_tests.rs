@@ -302,7 +302,10 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
     }];
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.parameters = crate::history::parameters::project_parameters(&ctx, &histories)?;
-    ir.model.features = crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories)?;
+    ir.model.features = crate::history::project::project_features(
+        &cadmpeg_test_support::service_decode_context(),
+        &histories,
+    )?;
     ir.model
         .configurations
         .push(design_configuration("design", 0, Some(0), None));
@@ -317,7 +320,11 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[],
         None,
     )?;
-    super::normalize_configuration_differences(&mut ir);
+    super::normalize_configuration_differences(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+    )
+    .unwrap();
     let id = ParameterId::mint("sldprt:model:parameter#feature:0").unwrap();
     let configuration = &ir.model.configurations[0];
     assert_eq!(
@@ -1105,7 +1112,10 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
     ];
     let mut base = cadmpeg_ir::CadIr::empty();
     base.model.parameters = crate::history::parameters::project_parameters(&ctx, &histories)?;
-    base.model.features = crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories)?;
+    base.model.features = crate::history::project::project_features(
+        &cadmpeg_test_support::service_decode_context(),
+        &histories,
+    )?;
     let parameter =
         cadmpeg_ir::features::ParameterId::mint("sldprt:model:parameter#feature:0").unwrap();
     base.model
@@ -1134,7 +1144,11 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
         .configurations
         .iter()
         .all(|configuration| configuration.feature_states.len() == 1));
-    super::normalize_configuration_differences(&mut uncapped);
+    super::normalize_configuration_differences(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut uncapped,
+    )
+    .unwrap();
     for configuration in &uncapped.model.configurations {
         assert!(configuration.feature_states.is_empty());
         assert!(configuration.parameter_values.is_empty());
@@ -1160,7 +1174,11 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
     assert_eq!(unprojected, 1);
     assert_eq!(capped.model.configurations[0].feature_states.len(), 1);
     assert!(capped.model.configurations[1].feature_states.is_empty());
-    super::normalize_configuration_differences(&mut capped);
+    super::normalize_configuration_differences(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut capped,
+    )
+    .unwrap();
     assert_eq!(
         capped.model.configurations[0],
         uncapped.model.configurations[0]

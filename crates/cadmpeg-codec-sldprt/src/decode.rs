@@ -212,7 +212,7 @@ fn decode_result(
     if let Some(source_image) = source_image {
         source_fidelity.retain_unknown_records("source", [source_image])?;
     }
-    crate::history::configuration::normalize_configuration_differences(&mut ir);
+    crate::history::configuration::normalize_configuration_differences(ctx, &mut ir)?;
     // The container projection retains native records without claiming a neutral model.
     if ctx.container_only() {
         ir.model = cadmpeg_ir::document::Model::default();

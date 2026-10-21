@@ -1435,7 +1435,31 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
 }
 
 /// Keep only inactive configuration differences from the active document state.
-pub(crate) fn normalize_configuration_differences(ir: &mut cadmpeg_ir::CadIr) {
+pub(crate) fn normalize_configuration_differences(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut active = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.active);
+    if let Some(configuration) = active.next().filter(|_| active.next().is_none()) {
+        for parameter in &mut ir.model.parameters {
+            if let Some(expression) = configuration.parameter_overrides.get(&parameter.id) {
+                parameter.expression = expression.clone();
+                parameter.value = configuration.parameter_values.get(&parameter.id).cloned();
+            } else if let Some(value) = configuration.parameter_values.get(&parameter.id) {
+                parameter.value = Some(value.clone());
+            }
+        }
+        for feature in &mut ir.model.features {
+            if let Some(state) = configuration.feature_states.get(&feature.id) {
+                apply_configuration_state(feature, state);
+            }
+        }
+        crate::history::project::refresh_definition_dependencies(ctx, &mut ir.model.features)?;
+    }
     let features = &ir.model.features;
     let parameters = &ir.model.parameters;
     for configuration in &mut ir.model.configurations {
@@ -1479,6 +1503,7 @@ pub(crate) fn normalize_configuration_differences(ir: &mut cadmpeg_ir::CadIr) {
             }
         });
     }
+    Ok(())
 }
 
 /// The first configuration and whether another follows, for one slot key.
