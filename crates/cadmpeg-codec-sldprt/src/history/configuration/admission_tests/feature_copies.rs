@@ -32,7 +32,7 @@ fn model() -> cadmpeg_ir::CadIr {
     let dependencies: DistinctMembers<FeatureId> =
         cadmpeg_ir::features::DistinctMembers::try_from(vec![dependency.clone()]).unwrap();
     let state = ConfigurationFeatureState::Definition {
-        definition: definition.clone(),
+        definition: Box::new(definition.clone()),
     };
     ir.model.features.push(Feature {
         id: id.clone(),

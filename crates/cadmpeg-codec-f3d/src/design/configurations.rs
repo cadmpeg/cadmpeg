@@ -335,7 +335,9 @@ pub(crate) fn canonicalize_active_configuration(
             Some(ConfigurationFeatureState::Suppressed {}) => feature.suppressed = Some(true),
             Some(ConfigurationFeatureState::Active {}) => feature.suppressed = Some(false),
             Some(ConfigurationFeatureState::Definition { definition }) => {
-                feature.evaluation.set_definition(definition.clone());
+                feature
+                    .evaluation
+                    .set_definition(definition.as_ref().clone());
             }
             None => {}
         }
@@ -368,7 +370,7 @@ pub(crate) fn canonicalize_active_configuration(
                         }
                         ConfigurationFeatureState::Active {} => feature.suppressed != Some(true),
                         ConfigurationFeatureState::Definition { definition } => {
-                            feature.evaluation.definition() == definition
+                            feature.evaluation.definition() == definition.as_ref()
                         }
                     }
             })

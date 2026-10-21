@@ -303,7 +303,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     configuration.feature_states.insert(
         id.clone(),
         cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-            definition: local_definition,
+            definition: Box::new(local_definition),
         },
     );
     ir.model.configurations.push(configuration);

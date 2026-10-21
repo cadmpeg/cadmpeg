@@ -510,9 +510,9 @@ mod tests {
             feature_states: BTreeMap::from([(
                 feature_id,
                 ConfigurationFeatureState::Definition {
-                    definition: FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    definition: Box::new(FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    }),
+                    })),
                 },
             )]),
             native_ref: None,

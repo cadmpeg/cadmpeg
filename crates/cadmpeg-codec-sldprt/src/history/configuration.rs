@@ -50,7 +50,9 @@ fn apply_configuration_state(
         ConfigurationFeatureState::Active {} => feature.suppressed = Some(false),
         ConfigurationFeatureState::Definition { definition } => {
             feature.suppressed = Some(false);
-            feature.evaluation.set_definition(definition.clone());
+            feature
+                .evaluation
+                .set_definition(definition.as_ref().clone());
         }
     }
 }
@@ -87,7 +89,7 @@ fn configuration_feature_state(
         ConfigurationFeatureState::Suppressed {}
     } else {
         ConfigurationFeatureState::Definition {
-            definition: feature.evaluation.into_parts().0,
+            definition: Box::new(feature.evaluation.into_parts().0),
         }
     };
     (feature.id, state)
@@ -1570,7 +1572,7 @@ pub(crate) fn normalize_configuration_differences(
                 ConfigurationFeatureState::Suppressed {} => feature.suppressed != Some(true),
                 ConfigurationFeatureState::Active {} => feature.suppressed == Some(true),
                 ConfigurationFeatureState::Definition { definition }
-                    if *definition == *feature.evaluation.definition() =>
+                    if definition.as_ref() == feature.evaluation.definition() =>
                 {
                     if feature.suppressed == Some(true) {
                         *state = ConfigurationFeatureState::Active {};

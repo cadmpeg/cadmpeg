@@ -453,7 +453,7 @@ fn edit_blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> usize {
             .insert(
                 feature.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-                    definition: edited_definition,
+                    definition: Box::new(edited_definition),
                 },
             );
     }

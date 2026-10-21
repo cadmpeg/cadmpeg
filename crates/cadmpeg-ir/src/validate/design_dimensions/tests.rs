@@ -348,10 +348,10 @@ fn structural_configuration_overrides_keep_bound_dimensions_in_the_parameter_ove
     configuration.feature_states.insert(
         ir.model.features[0].id.clone(),
         ConfigurationFeatureState::Definition {
-            definition: definition(
+            definition: Box::new(definition(
                 3.0,
                 RadialDimension::Radius(Dimension::Literal(PositiveLength::new(5.0).unwrap())),
-            ),
+            )),
         },
     );
     ir.model.configurations.push(configuration);
@@ -369,10 +369,10 @@ fn structural_configuration_overrides_keep_bound_dimensions_in_the_parameter_ove
     ir.model.configurations[0].feature_states.insert(
         ir.model.features[0].id.clone(),
         ConfigurationFeatureState::Definition {
-            definition: definition(
+            definition: Box::new(definition(
                 3.0,
                 RadialDimension::Radius(Dimension::Parameter(radius.clone())),
-            ),
+            )),
         },
     );
     let value = ParameterValue::Length(Length::new(5.0).unwrap());
@@ -390,7 +390,9 @@ fn structural_configuration_overrides_keep_bound_dimensions_in_the_parameter_ove
     ir.model.configurations[0].feature_states.insert(
         ir.model.features[0].id.clone(),
         ConfigurationFeatureState::Definition {
-            definition: FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+            definition: Box::new(FeatureDefinition::Operation(
+                FeatureOperation::StoredGeometry {},
+            )),
         },
     );
     let report = check(&ir);

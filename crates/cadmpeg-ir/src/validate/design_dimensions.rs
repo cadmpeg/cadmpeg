@@ -355,7 +355,7 @@ fn check_configuration_differences(
                 feature.suppressed != Some(true)
             }
             crate::features::ConfigurationFeatureState::Definition { definition } => {
-                definition == feature.definition()
+                definition.as_ref() == feature.definition()
             }
         };
         if redundant {
