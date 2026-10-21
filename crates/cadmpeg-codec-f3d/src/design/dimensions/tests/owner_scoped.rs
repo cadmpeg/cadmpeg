@@ -390,12 +390,12 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
 fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
     let stream = "f3d:A";
     let sketch = SketchId::mint("f3d:model:sketch#angular-incidence").unwrap();
-    let curve = |record_index, _byte_offset, angle: f64| SketchCurveIdentity {
+    let curve = |record_index, byte_offset, angle: f64| SketchCurveIdentity {
         id: format!("{stream}:sketch-curve#{record_index}"),
         record_index,
         owner_reference: Some(100),
         class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        byte_offset: None,
+        byte_offset: Some(byte_offset),
         geometry_offset: None,
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
@@ -471,7 +471,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
     ))
     .unwrap()
     .expect("angular parameter")
-    .into_record("Design/BulkStream.dat", 100)
+    .into_record("A", 100)
     .expect("located parameter");
     let parameter_id =
         ParameterId::mint("synthetic:test:parameter#angle").expect("identity grammar");
