@@ -130,7 +130,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         }],
     };
     let mut parameter = DesignParameter {
-        driving: true,
+        driving: false,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -142,10 +142,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         pmi: None,
         native_ref: None,
     };
-    parameter.properties.insert(
-        cadmpeg_core::nonblank_literal!("sldprt_relation_parameter_role"),
-        "reference".into(),
-    );
+    // D11: reference status is represented by driving=false above.
     parameter.properties.insert(
         cadmpeg_core::nonblank_literal!("sldprt_relation_id"),
         relation.id.clone(),
