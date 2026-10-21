@@ -546,25 +546,20 @@ pub(crate) fn reverse_helix_definition(
         if range != angle_range.get() {
             return None;
         }
-        let revolutions = (range[1] - range[0]) / std::f64::consts::TAU;
-        let radial_scale_at_end = 1.0 + apex_factor.get() * revolutions;
-        if !revolutions.is_finite()
-            || !radial_scale_at_end.is_finite()
-            || radial_scale_at_end == 0.0
-        {
-            return None;
-        }
         let angle_sum = range[0] + range[1];
-        if !angle_sum.is_finite() {
+        let sum_revolutions = angle_sum / std::f64::consts::TAU;
+        let radial_scale_at_sum = 1.0 + apex_factor.get() * sum_revolutions;
+        if !angle_sum.is_finite() || !radial_scale_at_sum.is_finite() || radial_scale_at_sum == 0.0
+        {
             return None;
         }
         let major_at_end = major.scale(angle_sum.cos()) + minor.scale(angle_sum.sin());
         let minor_at_end = major.scale(angle_sum.sin()) - minor.scale(angle_sum.cos());
-        let major = major_at_end.scale(radial_scale_at_end);
-        let minor = minor_at_end.scale(radial_scale_at_end);
-        let center = center.translated(pitch.get(), revolutions);
+        let major = major_at_end.scale(radial_scale_at_sum);
+        let minor = minor_at_end.scale(radial_scale_at_sum);
+        let center = center.translated(pitch.get(), sum_revolutions);
         let pitch = pitch.scale(-1.0);
-        let apex_factor = -apex_factor.get() / radial_scale_at_end;
+        let apex_factor = -apex_factor.get() / radial_scale_at_sum;
         let axis = axis.scale(-1.0);
         if ![center.x, center.y, center.z, apex_factor]
             .into_iter()
@@ -1122,14 +1117,13 @@ mod tests {
             let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
                 panic!("helix definition")
             };
-            let angle_range = helix_payload.angle_range();
             let center = helix_payload.center().as_raw();
             let major = helix_payload.major();
             let minor = helix_payload.minor();
             let pitch = helix_payload.pitch();
             let apex_factor = helix_payload.apex_factor();
 
-            let fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
+            let fraction = angle / std::f64::consts::TAU;
             let scale = 1.0 + apex_factor.get() * fraction;
             center
                 .translated(major.get(), scale * angle.cos())

@@ -2504,31 +2504,17 @@ impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
 
 impl HelixCurveConstruction {
     /// Reverse the parameter while preserving points and derivatives.
-    /// A zero radius at the new interval start has no admitted helix frame.
     pub fn try_reverse_parameterization(&mut self) -> Result<(), &'static str> {
-        let [start, end] = self.angle_range.finite_components();
-        let turns = end.turns_from(start).get();
-        let radial_end = self.apex_factor.get().mul_add(turns, 1.0);
-        if !turns.is_finite() || !radial_end.is_finite() || radial_end == 0.0 {
-            return Err("helix curve reversal has no finite nonzero starting radius");
-        }
-        let scale = |vector: Vector3| {
-            Vector3::new(
-                vector.x * radial_end,
-                vector.y * radial_end,
-                vector.z * radial_end,
-            )
-        };
         let candidate = Self::try_new(
             self.angle_range.reversed_negated().get(),
             HelixFrame {
-                center: self.center.get().translated(self.pitch.get(), turns),
-                major: scale(self.major.get()),
-                minor: scale(self.minor.negated().get()),
+                center: self.center.get(),
+                major: self.major.get(),
+                minor: self.minor.negated().get(),
                 pitch: self.pitch.negated().get(),
                 axis: self.axis.get(),
             },
-            -self.apex_factor.get() / radial_end,
+            -self.apex_factor.get(),
             self.cache,
         )?;
         *self = candidate;

@@ -3808,8 +3808,8 @@ fn differential_at(
 /// Evaluate the native helix path and its exact angle derivatives.
 ///
 /// The stored angular interval is the domain of the path parameter. The
-/// pitch and apex terms advance by the fraction of one full revolution from
-/// the interval's lower bound, while the major and minor vectors define the
+/// pitch and apex terms advance by the parameter's fraction of one full
+/// revolution from angle zero, while the major and minor vectors define the
 /// radial frame at the stored angle.
 ///
 /// A parameter outside the interval and a zero axis have no value. The point
@@ -3830,7 +3830,7 @@ fn helix_differential(
         return Err(EvaluationFailure::NoValue);
     }
     let inverse_revolution = 1.0 / std::f64::consts::TAU;
-    let revolution_fraction = finite_parameter.turns_from(start).get();
+    let revolution_fraction = parameter * inverse_revolution;
     let radial_scale = 1.0 + apex_factor * revolution_fraction;
     let radial = vector_sum(&[(parameter.cos(), major), (parameter.sin(), minor)]);
     let radial_first = vector_sum(&[(-parameter.sin(), major), (parameter.cos(), minor)]);
