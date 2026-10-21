@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{normalise, object_at_mut, probe_key, sweep, Step, UNKNOWN_KEY};
+use std::collections::{BTreeMap, BTreeSet};
+
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -117,4 +119,86 @@ fn probe_key_uses_the_first_absent_suffix() {
         (format!("{UNKNOWN_KEY}_"), Value::Null),
     ]);
     assert_eq!(probe_key(&fields), format!("{UNKNOWN_KEY}__"));
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StructuredMapDocument<T> {
+    #[serde(rename = "parameters")]
+    _parameters: BTreeMap<String, T>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StructuredMapValue {
+    #[serde(rename = "required")]
+    _required: StrictValue,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum StructuredMapVariant {
+    Bound {
+        #[serde(rename = "target")]
+        _target: StrictValue,
+    },
+}
+
+#[test]
+fn populated_structured_enum_and_nonempty_array_maps_are_detected() {
+    fn check<T: serde::de::DeserializeOwned>(value: Value) {
+        let document = json!({"parameters": {"depth": value}});
+        assert!(StructuredMapDocument::<T>::deserialize(&document).is_ok());
+        for baseline in super::probe_values() {
+            let mut probe = document.clone();
+            probe["parameters"][UNKNOWN_KEY] = baseline;
+            assert!(StructuredMapDocument::<T>::deserialize(&probe).is_err());
+        }
+        let swept = sweep(&document, &json!({"parameters": {}}), |probe| {
+            StructuredMapDocument::<T>::deserialize(probe).is_ok()
+        })
+        .expect("every path comes from the document");
+        assert_eq!(swept.accepting, BTreeSet::from(["/parameters".to_owned()]));
+    }
+
+    check::<StructuredMapValue>(json!({"required": {"value": 12}}));
+    check::<StructuredMapVariant>(json!({"kind": "bound", "target": {"value": 12}}));
+    check::<[StrictValue; 1]>(json!([{"value": 12}]));
+}
+
+#[test]
+fn structured_map_owners_and_children_still_deny_unknown_fields() {
+    let document = json!({"parameters": {"depth": {"required": {"value": 12}}}});
+    for path in ["", "/parameters/depth", "/parameters/depth/required"] {
+        let mut probe = document.clone();
+        probe
+            .pointer_mut(path)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .insert(UNKNOWN_KEY.to_owned(), json!({"required": {"value": 12}}));
+        assert!(StructuredMapDocument::<StructuredMapValue>::deserialize(&probe).is_err());
+    }
+}
+
+#[test]
+fn a_structured_existing_sentinel_remains_unchanged_in_all_probes() {
+    let existing = json!({"required": {"value": 7}});
+    let mut document = json!({"parameters": {}});
+    document["parameters"][UNKNOWN_KEY] = existing.clone();
+    let before = document.clone();
+    // The callback is Fn, so record observation separately without changing
+    // any document content supplied to the reader.
+    let observed = std::cell::Cell::new(false);
+    let swept = sweep(&document, &json!({"parameters": {}}), |probe| {
+        if probe["parameters"].get(format!("{UNKNOWN_KEY}_")).is_some() {
+            assert_eq!(probe["parameters"][UNKNOWN_KEY], existing);
+            observed.set(true);
+        }
+        StructuredMapDocument::<StructuredMapValue>::deserialize(probe).is_ok()
+    })
+    .expect("every path comes from the document");
+    assert!(observed.get());
+    assert_eq!(swept.accepting, BTreeSet::from(["/parameters".to_owned()]));
+    assert_eq!(document, before);
 }
