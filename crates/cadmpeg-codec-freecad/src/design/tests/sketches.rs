@@ -1147,7 +1147,51 @@ fn neutralizes_line_midpoint_coincidence() {
         result.ir().model.sketch_constraints[0].definition.kind(),
         cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Midpoint { .. }
     ));
-    assert_valid_document(result.ir());
+    // #209 §2.1 D9 / #210: retain the authored conflicting second equation
+    // and report its clean solved-locus disagreement as an Error.
+    let constraints = &result.ir().model.sketch_constraints;
+    assert_eq!(constraints.len(), 2);
+    assert!(matches!(
+        constraints[1].definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Coincident {
+            first: cadmpeg_ir::sketches::SketchLocus::End(_),
+            second: cadmpeg_ir::sketches::SketchLocus::Entity(_),
+        }
+    ));
+    let errors = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .unwrap()
+        .findings
+        .into_iter()
+        .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
+        .collect::<Vec<_>>();
+    assert_eq!(errors.len(), 1, "{errors:#?}");
+    assert_eq!(
+        errors[0].check,
+        cadmpeg_ir::report::check::Check::GeometricConsistency
+    );
+    assert_eq!(errors[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert_eq!(
+        errors[0].entity.as_deref(),
+        Some(constraints[1].id.as_str())
+    );
+    assert!(
+        matches!(*result.ir().model.sketch_entities[0].geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end }
+            if (start.get().u, start.get().v, end.get().u, end.get().v) == (0.0, 0.0, 2.0, 0.0)
+        )
+    );
+    assert!(
+        matches!(*result.ir().model.sketch_entities[1].geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Point { position }
+            if (position.get().u, position.get().v) == (1.0, 0.0)
+        )
+    );
+    assert!(result
+        .ir()
+        .model
+        .features
+        .iter()
+        .all(|feature| !feature.needs_recompute));
 }
 
 #[test]
