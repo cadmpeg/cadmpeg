@@ -1872,7 +1872,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 },
                 ..
             }) if id == &start_group.id
-                && offset == &cadmpeg_ir::Dimension::Parameter(profile_offset_id)
+                && offset == &cadmpeg_ir::Dimension::Parameter(profile_offset_id.clone())
                 && super::dimension_value(offset, &native_parameters.borrow()).get() == 0.0
         ));
 
