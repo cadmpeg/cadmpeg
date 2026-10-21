@@ -5,7 +5,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::{Body, BodyKind, Sense};
 use std::collections::HashMap;
-use std::fmt::Write as _;
 
 use super::geometry;
 mod reachable;
@@ -398,18 +397,30 @@ fn serialize_inner(
             rows.sort_by_key(|(_, _, sense)| *sense == Sense::Reversed);
             match rows.as_slice() {
                 [(curve, range, _)] => {
-                    let _infallible_string_write = write!(
-                        representation,
-                        " 2 {curve} {surface} {location} {} {}",
-                        range[0], range[1]
-                    );
+                    representation.push_str(" 2 ");
+                    representation.push_str(&curve.to_string());
+                    representation.push(' ');
+                    representation.push_str(&surface.to_string());
+                    representation.push(' ');
+                    representation.push_str(&location.to_string());
+                    representation.push(' ');
+                    representation.push_str(&range[0].to_string());
+                    representation.push(' ');
+                    representation.push_str(&range[1].to_string());
                 }
                 [(first, range, _), (second, other_range, _)] if range == other_range => {
-                    let _infallible_string_write = write!(
-                        representation,
-                        " 3 {first} {second} C0 {surface} {location} {} {}",
-                        range[0], range[1]
-                    );
+                    representation.push_str(" 3 ");
+                    representation.push_str(&first.to_string());
+                    representation.push(' ');
+                    representation.push_str(&second.to_string());
+                    representation.push_str(" C0 ");
+                    representation.push_str(&surface.to_string());
+                    representation.push(' ');
+                    representation.push_str(&location.to_string());
+                    representation.push(' ');
+                    representation.push_str(&range[0].to_string());
+                    representation.push(' ');
+                    representation.push_str(&range[1].to_string());
                 }
                 _ => complete = false,
             }
@@ -679,15 +690,14 @@ fn serialize_inner(
     }
     let mut output = format!("\nCASCADE Topology V3, (c) Open Cascade\nLocations {}\n{}\nCurve2ds {}\n{}\nCurves {}\n{}\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces {}\n{}\nTriangulations 0\nTShapes {}\n", locations.len(), locations.join("\n"), pcurves.len(), pcurves.join("\n"), curves.len(), curves.join("\n"), surfaces.len(), surfaces.join("\n"), shapes.len());
     for shape in &shapes {
-        let _infallible_string_write =
-            write!(output, "{}\n{}\n\n0101101\n", shape.kind, shape.geometry);
+        output.push_str(shape.kind);
+        output.push('\n');
+        output.push_str(&shape.geometry);
+        output.push_str("\n\n0101101\n");
         for (index, sense) in &shape.children {
-            let _infallible_string_write = write!(
-                output,
-                "{}{} 0 ",
-                if *sense == Sense::Forward { '+' } else { '-' },
-                shapes.len() - index
-            );
+            output.push(if *sense == Sense::Forward { '+' } else { '-' });
+            output.push_str(&(shapes.len() - index).to_string());
+            output.push_str(" 0 ");
         }
         output.push_str("*\n");
     }
@@ -695,7 +705,10 @@ fn serialize_inner(
         output.push_str("*\n");
     }
     for (root, location) in roots {
-        let _infallible_string_write = write!(output, "+{} {location}", shapes.len() - root);
+        output.push('+');
+        output.push_str(&(shapes.len() - root).to_string());
+        output.push(' ');
+        output.push_str(&location.to_string());
         output.push('\n');
     }
     Ok(Some(output.into_bytes()))

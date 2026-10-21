@@ -9,7 +9,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::Write as _;
 
 fn hex(value: i64) -> String {
     if value < 0 {
@@ -106,16 +105,18 @@ pub(crate) fn write(
         table_indices.insert(table.index, output_index);
         let mut content = String::new();
         for entry in entries {
-            let _infallible_string_write =
-                write!(content, "{}.{:x}", hex(entry.string_id), entry.flags);
+            content.push_str(&hex(entry.string_id));
+            content.push('.');
+            let flags = format!("{:x}", entry.flags);
+            content.push_str(&flags);
             for component in &entry.components {
                 content.push('.');
                 content.push_str(&hex(*component));
             }
             content.push(' ');
             if entry.flags & 8 == 0 {
-                let _infallible_string_write =
-                    write!(content, "{}:", entry.payload.matches('\n').count());
+                content.push_str(&entry.payload.matches('\n').count().to_string());
+                content.push(':');
             }
             content.push_str(&entry.payload);
             content.push('\n');
@@ -230,23 +231,21 @@ pub(crate) fn write(
             map.maps.iter().len()
         );
         for (index, node) in map.maps.iter().enumerate() {
-            let _infallible_string_write = write!(
-                content,
-                "ElementMap {} {} {}",
-                index + 1,
-                node.map_id,
-                node.groups.len()
-            );
+            content.push_str("ElementMap ");
+            content.push_str(&(index + 1).to_string());
+            content.push(' ');
+            content.push_str(&node.map_id.to_string());
+            content.push(' ');
+            content.push_str(&node.groups.len().to_string());
             content.push('\n');
             for group in &node.groups {
-                let _infallible_string_write = write!(
-                    content,
-                    "{} ChildCount {} {} NameCount {}",
-                    group.indexed_name,
-                    group.children.len(),
-                    group.children.join(" "),
-                    group.names.len()
-                );
+                content.push_str(&group.indexed_name);
+                content.push_str(" ChildCount ");
+                content.push_str(&group.children.len().to_string());
+                content.push(' ');
+                content.push_str(&group.children.join(" "));
+                content.push_str(" NameCount ");
+                content.push_str(&group.names.len().to_string());
                 content.push('\n');
                 for chain in &group.names {
                     for name in chain {

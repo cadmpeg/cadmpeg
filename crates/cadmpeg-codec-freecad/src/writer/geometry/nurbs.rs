@@ -2,7 +2,6 @@
 //! Reverse the OCCT periodic-knot and cyclic-pole normalization.
 
 use cadmpeg_ir::geometry::nurbs::{KnotVector, NurbsCurve, NurbsSurface};
-use std::fmt::Write as _;
 
 pub(in crate::writer) struct Axis {
     pub(in crate::writer) rows: Vec<(f64, usize)>,
@@ -105,9 +104,11 @@ pub(super) fn curve(value: &NurbsCurve) -> Option<String> {
         axis.rows.len()
     );
     for (index, pole) in poles.iter().take(axis.count).enumerate() {
-        let _infallible_string_write = write!(output, " {}", super::point(pole.get()));
+        output.push(' ');
+        output.push_str(&super::point(pole.get()));
         if let Some(weights) = &weights {
-            let _infallible_string_write = write!(output, " {}", weights[index].get());
+            output.push(' ');
+            output.push_str(&weights[index].get().to_string());
         }
     }
     append_knots(&mut output, axis.rows);
@@ -155,9 +156,11 @@ pub(super) fn surface(value: &NurbsSurface) -> Option<String> {
     );
     for (ui, row) in poles.iter().take(u.count).enumerate() {
         for (vi, pole) in row.iter().take(v.count).enumerate() {
-            let _infallible_string_write = write!(output, " {}", super::point(pole.get()));
+            output.push(' ');
+            output.push_str(&super::point(pole.get()));
             if let Some(weights) = &weights {
-                let _infallible_string_write = write!(output, " {}", weights[ui][vi].get());
+                output.push(' ');
+                output.push_str(&weights[ui][vi].get().to_string());
             }
         }
     }
@@ -168,7 +171,10 @@ pub(super) fn surface(value: &NurbsSurface) -> Option<String> {
 
 fn append_knots(output: &mut String, rows: Vec<(f64, usize)>) {
     for (knot, multiplicity) in rows {
-        let _infallible_string_write = write!(output, " {knot} {multiplicity}");
+        output.push(' ');
+        output.push_str(&knot.to_string());
+        output.push(' ');
+        output.push_str(&multiplicity.to_string());
     }
 }
 

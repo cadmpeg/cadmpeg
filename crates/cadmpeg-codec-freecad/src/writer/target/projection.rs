@@ -8,7 +8,6 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{ArenaName, CadIr};
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 
 mod payloads;
 
@@ -217,16 +216,17 @@ fn gui_xml_impl(
             };
             encoded_properties.push(value);
         }
-        let _infallible_string_write = write!(
-            output,
-            "<ViewProvider name=\"{}\"{}><Properties Count=\"{}\">",
-            xml::escaped(&provider.name),
-            provider.expanded.map_or_else(String::new, |value| format!(
-                " expanded=\"{}\"",
-                u8::from(value)
-            )),
-            encoded_properties.len(),
-        );
+        output.push_str("<ViewProvider name=\"");
+        output.push_str(&xml::escaped(&provider.name));
+        output.push('"');
+        if let Some(expanded) = provider.expanded {
+            output.push_str(" expanded=\"");
+            output.push_str(&u8::from(expanded).to_string());
+            output.push('"');
+        }
+        output.push_str("><Properties Count=\"");
+        output.push_str(&encoded_properties.len().to_string());
+        output.push_str("\">");
         for value in encoded_properties {
             output.push_str(&value);
         }

@@ -3,7 +3,6 @@
 
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::units::FinitePoint2;
-use std::fmt::Write as _;
 
 const RIGID_CHART_TOLERANCE: f64 = 1.0e-12;
 
@@ -134,13 +133,18 @@ fn transformed(
                 axis.rows.len()
             );
             for (index, pole) in poles.iter().take(axis.count).enumerate() {
-                let _infallible_string_write = write!(output, " {}", point_row(pole.get())?);
+                output.push(' ');
+                output.push_str(&point_row(pole.get())?);
                 if let Some(weights) = &weights {
-                    let _infallible_string_write = write!(output, " {}", weights[index].get());
+                    output.push(' ');
+                    output.push_str(&weights[index].get().to_string());
                 }
             }
             for (knot, multiplicity) in axis.rows {
-                let _infallible_string_write = write!(output, " {knot} {multiplicity}");
+                output.push(' ');
+                output.push_str(&knot.to_string());
+                output.push(' ');
+                output.push_str(&multiplicity.to_string());
             }
             output
         }
