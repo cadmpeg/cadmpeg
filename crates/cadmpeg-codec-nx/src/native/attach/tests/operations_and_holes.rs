@@ -751,7 +751,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             ]),
             placement: None,
             op: BooleanOp::Unresolved,
-        }) if ir.dimension_value(&actual_dimensions).expect("dimension value").get() == 10.0 && ir.dimension_value(&actual_dimensions_2).expect("dimension value").get() == 20.0 && ir.dimension_value(&actual_dimensions_3).expect("dimension value").get() == 30.0
+        }) if cadmpeg_ir::CadIr::empty().dimension_value(&actual_dimensions).expect("dimension value").get() == 10.0 && cadmpeg_ir::CadIr::empty().dimension_value(&actual_dimensions_2).expect("dimension value").get() == 20.0 && cadmpeg_ir::CadIr::empty().dimension_value(&actual_dimensions_3).expect("dimension value").get() == 30.0
     ));
     assert_eq!(
         non_boolean_feature_definition("BLOCK", &[], None, None, None),
@@ -1028,7 +1028,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         }) if matches!((&shape.diameter(), shape.construction(),), (Some(actual_diameter), cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Unresolved(None),
                 ..
-            },) if ir.dimension_value(&actual_diameter).expect("dimension value").get() == 8.0)));
+            },) if cadmpeg_ir::CadIr::empty().dimension_value(&actual_diameter).expect("dimension value").get() == 8.0)));
     assert!(matches!(
         non_boolean_feature_definition("RIB", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Rib {

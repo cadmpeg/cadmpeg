@@ -245,7 +245,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     };
     let chamfers = operations
         .iter()
-        .map(|operation| (operation.clone(), chamfer))
+        .map(|operation| (operation.clone(), chamfer.clone()))
         .collect();
 
     ({

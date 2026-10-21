@@ -947,14 +947,18 @@ fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
         crate::native::attach::parameter_owner_dependencies(
             &parameter_owners,
             &[
-                crate::native::attach::expressions::expression_parameter_id(
-                    &parameter_use.expression,
+                cadmpeg_ir::features::ParameterId::mint(
+                    parameter_use
+                        .expression
+                        .replace(":expression#", ":parameter#"),
                 )
-                .expect("expression parameter"),
-                crate::native::attach::expressions::expression_parameter_id(
-                    &parameter_use.expression,
+                .expect("identity grammar"),
+                cadmpeg_ir::features::ParameterId::mint(
+                    parameter_use
+                        .expression
+                        .replace(":expression#", ":parameter#"),
                 )
-                .expect("expression parameter"),
+                .expect("identity grammar"),
             ],
         )
     };

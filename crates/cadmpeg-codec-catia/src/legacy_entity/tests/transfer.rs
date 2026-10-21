@@ -192,17 +192,11 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
             field.encoding == crate::native::CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
         }));
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            &native.legacy_entity_runs[0].relations[0]
-        ),
+        native.legacy_entity_runs[0].relations[0].expression,
         "2 * #1_"
     );
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(
-            decoded.ir(),
-            &native.legacy_entity_runs[0].relations[1]
-        ),
+        native.legacy_entity_runs[0].relations[1].expression,
         "#1_ + #2_"
     );
     assert_eq!(
@@ -1156,7 +1150,7 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
         panic!("one legacy output parameter")
     };
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(decoded.ir(), &parameter),
+        crate::test_support::parameter_projection::expression_text(transferred.ir(), &parameter),
         "2+3"
     );
     assert_eq!(

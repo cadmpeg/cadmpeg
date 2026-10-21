@@ -1156,7 +1156,6 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
     let incomplete = |profile, face| {
         hole_feature_is_incomplete(
             &cadmpeg_ir::CadIr::empty(),
-            &cadmpeg_ir::CadIr::empty(),
             profile,
             face,
             Some(std::slice::from_ref(&placement)),
