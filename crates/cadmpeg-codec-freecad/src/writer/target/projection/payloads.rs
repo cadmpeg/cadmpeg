@@ -35,8 +35,15 @@ pub(super) fn entries(
     };
     if property.type_name == "Part::PropertyPartShape" {
         for shape in shapes.iter().filter(|shape| shape.property == property.id) {
-            if references("Part", &shape.entry) {
-                entries.insert(shape.entry.clone());
+            // Shape payloads name the archive-entry identity; XML carries
+            // that entry's filename. Resolve the typed join before comparing.
+            if let Some(entry) = archive_entries
+                .iter()
+                .find(|entry| entry.id() == shape.entry)
+            {
+                if references("Part", entry.name()) {
+                    entries.insert(entry.name().to_owned());
+                }
             }
         }
         for map in maps.iter().filter(|map| map.property == property.id) {
