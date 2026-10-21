@@ -1025,17 +1025,26 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
         } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.as_str().ends_with(":reference-root-point"))
             && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.as_str().ends_with(":4"))
     ));
+    let repeated_constraint_parameters = result
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| constraint.name.as_deref() == Some("Repeated"))
+        .flat_map(|constraint| {
+            constraint
+                .definition
+                .kind()
+                .dimension_parameters()
+                .expect("dimensional source constraint")
+        })
+        .collect::<Vec<_>>();
     let repeated_parameters = result
         .ir()
         .model
         .parameters
         .iter()
-        .filter(|parameter| {
-            parameter
-                .properties
-                .get("source_name")
-                .is_some_and(|name| name == "Repeated")
-        })
+        .filter(|parameter| repeated_constraint_parameters.contains(&parameter.id))
         .collect::<Vec<_>>();
     assert_eq!(repeated_parameters.len(), 2);
     assert_eq!(repeated_parameters[0].name, "Constraint14");
