@@ -252,6 +252,7 @@ fn boundary_contradicts_extrusion(ir: &CadIr, face: &cadmpeg_ir::topology::Face)
             .tolerances
             .linear
             .get()
+            .max(face.tolerance.map_or(0.0, |value| value.get()))
             .max(vertex.tolerance.map_or(0.0, |value| value.get()));
         for axis in 0..3 {
             if direction[axis] != 0.0 {
