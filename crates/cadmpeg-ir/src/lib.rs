@@ -96,14 +96,14 @@ pub use document::{
 };
 pub use draft::ModelDraft;
 pub use features::{
-    BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction,
-    CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement,
-    ConfigurationId, CurveProjectionDirection,
-    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, FaceMotion, Feature,
-    CircularPatternDistribution, Dimension, DimensionResolutionError, DimensionValue, Expression,
-    ExpressionError, ExpressionToken, FeatureAngularRange, FeatureScalarRange, FeatureDefinition, FeatureId, FeatureOperation, LoftGuidance,
-    ParameterId, PatternAngle, PatternDistance, RadialDimension,
-    ParameterValue, ScaleCenter, ScaleFactors,
+    BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide,
+    CircularPatternDistribution, CoilConstruction, CoilExtent, CoilPlacement, CoilResult,
+    CoilSection, CoilSectionPlacement, ConfigurationId, CurveProjectionDirection,
+    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, Dimension,
+    DimensionResolutionError, DimensionValue, Expression, ExpressionError, ExpressionToken,
+    FaceMotion, Feature, FeatureAngularRange, FeatureDefinition, FeatureId, FeatureOperation,
+    FeatureScalarRange, LoftGuidance, ParameterId, ParameterValue, PatternAngle, PatternDistance,
+    RadialDimension, ScaleCenter, ScaleFactors,
 };
 pub use ids::{is_valid_identity, IdentityError};
 pub use native::{

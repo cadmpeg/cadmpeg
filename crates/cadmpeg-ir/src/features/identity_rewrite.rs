@@ -11,12 +11,12 @@ use super::{
     FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame,
     FilledSurfaceBoundaryCondition, FlexForm, FlexMode, FuzzyTolerance, GeometryImportFormat,
     HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape, InnerWireTaper,
-    NoGeneratedSection, PolygonSideCount, PrincipalPlane,
-    RevolutionFuseOrder, RibDraft, RibSide, RuledCurveOrientation, RuledSurfaceCorner,
-    ScaleFactors, SheetMetalBendPosition, SheetMetalHeightDatum, SheetMetalHemBendPosition,
-    SheetMetalHemDirection, SheetMetalThicknessSide, ShellJoin, ShellMode, SolidSweepOperation,
-    SurfaceContinuity, SurfaceExtension, SurfaceProjectionMode, SweepPathExtent,
-    SweepTransformation, SweepTransition, ThickenSide, UnresolvedFamily, WrapMode,
+    NoGeneratedSection, PolygonSideCount, PrincipalPlane, RevolutionFuseOrder, RibDraft, RibSide,
+    RuledCurveOrientation, RuledSurfaceCorner, ScaleFactors, SheetMetalBendPosition,
+    SheetMetalHeightDatum, SheetMetalHemBendPosition, SheetMetalHemDirection,
+    SheetMetalThicknessSide, ShellJoin, ShellMode, SolidSweepOperation, SurfaceContinuity,
+    SurfaceExtension, SurfaceProjectionMode, SweepPathExtent, SweepTransformation, SweepTransition,
+    ThickenSide, UnresolvedFamily, WrapMode,
 };
 
 rewrite_scalar!(BinderCopyOnChange);

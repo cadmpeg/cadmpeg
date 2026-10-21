@@ -522,7 +522,7 @@ fn the_sealed_wrapper_synthesizes_instead_of_exposing_untyped_source_bytes() {
     let mut fidelity = SourceFidelity::default();
     fidelity
         .insert_retained_record(
-            crate::ids::UnknownId::mint("test:source#image").unwrap(),
+            crate::ids::UnknownId::mint("test:source:record#image").unwrap(),
             crate::RetainedSourceRecord::whole("", b"unread design".to_vec())
                 .with_untyped(crate::ArenaClasses::from([crate::ArenaClass::Design])),
         )

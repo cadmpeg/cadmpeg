@@ -82,7 +82,7 @@ fn draft_anchor_round_trips_as_a_nested_key() {
                 "plane": "test:draft:plane#pull"
             }
         },
-        "angle": 0.1,
+        "angle": {"kind":"literal","value":0.1},
         "outward": false
     });
     let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
@@ -104,7 +104,7 @@ fn wrap_mode_round_trips_as_a_nested_key() {
         "definition": "wrap",
         "profile": {"kind": "native", "value": "wrap:profile"},
         "face": {"kind": "native", "value": "wrap:face"},
-        "mode": {"emboss": {"depth": 2.5}}
+        "mode": {"emboss": {"depth": {"kind":"literal","value":2.5}}}
     });
     let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert!(matches!(
@@ -226,7 +226,7 @@ fn revolve_construction_carries_its_axis_reference_inside_the_axis() {
             },
             "extent": {
                 "kind": "one_sided",
-                "termination": {"kind": "angle", "angle": 1.25}
+                "termination": {"kind": "angle", "angle": {"kind":"literal","value":1.25}}
             },
             "solid": true,
             "face_maker_class": "Part::FaceMakerBullseye"
@@ -288,7 +288,7 @@ fn revolve_construction_admits_only_typed_partial_states() {
             },
             "extent": {
                 "kind": "one_sided",
-                "termination": {"kind": "angle", "angle": 1.25}
+                "termination": {"kind": "angle", "angle": {"kind":"literal","value":1.25}}
             }
         },
         "op": "unresolved"
@@ -309,7 +309,7 @@ fn an_unresolved_revolve_names_its_first_missing_operand() {
     });
     let extent = serde_json::json!({
         "kind": "one_sided",
-        "termination": {"kind": "angle", "angle": 1.25}
+        "termination": {"kind": "angle", "angle": {"kind":"literal","value":1.25}}
     });
     let profile = serde_json::json!({"kind": "native", "value": "test:profile"});
 
@@ -374,7 +374,7 @@ fn extrude_direction_round_trips_as_a_nested_key() {
         "extent": {
             "kind": "one_sided",
             "side": {
-                "termination": {"kind": "blind", "length": 4.0}
+                "termination": {"kind": "blind", "length": {"kind":"literal","value":4.0}}
             }
         },
         "op": "new_body",
@@ -400,7 +400,7 @@ fn extrude_direction_round_trips_as_a_nested_key() {
 fn per_edge_flange_widths_reject_empty_rosters_and_preserve_array_wire() {
     let wire = serde_json::json!({
         "kind": "two_sides_per_edge",
-        "value": {"widths": [{"first": 3.0, "second": 1.5}, {"first": 2.0, "second": 4.0}]}
+        "value": {"widths": [{"first": {"kind":"literal","value":3.0}, "second": {"kind":"literal","value":1.5}}, {"first": {"kind":"literal","value":2.0}, "second": {"kind":"literal","value":4.0}}]}
     });
     let width: super::SheetMetalFlangeWidth = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(width).unwrap(), wire);
@@ -521,19 +521,19 @@ fn primitive_dimensions_are_checked_at_construction_and_deserialization() {
 
     let cases: [(Value, &[&str]); 8] = [
         (
-            json!({"kind":"box","length":1.0,"width":2.0,"height":3.0}),
+            json!({"kind":"box","length":{"kind":"literal","value":1.0},"width":2.0,"height":3.0}),
             &["length", "width", "height"],
         ),
         (
-            json!({"kind":"cylinder","radius":1.0,"height":2.0,"angle":0.0}),
+            json!({"kind":"cylinder","radius":{"kind":"literal","value":1.0},"height":2.0,"angle":{"kind":"literal","value":0.0}}),
             &["radius", "height"],
         ),
         (
-            json!({"kind":"cone","radius1":0.0,"radius2":1.0,"height":2.0,"angle":-1.0}),
+            json!({"kind":"cone","radius1":0.0,"radius2":1.0,"height":2.0,"angle":{"kind":"literal","value":-1.0}}),
             &["height"],
         ),
         (
-            json!({"kind":"sphere","radius":1.0,"latitude1":-1.0,"latitude2":1.0,"longitude":0.0}),
+            json!({"kind":"sphere","radius":{"kind":"literal","value":1.0},"latitude1":-1.0,"latitude2":1.0,"longitude":0.0}),
             &["radius"],
         ),
         (
@@ -656,13 +656,13 @@ fn scale_factors_admit_only_finite_nonzero_components() {
     // A partial axis set, a mixed set and an untagged object have no name, so
     // the wire cannot state them.
     for wire in [
-        serde_json::json!({"kind": "uniform", "factor": 0.0}),
+        serde_json::json!({"kind": "uniform", "factor": {"kind":"literal","value":0.0}}),
         serde_json::json!({"kind": "per_axis", "factors": [0.0, 1.0, 1.0]}),
         serde_json::json!({"kind": "per_axis", "factors": [1.0, 0.0, 1.0]}),
         serde_json::json!({"kind": "per_axis", "factors": [1.0, 1.0, 0.0]}),
         serde_json::json!({"kind": "per_axis", "factors": [1.0, 1.0]}),
-        serde_json::json!({"kind": "uniform", "factor": 1.0, "factors": [1.0, 1.0, 1.0]}),
-        serde_json::json!({"kind": "unresolved", "factor": 1.0}),
+        serde_json::json!({"kind": "uniform", "factor": {"kind":"literal","value":1.0}, "factors": [1.0, 1.0, 1.0]}),
+        serde_json::json!({"kind": "unresolved", "factor": {"kind":"literal","value":1.0}}),
         serde_json::json!({"uniform": 1.0}),
         serde_json::json!({"x": 1.0, "y": 1.0, "z": 1.0}),
     ] {
@@ -684,16 +684,16 @@ fn blind_and_coil_lengths_reject_zero_without_losing_signed_wire_values() {
         ))
         .is_err());
         for wire in [
-            serde_json::json!({"kind":"revolutions_pitch","revolutions":1.0,"pitch":value}),
-            serde_json::json!({"kind":"height_pitch","height":value,"pitch":1.0}),
+            serde_json::json!({"kind":"revolutions_pitch","revolutions":{"kind":"literal","value":1.0},"pitch":value}),
+            serde_json::json!({"kind":"height_pitch","height":value,"pitch":{"kind":"literal","value":1.0}}),
             serde_json::json!({"kind":"height_pitch","height":1.0,"pitch":value}),
-            serde_json::json!({"kind":"spiral","revolutions":1.0,"radial_pitch":value}),
+            serde_json::json!({"kind":"spiral","revolutions":{"kind":"literal","value":1.0},"radial_pitch":value}),
         ] {
             assert!(serde_json::from_value::<CoilExtent>(literal_fields(wire)).is_err());
         }
     }
     let wire = literal_fields(
-        serde_json::json!({"kind":"revolutions_height","revolutions":1.0,"height":0.0}),
+        serde_json::json!({"kind":"revolutions_height","revolutions":{"kind":"literal","value":1.0},"height":0.0}),
     );
     let admitted: CoilExtent = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
@@ -963,12 +963,12 @@ fn helical_sweep_travel_preserves_signed_and_planar_values_but_rejects_zero_trav
         (
             0.0,
             -3.0,
-            serde_json::json!({"kind":"radial","radial_growth":-3.0}),
+            serde_json::json!({"kind":"radial","radial_growth":{"kind":"literal","value":-3.0}}),
         ),
         (
             2.0,
             -3.0,
-            serde_json::json!({"kind":"conical","height":2.0,"radial_growth":-3.0}),
+            serde_json::json!({"kind":"conical","height":2.0,"radial_growth":{"kind":"literal","value":-3.0}}),
         ),
     ] {
         let wire = literal_fields(wire);
@@ -1000,11 +1000,11 @@ fn helical_sweep_travel_preserves_signed_and_planar_values_but_rejects_zero_trav
     ))
     .is_err());
     assert!(serde_json::from_value::<HelicalSweepTravel>(literal_fields(
-        serde_json::json!({"kind":"conical","height":1.0,"radial_growth":0.0})
+        serde_json::json!({"kind":"conical","height":1.0,"radial_growth":{"kind":"literal","value":0.0}})
     ))
     .is_err());
     assert!(serde_json::from_value::<HelicalSweepTravel>(literal_fields(
-        serde_json::json!({"kind":"axial","height":1.0,"radial_growth":2.0})
+        serde_json::json!({"kind":"axial","height":1.0,"radial_growth":{"kind":"literal","value":2.0}})
     ))
     .is_err());
 }
@@ -1748,7 +1748,7 @@ fn wrap_depth_admits_only_a_positive_length_on_the_wire() {
             "definition": "wrap",
             "profile": {"kind": "native", "value": "wrap:profile"},
             "face": {"kind": "native", "value": "wrap:face"},
-            "mode": {"deboss": {"depth": depth}}
+            "mode": {"deboss": {"depth": {"kind":"literal", "value":depth}}}
         })
     };
     for refused in [0.0, -0.0, -2.5] {
