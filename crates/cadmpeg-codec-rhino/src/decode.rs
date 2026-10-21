@@ -713,9 +713,11 @@ impl<'a> DecodeContext<'a> {
                             }
                         ),
                     );
-                    if procedural_surface {
+                    if procedural_surface && future {
                         self.commit_unknown_surface(source_order)?;
                     } else if !future {
+                        // A malformed payload has no surface content to project.
+                        // Keep the source record through the failed-object path.
                         self.mark_failed(source_order);
                     }
                 }
