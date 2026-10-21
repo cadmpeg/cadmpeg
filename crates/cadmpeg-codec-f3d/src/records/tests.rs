@@ -1298,20 +1298,29 @@ fn glyph_transform_preserves_finite_matrix_wire_without_an_affine_restriction() 
 fn sketch_text_layout_preserves_flat_wire_pairs_and_independent_references() {
     use crate::records::sketch_geometry::SketchText;
 
-    let prefix = r#"{"id":"text","record_index":1,"owner_reference":2,"class_tag":"000","class_version":4,"byte_offset":0,"text":"text","font_family":"Arial","font_weight":400,"height":10.0"#;
+    let prefix = r#"{"id":"text","record_index":1,"owner_reference":2,"class_tag":"000","class_version":4,"text":"text","font_family":"Arial","font_weight":400,"height":10.0"#;
+    let frame = serde_json::to_string(&crate::records::source_frame::SourceFrame::from(
+        Vec::<u8>::new(),
+    ))
+    .unwrap();
     let color = r#","color":{"r":0.0,"g":0.0,"b":0.0,"a":1.0}"#;
     let placement = r#","anchor":{"u":2.0,"v":3.0},"rotation":0.5"#;
     let alignment = r#","horizontal_alignment":3,"vertical_alignment":7"#;
-    let txt = format!("{prefix}{color}{placement},\"raw_bytes\":\"\"}}");
+    let txt = format!("{prefix}{color}{placement},\"frame\":{frame}}}");
     let decoded: SketchText = serde_json::from_str(&txt).expect("txt placement");
     assert_eq!(serde_json::to_string(&decoded).unwrap(), txt);
+    let mut source = decoded.clone();
+    source.byte_offset = Some(0);
+    source.raw_bytes = Vec::<u8>::new().into();
+    assert_eq!(source.byte_offset, Some(0));
+    assert_eq!(serde_json::to_string(&source).unwrap(), txt);
     for placement in ["", placement] {
         for alignment in ["", alignment] {
             for first_reference in ["", ",\"first_reference\":0", ",\"first_reference\":12"] {
                 for second_reference in ["", ",\"second_reference\":0", ",\"second_reference\":13"]
                 {
                     let wire = format!(
-                        "{prefix},\"width_factor\":1.0{color}{placement}{alignment}{first_reference}{second_reference},\"raw_bytes\":\"\"}}"
+                        "{prefix},\"width_factor\":1.0{color}{placement}{alignment}{first_reference}{second_reference},\"frame\":{frame}}}"
                     );
                     let decoded: SketchText =
                         serde_json::from_str(&wire).expect("textex member pairs");
@@ -1328,10 +1337,11 @@ fn sketch_text_layout_rejects_partial_placement_and_alignment() {
 
     let base = serde_json::json!({
         "id": "text", "record_index": 1, "owner_reference": 2,
-        "class_tag": "000", "class_version": 4, "byte_offset": 0,
+        "class_tag": "000", "class_version": 4,
         "text": "text", "font_family": "Arial", "font_weight": 400,
         "height": 10.0, "width_factor": 1.0,
-        "color": {"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0}, "raw_bytes": ""
+        "color": {"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0},
+        "frame": serde_json::to_value(crate::records::source_frame::SourceFrame::from(Vec::<u8>::new())).unwrap()
     });
     for (field, value) in [
         ("anchor", serde_json::json!({"u": 2.0, "v": 3.0})),
