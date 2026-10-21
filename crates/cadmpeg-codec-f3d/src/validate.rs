@@ -2339,9 +2339,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     && matches!(envelope_ends, [Some(first_end), Some(second_end)]
                                 if !(first_start < second_end && second_start < first_end))
                                     && paths.iter().all(|path| {
-                                        matches!(path.class_tag().as_str(), "294" | "299" | "307" | "329" | "330" | "386" | "390")
+                                        (path.admitted_by_type()
+                                            || matches!(path.class_tag().as_str(), "294" | "299" | "307" | "329" | "330" | "386" | "390"))
                                             && !matches!(path.link().locator_class_tag.as_str(), "363" | "378")
-                                            && (matches!(
+                                            && (path.admitted_by_type()
+                                                || matches!(
                                                 path.class_tag().as_str(),
                                                 "294" | "299" | "307" | "330" | "386"
                                             ) || path.occurrence_guids().first().is_some_and(

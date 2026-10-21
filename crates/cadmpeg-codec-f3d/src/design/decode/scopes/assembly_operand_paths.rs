@@ -14,14 +14,20 @@ use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
+use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use std::collections::HashMap;
+
+/// Record types of one Design stream by entity id: type GUID and version.
+pub(super) type StreamTypes<'a> = HashMap<u64, (&'a str, u32)>;
 
 pub(super) fn exact_assembly_operand_paths(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    stream_types: &StreamTypes<'_>,
 ) -> Result<Option<[DesignAssemblyOperandPath; 2]>, CodecError> {
     (|| {
         let scope_at = usize::try_from(scope.byte_offset()).ok()?;
@@ -55,6 +61,7 @@ pub(super) fn exact_assembly_operand_paths(
                 let parsed = match exact_assembly_operand_path_envelope(
                     bytes,
                     scope,
+                    stream_types,
                     locator_record_index,
                     locator_reference_offset,
                     locator_at,
@@ -100,6 +107,7 @@ pub(super) fn exact_assembly_operand_paths(
 fn exact_assembly_operand_path_envelope(
     bytes: &[u8],
     scope: &DesignParameterScope,
+    stream_types: &StreamTypes<'_>,
     locator_record_index: u32,
     locator_reference_offset: u64,
     locator_at: usize,
@@ -261,7 +269,11 @@ fn exact_assembly_operand_path_envelope(
             path_reference_offset,
         };
         let mut paths = path_spans.into_iter().map(|(record_index, start, limit)| {
-            exact_assembly_operand_path(bytes, start, record_index, limit, link.clone())
+            let type_guid = stream_types
+                .get(&u64::from(record_index))
+                .map(|(guid, _)| *guid)
+                .filter(|guid| guid.eq_ignore_ascii_case(TYPED_OCCURRENCE_PATH_TYPE_GUID));
+            exact_assembly_operand_path(bytes, start, record_index, limit, link.clone(), type_guid)
         });
         let mut path = match paths.next()? {
             Ok(Some(path)) => path,
@@ -287,12 +299,15 @@ fn exact_assembly_operand_path_envelope(
     .transpose()
 }
 
+/// Read one path record. `type_guid` is the record's type GUID when it is the
+/// identity-qualified counted path type, which admits it whatever its class.
 fn exact_assembly_operand_path(
     bytes: &[u8],
     start: usize,
     record_index: u32,
     limit: usize,
     link: DesignAssemblyOperandPathLink,
+    type_guid: Option<&str>,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     (|| {
         let (class_tag, after_tag) =
@@ -360,7 +375,7 @@ fn exact_assembly_operand_path(
                     return None;
                 }
             }
-            "329" | "330" | "386" | "390" => {
+            tag if type_guid.is_some() || matches!(tag, "329" | "330" | "386" | "390") => {
                 if bytes.get(after_tag + 8..after_tag + 14)? != [0; 6] {
                     return None;
                 }
@@ -430,10 +445,15 @@ fn exact_assembly_operand_path(
             }
             _ => return None,
         }
-        DesignAssemblyOperandPath::try_new(
+        let type_guid = match type_guid {
+            Some(guid) => Some(guid.to_owned().try_into().ok()?),
+            None => None,
+        };
+        DesignAssemblyOperandPath::try_new_typed(
             link,
             record_index,
             crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
+            type_guid,
             u64::try_from(start).ok()?,
             occurrence_guids,
             identity_guids,
