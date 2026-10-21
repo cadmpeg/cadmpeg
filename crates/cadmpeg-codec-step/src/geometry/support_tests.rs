@@ -339,3 +339,86 @@ fn a_transformation_operator_refuses_a_zero_column() {
         [0.0, 0.0, 0.0, 0.0],
     ]);
 }
+
+#[test]
+fn rigid_placements_are_written_into_their_carriers() {
+    use cadmpeg_ir::geometry::pcurve::{CirclePcurve, LinePcurve, PcurveGeometry, PlacedPcurve};
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::transform::Transform2;
+    let emit = |write: &dyn Fn(&mut crate::writer::Emitter) -> Option<crate::writer::Ref>| {
+        let mut e = crate::writer::Emitter::new();
+        write(&mut e).expect("carrier is writable");
+        e.into_lines().expect("finite reals").join("\n")
+    };
+    // A quarter turn about z, then a move to (10, 20, 30).
+    let turn = Transform::affine([
+        [0.0, -1.0, 0.0, 10.0],
+        [1.0, 0.0, 0.0, 20.0],
+        [0.0, 0.0, 1.0, 30.0],
+    ])
+    .expect("rigid transform");
+    let circle = SolvedCurveGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .unwrap(),
+            )),
+            turn,
+        )
+        .expect("placed circle"),
+    );
+    let text = emit(&|e| curve(e, &circle));
+    assert!(!text.contains("CURVE_REPLICA"));
+    assert!(text.contains("CARTESIAN_POINT('',(10.,21.,30.))"));
+    assert!(text.contains("DIRECTION('',(0.,1.,0.))"));
+    assert!(text.contains("CIRCLE("));
+
+    let cylinder = SolvedSurfaceGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .unwrap(),
+            )),
+            turn,
+        )
+        .expect("placed cylinder"),
+    );
+    let text = emit(&|e| super::surface(e, &cylinder));
+    assert!(!text.contains("SURFACE_REPLICA"));
+    assert!(text.contains("CARTESIAN_POINT('',(10.,21.,30.))"));
+    assert!(text.contains("CYLINDRICAL_SURFACE("));
+
+    // A reflection of the chart places a line, which keeps its parameter,
+    // but not a circle, which would run the other way.
+    let flip = Transform2::affine([[1.0, 0.0, 0.0], [0.0, -1.0, 0.0]]).expect("reflection");
+    let placed =
+        |basis| PcurveGeometry::Transformed(PlacedPcurve::try_new(Box::new(basis), flip).unwrap());
+    let line = placed(PcurveGeometry::Line(
+        LinePcurve::try_new(Point2::new(1.0, 2.0), Point2::new(0.0, 1.0)).unwrap(),
+    ));
+    let line = emit(&|e| super::pcurve(e, &line));
+    assert!(!line.contains("CURVE_REPLICA"));
+    assert!(line.contains("CARTESIAN_POINT('',(1.,-2.))"));
+    let circle = placed(PcurveGeometry::Circle(
+        CirclePcurve::try_new(
+            Point2::new(1.0, 2.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            3.0,
+        )
+        .unwrap(),
+    ));
+    let circle = emit(&|e| super::pcurve(e, &circle));
+    assert!(circle.contains("CURVE_REPLICA"));
+}
