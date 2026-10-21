@@ -361,14 +361,6 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** We must know the member names and their meanings to build component references in a neutral model.
 
-### XR-03. Cross-document reference asset GUID
-
-**Question.** What does the LP-UTF16 asset GUID of a cross-document reference name?
-
-**Known.** `f3d.md` §3.1 "**References.**" gives the cross-document form. The eight-byte value the item once asked about is the reference's target entity ID, and the ASCII GUID after it is the target record's type GUID; both resolve against the segment the reference's segment ID names in the target document. The UTF-16 asset GUID between them is one value per link and does not equal the target segment's own asset GUID.
-
-**Need.** A writer must emit this GUID to build a cross-document reference, and we cannot derive it from either end of the link.
-
 ### XR-04. Occurrence-placement reference runs
 
 **Question.** What do the counted reference run after the matrix, the modern tagged u32 run, the two modern closing references, and the legacy typed target-reference fields name?
