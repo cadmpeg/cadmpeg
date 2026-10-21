@@ -186,10 +186,11 @@ pub(super) fn project(
             );
             continue;
         };
-        for (target_order, target) in items(ir, source_order, &object.identity.source_id)
-            .iter()
-            .filter_map(target)
-            .enumerate()
+        for (target_order, target) in
+            items(ir, source_order, &object.identity.object_id.to_string())
+                .iter()
+                .filter_map(target)
+                .enumerate()
         {
             let key = IdentityKey::try_new(format!("{source_order}-{target_order}"))
                 .map_err(CodecError::malformed)?;
