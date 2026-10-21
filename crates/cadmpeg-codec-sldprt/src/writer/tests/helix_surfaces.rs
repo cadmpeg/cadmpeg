@@ -985,17 +985,29 @@ fn semantic_writer_round_trips_knit_surface() {
         cadmpeg_core::nonblank_literal!("CheckGeometry"),
         "true".into(),
     );
-    let mut encoded = Vec::new();
-    SldprtCodec
+    let plan = SldprtCodec
         .plan(EncodeInput::new(&positive, None), TargetRequest::Inherit)
-        .unwrap()
-        .write_to(&mut encoded)
         .unwrap();
+    let report = plan.report().clone();
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    // The triangle has one face. Target serialization remints its physical
+    // identifier; its selected operand and complete model graph must agree.
+    assert_eq!(positive.model.faces.len(), 1);
+    assert_eq!(regenerated.ir().model.faces.len(), 1);
+    let mut expected_model = positive.clone();
+    expected_model.scope = cadmpeg_ir::ContentScope::geometry();
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &report,
+        &expected_model,
+        regenerated.ir(),
+    );
+    let written_face = &regenerated.ir().model.faces[0].id;
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
-    assert_eq!(native.properties["Faces"], face_id.as_str());
+    assert_eq!(native.properties["Faces"], written_face.as_str());
     assert_eq!(native.properties["MergeEntities"], "true");
     assert_eq!(native.properties["CreateSolid"], "true");
     assert_eq!(native.properties["CheckGeometry"], "true");
@@ -1003,11 +1015,11 @@ fn semantic_writer_round_trips_knit_surface() {
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+            faces: FaceSelection::Resolved { faces, .. },
             merge_entities: Some(true),
             create_solid: Some(true),
             gap_tolerance: None,
-            ..
-        })
+        }) if faces == std::slice::from_ref(written_face)
     ));
 }
 
