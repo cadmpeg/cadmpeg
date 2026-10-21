@@ -243,7 +243,6 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
 
 #[test]
 fn semantic_writer_round_trips_typed_scale() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::features::{
         BodySelection, FeatureDefinition, FeatureOperation, ScaleCenter, ScaleFactors,
     };
@@ -310,34 +309,26 @@ fn semantic_writer_round_trips_typed_scale() {
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
             ));
             *factors = ScaleFactors::PerAxis {
-                factors: [1.5, 2.0, 2.5]
-                    .map(|value| cadmpeg_ir::scalar::NonZeroReal::new(value).unwrap().into()),
+                factors: [1.5, 2.0, 2.5].map(|value| {
+                    cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::NonZeroReal::new(value).unwrap(),
+                    )
+                }),
             };
         });
     }
 
-    // D1/S-entity: the original Factor remains independent when the operation
-    // changes to per-axis scaling. The native format cannot encode both forms.
-    let regenerated = super::parameters_extrude::reduction::assert_independent_parameter_reduction(
+    let mut encoded = Vec::new();
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
-        0,
-        "independent parameter Factor",
-    );
-    let positive = super::parameters_extrude::reduction::source_less_operation(
-        decoded.ir().model.features[0].definition().clone(),
-        "Point",
-    );
-    let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&positive, None), TargetRequest::Inherit)
-        .unwrap()
-        .write_to(&mut encoded)
-        .unwrap();
-    let supported = SldprtCodec
+        &mut encoded,
+    )
+    .unwrap();
+    let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(supported.ir()).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.properties["Bodies"], "body:2,body:3");
     assert_eq!(feature.properties["Center"], "4mm,5mm,6mm");
     assert!(!feature.parameters.contains_key("Factor"));
@@ -352,12 +343,12 @@ fn semantic_writer_round_trips_typed_scale() {
     assert_eq!(native_features[3].properties["CenterType"], "Reference");
     assert_eq!(native_features[3].properties["CenterRef"], "csys:4");
     assert!(matches!(
-        supported.ir().model.features[0].evaluation.definition(),
+        regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Scale {
             center: Some(ScaleCenter::Point(checked_geometry_1)),
             factors: ScaleFactors::PerAxis { factors },
             ..
-        }) if (std::array::from_fn::<_, 3, _>(|index| supported.ir().dimension_value(&factors[index]).unwrap().get()) == [1.5, 2.0, 2.5]) && matches!(checked_geometry_1.get(), Point3 {
+        }) if (std::array::from_fn::<_, 3, _>(|index| regenerated.ir().dimension_value(&factors[index]).unwrap().get()) == [1.5, 2.0, 2.5]) && matches!(checked_geometry_1.get(), Point3 {
                 x: 4.0,
                 y: 5.0,
                 z: 6.0

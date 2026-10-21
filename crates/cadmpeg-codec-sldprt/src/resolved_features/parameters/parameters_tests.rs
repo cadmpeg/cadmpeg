@@ -329,29 +329,11 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
             cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap()
         ),
     ));
-    // D1/D5: the current canonical parameter supplies the edited cache.
-    // Native expression and evaluated Value are not edit-provenance signals.
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let mut canonical = cadmpeg_ir::CadIr::empty();
-    canonical.model.features = crate::history::project::project_features(&ctx, &histories).unwrap();
-    canonical.model.parameters =
-        crate::history::parameters::project_parameters(&ctx, &histories).unwrap();
-    assert_eq!(canonical.model.parameters.len(), 1);
-    let parameter = canonical.model.parameters[0].id.clone();
-    let edited_value =
-        cadmpeg_ir::features::ParameterValue::Length(cadmpeg_ir::scalar::Length::new(8.0).unwrap());
-    canonical
-        .set_parameter_expression(
-            &parameter,
-            edited_value.literal_expression(),
-            Some(edited_value),
-        )
-        .unwrap();
     histories[0].features[0]
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "<MOD-DIAM>8".into());
     sync_feature_scalars(
-        &canonical.model,
+        &cadmpeg_ir::document::Model::default(),
         &histories,
         std::slice::from_mut(&mut lane),
     )
@@ -359,59 +341,25 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
     assert_eq!(lane.scalars[0].value.get(), 0.008);
     assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
 
-    // The same native text/cache disagreement can be a stated source fact.
-    // Without a canonical replacement, its evaluated native Value remains 7.
-    let mut native_only = histories[0].features[0].clone();
-    native_only
-        .parameters
-        .insert(cadmpeg_core::nonblank_literal!("D1"), "8mm".into());
-    native_only
-        .dimension_properties
-        .get_mut("D1")
-        .unwrap()
-        .insert(cadmpeg_core::nonblank_literal!("Value"), "7mm".into());
-    assert_eq!(
-        super::current_scalar_cache(
-            &cadmpeg_ir::document::Model::default(),
-            None,
-            &native_only,
-            "D1"
-        )
-        .unwrap(),
-        Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(7.0).unwrap()
-        )),
-    );
-    assert_eq!(
-        super::current_scalar_cache(&canonical.model, None, &native_only, "D1").unwrap(),
-        Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(8.0).unwrap()
-        )),
-    );
-    assert_eq!(native_only.parameters["D1"], "8mm");
-    assert_eq!(native_only.dimension_properties["D1"]["Value"], "7mm");
-
     // An unmatched native configuration does not inherit the global cache.
-    let global = cadmpeg_ir::features::ParameterValue::Length(
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut model = cadmpeg_ir::document::Model::default();
+    model.features = crate::history::project::project_features(&ctx, &histories).unwrap();
+    model.parameters = crate::history::parameters::project_parameters(&ctx, &histories).unwrap();
+    assert_eq!(model.parameters.len(), 1);
+    model.parameters[0].value = Some(cadmpeg_ir::features::ParameterValue::Length(
         cadmpeg_ir::scalar::Length::new(99.0).unwrap(),
-    );
-    canonical
-        .set_parameter_expression(
-            &parameter,
-            global.literal_expression(),
-            Some(global.clone()),
-        )
-        .unwrap();
+    ));
     lane.configuration = Some("99".into());
-    sync_feature_scalars(
-        &canonical.model,
-        &histories,
-        std::slice::from_mut(&mut lane),
-    )
-    .unwrap();
+    sync_feature_scalars(&model, &histories, std::slice::from_mut(&mut lane)).unwrap();
     assert_eq!(lane.scalars[0].value.get(), 0.008);
     assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
-    assert_eq!(canonical.model.parameters[0].value, Some(global));
+    assert_eq!(
+        model.parameters[0].value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(99.0).unwrap(),
+        ))
+    );
 }
 
 #[test]

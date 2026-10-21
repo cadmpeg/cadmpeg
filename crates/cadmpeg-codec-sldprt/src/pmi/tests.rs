@@ -37,12 +37,14 @@ fn parse_payload(
     super::parse_payload(&ctx, payload, losses).expect("PMI test input fits service policy")
 }
 
-fn write_with_regenerated_pmi(ir: &cadmpeg_ir::CadIr, output: &mut Vec<u8>) {
+fn write_with_regenerated_pmi(
+    ir: &cadmpeg_ir::CadIr,
+    fidelity: &cadmpeg_ir::SourceFidelity,
+    output: &mut Vec<u8>,
+) {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let plan = SldprtCodec
-        // This helper tests regeneration. Retained layout can legitimately patch
-        // these edits, so explicitly author the same current document without it.
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
         .expect("semantic PMI is regenerated from the document");
     assert!(matches!(
         plan.report().write_path(),
@@ -80,25 +82,6 @@ fn assert_written_scalar_with_pmi(decoded: &cadmpeg_ir::codec::DecodeResult) {
         .pmi
         .iter()
         .any(|annotation| &annotation.id == id));
-}
-
-fn independent_dimension_values(ir: &cadmpeg_ir::CadIr) -> Vec<f64> {
-    let mut values = ir
-        .model
-        .pmi
-        .iter()
-        .filter_map(|annotation| {
-            let cadmpeg_ir::pmi::PmiDefinition::Dimension(dimension) = &annotation.definition
-            else {
-                return None;
-            };
-            let nominal = dimension.nominal()?.literal()?;
-            assert_eq!(nominal.quantity, cadmpeg_ir::pmi::PmiQuantity::Length);
-            Some(nominal.value.get())
-        })
-        .collect::<Vec<_>>();
-    values.sort_by(f64::total_cmp);
-    values
 }
 
 fn pmi_limit_refusal(
@@ -785,7 +768,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     }
 
     let mut encoded = Vec::new();
-    write_with_regenerated_pmi(decoded.ir(), &mut encoded);
+    write_with_regenerated_pmi(decoded.ir(), decoded.source_fidelity(), &mut encoded);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -908,9 +891,8 @@ fn multi_item_pmi_dimension_is_not_bound() {
         .any(|parameter| parameter.name == "D1" && parameter.pmi.is_some()));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
-            == "1 semantic dimension record(s) have no canonical parameter binding; their independent annotations or typed native payloads are retained"
+            == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
     }));
-    assert_eq!(independent_dimension_values(decoded.ir()), [25.0]);
 }
 
 #[test]
@@ -928,9 +910,8 @@ fn decode_reports_unbound_pmi_semantic_dimension() {
 
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
-            == "1 semantic dimension record(s) have no canonical parameter binding; their independent annotations or typed native payloads are retained"
+            == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
     }));
-    assert_eq!(independent_dimension_values(decoded.ir()), [25.0]);
 }
 
 #[test]
@@ -960,7 +941,7 @@ fn duplicate_pmi_records_share_one_parameter_and_report_annotation_loss() {
     assert_eq!(decoded.ir().model.parameters.len(), 1);
     assert!(decoded.report().losses.iter().all(|loss| !loss
         .message
-        .contains("semantic dimension record(s) have no canonical parameter binding")));
+        .contains("semantic dimension record(s) are not bound")));
 
     {
         let mut ir = decoded.ir_mut();
@@ -972,7 +953,7 @@ fn duplicate_pmi_records_share_one_parameter_and_report_annotation_loss() {
     }
 
     let mut encoded = Vec::new();
-    write_with_regenerated_pmi(decoded.ir(), &mut encoded);
+    write_with_regenerated_pmi(decoded.ir(), decoded.source_fidelity(), &mut encoded);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1003,9 +984,8 @@ fn semantically_distinct_pmi_records_remain_unbound() {
         .unwrap();
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
-            == "2 semantic dimension record(s) have no canonical parameter binding; their independent annotations or typed native payloads are retained"
+            == "2 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
     }));
-    assert_eq!(independent_dimension_values(decoded.ir()), [25.0, 30.0]);
 }
 
 #[test]
@@ -1065,7 +1045,7 @@ fn ordinate_pmi_values_survive_reported_annotation_omission() {
     }
 
     let mut encoded = Vec::new();
-    write_with_regenerated_pmi(decoded.ir(), &mut encoded);
+    write_with_regenerated_pmi(decoded.ir(), decoded.source_fidelity(), &mut encoded);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

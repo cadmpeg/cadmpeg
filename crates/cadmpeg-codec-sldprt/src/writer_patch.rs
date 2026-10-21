@@ -85,15 +85,7 @@ pub(crate) fn patch_partition(
         &ctx,
         &bodies,
         &cadmpeg_ir::stream_name!("native-patch-baseline"),
-    )
-    .map_err(|error| match error {
-        // This decode admits the retained patch baseline only. Current
-        // document validity is independent of malformed source-fidelity bytes.
-        CodecError::Malformed(reason) => CodecError::UnsupportedContent(format!(
-            "retained SLDPRT patch baseline cannot be decoded: {reason}"
-        )),
-        other => other,
-    })?;
+    )?;
     let colors = crate::writer::face_colors(ir);
     if native
         .faces
