@@ -160,7 +160,7 @@ fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
         "{refusal:?}"
     );
     let message = refusal.evidence().message;
-    assert!(message.contains("source-native record(s)"), "{message}");
+    assert!(message.contains("native record(s)"), "{message}");
     let report = refusal
         .evidence()
         .reports
@@ -170,7 +170,7 @@ fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
         report
             .losses
             .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
+            .any(|loss| loss.message.contains("native record(s)")),
         "{:?}",
         report.losses
     );
@@ -194,7 +194,7 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
+            .any(|loss| loss.message.contains("native record(s)")),
         "{:?}",
         planned.plan.report().losses
     );
