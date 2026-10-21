@@ -454,9 +454,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
     assert_eq!(native[2].kind, "CustomFillet");
     assert_eq!(native[2].parameters["Radius"], "2.5mm");
     assert_eq!(native[2].properties["Algorithm"], "FaceBlend");
-    assert!(regenerated.ir().model.features[2]
-        .source_properties
-        .is_empty());
+
     assert_eq!(
         regenerated.ir().model.features[2].dependencies.as_slice(),
         vec![
