@@ -19,7 +19,7 @@ fn entity(entity_type: i64, form: i64, parameters: &str) -> OwnedTestEntity {
 }
 
 #[test]
-fn property_values_have_one_neutral_home_and_native_records_keep_only_links() {
+fn property_values_have_one_neutral_home_and_native_records_keep_typed_values() {
     let bytes = owned_test_file(&[entity(406, 27, "406,4,4HNAME,1,3,3HVAL;")]);
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -32,21 +32,14 @@ fn property_values_have_one_neutral_home_and_native_records_keep_only_links() {
         .any(|attribute| attribute.name == "NAME"
             && attribute.values == vec![AttributeValue::String("VAL".into())]));
     let record = &ir.native.namespace("iges").unwrap().arenas()["properties"][0];
-    assert!(record.field("name").is_none());
-    assert!(record.field("values").is_none());
-    let links = record.field("neutral_values").unwrap();
-    for reference in links
-        .as_object()
-        .unwrap()
-        .values()
-        .flat_map(|value| value.as_array().unwrap())
-    {
-        assert!(ir
-            .model
-            .attributes
-            .iter()
-            .any(|attribute| attribute.id.as_str() == reference.as_str().unwrap()));
-    }
+    assert_eq!(
+        crate::test_support::native_bytes(&record.field("name").unwrap()),
+        b"NAME"
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&record.field("values").unwrap()[0]["value"]["value"]),
+        b"VAL"
+    );
 }
 
 #[test]
@@ -73,15 +66,22 @@ fn property_owner_targets_the_projected_point_instead_of_the_native_property() {
     );
     assert_eq!(property.values, vec![AttributeValue::String("P1".into())]);
     let product_property = &ir.native.namespace("iges").unwrap().arenas()["product_properties"][0];
-    assert!(product_property.field("value").is_none());
     assert_eq!(
-        product_property.field("neutral_values"),
-        ir.native.namespace("iges").unwrap().arenas()["properties"][0].field("neutral_values")
+        crate::test_support::native_bytes(&product_property.field("value").unwrap()),
+        b"P1"
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(
+            &ir.native.namespace("iges").unwrap().arenas()["properties"][0]
+                .field("value")
+                .unwrap()
+        ),
+        b"P1"
     );
 }
 
 #[test]
-fn table_defaults_and_rows_project_without_retaining_second_value_copies() {
+fn table_defaults_and_rows_keep_typed_native_values_after_projection() {
     let bytes = owned_test_file_with_structures(
         &[
             entity(322, 1, "322,4HATTR,0,1,1,3,1,3HVAL;"),
@@ -104,13 +104,24 @@ fn table_defaults_and_rows_project_without_retaining_second_value_copies() {
     let schema = namespace.arenas()["attribute_table_definitions"][0]
         .field("attributes")
         .unwrap();
-    assert!(schema[0].get("values").is_none());
+    assert_eq!(
+        crate::test_support::native_bytes(&schema[0]["values"][0]["value"]["value"]),
+        b"VAL"
+    );
     assert_eq!(schema[0]["value_data_type"], 3);
     let instance = &namespace.arenas()["attribute_table_instances"][0];
-    assert!(instance.field("rows").is_none());
+    let rows = instance.field("rows").unwrap();
     assert_eq!(
-        instance.field("row_widths").unwrap(),
-        serde_json::json!([1])
+        rows.as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row.as_array().unwrap().len())
+            .collect::<Vec<_>>(),
+        [1]
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&rows[0][0]["value"]),
+        b"ITEM"
     );
 }
 
@@ -137,8 +148,10 @@ fn directory_carrier_label_has_one_editable_neutral_name() {
     );
     assert_eq!(name.values, [AttributeValue::String("HELLO".into())]);
     let native = &ir.native.namespace("iges").unwrap().arenas()["entities"][0];
-    assert!(native.field("label").is_none());
-    assert_eq!(native.field("neutral_label").unwrap()[0], name.id.as_str());
+    assert_eq!(
+        crate::test_support::native_bytes(&native.field("label").unwrap()),
+        b"   HELLO"
+    );
 }
 
 #[test]
@@ -164,6 +177,8 @@ fn full_name_property_and_distinct_directory_label_remain_distinct_facts() {
                 && attribute.values == [AttributeValue::String(value.into())]));
     }
     let native = &ir.native.namespace("iges").unwrap().arenas()["properties"][0];
-    assert!(native.field("value").is_none());
-    assert!(native.field("neutral_values").is_some());
+    assert_eq!(
+        crate::test_support::native_bytes(&native.field("value").unwrap()),
+        b"longer label"
+    );
 }

@@ -1867,12 +1867,7 @@ mod tests {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("Binary point decodes");
         assert_eq!(
-            result
-                .ir()
-                .source
-                .as_ref()
-                .expect("Binary decode retains source metadata")
-                .attributes["representation"],
+            result.source_fidelity().metadata["iges.representation"],
             "binary"
         );
         assert_eq!(result.ir().model.points.len(), 1);

@@ -4,7 +4,7 @@
 use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::source_fidelity::SourceEvidence;
 
-use crate::card::{CardScan, ScannedLine};
+use crate::card::{CardScan, ScannedLine, Section};
 
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
@@ -152,16 +152,19 @@ impl Serialize for NativeCard<'_> {
         #[derive(Serialize)]
         struct Wire {
             id: CardId,
-            evidence: SourceEvidence,
+            section: Option<Section>,
         }
-        let line = self.line.physical();
+        let section = match self.line {
+            ScannedLine::Card { section, .. } => Some(*section),
+            ScannedLine::Trailing(_) => None,
+        };
         Wire {
             id: CardId(
                 self.index
                     .checked_add(1)
                     .ok_or_else(|| serde::ser::Error::custom("IGES card index exceeds usize"))?,
             ),
-            evidence: SourceEvidence::of(&line.payload),
+            section,
         }
         .serialize(serializer)
     }
@@ -1933,13 +1936,11 @@ impl Serialize for NativeParameterRecordSlot<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            evidence: Option<SourceEvidence>,
             parameters: &'a [Token],
             comment: NativeBytes<&'a [u8]>,
         }
         let record = self.0;
         Wire {
-            evidence: record.map(|record| SourceEvidence::of(&record.bytes)),
             parameters: record.map_or(&[], ParameterRecord::tokens),
             comment: NativeBytes::from(record.map_or(&[][..], |record| record.comment.as_slice())),
         }
@@ -1984,9 +1985,6 @@ struct NativeMacroDefinition {
     id: String,
     source_entity: String,
     defined_entity_type: i64,
-    macro_statement: SourceEvidence,
-    language_statements: Vec<SourceEvidence>,
-    end_statement: SourceEvidence,
 }
 
 #[derive(Serialize)]
@@ -2322,30 +2320,10 @@ pub(crate) fn store(
             Err(MacroDataError::Defect(_, _)) => continue,
             Err(MacroDataError::Error(error)) => return Err(error),
         };
-        let Some(first) = data.statement_spans.first() else {
-            continue;
-        };
-        let Some(last) = data.statement_spans.last() else {
-            continue;
-        };
-        let Some(language_end) = data.statement_spans.len().checked_sub(1) else {
-            continue;
-        };
-        let Some(language_spans) = data.statement_spans.get(1..language_end) else {
-            continue;
-        };
-        let mut language_statements = Vec::new();
-        for span in language_spans {
-            language_statements.push(SourceEvidence::of(&record.bytes[span.clone()]));
-        }
-
         macro_definitions.push(NativeMacroDefinition {
             id: format!("iges:native:macro-definition#D{}", entry.sequence),
             source_entity: format!("iges:entity:directory#{}", entry.sequence),
             defined_entity_type: data.defined_entity_type,
-            macro_statement: SourceEvidence::of(&record.bytes[first.clone()]),
-            language_statements: (language_statements).into_iter().collect(),
-            end_statement: SourceEvidence::of(&record.bytes[last.clone()]),
         });
     }
     let mut macro_instances = Vec::new();

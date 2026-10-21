@@ -52,10 +52,8 @@ fn an_unreadable_literal_retains_the_other_fields_and_refuses_required_geometry(
     let result = decode(bytes.clone());
     let native = result.ir().native.namespace("iges").unwrap();
     let entity = &native.arenas()["entities"][0];
-    assert!(!entity.fields().unwrap()["parameter_bytes"]
-        .as_str()
-        .unwrap()
-        .is_empty());
+    let (_, retained_parameters) = crate::test_support::retained_fixed_ascii(&result);
+    assert!(!retained_parameters.records[0].bytes.is_empty());
     assert_eq!(
         entity.fields().unwrap()["parameters"]
             .as_array()
@@ -129,8 +127,9 @@ fn a_non_null_entity_declaring_zero_cards_gets_a_zero_card_quarantine_record() {
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#3");
     let fields = quarantined[0].fields().unwrap();
-    assert_eq!(fields["cards"], 0);
-    assert!(fields["bytes"].as_str().unwrap().is_empty());
+    let (_, retained_parameters) = crate::test_support::retained_fixed_ascii(&result);
+    assert_eq!(retained_parameters.quarantined[0].cards(), 0);
+    assert!(retained_parameters.quarantined[0].bytes().is_empty());
     assert_eq!(fields["defect"], "declared-count-zero");
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
@@ -187,7 +186,8 @@ fn a_declared_card_that_does_not_exist_quarantines_the_parameter_data() {
         quarantined[0].fields().unwrap()["defect"],
         "declared-card-missing"
     );
-    assert_eq!(quarantined[0].fields().unwrap()["cards"], 0);
+    let (_, retained_parameters) = crate::test_support::retained_fixed_ascii(&result);
+    assert_eq!(retained_parameters.quarantined[0].cards(), 0);
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
         1
