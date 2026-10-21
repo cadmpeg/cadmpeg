@@ -7,6 +7,8 @@ use sha2::{Digest, Sha256};
 
 use crate::loss::F3dLossCode;
 
+const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
+
 pub(super) fn prepare(target: &mut CadIr, losses: &mut Vec<LossNote>) {
     use cadmpeg_ir::appearance::AppearanceTarget;
     let mut bindings = std::collections::BTreeMap::new();
@@ -159,7 +161,6 @@ fn asset_guid(identity: &str) -> String {
     bytes.copy_from_slice(&digest[..16]);
     bytes[6] = (bytes[6] & 0x0f) | 0x80;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
     let mut hex = String::with_capacity(32);
     for byte in bytes {
         hex.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
