@@ -52,8 +52,7 @@ pub(crate) fn validate(
     } else {
         Vec::new()
     };
-    let coverage_records: Vec<native::ByteCoverageRecord> =
-        read_layout(ctx, fidelity, "byte-coverage")?;
+    let coverage: native::ByteCoverageRecord = read_layout(ctx, fidelity, "byte-coverage")?;
     let entries: Vec<native::EntryRecord> = read_arena(ctx, namespace, "entries")?;
     let properties: Vec<native::PropertyRecord> = read_arena(ctx, namespace, "properties")?;
     let gui_properties: Vec<native::GuiPropertyRecord> =
@@ -147,7 +146,7 @@ pub(crate) fn validate(
         &logical,
         physical_end.unwrap_or_default(),
     );
-    if coverage_records.as_slice() != [expected_coverage.clone()] || !expected_coverage.exact {
+    if coverage != expected_coverage || !expected_coverage.exact {
         findings.push(finding(
             Check::PayloadIntegrity,
             "FCStd byte coverage report is stale or does not prove exact closure",
