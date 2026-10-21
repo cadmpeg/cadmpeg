@@ -4,7 +4,7 @@
 use std::fs;
 
 use assert_cmd::Command;
-use cadmpeg_ir::{CadIr, DecodeSidecar, decode_sidecar_path};
+use cadmpeg_ir::{decode_sidecar_path, CadIr, DecodeSidecar};
 use tempfile::tempdir;
 
 #[test]

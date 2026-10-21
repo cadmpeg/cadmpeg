@@ -10,9 +10,9 @@ use cadmpeg_ir::codec::write::{Encoder, SynthesisCause};
 use cadmpeg_ir::document::ContentScope;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::export::WritePath;
-use cadmpeg_ir::{CadIr, DecodeSidecar, decode_sidecar_path};
+use cadmpeg_ir::{decode_sidecar_path, CadIr, DecodeSidecar};
 use predicates::prelude::predicate;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tempfile::tempdir;
 
 use super::{decode, workspace, write_decode};
@@ -155,12 +155,11 @@ fn edit_document(ir: &CadIr) -> CadIr {
 }
 
 fn assert_edits(ir: &CadIr) {
-    assert!(
-        ir.model
-            .features
-            .iter()
-            .any(|feature| feature.name.as_deref() == Some(FEATURE_NAME))
-    );
+    assert!(ir
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some(FEATURE_NAME)));
     let length = ir
         .model
         .parameters
@@ -343,7 +342,7 @@ fn assert_step_geometry_agrees(cadir: &Path, native: &Path, directory: &Path) {
 
 #[test]
 fn library_editor_rebinds_history_before_synthesizing_its_edits() {
-    use cadmpeg_ir::codec::write::{EncodeInput, Encoder, target::TargetRequest};
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     for name in ["design_history.FCStd", "core_design_product.FCStd"] {
         let dir = tempdir().unwrap();
         let result = decode(&FcstdCodec, &fixture(name));

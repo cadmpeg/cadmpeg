@@ -7,11 +7,11 @@ use std::io::{Cursor, Read, Write};
 
 use assert_cmd::Command;
 use cadmpeg_codec_freecad::FcstdCodec;
-use cadmpeg_ir::CadIr;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::document::{ArenaClass, ArenaName, ContentScope};
-use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::report::export::WritePath;
+use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::CadIr;
 use predicates::prelude::predicate;
 use serde_json::json;
 use tempfile::tempdir;
@@ -238,25 +238,21 @@ fn partial_design_default_exports_and_loss_policy_judges_the_current_decode() {
         let written_bytes = fs::read(&output).unwrap();
         let xml = String::from_utf8(entry(&written_bytes, "Document.xml")).unwrap();
         let written = decode(&FcstdCodec, &written_bytes);
-        assert!(
-            !written
-                .ir()
-                .model
-                .features
-                .iter()
-                .any(|feature| feature.name.as_deref() == Some("Pad"))
-        );
+        assert!(!written
+            .ir()
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.name.as_deref() == Some("Pad")));
         match kind {
             MixedKind::Unreadable => assert!(!xml.contains("name=\"Pad\"")),
             MixedKind::Vendor => {
                 assert!(xml.contains("Vendor::PartDesign::PadLike"));
-                assert!(
-                    written
-                        .report()
-                        .losses
-                        .iter()
-                        .any(|loss| loss.code.local_code() == "feature.object-unprojected")
-                );
+                assert!(written
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code.local_code() == "feature.object-unprojected"));
             }
         }
         let refusal_path = dir.path().join("decode-refusal.json");
@@ -361,7 +357,7 @@ fn partial_design_native_guard_and_synthesis_do_not_resurrect_unreadable_objects
 
 #[test]
 fn authored_replacement_design_and_geometry_only_scope_drop_original_history() {
-    use cadmpeg_ir::codec::write::{Encoder, target::TargetRequest};
+    use cadmpeg_ir::codec::write::{target::TargetRequest, Encoder};
     for kind in [MixedKind::Unreadable, MixedKind::Vendor] {
         let result = decode(&FcstdCodec, &mixed(kind));
         for author_box in [false, true] {
