@@ -36,7 +36,7 @@ pub(super) fn move_layout(ir: &mut CadIr, fidelity: &mut SourceFidelity) -> Resu
         for record in records {
             let identity =
                 cadmpeg_ir::ids::Identity::try_from(record.id()).map_err(CodecError::malformed)?;
-            let mut fields = record.fields()?;
+            let fields = record.fields()?;
             let mut value = Value::Object(fields);
             extract(
                 &mut value,
