@@ -6,7 +6,7 @@ use cadmpeg_ir::ids::Identity;
 use serde_json::json;
 use std::collections::BTreeMap;
 
-fn install(ir: &mut CadIr, arena: &str, id: &str, fields: Value) {
+fn install(ir: &mut CadIr, arena: &str, id: &str, fields: &Value) {
     ir.native
         .namespace_mut("iges")
         .arenas_mut()
@@ -14,10 +14,13 @@ fn install(ir: &mut CadIr, arena: &str, id: &str, fields: Value) {
         .or_default()
         .push(
             NativeRecord::new(
-                Identity::new(id).unwrap(),
-                fields.as_object().unwrap().clone(),
+                Identity::new(id).expect("valid native fixture record identity"),
+                fields
+                    .as_object()
+                    .expect("native fixture fields are an object")
+                    .clone(),
             )
-            .unwrap(),
+            .expect("fixture native fields admit as a record"),
         );
 }
 
@@ -45,7 +48,7 @@ fn directory_pattern_number_is_written_from_typed_display() {
         &mut ir,
         "display_attributes",
         "iges:presentation:display#D1",
-        json!({
+        &json!({
             "source_entity": "iges:entity:directory#1", "line_font_number": 3,
         }),
     );
@@ -60,13 +63,13 @@ fn directory_pattern_number_is_written_from_typed_display() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        generated_minimum_resolution(&ir).unwrap(),
+        generated_minimum_resolution(&ir).expect("fixture minimum resolution is representable"),
     )
-    .unwrap();
+    .expect("typed directory pattern encodes");
     let directory = bytes
         .split(|byte| *byte == b'\n')
         .find(|line| line.get(72) == Some(&b'D'))
-        .unwrap();
+        .expect("encoded file contains a directory record");
     assert_eq!(&directory[24..32], b"       3");
 }
 
@@ -78,7 +81,7 @@ fn reemitted_font_definition_uses_current_directory_pointer() {
         &mut ir,
         "line_fonts",
         font,
-        json!({
+        &json!({
             "source_entity":"iges:entity:directory#99", "kind":"visible_blank_pattern",
             "fallback_line_font_number": 1, "segment_count": 2, "lengths": [2.0, 1.0],
             "hexadecimal_pattern": "41",
@@ -88,7 +91,7 @@ fn reemitted_font_definition_uses_current_directory_pointer() {
         &mut ir,
         "display_attributes",
         "iges:presentation:display#D1",
-        json!({
+        &json!({
             "source_entity":"iges:entity:directory#1", "line_font_number": -99,
             "line_font_definition": font,
         }),
@@ -111,13 +114,13 @@ fn reemitted_font_definition_uses_current_directory_pointer() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        generated_minimum_resolution(&ir).unwrap(),
+        generated_minimum_resolution(&ir).expect("fixture minimum resolution is representable"),
     )
-    .unwrap();
+    .expect("current font definition encodes");
     let directory = bytes
         .split(|byte| *byte == b'\n')
         .find(|line| line.get(72) == Some(&b'D'))
-        .unwrap();
+        .expect("encoded font file contains a directory record");
     assert_eq!(&directory[24..32], b"      -3");
 }
 
@@ -129,7 +132,7 @@ fn units_data_preserves_its_current_owner_link() {
         &mut ir,
         "units_data",
         id,
-        json!({
+        &json!({
             "source_entity":"iges:entity:directory#99", "declared_count":1,
             "units":[{"unit_type":"4c454e475448", "unit_value":"4d4d", "scale_factor":1.0}],
             "owners":["iges:entity:directory#1"],
@@ -141,13 +144,20 @@ fn units_data_preserves_its_current_owner_link() {
     assert!(exported.regenerated.contains(id));
     assert_eq!(entities[0].property_links, [1]);
     assert_eq!(entities[1].type_code, 316);
-    let parameters = std::str::from_utf8(&entities[1].parameter_body).unwrap();
+    let parameters = std::str::from_utf8(&entities[1].parameter_body)
+        .expect("units-data parameter body is UTF-8");
     let scale = parameters
         .strip_prefix("1,6HLENGTH,2HMM,")
-        .unwrap()
+        .expect("units-data retains LENGTH and MM headers")
         .strip_suffix(';')
-        .unwrap();
-    assert_eq!(scale.replace('D', "e").parse::<f64>().unwrap(), 1.0);
+        .expect("units-data parameter body ends with a semicolon");
+    assert_eq!(
+        scale
+            .replace('D', "e")
+            .parse::<f64>()
+            .expect("units-data scale is a finite numeric token"),
+        1.0
+    );
 }
 
 #[test]
@@ -158,7 +168,7 @@ fn missing_units_owner_drops_the_record_with_its_identity() {
         &mut ir,
         "units_data",
         id,
-        json!({
+        &json!({
             "source_entity":"iges:entity:directory#99", "declared_count":0,
             "units":[], "owners":["iges:entity:directory#missing"],
         }),

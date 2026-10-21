@@ -22,7 +22,7 @@ mod tests {
         let bytes = NativeBytes::from("Rib α".as_bytes());
         assert_eq!(decoded(&bytes), Some("Rib α"));
         assert_eq!(
-            serde_json::to_value(bytes).unwrap(),
+            serde_json::to_value(bytes).expect("UTF-8 native bytes serialize exactly"),
             serde_json::json!("52696220ceb1")
         );
     }
@@ -32,8 +32,11 @@ mod tests {
         let source = [0xff, 0xfe, 0x80];
         let bytes = NativeBytes::from(source);
         assert_eq!(decoded(&bytes), None);
-        let value = serde_json::to_value(bytes).unwrap();
+        let value = serde_json::to_value(bytes).expect("non-UTF-8 native bytes serialize exactly");
         assert_eq!(value, serde_json::json!("fffe80"));
-        assert_eq!(field(&value).unwrap(), source);
+        assert_eq!(
+            field(&value).expect("serialized native text decodes to its exact bytes"),
+            source
+        );
     }
 }

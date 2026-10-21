@@ -14,14 +14,19 @@ fn nested_subfigures_project_names_and_local_placements() {
             ),
             &DecodeOptions::default(),
         )
-        .unwrap();
+        .expect("nested subfigure fixture decodes");
     let ir = decoded.ir();
     assert_eq!(ir.model.product_definitions.len(), 2);
     let labels = ir
         .model
         .product_definitions
         .iter()
-        .map(|definition| definition.label.as_deref().unwrap())
+        .map(|definition| {
+            definition
+                .label
+                .as_deref()
+                .expect("subfigure definition has an authored label")
+        })
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(
         labels,
@@ -32,7 +37,7 @@ fn nested_subfigures_project_names_and_local_placements() {
         .product_definitions
         .iter()
         .find(|definition| definition.label.as_deref() == Some("CHILD"))
-        .unwrap();
+        .expect("CHILD reusable definition exists");
     assert_eq!(child_definition.bodies.len(), 1);
     assert_eq!(child_definition.bodies[0].as_str(), "iges:model:body#D3:D1");
     assert_eq!(ir.model.occurrences.len(), 2);
@@ -41,8 +46,8 @@ fn nested_subfigures_project_names_and_local_placements() {
         .occurrences
         .iter()
         .find(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
-        .unwrap();
-    let child = ir.model.occurrences.iter().find(|occurrence| matches!(&occurrence.parent, OccurrenceParent::Occurrence { occurrence: parent } if *parent == root.id)).unwrap();
+        .expect("root product occurrence exists");
+    let child = ir.model.occurrences.iter().find(|occurrence| matches!(&occurrence.parent, OccurrenceParent::Occurrence { occurrence: parent } if *parent == root.id)).expect("nested child occurrence refers to the root");
     assert_eq!(
         root.transform.affine_rows(),
         [
@@ -59,10 +64,21 @@ fn nested_subfigures_project_names_and_local_placements() {
             [0.0, 0.0, 0.5, 3.0]
         ]
     );
-    for record in &ir.native.namespace("iges").unwrap().arenas()["product_occurrences"] {
+    for record in &ir
+        .native
+        .namespace("iges")
+        .expect("decoded IGES native namespace")
+        .arenas()["product_occurrences"]
+    {
         let world = record
             .field("world_transform")
             .expect("retained native world placement");
-        assert_eq!(world.as_array().unwrap().len(), 3);
+        assert_eq!(
+            world
+                .as_array()
+                .expect("native table value is an array")
+                .len(),
+            3
+        );
     }
 }

@@ -77,8 +77,14 @@ fn directrix_interval(ir: &CadIr, construction: &ProceduralSurface) -> [f64; 2] 
 
 fn physical_parameter_in_chart(ir: &CadIr, construction: &ProceduralSurface, physical: f64) -> f64 {
     let [start, end] = directrix_interval(ir, construction);
-    let bounds = construction.record_bounds().unwrap().get();
-    let [chart_start, chart_end] = [bounds[0].unwrap(), bounds[1].unwrap()];
+    let bounds = construction
+        .record_bounds()
+        .expect("procedural construction has a current record chart")
+        .get();
+    let [chart_start, chart_end] = [
+        bounds[0].expect("record chart has a lower directrix bound"),
+        bounds[1].expect("record chart has an upper directrix bound"),
+    ];
     (physical - start) / (end - start) * (chart_end - chart_start) + chart_start
 }
 
@@ -224,7 +230,8 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
                     })
             })
             .expect("source line revolution surface");
-        let source_procedural = surface_construction(original.ir(), &source_surface.id).unwrap();
+        let source_procedural = surface_construction(original.ir(), &source_surface.id)
+            .expect("source revolution has its owned procedural construction");
         let source_interval = directrix_interval(original.ir(), source_procedural);
         let round_interval = directrix_interval(round_trip.ir(), procedural);
         for (source, round) in source_interval.into_iter().zip(round_interval) {

@@ -2,7 +2,6 @@
 //! Regenerate properties and attribute tables from their current neutral values.
 
 use super::{reference_marker, Entity, EntityStatus, IgesLossCode};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::native::NativeRecord;
 use cadmpeg_ir::report::loss::LossNote;
@@ -259,7 +258,7 @@ pub(super) fn append(
     ir: &CadIr,
     entities: &mut Vec<Entity>,
     version: crate::IgesVersion,
-) -> Result<AttributeExport, CodecError> {
+) -> AttributeExport {
     let mut targets = targets(ir, entities);
     let mut result = AttributeExport {
         regenerated: BTreeSet::new(),
@@ -407,7 +406,7 @@ pub(super) fn append(
             Err(reason) => omitted(&mut result.losses, attribute.id.as_str(), reason),
         }
     }
-    Ok(result)
+    result
 }
 
 mod fields;

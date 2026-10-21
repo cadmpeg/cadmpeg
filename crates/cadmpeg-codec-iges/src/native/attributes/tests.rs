@@ -23,7 +23,7 @@ fn property_values_have_one_neutral_home_and_native_records_keep_typed_values() 
     let bytes = owned_test_file(&[entity(406, 27, "406,4,4HNAME,1,3,3HVAL;")]);
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("generic property fixture decodes");
     let ir = result.ir();
     assert!(ir
         .model
@@ -31,13 +31,19 @@ fn property_values_have_one_neutral_home_and_native_records_keep_typed_values() 
         .iter()
         .any(|attribute| attribute.name == "NAME"
             && attribute.values == vec![AttributeValue::String("VAL".into())]));
-    let record = &ir.native.namespace("iges").unwrap().arenas()["properties"][0];
+    let record = &ir
+        .native
+        .namespace("iges")
+        .expect("decoded IGES native namespace")
+        .arenas()["properties"][0];
     assert_eq!(
-        crate::test_support::native_bytes(&record.field("name").unwrap()),
+        crate::test_support::native_bytes(&record.field("name").expect("typed native name field")),
         b"NAME"
     );
     assert_eq!(
-        crate::test_support::native_bytes(&record.field("values").unwrap()[0]["value"]["value"]),
+        crate::test_support::native_bytes(
+            &record.field("values").expect("typed native values field")[0]["value"]["value"]
+        ),
         b"VAL"
     );
 }
@@ -51,7 +57,7 @@ fn property_owner_targets_the_projected_point_instead_of_the_native_property() {
     ]);
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("owned reference-designator fixture decodes");
     let ir = result.ir();
     assert_eq!(ir.model.points.len(), 1);
     let property = ir
@@ -59,22 +65,33 @@ fn property_owner_targets_the_projected_point_instead_of_the_native_property() {
         .attributes
         .iter()
         .find(|attribute| attribute.name == "iges.property.reference_designator.value")
-        .unwrap();
+        .expect("projected reference-designator attribute exists");
     assert_eq!(
         property.target,
         AttributeTarget::Point(ir.model.points[0].id.clone())
     );
     assert_eq!(property.values, vec![AttributeValue::String("P1".into())]);
-    let product_property = &ir.native.namespace("iges").unwrap().arenas()["product_properties"][0];
+    let product_property = &ir
+        .native
+        .namespace("iges")
+        .expect("decoded IGES native namespace")
+        .arenas()["product_properties"][0];
     assert_eq!(
-        crate::test_support::native_bytes(&product_property.field("value").unwrap()),
+        crate::test_support::native_bytes(
+            &product_property
+                .field("value")
+                .expect("typed native value field")
+        ),
         b"P1"
     );
     assert_eq!(
         crate::test_support::native_bytes(
-            &ir.native.namespace("iges").unwrap().arenas()["properties"][0]
+            &ir.native
+                .namespace("iges")
+                .expect("decoded IGES native namespace")
+                .arenas()["properties"][0]
                 .field("value")
-                .unwrap()
+                .expect("typed native value field")
         ),
         b"P1"
     );
@@ -92,7 +109,7 @@ fn table_defaults_and_rows_keep_typed_native_values_after_projection() {
     );
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("typed attribute table defaults and row fixture decodes");
     let ir = result.ir();
     assert!(ir.model.attributes.iter().any(|attribute| attribute.name
         == "iges.attribute_table.default.attributes.0.values.0"
@@ -100,22 +117,28 @@ fn table_defaults_and_rows_keep_typed_native_values_after_projection() {
     assert!(ir.model.attributes.iter().any(|attribute| attribute.name
         == "iges.attribute_table.value.rows.0.0"
         && attribute.values == vec![AttributeValue::String("ITEM".into())]));
-    let namespace = ir.native.namespace("iges").unwrap();
+    let namespace = ir
+        .native
+        .namespace("iges")
+        .expect("decoded IGES native namespace");
     let schema = namespace.arenas()["attribute_table_definitions"][0]
         .field("attributes")
-        .unwrap();
+        .expect("typed native attributes field");
     assert_eq!(
         crate::test_support::native_bytes(&schema[0]["values"][0]["value"]["value"]),
         b"VAL"
     );
     assert_eq!(schema[0]["value_data_type"], 3);
     let instance = &namespace.arenas()["attribute_table_instances"][0];
-    let rows = instance.field("rows").unwrap();
+    let rows = instance.field("rows").expect("typed native rows field");
     assert_eq!(
         rows.as_array()
-            .unwrap()
+            .expect("native table rows are an array")
             .iter()
-            .map(|row| row.as_array().unwrap().len())
+            .map(|row| row
+                .as_array()
+                .expect("native table value is an array")
+                .len())
             .collect::<Vec<_>>(),
         [1]
     );
@@ -134,22 +157,28 @@ fn directory_carrier_label_has_one_editable_neutral_name() {
             &mut Cursor::new(owned_test_file(&[point])),
             &DecodeOptions::default(),
         )
-        .unwrap();
+        .expect("directory-label point fixture decodes");
     let ir = result.ir();
     let name = ir
         .model
         .attributes
         .iter()
         .find(|attribute| attribute.name == "name")
-        .unwrap();
+        .expect("projected point name attribute exists");
     assert_eq!(
         name.target,
         AttributeTarget::Point(ir.model.points[0].id.clone())
     );
     assert_eq!(name.values, [AttributeValue::String("HELLO".into())]);
-    let native = &ir.native.namespace("iges").unwrap().arenas()["entities"][0];
+    let native = &ir
+        .native
+        .namespace("iges")
+        .expect("decoded IGES native namespace")
+        .arenas()["entities"][0];
     assert_eq!(
-        crate::test_support::native_bytes(&native.field("label").unwrap()),
+        crate::test_support::native_bytes(
+            &native.field("label").expect("typed native label field")
+        ),
         b"   HELLO"
     );
 }
@@ -166,7 +195,7 @@ fn full_name_property_and_distinct_directory_label_remain_distinct_facts() {
             ])),
             &DecodeOptions::default(),
         )
-        .unwrap();
+        .expect("full-name and directory-label fixture decodes");
     let ir = result.ir();
     for (name, value) in [("name", "longer label"), ("iges.directory_label", "SHORT")] {
         assert!(ir
@@ -176,9 +205,15 @@ fn full_name_property_and_distinct_directory_label_remain_distinct_facts() {
             .any(|attribute| attribute.name == name
                 && attribute.values == [AttributeValue::String(value.into())]));
     }
-    let native = &ir.native.namespace("iges").unwrap().arenas()["properties"][0];
+    let native = &ir
+        .native
+        .namespace("iges")
+        .expect("decoded IGES native namespace")
+        .arenas()["properties"][0];
     assert_eq!(
-        crate::test_support::native_bytes(&native.field("value").unwrap()),
+        crate::test_support::native_bytes(
+            &native.field("value").expect("typed native value field")
+        ),
         b"longer label"
     );
 }
