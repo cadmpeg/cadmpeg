@@ -5,7 +5,7 @@ use std::io::Cursor;
 
 use crate::SldprtCodec;
 use cadmpeg_ir::codec::write::{
-    ArenaCoverage, ArenaDisposition, EncodeInput, Encoder, target::TargetRequest,
+    target::TargetRequest, ArenaCoverage, ArenaDisposition, EncodeInput, Encoder,
 };
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
@@ -46,7 +46,7 @@ fn partition_configuration_reports_only_its_new_native_association() {
     assert!(note.message.contains(snapshot.id.as_str()));
     let mut projected = decoded.ir().clone();
     let mut losses = Vec::new();
-    let native = super::design::prepare(&mut projected, &mut losses)
+    let native = super::design::prepare(&mut projected, &mut losses, &Default::default())
         .unwrap()
         .unwrap();
     let association = projected.model.configurations[0]
@@ -101,13 +101,11 @@ fn partition_configuration_reports_only_its_new_native_association() {
         matches!(bound.report().coverage, ArenaCoverage::Declared(coverage)
         if coverage.configurations == ArenaDisposition::Written)
     );
-    assert!(
-        !bound
-            .report()
-            .losses
-            .iter()
-            .any(|note| note.code.local_code() == "writer.configuration-association-generated")
-    );
+    assert!(!bound
+        .report()
+        .losses
+        .iter()
+        .any(|note| note.code.local_code() == "writer.configuration-association-generated"));
     let mut bytes = Vec::new();
     bound.write_to(&mut bytes).unwrap();
     let rewritten = SldprtCodec
