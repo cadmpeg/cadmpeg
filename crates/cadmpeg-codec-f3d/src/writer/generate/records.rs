@@ -189,7 +189,20 @@ pub(super) fn encode_design_bulkstream(
         || !native.design_dimension_locus_pairs.is_empty()
         || !native.design_dimension_locus_groups.is_empty()
         || !native.design_dimension_null_locus_pairs.is_empty()
-        || !native.design_dimension_recipe_records.is_empty()
+        || native.design_dimension_recipe_records.iter().any(|record| {
+            native.design_parameter_scopes.is_empty()
+                || !record.references.is_empty()
+                || !record.matching_edge_operand_ids.is_empty()
+                || record.program.is_empty()
+                || i32::try_from(record.record_index).is_err()
+                || !native
+                    .design_parameter_companions
+                    .iter()
+                    .any(|companion| companion.record_index() == record.companion_record_index)
+                || !native.construction_recipes.iter().any(|recipe| {
+                    recipe.id == record.recipe_id && recipe.kind == record.recipe_kind
+                })
+        })
         || native
             .design_entity_headers
             .iter()

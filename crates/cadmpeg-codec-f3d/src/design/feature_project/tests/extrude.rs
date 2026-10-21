@@ -1872,22 +1872,21 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 },
                 ..
             }) if id == &start_group.id
-                && offset == &cadmpeg_ir::Dimension::Parameter(profile_offset_id.clone())
+                && offset == &cadmpeg_ir::Dimension::Parameter(profile_offset_id)
                 && super::dimension_value(offset, &native_parameters.borrow()).get() == 0.0
         ));
 
         set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
         set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistance);
         set_extrude_direction_reversed(&mut scope, false);
+        let two_sided_profile_offset = parameter("ProfileOffset", "mm", 0.0);
+        let two_sided_profile_offset_id =
+            crate::ids::neutral_parameter_id(&two_sided_profile_offset);
         let from_face_two_sided = crate::test_support::with_decode_context(|decode_ctx| {
             project_extrude(
                 decode_ctx,
                 &scope,
-                &[
-                    (0, &parameter("ProfileOffset", "mm", 0.0)),
-                    (1, &along),
-                    (2, &against),
-                ],
+                &[(0, &two_sided_profile_offset), (1, &along), (2, &against)],
                 &[start_group.clone()],
                 &[],
                 std::slice::from_ref(&placement),
@@ -1915,7 +1914,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 },
                 ..
             }) if (id == &start_group.id)
-                && offset == &cadmpeg_ir::Dimension::Parameter(profile_offset_id)
+                && offset == &cadmpeg_ir::Dimension::Parameter(two_sided_profile_offset_id)
                 && super::dimension_value(offset, &native_parameters.borrow()).get() == 0.0
                 && super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(&actual_length_2, &native_parameters.borrow()).get() == 0.5
         ));
