@@ -928,10 +928,10 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
                 record_index: 700,
                 source_ordinal: 0,
                 source: crate::records::parameters::DesignParameterSource::User {
-                    family_discriminator: crate::records::identity::Located {
+                    family_discriminator: Some(crate::records::identity::Located {
                         value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                         offset: 22,
-                    },
+                    }),
                 },
                 expression: "Width / 2".into(),
                 expression_offset: 36,
@@ -959,10 +959,10 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
                 record_index: 701,
                 source_ordinal: 1,
                 source: crate::records::parameters::DesignParameterSource::User {
-                    family_discriminator: crate::records::identity::Located {
+                    family_discriminator: Some(crate::records::identity::Located {
                         value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                         offset: 22,
-                    },
+                    }),
                 },
                 expression: "60 mm".into(),
                 expression_offset: 36,

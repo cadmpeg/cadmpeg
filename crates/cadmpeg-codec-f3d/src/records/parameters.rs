@@ -80,8 +80,10 @@ impl TryFrom<u64> for DesignParameterDiscriminator {
 /// Source family and ownership of one Design parameter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DesignParameterSource {
+    /// A document parameter. The discriminated form stores a family
+    /// discriminator; the typed compact form stores none.
     User {
-        family_discriminator: Located<DesignParameterDiscriminator>,
+        family_discriminator: Option<Located<DesignParameterDiscriminator>>,
     },
     Owned(OwnedDesignParameter),
 }
@@ -110,13 +112,9 @@ impl DesignParameterSource {
             source_kind == *USER_PARAMETER_SOURCE_KIND,
             owner_record_index,
         ) {
-            (true, None) => family_discriminator
-                .map(|family_discriminator| Self::User {
-                    family_discriminator,
-                })
-                .ok_or_else(|| {
-                    "design parameter family_discriminator is missing for user source_kind".into()
-                }),
+            (true, None) => Ok(Self::User {
+                family_discriminator,
+            }),
             (true, Some(_)) => {
                 Err("design parameter owner_record_index is present for user source_kind".into())
             }
@@ -275,7 +273,7 @@ fn check_parameter_discriminator_offset(
     let family_discriminator = match source {
         DesignParameterSource::User {
             family_discriminator,
-        } => Some(*family_discriminator),
+        } => *family_discriminator,
         DesignParameterSource::Owned(source) => source.family_discriminator,
     };
     if family_discriminator.is_some_and(|field| {
@@ -349,7 +347,7 @@ impl DesignParameter {
         match &self.source {
             DesignParameterSource::User {
                 family_discriminator,
-            } => Some(*family_discriminator),
+            } => *family_discriminator,
             DesignParameterSource::Owned(source) => source.family_discriminator,
         }
     }
@@ -793,6 +791,21 @@ impl DesignParameterOwner {
                 | (103 | 104, Some(40), Some(0..=1))
                 | (107 | 108, Some(44), Some(0..=1))
         );
+        // The typed-reference spelling widens each of the five reference
+        // fields by forty bytes; one of them precedes the scalar envelope.
+        let typed = matches!(
+            (
+                wire.frame_length,
+                wire.evaluated_value_offset.checked_sub(wire.byte_offset),
+                wire.variant
+            ),
+            (299 | 303, Some(80), None)
+                | (300, Some(81), None)
+                | (307, Some(84), None)
+                | (300 | 301, Some(81), Some(0..=1))
+                | (303 | 304, Some(80), Some(0..=1))
+                | (307 | 308, Some(84), Some(0..=1))
+        );
         let legacy = wire.local_ordinal == 0
             && match wire.frame_length {
                 68 => {
@@ -807,7 +820,7 @@ impl DesignParameterOwner {
                 }
                 _ => false,
             };
-        if !modern && !legacy {
+        if !modern && !typed && !legacy {
             return Err("frame_length, evaluated_value_offset, and variant must describe a parameter owner frame".into());
         }
         Ok(Self {

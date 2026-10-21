@@ -1813,6 +1813,22 @@ fn push_loss_vec(
     losses.push(code.note(args.to_string()));
 }
 
+fn report_unparsed_parameter_records(
+    report: &mut DecodeBody,
+    unparsed: &[crate::design::decode::parameters::UnparsedParameterRecords],
+) {
+    for records in unparsed {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterRecordUnparsed,
+            format_args!(
+                "{} typed compact parameter frame(s) in {} match no parameter grammar and were not decoded.",
+                records.count, records.stream
+            ),
+        );
+    }
+}
+
 fn report_design_projection_gaps(
     report: &mut DecodeBody,
     ctx: &DecodeContext<'_>,
@@ -2451,6 +2467,7 @@ impl<'a> F3dDecodeSession<'a> {
     fn into_result(mut self, path: SessionPath) -> Result<AuthoredDecoded, CodecError> {
         self.admit_model_entities("admit F3D geometry entities")?;
         let prereqs = self.decode_product_prereqs(&path)?;
+        report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         let path = self.decode_products(path, &prereqs)?;
         let design = self.decode_design_state(&path, &prereqs)?;
         self.finalize(path, prereqs, design)
