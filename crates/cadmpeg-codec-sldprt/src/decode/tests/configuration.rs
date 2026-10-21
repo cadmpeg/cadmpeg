@@ -117,11 +117,10 @@ fn actual_partition_binds_the_unique_native_slot_before_inferred_configuration()
     assert_eq!(unknown_slot.model.configurations.len(), 3);
     assert_eq!(unknown_slot.model.configurations[1].source_index, None);
     assert!(unknown_slot.model.configurations[1].bodies.is_none());
-    assert!(unknown_slot
-        .model
-        .configurations
-        .iter()
-        .all(|configuration| !configuration.active));
+    assert!(!unknown_slot.model.configurations[0].active);
+    assert!(!unknown_slot.model.configurations[1].active);
+    assert!(unknown_slot.model.configurations[2].active);
+    assert_eq!(unknown_slot.model.configurations[2].source_index, Some(0));
     assign_configuration_bodies(&mut ir, vec![(0, vec![body.clone()])]).unwrap();
     mark_active_configuration(&mut ir);
     assert_eq!(ir.model.configurations.len(), 2);

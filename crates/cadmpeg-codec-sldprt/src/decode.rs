@@ -4102,7 +4102,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
         matches.next().filter(|_| matches.next().is_none())
     });
     let by_index = active_index.and_then(|index| {
-        crate::history::configuration::configuration_for_source_slot(
+        crate::history::configuration::configuration_for_selected_source_slot(
             &ir.model.configurations,
             u32::try_from(index).ok()?,
         )
