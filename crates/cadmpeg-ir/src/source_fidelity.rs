@@ -792,9 +792,9 @@ mod tests {
         // refuses the second by name rather than keeping the last.
         let error = serde_json::from_str::<SourceFidelity>(
             r#"{"retained_records":{
-                 "synthetic:source:record#a":{"stream":"source","offset":0,
+                 "synthetic:source:record#a":{"stream":"source","offset":0,"untyped":[],
                       "bytes":{"retention":"inline","data":"AQ=="}},
-                 "synthetic:source:record#a":{"stream":"source","offset":0,
+                 "synthetic:source:record#a":{"stream":"source","offset":0,"untyped":[],
                       "bytes":{"retention":"inline","data":"Ag=="}}}}"#,
         )
         .expect_err("a repeated record id states two records under one identity")
@@ -806,7 +806,7 @@ mod tests {
 
         let single = serde_json::from_str::<SourceFidelity>(
             r#"{"retained_records":{
-                 "synthetic:source:record#a":{"stream":"source","offset":0,
+                 "synthetic:source:record#a":{"stream":"source","offset":0,"untyped":[],
                       "bytes":{"retention":"inline","data":"Ag=="}}}}"#,
         )
         .expect("one record under one id reads");
@@ -888,6 +888,7 @@ mod tests {
             serde_json::json!({
                 "stream": stream,
                 "offset": 0,
+                "untyped": [],
                 "bytes": {
                     "retention": "digest",
                     "byte_len": 3,

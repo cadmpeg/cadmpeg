@@ -58,8 +58,8 @@ fn fixture() -> Value {
                 }
             },
             "retained_records": {
-                FIRST: {"stream": "", "offset": 0, "bytes": {"retention": "inline", "data": "YWJj"}},
-                SECOND: {"stream": "source", "offset": 7, "bytes": {"retention": "digest", "byte_len": 3, "sha256": DIGEST}}
+                FIRST: {"stream": "", "offset": 0, "untyped": [], "bytes": {"retention": "inline", "data": "YWJj"}},
+                SECOND: {"stream": "source", "offset": 7, "untyped": [], "bytes": {"retention": "digest", "byte_len": 3, "sha256": DIGEST}}
             }
         }
     })
@@ -100,7 +100,8 @@ fn complete_sidecar_refuses_unknown_fields_at_every_owned_object() {
                 "extra": [{"dialect": "acis:asm-binaryfile-4", "instance": "body", "admission": "admitted"}]
             }
         });
-        classified["report"]["transfer"] = json!({"transfer": "container"});
+        classified["report"]["transfer"] =
+            json!({"scope":{"model":false,"design":false},"geometry_transferred":false});
         fixtures.push(classified);
     }
     let mut visited = BTreeSet::new();

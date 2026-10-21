@@ -13,7 +13,7 @@ fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
         "state": "unresolved",
         "missing": "axis",
         "profile": {"kind": "native", "value": "test:profile"},
-        "extent": {"kind": "one_sided", "termination": {"kind": "angle", "angle": 1.25}},
+        "extent": {"kind": "one_sided", "termination": {"kind": "angle", "angle": {"kind":"literal","value":1.25}}},
         "solid": true,
         "face_maker_class": "Part::FaceMakerBullseye"
     }))
@@ -27,7 +27,7 @@ fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
             "state": "resolved",
             "profile": {"kind": "native", "value": "test:profile"},
             "axis": axis,
-            "extent": {"kind": "one_sided", "termination": {"kind": "angle", "angle": 1.25}},
+            "extent": {"kind": "one_sided", "termination": {"kind": "angle", "angle": {"kind":"literal","value":1.25}}},
             "solid": true,
             "face_maker_class": "Part::FaceMakerBullseye"
         })

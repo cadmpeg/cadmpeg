@@ -360,6 +360,7 @@ fn feature_wire_refuses_the_deleted_parent_key() {
                 "id": "test:model:feature#parent",
                 "ordinal": 0,
                 "suppressed": null,
+                "needs_recompute": false,
                 "definition": {
                     "definition": "tree_node",
                     "role": "history",
@@ -370,6 +371,7 @@ fn feature_wire_refuses_the_deleted_parent_key() {
                 "id": "test:model:feature#child",
                 "ordinal": 1,
                 "suppressed": null,
+                "needs_recompute": false,
                 "parent": "test:model:feature#parent",
                 "definition": {"definition": "stored_geometry"}
             }
@@ -766,7 +768,6 @@ fn parameter(id: &str) -> crate::features::DesignParameter {
         native_ref: None,
     }
 }
-
 
 fn with_scope(ir: &CadIr, scope: ContentScope) -> String {
     let mut value = serde_json::to_value(ir).unwrap();

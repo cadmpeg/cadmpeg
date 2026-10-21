@@ -228,7 +228,8 @@ fn feature_extents_round_trip_through_json() {
 fn termination_families_preserve_wire_and_reject_cross_family_variants() {
     use crate::features::{AngularTermination, LinearTermination};
 
-    let blind_wire = serde_json::json!({"kind": "blind", "length": 12.5});
+    let blind_wire =
+        serde_json::json!({"kind": "blind", "length": {"kind":"literal","value":12.5}});
     let blind: LinearTermination = serde_json::from_value(blind_wire.clone()).unwrap();
     assert_eq!(
         blind,
@@ -241,7 +242,7 @@ fn termination_families_preserve_wire_and_reject_cross_family_variants() {
     assert_eq!(serde_json::to_value(blind).unwrap(), blind_wire);
     assert!(serde_json::from_value::<AngularTermination>(blind_wire).is_err());
 
-    let angle_wire = serde_json::json!({"kind": "angle", "angle": 1.25});
+    let angle_wire = serde_json::json!({"kind": "angle", "angle": {"kind":"literal","value":1.25}});
     let angle: AngularTermination = serde_json::from_value(angle_wire.clone()).unwrap();
     assert_eq!(
         angle,
@@ -471,7 +472,7 @@ fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
 
     let counterbore = serde_json::json!({
         "kind": "partial_counterbore",
-        "dimension": {"kind": "diameter", "diameter": 10.0}
+        "dimension": {"kind": "diameter", "diameter": {"kind":"literal","value":10.0}}
     });
     let kind: HoleKind = serde_json::from_value(counterbore.clone()).unwrap();
     assert_eq!(
@@ -522,7 +523,7 @@ fn unresolved_flex_wire_forms_reject_cross_family_payloads() {
     assert!(serde_json::from_value::<FlexMode>(serde_json::json!({
         "kind": "unresolved",
         "form": "twisting",
-        "factor": 2.0
+        "factor": {"kind":"literal","value":2.0}
     }))
     .is_err());
 }
@@ -567,12 +568,12 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
         "shape": {
             "construction": {
                 "construction": "native_thread",
-                "major_diameter": 8.0,
-                "thread_depth": 12.0,
-                "pitch": 1.25,
-                "drill_point_angle": 2.0
+                "major_diameter": {"kind":"literal","value":8.0},
+                "thread_depth": {"kind":"literal","value":12.0},
+                "pitch": {"kind":"literal","value":1.25},
+                "drill_point_angle": {"kind":"literal","value":2.0}
             },
-            "diameter": 6.0
+            "diameter": {"kind":"literal","value":6.0}
         }
     });
     let definition: FeatureDefinition = serde_json::from_value(native_thread.clone()).unwrap();
@@ -618,7 +619,7 @@ fn an_unknown_key_beside_the_hole_shape_is_rejected_by_name() {
 
     let hole = serde_json::json!({
         "definition": "hole",
-        "shape": {"construction": {"construction": "form", "kind": {"kind": "simple"}}, "diameter": 3.0}
+        "shape": {"construction": {"construction": "form", "kind": {"kind": "simple"}}, "diameter": {"kind":"literal","value":3.0}}
     });
     assert!(serde_json::from_value::<FeatureDefinition>(hole.clone()).is_ok());
 
@@ -689,9 +690,9 @@ fn hole_wire_rejects_cross_form_thread_fields() {
         "shape": {
             "kind": {
                 "kind": "threaded",
-                "major_diameter": 8.0,
-                "thread_depth": 12.0,
-                "drill_point_angle": 2.0
+                "major_diameter": {"kind":"literal","value":8.0},
+                "thread_depth": {"kind":"literal","value":12.0},
+                "drill_point_angle": {"kind":"literal","value":2.0}
             }
         }
     });
@@ -836,8 +837,8 @@ fn scale_factor_forms_name_themselves_on_the_wire() {
 
     for wire in [
         serde_json::json!({"kind": "unresolved"}),
-        serde_json::json!({"kind": "uniform", "factor": 2.0}),
-        serde_json::json!({"kind": "per_axis", "factors": [1.0, 2.0, 3.0]}),
+        serde_json::json!({"kind": "uniform", "factor": {"kind":"literal","value":2.0}}),
+        serde_json::json!({"kind": "per_axis", "factors": [{"kind":"literal","value":1.0}, {"kind":"literal","value":2.0}, {"kind":"literal","value":3.0}]}),
     ] {
         let factors: ScaleFactors = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(factors).unwrap(), wire);
@@ -854,7 +855,7 @@ fn scale_factor_wire_rejects_mixed_and_partial_forms() {
     for wire in [
         serde_json::json!({"uniform": 2.0, "x": 1.0}),
         serde_json::json!({"x": 1.0, "z": 3.0}),
-        serde_json::json!({"kind": "uniform", "factor": 2.0, "factors": [1.0, 2.0, 3.0]}),
+        serde_json::json!({"kind": "uniform", "factor": {"kind":"literal","value":2.0}, "factors": [{"kind":"literal","value":1.0}, {"kind":"literal","value":2.0}, {"kind":"literal","value":3.0}]}),
         serde_json::json!({"kind": "per_axis", "factors": [1.0, 3.0]}),
         serde_json::json!({}),
     ] {
@@ -1183,7 +1184,7 @@ fn an_unresolved_form_refuses_a_dimension_beside_it() {
     };
 
     let error = serde_json::from_value::<RadiusSpec>(
-        serde_json::json!({"kind": "unresolved", "form": "chordal", "radius": 1}),
+        serde_json::json!({"kind": "unresolved", "form": "chordal", "radius": {"kind":"literal","value":1}}),
     )
     .unwrap_err()
     .to_string();
@@ -1289,8 +1290,8 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
 
     let error = serde_json::from_value::<HoleKind>(serde_json::json!({
         "kind": "partial_counterbore",
-        "diameter": 10.0,
-        "counter_bore_depth": 4.0
+        "diameter": {"kind":"literal","value":10.0},
+        "counter_bore_depth": {"kind":"literal","value":4.0}
     }))
     .unwrap_err()
     .to_string();
@@ -1299,10 +1300,10 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
     let error = serde_json::from_value::<HoleShape>(serde_json::json!({
         "construction": {
             "construction": "form",
-            "kind": {"kind": "partial_counterbore", "dimension": {"kind": "diameter", "diameter": 10.0}}
+            "kind": {"kind": "partial_counterbore", "dimension": {"kind": "diameter", "diameter": {"kind":"literal","value":10.0}}}
         },
-        "diameter": 2.0,
-        "counter_bore_depth": 4.0
+        "diameter": {"kind":"literal","value":2.0},
+        "counter_bore_depth": {"kind":"literal","value":4.0}
     }))
     .unwrap_err()
     .to_string();
@@ -1311,9 +1312,9 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
     let error = serde_json::from_value::<HoleShape>(serde_json::json!({
         "construction": {
             "construction": "native_thread",
-            "major_diameter": 8.0,
-            "thread_depth": 12.0,
-            "drill_point_angle": 2.0,
+            "major_diameter": {"kind":"literal","value":8.0},
+            "thread_depth": {"kind":"literal","value":12.0},
+            "drill_point_angle": {"kind":"literal","value":2.0},
             "specification": {
                 "kind": "clearance",
                 "standard": "ISO metric",
@@ -1323,7 +1324,7 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
                 "depth": {"kind": "hole_depth"}
             }
         },
-        "diameter": 2.0
+        "diameter": {"kind":"literal","value":2.0}
     }))
     .unwrap_err()
     .to_string();
@@ -1403,14 +1404,14 @@ fn a_partial_hole_dimension_carries_exactly_one_measurement() {
         (
             serde_json::json!({
                 "kind": "partial_counterbore",
-                "dimension": {"kind": "diameter", "diameter": 10.0, "depth": 4.0}
+                "dimension": {"kind": "diameter", "diameter": {"kind":"literal","value":10.0}, "depth": {"kind":"literal","value":4.0}}
             }),
             "depth",
         ),
         (
             serde_json::json!({
                 "kind": "partial_countersink",
-                "dimension": {"kind": "diameter", "diameter": 10.0, "angle": 1.5}
+                "dimension": {"kind": "diameter", "diameter": {"kind":"literal","value":10.0}, "angle": {"kind":"literal","value":1.5}}
             }),
             "angle",
         ),
@@ -1464,10 +1465,10 @@ fn an_unknown_key_beside_the_helix_shape_is_rejected_by_name() {
         "definition": "helix",
         "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "radius": 2.0,
-        "shape": {"kind": "spiral", "radial_growth": 1.5},
-        "revolutions": 4.0,
-        "start_angle": 0.0,
+        "radius": {"kind":"literal","value":2.0},
+        "shape": {"kind": "spiral", "radial_growth": {"kind":"literal","value":1.5},
+            "revolutions": {"kind":"literal","value":4.0}},
+        "start_angle": {"kind":"literal","value":0.0},
         "clockwise": false
     });
     assert_key_beside_the_nested_field_is_rejected(&helix);
@@ -1480,7 +1481,7 @@ fn an_unknown_key_beside_the_wrap_mode_is_rejected_by_name() {
         "definition": "wrap",
         "profile": {"kind": "native", "value": "wrap:profile"},
         "face": {"kind": "native", "value": "wrap:face"},
-        "mode": {"emboss": {"depth": 2.5}}
+        "mode": {"emboss": {"depth": {"kind":"literal","value":2.5}}}
     });
     assert_key_beside_the_nested_field_is_rejected(&wrap);
 
@@ -1514,7 +1515,7 @@ fn an_unknown_key_beside_the_extrude_direction_is_rejected_by_name() {
         "start": {"kind": "profile_plane"},
         "extent": {
             "kind": "one_sided",
-            "side": {"termination": {"kind": "blind", "length": 4.0}}
+            "side": {"termination": {"kind": "blind", "length": {"kind":"literal","value":4.0}}}
         },
         "op": "new_body"
     });
@@ -1542,7 +1543,7 @@ fn an_unknown_key_beside_the_draft_anchor_is_rejected_by_name() {
             "tool": {"kind": "native", "value": "draft:parting-tool"},
             "pull": {"direction": {"x": 0.0, "y": 0.0, "z": 1.0}}
         },
-        "angle": 0.1,
+        "angle": {"kind":"literal","value":0.1},
         "outward": false
     });
     assert_key_beside_the_nested_field_is_rejected(&draft);
@@ -1564,7 +1565,7 @@ fn an_unknown_key_inside_the_extrude_direction_is_rejected_by_name() {
         "start": {"kind": "profile_plane"},
         "extent": {
             "kind": "one_sided",
-            "side": {"termination": {"kind": "blind", "length": 4.0}}
+            "side": {"termination": {"kind": "blind", "length": {"kind":"literal","value":4.0}}}
         },
         "op": "new_body"
     });
