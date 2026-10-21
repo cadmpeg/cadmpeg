@@ -70,7 +70,7 @@ fn source_value<Q: cadmpeg_ir::features::DimensionValue>(
     .expect("source control resolves from its actual source parameter")
 }
 
-fn source_binding<Q>(feature: &Feature, name: &str) -> cadmpeg_ir::Dimension<Q> {
+fn source_binding<Q: cadmpeg_ir::features::DimensionValue>(feature: &Feature, name: &str) -> cadmpeg_ir::Dimension<Q> {
     super::parameter_dimension(feature, &[name])
         .expect("source dimension has its canonical parameter identity")
 }
