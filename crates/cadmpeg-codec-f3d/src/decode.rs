@@ -2445,6 +2445,9 @@ impl<'a> F3dDecodeSession<'a> {
             materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
         let (mut ir, source_attributes, mut native, asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
+        if cache_admission::recover(ctx, &mut ir, &mut native, &mut report.losses)? {
+            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+        }
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
         ir.scope = cadmpeg_ir::document::ContentScope::geometry();
@@ -5260,6 +5263,7 @@ pub(crate) fn resolve_face_appearance_bindings(
     Ok(())
 }
 
+pub(crate) mod cache_admission;
 pub(crate) mod design_intent;
 mod prereqs;
 mod projection_records;

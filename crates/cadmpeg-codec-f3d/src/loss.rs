@@ -168,6 +168,8 @@ pub(crate) enum F3dLossCode {
     NurbsSurfaceCarrier,
     /// Procedural curve records were decoded into NURBS carriers from cache.
     NurbsCurveCarrier,
+    /// A stored solved surface cache contradicts its independently evaluated construction.
+    SurfaceCacheRejected,
     /// Faces were omitted because their required surface reference was dangling.
     FaceSurfaceReferenceDangling,
     /// Faces rest on spline or procedural surfaces whose shape was not decoded.
@@ -330,6 +332,7 @@ impl F3dLossCode {
         Self::AssemblyComponentsExternal,
         Self::NurbsSurfaceCarrier,
         Self::NurbsCurveCarrier,
+        Self::SurfaceCacheRejected,
         Self::FaceSurfaceReferenceDangling,
         Self::SurfaceShapeNotDecoded,
         Self::MeshSurfaceSentinel,
@@ -455,6 +458,7 @@ impl F3dLossCode {
             Self::AssemblyComponentsExternal => "assembly.components-external",
             Self::NurbsSurfaceCarrier => "geometry.nurbs-surface-carrier",
             Self::NurbsCurveCarrier => "geometry.nurbs-curve-carrier",
+            Self::SurfaceCacheRejected => "geometry.surface-cache-rejected",
             Self::FaceSurfaceReferenceDangling => "geometry.face-surface-dangling",
             Self::SurfaceShapeNotDecoded => "geometry.surface-shape-not-decoded",
             Self::MeshSurfaceSentinel => "geometry.mesh-surface-sentinel",
@@ -505,6 +509,7 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::SurfaceCacheRejected => Severity::Error,
             Self::WriterNativeRecordsOmitted => Severity::Warning,
             Self::ImageAssetUntransferred => Severity::Warning,
             Self::WriterDesignRecordsOmitted => Severity::Error,
@@ -718,6 +723,7 @@ impl F3dLossCode {
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
                 LossTaxonomy::AssetNotTransferred
             }
+            Self::SurfaceCacheRejected => LossTaxonomy::DecodeDiagnostic,
             Self::MeshContainerUndecoded
             | Self::DialectLayerCollision
             | Self::DesignIntentUndecoded => LossTaxonomy::DecodeDiagnostic,
@@ -1007,6 +1013,7 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
     ),
     (F3dLossCode::NurbsSurfaceCarrier, Representation::Typed),
     (F3dLossCode::NurbsCurveCarrier, Representation::Typed),
+    (F3dLossCode::SurfaceCacheRejected, Representation::Model),
     (
         F3dLossCode::FaceSurfaceReferenceDangling,
         Representation::Model,
@@ -1291,6 +1298,7 @@ mod tests {
                 "assembly.components-external",
                 "geometry.nurbs-surface-carrier",
                 "geometry.nurbs-curve-carrier",
+                "geometry.surface-cache-rejected",
                 "geometry.face-surface-dangling",
                 "geometry.surface-shape-not-decoded",
                 "geometry.mesh-surface-sentinel",
