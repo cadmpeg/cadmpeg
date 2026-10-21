@@ -283,6 +283,9 @@ pub(crate) enum StepLossCode {
     SourceAttributeNotWritten,
     /// Procedural definitions were reduced to solved STEP carriers.
     ProceduralReducedToCarrier,
+    /// Helix definitions without a solved carrier were written as fitted
+    /// cubic B-splines.
+    HelixFittedToBspline,
     /// A procedural definition has no emitted native construction or solved carrier.
     ProceduralDefinitionNotWritten,
     /// Source-native records were not represented.
@@ -487,6 +490,7 @@ impl StepLossCode {
         Self::AppearanceBindingMetadataReduced,
         Self::SourceAttributeNotWritten,
         Self::ProceduralReducedToCarrier,
+        Self::HelixFittedToBspline,
         Self::ProceduralDefinitionNotWritten,
         Self::SourceNativeRecordOmitted,
         Self::RegionNoWritableOuterShell,
@@ -670,6 +674,7 @@ impl StepLossCode {
             Self::AppearanceBindingMetadataReduced => "appearance.binding-metadata-reduced",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
+            Self::HelixFittedToBspline => "geometry.helix-fitted-to-bspline",
             Self::ProceduralDefinitionNotWritten => "geometry.procedural-definition-not-written",
             Self::SourceNativeRecordOmitted => "native.source-record-omitted",
             Self::RegionNoWritableOuterShell => "topology.region-no-writable-outer-shell",
@@ -755,6 +760,7 @@ impl StepLossCode {
             | Self::AppearanceBindingMetadataReduced
             | Self::SourceAttributeNotWritten
             | Self::ProceduralReducedToCarrier
+            | Self::HelixFittedToBspline
             | Self::SourceNativeRecordOmitted
             | Self::NonManifoldEdgeSplit => Severity::Info,
             _ => Severity::Warning,
@@ -922,7 +928,9 @@ impl StepLossCode {
             Self::AppearanceReducedToBaseColor | Self::AppearanceBindingMetadataReduced => {
                 LossTaxonomy::AppearanceReduced
             }
-            Self::ProceduralReducedToCarrier => LossTaxonomy::ProceduralReduced,
+            Self::ProceduralReducedToCarrier | Self::HelixFittedToBspline => {
+                LossTaxonomy::ProceduralReduced
+            }
         }
     }
 
@@ -1082,6 +1090,7 @@ mod tests {
                 "appearance.binding-metadata-reduced",
                 "attribute.source-record-not-written",
                 "geometry.procedural-reduced-to-carrier",
+                "geometry.helix-fitted-to-bspline",
                 "geometry.procedural-definition-not-written",
                 "native.source-record-omitted",
                 "topology.region-no-writable-outer-shell",
