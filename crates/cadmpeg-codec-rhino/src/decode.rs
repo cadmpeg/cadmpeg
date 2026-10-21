@@ -2756,10 +2756,13 @@ impl<'a> DecodeContext<'a> {
                     session,
                     candidate,
                     candidate_annotations,
-                    std::mem::replace(&mut boundary.start_curve, crate::curves::DecodedCurve::leaf(
-                        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                        Diagnostics::new(),
-                    )),
+                    std::mem::replace(
+                        &mut boundary.start_curve,
+                        crate::curves::DecodedCurve::leaf(
+                            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                            Diagnostics::new(),
+                        ),
+                    ),
                     CurveCommitSource {
                         key: key.as_str(),
                         association: &association,
@@ -2773,18 +2776,28 @@ impl<'a> DecodeContext<'a> {
                 });
             }
             for (index, boundary) in boundaries.iter().enumerate() {
-                let surface_id = {  Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::SurfaceId::compose(
-                    &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
-                    key.clone()
-                        .then(cadmpeg_ir::identity_key!(".lateral-"))
-                        .then(index),
-                )) }?;
-                let procedure_id = {  Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::ProceduralSurfaceId::compose(
-                    &cadmpeg_ir::identity_namespace!("rhino", "object", "procedural-surface"),
-                    key.clone()
-                        .then(cadmpeg_ir::identity_key!(".lateral-"))
-                        .then(index),
-                )) }?;
+                let surface_id = {
+                    Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::SurfaceId::compose(
+                        &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
+                        key.clone()
+                            .then(cadmpeg_ir::identity_key!(".lateral-"))
+                            .then(index),
+                    ))
+                }?;
+                let procedure_id = {
+                    Ok::<_, cadmpeg_core::CodecError>(
+                        cadmpeg_ir::ids::ProceduralSurfaceId::compose(
+                            &cadmpeg_ir::identity_namespace!(
+                                "rhino",
+                                "object",
+                                "procedural-surface"
+                            ),
+                            key.clone()
+                                .then(cadmpeg_ir::identity_key!(".lateral-"))
+                                .then(index),
+                        ),
+                    )
+                }?;
                 candidate.model.surfaces.push(Surface {
                     id: surface_id.clone(),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -2792,21 +2805,18 @@ impl<'a> DecodeContext<'a> {
                     )),
                     source_object: Some(association.identity.clone()),
                 });
+                let construction = extrusion_parameterization::construction(
+                    candidate,
+                    &boundary.boundary.start_nurbs,
+                    &boundary.boundary.lateral,
+                    &boundary.directrix,
+                    procedure_id.clone(),
+                    extrusion.direction,
+                    &association.identity,
+                )?;
                 candidate
                     .model
-                    .add_procedural_surface(&surface_id, cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                            boundary.directrix.clone(),
-                            None,
-                            extrusion.direction,
-                            None,
-                            cadmpeg_ir::geometry::CacheContract::from_form(None),
-                        )
-                        .map_err(|error| CandidateError::Admission(error.to_string())).map(|admitted_payload| ProceduralSurface::new(
-                                procedure_id.clone(),
-                                ProceduralSurfaceDefinition::Extrusion(admitted_payload),
-                                None,
-                            ))
-                        ?)
+                    .add_procedural_surface(&surface_id, construction)
                     .map_err(|error| error.to_string())?;
                 annotate_derived(candidate_annotations, &surface_id.to_string());
                 annotate_derived(candidate_annotations, &procedure_id.to_string());
@@ -5817,6 +5827,8 @@ fn build_ir(scan: &Scan<'_>) -> CadIr {
     }
     ir
 }
+
+mod extrusion_parameterization;
 
 #[cfg(test)]
 mod tests;
