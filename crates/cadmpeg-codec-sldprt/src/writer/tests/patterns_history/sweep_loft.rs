@@ -49,13 +49,19 @@ fn semantic_writer_round_trips_typed_sweep() {
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let owner = ir_edit.model.features[3].id.clone();
+        ir_edit
+            .set_dimension(&owner, "/twist", Angle::new(std::f64::consts::PI).unwrap())
+            .unwrap();
+        ir_edit
+            .set_dimension(
+                &owner,
+                "/scale",
+                cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[3].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Sweep {
-                shape,
-                twist,
-                scale,
-                ..
-            }) = definition
+            let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) = definition
             else {
                 panic!("typed sweep");
             };
@@ -70,12 +76,6 @@ fn semantic_writer_round_trips_typed_sweep() {
                 section,
                 sections,
             );
-            *twist = Some(cadmpeg_ir::Dimension::Literal(
-                Angle::new(std::f64::consts::PI).unwrap(),
-            ));
-            *scale = Some(cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
-            ));
         });
         ir_edit.model.features[3]
             .dependencies
@@ -100,7 +100,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     assert!(
         error
             .to_string()
-            .contains("profile feature is not a preceding dependency"),
+            .contains("profile feature is absent from the consumer's dependencies"),
         "{error}"
     );
 
@@ -315,7 +315,6 @@ fn semantic_writer_round_trips_typed_loft() {
                 feature_refs[2].clone(),
                 feature_refs[1].clone(),
                 feature_refs[0].clone(),
-                feature_refs[4].clone(),
             ])
             .unwrap();
     }
@@ -581,6 +580,14 @@ fn semantic_writer_round_trips_typed_rib() {
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let owner = ir_edit.model.features[1].id.clone();
+        ir_edit
+            .set_dimension(
+                &owner,
+                "/construction/thickness",
+                cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[1].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Rib { construction, op }) =
                 definition
@@ -590,9 +597,6 @@ fn semantic_writer_round_trips_typed_rib() {
             construction.direction = Some(
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             );
-            construction.thickness = Some(cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
-            ));
             construction.side = Some(RibSide::Centered);
             construction.draft = RibDraft::None;
             *op = BooleanOp::NewBody;
