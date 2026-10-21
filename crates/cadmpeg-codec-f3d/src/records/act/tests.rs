@@ -332,7 +332,7 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
 fn act_class_tail_requires_nonpadding_bytes_and_a_bounded_offset() {
     let wire = serde_json::json!({
         "id": "f3d:stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
-        "in_table": false, "channel_class_tag": "261", "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, "channel_class_tail_frame": serde_json::to_value(super::super::source_frame::SourceFrame::from(vec![0,1])).unwrap(), });
+        "in_table": false, "channel_class_tag": "261", "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, "class_tail_frame": serde_json::to_value(super::super::source_frame::SourceFrame::from(vec![0,1])).unwrap(), });
     let entity: crate::records::act::ActEntity = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(entity).unwrap(), wire);
     for (bytes, offset) in [
@@ -444,24 +444,20 @@ fn act_table_reference_derives_target_offset_and_rejects_wire_drift() {
             serde_json::from_value::<crate::records::act::ActTableReference>(invalid).unwrap_err();
         assert!(error.to_string().contains("target_record_offset"));
     }
-    assert!(
-        crate::records::act::ActTableReference::new(
-            format!("stream:act-table-reference#{}", u64::MAX),
-            0,
-            u64::MAX,
-            3
-        )
-        .is_err()
-    );
-    assert!(
-        crate::records::act::ActTableReference::new(
-            format!("stream:act-table-reference#{}", u64::MAX - 1),
-            0,
-            u64::MAX - 1,
-            3
-        )
-        .is_ok()
-    );
+    assert!(crate::records::act::ActTableReference::new(
+        format!("stream:act-table-reference#{}", u64::MAX),
+        0,
+        u64::MAX,
+        3
+    )
+    .is_err());
+    assert!(crate::records::act::ActTableReference::new(
+        format!("stream:act-table-reference#{}", u64::MAX - 1),
+        0,
+        u64::MAX - 1,
+        3
+    )
+    .is_ok());
 }
 
 #[test]
@@ -492,24 +488,20 @@ fn act_guid_derives_payload_offset_and_rejects_wire_drift() {
         assert!(error.to_string().contains("GUID"));
     }
     let text = "01234567-89ab-cdef-0123-456789abcdef";
-    assert!(
-        crate::records::act::ActGuid::new(
-            format!("stream:act-guid#{}", u64::MAX - 3),
-            u64::MAX - 3,
-            0,
-            text.into()
-        )
-        .is_err()
-    );
-    assert!(
-        crate::records::act::ActGuid::new(
-            format!("stream:act-guid#{}", u64::MAX - 4),
-            u64::MAX - 4,
-            0,
-            text.into()
-        )
-        .is_ok()
-    );
+    assert!(crate::records::act::ActGuid::new(
+        format!("stream:act-guid#{}", u64::MAX - 3),
+        u64::MAX - 3,
+        0,
+        text.into()
+    )
+    .is_err());
+    assert!(crate::records::act::ActGuid::new(
+        format!("stream:act-guid#{}", u64::MAX - 4),
+        u64::MAX - 4,
+        0,
+        text.into()
+    )
+    .is_ok());
 }
 
 #[test]
@@ -550,36 +542,30 @@ fn act_registry_channel_derives_offsets_and_rejects_invalid_wire() {
         );
     }
     let guid = "01234567-89ab-cdef-0123-456789abcdef";
-    assert!(
-        crate::records::act::ActRegistryChannel::new(
-            format!("stream:act-registry-channel#{}", u64::MAX - 10),
-            0,
-            u64::MAX - 10,
-            "abc".into(),
-            guid.into()
-        )
-        .is_err()
-    );
-    assert!(
-        crate::records::act::ActRegistryChannel::new(
-            format!("stream:act-registry-channel#{}", u64::MAX - 11),
-            0,
-            u64::MAX - 11,
-            "abc".into(),
-            guid.into()
-        )
-        .is_ok()
-    );
-    assert!(
-        crate::records::act::ActRegistryChannel::new(
-            "stream:act-registry-channel#0".into(),
-            0,
-            0,
-            "abc".into(),
-            String::new()
-        )
-        .is_err()
-    );
+    assert!(crate::records::act::ActRegistryChannel::new(
+        format!("stream:act-registry-channel#{}", u64::MAX - 10),
+        0,
+        u64::MAX - 10,
+        "abc".into(),
+        guid.into()
+    )
+    .is_err());
+    assert!(crate::records::act::ActRegistryChannel::new(
+        format!("stream:act-registry-channel#{}", u64::MAX - 11),
+        0,
+        u64::MAX - 11,
+        "abc".into(),
+        guid.into()
+    )
+    .is_ok());
+    assert!(crate::records::act::ActRegistryChannel::new(
+        "stream:act-registry-channel#0".into(),
+        0,
+        0,
+        "abc".into(),
+        String::new()
+    )
+    .is_err());
 }
 
 #[test]
@@ -587,68 +573,85 @@ fn native_act_ids_bind_kind_and_key_at_each_admission_route() {
     for id in [
         "",
         "act-entity#7",
-        "stream:act-guid#7",
-        "stream:act-entity#8",
-        "stream:act-entity#07",
+        "f3d:stream:act-guid#7",
+        "f3d:stream:act-entity#8",
+        "f3d:stream:act-entity#07",
     ] {
         assert!(ActEntity::try_new(id.into(), 7, "0_1".into(), None, group()).is_err());
     }
     reject_changed_id(
-        ActEntity::try_new("stream:act-entity#7".into(), 7, "0_1".into(), None, group()).unwrap(),
+        ActEntity::try_new(
+            "f3d:stream:act-entity#7".into(),
+            7,
+            "0_1".into(),
+            None,
+            group(),
+        )
+        .unwrap(),
         &[
             "",
             "act-entity#7",
-            "stream:act-guid#7",
-            "stream:act-entity#8",
-            "stream:act-entity#07",
+            "f3d:stream:act-guid#7",
+            "f3d:stream:act-entity#8",
+            "f3d:stream:act-entity#07",
         ],
     );
-    for id in ["id", "stream:act-guid#21", "stream:act-entity#20"] {
+    for id in ["id", "f3d:stream:act-guid#21", "f3d:stream:act-entity#20"] {
         assert!(ActGuid::new(id.into(), 20, 0, GUID.into()).is_err());
     }
     reject_changed_id(
-        ActGuid::new("stream:act-guid#20".into(), 20, 0, GUID.into()).unwrap(),
-        &["id", "stream:act-entity#20"],
+        ActGuid::new("f3d:stream:act-guid#20".into(), 20, 0, GUID.into()).unwrap(),
+        &["id", "f3d:stream:act-entity#20"],
     );
-    for id in ["id", "stream:act-table-reference#21", "stream:act-guid#20"] {
+    for id in [
+        "id",
+        "f3d:stream:act-table-reference#21",
+        "f3d:stream:act-guid#20",
+    ] {
         assert!(ActTableReference::new(id.into(), 0, 20, 7).is_err());
     }
     reject_changed_id(
-        ActTableReference::new("stream:act-table-reference#20".into(), 0, 20, 7).unwrap(),
-        &["id", "stream:act-guid#20"],
+        ActTableReference::new("f3d:stream:act-table-reference#20".into(), 0, 20, 7).unwrap(),
+        &["id", "f3d:stream:act-guid#20"],
     );
-    for id in ["id", "stream:act-registry-channel#21", "stream:act-guid#20"] {
+    for id in [
+        "id",
+        "f3d:stream:act-registry-channel#21",
+        "f3d:stream:act-guid#20",
+    ] {
         assert!(
             ActRegistryChannel::new(id.into(), 0, 20, "Appearance".into(), GUID.into()).is_err()
         );
     }
     reject_changed_id(
         ActRegistryChannel::new(
-            "stream:act-registry-channel#20".into(),
+            "f3d:stream:act-registry-channel#20".into(),
             0,
             20,
             "Appearance".into(),
             GUID.into(),
         )
         .unwrap(),
-        &["id", "stream:act-guid#20"],
+        &["id", "f3d:stream:act-guid#20"],
     );
-    for id in ["id", "stream:act-root-component#21", "stream:act-guid#20"] {
-        assert!(
-            ActRootComponent::try_new(
-                id.into(),
-                1,
-                "261".to_owned().try_into().unwrap(),
-                2,
-                4,
-                ActRegistryFlag::Off,
-                ActRootLayout::new(20, "0_3".into(), String::new(), 1).unwrap()
-            )
-            .is_err()
-        );
+    for id in [
+        "id",
+        "f3d:stream:act-root-component#21",
+        "f3d:stream:act-guid#20",
+    ] {
+        assert!(ActRootComponent::try_new(
+            id.into(),
+            1,
+            "261".to_owned().try_into().unwrap(),
+            2,
+            4,
+            ActRegistryFlag::Off,
+            ActRootLayout::new(20, "0_3".into(), String::new(), 1).unwrap()
+        )
+        .is_err());
     }
     let mut root = ActRootComponent::try_new(
-        "stream:act-root-component#20".into(),
+        "f3d:stream:act-root-component#20".into(),
         1,
         "261".to_owned().try_into().unwrap(),
         2,
@@ -659,15 +662,14 @@ fn native_act_ids_bind_kind_and_key_at_each_admission_route() {
     .unwrap();
     root.try_set_strings("10_3".into(), "Renamed".into())
         .unwrap();
-    assert_eq!(root.id(), "stream:act-root-component#20");
+    assert_eq!(root.id(), "f3d:stream:act-root-component#20");
     assert_eq!(root.layout().byte_offset(), Some(20));
     let before = root.clone();
-    assert!(
-        root.try_set_strings("invalid".into(), "Name".into())
-            .is_err()
-    );
+    assert!(root
+        .try_set_strings("invalid".into(), "Name".into())
+        .is_err());
     assert_eq!(root, before);
-    reject_changed_id(root, &["id", "stream:act-guid#20"]);
+    reject_changed_id(root, &["id", "f3d:stream:act-guid#20"]);
 }
 
 #[test]
