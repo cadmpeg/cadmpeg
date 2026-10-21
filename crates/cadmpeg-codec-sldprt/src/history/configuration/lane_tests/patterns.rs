@@ -76,7 +76,7 @@ fn active_scoped_pattern_keeps_its_unresolved_plane() {
     });
     let mut ir = document(definition.clone());
     let ctx = cadmpeg_test_support::service_decode_context();
-    let lane = super::feature_input_lane("scoped", Some("0"));
+    let lane = super::feature_input_lane("sldprt:native:feature-input-lane#scoped", Some("0"));
     let native = crate::native::SldprtNative {
         feature_input_lanes: vec![lane],
         ..Default::default()
