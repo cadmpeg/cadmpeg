@@ -1848,15 +1848,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::Faces,
                 usage: DesignExtrudeFaceRole::Start,
             };
+        let profile_offset = parameter("ProfileOffset", "mm", 0.0);
+        let profile_offset_id = crate::ids::neutral_parameter_id(&profile_offset);
         let from_face = crate::test_support::with_decode_context(|decode_ctx| {
             project_extrude(
                 decode_ctx,
                 &scope,
-                &[
-                    (0, &parameter("ProfileOffset", "mm", 0.0)),
-                    (1, &side_offset),
-                    (2, &taper),
-                ],
+                &[(0, &profile_offset), (1, &side_offset), (2, &taper)],
                 &[body_group, start_group.clone(), face_group],
                 &[],
                 std::slice::from_ref(&placement),
@@ -1870,10 +1868,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 start: ExtrudeStart::FromFace {
                     face: FaceSelection::Native(ref id),
-                    offset: None,
+                    offset: Some(ref offset),
                 },
                 ..
             }) if id == &start_group.id
+                && offset == &cadmpeg_ir::Dimension::Parameter(profile_offset_id)
+                && super::dimension_value(offset, &native_parameters.borrow()).get() == 0.0
         ));
 
         set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
