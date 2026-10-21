@@ -78,64 +78,30 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
         .arena_as::<crate::container::UnreadableEntry>("unreadable_entries")
         .unwrap();
     assert_eq!(unreadable.len(), 1);
-    let mut physical: Vec<crate::native::ArchiveSpan> =
-        crate::test_support::source_fidelity::layout(decoded.source_fidelity(), "physical-ledger");
-    physical.sort_by(|left, right| left.id.cmp(&right.id));
-    let record = decoded
-        .source_fidelity()
-        .retained_record(&unreadable[0].id)
+    let physical = namespace
+        .arena_as::<crate::native::ArchiveSpan>("physical_ledger")
         .unwrap();
-    assert!(physical.last().unwrap().span.end() < record.end_offset());
-    let start = usize::try_from(record.offset()).unwrap();
-    let end = usize::try_from(record.end_offset()).unwrap();
-    assert_eq!(
-        crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), &unreadable[0].id),
-        &changed[start..end]
-    );
+    assert!(physical.last().unwrap().span.end() < unreadable[0].data_end);
+    let start = usize::try_from(unreadable[0].data_start).unwrap();
+    let end = usize::try_from(unreadable[0].data_end).unwrap();
+    assert_eq!(unreadable[0].stored_data, &changed[start..end]);
 
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let mut fidelity = decoded.source_fidelity().clone();
-    fidelity
-        .remove_retained_record(&crate::native::native_id(
-            "source-layout",
-            "physical-ledger",
-        ))
-        .unwrap();
-    crate::fidelity::layout(&ctx, &mut fidelity, "physical-ledger", &physical).unwrap();
-    assert!(
-        crate::fidelity::validation::validate(&ctx, decoded.ir(), &fidelity)
-            .unwrap()
-            .is_empty()
-    );
-    let shifted = cadmpeg_ir::RetainedSourceRecord::from_bytes(
-        record.stream(),
-        record.offset() + 1,
-        cadmpeg_ir::RetainedBytes::Digest {
-            byte_len: record.byte_len(),
-            sha256: cadmpeg_ir::hash::digest::Sha256Digest::try_from(record.sha256()).unwrap(),
-        },
-    )
-    .unwrap()
-    .with_untyped(record.untyped().clone());
-    assert_eq!(shifted.end_offset(), record.end_offset() + 1);
-    fidelity.remove_retained_record(&unreadable[0].id).unwrap();
-    fidelity
-        .insert_retained_record(
-            cadmpeg_ir::ids::UnknownId::mint(&unreadable[0].id).unwrap(),
-            shifted,
+    let mut shifted = unreadable;
+    shifted[0].data_start += 1;
+    shifted[0].data_end += 1;
+    let mut invalid = decoded.ir().clone();
+    invalid
+        .native
+        .namespace_mut("fcstd")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "unreadable_entries",
+            &shifted,
         )
         .unwrap();
-    assert!(
-        crate::fidelity::validation::validate(&ctx, decoded.ir(), &fidelity)
-            .unwrap()
-            .iter()
-            .any(
-                |finding| finding.message == "invalid source-only FCStd entry"
-                    && finding.check == cadmpeg_ir::report::check::Check::PayloadIntegrity
-                    && finding.severity == cadmpeg_ir::report::Severity::Error
-                    && finding.entity.as_deref() == Some(unreadable[0].id.as_str())
-            )
-    );
+    assert!(crate::test_support::validate_native(&invalid)
+        .iter()
+        .any(|finding| finding.message == "invalid source-only FCStd entry"));
 }
 
 #[test]
@@ -225,18 +191,9 @@ fn empty_unreadable_payload_still_requires_its_physical_source_entry() {
             &source,
         )
         .unwrap();
-    let findings = crate::fidelity::validation::validate(
-        &cadmpeg_test_support::service_decode_context(),
-        &changed,
-        result.source_fidelity(),
-    )
-    .expect("validate source entry ownership");
-    assert!(findings.iter().any(
-        |finding| finding.message == "invalid source-only FCStd entry"
-            && finding.check == cadmpeg_ir::report::check::Check::PayloadIntegrity
-            && finding.severity == cadmpeg_ir::report::Severity::Error
-            && finding.entity.as_deref() == Some(source[0].id.as_str())
-    ));
+    assert!(crate::test_support::validate_native(&changed)
+        .iter()
+        .any(|finding| finding.message == "invalid source-only FCStd entry"));
 }
 
 #[test]

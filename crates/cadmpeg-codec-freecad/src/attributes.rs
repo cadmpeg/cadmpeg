@@ -167,16 +167,60 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
     false
 }
 
-pub(crate) fn target(_ir: &CadIr, owner: &str) -> AttributeTarget {
+pub(crate) fn target(ir: &CadIr, owner: &str) -> AttributeTarget {
     if owner == crate::native::native_id("document", "0") {
-        AttributeTarget::Document
-    } else {
-        // The typed source object owns an unconsumed native property at every
-        // delivery depth. A neutral projection of that object is not a second
-        // authority for its extra native properties.
-        AttributeTarget::Source {
-            source_id: owner.to_owned(),
-        }
+        return AttributeTarget::Document;
+    }
+    if let Some(feature) = ir
+        .model
+        .features
+        .iter()
+        .find(|record| record.native_ref.as_deref() == Some(owner))
+    {
+        return AttributeTarget::Feature(feature.id.clone());
+    }
+    if let Some(sketch) = ir
+        .model
+        .sketches
+        .iter()
+        .find(|record| record.native_ref.as_deref() == Some(owner))
+    {
+        return AttributeTarget::Sketch(sketch.id.clone());
+    }
+    if let Some(product) = ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|record| record.native_ref.as_deref() == Some(owner))
+    {
+        return AttributeTarget::ProductDefinition(product.id.clone());
+    }
+    if let Some(occurrence) = ir
+        .model
+        .occurrences
+        .iter()
+        .find(|record| record.native_ref.as_deref() == Some(owner))
+    {
+        return AttributeTarget::Occurrence(occurrence.id.clone());
+    }
+    if let Some(drawing) = ir
+        .model
+        .drawings
+        .iter()
+        .find(|record| record.object == owner)
+    {
+        return AttributeTarget::Drawing(drawing.id.clone());
+    }
+    if let Some(annotation) = ir
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|record| record.object == owner)
+    {
+        return AttributeTarget::SemanticAnnotation(annotation.id.clone());
+    }
+    AttributeTarget::Source {
+        source_id: owner.to_owned(),
     }
 }
 
@@ -193,54 +237,26 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<AttributeValue>> {
         return None;
     };
     if !side_entries.is_empty() {
-        return (property.family != crate::native::PropertyFamily::Unknown)
-            .then(|| vec![AttributeValue::Reference(property.id.clone())]);
+        return None;
     }
     if !links.is_empty() {
-        // A property with subelements, external documents, or empty targets
-        // cannot be reduced to a bare object identity. Its admitted typed
-        // record is the authoritative, ordered reference value.
-        if links.iter().all(|link| {
-            link.as_ref().is_some_and(|link| {
-                link.document().is_none()
-                    && link.subelements().is_empty()
-                    && link.object().is_some()
-            })
-        }) {
-            return Some(
-                links
-                    .iter()
-                    .flatten()
-                    .filter_map(|link| {
+        return links
+            .iter()
+            .map(|link| {
+                link.as_ref()
+                    .filter(|link| link.document().is_none() && link.subelements().is_empty())
+                    .and_then(|link| {
                         link.object()
                             .map(|object| AttributeValue::Reference(object.to_owned()))
                     })
-                    .collect(),
-            );
-        }
-        return Some(vec![AttributeValue::Reference(property.id.clone())]);
-    }
-    if matches!(
-        property.family,
-        crate::native::PropertyFamily::Map
-            | crate::native::PropertyFamily::List
-            | crate::native::PropertyFamily::Placement
-            | crate::native::PropertyFamily::Matrix
-            | crate::native::PropertyFamily::Expression
-            | crate::native::PropertyFamily::Link
-    ) || matches!(
-        property.type_name.as_str(),
-        "Materials::PropertyMaterial"
-            | "Spreadsheet::PropertyColumnWidths"
-            | "Spreadsheet::PropertyRowHeights"
-    ) {
-        return Some(vec![AttributeValue::Reference(property.id.clone())]);
+            })
+            .collect();
     }
     let mut projected = Vec::new();
     for value in values {
         let attributes = &value.attributes;
         if value.decoded_json.is_some() {
-            return Some(vec![AttributeValue::Reference(property.id.clone())]);
+            return None;
         }
         // An enumeration's choices describe its native grammar; the root
         // Integer is the selected semantic value. Keep all labels in the typed
@@ -256,13 +272,11 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<AttributeValue>> {
         }
         let scalar = attributes.get("value").or_else(|| attributes.get("Value"));
         let item = match value.tag.as_str() {
-            "String" | "Unicode" | "Uuid" => {
-                scalar.map(|value| AttributeValue::String(value.clone()))
-            }
+            "String" | "Unicode" => scalar.map(|value| AttributeValue::String(value.clone())),
             "Bool" => scalar
                 .and_then(|value| crate::native::parse_bool(value))
                 .map(AttributeValue::Boolean),
-            "Integer" | "Int" | "Unsigned" | "PropertyColor" => scalar
+            "Integer" | "Int" | "Unsigned" => scalar
                 .and_then(|value| value.parse().ok())
                 .map(AttributeValue::Integer),
             "Float" | "Double" | "Quantity" | "PropertyFloat" => scalar
@@ -279,14 +293,7 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<AttributeValue>> {
                     _ => None,
                 }
             }
-            _ if scalar.is_none()
-                && value
-                    .text
-                    .as_deref()
-                    .is_none_or(|text| text.trim().is_empty()) =>
-            {
-                continue;
-            }
+            _ if scalar.is_none() && value.text.as_deref().is_none_or(str::is_empty) => continue,
             _ => return None,
         }?;
         projected.push(item);

@@ -19,7 +19,6 @@ pub(crate) const PROPERTY: &str = "CadmpegControlLinks";
 pub(crate) enum Measurement {
     Direct,
     Diameter,
-    Negated,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -34,10 +33,7 @@ fn target(expression: &Expression, measurement: Measurement) -> Option<&Paramete
     let mut text = String::new();
     for token in &expression.tokens {
         match token {
-            ExpressionToken::Parameter(id) if target.is_none() => {
-                target = Some(id);
-                text.push('\0');
-            }
+            ExpressionToken::Parameter(id) if target.is_none() => target = Some(id),
             ExpressionToken::Text(value) => {
                 text.extend(value.chars().filter(|c| !c.is_whitespace()));
             }
@@ -45,9 +41,8 @@ fn target(expression: &Expression, measurement: Measurement) -> Option<&Paramete
         }
     }
     let expected = match measurement {
-        Measurement::Direct => "\0",
-        Measurement::Diameter => "\0/2",
-        Measurement::Negated => "-(\0)",
+        Measurement::Direct => "",
+        Measurement::Diameter => "/2",
     };
     (text == expected).then_some(target).flatten()
 }
@@ -60,20 +55,6 @@ fn cache_agrees(
     let close = |left: f64, right: f64| {
         (left - right).abs() <= 32.0 * f64::EPSILON * left.abs().max(right.abs()).max(1.0)
     };
-    if measurement == Measurement::Negated {
-        return match (control, parameter) {
-            (Some(ParameterValue::Length(left)), Some(ParameterValue::Length(right))) => {
-                close(left.get(), -right.get())
-            }
-            (Some(ParameterValue::Angle(left)), Some(ParameterValue::Angle(right))) => {
-                close(left.get(), -right.get())
-            }
-            (Some(ParameterValue::Real(left)), Some(ParameterValue::Real(right))) => {
-                close(left.get(), -right.get())
-            }
-            _ => false,
-        };
-    }
     match (control, parameter, measurement) {
         (
             Some(ParameterValue::Length(control)),
@@ -114,11 +95,11 @@ fn cache_quantity_matches(
         ) | (
             Some(ParameterValue::Angle(_)),
             Some(ParameterValue::Angle(_)),
-            Measurement::Direct | Measurement::Negated,
+            Measurement::Direct,
         ) | (
             Some(ParameterValue::Real(_)),
             Some(ParameterValue::Real(_)),
-            Measurement::Direct | Measurement::Negated,
+            Measurement::Direct,
         ) | (
             Some(ParameterValue::Integer(_)),
             Some(ParameterValue::Integer(_)),
@@ -229,16 +210,12 @@ pub(crate) fn apply(
             match token {
                 ExpressionToken::Parameter(id) if aliases.contains_key(id) => {
                     let (target, measurement) = &aliases[id];
-                    match measurement {
-                        Measurement::Diameter => tokens.push(ExpressionToken::Text("(".into())),
-                        Measurement::Negated => tokens.push(ExpressionToken::Text("-(".into())),
-                        Measurement::Direct => {}
+                    if *measurement == Measurement::Diameter {
+                        tokens.push(ExpressionToken::Text("(".into()));
                     }
                     tokens.push(ExpressionToken::Parameter(target.clone()));
-                    match measurement {
-                        Measurement::Diameter => tokens.push(ExpressionToken::Text(" / 2)".into())),
-                        Measurement::Negated => tokens.push(ExpressionToken::Text(")".into())),
-                        Measurement::Direct => {}
+                    if *measurement == Measurement::Diameter {
+                        tokens.push(ExpressionToken::Text(" / 2)".into()));
                     }
                 }
                 token => tokens.push(token.clone()),
@@ -320,38 +297,6 @@ mod tests {
             Some(&length(3.0)),
             None,
             Measurement::Diameter
-        ));
-    }
-
-    #[test]
-    fn reversed_control_requires_the_inverse_current_expression_and_cache() {
-        let id = ParameterId::mint("test:parameter:angle#0").unwrap();
-        let expression = Expression {
-            tokens: vec![
-                ExpressionToken::Text("-(".into()),
-                ExpressionToken::Parameter(id.clone()),
-                ExpressionToken::Text(")".into()),
-            ],
-        };
-        assert_eq!(target(&expression, Measurement::Negated), Some(&id));
-        assert_eq!(target(&expression, Measurement::Direct), None);
-        let reversed_tokens = Expression {
-            tokens: vec![
-                ExpressionToken::Parameter(id.clone()),
-                ExpressionToken::Text("-()".into()),
-            ],
-        };
-        assert_eq!(target(&reversed_tokens, Measurement::Negated), None);
-        let angle = |value| ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(value).unwrap());
-        assert!(cache_agrees(
-            Some(&angle(5.0)),
-            Some(&angle(-5.0)),
-            Measurement::Negated
-        ));
-        assert!(!cache_agrees(
-            Some(&angle(-5.0)),
-            Some(&angle(-5.0)),
-            Measurement::Negated
         ));
     }
 

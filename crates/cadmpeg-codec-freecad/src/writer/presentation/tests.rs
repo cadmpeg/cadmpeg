@@ -93,39 +93,10 @@ fn explicit_appearance_binding_overrides_body_and_native_color() {
             .find(|node| node.has_tag_name("PropertyColor"))
             .expect("color")
             .attribute("value"),
-        Some("4278190335")
-    );
-    // D19: the red display colour and blue material colour are distinct facts.
-    let material = roxmltree::Document::parse(&providers["Shape"].properties["ShapeMaterial"])
-        .expect("material XML");
-    assert_eq!(
-        material
-            .descendants()
-            .find(|node| node.has_tag_name("PropertyMaterial"))
-            .expect("material")
-            .attribute("diffuseColor"),
         Some("65535")
     );
     assert!(providers["Shape"].properties["Visibility"].contains("value=\"0\""));
-    let native_material = material
-        .descendants()
-        .find(|node| node.has_tag_name("PropertyMaterial"))
-        .unwrap();
-    assert_eq!(native_material.attribute("shininess"), Some("0.9"));
-    assert_eq!(native_material.attribute("transparency"), Some("0"));
-    assert_eq!(losses.len(), 2);
-    assert!(losses
-        .iter()
-        .all(|loss| loss.code.local_code() == "appearance.not-transferred"));
-    assert!(losses
-        .iter()
-        .any(|loss| loss.message.contains("required native material defaults")));
-    assert!(losses.iter().any(|loss| loss
-        .message
-        .contains("authored:model:appearance_binding#Blue")
-        && loss
-            .message
-            .contains("independent visibility/channel gates")));
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -167,7 +138,6 @@ fn face_colors_are_regenerated_as_complete_typed_binary_lists() {
         .concat()
     );
     assert!(providers["Shape"].properties["DiffuseColor"].contains("Shape.DiffuseColor"));
-    assert!(!providers["Shape"].properties.contains_key("ShapeMaterial"));
     assert!(losses.is_empty());
 }
 

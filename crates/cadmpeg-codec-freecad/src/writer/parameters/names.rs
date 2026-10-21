@@ -31,14 +31,8 @@ pub(super) fn prepare(
         .transpose()?
         .unwrap_or_default();
     let mut controls = BTreeMap::new();
-    let mut reserved = BTreeMap::new();
-    let mut signed_thickness = std::collections::BTreeSet::new();
     for feature in &ir.model.features {
-        controls.insert(feature.id.clone(), super::controls::bindings(ir, feature)?);
-        reserved.insert(feature.id.clone(), super::controls::reserved(feature)?);
-        if super::has_signed_thickness_driver(ir, feature) {
-            signed_thickness.insert(feature.id.clone());
-        }
+        controls.insert(feature.id.clone(), super::controls::bindings(feature)?);
     }
     let mut assigned = BTreeMap::<String, std::collections::BTreeSet<String>>::new();
     for (index, parameter) in ir.model.parameters.iter().enumerate() {
@@ -95,20 +89,8 @@ pub(super) fn prepare(
                 .iter()
                 .any(|property| property.id == *id && property.name == parameter.name)
         });
-        let reserved_control = parameter
-            .owner
-            .as_ref()
-            .and_then(|owner| reserved.get(owner))
-            .is_some_and(|controls| controls.contains(&parameter.name));
-        let signed_driver = parameter.name == "Value"
-            && parameter
-                .owner
-                .as_ref()
-                .is_some_and(|owner| signed_thickness.contains(owner));
-        let occupied = object.properties.contains_key(&parameter.name)
-            && !own_control
-            && !signed_driver
-            && (!native_home || reserved_control);
+        let occupied =
+            object.properties.contains_key(&parameter.name) && !own_control && !native_home;
         let duplicate = !assigned
             .entry(owner.clone())
             .or_default()
