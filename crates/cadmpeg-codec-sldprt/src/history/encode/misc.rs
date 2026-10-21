@@ -186,12 +186,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok(NeutralFeatureEncoding {
             kind: kind.to_string(),
             parameters: rendered,
-            properties: self.self.base_properties(),
+            properties: self.base_properties(),
         })
     }
 
     pub(super) fn encode_stored_geometry(&self) -> NeutralFeatureEncoding {
-        let feature = self.feature;
         let existing = self.existing;
         NeutralFeatureEncoding {
             kind: existing.map_or_else(|| "Feature".into(), |record| record.kind.clone()),
