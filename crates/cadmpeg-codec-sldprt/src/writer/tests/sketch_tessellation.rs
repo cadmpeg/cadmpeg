@@ -753,8 +753,12 @@ fn synthesis_writes_supported_lanes_from_neutral_content() {
     assert!(active[0].source_index.is_some());
     assert!(active[0].parameter_values.is_empty());
     assert!(active[0].feature_states.is_empty());
-    assert!(!active[0].bodies.is_empty());
-    assert!(active[0].bodies.iter().all(|id| decoded
+    let active_bodies = active[0]
+        .bodies
+        .as_ref()
+        .expect("the physical partition has bodies");
+    assert!(!active_bodies.is_empty());
+    assert!(active_bodies.iter().all(|id| decoded
         .ir()
         .model
         .bodies
