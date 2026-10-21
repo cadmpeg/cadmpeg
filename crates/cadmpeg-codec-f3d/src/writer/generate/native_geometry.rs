@@ -16,6 +16,8 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use std::borrow::Cow;
 
+mod cache_generation;
+
 use super::native_bytes::{
     native_curve_base, native_enum, native_f64, native_i64, native_ident,
     native_length_prefixed_string, native_point, native_ref, native_string, native_subident,
@@ -1976,6 +1978,9 @@ fn native_cacheless_procedural_surface_definition(
             "surface {} has multiple procedural constructions",
             surface.id
         )));
+    }
+    if let Some(cache) = cache_generation::generate(target, procedural)? {
+        return native_procedural_surface_definition(bytes, target, surface, &cache);
     }
     if let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() {
         let directrix = definition_payload.directrix();
