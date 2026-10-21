@@ -4,7 +4,7 @@
 use crate::records::FeatureContent;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{DesignParameter, FeatureId, ParameterValue};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use super::features::generated_feature_record_id;
 use crate::history::literals::format_parameter_value;
@@ -129,6 +129,7 @@ fn sync_neutral_parameters(
             })?;
         let mut parameters = desired.remove(feature_id).unwrap_or_default();
         parameters.sort_by_key(|parameter| parameter.ordinal);
+        order_parameter_dependencies(&mut parameters);
         let canonical = cadmpeg_core::text::named_entries(
             format_args!("the sldprt feature {feature_id} record"),
             parameters
@@ -163,7 +164,11 @@ fn sync_neutral_parameters(
             record
                 .parameters
                 .keys()
-                .filter(|name| !parameters.iter().any(|parameter| parameter.name.as_str() == name.as_str()))
+                .filter(|name| {
+                    !parameters
+                        .iter()
+                        .any(|parameter| parameter.name.as_str() == name.as_str())
+                })
                 .map(ToString::to_string),
         );
         let mut names = names.into_iter();
@@ -256,4 +261,48 @@ fn sync_neutral_parameters(
         scalar.value = checked;
     }
     Ok(())
+}
+
+/// Keep authored order among available parameters, emitting a held local driver
+/// before its consumer. Cyclic expressions remain authored, in ordinal order.
+fn order_parameter_dependencies(parameters: &mut Vec<&DesignParameter>) {
+    let positions = parameters
+        .iter()
+        .enumerate()
+        .map(|(index, parameter)| (&parameter.id, index))
+        .collect::<HashMap<_, _>>();
+    let mut remaining = parameters.iter().map(|_| 0_usize).collect::<Vec<_>>();
+    let mut consumers = parameters.iter().map(|_| Vec::new()).collect::<Vec<_>>();
+    for (index, parameter) in parameters.iter().enumerate() {
+        for dependency in parameter.expression.dependencies() {
+            if let Some(&driver) = positions.get(dependency) {
+                remaining[index] += 1;
+                consumers[driver].push(index);
+            }
+        }
+    }
+    let mut ready = remaining
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &count)| (count == 0).then_some(index))
+        .collect::<BTreeSet<_>>();
+    let mut emitted = parameters.iter().map(|_| false).collect::<Vec<_>>();
+    let mut ordered = Vec::new();
+    while let Some(index) = ready.pop_first() {
+        emitted[index] = true;
+        ordered.push(parameters[index]);
+        for &consumer in &consumers[index] {
+            remaining[consumer] -= 1;
+            if remaining[consumer] == 0 {
+                ready.insert(consumer);
+            }
+        }
+    }
+    ordered.extend(
+        parameters
+            .iter()
+            .enumerate()
+            .filter_map(|(index, parameter)| (!emitted[index]).then_some(*parameter)),
+    );
+    *parameters = ordered;
 }
