@@ -494,7 +494,7 @@ fn extrude_completeness_requires_resolved_profile_start_and_termination() {
         "value": {"sketch": "test:model:sketch#1", "profiles": [0]}
     });
     let profile_start = serde_json::json!({"kind": "profile_plane"});
-    let blind = serde_json::json!({"kind": "blind", "length": 10.0});
+    let blind = serde_json::json!({"kind": "blind", "length": {"kind": "literal", "value": 10.0}});
 
     assert!(!feature_definition_is_incomplete(&extrude(
         sketch_profile.clone(),
@@ -532,11 +532,11 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
             "shape": {
                 "construction": {
                     "construction": "form",
-                    "kind": {"kind": "simple_drilled", "drill_point_angle": 2.0}
+                    "kind": {"kind": "simple_drilled", "drill_point_angle": {"kind": "literal", "value": 2.0}}
                 },
-                "diameter": 5.0
+                "diameter": {"kind": "literal", "value": 5.0}
             },
-            "extent": {"kind": "blind", "length": 10.0}
+            "extent": {"kind": "blind", "length": {"kind": "literal", "value": 10.0}}
         }))
         .expect("complete Hole definition");
     assert!(!feature_definition_is_incomplete(&complete));
@@ -656,7 +656,7 @@ fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
         definition(serde_json::json!({
             "definition": "sheet_metal_base_flange",
             "profile": profile,
-            "thickness": 2.5,
+            "thickness": {"kind": "literal", "value": 2.5},
             "side": "forward"
         }))
     };
@@ -664,12 +664,12 @@ fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
         definition(serde_json::json!({
             "definition": "sheet_metal_edge_flange",
             "edges": edges,
-            "height": {"kind": "distance", "value": 25.0},
-            "angle": std::f64::consts::FRAC_PI_2,
+            "height": {"kind": "distance", "value": {"kind": "literal", "value": 25.0}},
+            "angle": {"kind": "literal", "value": std::f64::consts::FRAC_PI_2},
             "height_datum": "outer_faces",
             "bend_position": "inside",
             "width": {"kind": "full_edge"},
-            "bend_radius": 2.5
+            "bend_radius": {"kind": "literal", "value": 2.5}
         }))
     };
     let hem = |edges| {
@@ -677,9 +677,9 @@ fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
             "definition": "sheet_metal_hem",
             "edges": edges,
             "bend_position": "adjacent",
-            "form": {"kind": "flat", "value": {"length": 10.0}},
+            "form": {"kind": "flat", "value": {"length": {"kind": "literal", "value": 10.0}}},
             "direction": "forward",
-            "bend_radius": 2.5
+            "bend_radius": {"kind": "literal", "value": 2.5}
         }))
     };
 
@@ -714,8 +714,8 @@ fn selected_face_and_edge_features_require_neutral_operands() {
             "definition": "fillet",
             "groups": [{
                 "edges": edges,
-                "radius": {"kind": "constant", "radius": 5.0},
-                "tangency_weight": 1.0
+                "radius": {"kind": "constant", "radius": {"kind": "literal", "value": 5.0}},
+                "tangency_weight": {"kind": "literal", "value": 1.0}
             }]
         }))
     };
@@ -744,7 +744,7 @@ fn selected_face_and_edge_features_require_neutral_operands() {
         serde_json::json!({
             "definition": "offset_surface",
             "faces": {"kind": "faces", "value": ["test:model:face#1"]},
-            "distance": 2.0
+            "distance": {"kind": "literal", "value": 2.0}
         }),
     )));
     assert!(feature_definition_is_incomplete(&definition(
@@ -772,7 +772,7 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "block",
-            "dimensions": [30.0, 40.0, 20.0],
+            "dimensions": [{"kind": "literal", "value": 30.0}, {"kind": "literal", "value": 40.0}, {"kind": "literal", "value": 20.0}],
             "placement": [
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
@@ -784,7 +784,7 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
     assert!(feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "block",
-            "dimensions": [30.0, 40.0, 20.0],
+            "dimensions": [{"kind": "literal", "value": 30.0}, {"kind": "literal", "value": 40.0}, {"kind": "literal", "value": 20.0}],
             "placement": null,
             "op": "join"
         }),
@@ -792,11 +792,12 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "primitive",
+            "placement": null,
             "solid": {
                 "kind": "cylinder",
-                "radius": 15.0,
-                "height": 7.0,
-                "angle": std::f64::consts::TAU
+                "radius": {"kind": "radius", "value": {"kind": "literal", "value": 15.0}},
+                "height": {"kind": "literal", "value": 7.0},
+                "angle": {"kind": "literal", "value": std::f64::consts::TAU}
             },
             "op": "join"
         }),
@@ -804,11 +805,12 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
     assert!(feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "primitive",
+            "placement": null,
             "solid": {
                 "kind": "cylinder",
-                "radius": 15.0,
-                "height": 7.0,
-                "angle": std::f64::consts::TAU
+                "radius": {"kind": "radius", "value": {"kind": "literal", "value": 15.0}},
+                "height": {"kind": "literal", "value": 7.0},
+                "angle": {"kind": "literal", "value": std::f64::consts::TAU}
             },
             "op": "unresolved"
         }),
@@ -854,7 +856,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
         "definition": "chamfer",
         "groups": [{
             "edges": {"kind": "edges", "value": ["test:model:edge#1"]},
-            "spec": {"kind": "distance", "distance": 2.0}
+            "spec": {"kind": "distance", "distance": {"kind": "literal", "value": 2.0}}
         }]
     }));
     assert!(!feature_definition_is_incomplete(&chamfer));
@@ -863,7 +865,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
             "definition": "chamfer",
             "groups": [{
                 "edges": {"kind": "native", "value": "native:edges"},
-                "spec": {"kind": "distance", "distance": 2.0}
+                "spec": {"kind": "distance", "distance": {"kind": "literal", "value": 2.0}}
             }]
         }),
     )));
@@ -899,7 +901,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
             },
             "extent": {
                 "kind": "one_sided",
-                "termination": {"kind": "angle", "angle": std::f64::consts::PI}
+                "termination": {"kind": "angle", "angle": {"kind": "literal", "value": std::f64::consts::PI}}
             }
         },
         "op": "new_body"
@@ -917,7 +919,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
                 },
                 "extent": {
                     "kind": "one_sided",
-                    "termination": {"kind": "angle", "angle": std::f64::consts::PI}
+                    "termination": {"kind": "angle", "angle": {"kind": "literal", "value": std::f64::consts::PI}}
                 }
             },
             "op": "new_body"
@@ -953,7 +955,7 @@ fn datum_point_completeness_requires_a_resolved_construction_rule() {
         serde_json::json!({
             "kind": "distance_on_edge",
             "edge": {"kind": "native", "value": "native:edge"},
-            "fraction": 0.5
+            "fraction": {"kind": "literal", "value": 0.5}
         }),
     ))));
 }
@@ -1011,13 +1013,13 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
         serde_json::json!({
             "definition": "datum_offset_plane",
             "reference": {"reference": "feature", "feature": "test:model:feature#plane"},
-            "distance": 5.0
+            "distance": {"kind": "literal", "value": 5.0}
         }),
     )));
     assert!(feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "datum_offset_plane",
-            "distance": 5.0
+            "distance": {"kind": "literal", "value": 5.0}
         }),
     )));
 }
@@ -1132,7 +1134,7 @@ fn draft_completeness_requires_material_side() {
                 "kind": "neutral_plane",
                 "plane": {"kind": "faces", "value": ["test:model:face#neutral"]}
             },
-            "angle": 0.1,
+            "angle": {"kind": "literal", "value": 0.1},
             "outward": true
         }))
         .expect("complete neutral-plane Draft");
