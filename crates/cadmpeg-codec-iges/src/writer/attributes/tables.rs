@@ -58,8 +58,15 @@ fn definition(
         .and_then(|form| form.as_i64())
         .filter(|form| (0..=2).contains(form))
         .ok_or("attribute definition has no valid form")?;
-    let name = string_field(record, "name")
-        .map(|name| hollerith(&name))
+    let name = record
+        .field("name")
+        .filter(|name| !name.is_null())
+        .map(|name| {
+            let bytes = crate::text::field(&name)?;
+            let text = std::str::from_utf8(&bytes)
+                .map_err(|_| "attribute definition name is not UTF-8")?;
+            hollerith(text)
+        })
         .transpose()?
         .unwrap_or_default();
     let list_type = record

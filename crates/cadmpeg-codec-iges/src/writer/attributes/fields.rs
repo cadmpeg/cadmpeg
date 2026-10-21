@@ -191,21 +191,22 @@ pub(super) fn groups<'a>(
         .collect())
 }
 
-pub(super) fn collection_size(
-    record: &NativeRecord,
-    fields: &Fields<'_>,
-    key: &str,
-) -> Result<usize, String> {
-    if let Some(count) = record
-        .field("collection_sizes")
-        .and_then(|sizes| sizes.get(key)?.as_u64())
-    {
-        return usize::try_from(count)
-            .map_err(|_| "collection count exceeds the platform capacity".into());
+pub(super) fn collection_size(record: &NativeRecord, key: &str) -> Result<usize, String> {
+    let native = Value::Object(record.fields().map_err(|error| error.to_string())?);
+    let mut value = &native;
+    for part in key.split('.') {
+        value = match value {
+            Value::Array(values) => part
+                .parse::<usize>()
+                .ok()
+                .and_then(|index| values.get(index)),
+            Value::Object(values) => values.get(part),
+            _ => None,
+        }
+        .ok_or_else(|| format!("collection {key} has no current typed size"))?;
     }
-    fields
-        .native_value(key)
-        .and_then(Value::as_array)
+    value
+        .as_array()
         .map(Vec::len)
         .ok_or_else(|| format!("collection {key} has no current typed size"))
 }

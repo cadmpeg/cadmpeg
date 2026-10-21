@@ -78,7 +78,11 @@ pub(crate) struct Token {
 
 impl Serialize for Token {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.value.serialize(serializer)
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            value: &'a TokenValue,
+        }
+        Wire { value: &self.value }.serialize(serializer)
     }
 }
 

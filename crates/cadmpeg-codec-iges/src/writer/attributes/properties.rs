@@ -2,6 +2,7 @@
 //! Type 406 field grammars, regenerated from current canonical values.
 
 use super::{fields::collection_size, fields::Fields, *};
+use serde_json::Value;
 
 fn integer(fields: &Fields<'_>, key: &str) -> Result<String, String> {
     Ok(fields
@@ -77,7 +78,7 @@ pub(super) fn encode(
             "color"
         ),
         11 => {
-            let independent = collection_size(record, fields, "independent_variables")?;
+            let independent = collection_size(record, "independent_variables")?;
             let dependent = fields
                 .integer("declared_dependent_count")?
                 .and_then(|count| usize::try_from(count).ok())
@@ -93,11 +94,8 @@ pub(super) fn encode(
             }
             let mut point_count = 1_usize;
             for index in 0..independent {
-                let count = collection_size(
-                    record,
-                    fields,
-                    &format!("independent_variables.{index}.values"),
-                )?;
+                let count =
+                    collection_size(record, &format!("independent_variables.{index}.values"))?;
                 if count == 0 {
                     return Err("tabular independent variable has no values".into());
                 }
@@ -107,18 +105,16 @@ pub(super) fn encode(
                 values.push(count.to_string());
             }
             for index in 0..independent {
-                for offset in 0..collection_size(
-                    record,
-                    fields,
-                    &format!("independent_variables.{index}.values"),
-                )? {
+                for offset in
+                    0..collection_size(record, &format!("independent_variables.{index}.values"))?
+                {
                     values.push(real(
                         fields,
                         &format!("independent_variables.{index}.values.{offset}"),
                     )?);
                 }
             }
-            let dependent_values = collection_size(record, fields, "dependent_values")?;
+            let dependent_values = collection_size(record, "dependent_values")?;
             if point_count.checked_mul(dependent) != Some(dependent_values) {
                 return Err("tabular values do not fit the current independent grid".into());
             }
@@ -127,7 +123,7 @@ pub(super) fn encode(
             }
         }
         12 => {
-            for index in 0..collection_size(record, fields, "names")? {
+            for index in 0..collection_size(record, "names")? {
                 values.push(text(fields, &format!("names.{index}"))?);
             }
         }
@@ -136,7 +132,7 @@ pub(super) fn encode(
             texts!("name", "standard");
         }
         14 => {
-            for index in 0..collection_size(record, fields, "values")? {
+            for index in 0..collection_size(record, "values")? {
                 values.push(text(fields, &format!("values.{index}"))?);
             }
         }
@@ -162,7 +158,7 @@ pub(super) fn encode(
             texts!("name");
         }
         24 => {
-            let count = collection_size(record, fields, "definitions")?;
+            let count = collection_size(record, "definitions")?;
             values.push(count.to_string());
             for index in 0..count {
                 values.push(integer(
@@ -185,7 +181,7 @@ pub(super) fn encode(
         }
         25 => {
             texts!("identification");
-            let count = collection_size(record, fields, "levels")?;
+            let count = collection_size(record, "levels")?;
             values.push(count.to_string());
             for index in 0..count {
                 values.push(integer(fields, &format!("levels.{index}"))?);
@@ -219,7 +215,7 @@ pub(super) fn encode(
                 "arrow_orientation"
             );
             reals!("initial_value");
-            let count = collection_size(record, fields, "supplemental_notes")?;
+            let count = collection_size(record, "supplemental_notes")?;
             values.push(count.to_string());
             for index in 0..count {
                 for key in ["position", "first_text", "last_text"] {
@@ -243,7 +239,7 @@ pub(super) fn encode(
             texts!("revision");
         }
         34 | 35 => {
-            let count = collection_size(record, fields, "ranges")?;
+            let count = collection_size(record, "ranges")?;
             values.push(count.to_string());
             for index in 0..count {
                 for key in ["text_index", "first_character", "last_character"] {
@@ -281,7 +277,7 @@ fn generic(
             _ => return Err("generic attribute has no current name".into()),
         };
         let mut values = Vec::new();
-        for index in 0..collection_size(record, fields, "values")? {
+        for index in 0..collection_size(record, "values")? {
             if let Some(mut value) = fields.one(&format!("values.{index}.value"))? {
                 match fields.integer(&format!("values.{index}.data_type"))? {
                     Some(6) => {
@@ -317,37 +313,37 @@ fn generic(
         .iter()
         .map(|value| typed_value(value, targets))
         .collect::<Result<Vec<_>, _>>()?;
-    if let Some(types) = record
-        .field("generic_types")
-        .and_then(|types| types.as_array().cloned())
+    if let Some(schema) = record
+        .field("values")
+        .and_then(|values| values.as_array().cloned())
     {
-        let omitted = record
-            .field("omitted_values")
-            .and_then(|omitted| omitted.as_array().cloned())
-            .ok_or("generic attribute omission schema is absent")?;
-        let omitted = omitted
+        let omitted: BTreeSet<_> = schema
             .iter()
-            .map(|index| {
-                index
-                    .as_u64()
-                    .and_then(|index| usize::try_from(index).ok())
-                    .ok_or("generic omission index is invalid")
+            .enumerate()
+            .filter_map(|(index, slot)| {
+                (slot
+                    .get("value")
+                    .and_then(|value| value.get("kind"))
+                    .and_then(Value::as_str)
+                    == Some("omitted"))
+                .then_some(index)
             })
-            .collect::<Result<BTreeSet<_>, _>>()?;
+            .collect();
         if !omitted.is_empty() {
-            if types.len().checked_sub(omitted.len()) != Some(pairs.len()) {
+            if schema.len().checked_sub(omitted.len()) != Some(pairs.len()) {
                 return Err(
                     "generic values no longer fit their typed no-value schema slots".into(),
                 );
             }
             let mut current = pairs.into_iter();
-            pairs = types
+            pairs = schema
                 .iter()
                 .enumerate()
-                .map(|(index, kind)| {
+                .map(|(index, slot)| {
                     if omitted.contains(&index) {
-                        let kind = kind
-                            .as_i64()
+                        let kind = slot
+                            .get("data_type")
+                            .and_then(Value::as_i64)
                             .filter(|kind| matches!(kind, 0 | 5))
                             .ok_or("omitted generic slot does not have a no-value type")?;
                         Ok((kind, String::new()))
