@@ -125,6 +125,18 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     };
     if let Some(graph) = &sketch_graph {
         super::design::sketch::retain_graph(&mut native, graph);
+        for curve in &original.sketch_curve_identities {
+            if !native
+                .sketch_curve_identities
+                .iter()
+                .any(|written| written.id == curve.id)
+            {
+                losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(format!(
+                    "Sketch curve {} has no stated owner or retained containing membership and is omitted; supported Sketch entities and constraints remain",
+                    curve.id,
+                )));
+            }
+        }
         losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
             "Sketch identity, geometry and parameter bindings are regenerated; dimensional companion payloads and evaluation invalidation are omitted",
         ));

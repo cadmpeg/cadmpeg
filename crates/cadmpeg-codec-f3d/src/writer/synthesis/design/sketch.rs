@@ -144,7 +144,39 @@ pub(in crate::writer::synthesis) fn retain_graph(native: &mut F3dNative, origina
         .map(crate::records::parameters::DesignParameterCompanion::without_payload)
         .collect();
     native.sketch_points = original.sketch_points.clone();
-    native.sketch_curve_identities = original.sketch_curve_identities.clone();
+    native.sketch_curve_identities = original
+        .sketch_curve_identities
+        .iter()
+        .filter(|curve| {
+            // An ownerless auxiliary curve has no neutral Sketch entity. Omit it
+            // only when no retained Sketch carrier names it; a linked unsupported
+            // curve keeps the graph out of the writable profile instead.
+            curve.owner_reference.is_some()
+                || original.sketch_points.iter().any(|point| {
+                    point
+                        .companion()
+                        .incident_curves
+                        .contains(&curve.record_index)
+                })
+                || original.sketch_relations.iter().any(|relation| {
+                    relation
+                        .all_member_indices()
+                        .any(|index| index == curve.record_index)
+                })
+                || original.design_entity_headers.iter().any(|header| {
+                    header
+                        .reference_values()
+                        .any(|index| *index == curve.record_index)
+                })
+                || original.design_parameter_scopes.iter().any(|scope| {
+                    scope
+                        .reference_members()
+                        .values()
+                        .any(|index| *index == curve.record_index)
+                })
+        })
+        .cloned()
+        .collect();
     native.sketch_relations = original.sketch_relations.clone();
     native.sketch_texts = original.sketch_texts.clone();
 }
