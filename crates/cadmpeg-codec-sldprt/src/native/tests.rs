@@ -846,7 +846,7 @@ fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
             // #209 Rule W1/P: ordering can invalidate a document relation before
             // source comparison. Keep that structural check and test the exact
             // ordinal forgery independently at the fidelity boundary.
-            let error = SldprtNative::load(&namespace).unwrap_err();
+            let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
             assert!(
                 error.to_string().contains("relation instance")
                     && error.to_string().contains("inconsistent ownership"),
