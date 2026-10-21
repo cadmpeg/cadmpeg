@@ -702,3 +702,124 @@ fn exact_spans_and_macro_routes_are_isolated() {
         "an unknown macro receiving the deserializer cannot be ignored"
     );
 }
+
+fn prefix_fixture() -> String {
+    let legacy = include_str!("../../../src/document/legacy.rs");
+    let prefix = include_str!("../../../src/document/legacy/prefix.rs");
+    let legacy = legacy.replace("mod prefix;", &format!("mod prefix {{{prefix}}}"));
+    format!(
+        r#"
+        const IR_VERSION: &str = "8";
+        fn check_ir_version<T>(_: T) {{}}
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct CadIrReadWire {{}}
+        mod legacy {{ {legacy} }}
+        struct Reader;
+        impl<'de> serde::Deserialize<'de> for Reader {{
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {{
+                legacy::deserialize_wire(d)?;
+                Ok(Self)
+            }}
+        }}
+    "#
+    )
+}
+
+fn classify_prefix_fixture(source: &str) -> Result<HandReaderClass, String> {
+    let parsed = syn::parse_file(source).map_err(|error| error.to_string())?;
+    let mut index = SourceIndex::default();
+    collect_source_items(
+        &parsed.items,
+        "crates/cadmpeg-ir/src/document.rs",
+        source,
+        &["document".to_owned()],
+        &mut index,
+    );
+    let reader = index
+        .sources
+        .iter()
+        .find(|source| source.name == "Reader")
+        .unwrap();
+    classify_route(reader, &index)
+}
+
+#[test]
+fn version_prefix_route_proves_the_complete_delegate_and_map_forwarding() {
+    let source = prefix_fixture();
+    assert_eq!(classify_prefix_fixture(&source), Ok(HandReaderClass::Wire));
+    assert_eq!(
+        classify_prefix_fixture(&source.replace("deserialize_wire", "read_checked_prefix")),
+        Ok(HandReaderClass::Wire)
+    );
+    for (before, after) in [
+        ("#[serde(deny_unknown_fields)]", ""),
+        (
+            "super::check_ir_version(Some(&value))?;",
+            "let _ = super::check_ir_version(Some(&value));",
+        ),
+        ("prefix.push((key, value));", "drop((key, value));"),
+        (
+            "prefix: prefix.into_iter(),",
+            "prefix: Vec::new().into_iter(),",
+        ),
+        ("remaining: map,", "remaining: replacement(),"),
+        ("self.remaining.next_key_seed(seed)", "Ok(None)"),
+        ("type Error = A::Error;", "type Error = serde_json::Error;"),
+        (
+            "self.remaining.next_value_seed(seed)",
+            "Err(serde::de::Error::custom(\"discarded\"))",
+        ),
+        (
+            "seed.deserialize(value).map_err(serde::de::Error::custom)",
+            "seed.deserialize(serde_json::Value::Null).map_err(serde::de::Error::custom)",
+        ),
+        (
+            "map.next_value_seed(prefix::PrefixValue)?",
+            "map.next_value::<serde_json::Value>()?",
+        ),
+        (
+            "cadmpeg_core::distinct_keys::json_object",
+            "serde_json::Map::deserialize",
+        ),
+        (
+            "access.next_element_seed(Self)?",
+            "access.next_element::<serde_json::Value>()?",
+        ),
+        (
+            "super::CadIrReadWire::deserialize(",
+            "OpenWire::deserialize(",
+        ),
+    ] {
+        assert!(
+            source.contains(before),
+            "control mutation must change the input: {before}"
+        );
+        let changed = source.replace(before, after);
+        assert!(
+            classify_prefix_fixture(&changed).is_err(),
+            "unproved prefix route was accepted: {before} -> {after}"
+        );
+    }
+}
+
+#[test]
+fn version_prefix_route_does_not_trust_a_helper_name_or_import_alias() {
+    let source = prefix_fixture();
+    for changed in [
+        source.replace(
+            "legacy::deserialize_wire(d)?;",
+            "let _ = legacy::deserialize_wire(d);",
+        ),
+        source.replace(
+            "legacy::deserialize_wire(d)?;",
+            "hostile::deserialize_wire(d)?;",
+        ),
+        source.replace("mod legacy {", "mod legacy { mod serde { pub mod de {} }"),
+    ] {
+        assert!(
+            classify_prefix_fixture(&changed).is_err(),
+            "a hostile prefix route must remain unresolved"
+        );
+    }
+}

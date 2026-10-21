@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Unsupported version diagnostics.
+//! Version-prefix ordering and strict key admission.
 
 #![allow(clippy::unwrap_used)]
 
@@ -53,4 +53,110 @@ fn wire_v062_refusal_names_scope_and_report_changes() {
 #[test]
 fn wire_main_v7_refusal_names_scope_and_report_changes() {
     rejected_legacy_shape("7", Some("full"));
+}
+
+fn current_with_prefix(field: &str, raw: &str) -> String {
+    let mut value = serde_json::to_value(CadIr::empty()).unwrap();
+    value.as_object_mut().unwrap().remove(field);
+    let remaining = serde_json::to_string(&value).unwrap();
+    format!("{{{field:?}:{raw},{}", &remaining[1..])
+}
+
+#[test]
+fn current_version_after_model_and_native_rejects_nested_duplicate_keys() {
+    for (field, raw, key) in [
+        (
+            "model",
+            r#"{"attributes":[],"attributes":[]}"#,
+            "attributes",
+        ),
+        (
+            "native",
+            r#"{"iges":{"entities":[],"entities":[]}}"#,
+            "entities",
+        ),
+        (
+            "model",
+            r#"{"attributes":[{"name":"first","name":"second"}]}"#,
+            "name",
+        ),
+    ] {
+        let json = current_with_prefix(field, raw);
+        assert!(json.find(field).unwrap() < json.find("ir_version").unwrap());
+        let error = serde_json::from_str::<CadIr>(&json)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("duplicate") && error.contains(key),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn current_version_after_prefix_still_refuses_unknown_keys() {
+    for (field, raw, unknown) in [
+        ("unknown_prefix", "7", "unknown_prefix"),
+        (
+            "model",
+            r#"{"unknown_model_prefix":false}"#,
+            "unknown_model_prefix",
+        ),
+    ] {
+        let error = serde_json::from_str::<CadIr>(&current_with_prefix(field, raw))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("unknown field") && error.contains(unknown),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn current_version_after_prefix_refuses_repeated_top_level_fields() {
+    let scope =
+        serde_json::to_string(&serde_json::to_value(CadIr::empty()).unwrap()["scope"]).unwrap();
+    let json = current_with_prefix("scope", &scope);
+    let repeated = format!("{{\"scope\":{scope},{}", &json[1..]);
+    let error = serde_json::from_str::<CadIr>(&repeated)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("duplicate field") && error.contains("scope"),
+        "{error}"
+    );
+}
+
+#[test]
+fn unsupported_version_after_changed_model_shape_keeps_version_diagnostic() {
+    for version in ["6", "7"] {
+        let json = format!(
+            r#"{{"model":{{"features":{{"legacy":true}}}},"ir_version":"{version}","decode_depth":"full"}}"#
+        );
+        let error = serde_json::from_str::<CadIr>(&json)
+            .unwrap_err()
+            .to_string();
+        for expected in [
+            "unsupported ir_version",
+            "expected 8",
+            "decode_depth",
+            "scope",
+            "report",
+        ] {
+            assert!(error.contains(expected), "{error}");
+        }
+    }
+}
+
+#[test]
+fn current_version_first_and_after_valid_prefix_have_the_same_document() {
+    let expected = CadIr::empty();
+    let model = serde_json::to_string(&serde_json::to_value(&expected).unwrap()["model"]).unwrap();
+    let json = current_with_prefix("model", &model);
+    assert_eq!(serde_json::from_str::<CadIr>(&json).unwrap(), expected);
+    assert_eq!(
+        serde_json::from_str::<CadIr>(&serde_json::to_string(&expected).unwrap()).unwrap(),
+        expected
+    );
 }
