@@ -24,7 +24,7 @@ fn circle(center: Point2, radius: f64) -> SketchGeometry {
 
 fn check_with(
     ir: &CadIr,
-    definition: Constraint,
+    definition: &Constraint,
     entities: &[(&SketchEntityId, &SketchGeometry)],
 ) -> Option<&'static str> {
     let geometry = BorrowedIdentities::build(|add| {
@@ -32,7 +32,7 @@ fn check_with(
             add(id.as_str(), geometry);
         }
     });
-    check(ir, &definition, &geometry)
+    check(ir, definition, &geometry)
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn concentric_coradial_and_tangent_constraints_measure_distinct_facts() {
     let (first_id, second_id) = operands();
     assert!(check_with(
         &ir,
-        Constraint::Concentric {
+        &Constraint::Concentric {
             first: first_id,
             second: second_id
         },
@@ -59,7 +59,7 @@ fn concentric_coradial_and_tangent_constraints_measure_distinct_facts() {
     let (first_id, second_id) = operands();
     assert!(check_with(
         &ir,
-        Constraint::Coradial {
+        &Constraint::Coradial {
             first: first_id,
             second: second_id
         },
@@ -70,7 +70,7 @@ fn concentric_coradial_and_tangent_constraints_measure_distinct_facts() {
         let (first_id, second_id) = operands();
         assert!(check_with(
             &ir,
-            Constraint::Tangent {
+            &Constraint::Tangent {
                 first: first_id,
                 second: second_id
             },
@@ -81,7 +81,7 @@ fn concentric_coradial_and_tangent_constraints_measure_distinct_facts() {
     let (first_id, second_id) = operands();
     assert!(check_with(
         &ir,
-        Constraint::Tangent {
+        &Constraint::Tangent {
             first: first_id,
             second: second_id
         },
@@ -91,7 +91,7 @@ fn concentric_coradial_and_tangent_constraints_measure_distinct_facts() {
     let (first_id, second_id) = operands();
     assert!(check_with(
         &ir,
-        Constraint::Curvature {
+        &Constraint::Curvature {
             first: first_id,
             second: second_id
         },
@@ -119,8 +119,8 @@ fn tangent_loci_check_contact_position_and_local_direction() {
         first: SketchLocus::Start(first.clone()),
         second: SketchLocus::Start(second.clone()),
     };
-    assert!(check_with(&ir, definition(), &[(&first, &arc), (&second, &tangent)]).is_none());
-    assert!(check_with(&ir, definition(), &[(&first, &arc), (&second, &crossing)]).is_some());
+    assert!(check_with(&ir, &definition(), &[(&first, &arc), (&second, &tangent)]).is_none());
+    assert!(check_with(&ir, &definition(), &[(&first, &arc), (&second, &crossing)]).is_some());
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn repeated_distance_reads_the_canonical_parameter_and_per_measurement_axis() {
         driving: true,
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
     });
@@ -159,11 +159,11 @@ fn repeated_distance_reads_the_canonical_parameter_and_per_measurement_axis() {
         parameter: Dimension::Parameter(ir.model.parameters[0].id.clone()),
     };
     let entities = [(&first, &origin), (&second, &end)];
-    assert!(check_with(&ir, definition.clone(), &entities).is_none());
+    assert!(check_with(&ir, &definition, &entities).is_none());
     ir.model.parameters[0].value = Some(ParameterValue::Length(Length::new(4.0).unwrap()));
-    assert!(check_with(&ir, definition.clone(), &entities).is_some());
+    assert!(check_with(&ir, &definition, &entities).is_some());
     ir.model.parameters[0].value = None;
-    assert!(check_with(&ir, definition, &entities).is_none());
+    assert!(check_with(&ir, &definition, &entities).is_none());
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn cache_checks_use_the_declared_tolerance_and_do_not_measure_arc_chords_as_line
     .unwrap();
     assert!(check_with(
         &ir,
-        Constraint::Horizontal {
+        &Constraint::Horizontal {
             entity: entity.clone()
         },
         &[(&entity, &arc)]
@@ -239,7 +239,7 @@ fn circular_pattern_distinguishes_periodic_span_from_inclusive_span_and_spacing(
     let angle = Dimension::Literal(Angle::new(std::f64::consts::TAU).unwrap());
     assert!(check_with(
         &ir,
-        pattern(PatternAngle::Span {
+        &pattern(PatternAngle::Span {
             angle: angle.clone(),
             distribution: CircularPatternDistribution::Periodic,
         }),
@@ -248,14 +248,14 @@ fn circular_pattern_distinguishes_periodic_span_from_inclusive_span_and_spacing(
     .is_none());
     assert!(check_with(
         &ir,
-        pattern(PatternAngle::Span {
+        &pattern(PatternAngle::Span {
             angle: angle.clone(),
             distribution: CircularPatternDistribution::Inclusive,
         }),
         &geometry
     )
     .is_some());
-    assert!(check_with(&ir, pattern(PatternAngle::Spacing { angle }), &geometry).is_some());
+    assert!(check_with(&ir, &pattern(PatternAngle::Spacing { angle }), &geometry).is_some());
     let moved = point(0.0, 1.0);
     let wrong_geometry = [
         (&center, &origin),
@@ -265,7 +265,7 @@ fn circular_pattern_distinguishes_periodic_span_from_inclusive_span_and_spacing(
     ];
     assert!(check_with(
         &ir,
-        pattern(PatternAngle::Span {
+        &pattern(PatternAngle::Span {
             angle: Dimension::Literal(Angle::new(std::f64::consts::TAU).unwrap()),
             distribution: CircularPatternDistribution::Periodic,
         }),

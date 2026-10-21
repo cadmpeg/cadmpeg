@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::document::CadIr;
-use crate::features::{Dimension, Expression, ParameterValue};
+use crate::features::{Dimension, DimensionValue, Expression, ParameterValue};
 use crate::scalar::{Angle, Length, PositiveLength};
 
 #[test]
@@ -11,7 +11,6 @@ fn literal_dimensions_preserve_quantity_and_positive_admission() {
         document.dimension_value(&Dimension::Literal(length)),
         Some(length)
     );
-    use crate::features::DimensionValue;
     assert!(
         PositiveLength::from_parameter_value(&ParameterValue::Length(Length::new(-5.0).unwrap()))
             .is_none()
