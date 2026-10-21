@@ -1053,7 +1053,27 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .expect("source-less extrusion round trip");
     assert_eq!(round_trip.ir().model.procedural_surfaces.len(), 1);
     let actual = &round_trip.ir().model.procedural_surfaces[0];
-    assert_eq!(actual.definition(), expected.definition());
+    // Omitting the independently invalid source face changes native record
+    // positions. Compare every definition field under its actual typed owner.
+    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(payload) = actual.definition()
+    else {
+        panic!("expected extrusion definition")
+    };
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut identities = IdentityMap::new(|id: &str| {
+        Ok(if id == directrix_id.as_str() {
+            payload.directrix().as_str().to_owned()
+        } else {
+            id.to_owned()
+        })
+    });
+    let expected_definition = expected
+        .definition()
+        .clone()
+        .rewrite_identities(&ctx, &mut identities)
+        .unwrap();
+    assert_eq!(actual.definition(), &expected_definition);
     assert_eq!(actual.cache_fit_tolerance(), expected.cache_fit_tolerance());
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
         actual.definition()
