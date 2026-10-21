@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IGES level numbers and definition-level sets as neutral layer membership.
 
-use super::*;
+use super::{
+    BTreeMap, BTreeSet, CadIr, CodecError, DecodeContext, DirectoryEntry, IgesLossCode,
+    ParameterRecord,
+};
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
 fn projection_loss(

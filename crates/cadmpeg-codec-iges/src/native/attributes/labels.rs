@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Directory labels and carrier name properties have editable neutral homes.
 
-use super::*;
+use super::{
+    AttributeTarget, AttributeValue, BTreeMap, CadIr, CodecError, DecodeContext, IgesLossCode,
+    LossNote, NativeProperty, NativePropertyValue, project_fields,
+};
 
 fn carrier(target: &AttributeTarget) -> bool {
     matches!(

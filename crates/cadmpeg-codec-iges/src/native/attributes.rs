@@ -8,11 +8,11 @@ use super::{
 use crate::entities::geometry::SourceSequences;
 use crate::loss::IgesLossCode;
 use crate::parameter::TokenValue;
-use cadmpeg_core::{decode::DecodeContext, CodecError};
+use cadmpeg_core::{CodecError, decode::DecodeContext};
+use cadmpeg_ir::CadIr;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::{AttributeId, IdentityKey};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::CadIr;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 
@@ -130,7 +130,15 @@ pub(super) fn serialize_instance<S: Serializer>(
 }
 
 fn property_kind(value: &NativePropertyValue) -> &'static str {
-    use NativePropertyValue::*;
+    use NativePropertyValue::{
+        AssociativityGroupType, BasicDimension, Closure, DimensionDisplayData, DimensionTolerance,
+        DimensionUnits, DrawingSheetApproval, DrawingSheetId, DrilledHole,
+        ExternalReferenceFileList, FlowLineSpecification, GenericData, Hierarchy, Highlight,
+        IntercharacterSpacing, LepArtworkStackup, LepDrilledHole, LevelFunction,
+        LevelToLepLayerMap, LineFont, LineWidening, Name, NominalSize, Overscore, PartNumber, Pick,
+        PinNumber, ReferenceDesignator, RegionFill, RegionRestriction, TabularData, Underscore,
+        UniformRectangularGrid,
+    };
     match value {
         RegionRestriction { .. } => "region_restriction",
         LevelFunction { .. } => "level_function",
@@ -303,16 +311,26 @@ fn project_fields(
 mod fields;
 mod labels;
 
+pub(super) struct PropertyRecords<'a> {
+    pub(super) properties: &'a mut [NativeProperty],
+    pub(super) products: &'a mut [NativeProductProperty],
+    pub(super) definitions: &'a mut [NativeAttributeTableDefinition],
+    pub(super) instances: &'a mut [NativeAttributeTableInstance],
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     sequences: &SourceSequences,
     entities: &mut [super::NativeEntity<'_>],
-    properties: &mut [NativeProperty],
-    products: &mut [NativeProductProperty],
-    definitions: &mut [NativeAttributeTableDefinition],
-    instances: &mut [NativeAttributeTableInstance],
+    records: PropertyRecords<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<LossNote>, CodecError> {
+    let PropertyRecords {
+        properties,
+        products,
+        definitions,
+        instances,
+    } = records;
     let targets = targets(ir, sequences);
     let mut losses = Vec::new();
     for property in properties.iter_mut().filter(|property| property.form != 15) {
@@ -328,7 +346,7 @@ pub(super) fn project(
                     fields,
                     &targets,
                     ctx,
-                )?)
+                )?);
             }
             Err(reason) => losses.push(
                 IgesLossCode::NeutralProjectionUnavailable

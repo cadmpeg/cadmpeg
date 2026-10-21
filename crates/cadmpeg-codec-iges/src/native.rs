@@ -9,24 +9,24 @@ use crate::card::{CardScan, ScannedLine, Section};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
 use crate::entities::geometry::{
-    resolve_transform, BoundaryEndpoint, BoundaryVertexDerivation, TransformResolutionError,
+    BoundaryEndpoint, BoundaryVertexDerivation, TransformResolutionError, resolve_transform,
 };
 use crate::entities::structure::{
-    array_base_type, flow_join_target_valid, placement_affine, signal_string_geometry_target,
-    PlacementRejection,
+    PlacementRejection, array_base_type, flow_join_target_valid, placement_affine,
+    signal_string_geometry_target,
 };
 use crate::global::{RealPrecision, ResolvedGlobal};
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
-    connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount, MacroDataError,
-    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout,
-    Token, TokenValue, TrailingPointerAnalysis,
+    DefaultTailCount, MacroDataError, OverdeclaredCount, ParameterRecord,
+    QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout, Token, TokenValue,
+    TrailingPointerAnalysis, connect_node_layout, signal_string_layout, text_node_layout,
 };
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::transform::Transform;
+use cadmpeg_core::decode::{DecodeContext, u64_from_index};
 use cadmpeg_ir::CadIr;
+use cadmpeg_ir::transform::Transform;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1545,7 +1545,7 @@ fn attribute_table_rows<'a>(
                 .ok_or(UnstatableAttributeTable::ValueCount { attribute })?,
             Some(TokenValue::Integer(value)) => *value,
             Some(TokenValue::Real(_) | TokenValue::String(_) | TokenValue::Unreadable(_)) => {
-                return Err(UnstatableAttributeTable::ValueCount { attribute })
+                return Err(UnstatableAttributeTable::ValueCount { attribute });
             }
         };
         let declared = usize::try_from(declared)
@@ -3813,11 +3813,7 @@ pub(crate) fn store(
                     });
                     cursor = next;
                 }
-                if complete {
-                    classes
-                } else {
-                    Vec::new()
-                }
+                if complete { classes } else { Vec::new() }
             } else {
                 Vec::new()
             };
@@ -5848,10 +5844,12 @@ pub(crate) fn store(
             ir,
             sequences,
             &mut entities,
-            &mut properties,
-            &mut product_properties,
-            &mut attribute_table_definitions,
-            &mut attribute_table_instances,
+            attributes::PropertyRecords {
+                properties: &mut properties,
+                products: &mut product_properties,
+                definitions: &mut attribute_table_definitions,
+                instances: &mut attribute_table_instances,
+            },
             ctx,
         )?);
     }

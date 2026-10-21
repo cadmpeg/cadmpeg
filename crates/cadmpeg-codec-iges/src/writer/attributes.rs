@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Regenerate properties and attribute tables from their current neutral values.
 
-use super::{reference_marker, Entity, EntityStatus, IgesLossCode};
+use super::{Entity, EntityStatus, IgesLossCode, reference_marker};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::native::NativeRecord;
@@ -131,7 +131,7 @@ fn typed_value(value: &AttributeValue, targets: &Targets) -> Result<(i64, String
             (4, reference_marker(*index))
         }
         AttributeValue::Vector(_) => {
-            return Err("a numeric vector has no exact Generic Data scalar type".into())
+            return Err("a numeric vector has no exact Generic Data scalar type".into());
         }
     })
 }
@@ -283,7 +283,7 @@ pub(super) fn append(
             &mut targets,
             version,
             &mut result,
-        )?;
+        );
         for record in namespace.arenas().get("properties").into_iter().flatten() {
             match fields::groups(record, &attributes, ir.scope.model) {
                 Ok(groups) => {

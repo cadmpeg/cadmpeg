@@ -4,18 +4,18 @@
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, native, parameter};
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::ContainerSummary;
 #[cfg(test)]
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_FINGERPRINT_METADATA_KEY};
+use cadmpeg_ir::hash::{DOCUMENT_FINGERPRINT_METADATA_KEY, document_local_sha256};
 use cadmpeg_ir::report::{
+    Severity,
     decode::{TransferLedger, TransferOutcome},
     loss::LossNote,
-    Severity,
 };
-use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -184,8 +184,10 @@ fn append_generic_losses(
         } else {
             (
                 IgesLossCode::EntityOutsideEnvelope,
-                format!("IGES entity type {} form {} is outside the Fixed ASCII mechanical/document envelope",
-                entry.entity_type, entry.form),
+                format!(
+                    "IGES entity type {} form {} is outside the Fixed ASCII mechanical/document envelope",
+                    entry.entity_type, entry.form
+                ),
             )
         };
 
@@ -591,17 +593,23 @@ fn decode_with_occurrence_limits(
         );
     }
     for source_sequence in product_occurrence_expansion.malformed_definition_sequences {
-        push_occurrence_loss(&mut losses,
+        push_occurrence_loss(
+            &mut losses,
             IgesLossCode::OccurrenceRootInferenceBlocked,
-            format_args!("IGES product occurrence root inference was suppressed because a definition member list is malformed"),
+            format_args!(
+                "IGES product occurrence root inference was suppressed because a definition member list is malformed"
+            ),
             source_sequence,
             &parse.directory,
         );
     }
     for source_sequence in product_occurrence_expansion.malformed_placement_sequences {
-        push_occurrence_loss(&mut losses,
+        push_occurrence_loss(
+            &mut losses,
             IgesLossCode::OccurrencePlacementMalformed,
-            format_args!("IGES product occurrence expansion omitted an instance or member with malformed placement data"),
+            format_args!(
+                "IGES product occurrence expansion omitted an instance or member with malformed placement data"
+            ),
             source_sequence,
             &parse.directory,
         );
@@ -751,7 +759,7 @@ fn decode_with_occurrence_limits(
     } else {
         cadmpeg_ir::report::decode::DecodeTransfer {
             scope: cadmpeg_ir::ContentScope::full(),
-            geometry_transferred: geometry_transferred,
+            geometry_transferred,
         }
     });
     body.transfer.scope = ir.scope;

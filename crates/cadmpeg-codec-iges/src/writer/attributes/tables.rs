@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact Type 322/422 schema and row reconstruction from canonical attributes.
 
-use super::{fields::Fields, *};
+use super::{
+    AttributeExport, AttributeValue, BTreeMap, BTreeSet, CadIr, Entity, EntityStatus, NativeRecord,
+    SourceAttribute, Targets, append_owned, entity, fields, fields::Fields, hollerith, omitted,
+    reference_marker, string_field, typed_value,
+};
 use cadmpeg_ir::native::NativeNamespace;
 use serde_json::Value;
 
@@ -249,7 +253,7 @@ pub(super) fn append(
     targets: &mut Targets,
     version: crate::IgesVersion,
     result: &mut AttributeExport,
-) -> Result<(), CodecError> {
+) {
     let mut definitions = BTreeMap::new();
     for record in namespace
         .arenas()
@@ -315,5 +319,4 @@ pub(super) fn append(
             Err(reason) => omitted(&mut result.losses, record.id(), reason),
         }
     }
-    Ok(())
 }

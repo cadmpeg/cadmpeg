@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reconstruct typed native records without reading retained source bytes.
 
-use super::*;
+use super::{
+    CadIr, DirectoryLineFont, Entity, EntityStatus, FiniteReal, IgesLossCode, LossNote, attributes,
+    number, reference_marker,
+};
 use cadmpeg_ir::native::NativeRecord;
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
@@ -58,7 +61,7 @@ impl Fields<'_> {
             return Ok("0".into());
         };
         let id = value.as_str().ok_or("reference is not a typed identity")?;
-        let [index] = self.targets.get(id).map(Vec::as_slice).unwrap_or(&[]) else {
+        let [index] = self.targets.get(id).map_or(&[][..], Vec::as_slice) else {
             return Err(format!(
                 "current reference {id} has no unique emitted target"
             ));
@@ -138,6 +141,14 @@ fn count(fields: &Map<String, Value>, name: &str, length: usize) -> Result<Strin
     Ok(length.to_string())
 }
 fn entity(type_code: u32, form: i64, parameters: Vec<String>) -> Entity {
+    let mut parameter_body = String::new();
+    for (index, value) in parameters.into_iter().enumerate() {
+        if index != 0 {
+            parameter_body.push(',');
+        }
+        parameter_body.push_str(&value);
+    }
+    parameter_body.push(';');
     Entity {
         structure: None,
         property_links: Vec::new(),
@@ -148,7 +159,7 @@ fn entity(type_code: u32, form: i64, parameters: Vec<String>) -> Entity {
         form,
         label: String::new(),
         status: EntityStatus::Independent,
-        parameter_body: format!("{};", parameters.join(",")).into_bytes(),
+        parameter_body: parameter_body.into_bytes(),
         transform: None,
     }
 }

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Consume current carrier names exactly once, using short Directory labels.
 
-use super::*;
+use super::{
+    AttributeExport, AttributeTarget, AttributeValue, BTreeSet, CadIr, Entity, Targets, target_id,
+};
 
 fn carrier(target: &AttributeTarget) -> bool {
     matches!(
