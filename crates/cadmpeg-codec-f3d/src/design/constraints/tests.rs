@@ -524,7 +524,12 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
     };
     assert_eq!(pattern.center(), center.id());
     assert_eq!(
-        wire::field::<cadmpeg_ir::scalar::Angle>(&pattern, "angle").get(),
+        pattern
+            .angle()
+            .dimension()
+            .literal()
+            .expect("source literal angle")
+            .get(),
         std::f64::consts::PI
     );
     assert_eq!((pattern.instances().len() + 1), 3);
