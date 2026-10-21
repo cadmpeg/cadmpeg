@@ -231,6 +231,17 @@ pub(crate) fn enrich_history_parameters<'a>(
         }
         starts.sort_by_key(|left| left.0);
         let owners = ScalarOwners::new(&lane.scalars);
+        let metadata_ids = super::bindings::history_metadata_ids(histories);
+        let mut object_starts = histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
+            .filter_map(|feature| {
+                let offset = usize::try_from(object_names.of(feature)?.offset?).ok()?;
+                Some((offset, feature))
+            })
+            .collect::<Vec<_>>();
+        object_starts.sort_unstable_by_key(|(offset, _)| *offset);
         let mut pattern_values = Vec::new();
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map(|next| next.0);
@@ -240,13 +251,14 @@ pub(crate) fn enrich_history_parameters<'a>(
                     .of(feature)
                     .and_then(|name| name.offset)
                     .and_then(|offset| usize::try_from(offset).ok());
-                let object_end = starts
-                    .get(index + 1)
-                    .and_then(|&(_, history, feature)| {
-                        object_names
-                            .of(&histories[history].features[feature])?
-                            .offset
-                            .and_then(|offset| usize::try_from(offset).ok())
+                let object_end = object_starts
+                    .iter()
+                    .position(|(_, candidate)| candidate.id == feature.id)
+                    .map(|position| {
+                        super::bindings::pattern_object_end(
+                            object_starts.iter().skip(position + 1).copied(),
+                            lane.native_payload.len(),
+                        )
                     })
                     .unwrap_or(lane.native_payload.len());
                 if let Some(dimensions) = object_start.and_then(|start| {
