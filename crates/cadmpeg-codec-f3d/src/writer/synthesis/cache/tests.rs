@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::test_support::native_test::TestEncode;
 use cadmpeg_ir::codec::{write::ArenaDisposition, Codec, DecodeOptions};
 use std::io::Cursor;
 
