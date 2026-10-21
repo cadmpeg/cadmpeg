@@ -396,6 +396,18 @@ fn omit_face_parts(
         .filter(|shell| shell.faces().iter().any(|id| faces.contains(id.as_str())))
         .map(|shell| shell.id.clone())
         .collect();
+    let changed_regions: BTreeSet<_> = model
+        .shells
+        .iter()
+        .filter(|shell| affected_shells.contains(&shell.id))
+        .map(|shell| shell.region.clone())
+        .collect();
+    let changed_bodies: BTreeSet<_> = model
+        .regions
+        .iter()
+        .filter(|region| changed_regions.contains(&region.id))
+        .map(|region| region.body.clone())
+        .collect();
     let mut shells = Vec::new();
     for mut shell in std::mem::take(&mut model.shells) {
         let kept = shell
@@ -451,5 +463,67 @@ fn omit_face_parts(
             true
         }
     });
+    // A source Solid may lose a boundary face. Reuse ASM's semantic
+    // classification on the surviving uses, only for touched bodies.
+    let collapsed: BTreeSet<_> = model
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.start == edge.end
+                && edge.curve().is_some_and(|id| {
+                    model.curves.iter().any(|curve| {
+                        curve.id == *id
+                            && matches!(
+                                curve.geometry,
+                                cadmpeg_ir::geometry::CurveGeometry::Solved(
+                                    cadmpeg_ir::geometry::SolvedCurveGeometry::Degenerate(_)
+                                )
+                            )
+                    })
+                })
+        })
+        .map(|edge| edge.id.clone())
+        .collect();
+    for body in &mut model.bodies {
+        if !changed_bodies.contains(&body.id) {
+            continue;
+        }
+        let regions: BTreeSet<_> = body.regions.iter().collect();
+        let shells: Vec<_> = model
+            .shells
+            .iter()
+            .filter(|shell| regions.contains(&shell.region))
+            .collect();
+        let faces: BTreeSet<_> = shells
+            .iter()
+            .flat_map(|shell| shell.faces().iter())
+            .collect();
+        let loops: BTreeSet<_> = model
+            .loops
+            .iter()
+            .filter(|row| faces.contains(&row.face))
+            .map(|row| &row.id)
+            .collect();
+        body.kind = if faces.is_empty() {
+            cadmpeg_ir::topology::BodyKind::Wire
+        } else if shells
+            .iter()
+            .any(|shell| !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty())
+        {
+            cadmpeg_ir::topology::BodyKind::General
+        } else {
+            cadmpeg_asm::brep::geometry::faced_body_kind(
+                model
+                    .coedges
+                    .iter()
+                    .filter(|row| loops.contains(&row.owner_loop))
+                    .map(|row| (&row.edge, row.sense)),
+                |edge| collapsed.contains(edge),
+            )
+        };
+    }
     Ok(removed)
 }
+
+#[cfg(test)]
+mod tests;
