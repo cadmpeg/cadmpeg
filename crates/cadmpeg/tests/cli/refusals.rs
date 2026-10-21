@@ -529,7 +529,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         .stderr(
             predicate::str::contains("export planning reported 1 loss(es)")
                 .and(predicate::str::contains(
-                    "omits 1 native record(s) from `creo.unknowns`",
+                    "uninterpreted passthrough record(s)",
                 ))
                 .and(predicate::str::contains("decode reported").not()),
         );
