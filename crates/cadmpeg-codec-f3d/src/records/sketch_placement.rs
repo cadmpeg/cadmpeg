@@ -439,7 +439,10 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
             visibility: wire.visibility,
             class_tag: wire.class_tag.try_into()?,
             record_index: wire.record_index,
-            paired_class_tag: wire.paired_class_tag.try_into()?,
+            paired_class_tag: wire
+                .paired_class_tag
+                .try_into()
+                .map_err(|error| format!("paired_class_tag: {error}"))?,
             frame: DesignSketchFrame {
                 byte_offset: None,
                 form: DesignSketchFrameForm::Authored {
