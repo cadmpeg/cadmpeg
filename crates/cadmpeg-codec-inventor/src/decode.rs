@@ -509,6 +509,12 @@ fn decode_container<'a>(
         "pm_dc_entity_style_links",
         &feature_inventory.entity_style_links,
     )?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_kernel_entity_links",
+        &feature_inventory.kernel_entity_links,
+    )?;
+    namespace.set_arena(ctx, "pm_dc_work_planes", &feature_inventory.work_planes)?;
     namespace.set_arena(ctx, "feature_record_issues", &feature_inventory.issues)?;
     namespace.set_arena(ctx, "segment_pairs", &segment_pairs)?;
     namespace.set_arena(ctx, "segment_meta", &segment_meta)?;
