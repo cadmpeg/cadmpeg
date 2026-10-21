@@ -2013,12 +2013,6 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             .map(|occurrence| occurrence.occurrence_id),
         "UFRxDoc occurrence id",
     );
-    let reference_ids = data
-        .ufrx
-        .external_references()
-        .iter()
-        .map(|reference| reference.reference_id)
-        .collect::<HashSet<_>>();
     let assembly_ids = data
         .assembly_occurrences
         .iter()
@@ -2027,10 +2021,14 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     let mut actual_counts = HashMap::<u32, u64>::new();
     let assembly_document = is_assembly_document(ir);
     for occurrence in data.ufrx.occurrences() {
-        *actual_counts
-            .entry(occurrence.file_reference_id)
-            .or_default() += 1;
-        if !reference_ids.contains(&occurrence.file_reference_id)
+        let reference = crate::native::ufrx::resolve_occurrence_reference(
+            occurrence,
+            data.ufrx.external_references(),
+        );
+        if let Some(reference) = reference {
+            *actual_counts.entry(reference.reference_id).or_default() += 1;
+        }
+        if reference.is_none()
             || (assembly_document && !assembly_ids.contains(&occurrence.occurrence_id))
         {
             findings.push(finding(

@@ -105,45 +105,47 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
 
     // Each face: name, outward normal, surface origin, and its loop as an
     // ordered ring of (edge_index, forward) pairs. `forward` means the coedge
-    // traverses the edge in the edge's own start→end direction. Every edge
-    // appears exactly twice across all faces, once in each direction, so the
-    // two coedges of an edge always have opposite sense.
+    // traverses the edge in the edge's own start→end direction. Each ring runs
+    // counterclockwise about the outward normal, as every outer loop does about
+    // its face's oriented normal. Every edge appears exactly twice across all
+    // faces, once in each direction, so the two coedges of an edge always have
+    // opposite sense.
     let face_defs: [FaceDef; 6] = [
         (
             crate::identity_key!("bottom"),
             (0.0, 0.0, -1.0),
             (0.0, 0.0, 0.0),
-            [(0, true), (1, true), (2, true), (3, true)],
+            [(0, false), (3, false), (2, false), (1, false)],
         ),
         (
             crate::identity_key!("top"),
             (0.0, 0.0, 1.0),
             (0.0, 0.0, s),
-            [(7, false), (6, false), (5, false), (4, false)],
+            [(7, true), (4, true), (5, true), (6, true)],
         ),
         (
             crate::identity_key!("front"),
             (0.0, -1.0, 0.0),
             (0.0, 0.0, 0.0),
-            [(0, false), (8, true), (4, true), (9, false)],
+            [(0, true), (9, true), (4, false), (8, false)],
         ),
         (
             crate::identity_key!("right"),
             (1.0, 0.0, 0.0),
             (s, 0.0, 0.0),
-            [(1, false), (9, true), (5, true), (10, false)],
+            [(1, true), (10, true), (5, false), (9, false)],
         ),
         (
             crate::identity_key!("back"),
             (0.0, 1.0, 0.0),
             (0.0, s, 0.0),
-            [(2, false), (10, true), (6, true), (11, false)],
+            [(2, true), (11, true), (6, false), (10, false)],
         ),
         (
             crate::identity_key!("left"),
             (-1.0, 0.0, 0.0),
             (0.0, 0.0, 0.0),
-            [(3, false), (11, true), (7, true), (8, false)],
+            [(3, true), (8, true), (7, false), (11, false)],
         ),
     ];
 

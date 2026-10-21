@@ -1587,6 +1587,7 @@ fn project_ufrx_state(
                 caption: document.caption.clone(),
                 representation,
                 model_states,
+                levels_of_detail: project_ufrx_levels_of_detail(&document.levels_of_detail),
                 external_references: references,
                 embedded_references: embedded,
                 occurrences,
@@ -1599,6 +1600,40 @@ fn project_ufrx_state(
             }))
         }
     })
+}
+
+fn project_ufrx_levels_of_detail(
+    levels: &[crate::external_reference::UfrxLevelOfDetail],
+) -> Vec<crate::native::ufrx::UfrxLevelOfDetailRecord> {
+    use crate::external_reference::UfrxLevelOfDetailMemberKind;
+    use crate::native::ufrx::{UfrxLevelOfDetailMemberRecord, UfrxLevelOfDetailRecord};
+    levels
+        .iter()
+        .map(|level| UfrxLevelOfDetailRecord {
+            prefix: level.prefix,
+            name: level.name.clone(),
+            state: level.state,
+            members: level
+                .members
+                .iter()
+                .map(|member| {
+                    let (kind, nested_state, nested_level_of_detail) = match &member.kind {
+                        UfrxLevelOfDetailMemberKind::Listed => (1, None, None),
+                        UfrxLevelOfDetailMemberKind::Nested {
+                            state,
+                            level_of_detail,
+                        } => (2, Some(*state), Some(level_of_detail.clone())),
+                    };
+                    UfrxLevelOfDetailMemberRecord {
+                        occurrence: member.occurrence.clone(),
+                        kind,
+                        nested_state,
+                        nested_level_of_detail,
+                    }
+                })
+                .collect(),
+        })
+        .collect()
 }
 
 fn project_ufrx_model_state(
@@ -1704,12 +1739,16 @@ fn project_ufrx_occurrence(
     let admitted = UfrxOccurrenceRecord::try_from(UfrxOccurrenceRecordWire {
         id: format!("inventor:ufrx:occurrence#{ordinal}"),
         ordinal: record_ordinal(ordinal, "Inventor UFRx occurrence ordinal")?,
-        end_string_flag: occurrence.end_string_flag,
-        file_reference_id: occurrence.file_reference_id,
+        reference_id: occurrence.reference_id,
         occurrence_id: occurrence.occurrence_id,
+        occurrence_key: occurrence.occurrence_key,
         header_value: occurrence.header_value,
         title: occurrence.title.as_deref().map(str::to_owned),
         header_padding_words: occurrence.header_padding_words,
+        prototype_document_id: occurrence
+            .prototype_document_id
+            .map(cadmpeg_ir::native::bytes::NativeBytes::from),
+        component_name: occurrence.component_name.clone(),
         record_len: cadmpeg_core::decode::u64_from_index(occurrence.source.window().len()),
         record_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest(
             occurrence.source.window(),
