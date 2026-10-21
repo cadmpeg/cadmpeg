@@ -507,7 +507,8 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some("synthetic:test:constraint#point-coordinates")
-            && finding.check == Check::Counts
+            && finding.check == Check::GeometricConsistency
+            && finding.severity == crate::report::Severity::Error
     }));
 }
 
@@ -1646,6 +1647,25 @@ fn constraint_admission_checks_scalar_bounds_and_polar_angle_presence() {
         assert!(SketchLabelValue::try_from(value).is_err());
     }
 
+    // Offset dimensions are signed; their sign selects the source normal.
+    let negative_offset = Kind::Offset {
+        pairs: vec![SketchOffsetPair {
+            source: a.clone(),
+            result: b.clone(),
+            source_reversed: false,
+        }],
+        distance: crate::features::Dimension::Literal(Length::new(-1.0).unwrap()),
+    };
+    let admitted = SketchConstraintDefinition::try_from(negative_offset.clone()).unwrap();
+    assert_eq!(*admitted.kind(), negative_offset);
+    assert_eq!(
+        serde_json::from_value::<SketchConstraintDefinition>(
+            serde_json::to_value(&admitted).unwrap()
+        )
+        .unwrap(),
+        admitted,
+    );
+
     for kind in [
         Kind::DistanceLociValue {
             first: first.clone(),
@@ -1659,14 +1679,6 @@ fn constraint_admission_checks_scalar_bounds_and_polar_angle_presence() {
                 source_reversed: false,
             }],
             distance: crate::features::Dimension::Literal(Length::new(0.0).unwrap()),
-        },
-        Kind::Offset {
-            pairs: vec![SketchOffsetPair {
-                source: a.clone(),
-                result: b.clone(),
-                source_reversed: false,
-            }],
-            distance: crate::features::Dimension::Literal(Length::new(-1.0).unwrap()),
         },
         Kind::AngleDifference {
             first: 1,
