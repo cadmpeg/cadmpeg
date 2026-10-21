@@ -964,15 +964,9 @@ mod tests {
                 SketchConstraintDefinitionInput::DistanceLociValue {
                     first: SketchLocus::Start(entity.clone()),
                     second: SketchLocus::End(entity),
-                    distance: (None)
-                        .map(cadmpeg_ir::features::Dimension::Parameter)
-                        .unwrap_or_else(|| {
-                            cadmpeg_ir::features::Dimension::Literal(
-                                (cadmpeg_ir::scalar::Length::new(value)
-                                    .expect("finite source distance"))
-                                .into(),
-                            )
-                        }),
+                    distance: cadmpeg_ir::features::Dimension::Literal(
+                        cadmpeg_ir::scalar::Length::new(value).expect("finite source distance"),
+                    ),
                 },
             )
             .expect("valid source distance"),
