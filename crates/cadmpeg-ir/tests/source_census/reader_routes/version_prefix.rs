@@ -76,7 +76,12 @@ fn tokens(text: &str) -> Vec<super::Node> {
 }
 
 fn same(source: &str, span: proc_macro2::Span, expected: &str) -> bool {
-    tokens(&source_span_text(source, span)) == tokens(expected)
+    let actual = source_span_text(source, span);
+    let matches = tokens(&actual) == tokens(expected);
+    if !matches {
+        eprintln!("version-prefix grammar mismatch: expected {expected:?}, got {actual:?}");
+    }
+    matches
 }
 
 fn context(symbol: &SymbolKey) -> HandImplSource {
@@ -249,114 +254,131 @@ fn external_path(
 }
 
 pub(super) fn closed_route(resolved: &ResolvedPath, index: &SourceIndex) -> Option<InputRoute> {
-    let ResolvedPath::Local(symbol) = resolved else {
-        return None;
-    };
-    if symbol.kind != SymbolKind::Function {
-        return None;
-    }
-    let items = index
-        .module_items
-        .get(&(symbol.path.clone(), symbol.scope.clone()))?;
-    let source = index.source_text.get(&symbol.path)?;
-    let function = items.iter().find_map(|item| match item {
-        syn::Item::Fn(function) if function.sig.ident == symbol.name => Some(function),
-        _ => None,
-    })?;
-    if function.sig.inputs.len() != 1
-        || signature_deserializer_bindings(&function.sig)
-            != std::collections::BTreeSet::from(["deserializer".to_owned()])
-    {
-        return None;
-    }
-    let [syn::Stmt::Item(syn::Item::Struct(marker)), syn::Stmt::Item(syn::Item::Impl(visitor)), syn::Stmt::Expr(tail, None)] =
-        function.block.stmts.as_slice()
-    else {
-        return None;
-    };
-    if visitor
-        .trait_
-        .as_ref()?
-        .0
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string())
-        .collect::<Vec<_>>()
-        != ["serde", "de", "Visitor"]
-        || !matches!(visitor.self_ty.as_ref(), syn::Type::Path(ty) if ty.path.is_ident("VersionedDocument"))
-        || !same(source, marker.span(), "struct VersionedDocument;")
-        || !same(
-            source,
-            tail.span(),
-            "deserializer.deserialize_map(VersionedDocument)",
-        )
-        || visitor.items.len() != 3
-        || !same(
-            source,
-            method(visitor, "visit_map")?.block.span(),
-            VISIT_MAP,
-        )
-        || !adapter_is_forwarding(items, source)
-        || !prefix_preserves_keys(symbol, index)
-    {
-        return None;
-    }
-    let value = visitor.items.iter().find_map(|item| match item {
-        syn::ImplItem::Type(value) if value.ident == "Value" => Some(&value.ty),
-        _ => None,
-    })?;
-    let syn::Type::Path(value) = value else {
-        return None;
-    };
-    let TypeShape::Path(value) = path_shape_from_syn(&value.path)? else {
-        return None;
-    };
-    if value.segments != ["super", "CadIrReadWire"] {
-        return None;
-    }
-    let route = context(symbol);
-    for names in [
-        &["serde", "de", "Visitor"][..],
-        &["serde", "de", "value", "MapAccessDeserializer"][..],
-        &["serde_json", "Value"][..],
-    ] {
-        if !external_path(&route, index, names, names) {
+    let mut stage = "helper candidate";
+    let result = (|| {
+        stage = "helper resolution";
+        let ResolvedPath::Local(symbol) = resolved else {
+            return None;
+        };
+        if symbol.kind != SymbolKind::Function {
             return None;
         }
-    }
-    if !external_path(&route, index, &["Vec"], &["std", "vec", "Vec"])
-        || !external_path(&route, index, &["String"], &["std", "string", "String"])
-    {
-        return None;
-    }
-    let ResolvedPath::Local(wire) = resolve_receiver_path(&route, &value, index) else {
-        return None;
-    };
-    let ResolvedPath::Local(gate) = resolve_receiver_path(
-        &route,
-        &PathShape {
-            segments: vec!["super".into(), "check_ir_version".into()],
-            absolute: false,
-        },
-        index,
-    ) else {
-        return None;
-    };
-    if gate.path != "crates/cadmpeg-ir/src/document.rs"
-        || gate.name != "check_ir_version"
-        || gate.kind != SymbolKind::Function
-        || !index
-            .denied
+        stage = "module declarations";
+        let items = index
+            .module_items
+            .get(&(symbol.path.clone(), symbol.scope.clone()))?;
+        let source = index.source_text.get(&symbol.path)?;
+        let function = items.iter().find_map(|item| match item {
+            syn::Item::Fn(function) if function.sig.ident == symbol.name => Some(function),
+            _ => None,
+        })?;
+        stage = "helper input signature";
+        if function.sig.inputs.len() != 1
+            || signature_deserializer_bindings(&function.sig)
+                != std::collections::BTreeSet::from(["deserializer".to_owned()])
+        {
+            return None;
+        }
+        stage = "visitor structure";
+        let [syn::Stmt::Item(syn::Item::Struct(marker)), syn::Stmt::Item(syn::Item::Impl(visitor)), syn::Stmt::Expr(tail, None)] =
+            function.block.stmts.as_slice()
+        else {
+            return None;
+        };
+        stage = "visitor forwarding grammar";
+        if visitor
+            .trait_
+            .as_ref()?
+            .0
+            .segments
             .iter()
-            .any(|key| key.path == wire.path && key.scope == wire.scope && key.name == wire.name)
-    {
-        return None;
+            .map(|segment| segment.ident.to_string())
+            .collect::<Vec<_>>()
+            != ["serde", "de", "Visitor"]
+            || !matches!(visitor.self_ty.as_ref(), syn::Type::Path(ty) if ty.path.is_ident("VersionedDocument"))
+            || !same(source, marker.span(), "struct VersionedDocument;")
+            || !same(
+                source,
+                tail.span(),
+                "deserializer.deserialize_map(VersionedDocument)",
+            )
+            || visitor.items.len() != 3
+            || !same(
+                source,
+                method(visitor, "visit_map")?.block.span(),
+                VISIT_MAP,
+            )
+            || !adapter_is_forwarding(items, source)
+            || !prefix_preserves_keys(symbol, index)
+        {
+            return None;
+        }
+        stage = "visitor result";
+        let value = visitor.items.iter().find_map(|item| match item {
+            syn::ImplItem::Type(value) if value.ident == "Value" => Some(&value.ty),
+            _ => None,
+        })?;
+        let syn::Type::Path(value) = value else {
+            return None;
+        };
+        let TypeShape::Path(value) = path_shape_from_syn(&value.path)? else {
+            return None;
+        };
+        if value.segments != ["super", "CadIrReadWire"] {
+            return None;
+        }
+        stage = "wire context";
+        let route = context(symbol);
+        stage = "external library owners";
+        for names in [
+            &["serde", "de", "Visitor"][..],
+            &["serde", "de", "value", "MapAccessDeserializer"][..],
+            &["serde_json", "Value"][..],
+        ] {
+            if !external_path(&route, index, names, names) {
+                return None;
+            }
+        }
+        if !external_path(&route, index, &["Vec"], &["std", "vec", "Vec"])
+            || !external_path(&route, index, &["String"], &["std", "string", "String"])
+        {
+            return None;
+        }
+        stage = "strict wire resolution";
+        let ResolvedPath::Local(wire) = resolve_receiver_path(&route, &value, index) else {
+            return None;
+        };
+        stage = "version gate owner";
+        let ResolvedPath::Local(gate) = resolve_receiver_path(
+            &route,
+            &PathShape {
+                segments: vec!["super".into(), "check_ir_version".into()],
+                absolute: false,
+            },
+            index,
+        ) else {
+            return None;
+        };
+        stage = "strict wire declaration";
+        if gate.path != "crates/cadmpeg-ir/src/document.rs"
+            || gate.name != "check_ir_version"
+            || gate.kind != SymbolKind::Function
+            || !index.denied.iter().any(|key| {
+                key.path == wire.path && key.scope == wire.scope && key.name == wire.name
+            })
+        {
+            return None;
+        }
+        let mut segments = vec!["crate".to_owned()];
+        segments.extend(wire.scope);
+        segments.push(wire.name);
+        Some(InputRoute::Wire(Receiver::Path(PathShape {
+            segments,
+            absolute: false,
+        })))
+    })();
+    if result.is_none() {
+        eprintln!("version-prefix route rejected at {stage}: {resolved:?}");
     }
-    let mut segments = vec!["crate".to_owned()];
-    segments.extend(wire.scope);
-    segments.push(wire.name);
-    Some(InputRoute::Wire(Receiver::Path(PathShape {
-        segments,
-        absolute: false,
-    })))
+    result
 }
