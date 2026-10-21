@@ -140,7 +140,13 @@ fn units_data_preserves_its_current_owner_link() {
     assert!(exported.regenerated.contains(id));
     assert_eq!(entities[0].property_links, [1]);
     assert_eq!(entities[1].type_code, 316);
-    assert_eq!(&entities[1].parameter_body, b"1,6HLENGTH,2HMM,1;");
+    let parameters = std::str::from_utf8(&entities[1].parameter_body).unwrap();
+    let scale = parameters
+        .strip_prefix("1,6HLENGTH,2HMM,")
+        .unwrap()
+        .strip_suffix(';')
+        .unwrap();
+    assert_eq!(scale.replace('D', "e").parse::<f64>().unwrap(), 1.0);
 }
 
 #[test]
