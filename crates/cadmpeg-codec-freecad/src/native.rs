@@ -19,8 +19,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 
-/// Every content/evidence arena in the FreeCAD native namespace. Source byte
-/// ledgers live in SourceFidelity rather than in this registry.
+/// Every content/evidence arena in the `FreeCAD` native namespace. Source byte
+/// ledgers live in `SourceFidelity` rather than in this registry.
 pub(crate) const ARENAS: &[&str] = &[
     "document",
     "objects",

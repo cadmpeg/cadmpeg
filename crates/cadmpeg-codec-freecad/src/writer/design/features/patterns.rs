@@ -26,7 +26,7 @@ pub(super) fn pattern(
             if tag(value) == "linear" {
                 let distance = &value["distance"];
                 let span = tag(distance) == "span";
-                enumeration(object, "Mode", if span { 0 } else { 1 });
+                enumeration(object, "Mode", usize::from(!span));
                 object.set(
                     "Occurrences",
                     xml::scalar(
@@ -49,7 +49,7 @@ pub(super) fn pattern(
                     })?;
                     let distance = &second["distance"];
                     let span = tag(distance) == "span";
-                    enumeration(object, "Mode2", if span { 0 } else { 1 });
+                    enumeration(object, "Mode2", usize::from(!span));
                     object.set(
                         "Occurrences2",
                         xml::scalar(
@@ -88,7 +88,7 @@ pub(super) fn pattern(
                 let angle_form = &value["angle"];
                 let span = tag(angle_form) == "span";
                 let periodic = span && angle_form["distribution"] == "periodic";
-                enumeration(object, "Mode", if span && !periodic { 0 } else { 1 });
+                enumeration(object, "Mode", usize::from(!span || periodic));
                 object.set(
                     "Occurrences",
                     xml::scalar(

@@ -118,7 +118,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
 
             depth: actual_depth,
             angle,
-        } if matches!((&diameters.diameter(), &diameters.entry_diameter(),), (actual_diameter, None,) if ((result.ir().dimension_value(&angle).expect("resolved dimension").get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && result.ir().dimension_value(&actual_diameter).expect("resolved dimension").get() == 12.0 && result.ir().dimension_value(&actual_depth).expect("resolved dimension").get() == 2.0)));
+        } if matches!((&diameters.diameter(), &diameters.entry_diameter(),), (actual_diameter, None,) if ((result.ir().dimension_value(angle).expect("resolved dimension").get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && result.ir().dimension_value(actual_diameter).expect("resolved dimension").get() == 12.0 && result.ir().dimension_value(actual_depth).expect("resolved dimension").get() == 2.0)));
     assert!(matches!(
         extent,
         Some(cadmpeg_ir::features::LinearTermination::ThroughAll {})
@@ -154,7 +154,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
         depth,
         cadmpeg_ir::features::holes::HoleThreadDepth::Blind {
             depth: actual_depth
-        } if result.ir().dimension_value(&actual_depth).expect("resolved dimension").get() == 12.0
+        } if result.ir().dimension_value(actual_depth).expect("resolved dimension").get() == 12.0
     ));
     assert_eq!(hole.dependencies.len(), 1);
     assert!(result.report().losses.is_empty());
@@ -213,7 +213,7 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
         }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::holes::HoleKind::Simple,
                 specification: None,
-            },) if absent.ir().dimension_value(&actual_length).expect("resolved dimension").get() == 25.0)));
+            },) if absent.ir().dimension_value(actual_length).expect("resolved dimension").get() == 25.0)));
     assert!(absent.report().losses.is_empty());
 
     let malformed_values = [
@@ -768,7 +768,7 @@ fn resolves_deprecated_fcstd_hole_cut_indices() {
                     depth: actual_depth,
                 },
                 ..
-            },) if result.ir().dimension_value(&actual_diameter).expect("resolved dimension").get() == 6.0 && result.ir().dimension_value(&actual_depth).expect("resolved dimension").get() == 5.0)));
+            },) if result.ir().dimension_value(actual_diameter).expect("resolved dimension").get() == 6.0 && result.ir().dimension_value(actual_depth).expect("resolved dimension").get() == 5.0)));
     assert!(result.report().losses.is_empty());
 }
 
@@ -895,7 +895,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        }) if result.ir().dimension_value(&actual_offset).expect("resolved dimension").get() == 2.5
+        }) if result.ir().dimension_value(actual_offset).expect("resolved dimension").get() == 2.5
     ));
     assert!(matches!(
         definition("ToShape"),
@@ -937,7 +937,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        }) if direction.z == -1.0 && result.ir().dimension_value(&length).expect("resolved dimension").get() == 12.0 && (result.ir().dimension_value(&draft).expect("resolved dimension").get() - 5_f64.to_radians()).abs() < 1.0e-12
+        }) if direction.z == -1.0 && result.ir().dimension_value(length).expect("resolved dimension").get() == 12.0 && (result.ir().dimension_value(draft).expect("resolved dimension").get() - 5_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("PartExtrusion"),
@@ -966,9 +966,9 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             inner_wire_taper: Some(InnerWireTaper::SameAsOuter),
             op: BooleanOp::NewBody,
             ..
-        }) if direction.y == 1.0 && result.ir().dimension_value(&first).expect("resolved dimension").get() == 7.0 && result.ir().dimension_value(&second).expect("resolved dimension").get() == 3.0
-            && (result.ir().dimension_value(&draft).expect("resolved dimension").get() - 2_f64.to_radians()).abs() < 1.0e-12
-            && (result.ir().dimension_value(&reverse_draft).expect("resolved dimension").get() - 4_f64.to_radians()).abs() < 1.0e-12
+        }) if direction.y == 1.0 && result.ir().dimension_value(first).expect("resolved dimension").get() == 7.0 && result.ir().dimension_value(second).expect("resolved dimension").get() == 3.0
+            && (result.ir().dimension_value(draft).expect("resolved dimension").get() - 2_f64.to_radians()).abs() < 1.0e-12
+            && (result.ir().dimension_value(reverse_draft).expect("resolved dimension").get() - 4_f64.to_radians()).abs() < 1.0e-12
             && reference.ends_with(":DirLink")
             && *face_maker == cadmpeg_ir::features::FaceMaker::Unified
     ));
@@ -986,7 +986,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        }) if direction.z == -1.0 && result.ir().dimension_value(&length).expect("resolved dimension").get() == 5.0
+        }) if direction.z == -1.0 && result.ir().dimension_value(length).expect("resolved dimension").get() == 5.0
     ));
 }
 
@@ -1118,7 +1118,7 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
             },
             solid: Some(false),
             ..
-        }) if result.ir().dimension_value(&length).expect("resolved dimension").get() == 12.0 && (result.ir().dimension_value(&draft).expect("resolved dimension").get() - 3_f64.to_radians()).abs() < 1.0e-12
+        }) if result.ir().dimension_value(length).expect("resolved dimension").get() == 12.0 && (result.ir().dimension_value(draft).expect("resolved dimension").get() - 3_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1159,7 +1159,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
                 }
             },
             ..
-        }) if (direction.z == 1.0) && result.ir().dimension_value(&actual_length).expect("resolved dimension").get() == 5.0
+        }) if (direction.z == 1.0) && result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 5.0
     ));
     assert!(result.report().losses.is_empty());
     assert_valid_document(result.ir());
@@ -1355,8 +1355,8 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             ..
         }) if (direction.y == 1.0
             && reference.ends_with(":ReferenceAxis")
-            && (result.ir().dimension_value(&first_draft).expect("resolved dimension").get() - 2_f64.to_radians()).abs() < 1.0e-12
-            && (result.ir().dimension_value(&second_draft).expect("resolved dimension").get() + 3_f64.to_radians()).abs() < 1.0e-12) && result.ir().dimension_value(&actual_length).expect("resolved dimension").get() == -5.0
+            && (result.ir().dimension_value(first_draft).expect("resolved dimension").get() - 2_f64.to_radians()).abs() < 1.0e-12
+            && (result.ir().dimension_value(second_draft).expect("resolved dimension").get() + 3_f64.to_radians()).abs() < 1.0e-12) && result.ir().dimension_value(actual_length).expect("resolved dimension").get() == -5.0
     ));
     assert!(matches!(
         definition("Symmetric"),
@@ -1388,7 +1388,7 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
                 },
             },
             ..
-        }) if result.ir().dimension_value(&actual_length).expect("resolved dimension").get() == 6.0 && result.ir().dimension_value(&actual_length_2).expect("resolved dimension").get() == 2.0
+        }) if result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 6.0 && result.ir().dimension_value(actual_length_2).expect("resolved dimension").get() == 2.0
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1459,7 +1459,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
                         }
                     },
                     ..
-                }) if result.ir().dimension_value(&actual_length).expect("resolved dimension").get() == 6.0
+                }) if result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 6.0
             ));
         } else {
             assert!(matches!(
@@ -1910,7 +1910,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        }) if result.ir().dimension_value(&actual_length).expect("resolved dimension").get() == 10.0
+        }) if result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 10.0
     ));
     assert!(matches!(
         pocket.evaluation.definition(),
@@ -1925,7 +1925,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
-        }) if result.ir().dimension_value(&actual_length).expect("resolved dimension").get() == 2.5
+        }) if result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 2.5
     ));
     let native_findings = crate::test_support::validate_native(result.ir());
     assert!(native_findings.is_empty(), "{native_findings:#?}");

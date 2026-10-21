@@ -628,7 +628,7 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .model
         .spreadsheets
         .iter()
-        .flat_map(|sheet| sheet.cells())
+        .flat_map(cadmpeg_ir::Spreadsheet::cells)
         .any(|cell| cell.parameter == width.id && cell.address.a1() == "A1"));
     let pad = result
         .ir()

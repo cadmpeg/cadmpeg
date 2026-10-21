@@ -103,11 +103,11 @@ fn operand(
         }
         ("draft", "angle") => Some("Angle"),
         ("binder", "distance") => Some("Offset"),
-        ("helical_sweep", "pitch") | ("helix", "pitch") => Some("Pitch"),
+        ("helical_sweep" | "helix", "pitch") => Some("Pitch"),
         ("helical_sweep", "height") => Some("Height"),
         ("helical_sweep", "radial_growth") => Some("Growth"),
         ("helical_sweep", "turns") => Some("Turns"),
-        ("helical_sweep", "cone_angle") | ("helix", "cone_angle") => Some("Angle"),
+        ("helical_sweep" | "helix", "cone_angle") => Some("Angle"),
         ("helical_sweep", "tolerance") => Some("Tolerance"),
         ("helix", "radius") => Some("Radius"),
         ("helix", "radial_growth") => Some("Growth"),
@@ -159,11 +159,12 @@ pub(super) fn bind(
         .as_str()
         .unwrap_or_default()
         .to_owned();
-    if tag == "primitive" && operation["solid"]["kind"] == "ellipsoid" {
-        if !ids.contains_key("Radius3") {
-            if let Some(id) = ids.get("Radius2").copied() {
-                ids.insert("Radius3", id);
-            }
+    if tag == "primitive"
+        && operation["solid"]["kind"] == "ellipsoid"
+        && !ids.contains_key("Radius3")
+    {
+        if let Some(id) = ids.get("Radius2").copied() {
+            ids.insert("Radius3", id);
         }
     }
     if tag == "native" {

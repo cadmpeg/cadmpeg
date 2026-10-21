@@ -85,8 +85,8 @@ fn external(document: &ExternalDocument, losses: &mut Vec<LossNote>) -> String {
     }
 }
 
-fn fresh_name(proposed: String, used: &mut HashSet<String>) -> String {
-    let mut candidate = proposed.clone();
+fn fresh_name(proposed: &str, used: &mut HashSet<String>) -> String {
+    let mut candidate = proposed.to_owned();
     // With n occupied names, one of these n + 1 distinct candidates is free.
     for index in 1..=used.len() {
         if used.insert(candidate.clone()) {
@@ -289,7 +289,7 @@ fn placement(
     super::design::placement(transform)
 }
 
-/// FreeCAD stores a rigid Placement and diagonal ScaleVector. Split an
+/// `FreeCAD` stores a rigid Placement and diagonal `ScaleVector`. Split an
 /// orthogonal affine transform into those two facts without storing another
 /// neutral scale value. Shear remains an explicitly reported reduction.
 fn split_scale(
@@ -434,7 +434,7 @@ pub(super) fn write(
                 .get(occurrence.id.as_str())
                 .cloned()
                 .unwrap_or_else(|| format!("Instance{}", objects.len()));
-            let name = fresh_name(proposed, &mut used);
+            let name = fresh_name(&proposed, &mut used);
             objects.push(Object::new(
                 name.clone(),
                 "App::Link",

@@ -69,7 +69,7 @@ pub(crate) fn validate(
         read_arena(ctx, namespace, "element_maps")?;
     let physical_end = fidelity
         .retained_record(super::SOURCE_IMAGE)
-        .map(|record| record.byte_len());
+        .map(cadmpeg_ir::RetainedSourceRecord::byte_len);
     let mut findings = Vec::new();
     validate_span_chain("physical archive", &physical, physical_end, &mut findings);
     for entry in &unreadable {

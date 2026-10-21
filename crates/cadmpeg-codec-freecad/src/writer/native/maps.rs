@@ -9,6 +9,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write as _;
 
 fn hex(value: i64) -> String {
     if value < 0 {
@@ -105,14 +106,14 @@ pub(crate) fn write(
         table_indices.insert(table.index, output_index);
         let mut content = String::new();
         for entry in entries {
-            content.push_str(&format!("{}.{:x}", hex(entry.string_id), entry.flags));
+            let _ = write!(content, "{}.{:x}", hex(entry.string_id), entry.flags);
             for component in &entry.components {
                 content.push('.');
                 content.push_str(&hex(*component));
             }
             content.push(' ');
             if entry.flags & 8 == 0 {
-                content.push_str(&format!("{}:", entry.payload.matches('\n').count()));
+                let _ = write!(content, "{}:", entry.payload.matches('\n').count());
             }
             content.push_str(&entry.payload);
             content.push('\n');
@@ -227,21 +228,23 @@ pub(crate) fn write(
             map.maps.iter().len()
         );
         for (index, node) in map.maps.iter().enumerate() {
-            content.push_str(&format!(
+            let _ = write!(
+                content,
                 "ElementMap {} {} {}",
                 index + 1,
                 node.map_id,
                 node.groups.len()
-            ));
+            );
             content.push('\n');
             for group in &node.groups {
-                content.push_str(&format!(
+                let _ = write!(
+                    content,
                     "{} ChildCount {} {} NameCount {}",
                     group.indexed_name,
                     group.children.len(),
                     group.children.join(" "),
                     group.names.len()
-                ));
+                );
                 content.push('\n');
                 for chain in &group.names {
                     for name in chain {

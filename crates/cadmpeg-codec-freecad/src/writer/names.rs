@@ -5,8 +5,8 @@ use crate::native::{ObjectRecord, PropertyRecord};
 use cadmpeg_ir::document::CadIr;
 use std::collections::{HashMap, HashSet};
 
-fn reserve(proposed: String, used: &mut HashSet<String>) -> String {
-    let mut candidate = proposed.clone();
+fn reserve(proposed: &str, used: &mut HashSet<String>) -> String {
+    let mut candidate = proposed.to_owned();
     // With n occupied names, one of these n + 1 distinct candidates is free.
     for suffix in 1..=used.len() {
         if used.insert(candidate.clone()) {
@@ -39,7 +39,7 @@ pub(super) fn prepare(
                 .and_then(|id| names.get(id))
                 .cloned();
             if existing.as_ref() != Some(proposed) {
-                let emitted = reserve(proposed.clone(), &mut used);
+                let emitted = reserve(proposed, &mut used);
                 if let Some(native) = &definition.native_ref {
                     names.insert(native.clone(), emitted.clone());
                 }
@@ -58,7 +58,7 @@ pub(super) fn prepare(
             .as_ref()
             .and_then(|native| names.get(native))
             .cloned();
-        let name = existing.unwrap_or_else(|| reserve(format!("Feature{index}"), &mut used));
+        let name = existing.unwrap_or_else(|| reserve(&format!("Feature{index}"), &mut used));
         names.insert(feature.id.as_str().to_owned(), name);
     }
     for (index, sketch) in ir.model.sketches.iter().enumerate() {
@@ -79,7 +79,7 @@ pub(super) fn prepare(
                     }
                 })
             });
-        let name = existing.unwrap_or_else(|| reserve(format!("Sketch{index}"), &mut used));
+        let name = existing.unwrap_or_else(|| reserve(&format!("Sketch{index}"), &mut used));
         names.insert(sketch.id.as_str().to_owned(), name);
     }
     for (index, definition) in ir.model.product_definitions.iter().enumerate() {
@@ -95,7 +95,7 @@ pub(super) fn prepare(
             })
             .unwrap_or_else(|| {
                 reserve(
-                    definition
+                    &definition
                         .source_name
                         .clone()
                         .unwrap_or_else(|| format!("Product{index}")),
@@ -110,7 +110,7 @@ pub(super) fn prepare(
             .as_ref()
             .and_then(|native| names.get(native))
             .cloned()
-            .unwrap_or_else(|| reserve(format!("Instance{index}"), &mut used));
+            .unwrap_or_else(|| reserve(&format!("Instance{index}"), &mut used));
         names.insert(occurrence.id.as_str().to_owned(), name);
     }
     for property in properties {
@@ -170,7 +170,7 @@ pub(super) fn prepare(
                             .cloned()
                     })
             })
-            .unwrap_or_else(|| reserve(format!("Shape{index}"), &mut used));
+            .unwrap_or_else(|| reserve(&format!("Shape{index}"), &mut used));
         names.insert(body.id.as_str().to_owned(), owner.clone());
         let mut faces = Vec::new();
         let mut edges = Vec::new();

@@ -47,7 +47,7 @@ pub(crate) fn apply(ir: &mut CadIr, properties: &[PropertyRecord]) -> Result<(),
             });
             let cell_parameter = row.selector.strip_prefix("cells:").and_then(|address| {
                 let source = properties.iter().find(|source| source.owner == property.owner && source.name == "cells")?;
-                ir.model.spreadsheets.iter().flat_map(|sheet| sheet.cells()).find(|cell| {
+                ir.model.spreadsheets.iter().flat_map(cadmpeg_ir::Spreadsheet::cells).find(|cell| {
                     cell.address.a1() == address && ir.model.parameters.iter().any(|parameter| parameter.id == cell.parameter && parameter.native_ref.as_ref() == Some(&source.id))
                 }).map(|cell| cell.parameter.clone())
             });

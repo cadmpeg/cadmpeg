@@ -40,7 +40,7 @@ pub(crate) enum FreecadLossCode {
     ExportArenaNotTransferred,
     /// A neutral construction has no writable `FreeCAD` operation.
     ExportFeatureNotTransferred,
-    /// An assembly joint has no writable FreeCAD joint family.
+    /// An assembly joint has no writable `FreeCAD` joint family.
     ExportJointNotTransferred,
     /// A neutral body has an unsupported exact carrier.
     ExportGeometryNotTransferred,

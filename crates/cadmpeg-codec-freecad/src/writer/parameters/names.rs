@@ -56,7 +56,7 @@ pub(super) fn prepare(
             .model
             .spreadsheets
             .iter()
-            .flat_map(|sheet| sheet.cells())
+            .flat_map(cadmpeg_ir::Spreadsheet::cells)
             .find(|cell| cell.parameter == parameter.id)
         {
             if !valid {
@@ -171,7 +171,7 @@ pub(super) fn write(
                 .model
                 .spreadsheets
                 .iter()
-                .flat_map(|sheet| sheet.cells())
+                .flat_map(cadmpeg_ir::Spreadsheet::cells)
                 .find(|cell| cell.parameter == parameter.id)
             {
                 format!("cells:{}", cell.address.a1())
