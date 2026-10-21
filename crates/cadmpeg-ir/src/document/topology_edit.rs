@@ -320,7 +320,7 @@ fn add_loop(
     match (loops, role) {
         (FaceLoops::Unspecified { loops }, LoopBoundaryRole::Unspecified) => loops.push(id.clone()),
         (value @ FaceLoops::Unspecified { .. }, LoopBoundaryRole::Outer) if value.is_empty() => {
-            *value = FaceLoops::classified(id.clone(), Vec::new())
+            *value = FaceLoops::classified(id.clone(), Vec::new());
         }
         (FaceLoops::Classified { inner, .. }, LoopBoundaryRole::Inner) => inner.push(id.clone()),
         _ => {

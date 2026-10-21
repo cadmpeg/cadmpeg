@@ -487,15 +487,11 @@ pub(super) fn check_sketches(
                     stale_sketches.insert(id.as_str());
                 }
             }
-            crate::features::FeatureOperation::SpatialSketch { sketch } => {
-                if let Some(id) = sketch {
-                    stale_sketches.insert(id.as_str());
-                }
+            crate::features::FeatureOperation::SpatialSketch { sketch: Some(id) } => {
+                stale_sketches.insert(id.as_str());
             }
-            crate::features::FeatureOperation::SketchBlockDefinition { sketch } => {
-                if let Some(id) = sketch {
-                    stale_sketches.insert(id.as_str());
-                }
+            crate::features::FeatureOperation::SketchBlockDefinition { sketch: Some(id) } => {
+                stale_sketches.insert(id.as_str());
             }
             _ => {}
         }
