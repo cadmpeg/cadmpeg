@@ -4,7 +4,37 @@
 use super::*;
 
 fn source() -> SldprtNative {
+    let history = crate::records::FeatureHistory {
+        id: "sldprt:history#operand-control".into(),
+        part_name: None,
+        properties: Default::default(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![crate::records::Feature {
+            id: "sldprt:history:feature#operand-control".into(),
+            parent: "sldprt:history#operand-control".into(),
+            xml_tag: "Sketch".into(),
+            tree_parent: None,
+            source_id: crate::records::FeatureSource::from_value(1),
+            ordinal: 0,
+            name: "ControlSketch".into(),
+            kind: "Sketch".into(),
+            input_class: Some("moProfileFeature_c".into()),
+            suppressed: false,
+            parameters: Default::default(),
+            dimension_properties: Default::default(),
+            properties: Default::default(),
+            text: None,
+            content: Vec::new(),
+        }],
+    };
     let mut payload = Vec::new();
+    crate::resolved_features::write_generate::append_generated_object_name(
+        &mut payload,
+        "ControlSketch",
+        1,
+    )
+    .unwrap();
     for (index, id, coordinates) in [(0u32, 1u32, [0.001, 0.002]), (2, 2, [0.003, 0.004])] {
         payload.extend_from_slice(&index.to_le_bytes());
         crate::resolved_features::write_generate::append_coordinate_marker(
@@ -33,7 +63,7 @@ fn source() -> SldprtNative {
     )
     .unwrap();
     let lane = crate::resolved_features::write_prepare::generated_native_lane(
-        &[],
+        std::slice::from_ref(&history),
         "test:native:lane#operand-control",
         Some("0".into()),
         payload,
@@ -48,6 +78,7 @@ fn source() -> SldprtNative {
             .all(|operand| operand.entity_ref.is_some())
     );
     SldprtNative {
+        feature_histories: vec![history],
         feature_input_lanes: vec![lane],
         ..Default::default()
     }
@@ -56,7 +87,8 @@ fn source() -> SldprtNative {
 fn regenerate_control(source: &SldprtNative) -> (SldprtNative, Vec<LossNote>, NativeDispositions) {
     let mut ir = CadIr::empty();
     ir.set_scope(cadmpeg_ir::ContentScope::container()).unwrap();
-    let mut target = SldprtNative::default();
+    let mut target = source.clone();
+    target.feature_input_lanes.clear();
     let mut losses = Vec::new();
     let mut dispositions = NativeDispositions::for_namespace(
         "sldprt",
@@ -131,7 +163,7 @@ fn linked_native_scalar_requires_reconstructible_markers_but_keeps_independent_n
                     name.object_id.and_then(crate::records::ObjectId::value)
                 ))
                 .collect::<Vec<_>>(),
-            [("IndependentName", Some(77))]
+            [("ControlSketch", Some(1)), ("IndependentName", Some(77))]
         );
         let scalar = &rejected.feature_input_lanes[0].scalars[0];
         assert_eq!(
