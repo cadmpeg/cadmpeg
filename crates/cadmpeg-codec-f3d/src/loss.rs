@@ -226,6 +226,8 @@ pub(crate) enum F3dLossCode {
     ManifestMetadataUnresolved,
     /// An optional bounded archive payload is unreadable.
     ArchiveEntryUnreadable,
+    /// Dependent ACT records cannot form a stream with one current document root.
+    WriterActStreamOmitted,
     /// Typed native content without a supported synthesized record form.
     WriterNativeRecordsOmitted,
     /// Content that the synthesized writer cannot represent.
@@ -363,6 +365,7 @@ impl F3dLossCode {
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
         Self::ArchiveEntryUnreadable,
+        Self::WriterActStreamOmitted,
         Self::WriterNativeRecordsOmitted,
         Self::WriterDesignRecordsOmitted,
         Self::WriterGeometryOmitted,
@@ -490,6 +493,7 @@ impl F3dLossCode {
             Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
             Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
             Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
+            Self::WriterActStreamOmitted => "writer.act-stream-omitted",
             Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
             Self::WriterDesignRecordsOmitted => "writer.design-records-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
@@ -514,6 +518,7 @@ impl F3dLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::SurfaceCacheRejected => Severity::Error,
+            Self::WriterActStreamOmitted => Severity::Error,
             Self::WriterNativeRecordsOmitted => Severity::Warning,
             Self::ImageAssetUntransferred => Severity::Warning,
             Self::WriterDesignRecordsOmitted => Severity::Error,
@@ -635,6 +640,7 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::WriterActStreamOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::WriterNativeRecordsOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::WriterDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
@@ -1078,6 +1084,7 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
         Representation::Metadata,
     ),
     (F3dLossCode::ArchiveEntryUnreadable, Representation::Both),
+    (F3dLossCode::WriterActStreamOmitted, Representation::Export),
     (
         F3dLossCode::WriterNativeRecordsOmitted,
         Representation::Export,
@@ -1338,6 +1345,7 @@ mod tests {
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
                 "source.archive-entry-unreadable",
+                "writer.act-stream-omitted",
                 "writer.native-records-omitted",
                 "writer.design-records-omitted",
                 "writer.geometry-omitted",
