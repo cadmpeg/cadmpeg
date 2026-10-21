@@ -111,10 +111,16 @@ fn a_retained_f3d_with_zstandard_members_patches() {
         )
         .and_then(|plan| plan.write_to(&mut patched))
         .expect("patch an archive whose members are all Zstandard");
-    assert!(matches!(
+    assert!(
+        matches!(
+            report.write_path(),
+            cadmpeg_ir::report::export::WritePath::Patched { .. }
+        ),
+        "path {:?}; cause {:?}; losses {:?}",
         report.write_path(),
-        cadmpeg_ir::report::export::WritePath::Patched { .. }
-    ));
+        report.synthesis_cause,
+        report.losses
+    );
 
     // A member still at method 93 was copied as stored, so its bytes are the source's; one
     // that an edit changed is Deflate, and the report says so by name.

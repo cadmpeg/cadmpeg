@@ -206,7 +206,36 @@ fn scalar(
     parameter: &NeutralParameter,
     native_unit: Option<&str>,
 ) -> Option<(Option<String>, f64)> {
-    match parameter.value.as_ref() {
+    let literal = if parameter.value.is_none() && native_unit.is_none() {
+        // A unit-bearing literal states its quantity without native hints.
+        // Try dimensionless first so scientific notation remains scalar.
+        parameter
+            .expression
+            .literal_value_as(&ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::ZERO))
+            .or_else(|| {
+                parameter
+                    .expression
+                    .literal_value_as(&ParameterValue::Length(cadmpeg_ir::scalar::Length::ZERO))
+            })
+            .or_else(|| {
+                parameter
+                    .expression
+                    .literal_value_as(&ParameterValue::Angle(cadmpeg_ir::scalar::Angle::ZERO))
+            })
+    } else if parameter.value.is_none() {
+        let quantity = match native_unit {
+            Some(unit) if crate::design::feature_project::design_length_unit(unit) => {
+                ParameterValue::Length(cadmpeg_ir::scalar::Length::ZERO)
+            }
+            Some("deg" | "rad") => ParameterValue::Angle(cadmpeg_ir::scalar::Angle::ZERO),
+            Some(_) => return None,
+            None => ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::ZERO),
+        };
+        parameter.expression.literal_value_as(&quantity)
+    } else {
+        None
+    };
+    match parameter.value.as_ref().or(literal.as_ref()) {
         Some(ParameterValue::Length(value)) => Some((
             Some(
                 native_unit
@@ -229,14 +258,9 @@ fn scalar(
         Some(
             ParameterValue::Integer(_) | ParameterValue::Boolean(_) | ParameterValue::String(_),
         ) => None,
-        None => {
-            let unit = parameter.properties.get("unit")?.clone();
-            let value = parameter
-                .properties
-                .get("evaluated_scalar")?
-                .parse::<f64>()
-                .ok()?;
-            value.is_finite().then_some((Some(unit), value))
-        }
+        None => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

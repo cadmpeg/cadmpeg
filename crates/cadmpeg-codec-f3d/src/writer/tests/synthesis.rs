@@ -179,23 +179,100 @@ fn neutral_configurations_and_parameters_are_authored_together() {
         .expect("read configuration archive");
     assert_eq!(output.ir().model.bodies.len(), 1);
     assert_eq!(output.ir().model.parameters.len(), 1);
+    assert_eq!(
+        ir.model.parameters[0].value,
+        Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(12.0).unwrap()
+        ))
+    );
     let configuration = &output.ir().model.configurations[0];
     assert_eq!(configuration.name.as_deref(), Some("Wide"));
     assert_eq!(configuration.material.as_deref(), Some("Steel"));
     assert!(configuration.active);
+    assert!(configuration.parameter_overrides.is_empty());
+    let parameter = &output.ir().model.parameters[0];
+    assert_eq!(parameter.name, "width");
+    let native = crate::test_support::native_test::f3d_native(output.ir());
+    let record = native
+        .design_parameters
+        .iter()
+        .find(|record| record.name() == "width")
+        .unwrap();
+    assert_eq!(parameter.id, crate::ids::neutral_parameter_id(record));
     assert_eq!(
-        configuration
-            .parameter_overrides
-            .values()
-            .next()
-            .and_then(cadmpeg_ir::features::Expression::literal_text)
-            .as_deref(),
+        parameter.expression.tokens,
+        vec![cadmpeg_ir::features::ExpressionToken::Text("24 mm".into())]
+    );
+    assert_eq!(
+        parameter.expression.render_with(|_| None).as_deref(),
         Some("24 mm")
+    );
+    assert_eq!(
+        parameter
+            .expression
+            .literal_value_as(&ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(12.0).unwrap()
+            )),
+        Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(24.0).unwrap()
+        ))
+    );
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(24.0).unwrap()
+        ))
+    );
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(output.ir(), Vec::new())
+            .unwrap()
+            .is_ok()
     );
     assert!(configuration
         .properties
         .values()
         .any(|value| value == "width > 10"));
+}
+
+#[test]
+fn source_free_parameter_without_cache_evaluates_only_its_current_literal() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut width = parameter(
+        "width",
+        0,
+        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(24.0).unwrap()),
+    );
+    width.expression = cadmpeg_ir::features::Expression::text("24 mm");
+    width.value = None;
+    ir.model.parameters.push(width);
+    assert!(ir.native.namespace("f3d").is_none());
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut bytes)
+        .unwrap();
+    assert!(ir.model.parameters[0].value.is_none());
+    let output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.parameters.len(), 1);
+    assert_eq!(output.ir().model.parameters[0].name, "width");
+    assert_eq!(
+        output.ir().model.parameters[0].expression,
+        cadmpeg_ir::features::Expression::text("24 mm")
+    );
+    assert_eq!(
+        output.ir().model.parameters[0].value,
+        Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(24.0).unwrap()
+        ))
+    );
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(output.ir(), Vec::new())
+            .unwrap()
+            .is_ok()
+    );
 }
 
 #[test]
