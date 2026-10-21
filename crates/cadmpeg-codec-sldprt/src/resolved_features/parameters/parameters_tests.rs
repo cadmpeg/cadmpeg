@@ -306,6 +306,29 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
             cadmpeg_ir::scalar::Length::new(7.1374).unwrap()
         ))
     );
+    semantic_lane.classes.push(FeatureInputClass {
+        id: "length-class".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        sequence: 99,
+        offset: None,
+        feature_ref: None,
+        name: "moLengthParameter_c".into(),
+    });
+    assert!(super::scalar_quantity_matches(
+        &semantic_lane,
+        &semantic_lane.scalars[0],
+        &cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(7.1374).unwrap()
+        ),
+    ));
+    assert!(!super::scalar_quantity_matches(
+        &semantic_lane,
+        &semantic_lane.scalars[0],
+        &cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap()
+        ),
+    ));
     histories[0].features[0]
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "<MOD-DIAM>8".into());

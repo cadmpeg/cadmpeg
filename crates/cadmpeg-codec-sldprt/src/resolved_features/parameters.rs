@@ -29,6 +29,62 @@ enum ScalarUnit {
     Angle,
 }
 
+/// Whether a current cache can inhabit a retained scalar's declared quantity.
+/// A false result makes that source copy unavailable; it does not retype the
+/// canonical parameter or supply a value for a canonical dimensional binding.
+pub(crate) fn scalar_quantity_matches(
+    lane: &FeatureInputLane,
+    scalar: &FeatureInputScalar,
+    value: &cadmpeg_ir::features::ParameterValue,
+) -> bool {
+    use cadmpeg_ir::features::ParameterValue;
+    let declared = lane
+        .names
+        .iter()
+        .find(|name| name.id == scalar.name)
+        .and_then(|name| {
+            let class = lane
+                .classes
+                .iter()
+                .filter(|class| class.sequence < name.sequence)
+                .max_by_key(|class| class.sequence)?;
+            if lane
+                .names
+                .iter()
+                .any(|other| other.sequence > class.sequence && other.sequence < name.sequence)
+            {
+                return None;
+            }
+            match class.name.as_str() {
+                "moLengthParameter_c" => Some(ScalarUnit::Length),
+                "moAngleParameter_c" => Some(ScalarUnit::Angle),
+                _ => None,
+            }
+        });
+    let families = lane
+        .relation_bindings
+        .iter()
+        .filter(|binding| binding.scalar_ref == scalar.id)
+        .map(|binding| binding.family)
+        .chain(
+            lane.relation_instances
+                .iter()
+                .filter(|relation| relation.scalar_refs().contains(&scalar.id))
+                .map(|relation| relation.family),
+        );
+    let units = declared
+        .into_iter()
+        .chain(families.map(|family| match family {
+            FeatureInputRelationFamily::Angle => ScalarUnit::Angle,
+            _ => ScalarUnit::Length,
+        }));
+    units.into_iter().all(|unit| match unit {
+        ScalarUnit::Length => matches!(value, ParameterValue::Length(_)),
+        ScalarUnit::Angle => matches!(value, ParameterValue::Angle(_)),
+        ScalarUnit::Native => true,
+    })
+}
+
 /// A lane's scalars by owner. A scalar naming a feature belongs to it; an
 /// unreferenced scalar belongs to the object whose open span holds its offset.
 struct ScalarOwners<'a> {
@@ -415,21 +471,32 @@ pub(crate) fn sync_feature_scalars(
                         names_by_id.get(scalar.name.as_str()) == Some(&name.as_str())
                     })
                     .collect::<Vec<_>>();
-                let value = match crate::history::parameters::parse_native_parameter_literal(
+                let parsed = crate::history::parameters::parse_native_parameter_literal(
                     feature,
                     name.as_str(),
                     expression,
-                ) {
+                );
+                let value = match &parsed {
                     Some(ParameterValue::Length(value)) => value.get() / 1000.0,
                     Some(ParameterValue::Angle(value)) => value.get(),
                     Some(ParameterValue::Real(value)) => value.get(),
                     _ => continue,
                 };
-                updates.extend(
-                    candidates
-                        .into_iter()
-                        .map(|(scalar_index, _)| (scalar_index, value)),
-                );
+                for (scalar_index, scalar) in candidates {
+                    if parsed
+                        .as_ref()
+                        .is_some_and(|parsed| !scalar_quantity_matches(lane, scalar, parsed))
+                    {
+                        if !lane.native_payload.is_empty() {
+                            return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+                                "SLDPRT scalar {} no longer has its source quantity; regenerate the input lane",
+                                scalar.id
+                            )));
+                        }
+                        continue;
+                    }
+                    updates.push((scalar_index, value));
+                }
             }
         }
         for (scalar_index, value) in updates {
