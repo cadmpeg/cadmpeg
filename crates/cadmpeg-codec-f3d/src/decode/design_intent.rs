@@ -155,6 +155,7 @@ pub(super) struct DesignNative {
     design_surface_trim_operations: Vec<DesignSurfaceTrimOperation>,
     design_sheet_metal_settings:
         Vec<crate::records::sheet_metal_settings::DesignSheetMetalSettings>,
+    design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
 }
 
 impl DesignNative {
@@ -200,6 +201,7 @@ impl DesignNative {
             design_record_headers,
             design_surface_trim_operations,
             design_sheet_metal_settings,
+            design_joint_motions,
         } = self;
         native.asm_histories = asm_histories;
         native.asm_face_boundaries = asm_face_boundaries;
@@ -240,6 +242,7 @@ impl DesignNative {
         native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
         native.design_surface_trim_operations = design_surface_trim_operations;
         native.design_sheet_metal_settings = design_sheet_metal_settings;
+        native.design_joint_motions = design_joint_motions;
     }
 }
 
@@ -549,6 +552,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     }
     design.design_sheet_metal_settings =
         crate::design::decode::sheet_metal_settings::decode_settings(scan)?;
+    design.design_joint_motions = crate::design::decode::joint_motion::decode_joint_motions(
+        scan,
+        &design.design_parameter_scopes,
+    )?;
     design.design_surface_trim_operations =
         crate::design::decode::surface_trim::decode_surface_trim_operations(
             scan,

@@ -409,6 +409,24 @@ fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<Vec<Utf16View<'_>>, Co
     })
 }
 
+/// Require a nonempty ASCII URN beginning `urn:`.
+fn expect_lineage_urn(lineage_urn: Utf16View<'_>) -> Result<(), CodecError> {
+    if lineage_urn.len() <= 4
+        || !lineage_urn
+            .chars()
+            .take(4)
+            .map(|ch| ch.to_ascii_lowercase())
+            .eq("urn:".chars())
+        || !lineage_urn.chars().skip(4).all(|ch| ch.is_ascii_graphic())
+    {
+        return Err(parse_malformed(
+            "top-level manifest lineage URN",
+            "value is not a nonempty ASCII URN",
+        ));
+    }
+    Ok(())
+}
+
 fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<Vec<Utf16View<'_>>, CodecError> {
     let mut cursor = Cursor::from_offset(bytes, at)?;
     let _active_asset_guid = cursor.guid("top-level manifest active-asset GUID")?;
@@ -445,24 +463,15 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<Vec<Utf16View<'_>>, Co
                 ));
             }
             if !cursor.exhausted() {
-                let lineage_urn = cursor.utf16("top-level manifest lineage URN")?;
-                if lineage_urn.len() <= 4
-                    || !lineage_urn
-                        .chars()
-                        .take(4)
-                        .map(|ch| ch.to_ascii_lowercase())
-                        .eq("urn:".chars())
-                    || !lineage_urn.chars().skip(4).all(|ch| ch.is_ascii_graphic())
-                {
-                    return Err(parse_malformed(
-                        "top-level manifest lineage URN",
-                        "value is not a nonempty ASCII URN",
-                    ));
-                }
+                expect_lineage_urn(cursor.utf16("top-level manifest lineage URN")?)?;
             }
         }
         1 if !cursor.exhausted() => {
-            cursor.expect_utf16("top-level manifest export marker", "NA_EXPORT")?;
+            // The export marker, or the lineage URN of a referenced document.
+            let terminal = cursor.utf16("top-level manifest export marker")?;
+            if !terminal.chars().eq("NA_EXPORT".chars()) {
+                expect_lineage_urn(terminal)?;
+            }
         }
         1 => {}
         value => {

@@ -141,6 +141,8 @@ pub(in crate::design) struct ParsedDesignParameter {
     source_kind: String,
     owner_record_index: Option<u32>,
     family_discriminator: Option<crate::records::parameters::DesignParameterDiscriminator>,
+    /// Frame-relative offset of the family discriminator.
+    discriminator_offset: u64,
     expression: String,
     expression_offset: FrameRelative,
     source_kind_offset: FrameRelative,
@@ -167,7 +169,7 @@ impl ParsedDesignParameter {
         let family_discriminator = match self.family_discriminator {
             Some(value) => Some(crate::records::identity::Located {
                 value,
-                offset: FrameRelative(i128::from(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET))
+                offset: FrameRelative(i128::from(self.discriminator_offset))
                     .absolute(frame_start)?,
             }),
             None => None,
@@ -207,7 +209,9 @@ impl ParsedDesignParameter {
 }
 
 /// Frame-relative offset of the parameter family discriminator.
-const DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET: u64 = 22;
+const DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET: usize = 22;
+/// Further zero bytes before the discriminator in the wide discriminated form.
+const WIDE_DISCRIMINATED_SHIFT: usize = 4;
 
 /// Parse one indexed parameter frame in a Design `BulkStream` test fixture.
 #[cfg(test)]
@@ -267,6 +271,12 @@ pub(in crate::design) fn parse_design_parameter(
             && payload.get(30) == Some(&1)
             && payload.get(35..41) == Some(&[0; 6]);
         let discriminated = !compact_owned && payload.get(30) == Some(&0);
+        let shift = if discriminated && wide_discriminated_parameter(payload) {
+            WIDE_DISCRIMINATED_SHIFT
+        } else {
+            0
+        };
+        let discriminator_at = DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET + shift;
         if !compact_owned && !discriminated {
             return match parse_legacy_design_parameter(payload, class_tag, record_index) {
                 Ok(value) => value.map(Ok),
@@ -277,19 +287,19 @@ pub(in crate::design) fn parse_design_parameter(
             if discriminated {
                 let discriminator =
                     crate::records::parameters::DesignParameterDiscriminator::try_from(
-                        View::u64_le_at(payload, 22)?,
+                        View::u64_le_at(payload, discriminator_at)?,
                     )
                     .ok()?;
-                let owner = match payload.get(35)? {
-                    0 => (None, 36, 9),
-                    1 if payload.get(40..46) == Some(&[0; 6]) => {
-                        (Some(View::u32_le_at(payload, 36)?), 46, 9)
+                let owner = match payload.get(35 + shift)? {
+                    0 => (None, 36 + shift, 9),
+                    1 if payload.get(40 + shift..46 + shift) == Some(&[0; 6]) => {
+                        (Some(View::u32_le_at(payload, 36 + shift)?), 46 + shift, 9)
                     }
                     _ => return None,
                 };
                 (
                     Some(discriminator),
-                    View::u32_le_at(payload, 31)?,
+                    View::u32_le_at(payload, 31 + shift)?,
                     owner.0,
                     owner.1,
                     owner.2,
@@ -374,6 +384,7 @@ pub(in crate::design) fn parse_design_parameter(
             source_kind,
             owner_record_index,
             family_discriminator,
+            discriminator_offset: u64_from_index(discriminator_at),
             expression,
             expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
             source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
@@ -385,6 +396,22 @@ pub(in crate::design) fn parse_design_parameter(
         }))
     })();
     parsed.transpose()
+}
+
+/// Whether a discriminated parameter frame stores four further zero bytes
+/// before its discriminator: the discriminator at offset 22 is not one,
+/// offsets 11 through 25 are zero, a discriminator is at offset 26, and
+/// offset 34 is zero.
+fn wide_discriminated_parameter(payload: &[u8]) -> bool {
+    let discriminator = |at| {
+        View::u64_le_at(payload, at).is_some_and(|value| {
+            crate::records::parameters::DesignParameterDiscriminator::try_from(value).is_ok()
+        })
+    };
+    !discriminator(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET)
+        && payload.get(11..26) == Some(&[0; 15])
+        && discriminator(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET + WIDE_DISCRIMINATED_SHIFT)
+        && payload.get(34) == Some(&0)
 }
 
 /// Parse the class-287 owned parameter family.
@@ -454,6 +481,7 @@ fn parse_legacy_287_design_parameter(
             source_kind,
             owner_record_index: Some(owner_record_index),
             family_discriminator: None,
+            discriminator_offset: 0,
             expression,
             expression_offset: FrameRelative(
                 i128::try_from(legacy_287::EXPRESSION_LENGTH + 4).ok()?,
@@ -591,6 +619,7 @@ fn parse_typed_compact_design_parameter(
             source_kind,
             owner_record_index,
             family_discriminator: None,
+            discriminator_offset: 0,
             expression,
             expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
             source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
@@ -641,6 +670,7 @@ fn parse_legacy_design_parameter(
             source_kind,
             owner_record_index: Some(owner_record_index),
             family_discriminator: None,
+            discriminator_offset: 0,
             expression,
             expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
             source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),

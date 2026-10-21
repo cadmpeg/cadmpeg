@@ -683,9 +683,6 @@ fn decode_component_link(
     {
         components_marker += 1;
     }
-    if components_marker == cursor {
-        return Ok(None);
-    }
     let (components_root_record, end) = some!(marker_value(bytes, components_marker, frame.end));
     if !some!(bytes.get(end..frame.end))
         .iter()
@@ -762,7 +759,10 @@ fn marker_value(bytes: &[u8], position: usize, frame_end: usize) -> Option<(u32,
 mod tests {
     use cadmpeg_core::decode::u64_from_index;
 
-    use super::{decode_channel_group, merge_entities, ChannelGroup, RecordFrame, TableEntry};
+    use super::{
+        decode_channel_group, decode_component_link, merge_entities, ChannelGroup, ComponentLink,
+        RecordFrame, TableEntry,
+    };
     use crate::records::act::ActTableRow;
     use crate::records::identity::Located;
     use crate::test_support::{lp_ascii, lp_utf16};
@@ -844,6 +844,45 @@ mod tests {
             .expect("the table can supply an omitted group key");
         assert_eq!(entities[0].entity_id(), "0_985");
         assert!(entities[0].channel_entity_id_offset().is_none());
+    }
+
+    /// A document-root component link: `padding` zero bytes sit between the
+    /// display name and the components-root reference.
+    fn root_link(padding: usize) -> (Vec<u8>, RecordFrame) {
+        let payload_offset = 11;
+        let mut bytes = vec![0; payload_offset + 10];
+        bytes.extend_from_slice(&[1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        lp_utf16(&mut bytes, "1_2");
+        bytes.extend_from_slice(&[1, 3, 0, 0, 0, 0, 0, 0, 0, 0]);
+        bytes.extend_from_slice(&[1, 0, 0, 0, 0]);
+        lp_utf16(&mut bytes, "F01");
+        bytes.extend(std::iter::repeat_n(0, padding));
+        bytes.extend_from_slice(&[1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let frame = RecordFrame {
+            start: 0,
+            end: bytes.len(),
+            record_index: 2,
+            record_index_offset: 7,
+            payload_offset,
+            class_tag: "270".to_owned().try_into().unwrap(),
+        };
+        (bytes, frame)
+    }
+
+    #[test]
+    fn root_component_link_stores_zero_through_eight_padding_bytes() {
+        for padding in [0, 1, 8] {
+            let (bytes, frame) = root_link(padding);
+            let link = decode_component_link(&bytes, &frame, "synthetic").unwrap();
+            assert!(
+                matches!(link, Some(ComponentLink::Root(ref root)) if root.record_index == 2),
+                "document-root link with {padding} padding bytes"
+            );
+        }
+        let (bytes, frame) = root_link(9);
+        assert!(decode_component_link(&bytes, &frame, "synthetic")
+            .unwrap()
+            .is_none());
     }
 
     #[test]

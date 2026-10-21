@@ -316,13 +316,14 @@ fn check_parameter_discriminator_offset(
         } => *family_discriminator,
         DesignParameterSource::Owned(source) => source.family_discriminator,
     };
+    // The wide discriminated form stores four further zero bytes before it.
     if family_discriminator.is_some_and(|field| {
-        byte_offset.checked_add(22) != field.offset
+        (byte_offset.checked_add(22) != field.offset && byte_offset.checked_add(26) != field.offset)
             || field
                 .offset
                 .is_none_or(|offset| offset >= expression_offset)
     }) {
-        return Err("family_discriminator_offset must follow byte_offset by 22 bytes and precede expression_offset".into());
+        return Err("family_discriminator_offset must follow byte_offset by 22 or 26 bytes and precede expression_offset".into());
     }
     Ok(())
 }

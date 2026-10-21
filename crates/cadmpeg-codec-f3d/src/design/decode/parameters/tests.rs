@@ -1518,3 +1518,32 @@ fn typed_owner_frame_widens_every_reference_and_keeps_the_scalar_envelope() {
     mixed.extend_from_slice(&[0, 0]);
     assert!(parse_parameter_owner(&mixed).is_none());
 }
+
+#[test]
+fn wide_discriminated_parameter_stores_four_zero_bytes_before_its_discriminator() {
+    // The current discriminated family: discriminator 6 and the `00 01 10` tail.
+    let mut narrow = parameter_record(Some(305), "10 mm", "AlongDistance", Some("mm"), "d3", 1.0);
+    narrow[22..30].copy_from_slice(&6u64.to_le_bytes());
+    let tail = narrow.len() - 10;
+    narrow[tail] = 0x10;
+    let expected = parse_design_parameter_record(&narrow).expect("narrow discriminated parameter");
+    assert_eq!(
+        expected.family_discriminator().map(|field| field.offset),
+        Some(22)
+    );
+
+    let mut wide = narrow.clone();
+    wide.splice(22..22, [0; 4]);
+    let parameter = parse_design_parameter_record(&wide).expect("wide discriminated parameter");
+    assert_eq!(parameter.owner_record_index(), Some(305));
+    assert_eq!(parameter.expression(), "10 mm");
+    assert_eq!(parameter.name(), "d3");
+    assert_eq!(parameter.evaluated_value().get(), 1.0);
+    let discriminator = parameter.family_discriminator().expect("discriminator");
+    assert_eq!((discriminator.value.code(), discriminator.offset), (6, 26));
+
+    // The four bytes before the discriminator are zero.
+    let mut nonzero = wide.clone();
+    nonzero[24] = 1;
+    assert!(parse_design_parameter_record(&nonzero).is_none());
+}

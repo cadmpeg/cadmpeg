@@ -631,11 +631,13 @@ fn parse_mesh_body_record(
     parsed.ok_or_else(|| malformed_frame("mesh-body", frame.entity_id))
 }
 
+/// Parse one mesh-collection record. `None` for an empty collection, an empty
+/// `ParaMesh` registry with no mesh graph.
 fn parse_mesh_collection_record(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     frame: TypedPrimaryFrame<'_>,
-) -> Result<MeshCollectionRecord, CodecError> {
+) -> Result<Option<MeshCollectionRecord>, CodecError> {
     validate_mesh_registration(
         frame,
         MESH_COLLECTION_TYPE_VERSION,
@@ -682,14 +684,23 @@ fn parse_mesh_collection_record(
         .then_some(())?;
         let (body_records, owner_at) = counted_bodies?;
         (first_count == body_records.len()).then_some(())?;
+        // An empty collection can store a zero u32 before its owner reference.
+        let owner_at = if body_records.is_empty() && View::u32_le_at(record, owner_at) == Some(0) {
+            owner_at.checked_add(4)?
+        } else {
+            owner_at
+        };
         let owner_record_index = exact_local_record_index(record, owner_at)?;
         (owner_at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)? == record.len()).then_some(())?;
-        Some(MeshCollectionRecord {
+        if body_records.is_empty() {
+            return Some(None);
+        }
+        Some(Some(MeshCollectionRecord {
             collection: DesignMeshCollection::new(identity, base_record).ok()?,
             texture_table_record_index,
             body_records,
             owner_record_index,
-        })
+        }))
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-collection", frame.entity_id))
 }
@@ -1245,11 +1256,13 @@ where
     if collection_frames.is_empty() {
         return Ok(Vec::new());
     }
-    let mut collections = collection_frames
+    let collections = collection_frames
         .into_iter()
         .map(|frame| parse_mesh_collection_record(bytes, meta, frame))
-        .collect::<Result<Vec<_>, _>>()?;
-    collections.retain(|collection| !collection.body_records.is_empty());
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
     if collections.is_empty() {
         return Ok(Vec::new());
     }
@@ -1934,6 +1947,7 @@ mod tests {
         texture_table_record_index: u32,
         body_record_indices: &[u32],
         owner_record_index: u32,
+        owner_gap: bool,
     ) -> Vec<u8> {
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
@@ -1952,6 +1966,9 @@ mod tests {
         );
         for body in body_record_indices {
             push_reference(&mut bytes, *body);
+        }
+        if owner_gap {
+            bytes.extend_from_slice(&[0; 4]);
         }
         push_reference(&mut bytes, owner_record_index);
         bytes
@@ -2128,6 +2145,15 @@ mod tests {
     fn synthetic_mesh_graph_with_body_count(
         with_textures: bool,
         body_count: usize,
+    ) -> SyntheticMeshGraph {
+        synthetic_mesh_graph_with_collection(with_textures, body_count, false)
+    }
+
+    /// `owner_gap`: the collection stores a zero u32 before its owner reference.
+    fn synthetic_mesh_graph_with_collection(
+        with_textures: bool,
+        body_count: usize,
+        owner_gap: bool,
     ) -> SyntheticMeshGraph {
         const ENTRY: u32 = 102;
         const GUID: u32 = 103;
@@ -2336,6 +2362,7 @@ mod tests {
                 TEXTURES,
                 &BODIES[..body_count],
                 COLLECTION_OWNER,
+                owner_gap,
             ),
         );
         let flags = if with_textures {
@@ -2529,6 +2556,34 @@ mod tests {
             resolve_mesh_body(&[design], ENTRY_NAME, FUSION_UUID),
             Some((0, 0, 0))
         );
+    }
+
+    /// An empty collection can store a zero u32 before its owner reference; it is
+    /// still an empty registry. A nonzero value there is not a collection.
+    #[test]
+    fn empty_mesh_collection_with_a_zero_word_before_its_owner_is_an_empty_registry() {
+        let graph = synthetic_mesh_graph_with_collection(false, 0, true);
+        let mut no_asset = no_texture_asset;
+        let design = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_asset,
+        )
+        .expect("empty mesh registry");
+        assert!(design.is_empty());
+
+        let mut graph = synthetic_mesh_graph_with_collection(false, 0, true);
+        let owner_gap = 38 + 11 + 9 + 4;
+        graph.bytes[owner_gap] = 1;
+        let mut no_asset = no_texture_asset;
+        assert!(parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_asset,
+        )
+        .is_err());
     }
 
     #[test]

@@ -350,6 +350,14 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ## 2. External references
 
+### DR-82. Other joint freedom codes and the limit flags
+
+**Question.** Which degrees of freedom do freedom codes other than `1`, `2`, and `8` name, what do the two joint-record limit flag bytes select, and in which unit is a translation limit stored?
+
+**Known.** `f3d.md` "Assembly operands" gives the joint and motion records, the freedom entry, codes `1`, `2`, and `8`, and the limit lanes. Freedom codes `0`, `6`, and `7` also occur, alone and in pairs such as `2` with `7`, `0` with `8`, and `2` with `6` and `7`. Both flags are `1` on a joint with a minimum and a maximum.
+
+**Need.** Cylindrical, pin-slot, planar, and ball joints combine freedoms. A joint with only one limit needs the flag that enables it.
+
 ### XR-01. `neutronData` with a different GUID
 
 **Question.** What does `neutronData` mean when its GUID is different from the `neutronRole` GUID?

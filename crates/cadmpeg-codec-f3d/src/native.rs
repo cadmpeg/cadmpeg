@@ -147,6 +147,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_face_source_groups",
     "design_feature_timelines",
     "design_fillet_radius_groups",
+    "design_joint_motions",
     "design_loft_legacy_body_carriers",
     "design_material_assignments",
     "design_mesh_features",
@@ -739,6 +740,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "design_joint_motions",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_joint_motions)
+        },
+        len: |model| model.design_joint_motions.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "design_sheet_metal_settings",
         exactness: (),
         phase: Phase::ArenaOnly,
@@ -1290,6 +1301,9 @@ pub(crate) struct F3dNative {
     /// Sketch and construction-operation records that scope parameters.
     #[serde(default)]
     pub(crate) design_parameter_scopes: Vec<DesignParameterScope>,
+    /// Freedoms and limits of assembly joints with relative motion.
+    #[serde(default)]
+    pub(crate) design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
     /// MetaStream-bounded common sheet-metal settings frames.
     #[serde(default)]
     pub(crate) design_sheet_metal_settings:
@@ -1505,6 +1519,7 @@ impl F3dNative {
             design_parameter_owners: read_arena!("design_parameter_owners"),
             design_parameter_scopes: read_arena!("design_parameter_scopes"),
             design_sheet_metal_settings: read_arena!("design_sheet_metal_settings"),
+            design_joint_motions: read_arena!("design_joint_motions"),
             design_surface_trim_operations: read_arena!("design_surface_trim_operations"),
             design_parameters: read_arena!("design_parameters"),
             design_entity_headers: read_arena!("design_entity_headers"),
