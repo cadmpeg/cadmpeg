@@ -1211,9 +1211,6 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         }
     }
 
-    if !ctx.holds_design_intent() {
-        return Ok(());
-    }
     let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
@@ -1222,16 +1219,14 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         &native.asm_histories,
     );
     for scope in &native.design_parameter_scopes {
-        let Some(position) = scope_positions.get(scope.id.as_str()).copied() else {
-            continue;
-        };
-        match scope_history.predecessor(scope, |candidate| {
-            scope_positions.contains_key(candidate.id.as_str())
-        }) {
+        // Known history-state references can prove a cycle independently of
+        // whether every scope has an authored timeline position.
+        match scope_history.predecessor(scope, |_| true) {
             Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
                 if scope_positions
                     .get(predecessor.id.as_str())
-                    .is_some_and(|predecessor| *predecessor >= position)
+                    .zip(scope_positions.get(scope.id.as_str()))
+                    .is_some_and(|(predecessor, position)| predecessor >= position)
                 {
                     push_constant_finding(
                         findings,
