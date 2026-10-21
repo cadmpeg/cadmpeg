@@ -637,13 +637,13 @@ fn patch_payload_offsets_round_trip_through_reparse() {
         panic!("one record");
     };
     let mut patched = payload.clone();
-    let start = usize::try_from(record.value_offset).unwrap();
+    let start = usize::try_from(record.value_offset.expect("source offset")).unwrap();
     let edited = 0.05_f64;
     patched[start..start + 8].copy_from_slice(&edited.to_be_bytes());
-    patched[usize::try_from(record.precision_offset).unwrap()] = 4;
-    patched[usize::try_from(record.basic_offset).unwrap()] = 0xc2;
-    patched[usize::try_from(record.inspection_offset).unwrap()] = 0xc3;
-    patched[usize::try_from(record.reference_only_offset).unwrap()] = 0xc2;
+    patched[usize::try_from(record.precision_offset.expect("source offset")).unwrap()] = 4;
+    patched[usize::try_from(record.basic_offset.expect("source offset")).unwrap()] = 0xc2;
+    patched[usize::try_from(record.inspection_offset.expect("source offset")).unwrap()] = 0xc3;
+    patched[usize::try_from(record.reference_only_offset.expect("source offset")).unwrap()] = 0xc2;
     let text_off = usize::try_from(record.display_text_offset().expect("display text")).unwrap();
     patched[text_off..text_off + 9].copy_from_slice(b"50.000 mm");
     let mut again_losses = Vec::new();
@@ -1100,7 +1100,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
 fn u16_precision_survives_plain_patch_round_trip() {
     let mut payload = pmi_semantic_payload();
     let record = parse_payload(&payload, &mut Vec::new()).remove(0);
-    let offset = usize::try_from(record.precision_offset).unwrap();
+    let offset = usize::try_from(record.precision_offset.expect("source offset")).unwrap();
     payload.splice(offset..=offset, [0xcd, 0x00, 0x03]);
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

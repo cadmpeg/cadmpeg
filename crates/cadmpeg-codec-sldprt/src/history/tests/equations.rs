@@ -779,7 +779,7 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
 
 #[test]
 fn configuration_local_modeling_edits_without_brep_are_synthesized() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, WritePath};
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_body(&triangle_body());
