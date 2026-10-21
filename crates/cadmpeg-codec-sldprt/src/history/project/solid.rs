@@ -416,13 +416,14 @@ pub(crate) fn threaded_hole_major_diameter(
             .iter()
             .chain(std::iter::once(feature))
             .find_map(|source| {
-                source.parameters.iter().find_map(|(name, value)| {
+                source.parameters.keys().find_map(|name| {
                     (super::parameter_dimension::<PositiveLength>(source, &[name.as_str()])
                         .as_ref()
                         .and_then(Dimension::parameter)
                         == Some(id))
-                    .then(|| parse_positive_dimension_length_mm(value))
+                    .then(|| crate::history::parameters::source_parameter_value(source, name.as_str()))
                     .flatten()
+                    .and_then(|value| <PositiveLength as cadmpeg_ir::features::DimensionValue>::from_parameter_value(&value))
                 })
             })
     });
