@@ -12,6 +12,7 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 mod binders;
+mod tolerance_modes;
 
 #[test]
 fn transfers_partdesign_refine_and_fuzzy_post_processing() {

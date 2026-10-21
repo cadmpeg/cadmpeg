@@ -359,17 +359,23 @@ fn independent_linked_prototype_placement_is_baked_and_retains_its_decomposition
 #[test]
 fn exact_editor_feature_expression_constraint_and_appearance_edits_survive() {
     use serde_json::json;
-    for source in [
+    for (source_index, source) in [
         include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../corpus/freecad_fcstd/fixtures/design_history.FCStd"
         ))
         .as_slice(),
         CORE_DESIGN_PRODUCT,
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
+        if source_index == 0 {
+            assert_eq!(decoded.ir().model.parameters.len(), 16);
+        }
         let mut value = serde_json::to_value(decoded.ir()).unwrap();
         let features = value["model"]["features"].as_array_mut().unwrap();
         features
@@ -452,6 +458,32 @@ fn exact_editor_feature_expression_constraint_and_appearance_edits_survive() {
         let output = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
+        if source_index == 0 {
+            assert_eq!(output.ir().model.parameters.len(), 16);
+            assert!(!output
+                .ir()
+                .model
+                .parameters
+                .iter()
+                .any(|parameter| parameter.name == "FuzzyTolerance"));
+        }
+        for feature in &edited.model.features {
+            if let cadmpeg_ir::features::FeatureDefinition::PostProcess {
+                fuzzy_tolerance, ..
+            } = feature.definition()
+            {
+                let written = output
+                    .ir()
+                    .model
+                    .features
+                    .iter()
+                    .find(|written| written.id == feature.id)
+                    .unwrap();
+                assert!(
+                    matches!(written.definition(), cadmpeg_ir::features::FeatureDefinition::PostProcess { fuzzy_tolerance: actual, .. } if actual == fuzzy_tolerance)
+                );
+            }
+        }
         assert!(
             output.source_fidelity().unrepresented().is_empty(),
             "{:?}",

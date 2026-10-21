@@ -1329,6 +1329,23 @@ fn append_operation_parameters(
             continue;
         }
         let expression = expression_binding(properties, &property.name);
+        // Built-in nonpositive tolerances select a kernel mode. They are
+        // already represented by PostProcess, not an authored length driver.
+        // An expression binding or dynamic declaration states a real driver,
+        // including an authored zero, and must keep its parameter identity.
+        if property.name == "FuzzyTolerance"
+            && value.get() <= 0.0
+            && expression.is_none()
+            && !matches!(
+                &property.body,
+                crate::native::PropertyBody::Persisted {
+                    dynamic: Some(_),
+                    ..
+                }
+            )
+        {
+            continue;
+        }
         let is_angle = property.type_name.contains("Angle")
             || matches!(
                 property.name.as_str(),
