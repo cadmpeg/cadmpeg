@@ -316,32 +316,124 @@ fn native_validation_rejects_edited_relation_instance() {
         plan.report().write_path(),
         cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
-    let expected = decoded
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
+    let omitted = decoded
         .ir()
         .model
         .sketch_constraints
         .iter()
-        .map(|constraint| constraint.definition.clone())
-        .collect::<Vec<_>>();
+        .find(|constraint| {
+            matches!(
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Native { .. }
+            )
+        })
+        .expect("fixture has one canonical native relation");
+    let SketchConstraintDefinitionInput::Native {
+        native_kind,
+        entities,
+        parameter,
+        operands,
+        ..
+    } = omitted.definition.kind()
+    else {
+        unreachable!()
+    };
+    assert_eq!(native_kind.as_str(), "sgPntPntDist");
+    assert!(entities.is_empty());
+    assert!(parameter.is_some());
     assert!(
-        !expected.is_empty(),
-        "fixture has canonical relation semantics"
+        operands.iter().any(
+            |operand| operand.native_ref.as_ref().is_none_or(|reference| {
+                !decoded
+                    .ir()
+                    .model
+                    .sketch_entities
+                    .iter()
+                    .any(|entity| entity.native_ref.as_ref() == Some(reference))
+            })
+        ),
+        "the native relation has an operand without a resolved document entity"
     );
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.design-reduced" && loss.message == format!(
+            "sketch constraint {} omitted: source-less SLDPRT sketch constraints support solved endpoint coincidences and horizontal, vertical, or fixed marker relations", omitted.id
+        )
+    }), "the exact unresolved relation must have a named export loss");
+    let cadmpeg_ir::codec::write::ArenaCoverage::Declared(coverage) = plan.report().coverage else {
+        panic!("synthesis declares partial coverage");
+    };
+    assert_eq!(
+        coverage.sketch_constraints,
+        cadmpeg_ir::codec::write::ArenaDisposition::Reported
+    );
+    assert_eq!(
+        plan.report().native_dispositions.record_disposition(
+            "sldprt",
+            "feature_input_relation_instances",
+            &edited.feature_input_lanes[0].relation_instances[0].id
+        ),
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+    );
+    let mut expected = decoded
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| {
+            matches!(
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::CoincidentLoci { .. }
+            )
+        })
+        .map(|constraint| serde_json::to_value(&constraint.definition).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(expected.len(), 3);
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let written = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
+    let identities = decoded
+        .ir()
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| {
+            let matching = written
+                .ir()
+                .model
+                .sketch_entities
+                .iter()
+                .filter(|candidate| {
+                    candidate.geometry == entity.geometry
+                        && candidate.construction == entity.construction
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                matching.len(),
+                1,
+                "each solved entity has one written counterpart"
+            );
+            (
+                entity.id().as_str().to_owned(),
+                matching[0].id().as_str().to_owned(),
+            )
+        })
+        .collect();
+    for definition in &mut expected {
+        remap_constraint_entity_ids(definition, &identities);
+    }
     assert_eq!(
         written
             .ir()
             .model
             .sketch_constraints
             .iter()
-            .map(|constraint| constraint.definition.clone())
+            .map(|constraint| serde_json::to_value(&constraint.definition).unwrap())
             .collect::<Vec<_>>(),
         expected,
-        "canonical relation semantics survive regeneration"
+        "all three supported coincidence relations survive with the same entity semantics"
     );
 }
 
@@ -369,4 +461,28 @@ fn native_validation_route_refuses_nesting_limit() {
         matches!(SldprtCodec.validate_native(&ctx, decoded.ir()), Err(CodecError::ResourceLimit(refusal))
         if refusal.dimension == ResourceDimension::RecursionDepth && refusal.operation == limit.operation)
     );
+}
+
+fn remap_constraint_entity_ids(
+    value: &mut serde_json::Value,
+    identities: &std::collections::HashMap<String, String>,
+) {
+    match value {
+        serde_json::Value::String(id) => {
+            if let Some(written) = identities.get(id) {
+                *id = written.clone();
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                remap_constraint_entity_ids(value, identities);
+            }
+        }
+        serde_json::Value::Object(values) => {
+            for value in values.values_mut() {
+                remap_constraint_entity_ids(value, identities);
+            }
+        }
+        _ => {}
+    }
 }
