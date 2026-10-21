@@ -17,6 +17,7 @@ pub(crate) const fn projection_held(ir: &CadIr) -> bool {
 
 pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectRecord]) -> bool {
     if matches!(property.name.as_str(), "Shape" | "Placement")
+        || crate::application_geometry::holds_property(ir, &property.type_name, &property.owner)
         || crate::property_policy::is_projection_metadata(property)
         || ir
             .model
