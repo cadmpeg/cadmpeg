@@ -132,3 +132,54 @@ fn a_changed_neutral_sketch_entity_is_not_replaced_by_the_native_graph() {
     assert!(written.ir().model.sketch_entities.is_empty());
     assert!(written.ir().model.features.is_empty());
 }
+
+#[test]
+fn canonical_owned_parameter_order_updates_its_writable_owner_lane() {
+    let bytes = include_bytes!("../../../tests/golden/fixtures/design_sketch_constraints.f3d");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    for parameter in &mut ir.model.parameters {
+        parameter.ordinal = match parameter.name.as_str() {
+            "d1" => 1,
+            "d2" => 0,
+            _ => panic!("the fixture has precisely its two stated dimension parameters"),
+        };
+    }
+    let mut output = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut output))
+        .unwrap();
+    let written = F3dCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native_test::f3d_native(written.ir());
+    for (name, expected) in [("d1", 1), ("d2", 0)] {
+        assert_eq!(
+            written
+                .ir()
+                .model
+                .parameters
+                .iter()
+                .find(|parameter| parameter.name == name)
+                .unwrap()
+                .ordinal,
+            expected
+        );
+        let record = native
+            .design_parameters
+            .iter()
+            .find(|parameter| parameter.name() == name)
+            .unwrap();
+        assert_eq!(record.source_ordinal, 9);
+        let owner = native
+            .design_parameter_owners
+            .iter()
+            .find(|owner| Some(owner.record_index()) == record.owner_record_index())
+            .unwrap();
+        assert_eq!(owner.local_ordinal(), Some(expected));
+        assert_eq!(owner.owned_ordinal(), 9);
+    }
+}
