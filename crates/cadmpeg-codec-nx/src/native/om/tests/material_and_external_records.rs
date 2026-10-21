@@ -53,11 +53,10 @@ fn decode_retains_strict_tiff_material_texture_assets() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
-    let assets = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant")
+    let assets = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ))
         .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>(
             "material_texture_assets",
         )
@@ -102,11 +101,10 @@ fn decode_joins_qaf_material_names_to_texture_assets() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
-    let namespace = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant");
+    let namespace = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ));
     let assets = namespace
         .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>(
             "material_texture_assets",
@@ -202,11 +200,10 @@ fn assembly_metadata_lists_external_child_paths() {
         attrs.get("external_reference.1").map(String::as_str),
         Some("nested/b.prt")
     );
-    let references = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("NX native namespace")
+    let references = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ))
         .arena_as::<super::super::ExternalReference>("external_references")
         .expect("typed external references");
     assert_eq!(references.len(), 2);
@@ -650,7 +647,10 @@ fn decode_selects_dominant_rmfastload_body() {
     let result = NxCodec
         .decode(&mut cur, &DecodeOptions::default())
         .expect("required invariant");
-    let namespace = result.ir().native.namespace("nx").expect("NX namespace");
+    let namespace = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ));
     let tables = namespace
         .arena_as::<super::super::RmFastLoadObjectIdTable>("rmfastload_object_id_tables")
         .expect("RMFastLoad tables");

@@ -831,7 +831,10 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        let namespace = result.ir().native.namespace("nx").expect("NX namespace");
+        let namespace = (&crate::test_support::source_fidelity::native_namespace(
+            result.ir(),
+            result.source_fidelity(),
+        ));
         let rows = namespace
             .arena_as::<super::SegmentIndexRow>("segment_index_rows")
             .expect("required invariant");
@@ -873,11 +876,10 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        let links = result
-            .ir()
-            .native
-            .namespace("nx")
-            .expect("required invariant")
+        let links = (&crate::test_support::source_fidelity::native_namespace(
+            result.ir(),
+            result.source_fidelity(),
+        ))
             .arena_as::<super::SegmentStreamLink>("segment_stream_links")
             .expect("required invariant");
         assert_eq!(links.len(), 1);
@@ -1001,11 +1003,10 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        let bindings = result
-            .ir()
-            .native
-            .namespace("nx")
-            .expect("required invariant")
+        let bindings = (&crate::test_support::source_fidelity::native_namespace(
+            result.ir(),
+            result.source_fidelity(),
+        ))
             .arena_as::<super::SegmentBodyBinding>("segment_body_bindings")
             .expect("required invariant");
         assert_eq!(bindings.len(), 1);
@@ -1064,11 +1065,10 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        let bindings = result
-            .ir()
-            .native
-            .namespace("nx")
-            .expect("required invariant")
+        let bindings = (&crate::test_support::source_fidelity::native_namespace(
+            result.ir(),
+            result.source_fidelity(),
+        ))
             .arena_as::<super::SegmentBodyBinding>("segment_body_bindings")
             .expect("required invariant");
         assert_eq!(bindings.len(), 1);
@@ -1088,7 +1088,10 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        let namespace = result.ir().native.namespace("nx").expect("NX namespace");
+        let namespace = (&crate::test_support::source_fidelity::native_namespace(
+            result.ir(),
+            result.source_fidelity(),
+        ));
         let links = namespace
             .arena_as::<super::SegmentStreamLink>("segment_stream_links")
             .expect("required invariant");
@@ -1113,11 +1116,10 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        let namespace = result
-            .ir()
-            .native
-            .namespace("nx")
-            .expect("required invariant");
+        let namespace = (&crate::test_support::source_fidelity::native_namespace(
+            result.ir(),
+            result.source_fidelity(),
+        ));
         let links = namespace
             .arena_as::<super::SegmentStreamLink>("segment_stream_links")
             .expect("required invariant");
@@ -1142,11 +1144,10 @@ mod tests {
             let result = NxCodec
                 .decode(&mut Cursor::new(file), &DecodeOptions::default())
                 .expect("required invariant");
-            let links = result
-                .ir()
-                .native
-                .namespace("nx")
-                .expect("required invariant")
+            let links = (&crate::test_support::source_fidelity::native_namespace(
+                result.ir(),
+                result.source_fidelity(),
+            ))
                 .arena_as::<super::SegmentOmLink>("segment_om_links")
                 .expect("required invariant");
             assert_eq!(links.len(), 1);
@@ -1190,11 +1191,10 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        let links = result
-            .ir()
-            .native
-            .namespace("nx")
-            .expect("NX namespace")
+        let links = (&crate::test_support::source_fidelity::native_namespace(
+            result.ir(),
+            result.source_fidelity(),
+        ))
             .arena_as::<super::SegmentOmLink>("segment_om_links")
             .expect("required invariant");
         assert_eq!(links.len(), 1);
@@ -1227,11 +1227,10 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        let links = result
-            .ir()
-            .native
-            .namespace("nx")
-            .expect("NX namespace")
+        let links = (&crate::test_support::source_fidelity::native_namespace(
+            result.ir(),
+            result.source_fidelity(),
+        ))
             .arena_as::<super::SegmentOmLink>("segment_om_links")
             .expect("required invariant");
         assert_eq!(links.len(), 1);

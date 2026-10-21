@@ -405,11 +405,10 @@ fn decode_orders_and_deduplicates_linked_feature_history_sections() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
-    let namespace = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant");
+    let namespace = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ));
     let links = namespace
         .arena_as::<crate::native::segments::SegmentOmLink>("segment_om_links")
         .expect("required invariant");
@@ -477,11 +476,10 @@ fn decoded_feature_ids_preserve_source_order_and_ordinals_reverse_history() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
-    let labels = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant")
+    let labels = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ))
         .arena_as::<FeatureOperationLabel>("feature_operation_labels")
         .expect("required invariant");
 
@@ -514,11 +512,10 @@ fn decode_retains_role_scoped_om_record_area_header() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
-    let areas = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant")
+    let areas = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ))
         .arena_as::<crate::native::om::OmRecordArea>("om_record_areas")
         .expect("required invariant");
     assert_eq!(areas.len(), 1);
@@ -530,11 +527,10 @@ fn decode_retains_role_scoped_om_record_area_header() {
     assert_eq!(areas[0].product_version.as_str(), "NX 2027.3102");
     assert!(areas[0].byte_len > 12);
     assert_eq!(areas[0].sha256.as_str().len(), 64);
-    let labels = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant")
+    let labels = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ))
         .arena_as::<FeatureOperationLabel>("feature_operation_labels")
         .expect("required invariant");
     assert_eq!(labels.len(), 1);
@@ -545,22 +541,20 @@ fn decode_retains_role_scoped_om_record_area_header() {
         [Some(1), Some(576), Some(6099), None]
     );
     assert_eq!(labels[0].section_link, areas[0].section_link);
-    let records = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant")
+    let records = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ))
         .arena_as::<FeatureOperationRecord>("feature_operation_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].operation_label, labels[0].id);
     assert!(records[0].span.byte_len() > 40);
     assert_eq!(records[0].sha256.as_str().len(), 64);
-    let booleans = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant")
+    let booleans = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ))
         .arena_as::<FeatureBooleanOperation>("feature_boolean_operations")
         .expect("required invariant");
     assert_eq!(booleans.len(), 1);
@@ -574,21 +568,19 @@ fn decode_retains_role_scoped_om_record_area_header() {
             .collect::<Vec<_>>(),
         [6476, 127]
     );
-    let body_references = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant")
+    let body_references = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ))
         .arena_as::<FeatureBodyReference>("feature_body_references")
         .expect("required invariant");
     assert_eq!(body_references.len(), 1);
     assert_eq!(body_references[0].operation_label, labels[0].id);
     assert_eq!(body_references[0].body.value(), 6466);
-    let body_reference_occurrences = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant")
+    let body_reference_occurrences = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ))
         .arena_as::<FeatureBodyReference>("feature_body_reference_occurrences")
         .expect("required invariant");
     assert_eq!(body_reference_occurrences.len(), 1);
@@ -633,11 +625,10 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
-    let inputs = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant")
+    let inputs = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ))
         .arena_as::<FeatureInputBlock>("feature_input_blocks")
         .expect("required invariant");
     assert_eq!(inputs.len(), 1);
@@ -652,11 +643,10 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
         result.ir().model.features[0].source_properties["input_block_record.0"],
         inputs[0].id
     );
-    let references = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant")
+    let references = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ))
         .arena_as::<crate::native::om::DataBlockReference>("data_block_references")
         .expect("required invariant");
     assert_eq!(references.len(), 1);

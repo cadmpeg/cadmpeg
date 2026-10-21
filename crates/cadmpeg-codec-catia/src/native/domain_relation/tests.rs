@@ -75,11 +75,10 @@ fn unresolved_class24_relation_creates_no_neutral_geometry() {
     assert!(decoded.ir().model.procedural_curves.is_empty());
     assert!(decoded.ir().model.edges.is_empty());
     assert_eq!(
-        decoded
-            .ir()
-            .native
-            .namespace("catia")
-            .expect("native namespace")
+        (&crate::test_support::source_fidelity::native_namespace(
+            decoded.ir(),
+            decoded.source_fidelity()
+        ))
             .arenas()["consolidated_domain_relations"]
             .len(),
         1
@@ -167,11 +166,10 @@ fn unresolved_class25_maps_create_no_neutral_geometry() {
         assert!(model.surfaces.is_empty() && model.procedural_surfaces.is_empty());
         assert!(model.edges.is_empty() && model.faces.is_empty());
         assert_eq!(
-            decoded
-                .ir()
-                .native
-                .namespace("catia")
-                .expect("native namespace")
+            (&crate::test_support::source_fidelity::native_namespace(
+                decoded.ir(),
+                decoded.source_fidelity()
+            ))
                 .arenas()["consolidated_domain_relations"]
                 .len(),
             1

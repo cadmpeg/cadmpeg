@@ -32,36 +32,11 @@ const BYTE_FIELDS: &[&str] = &[
 ];
 
 pub(super) fn move_layout(ir: &mut CadIr, fidelity: &mut SourceFidelity) -> Result<(), CodecError> {
-    let mut projected =
-        std::collections::BTreeMap::<String, std::collections::BTreeMap<usize, String>>::new();
-    for attribute in &ir.model.attributes {
-        if let cadmpeg_ir::attributes::AttributeTarget::Source { source_id } = &attribute.target {
-            if let Some(ordinal) = attribute
-                .name
-                .strip_prefix("value.")
-                .and_then(|ordinal| ordinal.parse().ok())
-            {
-                projected
-                    .entry(source_id.clone())
-                    .or_default()
-                    .insert(ordinal, attribute.id.to_string());
-            }
-        }
-    }
     for (arena, records) in ir.native.namespace_mut("catia").arenas_mut() {
         for record in records {
             let identity =
                 cadmpeg_ir::ids::Identity::try_from(record.id()).map_err(CodecError::malformed)?;
             let mut fields = record.fields()?;
-            if let Some(projected) = projected.get(record.id()) {
-                if let Some(Value::Array(values)) = fields.get_mut("fields") {
-                    for (ordinal, value) in values.iter_mut().enumerate() {
-                        if let Some(attribute) = projected.get(&ordinal) {
-                            *value = json!({"neutral_attribute":attribute});
-                        }
-                    }
-                }
-            }
             let mut value = Value::Object(fields);
             extract(
                 &mut value,
@@ -143,9 +118,8 @@ fn extract(value: &mut Value, path: &str, fidelity: &mut SourceFidelity) -> Resu
                             cadmpeg_ir::source_fidelity::RetainedSourceRecord::from_bytes(
                                 child_path,
                                 0,
-                                cadmpeg_ir::source_fidelity::RetainedBytes::Digest {
-                                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                                    sha256: hash.clone(),
+                                cadmpeg_ir::source_fidelity::RetainedBytes::Inline {
+                                    data: bytes.clone(),
                                 },
                             )?,
                         )?;

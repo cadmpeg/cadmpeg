@@ -760,11 +760,10 @@ fn topology_retains_entity_attribute_list_references() {
             &DecodeOptions::default(),
         )
         .expect("required invariant");
-    let references = result
-        .ir()
-        .native
-        .namespace("nx")
-        .expect("required invariant")
+    let references = (&crate::test_support::source_fidelity::native_namespace(
+        result.ir(),
+        result.source_fidelity(),
+    ))
         .arena_as::<super::ParasolidTopologyAttributeListReference>(
             "parasolid_topology_attribute_list_references",
         )

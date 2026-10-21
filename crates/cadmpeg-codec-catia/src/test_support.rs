@@ -8,6 +8,7 @@
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
 pub(crate) mod parameter_projection;
+pub(crate) mod source_fidelity;
 pub(crate) mod test_a5_bound;
 pub(crate) mod test_a5a8;
 pub(crate) mod test_annotations;

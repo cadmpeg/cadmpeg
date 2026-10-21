@@ -178,11 +178,10 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
     );
 
     let native = crate::native::CatiaNative::load(
-        decoded
-            .ir()
-            .native
-            .namespace("catia")
-            .expect("CATIA native namespace"),
+        (&crate::test_support::source_fidelity::native_namespace(
+            decoded.ir(),
+            decoded.source_fidelity(),
+        )),
     )
     .expect("load compound legacy fields");
     assert!(native.legacy_entity_runs[0]
@@ -292,11 +291,10 @@ fn decode_retains_legacy_relation_synchronous_states() {
         4
     );
     let native = crate::native::CatiaNative::load(
-        decoded
-            .ir()
-            .native
-            .namespace("catia")
-            .expect("CATIA native namespace"),
+        (&crate::test_support::source_fidelity::native_namespace(
+            decoded.ir(),
+            decoded.source_fidelity(),
+        )),
     )
     .expect("load retained update states");
     assert_eq!(
@@ -386,7 +384,11 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
         ))
     );
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(decoded.ir(), &parameter),
+        crate::test_support::parameter_projection::expression_text(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &parameter
+        ),
         "12.5 mm"
     );
     assert!(parameter
@@ -442,7 +444,11 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
         ))
     );
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(decoded.ir(), &parameter),
+        crate::test_support::parameter_projection::expression_text(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &parameter
+        ),
         "\"Cilas Evans\""
     );
     assert_eq!(
@@ -526,7 +532,11 @@ fn decode_transfers_an_input_bound_legacy_string_formula() {
         Some(cadmpeg_ir::ParameterValue::String("left-right".to_string()))
     );
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(decoded.ir(), &result),
+        crate::test_support::parameter_projection::expression_text(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &result
+        ),
         "#1_ + \"-\" + #2_"
     );
     let dependency_names = result
@@ -587,7 +597,11 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_integer() {
         Some(cadmpeg_ir::features::ParameterValue::Integer(11))
     );
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(decoded.ir(), &parameter),
+        crate::test_support::parameter_projection::expression_text(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &parameter
+        ),
         "11"
     );
     assert_eq!(
@@ -730,7 +744,11 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
         ))
     );
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(decoded.ir(), &string),
+        crate::test_support::parameter_projection::expression_text(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &string
+        ),
         "\"Revision-1\""
     );
     assert_eq!(string.properties["value_type"], "String");
@@ -947,7 +965,11 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         panic!("one legacy formula parameter")
     };
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(decoded.ir(), &parameter),
+        crate::test_support::parameter_projection::expression_text(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &parameter
+        ),
         "2+3"
     );
     assert_eq!(
@@ -970,6 +992,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     assert_eq!(
         crate::test_support::parameter_projection::expression_text(
             mismatched.ir(),
+            mismatched.source_fidelity(),
             &mismatched.ir().model.parameters[0]
         ),
         "6"
@@ -992,7 +1015,11 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         panic!("one unset legacy formula parameter")
     };
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(decoded.ir(), &parameter),
+        crate::test_support::parameter_projection::expression_text(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &parameter
+        ),
         "2+3"
     );
     assert_eq!(parameter.value, None);
@@ -1037,7 +1064,11 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         panic!("one Boolean formula parameter")
     };
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(decoded.ir(), &parameter),
+        crate::test_support::parameter_projection::expression_text(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &parameter
+        ),
         "not false"
     );
     assert_eq!(parameter.value, None);
@@ -1068,7 +1099,11 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         panic!("one conditional formula parameter")
     };
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(decoded.ir(), &parameter),
+        crate::test_support::parameter_projection::expression_text(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &parameter
+        ),
         "true ? 5 ; 1 / 0"
     );
     assert_eq!(
@@ -1150,7 +1185,11 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
         panic!("one legacy output parameter")
     };
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(transferred.ir(), &parameter),
+        crate::test_support::parameter_projection::expression_text(
+            transferred.ir(),
+            transferred.source_fidelity(),
+            &parameter
+        ),
         "2+3"
     );
     assert_eq!(
@@ -1170,6 +1209,7 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
     assert_eq!(
         crate::test_support::parameter_projection::expression_text(
             unset.ir(),
+            unset.source_fidelity(),
             &unset.ir().model.parameters[0]
         ),
         "2+3"
@@ -1190,6 +1230,7 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
     assert_eq!(
         crate::test_support::parameter_projection::expression_text(
             mismatched_value.ir(),
+            mismatched_value.source_fidelity(),
             &mismatched_value.ir().model.parameters[0]
         ),
         "6"
@@ -1276,7 +1317,11 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         panic!("one legacy string formula parameter")
     };
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(decoded.ir(), &parameter),
+        crate::test_support::parameter_projection::expression_text(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &parameter
+        ),
         "ReplaceSubText(\"Cilas Evans\",\"Cilas\",\"Easy\")"
     );
     assert_eq!(
@@ -1308,6 +1353,7 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
     assert_eq!(
         crate::test_support::parameter_projection::expression_text(
             mismatched.ir(),
+            mismatched.source_fidelity(),
             &mismatched.ir().model.parameters[0]
         ),
         "\"Cilas Evans\""
@@ -1333,7 +1379,11 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         panic!("one legacy string-method formula parameter")
     };
     assert_eq!(
-        crate::test_support::parameter_projection::expression_text(decoded.ir(), &parameter),
+        crate::test_support::parameter_projection::expression_text(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &parameter
+        ),
         "ToLower(\"MIXED\").Extract(1,4) - \"x\""
     );
     assert_eq!(
