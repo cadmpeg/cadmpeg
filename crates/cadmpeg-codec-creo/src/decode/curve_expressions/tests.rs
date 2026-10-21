@@ -300,21 +300,6 @@ fn curve_expression_feature_labels_keep_source_spelling() {
 }
 
 #[test]
-fn curve_expression_source_text_joins_lines() {
-    let lines = [
-        crate::curve::CurveExpressionLine {
-            text: "alpha".to_string(),
-            offset: 0,
-        },
-        crate::curve::CurveExpressionLine {
-            text: "beta".to_string(),
-            offset: 6,
-        },
-    ];
-    assert_eq!(super::curve_expression_source_text(&lines), "alpha\nbeta");
-}
-
-#[test]
 fn curve_expression_named_properties_build_both_maps() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x01a=1\0";

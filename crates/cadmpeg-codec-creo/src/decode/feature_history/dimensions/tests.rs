@@ -12,7 +12,7 @@ use cadmpeg_ir::AnnotationBuilder;
 use super::super::dimensions::{
     dimension_expression, feature_dimension_parameter_row_id, insert_dimension_property,
     planned_feature_dimension_parameter_ids, push_feature_source_parameter,
-    transfer_feature_dimensions, HexToken,
+    transfer_feature_dimensions,
 };
 
 fn layout_key() -> cadmpeg_ir::sketches::SketchId {
@@ -138,7 +138,9 @@ fn dimension_hex_token_keeps_lowercase_byte_order() {
     insert_dimension_property(
         &mut properties,
         "value_token",
-        HexToken(&[0x00, 0xf1, 0x7f]),
+        serde_json::to_string(&cadmpeg_ir::native::bytes::NativeBytes::from([0x00_u8, 0xf1, 0x7f]))
+            .expect("native bytes serialize")
+            .trim_matches('"'),
     );
     assert_eq!(properties["value_token"], "00f17f");
     assert_eq!(
