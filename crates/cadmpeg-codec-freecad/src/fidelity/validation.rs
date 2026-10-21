@@ -54,6 +54,8 @@ pub(crate) fn validate(
     };
     let coverage: native::ByteCoverageRecord = read_layout(ctx, fidelity, "byte-coverage")?;
     let entries: Vec<native::EntryRecord> = read_arena(ctx, namespace, "entries")?;
+    let unreadable: Vec<crate::container::UnreadableEntry> =
+        read_arena(ctx, namespace, "unreadable_entries")?;
     let properties: Vec<native::PropertyRecord> = read_arena(ctx, namespace, "properties")?;
     let gui_properties: Vec<native::GuiPropertyRecord> =
         read_arena(ctx, namespace, "gui_properties")?;
@@ -70,6 +72,17 @@ pub(crate) fn validate(
         .map(|record| record.byte_len());
     let mut findings = Vec::new();
     validate_span_chain("physical archive", &physical, physical_end, &mut findings);
+    for entry in &unreadable {
+        if !fidelity.retained_record(&entry.id).is_some_and(|record| {
+            record.byte_len() == entry.byte_len && record.sha256() == entry.sha256
+        }) {
+            findings.push(finding(
+                Check::PayloadIntegrity,
+                "invalid source-only FCStd entry",
+                Some(entry.id.clone()),
+            ));
+        }
+    }
     let property_ids = properties
         .iter()
         .map(|property| property.id.as_str())
