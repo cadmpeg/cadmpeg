@@ -163,7 +163,7 @@ fn sync_neutral_parameters(
             record
                 .parameters
                 .keys()
-                .filter(|name| !parameters.iter().any(|parameter| parameter.name == **name))
+                .filter(|name| !parameters.iter().any(|parameter| parameter.name.as_str() == name.as_str()))
                 .map(ToString::to_string),
         );
         let mut names = names.into_iter();
