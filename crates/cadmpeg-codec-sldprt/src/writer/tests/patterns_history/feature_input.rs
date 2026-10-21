@@ -406,7 +406,7 @@ fn semantic_writer_omits_marker_framing_without_typed_operands() {
         .unwrap();
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     assert!(plan
         .report()
@@ -430,6 +430,11 @@ fn semantic_writer_omits_marker_framing_without_typed_operands() {
         regenerated.ir().model.features.len(),
         decoded.ir().model.features.len()
     );
+    let synthesized =
+        crate::test_support::assert_source_free_synthesis_agrees(decoded.ir(), regenerated.ir());
+    assert!(sldprt_native(synthesized.ir())
+        .feature_input_lanes
+        .is_empty());
 }
 
 #[test]

@@ -54,6 +54,33 @@ pub(crate) fn assert_synthesis_fallback(ir: &CadIr, fidelity: &SourceFidelity) {
     assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
 }
 
+/// Independently synthesize current content and compare every Written arena.
+pub(crate) fn assert_source_free_synthesis_agrees(
+    ir: &CadIr,
+    retained_output: &CadIr,
+) -> cadmpeg_ir::codec::DecodeResult {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    let report = plan.report().clone();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let synthesized = SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &report,
+        retained_output,
+        synthesized.ir(),
+    );
+    synthesized
+}
+
 pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
     let unavailable = {
         let record = fidelity

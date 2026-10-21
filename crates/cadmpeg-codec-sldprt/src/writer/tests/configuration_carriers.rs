@@ -1705,7 +1705,7 @@ fn untyped_feature_framing_is_not_written_as_content() {
             .unwrap();
         assert!(matches!(
             plan.report().write_path(),
-            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+            cadmpeg_ir::report::export::WritePath::Patched { .. }
         ));
         assert!(plan
             .report()
@@ -1720,6 +1720,14 @@ fn untyped_feature_framing_is_not_written_as_content() {
             .section
             .name()
             .is_some_and(|name| name.ends_with("ResolvedFeatures"))));
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap();
+        let synthesized =
+            crate::test_support::assert_source_free_synthesis_agrees(&document, output.ir());
+        assert!(sldprt_native(synthesized.ir())
+            .feature_input_lanes
+            .is_empty());
     }
 }
 
