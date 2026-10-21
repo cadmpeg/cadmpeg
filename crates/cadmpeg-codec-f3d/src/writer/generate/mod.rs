@@ -23,6 +23,7 @@ mod parameters;
 pub(in crate::writer) mod preconditions;
 mod presentation;
 mod records;
+mod sketch_scopes;
 mod smbh;
 use parameters::encode_document_parameters;
 use preconditions::{
@@ -131,7 +132,7 @@ pub(crate) fn write_new(
             archive.write_all(&payload)?;
         }
     }
-    if !parameter_bytes.is_empty() {
+    if !parameter_bytes.is_empty() && native.design_parameter_scopes.is_empty() {
         archive
             .start_file(
                 format!("{DESIGN_FOLDER}/FusionDesignSegmentType2/BulkStream.dat"),
@@ -229,14 +230,30 @@ fn coverage(
         procedural_surfaces: Written,
         procedural_curves: Written,
         assets: Dropped,
-        features: Omitted,
+        features: if native.design_parameter_scopes.is_empty() {
+            Omitted
+        } else {
+            Reported
+        },
         feature_input_topologies: Omitted,
         feature_result_topologies: Omitted,
         configurations: if has_native { Written } else { Omitted },
         parameters: if has_native { Written } else { Dropped },
-        sketches: Omitted,
-        sketch_entities: Omitted,
-        sketch_constraints: Omitted,
+        sketches: if native.design_parameter_scopes.is_empty() {
+            Omitted
+        } else {
+            Reported
+        },
+        sketch_entities: if native.design_parameter_scopes.is_empty() {
+            Omitted
+        } else {
+            Reported
+        },
+        sketch_constraints: if native.design_parameter_scopes.is_empty() {
+            Omitted
+        } else {
+            Reported
+        },
         spatial_sketches: Omitted,
         spatial_sketch_entities: Omitted,
         spatial_sketch_constraints: Omitted,

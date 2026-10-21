@@ -9,7 +9,8 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use crate::records::parameters::{
-    DesignParameter, DesignParameterContent, DesignParameterDiscriminator, DesignParameterSource,
+    DesignParameter, DesignParameterContent, DesignParameterDiscriminator, DesignParameterOwner,
+    DesignParameterOwnerContent, DesignParameterSource,
 };
 
 pub(super) fn regenerate(
@@ -21,7 +22,7 @@ pub(super) fn regenerate(
     let mut parameters = target.model.parameters.iter().collect::<Vec<_>>();
     parameters.sort_by(|left, right| (left.ordinal, &left.id).cmp(&(right.ordinal, &right.id)));
     for parameter in parameters {
-        let hint = original_native
+        let original = original_native
             .iter()
             .find(|record| parameter.native_ref.as_deref() == Some(record.id.as_str()))
             .or_else(|| {
@@ -30,8 +31,8 @@ pub(super) fn regenerate(
                     .filter(|record| record.name() == parameter.name);
                 let first = named.next()?;
                 named.next().is_none().then_some(first)
-            })
-            .and_then(|record| record.unit().map(|unit| unit.value.as_str()));
+            });
+        let hint = original.and_then(|record| record.unit().map(|unit| unit.value.as_str()));
         let Some((unit, scalar)) = scalar(parameter, hint) else {
             losses.push(F3dLossCode::WriterDesignRecordsOmitted.note(format!(
                 "parameter {} has no document-scalar F3D encoding",
@@ -55,7 +56,25 @@ pub(super) fn regenerate(
                     parameter.id
                 ))
             })?;
-        if parameter.owner.is_some()
+        let owned = parameter.owner.as_ref().and_then(|feature_id| {
+            let feature = target
+                .model
+                .features
+                .iter()
+                .find(|feature| &feature.id == feature_id)?;
+            let scope = native
+                .design_parameter_scopes
+                .iter()
+                .find(|scope| feature.native_ref.as_deref() == Some(scope.id.as_str()))?;
+            let record = original?;
+            let owner = native.design_parameter_owners.iter().find(|owner| {
+                Some(owner.record_index()) == record.owner_record_index()
+                    && owner.scope_record_index() == Some(scope.record_index)
+                    && owner.parameter_record_index() == record.record_index
+            })?;
+            Some((record, owner))
+        });
+        if (parameter.owner.is_some() && owned.is_none())
             || parameter.name.trim().is_empty()
             || expression.trim().is_empty()
         {
@@ -73,14 +92,25 @@ pub(super) fn regenerate(
             CodecError::InvalidInput("F3D document parameter index exceeds u32::MAX".into())
         })?;
         let generated = DesignParameter::authored(DesignParameterContent {
-            id: format!("f3d:design:design-parameter#{record_index}"),
-            class_tag: "256".to_owned().try_into().map_err(CodecError::Malformed)?,
-            record_index,
-            source_ordinal: index,
+            id: owned.map_or_else(
+                || format!("f3d:design:design-parameter#{record_index}"),
+                |(record, _)| record.id.clone(),
+            ),
+            class_tag: match owned {
+                Some((record, _)) => record.class_tag.clone(),
+                None => "256".to_owned().try_into().map_err(CodecError::Malformed)?,
+            },
+            record_index: owned.map_or(record_index, |(record, _)| record.record_index),
+            source_ordinal: owned.map_or(index, |(record, _)| record.source_ordinal),
             source: DesignParameterSource::authored(
-                "User Parameter".into(),
-                None,
-                Some(DesignParameterDiscriminator::Code0),
+                owned.map_or_else(
+                    || "User Parameter".into(),
+                    |(record, _)| record.source_kind_str().into(),
+                ),
+                owned.map(|(_, owner)| owner.record_index()),
+                owned.map_or(Some(DesignParameterDiscriminator::Code0), |(record, _)| {
+                    record.family_discriminator().map(|value| value.value)
+                }),
             )
             .map_err(CodecError::Malformed)?,
             expression,
@@ -89,6 +119,29 @@ pub(super) fn regenerate(
             evaluated_value: scalar,
         })
         .map_err(CodecError::Malformed)?;
+        if let Some((_, owner)) = owned {
+            let replacement = DesignParameterOwner::try_from(DesignParameterOwnerContent {
+                id: owner.id().clone(),
+                class_tag: owner.class_tag().clone(),
+                record_index: owner.record_index(),
+                scope_record_index: owner.scope_record_index(),
+                local_ordinal: owner.local_ordinal(),
+                evaluated_value: scalar,
+                parameter_record_index: owner.parameter_record_index(),
+                owned_ordinal: owner.owned_ordinal(),
+                variant: owner.variant(),
+                companion_record_index: owner.companion_record_index(),
+            })
+            .map_err(CodecError::Malformed)?;
+            let owner_id = owner.id().clone();
+            if let Some(slot) = native
+                .design_parameter_owners
+                .iter_mut()
+                .find(|owner| owner.id() == &owner_id)
+            {
+                *slot = replacement;
+            }
+        }
         native.design_parameters.push(generated);
         if parameter.display.is_some()
             || parameter.pmi.is_some()
@@ -101,35 +154,51 @@ pub(super) fn regenerate(
             )));
         }
     }
-    target.model.parameters = super::with_context(|ctx| {
-        Ok(
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &native.design_parameters,
-                    owners: &[],
-                    scopes: &[],
-                    timelines: &[],
-                    construction_groups: &[],
-                    fillet_radius_groups: &[],
-                    edge_operands: &[],
-                    edge_identity_operands: &[],
-                    edge_treatment_vertex_operands: &[],
-                    entity_selection_operands: &[],
-                    curve_identities: &[],
-                    face_operands: &[],
-                    body_recipe_operands: &[],
-                    legacy_loft_body_carriers: &[],
-                    placements: &[],
-                    body_bindings: &[],
-                    component_naming_spaces: &[],
-                    histories: &[],
-                    face_boundaries: &[],
-                },
-            )?
-            .parameters,
-        )
-    })?;
+    if !native.design_parameter_scopes.is_empty() {
+        native.design_parameter_owners.retain(|owner| {
+            native
+                .design_parameters
+                .iter()
+                .any(|parameter| parameter.owner_record_index() == Some(owner.record_index()))
+        });
+        native.design_parameter_companions.retain(|companion| {
+            native
+                .design_parameter_owners
+                .iter()
+                .any(|owner| owner.companion_record_index() == companion.record_index())
+        });
+        target.model.parameters = super::sketch::project(native)?.parameters;
+    } else {
+        target.model.parameters = super::with_context(|ctx| {
+            Ok(
+                crate::design::feature_project::project_parameter_design_with_edge_identities(
+                    ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        native: &native.design_parameters,
+                        owners: &[],
+                        scopes: &[],
+                        timelines: &[],
+                        construction_groups: &[],
+                        fillet_radius_groups: &[],
+                        edge_operands: &[],
+                        edge_identity_operands: &[],
+                        edge_treatment_vertex_operands: &[],
+                        entity_selection_operands: &[],
+                        curve_identities: &[],
+                        face_operands: &[],
+                        body_recipe_operands: &[],
+                        legacy_loft_body_carriers: &[],
+                        placements: &[],
+                        body_bindings: &[],
+                        component_naming_spaces: &[],
+                        histories: &[],
+                        face_boundaries: &[],
+                    },
+                )?
+                .parameters,
+            )
+        })?;
+    }
     Ok(())
 }
 

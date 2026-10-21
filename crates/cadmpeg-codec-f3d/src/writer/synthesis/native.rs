@@ -35,6 +35,14 @@ const WRITTEN: &[&str] = &[
     "face_sidedness",
     "face_native_keys",
     "design_parameters",
+    "design_parameter_scopes",
+    "design_parameter_owners",
+    "design_parameter_companions",
+    "design_sketch_placements",
+    "sketch_points",
+    "sketch_curve_identities",
+    "sketch_relations",
+    "sketch_texts",
     "design_configurations",
     "creation_timestamps",
     "edge_ownerships",
@@ -51,6 +59,13 @@ const WRITTEN: &[&str] = &[
 pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
     let original = super::super::primitives::f3d_native(target)?.unwrap_or_default();
     validate_input(target, &original)?;
+    let sketch_graph = if super::design::sketch::admit(target, &original)? {
+        let mut graph = F3dNative::default();
+        super::design::sketch::retain_graph(&mut graph, &original);
+        Some(graph)
+    } else {
+        None
+    };
     // Parameter values have an independent generated stream. The native-only
     // metadata registry can therefore coexist with neutral parameter edits.
     let histories = original
@@ -108,6 +123,12 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         persistent_subentity_tags: original.persistent_subentity_tags,
         ..F3dNative::default()
     };
+    if let Some(graph) = &sketch_graph {
+        super::design::sketch::retain_graph(&mut native, graph);
+        losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+            "Sketch identity, geometry and parameter bindings are regenerated; dimensional companion payloads and evaluation invalidation are omitted",
+        ));
+    }
     super::streams::reconcile(&mut native, losses);
     native
         .design_types
@@ -130,7 +151,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         recipe.recipe_index = *ordinal;
         *ordinal += 1;
     }
-    let omitted_sketch_records = original
+    let mut omitted_sketch_records = original
         .sketch_points
         .iter()
         .map(|record| record.record_index)
@@ -153,6 +174,9 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 .map(|record| record.record_index),
         )
         .collect::<std::collections::BTreeSet<_>>();
+    if sketch_graph.is_some() {
+        omitted_sketch_records.clear();
+    }
     native.design_entity_headers.retain(|header| {
         header.member_values().next().is_none()
             && !original
@@ -212,6 +236,59 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     native
         .design_record_headers
         .retain(|header| reachable.contains(&header.record_index));
+    if sketch_graph.is_some() {
+        let typed_indices = native
+            .sketch_points
+            .iter()
+            .flat_map(|point| [point.record_index, point.paired_reference])
+            .chain(
+                native
+                    .sketch_curve_identities
+                    .iter()
+                    .map(|curve| curve.record_index),
+            )
+            .chain(
+                native
+                    .sketch_relations
+                    .iter()
+                    .map(|relation| relation.record_index),
+            )
+            .chain(native.sketch_texts.iter().map(|text| text.record_index))
+            .chain(
+                native
+                    .design_sketch_placements
+                    .iter()
+                    .map(|placement| placement.record_index),
+            )
+            .chain(
+                native
+                    .design_parameter_scopes
+                    .iter()
+                    .map(|scope| scope.record_index),
+            )
+            .chain(
+                native
+                    .design_parameters
+                    .iter()
+                    .map(|parameter| parameter.record_index),
+            )
+            .chain(
+                native
+                    .design_parameter_owners
+                    .iter()
+                    .map(|owner| owner.record_index()),
+            )
+            .chain(
+                native
+                    .design_parameter_companions
+                    .iter()
+                    .map(|companion| companion.record_index()),
+            )
+            .collect::<std::collections::BTreeSet<_>>();
+        native
+            .design_record_headers
+            .retain(|header| !typed_indices.contains(&header.record_index));
+    }
     // These native lanes select identities or add native-only display facts.
     // Geometry and visibility values are always authored from the neutral model.
     native.body_native_keys.retain(|record| {

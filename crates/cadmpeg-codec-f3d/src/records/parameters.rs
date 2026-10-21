@@ -1140,6 +1140,15 @@ impl Clone for DesignParameterCompanion {
 }
 
 impl DesignParameterCompanion {
+    /// Keep the stated companion identity and timestamp with an empty payload.
+    pub(crate) fn without_payload(&self) -> Self {
+        Self {
+            byte_offset: None,
+            timestamp_micros_offset: None,
+            payload: None,
+            ..self.clone()
+        }
+    }
     /// Dynamic type identity of this companion record.
     pub(crate) fn class_tag(&self) -> &DesignClassTag {
         &self.class_tag
