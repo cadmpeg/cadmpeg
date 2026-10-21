@@ -672,51 +672,88 @@ fn companion_payload_absence_is_distinct_from_an_empty_payload() {
 
 #[test]
 fn companion_timestamp_preserves_wire_and_rejects_zero() {
-    let wire = r#"{"id":"companion","byte_offset":0,"class_tag":"123","record_index":3,"owner_record_index":2,"timestamp_micros":1,"timestamp_micros_offset":42,"payload_byte_offset":58,"payload_byte_length":0}"#;
-    let companion: crate::records::parameters::DesignParameterCompanion =
-        serde_json::from_str(wire).unwrap();
+    use crate::records::parameters::{DesignCompanionPayload, DesignParameterCompanion};
+    let source = DesignParameterCompanion::unbound(
+        "companion".into(),
+        0,
+        "123".to_owned().try_into().unwrap(),
+        3,
+        2,
+        std::num::NonZeroU64::new(1).unwrap(),
+        42,
+    )
+    .bound(DesignCompanionPayload::new(58, 0, Vec::new()));
+    let wire = r#"{"id":"companion","class_tag":"123","record_index":3,"owner_record_index":2,"timestamp_micros":1,"owned_recipe_ids":[]}"#;
+    assert_eq!(serde_json::to_string(&source).unwrap(), wire);
+    let companion: DesignParameterCompanion = serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&companion).unwrap(), wire);
-    let legacy = wire
-        .replace("timestamp_micros_offset", "opaque_value_offset")
-        .replace("timestamp_micros", "opaque_value");
-    let companion: crate::records::parameters::DesignParameterCompanion =
-        serde_json::from_str(&legacy).unwrap();
-    assert_eq!(serde_json::to_string(&companion).unwrap(), wire);
-    for invalid in [
-        wire.replace("\"timestamp_micros\":1", "\"timestamp_micros\":0"),
-        legacy.replace("\"opaque_value\":1", "\"opaque_value\":0"),
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    source.retain_source(&mut fidelity);
+    for (field, value) in [
+        ("byte_offset", "0"),
+        ("timestamp_micros_offset", "42"),
+        ("payload_byte_offset", "58"),
+        ("payload_byte_length", "0"),
     ] {
-        let error =
-            serde_json::from_str::<crate::records::parameters::DesignParameterCompanion>(&invalid)
-                .unwrap_err()
-                .to_string();
-        assert!(error.contains("timestamp_micros"));
+        assert_eq!(fidelity.metadata[&format!("companion.{field}")], value);
+    }
+    let legacy = wire.replace("timestamp_micros", "opaque_value");
+    assert!(serde_json::from_str::<DesignParameterCompanion>(&legacy).is_err());
+    for (invalid, field) in [
+        (
+            wire.replace("\"timestamp_micros\":1", "\"timestamp_micros\":0"),
+            "timestamp_micros",
+        ),
+        (
+            legacy.replace("\"opaque_value\":1", "\"opaque_value\":0"),
+            "opaque_value",
+        ),
+    ] {
+        let error = serde_json::from_str::<DesignParameterCompanion>(&invalid)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(field));
     }
 }
 
 #[test]
 fn dimension_operands_preserve_null_and_required_index_wires() {
+    use crate::records::dimensions::{
+        DesignDimensionAnnotationOperand, DesignDimensionPresentationOperand,
+    };
     for index in [0, 7, u32::MAX] {
-        let wire = format!(
-            r#"{{"geometry_record_index":{index},"geometry_reference_offset":25,"role":3,"role_offset":35}}"#
-        );
-        let operand: crate::records::dimensions::DesignDimensionAnnotationOperand =
-            serde_json::from_str(&wire).unwrap();
+        let wire = format!(r#"{{"geometry_record_index":{index},"role":3}}"#);
+        let source = DesignDimensionAnnotationOperand {
+            geometry_record_index: std::num::NonZeroU32::new(index),
+            geometry_reference_offset: Some(25),
+            role: 3,
+            role_offset: Some(35),
+        };
+        assert_eq!(source.geometry_reference_offset, Some(25));
+        assert_eq!(source.role_offset, Some(35));
+        assert_eq!(serde_json::to_string(&source).unwrap(), wire);
+        let operand: DesignDimensionAnnotationOperand = serde_json::from_str(&wire).unwrap();
         assert_eq!(
             operand.geometry_record_index,
             std::num::NonZeroU32::new(index)
         );
         assert_eq!(serde_json::to_string(&operand).unwrap(), wire);
         if index == 0 {
-            let error = serde_json::from_str::<
-                crate::records::dimensions::DesignDimensionPresentationOperand,
-            >(&wire)
-            .unwrap_err()
-            .to_string();
+            let error = serde_json::from_str::<DesignDimensionPresentationOperand>(&wire)
+                .unwrap_err()
+                .to_string();
             assert!(error.contains("geometry_record_index"));
         } else {
-            let operand: crate::records::dimensions::DesignDimensionPresentationOperand =
-                serde_json::from_str(&wire).unwrap();
+            let source = DesignDimensionPresentationOperand {
+                geometry_record_index: std::num::NonZeroU32::new(index).unwrap(),
+                geometry_reference_offset: Some(25),
+                role: 3,
+                role_offset: Some(35),
+            };
+            assert_eq!(source.geometry_reference_offset, Some(25));
+            assert_eq!(source.role_offset, Some(35));
+            assert_eq!(serde_json::to_string(&source).unwrap(), wire);
+            let operand: DesignDimensionPresentationOperand = serde_json::from_str(&wire).unwrap();
             assert_eq!(operand.geometry_record_index.get(), index);
             assert_eq!(serde_json::to_string(&operand).unwrap(), wire);
         }
