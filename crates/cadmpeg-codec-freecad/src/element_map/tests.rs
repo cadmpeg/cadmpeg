@@ -5,13 +5,13 @@ use super::{
     node_text_bytes, parse_element_map, parse_legacy_string_ids, parse_string_table,
     validate_string_hasher_framing,
 };
+use crate::FcstdCodec;
 use crate::native::{EntryRecord, PropertyRecord};
 use crate::test_support::test_archive::{
-    archive, archive_entries, assert_valid_document, GEOMETRY,
+    GEOMETRY, archive, archive_entries, assert_valid_document,
 };
-use crate::FcstdCodec;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::{Cursor, Read};
 
@@ -654,11 +654,13 @@ fn retains_interleaved_new_string_hasher_payload_source_only() {
         )
         .expect("independent shape carrier survives");
 
-    assert!(recovered
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.local_code() == "element-map.metadata-unresolved"));
+    assert!(
+        recovered
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "element-map.metadata-unresolved")
+    );
     assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
 }
 
@@ -864,14 +866,16 @@ fn unreadable_child_map_reference_keeps_independent_geometry() {
     );
     let recovered = result.expect("independent BRep geometry survives invalid naming map");
     assert_eq!(recovered.ir().model.faces.len(), 48);
-    assert!(recovered
-        .report()
-        .losses
-        .iter()
-        .any(
-            |loss| loss.code.local_code() == "element-map.metadata-unresolved"
-                && loss.message.contains("mapIndex")
-        ));
+    assert!(
+        recovered
+            .report()
+            .losses
+            .iter()
+            .any(
+                |loss| loss.code.local_code() == "element-map.metadata-unresolved"
+                    && loss.message.contains("mapIndex")
+            )
+    );
     assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
 }
 
@@ -908,4 +912,53 @@ fn parse(
         losses,
         None,
     )
+}
+
+#[test]
+fn empty_legacy_element_map_markers_are_typed_absence_not_unread_payloads() {
+    for marker in ["<ElementMap/>", "<ElementMap count=\"0\"> \n </ElementMap>"] {
+        let xml = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object name="Shape" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part/>{marker}</Property></Properties></Object></ObjectData></Document>"#
+        );
+        let source = archive(&xml);
+        let result = FcstdCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        assert!(
+            result.source_fidelity().unrepresented().is_empty(),
+            "{marker}"
+        );
+        assert!(
+            result
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
+                .unwrap()
+                .is_empty()
+        );
+        let evidence = result
+            .source_fidelity()
+            .retained_record("fcstd:native:property#Shape:Shape")
+            .unwrap();
+        assert!(evidence.untyped().is_empty());
+    }
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object name="Shape" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part/><ElementMap count="bad"/></Property></Properties></Object></ObjectData></Document>"#;
+    let source = archive(xml);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        result.source_fidelity().unrepresented(),
+        cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model])
+    );
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::FreecadLossCode::ElementMapMetadataUnresolved.kind())
+    );
 }
