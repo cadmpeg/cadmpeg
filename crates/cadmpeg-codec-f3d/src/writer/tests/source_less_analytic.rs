@@ -993,25 +993,23 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
     };
 
     let original_attribute_count = source_less.model.attributes.len();
+    let original_view_count = source_less.model.view_presentations.len();
+    let view_order = source_less
+        .model
+        .view_presentations
+        .iter()
+        .map(|view| view.order)
+        .max()
+        .map_or(0, |order| order.checked_add(1).unwrap());
     let presentation = |target: AttributeTarget| {
-        [
-            SourceAttribute {
-                id: "generated:test:attribute#association-name"
-                    .try_into()
-                    .unwrap(),
-                target: target.clone(),
-                name: "name".into(),
-                values: vec![AttributeValue::String("exact carrier".into())],
-            },
-            SourceAttribute {
-                id: "generated:test:attribute#association-visible"
-                    .try_into()
-                    .unwrap(),
-                target,
-                name: "visible".into(),
-                values: vec![AttributeValue::Boolean(true)],
-            },
-        ]
+        [SourceAttribute {
+            id: "generated:test:attribute#association-name"
+                .try_into()
+                .unwrap(),
+            target,
+            name: "name".into(),
+            values: vec![AttributeValue::String("exact carrier".into())],
+        }]
     };
     source_less
         .model
@@ -1019,6 +1017,22 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
         .extend(presentation(AttributeTarget::Surface(
             source_less.model.surfaces[0].id.clone(),
         )));
+    source_less
+        .model
+        .view_presentations
+        .push(cadmpeg_ir::presentation::ViewPresentation {
+            id: "generated:test:view#association".try_into().unwrap(),
+            object: Some(source_less.model.surfaces[0].id.to_string()),
+            order: view_order,
+            expanded: None,
+            visible: Some(true),
+            display_mode: None,
+            selection_style: None,
+            line_width: None,
+            point_size: None,
+            properties: Default::default(),
+            native_ref: None,
+        });
     source_less.model.surfaces[0].source_object = Some(association.clone());
     let (output, report) = synthesize_document(&source_less, None);
     assert_eq!(
@@ -1061,6 +1075,12 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
         .extend(presentation(AttributeTarget::Curve(
             source_less.model.curves.last().unwrap().id.clone(),
         )));
+    source_less
+        .model
+        .view_presentations
+        .last_mut()
+        .unwrap()
+        .object = Some(source_less.model.curves.last().unwrap().id.to_string());
     let (output, report) = synthesize_document(&source_less, None);
     assert_eq!(
         output.ir().model.bodies.len(),
@@ -1078,6 +1098,10 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
         .any(|loss| loss.code == crate::loss::F3dLossCode::WriterSourceAssociationOmitted.kind()));
 
     source_less.model.curves.pop();
+    source_less
+        .model
+        .view_presentations
+        .truncate(original_view_count);
     source_less
         .model
         .attributes
