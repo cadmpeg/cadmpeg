@@ -72,7 +72,7 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 + 33
                 + version_flags
                 + 1;
-            header.byte_offset.checked_add(delta)
+            header.byte_offset.and_then(|offset| offset.checked_add(delta))
         });
         let references_resolve = settings.record_references().all(|index| {
             u32::try_from(index)
@@ -82,7 +82,7 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         let valid = unique
             && class_matches
             && expected_pair == Some(settings.paired_byte_offset)
-            && header.is_some_and(|header| header.byte_offset == settings.byte_offset)
+            && header.is_some_and(|header| header.byte_offset == Some(settings.byte_offset))
             && typed(
                 settings.record_index,
                 SETTINGS_GUID,
