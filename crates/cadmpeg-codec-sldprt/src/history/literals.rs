@@ -332,7 +332,7 @@ fn strip_radius_modifier(expression: &str) -> Option<&str> {
         .or_else(|| expression.strip_prefix("&lt;MOD-RHO&gt;"))
 }
 
-pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
+pub(crate) fn format_parameter_value(value: &ParameterValue) -> String {
     match value {
         ParameterValue::Length(value) => format_length_mm(*value),
         ParameterValue::Angle(value) => format_angle_rad(*value),
