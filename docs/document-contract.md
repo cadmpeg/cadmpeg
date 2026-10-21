@@ -39,7 +39,7 @@ An empty export is represented by a `NoExportableSolids` loss. The CLI's `--allo
 
 ## Content scope
 
-Wire version 7 requires a `scope` object with a boolean for every `ArenaClass`:
+Wire version 8 requires a `scope` object with a boolean for every `ArenaClass`:
 
 ```json
 {"scope":{"model":true,"design":false}}
@@ -83,4 +83,4 @@ Adding an arena class changes the wire contract and requires a wire bump. Update
 
 ## Version policy
 
-Readers accept exactly version 7. Version 6 was emitted inconsistently by releases 0.6.0–0.6.1 and 0.6.2. Version 7 refuses all version-6 input with a message explaining `decode_depth` to `scope` and the report transfer change. There is no migration path in the reader.
+Readers accept exactly version 8. Earlier documents are refused with a message explaining `decode_depth` to `scope` and the report transfer change. There is no migration path in the reader.
