@@ -132,9 +132,28 @@ fn sync_neutral_parameters(
         order_parameter_dependencies(&mut parameters);
         let canonical = cadmpeg_core::text::named_entries(
             format_args!("the sldprt feature {feature_id} record"),
-            parameters
-                .iter()
-                .map(|parameter| (parameter.name.clone(), rendered[&parameter.id].clone())),
+            parameters.iter().map(|parameter| {
+                let native_literal = parameter.value.as_ref().and_then(|value| {
+                    (parameter.expression == value.literal_expression()
+                        && parameter.expression.literal_value_as(value).as_ref() == Some(value))
+                    .then(|| {
+                        let target = record.parameters.get(parameter.name.as_str())?;
+                        (crate::history::parameters::parse_native_parameter_literal(
+                            record,
+                            parameter.name.as_str(),
+                            target,
+                        )
+                        .as_ref()
+                            == Some(value))
+                        .then(|| target.clone())
+                    })
+                    .flatten()
+                });
+                (
+                    parameter.name.clone(),
+                    native_literal.unwrap_or_else(|| rendered[&parameter.id].clone()),
+                )
+            }),
         )?;
         record.parameters.extend(canonical);
         record.dimension_properties = parameters

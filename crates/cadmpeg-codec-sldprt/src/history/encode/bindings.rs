@@ -60,9 +60,26 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let text = if parameter.name == role
                 && parameter.owner.as_ref() == Some(&self.feature.id)
             {
-                self.base_parameters().get(role).cloned().ok_or_else(|| {
-                    CodecError::malformed("SLDPRT canonical parameter expression is absent")
-                })?
+                let native_literal = parameter.value.as_ref().and_then(|value| {
+                    (parameter.expression == value.literal_expression()
+                        && parameter.expression.literal_value_as(value).as_ref() == Some(value))
+                    .then(|| {
+                        let existing = self.existing?;
+                        let target = encoding.parameters.get(role)?;
+                        (crate::history::parameters::parse_native_parameter_literal(
+                            existing, role, target,
+                        )
+                        .as_ref()
+                            == Some(value))
+                        .then(|| target.clone())
+                    })
+                    .flatten()
+                });
+                native_literal
+                    .or_else(|| self.base_parameters().get(role).cloned())
+                    .ok_or_else(|| {
+                        CodecError::malformed("SLDPRT canonical parameter expression is absent")
+                    })?
             } else {
                 if self.canonical_parameters.iter().any(|candidate| {
                     candidate.owner.as_ref() == Some(&self.feature.id) && candidate.name == role
