@@ -6491,6 +6491,10 @@ pub(crate) fn unresolved_parameter_expression_records(
     native: &[DesignParameter],
     projected: &[cadmpeg_ir::features::DesignParameter],
 ) -> Vec<(String, usize)> {
+    let source_names = native
+        .iter()
+        .filter_map(|parameter| Some((native_stream(&parameter.id)?, parameter.name())))
+        .collect::<HashSet<_>>();
     let by_native = projected
         .iter()
         .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
@@ -6510,6 +6514,10 @@ pub(crate) fn unresolved_parameter_expression_records(
             .filter_map(|id| by_id.get(id).map(|parameter| parameter.name.as_str()))
             .collect::<HashSet<_>>();
         let unknown = expression_identifiers(parameter.expression())
+            .filter(|identifier| {
+                native_stream(&parameter.id)
+                    .is_some_and(|stream| source_names.contains(&(stream, *identifier)))
+            })
             .filter(|identifier| !names.contains(*identifier))
             .collect::<HashSet<_>>();
         if !unknown.is_empty() {

@@ -1528,8 +1528,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         let mut document_aliases = HashMap::<(&str, String), Option<ParameterId>>::new();
         let mut feature_aliases =
             HashMap::<(&str, cadmpeg_ir::features::FeatureId, String), Option<ParameterId>>::new();
-        let mut owned_aliases = HashMap::<(&str, String), Vec<ParameterId>>::new();
-        for parameter in &parameters {
+        let mut owned_aliases = HashMap::<(&str, String), Vec<(ParameterId, u32)>>::new();
+        for (source_parameter, parameter) in native.iter().zip(&parameters) {
             let scope = parameter_scopes[&parameter.id];
             if let Some(owner) = &parameter.owner {
                 let key = (scope, owner.clone(), parameter.name.clone());
@@ -1544,7 +1544,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 owned_aliases
                     .entry(key)
                     .or_default()
-                    .push(parameter.id.clone());
+                    .push((parameter.id.clone(), source_parameter.source_ordinal));
             } else {
                 let key = (scope, parameter.name.clone());
                 if let Some(candidate) = document_aliases.get_mut(&key) {
@@ -1578,9 +1578,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         for (span, identifier) in expression_identifier_spans(&source) {
             let alias_key = (scope, identifier.to_owned());
             let unique_owned = || {
-                let mut candidates = owned_aliases.get(&alias_key)?.iter();
+                let candidates = owned_aliases.get(&alias_key)?;
+                let mut preceding = candidates
+                    .iter()
+                    .filter(|(_, ordinal)| *ordinal < source_parameter.source_ordinal);
+                if let Some((candidate, _)) = preceding.next() {
+                    return preceding.next().is_none().then_some(candidate);
+                }
+                let mut candidates = candidates.iter();
                 let candidate = candidates.next()?;
-                candidates.next().is_none().then_some(candidate)
+                candidates.next().is_none().then_some(&candidate.0)
             };
             let candidate = if let Some(owner) = &parameter.owner {
                 match feature_aliases.get(&(scope, owner.clone(), identifier.to_owned())) {
@@ -4606,9 +4613,29 @@ fn order_parameter_scope(
         });
         if ready.is_empty() {
             // An unresolved component contains a cycle. Preserve its edges
-            // and select its lowest-ordinal member for deterministic output.
+            // and first resolve a component that depends on no other unresolved
+            // component. Source order breaks ties between independent cycles.
+            let unresolved_ids = unresolved
+                .iter()
+                .map(|index| &parameters[*index].id)
+                .collect::<HashSet<_>>();
             let cycle = cyclic_parameter_components(parameters, &unresolved)
                 .into_iter()
+                .filter(|(first, remaining)| {
+                    let component = std::iter::once(first)
+                        .chain(remaining)
+                        .map(|index| &parameters[*index].id)
+                        .collect::<HashSet<_>>();
+                    std::iter::once(first).chain(remaining).all(|index| {
+                        parameters[*index]
+                            .expression
+                            .dependencies()
+                            .all(|dependency| {
+                                !unresolved_ids.contains(dependency)
+                                    || component.contains(dependency)
+                            })
+                    })
+                })
                 .map(|(first, remaining)| {
                     let breaker = remaining.iter().copied().fold(first, |best, index| {
                         let candidate = &parameters[index];
