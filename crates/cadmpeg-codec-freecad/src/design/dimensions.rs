@@ -241,7 +241,7 @@ fn computed_control<Q: DimensionValue>(
         parameter.id != source_id
             && parameter.owner.as_ref() == Some(owner)
             && parameter.value.as_ref() == Some(&value)
-            && (parameter.expression.literal_text() == Some(expression_text.as_str())
+            && (parameter.expression.literal_text().as_deref() == Some(expression_text.as_str())
                 || parameter.expression.tokens
                     == vec![
                         ExpressionToken::Text(prefix.into()),
