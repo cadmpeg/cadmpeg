@@ -175,7 +175,7 @@ fn write_seekable(
             display,
         )?)?;
     }
-    for (id, (class, payload)) in &plan.curves {
+    for (id, payload) in &plan.curves {
         let curve = ir
             .model
             .curves
@@ -187,9 +187,7 @@ fn write_seekable(
             &cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
             curve.source_object.as_ref(),
         );
-        output.write_all(&attributed_object_record(
-            ir, 4, *class, payload, id, display,
-        )?)?;
+        output.write_all(&curve_object_record(ir, payload, id, display)?)?;
     }
     for (id, (class, payload)) in &plan.surfaces {
         let surface = ir
@@ -330,7 +328,7 @@ struct WritePlan<'a> {
     losses: Vec<LossNote>,
     meshes: Vec<cadmpeg_ir::tessellation::Tessellation>,
     /// Each free curve's identity and encoded payload.
-    curves: Vec<(&'a str, ClassPayload)>,
+    curves: Vec<(&'a str, compounds::CurvePayload)>,
     /// Each free surface's identity and encoded payload.
     surfaces: Vec<(&'a str, ClassPayload)>,
     brep_records: std::fs::File,
@@ -2212,6 +2210,27 @@ fn attributed_object_record(
         class_uuid,
         payload,
         None,
+        Some(object_attributes_payload(
+            ir,
+            identity,
+            display.name,
+            display.color,
+            display.visible,
+        )?),
+    )
+}
+
+fn curve_object_record(
+    ir: &CadIr,
+    payload: &compounds::CurvePayload,
+    identity: &str,
+    display: presentation::Display<'_>,
+) -> Result<Vec<u8>, CodecError> {
+    framed_object_record(
+        4,
+        payload.class,
+        &payload.body,
+        Some(&payload.direct),
         Some(object_attributes_payload(
             ir,
             identity,

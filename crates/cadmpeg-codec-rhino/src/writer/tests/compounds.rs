@@ -128,3 +128,132 @@ fn compound_cycle_is_not_hidden_when_it_has_no_standalone_root() {
         .expect_err("cyclic document");
     assert!(matches!(error, CodecError::Malformed(message) if message.contains("cyclic compound")));
 }
+
+/// Check the native grammar independently of the writer's direct-byte buffer.
+fn assert_compound_class_checksum(
+    bytes: &[u8],
+    range: std::ops::Range<usize>,
+    archive: crate::chunks::ArchiveVersion,
+) -> usize {
+    use crate::chunks::{
+        chunk_at, verify_checksum, verify_checksum_ranges, BoundedReader, ChecksumStatus,
+    };
+
+    let header = crate::layout::long_chunk_header_wide::LEN;
+    let chunk = chunk_at(bytes, range.start - header, bytes.len(), archive, false)
+        .expect("class-data chunk is bounded");
+    assert_eq!(chunk.body(), range);
+    let mut reader =
+        BoundedReader::new(bytes, range.start, range.end).expect("compound body is bounded");
+    assert_eq!(reader.u8().expect("version"), 0x10);
+    let count =
+        usize::try_from(reader.i32().expect("segment count")).expect("positive segment count");
+    assert!(count > 0);
+    assert_eq!(reader.i32().expect("first reserved word"), 0);
+    assert_eq!(reader.i32().expect("second reserved word"), 0);
+    for _ in 0..6 {
+        reader.f64().expect("reserved bounding-box coordinate");
+    }
+    assert_eq!(
+        usize::try_from(reader.i32().expect("parameter count"))
+            .expect("nonnegative parameter count"),
+        count + 1
+    );
+    for _ in 0..=count {
+        assert!(reader.f64().expect("segment parameter").is_finite());
+    }
+    let direct_end = reader.position();
+    assert_eq!(
+        verify_checksum_ranges(bytes, &chunk, std::iter::once(range.start..direct_end)),
+        Ok(ChecksumStatus::Valid),
+        "the parent CRC covers its scalar prefix, excluding complete child wrappers"
+    );
+    assert_ne!(
+        verify_checksum(bytes, &chunk),
+        Ok(ChecksumStatus::Valid),
+        "including the child chunks is the incorrect native CRC convention"
+    );
+    let mut compounds = 1;
+    for _ in 0..count {
+        let start = reader.position();
+        let child = chunk_at(bytes, start, range.end, archive, false)
+            .expect("complete child class wrapper");
+        let mut warnings = crate::loss::Diagnostics::new();
+        let class =
+            crate::objects::parse_class_wrapper(bytes, child.range(), archive, &mut warnings)
+                .expect("child class grammar");
+        if class.class_uuid == crate::curves::POLYCURVE {
+            compounds += assert_compound_class_checksum(bytes, class.class_data_range, archive);
+        }
+        reader
+            .skip(child.next_offset() - start)
+            .expect("child fits its parent");
+    }
+    assert_eq!(reader.remaining(), 0);
+    compounds
+}
+
+#[test]
+fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() {
+    let inputs: [(&str, &[u8]); 2] = [
+        (
+            "polycurve",
+            include_bytes!("../../../tests/golden/fixtures/polycurve.3dm"),
+        ),
+        (
+            "curves_mixed",
+            include_bytes!("../../../tests/golden/fixtures/curves_mixed.3dm"),
+        ),
+    ];
+    for (name, input) in inputs {
+        let source = RhinoCodec
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("frozen compound source is admitted");
+        let expected = source
+            .ir()
+            .model
+            .curves
+            .iter()
+            .map(|curve| curve.geometry.solved().cloned())
+            .collect::<Vec<_>>();
+        for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
+            let mut bytes = Vec::new();
+            RhinoCodec
+                .plan(
+                    EncodeInput::new(source.ir(), None),
+                    TargetRequest::Explicit(version.descriptor().id.as_str()),
+                )
+                .expect("supported compound target")
+                .write_to(&mut bytes)
+                .expect("complete compound archive");
+            let scan = crate::container::scan_owned(bytes.clone())
+                .expect("written archive framing is valid");
+            let mut compounds = 0;
+            for object in &scan.objects {
+                let object = object.framed().expect("written object is fully framed");
+                if object.class_uuid == crate::curves::POLYCURVE {
+                    compounds += assert_compound_class_checksum(
+                        scan.data,
+                        object.class_data_range.clone(),
+                        scan.archive,
+                    );
+                }
+            }
+            assert_eq!(compounds, 2, "{name} {version:?}: both compound levels");
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .expect("compound geometry decodes");
+            let actual = decoded
+                .ir()
+                .model
+                .curves
+                .iter()
+                .map(|curve| curve.geometry.solved().cloned())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                actual, expected,
+                "{name} {version:?}: curve geometry and order"
+            );
+        }
+    }
+}
