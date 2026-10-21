@@ -856,7 +856,7 @@ fn scale_factor_wire_rejects_mixed_and_partial_forms() {
         serde_json::json!({"uniform": 2.0, "x": 1.0}),
         serde_json::json!({"x": 1.0, "z": 3.0}),
         serde_json::json!({"kind": "uniform", "factor": {"kind":"literal","value":2.0}, "factors": [{"kind":"literal","value":1.0}, {"kind":"literal","value":2.0}, {"kind":"literal","value":3.0}]}),
-        serde_json::json!({"kind": "per_axis", "factors": [1.0, 3.0]}),
+        serde_json::json!({"kind": "per_axis", "factors": [{"kind":"literal", "value":1.0}, {"kind":"literal", "value":3.0}]}),
         serde_json::json!({}),
     ] {
         assert!(serde_json::from_value::<ScaleFactors>(wire).is_err());
