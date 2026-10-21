@@ -10,6 +10,68 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn geometry_source_patch_uses_its_scope_and_declines_a_neutral_body_edit() {
+    let options = DecodeOptions {
+        depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+        ..DecodeOptions::default()
+    };
+    let source = FcstdCodec
+        .decode(&mut Cursor::new(CORE_DESIGN_PRODUCT), &options)
+        .unwrap();
+    assert_eq!(source.ir().scope, cadmpeg_ir::ContentScope::geometry());
+    assert!(source.ir().model.features.is_empty());
+    assert!(source.ir().model.parameters.is_empty());
+    assert!(!source.ir().model.attributes.is_empty());
+    let plan = FcstdCodec
+        .plan(
+            EncodeInput::new(source.ir(), Some(source.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(
+        matches!(plan.report().write_path(), WritePath::Patched { .. }),
+        "{:#?}",
+        plan.report()
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let reread = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .unwrap();
+    assert_eq!(reread.ir().scope, source.ir().scope);
+    assert_eq!(reread.ir().model, source.ir().model);
+
+    let mut edited = source.ir().clone();
+    edited.model.bodies.first_mut().unwrap().name = Some("Geometry-authored body".into());
+    let plan = FcstdCodec
+        .plan(
+            EncodeInput::new(&edited, Some(source.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    assert!(matches!(
+        plan.report().synthesis_cause(),
+        Some(SynthesisCause::PatchDeclined { .. })
+    ));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let reread = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .unwrap();
+    assert_eq!(reread.ir().scope, edited.scope);
+    assert!(reread
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.name.as_deref() == Some("Geometry-authored body")));
+}
+
+#[test]
 fn coherent_array_reference_rename_declines_patch_and_regenerates_typed_values() {
     for (bytes, owner, count) in [
         (CORE_DESIGN_PRODUCT, "fcstd:native:object#Occurrence", 0),

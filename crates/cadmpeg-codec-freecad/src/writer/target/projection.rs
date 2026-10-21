@@ -43,6 +43,7 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         .first()
         .and_then(|document| document.program_version.as_deref());
     let mut projected = CadIr::empty();
+    projected.scope = ir.scope;
     projected.native = ir.native.clone();
     projected.source = ir.source.clone();
     let mut curves = brep::transfer_text_curves(ctx, &payloads, &properties)?;
