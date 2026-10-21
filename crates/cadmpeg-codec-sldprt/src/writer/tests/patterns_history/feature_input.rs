@@ -73,24 +73,14 @@ fn semantic_writer_applies_neutral_feature_edits() {
             ))
             .expect("a finite position is a point"),
         );
-        ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Extrude { extent, .. },
-            ) = definition
-            else {
-                panic!("typed extrusion feature");
-            };
-            *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::Dimension::Literal(
-                            cadmpeg_ir::scalar::NonZeroLength::new(18.0).unwrap(),
-                        ),
-                    },
-                    draft: None,
-                },
-            };
-        });
+        let owner = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &owner,
+                "/extent/side/termination/length",
+                cadmpeg_ir::scalar::NonZeroLength::new(18.0).unwrap(),
+            )
+            .unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -135,34 +125,23 @@ fn semantic_writer_uses_consistent_neutral_features_over_native_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Extrude { extent, .. },
-            ) = definition
-            else {
-                panic!("typed extrusion feature");
-            };
-            *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::Dimension::Literal(
-                            cadmpeg_ir::scalar::NonZeroLength::new(18.0).unwrap(),
-                        ),
-                    },
-                    draft: None,
-                },
-            };
-        });
         let depth = ir_edit
             .model
             .parameters
-            .iter_mut()
+            .iter()
             .find(|parameter| parameter.name == "Depth")
-            .expect("owned depth parameter");
-        depth.expression = "18mm".into();
-        depth.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(18.0).unwrap(),
-        ));
+            .expect("owned depth parameter")
+            .id
+            .clone();
+        ir_edit
+            .set_parameter_expression(
+                &depth,
+                "18mm".into(),
+                Some(cadmpeg_ir::features::ParameterValue::Length(
+                    cadmpeg_ir::scalar::Length::new(18.0).unwrap(),
+                )),
+            )
+            .unwrap();
         update_sldprt_native(&mut ir_edit, |native| {
             native.feature_histories[0].features[0]
                 .parameters
@@ -659,13 +638,20 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         let parameter = ir_edit
             .model
             .parameters
-            .iter_mut()
+            .iter()
             .find(|parameter| parameter.name == "D1")
-            .expect("projected D1 parameter");
-        parameter.expression = "50mm".into();
-        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
-        ));
+            .expect("projected D1 parameter")
+            .id
+            .clone();
+        ir_edit
+            .set_parameter_expression(
+                &parameter,
+                "50mm".into(),
+                Some(cadmpeg_ir::features::ParameterValue::Length(
+                    cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
+                )),
+            )
+            .unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -685,7 +671,7 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .expect("regenerated D1 parameter");
-    assert_eq!(parameter.expression, "50mm".into());
+    assert_eq!(parameter.expression, "50 mm".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -718,24 +704,14 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Extrude { extent, .. },
-            ) = definition
-            else {
-                panic!("typed extrusion feature");
-            };
-            *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::Dimension::Literal(
-                            cadmpeg_ir::scalar::NonZeroLength::new(50.0).unwrap(),
-                        ),
-                    },
-                    draft: None,
-                },
-            };
-        });
+        let owner = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &owner,
+                "/extent/side/termination/length",
+                cadmpeg_ir::scalar::NonZeroLength::new(50.0).unwrap(),
+            )
+            .unwrap();
     }
 
     let mut encoded = Vec::new();
