@@ -856,12 +856,17 @@ fn persistent_identity_native_retained_limit_refuses_before_clone() {
 /// A top-level optional key on a topology record names itself in its refusal.
 #[test]
 fn a_top_level_topology_key_names_itself_in_its_refusal() {
-    for key in ["transform", "transform_offset", "compact_variant"] {
+    for key in ["transform", "compact_variant"] {
         states_the_key(
             key,
             &refusal::<super::DesignConstructionOperandPathWire>(key),
         );
     }
+    let source_only = refusal::<super::DesignConstructionOperandPathWire>("transform_offset");
+    assert!(
+        source_only.contains("unknown field `transform_offset`"),
+        "{source_only}"
+    );
     for key in ["first_related_identity", "second_related_identity"] {
         states_the_key(
             key,
