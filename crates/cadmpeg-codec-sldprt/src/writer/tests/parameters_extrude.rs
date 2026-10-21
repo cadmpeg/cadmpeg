@@ -1587,10 +1587,19 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         0,
         "variable fillet radius law",
     );
-    let positive = reduction::source_less_operation(
+    let mut positive = reduction::source_less_operation(
         regenerated.ir().model.features[0].definition().clone(),
         "Constant radius",
     );
+    // A fresh supported fillet needs an actual held edge. The source-derived
+    // control above retains its original unresolved selection unchanged.
+    let edge = positive.model.edges[0].id.clone();
+    positive.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
+            panic!("fresh constant fillet");
+        };
+        groups[0].edges = EdgeSelection::Edges(vec![edge.clone()]);
+    });
     let mut encoded = Vec::new();
     SldprtCodec
         .plan(EncodeInput::new(&positive, None), TargetRequest::Inherit)
@@ -1602,6 +1611,17 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         .unwrap();
     let parameters = &sldprt_native(final_ir.ir()).feature_histories[0].features[0].parameters;
     assert_eq!(parameters["Radius"], "6mm");
+    let written_edge = &final_ir.ir().model.edges[0].id;
+    assert_eq!(
+        sldprt_native(final_ir.ir()).feature_histories[0].features[0].properties["Edges"],
+        written_edge.as_str()
+    );
+    assert!(matches!(
+        final_ir.ir().model.features[0].definition(),
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
+            if matches!(&groups[0].radius, RadiusSpec::Constant { radius }
+                if final_ir.ir().dimension_value(radius).unwrap().get() == 6.0)
+    ));
     assert!(!parameters
         .keys()
         .any(|name| name.as_str().starts_with("Position")));
