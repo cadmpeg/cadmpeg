@@ -99,41 +99,7 @@ pub(in crate::writer::synthesis) fn admit(
     if stated != projected.features {
         return Ok(false);
     }
-    let mut constraints = super::with_context(|ctx| {
-        crate::design::constraints::project_sketch_constraints(
-            ctx,
-            &native.design_sketch_placements,
-            &native.design_parameters,
-            (
-                &native.sketch_points,
-                &native.sketch_curve_identities,
-                &native.sketch_texts,
-            ),
-            &native.sketch_relations,
-            &entities,
-        )
-    })?;
-    constraints.extend(
-        crate::design::dimensions::project_dimension_constraints_with_presentations(
-            &crate::design::dimensions::DimensionConstraintInputs {
-                placements: &native.design_sketch_placements,
-                parameters: &native.design_parameters,
-                owners: &native.design_parameter_owners,
-                pairs: &native.design_dimension_locus_pairs,
-                groups: &native.design_dimension_locus_groups,
-                annotation_frames: &native.design_dimension_annotation_frames,
-                null_pairs: &native.design_dimension_null_locus_pairs,
-                companions: &native.design_parameter_companions,
-                recipe_records: &native.design_dimension_recipe_records,
-                points: &native.sketch_points,
-                curves: &native.sketch_curve_identities,
-                entities: &entities,
-            },
-            &native.design_dimension_presentation_frames,
-            &[],
-            target.tolerances.linear.get(),
-        ),
-    );
+    let mut constraints = constraints(native, &entities, target.tolerances.linear.get())?;
     constraints.sort_by(|left, right| left.id.cmp(&right.id));
     let mut stated_constraints = target.model.sketch_constraints.clone();
     stated_constraints.sort_by(|left, right| left.id.cmp(&right.id));
@@ -193,4 +159,85 @@ pub(in crate::writer::synthesis) fn retain_graph(native: &mut F3dNative, origina
         .collect();
     native.sketch_relations = original.sketch_relations.clone();
     native.sketch_texts = original.sketch_texts.clone();
+}
+
+fn constraints(
+    native: &F3dNative,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {
+    let mut constraints = super::with_context(|ctx| {
+        crate::design::constraints::project_sketch_constraints(
+            ctx,
+            &native.design_sketch_placements,
+            &native.design_parameters,
+            (
+                &native.sketch_points,
+                &native.sketch_curve_identities,
+                &native.sketch_texts,
+            ),
+            &native.sketch_relations,
+            entities,
+        )
+    })?;
+    constraints.extend(
+        crate::design::dimensions::project_dimension_constraints_with_presentations(
+            &crate::design::dimensions::DimensionConstraintInputs {
+                placements: &native.design_sketch_placements,
+                parameters: &native.design_parameters,
+                owners: &native.design_parameter_owners,
+                pairs: &native.design_dimension_locus_pairs,
+                groups: &native.design_dimension_locus_groups,
+                annotation_frames: &native.design_dimension_annotation_frames,
+                null_pairs: &native.design_dimension_null_locus_pairs,
+                companions: &native.design_parameter_companions,
+                recipe_records: &native.design_dimension_recipe_records,
+                points: &native.sketch_points,
+                curves: &native.sketch_curve_identities,
+                entities,
+            },
+            &native.design_dimension_presentation_frames,
+            &[],
+            tolerance,
+        ),
+    );
+    Ok(constraints)
+}
+
+pub(in crate::writer::synthesis) fn report_constraint_reductions(
+    target: &CadIr,
+    native: &F3dNative,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    if native.design_parameter_scopes.is_empty() {
+        return Ok(());
+    }
+    let projected = constraints(
+        native,
+        &target.model.sketch_entities,
+        target.tolerances.linear.get(),
+    )?;
+    for stated in &target.model.sketch_constraints {
+        let Some(written) = projected.iter().find(|written| written.id == stated.id) else {
+            losses.push(
+                crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(format!(
+                    "Sketch constraint {} has no exact regenerated dimensional definition",
+                    stated.id
+                )),
+            );
+            continue;
+        };
+        if stated.definition != written.definition {
+            use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
+            let detail = match (stated.definition.kind(), written.definition.kind()) {
+                (Definition::Native { entities: before, .. }, Definition::Native { entities: after, .. }) if before != after => format!("ordered entity links reduce from {} to {}; the canonical parameter and typed recipe are retained", before.len(), after.len()),
+                _ => "the target's dimensional definition cannot retain every canonical constraint field".into(),
+            };
+            losses.push(
+                crate::loss::F3dLossCode::WriterDesignRecordsOmitted
+                    .note(format!("Sketch constraint {}: {detail}", stated.id)),
+            );
+        }
+    }
+    Ok(())
 }
