@@ -3,8 +3,8 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, bounded_len};
 
 use crate::native::element_map::{
     ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
@@ -307,13 +307,31 @@ pub(crate) fn parse(
                         parsed,
                     })
                 }
-                ElementMapCarrier::Legacy(marker) => parse_legacy_element_map(
-                    marker,
-                    file_version,
-                    &entry_data,
-                    &property.id,
-                    losses,
-                )?,
+                ElementMapCarrier::Legacy(marker) => {
+                    let payload = parse_legacy_element_map(
+                        marker,
+                        file_version,
+                        &entry_data,
+                        &property.id,
+                        losses,
+                    )?;
+                    // A framed, empty legacy marker declares no map payload.
+                    // Its attributes remain typed property values. A malformed
+                    // count, unavailable side entry, or nonempty child remains
+                    // source-only through the ordinary recovery path.
+                    if payload.is_none()
+                        && marker.attribute("file").is_none_or(str::is_empty)
+                        && parse_count(marker, "ElementMap")? == 0
+                        && !marker.children().any(|node| {
+                            node.is_element()
+                                || (node.is_text()
+                                    && node.text().is_some_and(|text| !text.trim().is_empty()))
+                        })
+                    {
+                        carrier_present = false;
+                    }
+                    payload
+                }
             };
             let Some(payload) = payload else {
                 return Ok(None);
@@ -735,7 +753,9 @@ fn parse_legacy_element_map(
         return Ok(None);
     }
     let Some(file_version) = file_version else {
-        let message = format!("property {owner} inline legacy ElementMap requires a verified FileVersion; source XML retained without assigning an encoding");
+        let message = format!(
+            "property {owner} inline legacy ElementMap requires a verified FileVersion; source XML retained without assigning an encoding"
+        );
         losses.push(crate::loss::FreecadLossCode::ElementMapVersionUnresolved.note(message));
         return Ok(None);
     };
