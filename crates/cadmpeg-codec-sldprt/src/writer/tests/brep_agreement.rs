@@ -15,7 +15,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
-fn extrusion_depth_edit_without_brep_edit_is_synthesized() {
+fn extrusion_depth_edit_without_brep_edit_writes_canonical_design_with_retained_layout() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -30,11 +30,11 @@ fn extrusion_depth_edit_without_brep_edit_is_synthesized() {
             cadmpeg_ir::scalar::NonZeroLength::new(50.0).unwrap(),
         )
         .expect("edit canonical extrusion depth");
-    assert_synthesized_design(&decoded);
+    assert_written_design(&decoded, ExpectedPath::Patched);
 }
 
 #[test]
-fn feature_output_scope_edit_is_synthesized() {
+fn feature_output_scope_edit_writes_canonical_design_with_retained_layout() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -50,11 +50,12 @@ fn feature_output_scope_edit_is_synthesized() {
     decoded.ir_mut().model.features[0]
         .evaluation
         .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(replacement).unwrap());
-    assert_synthesized_design(&decoded);
+    assert_written_design(&decoded, ExpectedPath::Patched);
 }
 
 #[test]
-fn feature_output_edit_with_nongeometric_history_edit_is_synthesized() {
+fn feature_output_edit_with_nongeometric_history_edit_writes_canonical_design_with_retained_layout()
+{
     let mut source = sldprt_with_body_and_history(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -95,11 +96,11 @@ fn feature_output_edit_with_nongeometric_history_edit_is_synthesized() {
         .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(replacement).unwrap());
     edit.model.features[nongeometric].source_text = Some("changed".into());
     drop(edit);
-    assert_synthesized_design(&decoded);
+    assert_written_design(&decoded, ExpectedPath::Patched);
 }
 
 #[test]
-fn extrusion_parameter_value_edit_without_brep_edit_is_synthesized() {
+fn extrusion_parameter_value_edit_without_brep_edit_writes_canonical_design_with_retained_layout() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -117,7 +118,7 @@ fn extrusion_parameter_value_edit_without_brep_edit_is_synthesized() {
         cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
     ));
     drop(edit);
-    assert_synthesized_design(&decoded);
+    assert_written_design(&decoded, ExpectedPath::Patched);
 }
 
 #[test]
@@ -143,7 +144,7 @@ fn removing_referenced_extrusion_parameter_is_malformed() {
 }
 
 #[test]
-fn native_extrusion_depth_edit_is_synthesized() {
+fn native_extrusion_depth_edit_writes_canonical_design_with_retained_layout() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -154,7 +155,7 @@ fn native_extrusion_depth_edit_is_synthesized() {
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("Depth"), "50mm".into());
     });
-    assert_synthesized_design(&decoded);
+    assert_written_design(&decoded, ExpectedPath::Patched);
 }
 
 #[test]
@@ -170,7 +171,7 @@ fn native_extrusion_edit_without_source_image_is_synthesized() {
             .insert(cadmpeg_core::nonblank_literal!("Depth"), "50mm".into());
     });
     crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
-    assert_synthesized_design(&decoded);
+    assert_written_design(&decoded, ExpectedPath::Synthesized);
 }
 
 #[test]
@@ -283,7 +284,15 @@ fn native_feature_name_edit_keeps_retained_brep() {
     );
 }
 
-fn assert_synthesized_design(decoded: &cadmpeg_test_support::EditableDecodeResult) {
+enum ExpectedPath {
+    Patched,
+    Synthesized,
+}
+
+fn assert_written_design(
+    decoded: &cadmpeg_test_support::EditableDecodeResult,
+    expected_path: ExpectedPath,
+) {
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
@@ -362,11 +371,19 @@ fn assert_synthesized_design(decoded: &cadmpeg_test_support::EditableDecodeResul
             );
         }
     }
+    // E1 permits retained layout after the independent content check above.
+    // Without its source image the same canonical design is synthesized.
     assert!(
-        matches!(
-            report.write_path(),
-            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
-        ),
+        match expected_path {
+            ExpectedPath::Patched => matches!(
+                report.write_path(),
+                cadmpeg_ir::report::export::WritePath::Patched { .. }
+            ),
+            ExpectedPath::Synthesized => matches!(
+                report.write_path(),
+                cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+            ),
+        },
         "retained-path report after exact content checks: {report:?}"
     );
 }
