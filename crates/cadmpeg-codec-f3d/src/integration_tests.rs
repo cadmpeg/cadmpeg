@@ -415,14 +415,40 @@ fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
     .to_string()
 }
 
-/// An unresolvable inherited target cannot replay source-only content.
+/// Fully typed geometry can replay its original off-catalog dialect. The bare
+/// EOF delta_state boundary contains no omitted history/design record.
+#[test]
+fn inherit_replays_a_fully_typed_off_catalog_dialect() {
+    let source = f3d_with_smbh_and_manifest_version(&synthetic_geometry_smbh(), "3-3-0-0");
+    let result = decode(source.clone());
+    assert!(result.source_fidelity().unrepresented().is_empty());
+    let plan = plan(&result, true, TargetRequest::Inherit).unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay
+    ));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    assert_eq!(bytes, source);
+}
+
+/// An actual opaque history payload cannot be supplied from retained bytes.
 #[test]
 fn inherit_refuses_an_off_catalog_dialect_when_source_content_is_unrepresented() {
     let result = decode(f3d_with_smbh_and_manifest_version(
-        &synthetic_geometry_smbh(),
+        &synthetic_geometry_with_history_smbh(),
         "3-3-0-0",
     ));
-    assert!(!result.source_fidelity().unrepresented().is_empty());
+    assert!(f3d_native(result.ir())
+        .asm_histories
+        .iter()
+        .flat_map(crate::history_records::AsmHistory::states)
+        .flat_map(|state| &state.records)
+        .any(|record| !record.raw_bytes.is_empty()));
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Design));
     let error = plan(&result, true, TargetRequest::Inherit).unwrap_err();
     assert!(matches!(
         error,
@@ -492,11 +518,12 @@ fn an_explicit_catalog_row_does_not_replay_a_different_dialect() {
     assert_ne!(written, source, "the source archive must not be replayed");
 }
 
-/// Same-dialect requests keep their target when source-only content selects synthesis.
+/// All same-dialect spellings replay fully typed content with the same target.
 #[test]
-fn a_same_dialect_request_synthesizes_under_both_spellings() {
+fn a_same_dialect_request_replays_under_both_spellings() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let result = decode(source.clone());
+    assert!(result.source_fidelity().unrepresented().is_empty());
     for request in [
         TargetRequest::Inherit,
         TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
@@ -505,14 +532,13 @@ fn a_same_dialect_request_synthesizes_under_both_spellings() {
         let plan = plan(&result, true, request).expect("the source's own dialect is writable");
         assert!(matches!(
             plan.report().write_path(),
-            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+            cadmpeg_ir::report::export::WritePath::VerbatimReplay
         ));
         assert_eq!(named_target(&plan), "f3d:manifest-3-2-0-0");
-        let plan_cause = plan.report().synthesis_cause().is_some();
+        assert!(plan.report().synthesis_cause().is_none(), "{request:?}");
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
-        assert!(plan_cause, "{request:?}");
-        assert_ne!(written, source, "source-only archive content is omitted");
+        assert_eq!(written, source);
         assert_eq!(
             decode(written).ir().model.bodies.len(),
             result.ir().model.bodies.len()
@@ -603,10 +629,17 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
     ] {
         let plan = plan(result, fidelity, request)
             .unwrap_or_else(|error| panic!("{label} must plan, got {error}"));
-        assert!(matches!(
-            plan.report().write_path(),
-            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
-        ));
+        if label == "inherited" {
+            assert!(matches!(
+                plan.report().write_path(),
+                cadmpeg_ir::report::export::WritePath::VerbatimReplay
+            ));
+        } else {
+            assert!(matches!(
+                plan.report().write_path(),
+                cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+            ));
+        }
         let claimed = named_target(&plan);
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();

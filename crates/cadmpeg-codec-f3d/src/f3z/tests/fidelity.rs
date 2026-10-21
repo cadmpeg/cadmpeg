@@ -102,7 +102,26 @@ fn archive_scope_and_source_representation_union_independent_members() {
     assert!(decoded.report().geometry_transferred());
     assert_eq!(
         decoded.source_fidelity().unrepresented(),
-        [ArenaClass::Model, ArenaClass::Design].into()
+        [ArenaClass::Model].into()
+    );
+    // The root has no Design BulkStream, and the child's ASM stream has
+    // only an EOF delta_state boundary. A failed projection cannot create
+    // omitted Design content. Its unknown solved record is model content.
+    assert!(decoded
+        .source_fidelity()
+        .retained_record("f3d:file:source-image#root")
+        .unwrap()
+        .untyped()
+        .is_empty());
+    let child_image =
+        format!("f3d:xref/role-{XREF_ROLE}/reference-0/occurrence-0/file:source-image#0");
+    assert_eq!(
+        decoded
+            .source_fidelity()
+            .retained_record(&child_image)
+            .unwrap()
+            .untyped(),
+        &[ArenaClass::Model].into()
     );
     assert_eq!(
         decoded
@@ -130,7 +149,26 @@ fn archive_scope_excludes_design_when_every_member_failed_design_projection() {
     assert!(decoded.report().geometry_transferred());
     assert_eq!(
         decoded.source_fidelity().unrepresented(),
-        [ArenaClass::Model, ArenaClass::Design].into()
+        [ArenaClass::Model].into()
+    );
+    // The root has no Design BulkStream, and the child's ASM stream has
+    // only an EOF delta_state boundary. A failed projection cannot create
+    // omitted Design content. Its unknown solved record is model content.
+    assert!(decoded
+        .source_fidelity()
+        .retained_record("f3d:file:source-image#root")
+        .unwrap()
+        .untyped()
+        .is_empty());
+    let child_image =
+        format!("f3d:xref/role-{XREF_ROLE}/reference-0/occurrence-0/file:source-image#0");
+    assert_eq!(
+        decoded
+            .source_fidelity()
+            .retained_record(&child_image)
+            .unwrap()
+            .untyped(),
+        &[ArenaClass::Model].into()
     );
     assert_eq!(
         decoded
