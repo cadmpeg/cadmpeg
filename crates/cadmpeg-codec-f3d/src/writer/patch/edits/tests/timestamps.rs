@@ -32,6 +32,19 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
                 .unwrap(),
         },
     ];
+    let timestamp_attributes = f3d_native(&source)
+        .creation_timestamps
+        .iter()
+        .enumerate()
+        .map(|(ordinal, record)| {
+            crate::test_support::native_test::timestamp_attribute(
+                u32::try_from(ordinal).unwrap(),
+                record.target.clone(),
+                record.unix_microseconds,
+            )
+        })
+        .collect::<Vec<_>>();
+    source.model.attributes.extend(timestamp_attributes);
     let mut bytes = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
@@ -54,6 +67,13 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
             .map(|timestamp| (timestamp.id.clone(), timestamp.clone()))
             .collect::<BTreeMap<_, _>>()
     };
+    for record in expected.values() {
+        crate::test_support::native_test::edit_timestamp_attribute(
+            &mut target,
+            &record.target,
+            record.unix_microseconds,
+        );
+    }
     assert!(crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, &target).expect("validate the native namespace")
     })

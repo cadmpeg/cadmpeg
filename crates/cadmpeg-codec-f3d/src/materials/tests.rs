@@ -1233,6 +1233,14 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
     let vertex = source.model.vertices[0].id.clone();
     source.model.vertices[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
+    source
+        .model
+        .attributes
+        .push(crate::test_support::native_test::timestamp_attribute(
+            0,
+            AttributeTarget::Vertex(vertex.clone()),
+            cadmpeg_ir::scalar::FiniteReal::new(1_579_392_000_000_037.0).unwrap(),
+        ));
     f3d_native_mut(&mut source).creation_timestamps =
         vec![crate::records::recipes::CreationTimestamp {
             id: "f3d:asm:creation-timestamp#generated".into(),
@@ -1294,6 +1302,12 @@ fn generated_f3d_rewrites_creation_timestamp() {
             cadmpeg_ir::scalar::FiniteReal::new(expected).unwrap();
     });
 
+    let timestamp = f3d_native(&edited).creation_timestamps[0].clone();
+    crate::test_support::native_test::edit_timestamp_attribute(
+        &mut edited,
+        &timestamp.target,
+        timestamp.unix_microseconds,
+    );
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("timestamp regeneration");
