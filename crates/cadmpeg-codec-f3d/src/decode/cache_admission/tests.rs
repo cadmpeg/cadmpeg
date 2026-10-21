@@ -19,7 +19,12 @@ fn omitting_a_cube_boundary_reclassifies_only_the_affected_solid() {
     let original_points = ir.model.points.clone();
     let original_edges = ir.model.edges.clone();
     let face = ir.model.faces[0].id.as_str().to_owned();
-    let removed = omit_face_parts(&mut ir.model, &BTreeSet::from([face.clone()])).unwrap();
+    let removed = omit_face_parts(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir.model,
+        &BTreeSet::from([face.clone()]),
+    )
+    .unwrap();
     assert!(removed.contains(&face));
     let affected = ir
         .model
@@ -46,6 +51,8 @@ fn omitting_a_cube_boundary_reclassifies_only_the_affected_solid() {
             .count(),
         4
     );
+    ir.finalize();
+    assert_eq!(ir.model.surfaces.len(), 5);
     let after = cadmpeg_ir::validate_neutral(&ir, vec![]).unwrap();
     assert!(after.is_ok(), "{after:#?}");
 }
