@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Known native class declarations for synthesized neutral operations.
 
-use cadmpeg_ir::features::{BooleanOp, FeatureOperation, FeatureTreeNodeRole};
+use cadmpeg_ir::features::{
+    BooleanOp, FeatureOperation, FeatureTreeNodeRole, SketchFeatureBinding,
+};
 
 pub(super) fn class(operation: &FeatureOperation) -> Option<&'static str> {
     Some(match operation {
@@ -16,8 +18,13 @@ pub(super) fn class(operation: &FeatureOperation) -> Option<&'static str> {
         FeatureOperation::Fillet { .. } => "Fillet_c",
         FeatureOperation::Chamfer { .. } => "Chamfer_c",
         FeatureOperation::Hole { .. } => "moHoleWzd_c",
-        FeatureOperation::Sketch { .. } => "moProfileFeature_c",
-        FeatureOperation::SpatialSketch { .. } => "mo3DProfileFeature_c",
+        // A native profile class supplies a marker-backed sketch identity on
+        // decode, even without geometry records. Do not invent that identity
+        // for a history-only declaration whose canonical binding is absent.
+        FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(Some(_)),
+        } => "moProfileFeature_c",
+        FeatureOperation::SpatialSketch { sketch: Some(_) } => "mo3DProfileFeature_c",
         FeatureOperation::StoredGeometry {} => "moBaseBody_c",
         FeatureOperation::Shell { .. } => "moShell_c",
         FeatureOperation::Thicken { .. } => "moThicken_c",
@@ -76,4 +83,46 @@ pub(super) fn class(operation: &FeatureOperation) -> Option<&'static str> {
         },
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_only_sketch_declarations_do_not_author_geometry_classes() {
+        assert_eq!(
+            class(&FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(None),
+            }),
+            None
+        );
+        assert_eq!(
+            class(&FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Unresolved,
+            }),
+            None
+        );
+        assert_eq!(
+            class(&FeatureOperation::SpatialSketch { sketch: None }),
+            None
+        );
+        assert_eq!(
+            class(&FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(
+                    cadmpeg_ir::sketches::SketchId::mint("test:model:sketch#bound").unwrap(),
+                )),
+            }),
+            Some("moProfileFeature_c")
+        );
+        assert_eq!(
+            class(&FeatureOperation::SpatialSketch {
+                sketch: Some(
+                    cadmpeg_ir::sketches::SpatialSketchId::mint("test:model:spatial-sketch#bound")
+                        .unwrap()
+                ),
+            }),
+            Some("mo3DProfileFeature_c")
+        );
+    }
 }
