@@ -119,6 +119,9 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
     }
     crate::writer::body_styles::apply(&mut projected, &payloads, &properties)?;
     crate::attributes::transfer(&mut projected, &objects, &properties)?;
+    // Decoded documents are finalized before sealing. Match their canonical
+    // identity order before an exact comparison of the reconstructed arenas.
+    projected.finalize();
     let current = serde_json::to_value(&ir.model).map_err(CodecError::malformed)?;
     let candidate = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
     for arena in ArenaName::ALL {
