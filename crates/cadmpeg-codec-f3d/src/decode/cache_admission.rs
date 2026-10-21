@@ -205,6 +205,16 @@ fn boundary_contradicts_extrusion(ir: &CadIr, face: &cadmpeg_ir::topology::Face)
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry else {
         return None;
     };
+    // This proof covers the legacy, unreversed finite directrix interval.
+    // Extrapolated or revision-directed parameters need a separate proof.
+    if extrusion.revision_form().is_some() {
+        return None;
+    }
+    let [start, end] = extrusion.parameter_interval()?.get();
+    let degree = usize::try_from(nurbs.degree()).ok()?;
+    if start < nurbs.knots()[degree] || end > nurbs.knots()[nurbs.pole_count()] || start >= end {
+        return None;
+    }
     if let Some(weights) = nurbs.weights() {
         if !(weights.iter().all(|weight| weight.get() > 0.0)
             || weights.iter().all(|weight| weight.get() < 0.0))
