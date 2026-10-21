@@ -1569,6 +1569,11 @@ impl SketchInputEntity {
         self.object_index
     }
 
+    /// Attach a position admitted from the matching source-fidelity lane.
+    pub(crate) fn attach_source_position(&mut self, offset: Option<u64>) {
+        self.offset = offset;
+    }
+
     /// Returns the feature-local object identifier.
     pub(crate) fn local_id(&self) -> Option<u32> {
         self.local_id
