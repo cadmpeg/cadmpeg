@@ -608,10 +608,14 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "expression.reference-unresolved",
+                "attribute.property-unprojected",
+                "attribute.not-transferred",
                 "source.model-payload-unrepresented",
                 "source.design-payload-unrepresented",
                 "arena.not-transferred",
                 "feature.not-transferred",
+                "joint.not-transferred",
                 "geometry.not-transferred",
                 "appearance.not-transferred",
                 "presentation.not-transferred",
