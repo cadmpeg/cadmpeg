@@ -1118,6 +1118,41 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated NURBS surface decode");
+    // D9: preserve the original contradictory extrusion input as a negative
+    // source control. Physical NURBS edits use a separately authored Exact
+    // control, where the solved NURBS is the authoritative geometry.
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::SurfaceCacheRejected.kind()));
+    assert!(decoded
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Model));
+    assert!(decoded
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .any(|record| record.data() == Some(source.as_slice())));
+    assert!(decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surface.id.as_str() == "f3d:brep:entity#9")
+        .all(|surface| matches!(
+            surface.geometry,
+            cadmpeg_ir::geometry::SurfaceGeometry::Procedural { cache: None, .. }
+        )));
+    let canonical_source =
+        f3d_with_smbh(&crate::test_support::procedural_test::exact_nurbs_edit_control(false));
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(canonical_source),
+            &DecodeOptions::default(),
+        )
+        .expect("separate authoritative Exact NURBS control");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let surface = edited
         .model
@@ -1247,6 +1282,41 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated rational surface decode");
+    // D9: preserve the original contradictory extrusion input as a negative
+    // source control. Physical NURBS edits use a separately authored Exact
+    // control, where the solved NURBS is the authoritative geometry.
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::SurfaceCacheRejected.kind()));
+    assert!(decoded
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Model));
+    assert!(decoded
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .any(|record| record.data() == Some(source.as_slice())));
+    assert!(decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surface.id.as_str() == "f3d:brep:entity#9")
+        .all(|surface| matches!(
+            surface.geometry,
+            cadmpeg_ir::geometry::SurfaceGeometry::Procedural { cache: None, .. }
+        )));
+    let canonical_source =
+        f3d_with_smbh(&crate::test_support::procedural_test::exact_nurbs_edit_control(true));
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(canonical_source),
+            &DecodeOptions::default(),
+        )
+        .expect("separate authoritative Exact NURBS control");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let surface = edited
         .model
