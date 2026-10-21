@@ -3,6 +3,8 @@
 
 use super::IR_VERSION;
 
+mod prefix;
+
 pub(super) fn unsupported_version(version: Option<&str>) -> String {
     format!(
         "unsupported ir_version {version:?}; expected {IR_VERSION}; wire v8 replaces decode_depth with scope and changes decode report transfer to delivered scope"
@@ -29,7 +31,7 @@ pub(super) fn deserialize_wire<'de, D: serde::Deserializer<'de>>(
             use serde::Deserialize;
             let mut prefix = Vec::new();
             while let Some(key) = map.next_key::<String>()? {
-                let value = map.next_value::<serde_json::Value>()?;
+                let value = map.next_value_seed(prefix::PrefixValue)?;
                 let version_found = key == "ir_version";
                 if version_found {
                     super::check_ir_version(Some(&value))?;
