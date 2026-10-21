@@ -320,7 +320,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
 }
 
 #[test]
-fn f3z_archive_without_merged_components_requires_a_resolved_synthesis_target() {
+fn fully_typed_f3z_archive_replays_or_synthesizes_the_resolved_target() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
     let decoded = EditableDecodeResult::from(
@@ -336,16 +336,20 @@ fn f3z_archive_without_merged_components_requires_a_resolved_synthesis_target() 
         .source_fidelity()
         .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
         .is_some());
-    let error = F3dCodec
+    assert!(decoded.source_fidelity().unrepresented().is_empty());
+    let replay = F3dCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .unwrap_err();
+        .expect("a complete root document can replay its outer archive");
     assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::UnsupportedTarget(_)
+        replay.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay
     ));
+    let mut replayed = Vec::new();
+    replay.write_to(&mut replayed).unwrap();
+    assert_eq!(replayed, archive);
     let plan = F3dCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
