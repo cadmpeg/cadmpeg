@@ -36,6 +36,25 @@ fn one_owned_field_consumes_only_one_same_stream_observation() {
     assert_eq!(independent.len(), 1);
     assert_eq!(independent[0].id, duplicate.id);
     assert_eq!(independent[0].value, value);
+    let original_references = native.persistent_references.clone();
+    let mut batch = vec![original_references[0].clone()];
+    for ordinal in 1..=32u64 {
+        let mut extra = original_references[0].clone();
+        extra.id.push_str(&format!("-independent-{ordinal}"));
+        extra.value = value + ordinal;
+        batch.push(extra);
+    }
+    native.persistent_references = batch;
+    let independent = independent_persistent_references(&native);
+    assert_eq!(independent.len(), 32);
+    for (ordinal, reference) in independent.iter().enumerate() {
+        assert_eq!(
+            reference.value,
+            value + u64::try_from(ordinal).expect("small test index") + 1
+        );
+        assert_eq!(reference.id, native.persistent_references[ordinal + 1].id);
+    }
+    native.persistent_references = original_references;
     native.sketch_points.clear();
     assert_eq!(independent_persistent_references(&native).len(), 2);
     native.sketch_points = crate::test_support::native_test::f3d_native(decoded.ir()).sketch_points;

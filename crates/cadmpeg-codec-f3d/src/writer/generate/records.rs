@@ -507,29 +507,33 @@ fn independent_persistent_references(
     // The flat observation arena also names fields encoded inside retained
     // Sketch records. Consume one occurrence per actual typed field, within
     // the same stream; equal independent observations keep their multiplicity.
-    let mut owned = native
-        .sketch_points
-        .iter()
-        .filter_map(|point| {
-            Some((
-                crate::ids::native_stream(&point.id)?,
-                PersistentReferenceKind::Point,
-                point.persistent_id()?,
-            ))
-        })
-        .collect::<Vec<_>>();
+    let mut owned = std::collections::BTreeMap::new();
+    for point in &native.sketch_points {
+        if let (Some(scope), Some(value)) =
+            (crate::ids::native_stream(&point.id), point.persistent_id())
+        {
+            *owned
+                .entry((
+                    scope,
+                    persistent_reference_name(PersistentReferenceKind::Point),
+                    value,
+                ))
+                .or_insert(0usize) += 1;
+        }
+    }
     for curve in &native.sketch_curve_identities {
         if let Some(scope) = crate::ids::native_stream(&curve.id) {
-            owned.push((
-                scope,
-                PersistentReferenceKind::CurvePrimary,
-                curve.primary_id.get(),
-            ));
-            owned.push((
-                scope,
-                PersistentReferenceKind::CurveSecondary,
-                curve.secondary_id,
-            ));
+            for (kind, value) in [
+                (
+                    PersistentReferenceKind::CurvePrimary,
+                    curve.primary_id.get(),
+                ),
+                (PersistentReferenceKind::CurveSecondary, curve.secondary_id),
+            ] {
+                *owned
+                    .entry((scope, persistent_reference_name(kind), value))
+                    .or_insert(0usize) += 1;
+            }
         }
     }
     native
@@ -539,15 +543,18 @@ fn independent_persistent_references(
             let Some(scope) = crate::ids::native_stream(&reference.id) else {
                 return true;
             };
-            let owned_at = owned
-                .iter()
-                .position(|candidate| *candidate == (scope, reference.kind, reference.value));
-            if let Some(index) = owned_at {
-                owned.swap_remove(index);
-                false
-            } else {
-                true
+            let Some(remaining) = owned.get_mut(&(
+                scope,
+                persistent_reference_name(reference.kind),
+                reference.value,
+            )) else {
+                return true;
+            };
+            if *remaining == 0 {
+                return true;
             }
+            *remaining -= 1;
+            false
         })
         .collect()
 }
