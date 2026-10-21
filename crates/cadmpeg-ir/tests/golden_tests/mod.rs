@@ -230,11 +230,11 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
         name: None,
         suppressed: None,
         needs_recompute: false,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::Native {
                 kind: NativeFeatureKind::Other("zz_source_operation".to_string()),
