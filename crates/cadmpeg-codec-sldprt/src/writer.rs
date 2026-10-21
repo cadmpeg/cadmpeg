@@ -262,6 +262,10 @@ pub(super) fn write_semantic_at(
         }
         true
     };
+    let replayed_swobjects_bytes = replay_swobjects
+        && retained_swobjects
+            .iter()
+            .any(|(_, payload)| !payload.is_empty());
     if replay_swobjects {
         sections.extend(retained_swobjects);
     } else {
@@ -324,8 +328,10 @@ pub(super) fn write_semantic_at(
     // The source scan supplies the header, section type ids, directory fields
     // and cache-cell layout below. Other source records count only when their
     // payload was actually selected for output by a retained-byte branch.
-    let source_consumed =
-        source_scan.is_some() || retain_native_brep || replay_swobjects || !opaque.is_empty();
+    let source_consumed = source_scan.is_some()
+        || retain_native_brep
+        || replayed_swobjects_bytes
+        || opaque.iter().any(|(_, payload)| !payload.is_empty());
     let document_envelope = crate::container::first_solidworks_envelope(
         opaque.iter().map(|(_, payload)| payload.as_slice()),
     );
