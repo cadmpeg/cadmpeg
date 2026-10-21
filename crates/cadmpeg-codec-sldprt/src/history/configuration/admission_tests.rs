@@ -239,12 +239,14 @@ fn datum_model() -> cadmpeg_ir::CadIr {
     configuration.feature_states.insert(
         second,
         cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-            definition: FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                reference: None,
-                distance: cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
-                ),
-            }),
+            definition: Box::new(FeatureDefinition::Operation(
+                FeatureOperation::DatumOffsetPlane {
+                    reference: None,
+                    distance: cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
+                    ),
+                },
+            )),
         },
     );
     ir.model.configurations.push(configuration);
@@ -264,12 +266,16 @@ fn run_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         .get_mut(&FeatureId::mint("synthetic:test:id#offset-second").unwrap())
         .unwrap();
     *state = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-        definition: FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature {
-                feature: FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
-            }),
-            distance: cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::new(7.0).unwrap()),
-        }),
+        definition: Box::new(FeatureDefinition::Operation(
+            FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature {
+                    feature: FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+                }),
+                distance: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
+                ),
+            },
+        )),
     };
 
     super::inherit_configuration_reference_plane_states(&ctx, &mut ir)?;
@@ -371,12 +377,16 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         .get_mut(&FeatureId::mint("synthetic:test:id#offset-second").unwrap())
         .unwrap();
     *state = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-        definition: FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature {
-                feature: FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
-            }),
-            distance: cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::new(7.0).unwrap()),
-        }),
+        definition: Box::new(FeatureDefinition::Operation(
+            FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature {
+                    feature: FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+                }),
+                distance: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
+                ),
+            },
+        )),
     };
 
     let losses = project_configuration_sketch_states(
@@ -436,7 +446,9 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
         });
         configuration.feature_states.insert(
             id,
-            cadmpeg_ir::features::ConfigurationFeatureState::Definition { definition },
+            cadmpeg_ir::features::ConfigurationFeatureState::Definition {
+                definition: Box::new(definition),
+            },
         );
     }
     ir.model.configurations.push(configuration);
@@ -451,9 +463,11 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
     let mut expected = ir.clone();
     for state in expected.model.configurations[0].feature_states.values_mut() {
         *state = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-            definition: FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-                sketch: Some(sketch.clone()),
-            }),
+            definition: Box::new(FeatureDefinition::Operation(
+                FeatureOperation::SpatialSketch {
+                    sketch: Some(sketch.clone()),
+                },
+            )),
         };
     }
     let losses = project_configuration_sketch_states(
@@ -557,7 +571,7 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
         configuration.feature_states.insert(
             id,
             cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-                definition: hole(local_specification, false),
+                definition: Box::new(hole(local_specification, false)),
             },
         );
     }
@@ -568,7 +582,7 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
             .feature_states
             .get_mut(&FeatureId::mint(format!("synthetic:test:id#{name}")).unwrap())
             .unwrap() = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-            definition: hole(Some(Box::new(specification)), true),
+            definition: Box::new(hole(Some(Box::new(specification)), true)),
         };
     }
     let losses = project_configuration_sketch_states(
@@ -646,7 +660,7 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
     configuration.feature_states.insert(
         id.clone(),
         cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-            definition: hole(false),
+            definition: Box::new(hole(false)),
         },
     );
     ir.model.configurations.push(configuration);
@@ -655,7 +669,7 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
         .feature_states
         .get_mut(&id)
         .unwrap() = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-        definition: hole(true),
+        definition: Box::new(hole(true)),
     };
     let losses = project_configuration_sketch_states(
         &ctx,
@@ -850,7 +864,7 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
         configuration.feature_states.insert(
             id,
             cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-                definition: hole(None, None),
+                definition: Box::new(hole(None, None)),
             },
         );
     }
@@ -861,7 +875,7 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
             .feature_states
             .get_mut(&feature.id)
             .unwrap() = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-            definition: feature.evaluation.definition().clone(),
+            definition: Box::new(feature.evaluation.definition().clone()),
         };
     }
     let losses = project_configuration_sketch_states(

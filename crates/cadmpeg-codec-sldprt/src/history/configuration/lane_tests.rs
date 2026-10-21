@@ -375,15 +375,15 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
             (
                 feature_id.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-                    definition: unresolved,
+                    definition: Box::new(unresolved),
                 },
             ),
             (
                 spatial_feature_id.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-                    definition: FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-                        sketch: None,
-                    }),
+                    definition: Box::new(FeatureDefinition::Operation(
+                        FeatureOperation::SpatialSketch { sketch: None },
+                    )),
                 },
             ),
         ]),
@@ -634,17 +634,19 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
                 (
                     feature_id.clone(),
                     cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-                        definition: FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-                            sketch: None,
-                        }),
+                        definition: Box::new(FeatureDefinition::Operation(
+                            FeatureOperation::SpatialSketch { sketch: None },
+                        )),
                     },
                 ),
                 (
                     planar_state_id.clone(),
                     cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-                        definition: FeatureDefinition::Operation(FeatureOperation::Sketch {
-                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-                        }),
+                        definition: Box::new(FeatureDefinition::Operation(
+                            FeatureOperation::Sketch {
+                                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                            },
+                        )),
                     },
                 ),
             ]),
@@ -718,9 +720,9 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
     configuration.feature_states.insert(
         feature_id.clone(),
         cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-            definition: FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-                sketch: None,
-            }),
+            definition: Box::new(FeatureDefinition::Operation(
+                FeatureOperation::SpatialSketch { sketch: None },
+            )),
         },
     );
     ir.model.configurations.push(configuration);
@@ -808,13 +810,15 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
             (
                 producer_id.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-                    definition: FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                    definition: Box::new(FeatureDefinition::Operation(
+                        FeatureOperation::StoredGeometry {},
+                    )),
                 },
             ),
             (
                 consumer_id.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-                    definition: unresolved,
+                    definition: Box::new(unresolved),
                 },
             ),
         ]),
@@ -922,7 +926,7 @@ fn supplemental_edge_paths_match_projecting_every_configured_feature() {
                 cadmpeg_ir::features::ConfigurationFeatureState::Suppressed {}
             } else {
                 cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-                    definition: feature.evaluation.definition().clone(),
+                    definition: Box::new(feature.evaluation.definition().clone()),
                 }
             };
             configuration
@@ -984,7 +988,7 @@ fn supplemental_edge_paths_match_projecting_every_configured_feature() {
                 cadmpeg_ir::features::ConfigurationFeatureState::Suppressed {}
             } else {
                 cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-                    definition: feature.evaluation.into_parts().0,
+                    definition: Box::new(feature.evaluation.into_parts().0),
                 }
             };
             states.insert(feature.id, state);
@@ -1645,7 +1649,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     ir.model.configurations[0].feature_states.insert(
         feature_id,
         cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-            definition: definition(),
+            definition: Box::new(definition()),
         },
     );
     let mut lane = feature_input_lane("lane", Some("1"));
@@ -1758,7 +1762,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
     ir.model.configurations[0].feature_states.insert(
         feature_id,
         cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-            definition: definition(),
+            definition: Box::new(definition()),
         },
     );
 

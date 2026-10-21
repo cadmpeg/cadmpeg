@@ -153,9 +153,11 @@ fn configuration_structural_references_resolve_independently_of_order_and_use_ef
     alternative.feature_states.insert(
         second_id.clone(),
         State::Definition {
-            definition: FeatureDefinition::Operation(FeatureOperation::DerivedGeometry {
-                source: first_id.clone(),
-            }),
+            definition: Box::new(FeatureDefinition::Operation(
+                FeatureOperation::DerivedGeometry {
+                    source: first_id.clone(),
+                },
+            )),
         },
     );
     ir.model.configurations.push(alternative);
@@ -174,9 +176,9 @@ fn configuration_structural_references_resolve_independently_of_order_and_use_ef
     ir.model.configurations[0].feature_states.insert(
         first_id,
         State::Definition {
-            definition: FeatureDefinition::Operation(FeatureOperation::DerivedGeometry {
-                source: second_id,
-            }),
+            definition: Box::new(FeatureDefinition::Operation(
+                FeatureOperation::DerivedGeometry { source: second_id },
+            )),
         },
     );
     assert!(validate_neutral(&ir, vec![]).unwrap().is_ok());

@@ -1309,7 +1309,7 @@ pub enum ConfigurationFeatureState {
     /// Construction semantics differ structurally from the base definition.
     Definition {
         /// Structural override; bound dimensional changes use parameter overrides.
-        definition: FeatureDefinition,
+        definition: Box<FeatureDefinition>,
     },
 }
 

@@ -341,13 +341,15 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
 
     let mut edited = decoded.ir().clone();
     let replacement = cadmpeg_ir::features::ConfigurationFeatureState::Definition {
-        definition: super::effective_definition(
-            decoded.ir(),
-            &decoded.ir().model.configurations[0],
-            &feature_id,
-        )
-        .unwrap()
-        .clone(),
+        definition: Box::new(
+            super::effective_definition(
+                decoded.ir(),
+                &decoded.ir().model.configurations[0],
+                &feature_id,
+            )
+            .unwrap()
+            .clone(),
+        ),
     };
     if edited.model.configurations[1].active {
         edited

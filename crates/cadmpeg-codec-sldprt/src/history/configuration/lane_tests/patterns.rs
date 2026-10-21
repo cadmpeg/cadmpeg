@@ -43,9 +43,12 @@ fn document(definition: FeatureDefinition) -> cadmpeg_ir::CadIr {
     });
     let mut configuration = super::design_configuration("active", 0, Some(0), None);
     configuration.active = true;
-    configuration
-        .feature_states
-        .insert(id, ConfigurationFeatureState::Definition { definition });
+    configuration.feature_states.insert(
+        id,
+        ConfigurationFeatureState::Definition {
+            definition: Box::new(definition),
+        },
+    );
     ir.model.configurations.push(configuration);
     ir
 }

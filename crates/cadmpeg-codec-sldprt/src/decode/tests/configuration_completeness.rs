@@ -183,7 +183,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
             feature_states: BTreeMap::from([(
                 feature_id.clone(),
                 ConfigurationFeatureState::Definition {
-                    definition: definition,
+                    definition: Box::new(definition),
                 },
             )]),
             native_ref: None,
@@ -393,16 +393,16 @@ fn active_configuration_inherits_late_feature_resolutions() {
             (
                 feature_id.clone(),
                 ConfigurationFeatureState::Definition {
-                    definition: FeatureDefinition::Operation(FeatureOperation::Pattern {
+                    definition: Box::new(FeatureDefinition::Operation(FeatureOperation::Pattern {
                         seeds: vec![seed],
                         pattern: PatternKind::UNRESOLVED,
-                    }),
+                    })),
                 },
             ),
             (
                 hole_id.clone(),
                 ConfigurationFeatureState::Definition {
-                    definition: FeatureDefinition::Operation(FeatureOperation::Hole {
+                    definition: Box::new(FeatureDefinition::Operation(FeatureOperation::Hole {
                         profile: None,
                         profile_filter: None,
                         face: None,
@@ -418,7 +418,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
                         bottom: None,
                         taper_angle: None,
                         allow_multi_profile_faces: None,
-                    }),
+                    })),
                 },
             ),
         ]),

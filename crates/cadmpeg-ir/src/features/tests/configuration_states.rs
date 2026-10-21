@@ -16,9 +16,23 @@ fn configuration_states_store_only_suppression_activation_or_a_structural_differ
     for state in [
         ConfigurationFeatureState::Suppressed {},
         ConfigurationFeatureState::Active {},
-        ConfigurationFeatureState::Definition { definition },
+        ConfigurationFeatureState::Definition {
+            definition: Box::new(definition),
+        },
     ] {
         let wire = serde_json::to_value(&state).unwrap();
+        if state.definition().is_some() {
+            assert_eq!(
+                wire,
+                serde_json::json!({
+                    "kind": "definition",
+                    "definition": {
+                        "definition": "datum_point",
+                        "position": { "x": 0.0, "y": 0.0, "z": 0.0 }
+                    }
+                })
+            );
+        }
         assert_eq!(
             serde_json::from_value::<ConfigurationFeatureState>(wire).unwrap(),
             state

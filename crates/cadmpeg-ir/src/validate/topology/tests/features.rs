@@ -749,7 +749,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         feature_states: BTreeMap::from([(
             extrude.clone(),
             ConfigurationFeatureState::Definition {
-                definition: ir.model.features[1].evaluation.definition().clone(),
+                definition: Box::new(ir.model.features[1].evaluation.definition().clone()),
             },
         )]),
         native_ref: None,
@@ -1007,7 +1007,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             (
                 feature,
                 ConfigurationFeatureState::Definition {
-                    definition: ir.model.features[index].evaluation.definition().clone(),
+                    definition: Box::new(ir.model.features[index].evaluation.definition().clone()),
                 },
             )
         })
