@@ -5,7 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_freecad::{FcstdCodec, FcstdPropertyOwner};
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, target::TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::export::WritePath;
 
@@ -35,7 +35,7 @@ fuzz_target!(|data: &[u8]| {
     let Ok(plan) = FcstdCodec.plan(EncodeInput::new(&ir, retained), TargetRequest::Inherit) else {
         return;
     };
-    if retained.is_some() && !fidelity.unrepresented.is_empty() {
+    if retained.is_some() && !fidelity.unrepresented().is_empty() {
         assert!(matches!(
             plan.report().write_path(),
             WritePath::Synthesized { .. }
@@ -43,8 +43,10 @@ fuzz_target!(|data: &[u8]| {
     }
     let mut output = Vec::new();
     if plan.write_to(&mut output).is_ok() {
-        assert!(FcstdCodec
-            .decode(&mut Cursor::new(output), &DecodeOptions::default())
-            .is_ok());
+        assert!(
+            FcstdCodec
+                .decode(&mut Cursor::new(output), &DecodeOptions::default())
+                .is_ok()
+        );
     }
 });

@@ -297,14 +297,20 @@ fn cadir_edits_with_deleted_sidecar_synthesize_the_edited_document() {
             &written,
         );
         assert!(
-            report["export"]["losses"]
+            written.model.features.iter().any(|feature| {
+                feature.name.as_deref() == Some(FEATURE_NAME) && feature.needs_recompute
+            }) || report["export"]["losses"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|loss| loss["code"]["code"]
-                    .as_str()
-                    .is_some_and(|code| code.contains("brep-not-regenerated"))),
-            "{name}: {report}"
+                .any(|loss| {
+                    loss["code"]["code"] == "evaluation.stale"
+                        && matches!(
+                            loss["severity"].as_str(),
+                            Some("warning" | "error" | "blocking")
+                        )
+                }),
+            "{name}: a stale evaluation is written explicitly or reported at Warning severity: {report}"
         );
         #[cfg(feature = "step")]
         assert_step_geometry_agrees(&cadir, &output, dir.path());

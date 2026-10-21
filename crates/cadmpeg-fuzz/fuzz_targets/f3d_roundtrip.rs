@@ -8,7 +8,7 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_f3d::F3dCodec;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, target::TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::export::WritePath;
 
@@ -26,7 +26,7 @@ fuzz_target!(|data: &[u8]| {
             TargetRequest::Inherit,
         )
         .expect("decoded document must have an export path");
-    if !decoded.source_fidelity().unrepresented.is_empty() {
+    if !decoded.source_fidelity().unrepresented().is_empty() {
         assert!(matches!(
             plan.report().write_path(),
             WritePath::Synthesized { .. }
@@ -36,7 +36,9 @@ fuzz_target!(|data: &[u8]| {
     plan.write_to(&mut encoded)
         .expect("planned output must write");
     let mut round_trip = Cursor::new(encoded);
-    assert!(codec
-        .decode(&mut round_trip, &DecodeOptions::default())
-        .is_ok());
+    assert!(
+        codec
+            .decode(&mut round_trip, &DecodeOptions::default())
+            .is_ok()
+    );
 });

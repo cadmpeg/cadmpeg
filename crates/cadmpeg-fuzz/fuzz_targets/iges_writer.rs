@@ -6,7 +6,7 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_iges::{IgesCodec, IgesVersion};
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, target::TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::export::WritePath;
@@ -64,7 +64,9 @@ fuzz_target!(|data: &[u8]| {
             // already own the fixture identity. Neither reaches this export probe.
             return;
         }
-        source_fidelity.unrepresented.insert(ArenaClass::Model);
+        source_fidelity
+            .mark_untyped("iges:fuzz:unsupported#0", [ArenaClass::Model])
+            .expect("the unsupported source record was retained");
         fidelity = Some(source_fidelity);
     }
 
@@ -87,12 +89,14 @@ fuzz_target!(|data: &[u8]| {
 
     let codec = IgesCodec;
     let mut inspect = Cursor::new(encoded.as_slice());
-    assert!(codec
-        .inspect(
-            &mut inspect,
-            &cadmpeg_core::decode::InspectOptions::default()
-        )
-        .is_ok());
+    assert!(
+        codec
+            .inspect(
+                &mut inspect,
+                &cadmpeg_core::decode::InspectOptions::default()
+            )
+            .is_ok()
+    );
     let mut decode = Cursor::new(encoded.as_slice());
     let decoded = codec
         .decode(&mut decode, &DecodeOptions::default())
@@ -121,7 +125,7 @@ fuzz_target!(|data: &[u8]| {
             TargetRequest::Explicit(version.descriptor().id.as_str()),
         )
         .expect("writer output must plan after the optional source edit");
-    let replayable = control & 0x40 == 0 && source_fidelity.unrepresented.is_empty();
+    let replayable = control & 0x40 == 0 && source_fidelity.unrepresented().is_empty();
     if replayable {
         assert!(matches!(
             replay.report().write_path(),

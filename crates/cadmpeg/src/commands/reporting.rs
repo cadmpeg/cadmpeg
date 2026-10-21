@@ -5,8 +5,8 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use anyhow::Result;
-use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use cadmpeg_ir::SourceFidelity;
+use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
@@ -548,6 +548,7 @@ mod tests {
                 annotations_changed: false,
                 retained_records_changed: false,
                 unrepresented_changed: false,
+                metadata_changed: false,
             }))
             .unwrap(),
             serde_json::json!({
@@ -556,7 +557,8 @@ mod tests {
                 "diff": {
                     "annotations_changed": false,
                     "retained_records_changed": false,
-                    "unrepresented_changed": false
+                    "unrepresented_changed": false,
+                    "metadata_changed": false
                 }
             })
         );
@@ -565,6 +567,7 @@ mod tests {
                 annotations_changed: true,
                 retained_records_changed: false,
                 unrepresented_changed: false,
+                metadata_changed: false,
             }))
             .unwrap(),
             serde_json::json!({
@@ -573,7 +576,8 @@ mod tests {
                 "diff": {
                     "annotations_changed": true,
                     "retained_records_changed": false,
-                    "unrepresented_changed": false
+                    "unrepresented_changed": false,
+                    "metadata_changed": false
                 }
             })
         );
