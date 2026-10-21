@@ -2,7 +2,7 @@
 //! Circular and rectangular pattern constructions and their instances.
 
 use crate::records::identity::Located;
-use crate::records::mesh::DesignRelaxedGuidText;
+use crate::records::mesh::{DesignOccurrenceKey, DesignRelaxedGuidText};
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::Vector3;
@@ -713,7 +713,7 @@ impl Serialize for PatternGeneratedGuids<'_> {
 #[derive(Serialize)]
 struct DesignComponentPatternOccurrencesRef<'a> {
     component_guid: &'a DesignRelaxedGuidText,
-    seed_occurrence_guid: &'a DesignRelaxedGuidText,
+    seed_occurrence_guid: &'a DesignOccurrenceKey,
     generated_occurrence_guids: PatternGeneratedGuids<'a>,
 }
 
@@ -759,7 +759,7 @@ pub(crate) struct DesignPatternInstance {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignPatternComponentInstance {
     pub(crate) instance: DesignPatternInstance,
-    pub(crate) occurrence_guid: DesignRelaxedGuidText,
+    pub(crate) occurrence_guid: DesignOccurrenceKey,
 }
 
 impl DesignRectangularPatternInstances {
@@ -812,9 +812,9 @@ struct DesignComponentPatternOccurrencesWire {
     /// Reusable local component definition shared by every occurrence.
     component_guid: DesignRelaxedGuidText,
     /// Existing seed occurrence.
-    seed_occurrence_guid: DesignRelaxedGuidText,
+    seed_occurrence_guid: DesignOccurrenceKey,
     /// Newly generated occurrences in pattern order after the seed.
-    generated_occurrence_guids: Vec<DesignRelaxedGuidText>,
+    generated_occurrence_guids: Vec<DesignOccurrenceKey>,
 }
 
 impl TryFrom<DesignRectangularPatternInstancesWire> for DesignRectangularPatternInstances {

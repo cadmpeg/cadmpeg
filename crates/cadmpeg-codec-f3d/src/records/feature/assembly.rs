@@ -5,7 +5,7 @@ use super::hole::DesignHoleConstruction;
 use super::work_geometry::DesignWorkPointConstruction;
 use crate::records::dimensions::DesignRecipeReference;
 use crate::records::identity::Located;
-use crate::records::mesh::DesignRelaxedGuidText;
+use crate::records::mesh::{DesignOccurrenceKey, DesignRelaxedGuidText};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
@@ -1193,7 +1193,7 @@ pub(crate) struct DesignAssemblyOperandPath {
     type_guid: Option<DesignRelaxedGuidText>,
     byte_offset: u64,
     /// Ordered occurrence GUIDs and their UTF-16 code-unit locations.
-    occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
+    occurrence_guids: Vec<Located<DesignOccurrenceKey>>,
     /// Ordered identity GUIDs and their UTF-16 code-unit locations.
     identity_guids: Vec<Located<DesignRelaxedGuidText>>,
 }
@@ -1219,28 +1219,28 @@ impl Clone for DesignAssemblyOperandPath {
     }
 }
 
-struct PathGuidValues<'a>(&'a [Located<DesignRelaxedGuidText>]);
-struct PathGuidOffsets<'a>(&'a [Located<DesignRelaxedGuidText>]);
+struct PathGuidValues<'a, T>(&'a [Located<T>]);
+struct PathGuidOffsets<'a, T>(&'a [Located<T>]);
 
-impl PathGuidValues<'_> {
+impl<T> PathGuidValues<'_, T> {
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 }
 
-impl PathGuidOffsets<'_> {
+impl<T> PathGuidOffsets<'_, T> {
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 }
 
-impl Serialize for PathGuidValues<'_> {
+impl<T: Serialize> Serialize for PathGuidValues<'_, T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_seq(self.0.iter().map(|guid| &guid.value))
     }
 }
 
-impl Serialize for PathGuidOffsets<'_> {
+impl<T> Serialize for PathGuidOffsets<'_, T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_seq(self.0.iter().map(|guid| guid.offset))
     }
@@ -1254,12 +1254,12 @@ struct DesignAssemblyOperandPathRef<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     type_guid: Option<&'a DesignRelaxedGuidText>,
     byte_offset: u64,
-    occurrence_guids: PathGuidValues<'a>,
-    occurrence_guid_offsets: PathGuidOffsets<'a>,
+    occurrence_guids: PathGuidValues<'a, DesignOccurrenceKey>,
+    occurrence_guid_offsets: PathGuidOffsets<'a, DesignOccurrenceKey>,
     #[serde(skip_serializing_if = "PathGuidValues::is_empty")]
-    identity_guids: PathGuidValues<'a>,
+    identity_guids: PathGuidValues<'a, DesignRelaxedGuidText>,
     #[serde(skip_serializing_if = "PathGuidOffsets::is_empty")]
-    identity_guid_offsets: PathGuidOffsets<'a>,
+    identity_guid_offsets: PathGuidOffsets<'a, DesignRelaxedGuidText>,
 }
 
 impl Serialize for DesignAssemblyOperandPath {
@@ -1298,7 +1298,7 @@ struct DesignAssemblyOperandPathWire {
     /// Byte offset of the indexed header.
     byte_offset: u64,
     /// Ordered occurrence GUIDs from the outermost occurrence to the selected occurrence.
-    occurrence_guids: Vec<DesignRelaxedGuidText>,
+    occurrence_guids: Vec<DesignOccurrenceKey>,
     /// Byte offsets of the UTF-16 GUID code units parallel to `occurrence_guids`.
     occurrence_guid_offsets: Vec<u64>,
     /// Four ordered identity GUIDs following a class-390 occurrence path.
@@ -1315,7 +1315,7 @@ impl DesignAssemblyOperandPath {
         record_index: u32,
         class_tag: DesignClassTag,
         byte_offset: u64,
-        occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
+        occurrence_guids: Vec<Located<DesignOccurrenceKey>>,
         identity_guids: Vec<Located<DesignRelaxedGuidText>>,
     ) -> Result<Self, String> {
         Self::try_new_typed(
@@ -1336,7 +1336,7 @@ impl DesignAssemblyOperandPath {
         class_tag: DesignClassTag,
         type_guid: Option<DesignRelaxedGuidText>,
         byte_offset: u64,
-        occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
+        occurrence_guids: Vec<Located<DesignOccurrenceKey>>,
         identity_guids: Vec<Located<DesignRelaxedGuidText>>,
     ) -> Result<Self, String> {
         let typed = match &type_guid {
@@ -1370,17 +1370,27 @@ impl DesignAssemblyOperandPath {
         if !identity_arity {
             return Err("identity_guids has invalid assembly path class arity".into());
         }
-        for (field, guids) in [
-            ("occurrence_guids", &occurrence_guids),
-            ("identity_guids", &identity_guids),
+        let follows_byte_offset = !legacy_pair && class_tag.as_str() != "412";
+        for (field, offsets) in [
+            (
+                "occurrence_guids",
+                occurrence_guids
+                    .iter()
+                    .map(|guid| guid.offset)
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "identity_guids",
+                identity_guids
+                    .iter()
+                    .map(|guid| guid.offset)
+                    .collect::<Vec<_>>(),
+            ),
         ] {
-            if !guids.windows(2).all(|pair| pair[0].offset < pair[1].offset) {
+            if !offsets.windows(2).all(|pair| pair[0] < pair[1]) {
                 return Err(format!("{field} offsets must strictly increase"));
             }
-            if !legacy_pair
-                && class_tag.as_str() != "412"
-                && guids.iter().any(|guid| guid.offset <= byte_offset)
-            {
+            if follows_byte_offset && offsets.iter().any(|offset| *offset <= byte_offset) {
                 return Err(format!("{field} offsets must follow byte_offset"));
             }
         }
@@ -1407,7 +1417,7 @@ impl DesignAssemblyOperandPath {
     pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
-    pub(crate) fn occurrence_guids(&self) -> &[Located<DesignRelaxedGuidText>] {
+    pub(crate) fn occurrence_guids(&self) -> &[Located<DesignOccurrenceKey>] {
         &self.occurrence_guids
     }
     pub(crate) fn identity_guids(&self) -> &[Located<DesignRelaxedGuidText>] {

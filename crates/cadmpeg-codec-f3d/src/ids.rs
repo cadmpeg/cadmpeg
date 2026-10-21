@@ -223,13 +223,13 @@ pub(crate) fn neutral_component_id(
     )
 }
 
-/// Neutral local occurrence projected from its stable Design GUID.
+/// Neutral local occurrence projected from its stable Design occurrence key.
 pub(crate) fn neutral_component_occurrence_id(
-    guid: &crate::records::mesh::DesignRelaxedGuidText,
+    guid: &impl crate::records::mesh::OccurrenceIdentity,
 ) -> cadmpeg_ir::ids::OccurrenceId {
     cadmpeg_ir::ids::OccurrenceId::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
-        guid.identity_key(),
+        guid.occurrence_identity_key(),
     )
 }
 

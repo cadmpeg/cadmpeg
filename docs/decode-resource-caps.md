@@ -277,6 +277,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d`      | `src/paramesh.rs`                                  | `MAX_STREAM_BYTES`                        | `64 * 1024 * 1024`                                      | 2    | Declared byte count of one paramesh stream, checked before `begin_expand`. Excess returns `NotImplemented` without fusing; the container is recorded as failed and the decode continues. The expansion also charges the session.                                             |
 | `cadmpeg-codec-f3d`      | `src/manifest.rs`                                  | `MAX_MANIFEST_STRING_UNITS`               | `4 * 1024`                                              | 2    | Manifest ASCII and UTF-16 string length and locator length, read with `take`; the encoder checks the same limit.                                                                                                                                                             |
 | `cadmpeg-codec-f3d`      | `src/manifest.rs`                                  | `MAX_REGISTRY_ENTRIES`                    | `64`                                                    | 2    | Top-level registry, capability and revision-10 link counts. Excess is `Malformed`.                                                                                                                                                                                           |
+| `cadmpeg-codec-f3d`      | `src/design/decode/components.rs`                  | `MAX_OCCURRENCE_ATTRIBUTES`               | `16`                                                    | 2    | Attribute count of one attributed local-occurrence frame. Excess leaves the record unread as an occurrence.                                                                                                                                                                  |
 | `cadmpeg-codec-f3d`      | `src/manifest.rs`                                  | `MAX_ASSET_FOLDERS`                       | `64`                                                    | 2    | Top-level asset-folder count (non-zero). Excess is `Malformed`; the encoder checks the same limit.                                                                                                                                                                           |
 | `cadmpeg-codec-f3d`      | `src/manifest.rs`                                  | `MAX_TOP_LEVEL_MANIFEST_BYTES`            | `16 * 1024 * 1024`                                      | 2    | Size of one top-level manifest blob. Excess is `Malformed`.                                                                                                                                                                                                                  |
 | `cadmpeg-codec-f3d`      | `src/container.rs`                                 | `MAX_ARCHIVE_BYTES`                       | `256 * 1024 * 1024`                                     | N    | Encode path only: total declared inflated size when Protein appearances are patched (`materials::patch_protein_appearances`).                                                                                                                                                |
@@ -440,16 +441,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 225.
+Production `MAX_*` constants: 226.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 30    |
-| 2    | Per-input bound            | 68    |
+| 2    | Per-input bound            | 69    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 106   |
 | N    | Not a decode bound         | 21    |
-|      | Total                      | 225   |
+|      | Total                      | 226   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -457,7 +458,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 17,
+`cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 13,
 and `cadmpeg-codec-catia` 57.
 

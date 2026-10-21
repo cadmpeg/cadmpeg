@@ -230,3 +230,22 @@ fn wide_scope_locator_is_admitted_by_its_record_type() {
         );
     }
 }
+
+/// A typed path names a local occurrence by its decimal occurrence key.
+#[test]
+fn typed_path_reads_a_decimal_occurrence_key() {
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID as TYPED;
+    let guid_path = identity_qualified_path_bytes(*b"366", true);
+    // Replace the 36-unit occurrence GUID at offset 25 with the key "34".
+    let mut bytes = guid_path[..25].to_vec();
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    for unit in "34".encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    bytes.extend_from_slice(&guid_path[25 + 4 + 72..]);
+    let path = exact_assembly_operand_path(&bytes, 0, 65, bytes.len(), path_link(), Some(TYPED))
+        .unwrap()
+        .expect("typed path with a decimal key");
+    assert_eq!(path.occurrence_guids()[0].value.as_str(), "34");
+    assert_eq!(path.identity_guids().len(), 4);
+}

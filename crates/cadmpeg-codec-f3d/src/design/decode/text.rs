@@ -57,6 +57,22 @@ pub(in crate::design::decode) fn fixed_relaxed_guid_text(
     Ok(Some((value, end)))
 }
 
+/// Read an LP-UTF16 occurrence key: a positive decimal key or an exact
+/// 36-code-unit relaxed GUID.
+pub(in crate::design::decode) fn occurrence_key_text(
+    bytes: &[u8],
+    count_at: usize,
+) -> Result<Option<(crate::records::mesh::DesignOccurrenceKey, usize)>, CodecError> {
+    if let Some((key, end)) = crate::bytes::lp_utf16_bounded(bytes, count_at, 1..=9) {
+        if crate::records::mesh::DesignOccurrenceKey::is_decimal_key(&key) {
+            let key = crate::records::mesh::DesignOccurrenceKey::try_from(key)
+                .map_err(CodecError::malformed)?;
+            return Ok(Some((key, end)));
+        }
+    }
+    Ok(fixed_relaxed_guid_text(bytes, count_at)?.map(|(guid, end)| (guid.into(), end)))
+}
+
 /// Validate an exact 36-code-unit relaxed GUID in UTF-16LE without copying it.
 pub(in crate::design::decode) fn fixed_guid_end(bytes: &[u8], count_at: usize) -> Option<usize> {
     fixed_guid_ascii(bytes, count_at).map(|(_, end)| end)
