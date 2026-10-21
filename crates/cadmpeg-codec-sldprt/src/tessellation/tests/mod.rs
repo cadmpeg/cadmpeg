@@ -1393,19 +1393,15 @@ fn decode_reports_display_list_geometry() {
             .unwrap(),
     );
     let source = result.ir().source.as_ref().expect("source metadata");
-
+    assert!(!source.attributes.contains_key("displaylist_vertices"));
+    assert!(!source.attributes.contains_key("displaylist_triangles"));
+    let metadata = &result.source_fidelity().metadata;
     assert_eq!(
-        source
-            .attributes
-            .get("displaylist_vertices")
-            .map(String::as_str),
+        metadata.get("displaylist_vertices").map(String::as_str),
         Some("3")
     );
     assert_eq!(
-        source
-            .attributes
-            .get("displaylist_triangles")
-            .map(String::as_str),
+        metadata.get("displaylist_triangles").map(String::as_str),
         Some("1")
     );
     assert_eq!(result.ir().model.tessellations.len(), 1);
@@ -1510,12 +1506,13 @@ fn decode_rejects_inconsistent_display_list_table() {
         .unwrap();
     assert!(result.ir().model.tessellations.is_empty());
     assert!(!result
-        .ir()
-        .source
-        .as_ref()
-        .unwrap()
-        .attributes
+        .source_fidelity()
+        .metadata
         .contains_key("displaylist_vertices"));
+    assert!(!result
+        .source_fidelity()
+        .metadata
+        .contains_key("displaylist_triangles"));
 }
 
 #[test]
