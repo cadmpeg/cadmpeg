@@ -3057,10 +3057,6 @@ impl Serialize for ValueRecord {
             text: Option<&'a str>,
         }
         let python = self.tag == "Python";
-        let encoded_stream = matches!(
-            self.tag.as_str(),
-            "StringHasher" | "StringHasher2" | "ElementMap" | "ElementMap2"
-        );
         ValueOut {
             tag: &self.tag,
             order: self.order,
@@ -3078,13 +3074,14 @@ impl Serialize for ValueRecord {
                 .map(|(key, value)| (key.as_str(), value.as_str()))
                 .collect(),
             decoded_json: self.decoded_json.as_ref(),
-            text: (!python && !encoded_stream)
-                .then_some(self.text.as_deref())
-                .flatten(),
+            text: self.text.as_deref(),
         }
         .serialize(serializer)
     }
 }
+
+#[cfg(test)]
+mod value_text_tests;
 
 /// Persisted values of a property, or a status-only transient declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]

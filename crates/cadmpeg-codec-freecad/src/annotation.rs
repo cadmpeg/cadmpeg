@@ -64,7 +64,7 @@ pub(crate) fn transfer(
                 }
             }
             let mut text = Vec::new();
-            if let Some(carrier) = schema.text.filter(|carrier| !carrier.has_format_spec) {
+            if let Some(carrier) = schema.text {
                 for property in owned
                     .iter()
                     .filter(|property| property.name == carrier.property)
@@ -178,7 +178,11 @@ pub(crate) fn transfer_neutral(
             order: u32::try_from(order).map_err(|_| {
                 CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
             })?,
-            text: record.text.clone(),
+            text: if schema.text.is_some_and(|carrier| carrier.has_format_spec) {
+                Vec::new()
+            } else {
+                record.text.clone()
+            },
             references: cadmpeg_core::text::named_entries(&record.object, references)?,
             value: None,
             format: match schema.text {
@@ -1123,10 +1127,7 @@ pub(crate) mod tests {
             .find(|annotation| annotation.object.ends_with("#Dimension"))
             .expect("dimension");
         assert_eq!(dimension.parameters["FormatSpec"], "12.5 mm");
-        assert!(
-            dimension.text.is_empty(),
-            "format syntax is distinct from literal text"
-        );
+        assert_eq!(dimension.text, ["12.5 mm"]);
         assert_eq!(
             dimension.references["References2D"][0]
                 .as_ref()
