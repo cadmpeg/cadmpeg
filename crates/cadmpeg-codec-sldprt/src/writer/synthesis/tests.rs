@@ -45,7 +45,8 @@ fn unrepresented_source_content_never_reaches_patch_or_replay() {
     fidelity
         .mark_untyped(&retained, [ArenaClass::Design])
         .expect("mark retained source");
-    for (edited, declined_path) in [(false, "verbatim_replay"), (true, "patched")] {
+    // D/E1: unrepresented source is rejected before either retained layout path.
+    for edited in [false, true] {
         let mut document = ir.clone();
         if edited {
             document.model.faces[0].name = Some("authored face".into());
@@ -61,7 +62,7 @@ fn unrepresented_source_content_never_reaches_patch_or_replay() {
             WritePath::Synthesized { .. }
         ));
         assert!(
-            matches!(plan.report().synthesis_cause(), Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason }) if reason.contains(declined_path))
+            matches!(plan.report().synthesis_cause(), Some(cadmpeg_ir::codec::write::SynthesisCause::SourceUnrepresented { classes }) if classes == &cadmpeg_ir::document::ArenaClasses::from([ArenaClass::Design]))
         );
     }
 }
