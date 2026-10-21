@@ -69,7 +69,7 @@ fallback.
 
 ## Recipe: inspect content scope and decode history
 
-CADIR wire version 7 requires a boolean for each neutral arena class. Inspect
+CADIR wire version 8 requires a boolean for each neutral arena class. Inspect
 that state before interpreting an empty arena:
 
 ```sh
