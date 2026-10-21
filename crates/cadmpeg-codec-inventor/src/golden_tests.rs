@@ -10,6 +10,7 @@ use cadmpeg_test_support::EditableDecodeResult;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
@@ -127,7 +128,6 @@ fn source_model_state_has_a_neutral_configuration() {
     assert!(configuration.feature_states.is_empty());
     assert!(configuration.native_ref.is_some());
 
-    use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
     let mut encoded = Vec::new();
     CadirEncoder
         .plan(
@@ -137,8 +137,10 @@ fn source_model_state_has_a_neutral_configuration() {
         .expect("the projected model state exports to CADIR")
         .write_to(&mut encoded)
         .expect("CADIR configuration bytes write");
-    let restored = cadmpeg_ir::CadIr::from_json(std::str::from_utf8(&encoded).unwrap())
-        .expect("CADIR parses independently of a decode sidecar");
+    let restored = cadmpeg_ir::CadIr::from_json(
+        std::str::from_utf8(&encoded).expect("fixture value is valid"),
+    )
+    .expect("CADIR parses independently of a decode sidecar");
     assert!(restored.scope.design);
     assert_eq!(
         restored.model.configurations,

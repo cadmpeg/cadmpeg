@@ -198,7 +198,10 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .expect("whole source evidence survives the container cut");
     assert_eq!(image.stream(), "inventor:source");
     assert_eq!(image.offset(), 0);
-    assert_eq!(image.byte_len(), u64::try_from(source.len()).unwrap());
+    assert_eq!(
+        image.byte_len(),
+        u64::try_from(source.len()).expect("fixture value is valid")
+    );
     assert_eq!(image.sha256(), cadmpeg_ir::hash::sha256_hex(&source));
 }
 
@@ -632,7 +635,7 @@ fn unclosed_parameter_reference_keeps_typed_source_semantics() {
         .expect("unprojected segment evidence");
     assert_eq!(
         source_record.byte_len(),
-        u64::try_from(source.len()).unwrap()
+        u64::try_from(source.len()).expect("fixture value is valid")
     );
     assert_eq!(
         source_record.sha256(),

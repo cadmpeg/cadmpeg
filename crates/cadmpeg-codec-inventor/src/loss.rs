@@ -445,7 +445,7 @@ mod tests {
         assert!(super::unrepresented(&[], None).is_empty());
     }
 
-    /// decode::primary stores complete typed PmDc parameters/expressions/units,
+    /// `decode::primary` stores complete typed `PmDc` parameters/expressions/units,
     /// features/properties, and sketch entities/constraints before projection.
     /// An open neutral graph does not discard those source semantic records.
     #[test]
