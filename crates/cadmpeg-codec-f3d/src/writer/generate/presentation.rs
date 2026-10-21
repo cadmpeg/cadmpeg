@@ -141,6 +141,12 @@ impl GeneratedDesignRegistry {
         );
         used_record_indices.extend(
             native
+                .design_dimension_recipe_records
+                .iter()
+                .map(|record| record.record_index),
+        );
+        used_record_indices.extend(
+            native
                 .design_record_headers
                 .iter()
                 .map(|header| header.record_index),

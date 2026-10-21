@@ -1917,7 +1917,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 }) if (id == &start_group.id)
                     && offset == &cadmpeg_ir::Dimension::Parameter(two_sided_profile_offset_id)
                     && super::dimension_value(offset, &native_parameters.borrow()).get() == 0.0
-                    && super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(&actual_length_2, &native_parameters.borrow()).get() == 0.5
+                    && super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5 && actual_length_2.parameter() == Some(&crate::ids::neutral_parameter_id(&against))
+                && super::dimension_value(&actual_length_2, &native_parameters.borrow()).get() == -0.5
+                && super::dimension_value(&actual_length_2, &native_parameters.borrow()).get().abs() == 0.5
             ),
             "{from_face_two_sided:#?}"
         );

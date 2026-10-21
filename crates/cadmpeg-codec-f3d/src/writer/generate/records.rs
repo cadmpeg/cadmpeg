@@ -437,7 +437,8 @@ pub(super) fn encode_design_bulkstream(
                 .collect::<Vec<_>>();
             recipes.sort_by_key(|record| record.recipe_ordinal);
             for record in recipes {
-                primary_records.push(primary_record(record.record_index, out.len())?);
+                // Companion-owned auxiliary frames are not primary entities.
+                // Their type and primary registrations must not be invented.
                 // The generated prefix uses the standard self-selector frame.
                 // Neither source prefix bytes nor source coordinates supply content.
                 native_lp_ascii(&mut out, record.class_tag.as_str())?;
