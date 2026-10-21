@@ -40,6 +40,7 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
             decoded.ir().model.parameters[1].id.clone(),
             decoded.ir().model.parameters[2].id.clone(),
             decoded.ir().model.parameters[0].id.clone(),
+            decoded.ir().model.parameters[1].id.clone(),
         ]
     );
 
@@ -74,6 +75,7 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
             decoded.ir().model.parameters[1].id.clone(),
             decoded.ir().model.parameters[2].id.clone(),
             decoded.ir().model.parameters[0].id.clone(),
+            decoded.ir().model.parameters[1].id.clone(),
         ]
     );
 
@@ -125,7 +127,7 @@ fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
         .map(|parameter| (parameter.ordinal, parameter.name.as_str()))
         .collect::<Vec<_>>();
     parameter_order.sort_unstable();
-    assert_eq!(parameter_order, vec![(0, "Input"), (1, "Result")]);
+    assert_eq!(parameter_order, vec![(0, "Result"), (1, "Input")]);
 
     {
         let input = decoded
@@ -869,44 +871,16 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Extrude {
-                extent:
-                    ExtrudeExtent::OneSided {
-                        side:
-                            ExtrudeSide {
-                                termination: LinearTermination::Blind { length },
-                                ..
-                            },
-                    },
-                ..
-            }) = definition
-            else {
-                panic!("typed positional boss extrusion");
-            };
-            *length = cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::NonZeroLength::new(250.0).unwrap(),
-            );
-        });
-        ir_edit.model.features[1].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Extrude {
-                extent:
-                    ExtrudeExtent::OneSided {
-                        side:
-                            ExtrudeSide {
-                                termination: LinearTermination::Blind { length },
-                                ..
-                            },
-                    },
-                ..
-            }) = definition
-            else {
-                panic!("typed positional cut extrusion");
-            };
-            *length = cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::NonZeroLength::new(4.5).unwrap(),
-            );
-        });
+        for (index, value) in [(0, 250.0), (1, 4.5)] {
+            let id = ir_edit.model.features[index].id.clone();
+            ir_edit
+                .set_dimension(
+                    &id,
+                    "/extent/side/termination/length",
+                    cadmpeg_ir::scalar::NonZeroLength::new(value).unwrap(),
+                )
+                .unwrap();
+        }
     }
 
     let mut encoded = Vec::new();
@@ -1446,17 +1420,20 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &id,
+                "/groups/0/radius/radius",
+                cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Fillet { groups },
             ) = definition
             else {
                 panic!("typed fillet feature");
-            };
-            groups[0].radius = cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
-                radius: cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap(),
-                ),
             };
             groups[0].edges = cadmpeg_ir::features::EdgeSelection::Native("edge:3".into());
         });
@@ -1556,31 +1533,29 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Fillet { groups, .. }) = definition
-            else {
-                panic!("typed positional fillet");
-            };
-            groups[0].radius = RadiusSpec::Constant {
-                radius: cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
-                ),
-            };
-        });
-        ir_edit.model.features[1].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) = definition
-            else {
-                panic!("typed positional chamfer");
-            };
-            groups[0].spec = ChamferSpec::DistanceAngle {
-                distance: cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::PositiveLength::new(0.6).unwrap(),
-                ),
-                angle: cadmpeg_ir::Dimension::Literal(
-                    cadmpeg_ir::scalar::InteriorAngle::new(30.0_f64.to_radians()).unwrap(),
-                ),
-            };
-        });
+        let fillet = ir_edit.model.features[0].id.clone();
+        let chamfer = ir_edit.model.features[1].id.clone();
+        ir_edit
+            .set_dimension(
+                &fillet,
+                "/groups/0/radius/radius",
+                cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
+            )
+            .unwrap();
+        ir_edit
+            .set_dimension(
+                &chamfer,
+                "/groups/0/spec/distance",
+                cadmpeg_ir::scalar::PositiveLength::new(0.6).unwrap(),
+            )
+            .unwrap();
+        ir_edit
+            .set_dimension(
+                &chamfer,
+                "/groups/0/spec/angle",
+                cadmpeg_ir::scalar::InteriorAngle::new(30.0_f64.to_radians()).unwrap(),
+            )
+            .unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -1654,14 +1629,35 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Variable { points }, ..
-        }] if points.as_slice().iter().map(VariableRadius::to_raw).collect::<Vec<_>>() == [
-            VariableRadius { parameter: 0.0, radius: cadmpeg_ir::Dimension::Literal(Length::new(2.0).unwrap()) },
-            VariableRadius { parameter: 0.5, radius: cadmpeg_ir::Dimension::Literal(Length::new(4.0).unwrap()) },
-            VariableRadius { parameter: 1.0, radius: cadmpeg_ir::Dimension::Literal(Length::new(3.0).unwrap()) },
-        ])
+        }] if points.as_slice().iter().map(|point| {
+            let point = point.to_raw();
+            (point.parameter, decoded.ir().dimension_value(&point.radius).unwrap().get())
+        }).collect::<Vec<_>>() == [(0.0, 2.0), (0.5, 4.0), (1.0, 3.0)])
     ));
     {
         let mut ir_edit = decoded.ir_mut();
+        let id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &id,
+                "/groups/0/radius/points/1/radius",
+                Length::new(5.0).unwrap(),
+            )
+            .unwrap();
+        let position = ir_edit
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == "Position1")
+            .unwrap()
+            .id
+            .clone();
+        let value = cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(0.4).unwrap(),
+        );
+        ir_edit
+            .set_parameter_expression(&position, value.literal_expression(), Some(value))
+            .unwrap();
         let updated_ir_edit_evaluation = &mut ir_edit.model.features[0].evaluation;
         let mut updated_ir_edit_definition = updated_ir_edit_evaluation.definition().clone();
         let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
@@ -1678,7 +1674,6 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
             .map(VariableRadius::to_raw)
             .collect::<Vec<_>>();
         samples[1].parameter = 0.4;
-        samples[1].radius = cadmpeg_ir::Dimension::Literal(Length::new(5.0).unwrap());
         *points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(samples).unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
@@ -1796,45 +1791,39 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         }] if ((decoded.ir().dimension_value(&angle).unwrap().get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12) && decoded.ir().dimension_value(&actual_distance).unwrap().get() == 4.0)
     ));
 
-    let replacements = [
-        ChamferSpec::Distance {
-            distance: cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
-            ),
-        },
-        ChamferSpec::TwoDistances {
-            first: cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap(),
-            ),
-            second: cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap(),
-            ),
-        },
-        ChamferSpec::DistanceAngle {
-            distance: cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap(),
-            ),
-            angle: cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_6).unwrap(),
-            ),
-        },
-    ];
-    for (index, (feature, replacement)) in decoded
-        .ir_mut()
-        .model
-        .features
-        .iter_mut()
-        .zip(replacements)
-        .enumerate()
     {
-        feature.evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) = definition
-            else {
-                panic!("typed chamfer feature");
-            };
-            groups[0].spec = replacement;
-            groups[0].edges = EdgeSelection::Native(format!("edge:{}", index + 4));
-        });
+        let mut ir = decoded.ir_mut();
+        for (index, path, value) in [
+            (0, "/groups/0/spec/distance", 2.5),
+            (1, "/groups/0/spec/first", 3.5),
+            (1, "/groups/0/spec/second", 7.0),
+            (2, "/groups/0/spec/distance", 4.5),
+        ] {
+            let id = ir.model.features[index].id.clone();
+            ir.set_dimension(
+                &id,
+                path,
+                cadmpeg_ir::scalar::PositiveLength::new(value).unwrap(),
+            )
+            .unwrap();
+        }
+        let id = ir.model.features[2].id.clone();
+        ir.set_dimension(
+            &id,
+            "/groups/0/spec/angle",
+            cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_6).unwrap(),
+        )
+        .unwrap();
+        for (index, feature) in ir.model.features.iter_mut().enumerate() {
+            feature.evaluation.edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) =
+                    definition
+                else {
+                    panic!("typed chamfer feature");
+                };
+                groups[0].edges = EdgeSelection::Native(format!("edge:{}", index + 4));
+            });
+        }
     }
 
     let mut encoded = Vec::new();
