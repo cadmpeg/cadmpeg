@@ -799,14 +799,47 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
                 .contains("entity_id")
         );
     }
+    use crate::records::topology::sketch_profile::{
+        DesignSketchProfileOperand, DesignSketchProfileOperandDraft,
+    };
+    let source = DesignSketchProfileOperand::try_new(DesignSketchProfileOperandDraft {
+        scope_reference_ordinal: 0,
+        record_index: 1,
+        byte_offset: 10,
+        class_tag: "300".to_owned().try_into().unwrap(),
+        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+            .to_owned()
+            .try_into()
+            .unwrap(),
+        asset_id_offset: 20,
+        entity_id: "Sketch_00017".to_owned().try_into().unwrap(),
+        entity_reference_offset: 30,
+        region_selection: None,
+        paired_class_tag: "301".to_owned().try_into().unwrap(),
+        paired_byte_offset: 40,
+    })
+    .expect("valid source profile ID");
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    source.retain_source(&mut fidelity, "profile", "selection");
+    for (field, offset) in [
+        ("byte_offset", "10"),
+        ("asset_id_offset", "20"),
+        ("entity_reference_offset", "30"),
+        ("paired_byte_offset", "40"),
+    ] {
+        assert_eq!(
+            fidelity.metadata[&format!("profile.selection.{field}")],
+            offset
+        );
+    }
     let wire = serde_json::json!({
-        "scope_reference_ordinal": 0, "record_index": 1, "byte_offset": 10,
+        "scope_reference_ordinal": 0, "record_index": 1,
         "class_tag": "300", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
-        "asset_id_offset": 20,
-        "entity_id": "Sketch_00017", "entity_suffix": 17, "entity_reference_offset": 30,
-        "paired_class_tag": "301", "paired_byte_offset": 40
+        "entity_id": "Sketch_00017", "entity_suffix": 17,
+        "paired_class_tag": "301"
     });
-    let profile: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
+    assert_eq!(serde_json::to_value(&source).unwrap(), wire);
+    let profile: DesignSketchProfileOperand =
         serde_json::from_value(wire.clone()).expect("valid profile ID");
     assert_eq!(serde_json::to_value(profile).unwrap(), wire);
     let mut mismatch = wire.clone();
@@ -856,7 +889,7 @@ fn sketch_placement_preserves_identity_wire() {
 
 #[test]
 fn entity_header_identity_preserves_wire_spelling() {
-    let wire = r#"{"id":"header","entity_id":"0_+001","class_tag":"256","reference_indices":[]}"#;
+    let wire = r#"{"id":"header","entity_id":"0_+001","class_tag":"256"}"#;
     let header: crate::records::entity_header::DesignEntityHeader =
         serde_json::from_str(wire).expect("matching identity");
     assert_eq!(header.entity_id.suffix(), 1);
@@ -1493,12 +1526,16 @@ fn empty_reference_runs_have_one_representation() {
         )
         .unwrap(),
     };
-    let wire = r#"{"id":"header","byte_offset":10,"entity_id":"Sketch_7","class_tag":"256","optional_slot_present":false,"module":"MSketch","record_reference_offset":20,"declared_reference_count":0,"reference_indices":[],"reference_offsets":[]}"#;
+    let wire = r#"{"id":"header","entity_id":"Sketch_7","class_tag":"256","module":"MSketch","reference_indices":[]}"#;
     assert_eq!(serde_json::to_string(&header).unwrap(), wire);
-    assert_eq!(
-        serde_json::from_str::<crate::records::entity_header::DesignEntityHeader>(wire).unwrap(),
-        header
-    );
+    assert!(header.content_eq(
+        &serde_json::from_str::<crate::records::entity_header::DesignEntityHeader>(wire).unwrap()
+    ));
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    header.retain_source(&mut fidelity);
+    assert_eq!(fidelity.metadata["header.byte_offset"], "10");
+    assert_eq!(fidelity.metadata["header.optional_slot_present"], "false");
+    assert_eq!(fidelity.metadata["header.record_reference_offset"], "20");
 }
 
 #[test]
@@ -1550,8 +1587,10 @@ fn dimension_locus_pairs_preserve_both_semantic_forms_and_reject_a_stray_opaque_
 #[test]
 fn null_locus_arena_preserves_base_wire_fields_and_order() {
     let entry = r#"{"id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"class_tag":"274","record_index":3,"null_role":0,"geometry_record_index":41,"geometry_role":1,"paired_class_tag":"273"}"#;
-    let wire = format!(r#"{{"design_dimension_null_locus_pairs":[{entry}]}}"#);
-    let native: crate::native::F3dNative = serde_json::from_str(&wire).unwrap();
+    let mut wire = serde_json::to_value(crate::native::F3dNative::default()).unwrap();
+    wire["design_dimension_null_locus_pairs"] =
+        serde_json::from_str(&format!("[{entry}]")).unwrap();
+    let native: crate::native::F3dNative = serde_json::from_value(wire).unwrap();
     let encoded = serde_json::to_string(&native).unwrap();
     assert!(encoded.contains(&format!(r#""design_dimension_null_locus_pairs":[{entry}]"#)));
     let decoded: crate::native::F3dNative = serde_json::from_str(&encoded).unwrap();
