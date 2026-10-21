@@ -458,7 +458,10 @@ fn project_qualified_operands(
                 let root_guid = &path.occurrence_guids().first()?.value;
                 let lookup_guid = root_guid.as_str().to_ascii_lowercase();
                 let occurrence = occurrences.get(&(stream, lookup_guid)).copied().flatten();
-                if occurrence.is_none() && !matches!(path.class_tag().as_str(), "330" | "386") {
+                if occurrence.is_none()
+                    && !path.admitted_by_type()
+                    && !matches!(path.class_tag().as_str(), "330" | "386")
+                {
                     return None;
                 }
                 let object = root_guid.as_str().to_ascii_lowercase();
@@ -752,6 +755,93 @@ mod tests {
             Some(&native),
         )
         .expect("the writer re-projects the same skipped joint");
+    }
+
+    #[test]
+    fn a_typed_path_with_no_local_occurrence_projects_an_external_operand() {
+        use crate::records::feature::{
+            assembly::{
+                DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
+                DesignAssemblyOperandPath, DesignAssemblyOperandPathLink,
+                TYPED_OCCURRENCE_PATH_TYPE_GUID,
+            },
+            scope::{DesignFeatureKind, DesignScopePayload},
+        };
+        let guid = |text: &str, offset| crate::records::identity::Located {
+            value: text.to_owned().try_into().unwrap(),
+            offset,
+        };
+        let path = |record_index: u32, typed: bool| {
+            let link = DesignAssemblyOperandPathLink {
+                locator_reference_offset: 0,
+                locator_record_index: record_index - 1,
+                locator_class_tag: "337".to_owned().try_into().unwrap(),
+                locator_byte_offset: 0,
+                locator_scope_reference_offset: 0,
+                wrapper_record_index: record_index + 1,
+                wrapper_reference_offset: 0,
+                wrapper_class_tag: "341".to_owned().try_into().unwrap(),
+                wrapper_byte_offset: 0,
+                path_reference_offset: 0,
+            };
+            let typed_guid = typed.then(|| {
+                TYPED_OCCURRENCE_PATH_TYPE_GUID
+                    .to_owned()
+                    .try_into()
+                    .unwrap()
+            });
+            DesignAssemblyOperandPath::try_new_typed(
+                link,
+                record_index,
+                "384".to_owned().try_into().unwrap(),
+                typed_guid,
+                100,
+                vec![guid("11111111-1111-1111-1111-11111111111a", 200)],
+                (0..4)
+                    .map(|ordinal| guid("22222222-2222-2222-2222-22222222222b", 300 + ordinal))
+                    .collect(),
+            )
+        };
+        let scopes = |typed: bool| {
+            let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
+                reference_record_index: index,
+                reference_offset: 0,
+                transform: cadmpeg_ir::transform::Transform::identity()
+                    .rows()
+                    .try_into()
+                    .unwrap(),
+                transform_offset: 0,
+            });
+            let qualifiers = [11, 21].map(|index| DesignAssemblyOperandQualifier::OccurrencePath {
+                path: path(index, typed).unwrap(),
+            });
+            let mut scope = DesignParameterScope::empty(
+                "f3d:Design/BulkStream.dat:design-parameter-scope#3",
+                DesignFeatureKind::Assemble,
+                3,
+            );
+            scope
+                .try_edit(|draft| {
+                    draft.payload = DesignScopePayload::Assemble(Some(
+                        DesignAssemblyAlignment::try_new(
+                            0.0,
+                            [0.0; 3],
+                            Vec::new(),
+                            Some(DesignAssemblyAlignmentForm::qualified(frames, qualifiers)),
+                        )
+                        .unwrap(),
+                    ));
+                })
+                .unwrap();
+            vec![scope]
+        };
+        let inserts = crate::design::components::ComponentInserts::default();
+        let projection = super::project_assembly_joints(&scopes(true), &[], &inserts);
+        assert_eq!(projection.joints.len(), 1);
+        assert!(projection.losses.is_empty());
+
+        // The class tag alone admits no external path and no untyped arity.
+        assert!(path(11, false).is_err());
     }
 
     #[test]
