@@ -827,13 +827,17 @@ fn semantic_writer_types_resolved_relation_scalar() {
             TargetRequest::Inherit,
         )
         .unwrap();
-    assert!(plan.report().losses.iter().any(|loss| {
-        loss.code.local_code() == "native.records-omitted"
+    assert!(
+        plan.report().losses.iter().any(|loss| {
+            loss.code.local_code() == "native.records-omitted"
             && loss.message.contains(&scalar_id)
             && loss.message.contains(
                 "canonical parameter quantity does not match the retained native scalar quantity",
             )
-    }));
+        }),
+        "scalar={scalar_id}; report={:#?}; source lane={lane:#?}",
+        plan.report()
+    );
     assert_eq!(
         plan.report().native_dispositions.record_disposition(
             "sldprt",
