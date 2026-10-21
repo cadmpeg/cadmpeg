@@ -24,6 +24,18 @@ pub(super) fn operation(
             width: length(1)?,
             height: length(2)?,
         },
+        152 => PrimitiveSolidKind::Wedge {
+            xmin: Dimension::Literal(Length::new(0.0)?),
+            ymin: Dimension::Literal(Length::new(0.0)?),
+            zmin: Dimension::Literal(Length::new(0.0)?),
+            xmax: length(0)?,
+            ymax: length(1)?,
+            zmax: length(2)?,
+            x2min: Dimension::Literal(Length::new(0.0)?),
+            x2max: length(3)?,
+            z2min: Dimension::Literal(Length::new(0.0)?),
+            z2max: length(2)?,
+        },
         154 => PrimitiveSolidKind::Cylinder {
             radius: radial(1)?,
             height: length(0)?,
