@@ -43,6 +43,10 @@ pub(super) fn encode_smbh(
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
 ) -> Result<Vec<u8>, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (cache_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let topology = NativeGenerationIndex::new(native);
     if target.model.faces.is_empty() {
         if !target
@@ -70,7 +74,7 @@ pub(super) fn encode_smbh(
         }
         return encode_wire_body_smbh(target, native, attributes, &topology);
     }
-    encode_face_topology_smbh(target, native, attributes, &topology)
+    encode_face_topology_smbh(&cache_ctx, target, native, attributes, &topology)
 }
 
 #[derive(Debug)]
@@ -654,6 +658,7 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
 }
 
 fn encode_face_topology_smbh(
+    cache_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
@@ -1232,7 +1237,7 @@ fn encode_face_topology_smbh(
                 )));
             }
             None | Some(SolvedSurfaceGeometry::Unknown { .. }) => {
-                if !native_cacheless_procedural_surface(&mut records, target, surface)? {
+                if !native_cacheless_procedural_surface(cache_ctx, &mut records, target, surface)? {
                     return Err(CodecError::UnsupportedContent(format!(
                         "source-less F3D face generation does not support surface carrier {}",
                         surface.id

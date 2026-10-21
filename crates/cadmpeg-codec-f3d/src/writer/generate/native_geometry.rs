@@ -1947,11 +1947,12 @@ fn encode_native_scaled_compound_loft(
 }
 
 pub(super) fn native_cacheless_procedural_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &mut Vec<u8>,
     target: &CadIr,
     surface: &Surface,
 ) -> Result<bool, CodecError> {
-    let written = native_cacheless_procedural_surface_definition(bytes, target, surface)?;
+    let written = native_cacheless_procedural_surface_definition(ctx, bytes, target, surface)?;
     if written {
         native_record_bounds(bytes, target, &surface.id);
     }
@@ -1959,6 +1960,7 @@ pub(super) fn native_cacheless_procedural_surface(
 }
 
 fn native_cacheless_procedural_surface_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &mut Vec<u8>,
     target: &CadIr,
     surface: &Surface,
@@ -1979,7 +1981,7 @@ fn native_cacheless_procedural_surface_definition(
             surface.id
         )));
     }
-    if let Some(cache) = cache_generation::generate(target, procedural)? {
+    if let Some(cache) = cache_generation::generate(ctx, target, procedural)? {
         return native_procedural_surface_definition(bytes, target, surface, &cache);
     }
     if let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() {

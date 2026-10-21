@@ -105,7 +105,84 @@ fn ruled_cache_joins_two_rational_profiles_without_changing_weights() {
         },
         None,
     );
-    let cache = generate(&ir, &construction).unwrap().unwrap();
+    let cache = generate(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &construction,
+    )
+    .unwrap()
+    .unwrap();
     close(at(&cache, 0.5, 0.25), Point3::new(1.0, 4.0 / 3.0, 0.75));
     assert_eq!(construction.cache_fit_tolerance().unwrap().get(), 0.025);
+}
+
+fn revolution_control() -> (CadIr, ProceduralSurface) {
+    let mut ir = CadIr::empty();
+    let id = cadmpeg_ir::ids::CurveId::mint("synthetic:cache-control:curve#revolved").unwrap();
+    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        id: id.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(rational())),
+        parameter_range: None,
+        source_object: None,
+    });
+    let payload = cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+        id,
+        (
+            cadmpeg_ir::features::FinitePoint3::ZERO,
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        ),
+        [0.0, 1.0],
+        None,
+        Some([0.0, 1.0]),
+        false,
+        cadmpeg_ir::geometry::CacheContract::Legacy {
+            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.001).unwrap()),
+        },
+    )
+    .unwrap();
+    (
+        ir,
+        ProceduralSurface::new(
+            cadmpeg_ir::ids::ProceduralSurfaceId::mint(
+                "synthetic:cache-control:construction#revolution",
+            )
+            .unwrap(),
+            ProceduralSurfaceDefinition::Revolution(payload),
+            None,
+        ),
+    )
+}
+
+#[test]
+fn canonical_revolution_cache_meets_the_actual_fit_between_stations() {
+    let (ir, construction) = revolution_control();
+    let cache = generate(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &construction,
+    )
+    .unwrap()
+    .unwrap();
+    // At u=.5 the independently evaluated rational directrix is (1,4/3,0).
+    // The angular values are interior values, not selected cache stations.
+    for angle in [0.13_f64, 0.37, 0.71, 0.89] {
+        let (sin, cos) = angle.sin_cos();
+        let expected = Point3::new(cos - (4.0 / 3.0) * sin, sin + (4.0 / 3.0) * cos, 0.0);
+        assert!(at(&cache, 0.5, angle).distance(expected) <= 0.001);
+    }
+    assert_eq!(construction.cache_fit_tolerance().unwrap().get(), 0.001);
+}
+
+#[test]
+fn revolution_cache_capacity_refuses_before_adaptive_allocation() {
+    let (ir, construction) = revolution_control();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = generate(&ctx, &ir, &construction).unwrap_err();
+    assert!(
+        matches!(error,CodecError::ResourceLimit(limit) if limit.dimension==cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation=="generate F3D revolution cache output")
+    );
 }

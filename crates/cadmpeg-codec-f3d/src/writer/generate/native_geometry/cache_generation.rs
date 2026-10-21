@@ -2,8 +2,11 @@
 //! Reconstruct a writer cache from authoritative typed construction geometry.
 
 use super::*;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
 use cadmpeg_ir::geometry::ProceduralSurface;
+
+mod revolution;
 
 fn profile(target: &CadIr, id: &cadmpeg_ir::ids::CurveId) -> Result<NurbsCurve, CodecError> {
     let curve = target
@@ -77,6 +80,7 @@ fn tensor(
 }
 
 pub(super) fn generate(
+    ctx: &DecodeContext<'_>,
     target: &CadIr,
     construction: &ProceduralSurface,
 ) -> Result<Option<NurbsSurface>, CodecError> {
@@ -137,6 +141,9 @@ pub(super) fn generate(
                 false,
             )
             .map_err(CodecError::malformed)?
+        }
+        ProceduralSurfaceDefinition::Revolution(payload) => {
+            return revolution::generate(ctx, target, construction, payload)
         }
         _ => return Ok(None),
     };
