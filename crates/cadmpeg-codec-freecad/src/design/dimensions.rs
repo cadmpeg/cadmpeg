@@ -236,6 +236,26 @@ fn computed_control<Q: DimensionValue>(
         return Ok(());
     };
     let source_id = source.id.clone();
+    let expression_text = format!("{prefix}{source_name})");
+    if let Some(computed) = parameters.iter_mut().find(|parameter| {
+        parameter.id != source_id
+            && parameter.owner.as_ref() == Some(owner)
+            && parameter.value.as_ref() == Some(&value)
+            && (parameter.expression.literal_text() == Some(expression_text.as_str())
+                || parameter.expression.tokens
+                    == vec![
+                        ExpressionToken::Text(prefix.into()),
+                        ExpressionToken::Parameter(source_id.clone()),
+                        ExpressionToken::Text(")".into()),
+                    ])
+    }) {
+        // A native custom parameter can already express this exact K2
+        // computation, including after source-less synthesis. Reuse its arena
+        // identity instead of minting an equivalent second magnitude control.
+        computed.driving = false;
+        *dimension = Dimension::Parameter(computed.id.clone());
+        return Ok(());
+    }
     // At most N names/identities can already be occupied, so N+1 candidates
     // always include a free one without an unbounded search.
     let mut candidate = None;

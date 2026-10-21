@@ -209,6 +209,12 @@ pub(super) fn bindings(
         false,
         &mut controls,
     );
+    // Part::Thickness already stores the signed authored Value. Its semantic
+    // magnitude is a computation of that driver, not a replacement native
+    // control; writing a bridge here would rename/overwrite the raw formula.
+    if operation == "shell" && feature.source_tag.as_deref() == Some("Part::Thickness") {
+        controls.remove("Value");
+    }
     // The native Reversed flag applies a second sign transform. Its Angle
     // control must therefore be the inverse of the signed neutral draft angle.
     if operation == "draft" && definition["outward"] == true {
