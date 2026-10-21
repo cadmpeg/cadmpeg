@@ -9,6 +9,7 @@ Writing:
 
 Code:
 
+- A comment states only intent that the code cannot show. Do not use comments to hedge, justify, narrate history, or record invariants; enforce an invariant with code or a test.
 - When you move code, update callers to import from the owning module. Do not keep old paths through re-exports.
 - Codec crate roots are facades. Their `pub` names must match `docs/codec-facade.toml` (`scripts/check-codec-facade.py`). Read-only codecs have no encoder.
 - Read file bytes through `cadmpeg_core::decode::View` (typed reads, `req_*`, offset helpers such as `View::u16_le_at`). Keep a `View`, not `&[u8]`, where its `SpaceId` must survive. Propagate `req_*` errors with `?` through a codec-local `From<ParseError>` so the location survives. Validate a parsed count with `View::counted` or `bounded_len`, then allocate with `DecodeContext::alloc_filled`.

@@ -3,11 +3,12 @@
 # Dispatch this workflow (Actions tab -> Cut release -> Run workflow) with the
 # target version, e.g. 0.1.5. It performs the entire release in a single run:
 #
-#   1. Validates the version (must be a strict upgrade; tag must not exist).
-#   2. Bumps the workspace manifest and refreshes Cargo.lock.
-#   3. Runs the full CI gate (fmt, clippy, build, test) as a safety net.
-#   4. Commits the bump directly to main.
-#   5. Pushes the matching git tag, which triggers the Release workflow
+#   1. Requires a successful CI run on the main commit it releases.
+#   2. Validates the version (must be a strict upgrade; tag must not exist).
+#   3. Bumps the workspace manifest and refreshes Cargo.lock.
+#   4. Runs the repository policy gate on the bumped manifests.
+#   5. Commits the bump directly to main.
+#   6. Pushes the matching git tag, which triggers the Release workflow
 #      (release.yml) that builds artifacts and creates the GitHub Release.
 #
 # WHY A GITHUB APP TOKEN, NOT GITHUB_TOKEN:
@@ -42,6 +43,7 @@ on:
 # GitHub App token instead. Keep the built-in token read-only.
 permissions:
   contents: read
+  actions: read
 
 jobs:
   release:
@@ -62,13 +64,16 @@ jobs:
           # authenticated as the App and therefore trigger release.yml.
           token: ${{ steps.app-token.outputs.token }}
 
+      - name: Require a successful CI run on the released commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          passed="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=$(git rev-parse HEAD)&status=success" \
+            --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
+          test "$passed" -gt 0 || { echo "::error::CI has not passed on main HEAD." >&2; exit 1; }
+
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
 
       - name: Set workspace version
         id: bump
@@ -133,14 +138,6 @@ jobs:
           python3 scripts/check-dialect-support.py
           python3 -m unittest discover -q -s scripts -p test_render_format_support.py
           python3 scripts/render-format-support.py --check
-
-      - name: Cargo gate
-        run: |
-          set -euo pipefail
-          cargo fmt --all --check
-          cargo clippy --workspace --all-targets
-          cargo build --workspace --locked
-          cargo test --workspace --locked
 
       - name: Commit, tag, and push
         shell: bash

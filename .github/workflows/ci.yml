@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  merge_group:
 
 permissions:
   contents: read
@@ -13,7 +14,7 @@ permissions:
 # otherwise runs stale and current pipelines to completion side by side.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -32,6 +33,10 @@ jobs:
   changes:
     name: Select affected crates
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       packages: ${{ steps.scope.outputs.packages }}
       full: ${{ steps.scope.outputs.full }}
@@ -39,6 +44,8 @@ jobs:
       features: ${{ steps.scope.outputs.features }}
       schema: ${{ steps.scope.outputs.schema }}
       iges: ${{ steps.scope.outputs.iges }}
+      static: ${{ steps.scope.outputs.static }}
+      audit: ${{ steps.scope.outputs.audit }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -47,11 +54,30 @@ jobs:
       - name: Select gate inputs
         id: scope
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          PUSH_BASE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
         run: |
-          if [ "${{ github.event_name }}" = pull_request ]; then
-            git fetch --no-tags --depth=1 origin "$BASE"
-            python3 scripts/ci_scope.py --base "$BASE" --github-output "$GITHUB_OUTPUT"
+          set -euo pipefail
+          mode=()
+          case "$EVENT" in
+            pull_request) base="$PR_BASE" ;;
+            merge_group) base="$QUEUE_BASE" ;;
+            *)
+              base="$PUSH_BASE"
+              mode=(--cache-writer)
+              tested="$(gh api "repos/$REPOSITORY/actions/runs?head_sha=$SHA&event=merge_group&status=success" \
+                --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
+              if [ "$tested" -gt 0 ]; then mode=(--tested); fi
+              ;;
+          esac
+          if [ -n "$base" ] && [ "$base" != 0000000000000000000000000000000000000000 ] \
+              && git fetch --no-tags --depth=1 origin "$base"; then
+            python3 scripts/ci_scope.py --base "$base" "${mode[@]}" --github-output "$GITHUB_OUTPUT"
           else
             python3 scripts/ci_scope.py --full --github-output "$GITHUB_OUTPUT"
           fi
@@ -63,12 +89,13 @@ jobs:
   # job instead of the sum of every step.
   lint:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' }}
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.static == 'true') }}
     name: fmt / clippy (stable)
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Require valid gate selection
         shell: bash
@@ -90,8 +117,8 @@ jobs:
         if: needs.changes.outputs.rust == 'true'
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: stable
-          save-if: false
+          shared-key: clippy
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Specification reference check
         # Open-items documents cite the specification by section and paragraph
@@ -169,6 +196,7 @@ jobs:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Require valid gate selection
         shell: bash
@@ -235,6 +263,7 @@ jobs:
     if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.features == 'true') }}
     name: schema / fuzz (stable)
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - name: Require valid gate selection
         shell: bash
@@ -300,6 +329,7 @@ jobs:
     if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     name: MSRV check (1.88)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
@@ -332,14 +362,16 @@ jobs:
         run: python3 scripts/ci_cargo.py check
 
   # Byte-level codecs are the code most likely to break across platforms.
+  # These jobs run in the merge queue and on main, not on PR pushes.
   cross-platform:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ github.event_name != 'pull_request' && always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     name: build / test (${{ matrix.os }})
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -365,11 +397,17 @@ jobs:
       - name: Unit and integration tests
         run: python3 scripts/ci_cargo.py test --bins --tests --no-fail-fast
 
-  # RustSec advisory scan of the dependency tree.
+  # RustSec advisory scan of a changed dependency tree; audit.yml scans daily.
   audit:
+    needs: changes
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.audit == 'true') }}
     name: cargo audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
+      - name: Require valid gate selection
+        shell: bash
+        run: test "${{ needs.changes.result }}" = success
       - name: Checkout
         uses: actions/checkout@v7.0.1
 

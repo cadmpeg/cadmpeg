@@ -1,0 +1,26 @@
+name: Advisory audit
+
+on:
+  schedule:
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2.87.28
+        with:
+          tool: cargo-audit
+
+      - name: Audit dependencies
+        run: cargo audit
