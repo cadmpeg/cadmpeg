@@ -452,7 +452,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     append_color_definitions(&mut graph.entities, &mut graph.presentations)?;
     let native_export = native_records::append(ir, &mut graph.entities, version);
     graph.losses.extend(native_export.losses);
-    let mut attribute_export = attributes::append(ir, &mut graph.entities, version)?;
+    let mut attribute_export = attributes::append(ir, &mut graph.entities, version);
     attribute_export
         .regenerated
         .extend(native_export.regenerated);
