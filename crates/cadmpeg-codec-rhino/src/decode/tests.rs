@@ -1454,17 +1454,28 @@ fn unset_settings_angular_tolerance_uses_default_and_records_repair() {
 }
 
 #[test]
-fn unknown_surface_placeholder_does_not_report_geometry_transfer() {
+fn unreadable_surface_has_one_source_home_and_no_geometry_transfer() {
     let archive = ArchiveVersion::V5;
     let object = object_record_with_payload(archive, 8, REV_SURFACE_CLASS, &[0]);
-    let mut scan = scan_with_objects(&[object]);
+    let mut scan = scan_with_objects(&[object.clone()]);
     set_test_units(&mut scan, 1.0);
     let result = crate::decode::decode_for_test(&scan);
-    assert_eq!(result.ir().model.surfaces.len(), 1);
-    assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-    ));
+    assert!(result.ir().model.surfaces.is_empty());
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("rhino:object:record#000000")
+            .expect("failed part source home")
+            .data(),
+        Some(object.as_slice())
+    );
+    let unknowns = result.ir().native_unknowns("rhino").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    assert!(unknowns[0].links.is_empty());
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Model));
     assert!(!result.report().geometry_transferred());
 }
 

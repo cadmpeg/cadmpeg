@@ -730,7 +730,7 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
 }
 
 #[test]
-fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
+fn invalid_extrusion_profile_keeps_one_source_home_and_later_point_recovers() {
     let mut malformed = crate::extrusion::tests::archive_payload(2, [true, false], false, false);
     let profile_count = malformed.len() - 4 - 2 - 4;
     malformed[profile_count..profile_count + 4].copy_from_slice(&2_i32.to_le_bytes());
@@ -739,28 +739,34 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
     let end = malformed.len();
     malformed[end - 4..].copy_from_slice(&crc.to_le_bytes());
     let point = object_record(1, POINT_CLASS, &point_payload([3.0, 4.0, 5.0]));
-    let result = decode(&archive(&[
-        object_record(0x10, EXTRUSION_CLASS, &malformed),
-        point,
-    ]));
+    let failed = object_record(0x10, EXTRUSION_CLASS, &malformed);
+    let result = decode(&archive(&[failed.clone(), point]));
     assert!(result.ir().model.procedural_surfaces.is_empty());
     assert!(result.ir().model.faces.is_empty());
     assert!(result.ir().model.pcurves.is_empty());
+    // #209 §4.5/§3.4: unreadable content has no invented Unknown surface.
+    assert!(result.ir().model.surfaces.is_empty());
     assert_eq!(
         result
-            .ir()
-            .model
-            .surfaces
-            .iter()
-            .filter(|surface| matches!(
-                surface.geometry,
-                cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                    SolvedSurfaceGeometry::Unknown { .. }
-                )
-            ))
-            .count(),
-        1
+            .source_fidelity()
+            .retained_record("rhino:object:record#000000")
+            .expect("failed part source home")
+            .data(),
+        Some(failed.as_slice())
     );
+    assert!(result
+        .ir()
+        .native_unknowns("rhino")
+        .unwrap()
+        .iter()
+        .find(|record| record.id.as_str() == "rhino:object:record#000000")
+        .unwrap()
+        .links
+        .is_empty());
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Model));
     assert_eq!(result.ir().model.points.len(), 1);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
