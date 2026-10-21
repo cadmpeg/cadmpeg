@@ -156,6 +156,7 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
 
 mod attributes;
 mod degrade;
+mod native_records;
 pub(crate) mod target;
 
 fn body(
@@ -372,8 +373,8 @@ fn append_color_definitions(
         entities.push(Entity {
             structure: None,
             property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+            association_links: Vec::new(),
+            line_font: None,
             source_targets: Vec::new(),
             type_code: 314,
             form: 0,
@@ -409,8 +410,8 @@ fn append_name_properties(
         entities.push(Entity {
             structure: None,
             property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+            association_links: Vec::new(),
+            line_font: None,
             source_targets: Vec::new(),
             type_code: 406,
             form: 15,
@@ -449,7 +450,12 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     };
     graph.losses.extend(transform_losses);
     append_color_definitions(&mut graph.entities, &mut graph.presentations)?;
-    let attribute_export = attributes::append(ir, &mut graph.entities, version)?;
+    let native_export = native_records::append(ir, &mut graph.entities, version);
+    graph.losses.extend(native_export.losses);
+    let mut attribute_export = attributes::append(ir, &mut graph.entities, version)?;
+    attribute_export
+        .regenerated
+        .extend(native_export.regenerated);
     graph.losses.extend(attribute_export.losses);
     ensure_version_support(&graph.entities, version)?;
     append_name_properties(&mut graph.entities, &graph.presentations)?;
@@ -945,7 +951,10 @@ fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
 
 impl crate::IgesVersion {
     fn admits(self, entity: &Entity) -> bool {
-        if matches!(entity.type_code, 322 | 406 | 422) {
+        if matches!(
+            entity.type_code,
+            125 | 302 | 304 | 310 | 312 | 316 | 322 | 402 | 406 | 422
+        ) {
             return crate::profile::envelope_a_admits(
                 i64::from(entity.type_code),
                 entity.form,
@@ -2084,8 +2093,8 @@ fn brep_entities(
         entities.push(Entity {
             structure: None,
             property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+            association_links: Vec::new(),
+            line_font: None,
             source_targets: Vec::new(),
             type_code: 502,
             form: 1,
@@ -2133,8 +2142,8 @@ fn brep_entities(
             entities.push(Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: 504,
                 form: 1,
@@ -2322,8 +2331,8 @@ fn brep_entities(
             entities.push(Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: 508,
                 form: 1,
@@ -2367,8 +2376,8 @@ fn brep_entities(
             entities.push(Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: 510,
                 form: 1,
@@ -2409,8 +2418,8 @@ fn brep_entities(
             entities.push(Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: 514,
                 form: if body.kind == BodyKind::Solid { 1 } else { 2 },
@@ -2450,8 +2459,8 @@ fn brep_entities(
             entities.push(Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: 186,
                 form: 0,
@@ -2989,8 +2998,8 @@ fn topology_entities(
         entities.push(Entity {
             structure: None,
             property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+            association_links: Vec::new(),
+            line_font: None,
             source_targets: Vec::new(),
             type_code: if bounded { 143 } else { 144 },
             form: 0,
@@ -4380,9 +4389,18 @@ fn resolve_entity_references(entities: &mut [Entity]) -> Result<(), CodecError> 
                 "IGES property owner has no Parameter Data terminator",
             ));
         }
-        for links in [std::mem::take(&mut entity.association_links),std::mem::take(&mut entity.property_links)] {
-            entity.parameter_body.extend_from_slice(format!(",{}",links.len()).as_bytes());
-            for index in links {entity.parameter_body.extend_from_slice(format!(",{}",reference_marker(index)).as_bytes());}
+        for links in [
+            std::mem::take(&mut entity.association_links),
+            std::mem::take(&mut entity.property_links),
+        ] {
+            entity
+                .parameter_body
+                .extend_from_slice(format!(",{}", links.len()).as_bytes());
+            for index in links {
+                entity
+                    .parameter_body
+                    .extend_from_slice(format!(",{}", reference_marker(index)).as_bytes());
+            }
         }
         entity.parameter_body.push(b';');
     }
@@ -5179,6 +5197,7 @@ fn native_omission_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
                 records.len()
             ),
             "attribute_table_definitions" | "attribute_table_instances" => continue,
+            arena if native_records::ARENAS.contains(&arena) => continue,
             "product_properties" | "properties" if represented_name_properties.is_some() => continue,
             "product_properties" | "properties" => continue,
             arena if ALLOWED_NATIVE_ARENAS.contains(&arena) => continue,
@@ -5794,8 +5813,8 @@ fn revolution_surface_entities(
         Entity {
             structure: None,
             property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+            association_links: Vec::new(),
+            line_font: None,
             source_targets: Vec::new(),
             type_code: 120,
             form: 0,
@@ -5831,8 +5850,8 @@ fn surface_entities(
                 return Ok(vec![Entity {
                     structure: None,
                     property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                    association_links: Vec::new(),
+                    line_font: None,
                     source_targets: Vec::new(),
                     // Type 108 Form 0 is the unbounded plane carrier in the
                     // V4.0 and V5.0 profiles.  Keep the neutral plane frame
@@ -5851,8 +5870,8 @@ fn surface_entities(
             entities.push(Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES plane has no analytic surface family".into())
@@ -5882,8 +5901,8 @@ fn surface_entities(
             let surface = Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES cylinder has no analytic surface family".into())
@@ -5923,8 +5942,8 @@ fn surface_entities(
             let surface = Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES cone has no analytic surface family".into())
@@ -5964,8 +5983,8 @@ fn surface_entities(
             let surface = Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES sphere has no analytic surface family".into())
@@ -5999,8 +6018,8 @@ fn surface_entities(
             let surface = Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES torus has no analytic surface family".into())
@@ -6896,8 +6915,8 @@ fn curve_entity(
             Ok(Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: 110,
                 form: 0,
@@ -6937,8 +6956,8 @@ fn curve_entity(
             Ok(Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: 100,
                 form: 0,
@@ -6982,8 +7001,8 @@ fn curve_entity(
             Ok(Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: 104,
                 form,
@@ -7022,8 +7041,8 @@ fn curve_entity(
             Ok(Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: 104,
                 form: 3,
@@ -7062,8 +7081,8 @@ fn curve_entity(
             Ok(Entity {
                 structure: None,
                 property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                association_links: Vec::new(),
+                line_font: None,
                 source_targets: Vec::new(),
                 type_code: 104,
                 form: 2,
@@ -7665,8 +7684,11 @@ fn non_finite_point(label: &str) -> CodecError {
     ))
 }
 
-#[derive(Clone,Copy)]
-enum DirectoryLineFont { Number(i64), Definition(usize) }
+#[derive(Clone, Copy)]
+enum DirectoryLineFont {
+    Number(i64),
+    Definition(usize),
+}
 
 #[derive(Clone)]
 struct Entity {
@@ -7727,8 +7749,8 @@ fn encode_file(
                 Entity {
                     structure: None,
                     property_links: Vec::new(),
-        association_links: Vec::new(),
-        line_font: None,
+                    association_links: Vec::new(),
+                    line_font: None,
                     source_targets: Vec::new(),
                     type_code: 124,
                     form: 0,
@@ -7824,13 +7846,23 @@ fn encode_file(
                 parameter_sequence.to_string(),
                 structure.to_string(),
                 match entity.line_font {
-                    Some(DirectoryLineFont::Number(number))=>number.to_string(),
-                    Some(DirectoryLineFont::Definition(index))=> {
-                        let expanded=expanded_index_by_entity.get(index).ok_or_else(|| CodecError::malformed("IGES line font targets no emitted entity"))?;
-                        let sequence=i64::try_from(*expanded).ok().and_then(|value| value.checked_mul(2)).and_then(|value| value.checked_add(1)).ok_or_else(|| CodecError::InvalidInput("IGES line font sequence exceeds i64".into()))?;
+                    Some(DirectoryLineFont::Number(number)) => number.to_string(),
+                    Some(DirectoryLineFont::Definition(index)) => {
+                        let expanded = expanded_index_by_entity.get(index).ok_or_else(|| {
+                            CodecError::malformed("IGES line font targets no emitted entity")
+                        })?;
+                        let sequence = i64::try_from(*expanded)
+                            .ok()
+                            .and_then(|value| value.checked_mul(2))
+                            .and_then(|value| value.checked_add(1))
+                            .ok_or_else(|| {
+                                CodecError::InvalidInput(
+                                    "IGES line font sequence exceeds i64".into(),
+                                )
+                            })?;
                         (-sequence).to_string()
                     }
-                    None=>generated_line_font(version,entity.type_code,entity.form).to_string(),
+                    None => generated_line_font(version, entity.type_code, entity.form).to_string(),
                 },
                 "0".into(),
                 "0".into(),

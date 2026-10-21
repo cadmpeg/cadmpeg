@@ -210,14 +210,25 @@ fn append(target: &mut SynthesisGraph, mut source: SynthesisGraph) -> Result<(),
                 .checked_add(offset)
                 .ok_or_else(|| CodecError::malformed("IGES Structure index overflows"))?;
         }
-        for index in entity.property_links.iter_mut().chain(entity.association_links.iter_mut()) {
+        for index in entity
+            .property_links
+            .iter_mut()
+            .chain(entity.association_links.iter_mut())
+        {
             *index = index
                 .checked_add(offset)
                 .ok_or_else(|| CodecError::malformed("IGES property index overflows"))?;
         }
-        if let Some(super::DirectoryLineFont::Definition(index))=&mut entity.line_font { *index=index.checked_add(offset).ok_or_else(|| CodecError::malformed("IGES line font index overflows"))?; }
-        entity.parameter_body=super::map_parameter_references(&entity.parameter_body,|index| {
-            index.checked_add(offset).map(reference_marker).ok_or_else(|| CodecError::malformed("IGES graph entity index overflows"))
+        if let Some(super::DirectoryLineFont::Definition(index)) = &mut entity.line_font {
+            *index = index
+                .checked_add(offset)
+                .ok_or_else(|| CodecError::malformed("IGES line font index overflows"))?;
+        }
+        entity.parameter_body = super::map_parameter_references(&entity.parameter_body, |index| {
+            index
+                .checked_add(offset)
+                .map(reference_marker)
+                .ok_or_else(|| CodecError::malformed("IGES graph entity index overflows"))
         })?;
     }
     for (index, presentation) in source.presentations {
