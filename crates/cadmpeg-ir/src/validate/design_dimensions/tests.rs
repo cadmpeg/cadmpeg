@@ -148,10 +148,10 @@ fn inactive_configuration_maps_store_only_actual_differences() {
         name: None,
         material: None,
         properties: std::collections::BTreeMap::default(),
-        parameter_overrides: Default::default(),
+        parameter_overrides: std::collections::BTreeMap::default(),
         bodies: None,
-        parameter_values: Default::default(),
-        feature_states: Default::default(),
+        parameter_values: std::collections::BTreeMap::default(),
+        feature_states: std::collections::BTreeMap::default(),
         native_ref: None,
     };
     let parameter = &ir.model.parameters[0];

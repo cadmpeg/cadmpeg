@@ -94,7 +94,7 @@ fn stale_producing_feature_permits_its_surface_cache_to_disagree() {
         suppressed: None,
         needs_recompute: true,
         dependencies: DistinctMembers::default(),
-        source_properties: Default::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),

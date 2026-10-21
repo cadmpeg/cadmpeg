@@ -69,7 +69,7 @@ fn translation_moves_polynomial_and_rational_surface_poles_once() {
                                 } else {
                                     4.0
                                 })
-                                .unwrap(),
+                                .expect("valid authored test fixture"),
                             })
                             .collect()
                     })
@@ -79,15 +79,17 @@ fn translation_moves_polynomial_and_rational_surface_poles_once() {
             NurbsPoleGrid::Polynomial { rows: rows.clone() }
         };
         let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
-        let surface = NurbsSurface::new(axis(), axis(), poles, false).unwrap();
+        let surface =
+            NurbsSurface::new(axis(), axis(), poles, false).expect("valid authored test fixture");
         let weights = surface.weights();
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#translate").unwrap(),
+            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#translate")
+                .expect("valid authored test fixture"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: None,
         });
-        translate_model(&mut ir, [13.0, -7.0, 5.0]).unwrap();
+        translate_model(&mut ir, [13.0, -7.0, 5.0]).expect("valid authored test fixture");
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
             &ir.model.surfaces[0].geometry
         else {
@@ -199,7 +201,8 @@ fn written_comparison_does_not_treat_excluded_design_as_known_empty() {
         .set_scope(ContentScope::geometry())
         .expect("empty design may be excluded");
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+        .expect("valid authored test fixture");
     before
         .native
         .namespace_mut("test")
@@ -208,7 +211,7 @@ fn written_comparison_does_not_treat_excluded_design_as_known_empty() {
     let retained = before
         .native
         .namespace("test")
-        .unwrap()
+        .expect("valid authored test fixture")
         .arena_as::<DesignParameter>("parameters")
         .expect("typed native parameter query");
     assert_eq!(retained, vec![parameter.clone()]);
@@ -218,11 +221,13 @@ fn written_comparison_does_not_treat_excluded_design_as_known_empty() {
         .expect("declare projected design");
     let mut projected = parameter;
     projected.native_ref = Some(projected.id.to_string());
-    projected.id = "test:model:parameter#dimension".try_into().unwrap();
+    projected.id = "test:model:parameter#dimension"
+        .try_into()
+        .expect("valid authored test fixture");
     after.model.parameters.push(projected);
     let plan = CadirEncoder
         .plan(EncodeInput::new(&before, None), TargetRequest::Inherit)
-        .unwrap();
+        .expect("valid authored test fixture");
     assert_written_arenas_agree(plan.report(), &before, &after);
 
     before
@@ -230,7 +235,7 @@ fn written_comparison_does_not_treat_excluded_design_as_known_empty() {
         .expect("known complete empty design");
     let plan = CadirEncoder
         .plan(EncodeInput::new(&before, None), TargetRequest::Inherit)
-        .unwrap();
+        .expect("valid authored test fixture");
     assert!(
         std::panic::catch_unwind(|| {
             assert_written_arenas_agree(plan.report(), &before, &after);
@@ -250,8 +255,9 @@ fn geometry_projection_resolves_bound_pmi_without_losing_model_semantics() {
     use cadmpeg_ir::scalar::Length;
 
     let mut full = unit_cube().expect("cube fixture");
-    let parameter_id = ParameterId::mint("synthetic:test:parameter#pmi-nominal").unwrap();
-    let cache = ParameterValue::Length(Length::new(37.0).unwrap());
+    let parameter_id = ParameterId::mint("synthetic:test:parameter#pmi-nominal")
+        .expect("valid authored test fixture");
+    let cache = ParameterValue::Length(Length::new(37.0).expect("valid authored test fixture"));
     full.model.parameters.push(DesignParameter {
         id: parameter_id.clone(),
         owner: None,
@@ -261,12 +267,12 @@ fn geometry_projection_resolves_bound_pmi_without_losing_model_semantics() {
         driving: true,
         display: None,
         value: Some(cache),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
     });
     full.model.pmi.push(PmiAnnotation {
-        id: PmiId::mint("synthetic:test:pmi#bound-nominal").unwrap(),
+        id: PmiId::mint("synthetic:test:pmi#bound-nominal").expect("valid authored test fixture"),
         name: Some("width".into()),
         visible: Some(true),
         targets: Vec::new(),
@@ -276,7 +282,7 @@ fn geometry_projection_resolves_bound_pmi_without_losing_model_semantics() {
                 Some(Dimension::Parameter(parameter_id)),
                 None,
             )
-            .unwrap(),
+            .expect("valid authored test fixture"),
         ),
     });
     let mut geometry = full.clone();
@@ -286,23 +292,33 @@ fn geometry_projection_resolves_bound_pmi_without_losing_model_semantics() {
     };
     dimension
         .set_nominal(Some(
-            PmiValue::new(37.0, PmiQuantity::Length).unwrap().into(),
+            PmiValue::new(37.0, PmiQuantity::Length)
+                .expect("valid authored test fixture")
+                .into(),
         ))
-        .unwrap();
+        .expect("valid authored test fixture");
     geometry
         .set_scope(cadmpeg_ir::ContentScope::geometry())
-        .unwrap();
+        .expect("valid authored test fixture");
     let full_view = neutral_view(&full, &[ArenaClass::Design]);
-    assert_eq!(full_view["model"]["pmi"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        full_view["model"]["pmi"]
+            .as_array()
+            .expect("valid authored test fixture")
+            .len(),
+        1
+    );
     assert_eq!(full_view, neutral_view(&geometry, &[ArenaClass::Design]));
     let PmiDefinition::Dimension(dimension) = &mut geometry.model.pmi[0].definition else {
         panic!("dimensional PMI fixture")
     };
     dimension
         .set_nominal(Some(
-            PmiValue::new(38.0, PmiQuantity::Length).unwrap().into(),
+            PmiValue::new(38.0, PmiQuantity::Length)
+                .expect("valid authored test fixture")
+                .into(),
         ))
-        .unwrap();
+        .expect("valid authored test fixture");
     assert_ne!(full_view, neutral_view(&geometry, &[ArenaClass::Design]));
     assert!(
         matches!(
@@ -331,18 +347,24 @@ fn geometry_projection_removes_only_attributes_owned_by_design_entities() {
     );
     let targets = [
         AttributeTarget::Feature(
-            FeatureId::mint("synthetic:test:feature#design-attribute").unwrap(),
+            FeatureId::mint("synthetic:test:feature#design-attribute")
+                .expect("valid authored test fixture"),
         ),
         AttributeTarget::Parameter(
-            ParameterId::mint("synthetic:test:parameter#design-attribute").unwrap(),
+            ParameterId::mint("synthetic:test:parameter#design-attribute")
+                .expect("valid authored test fixture"),
         ),
-        AttributeTarget::Sketch(SketchId::mint("synthetic:test:sketch#design-attribute").unwrap()),
+        AttributeTarget::Sketch(
+            SketchId::mint("synthetic:test:sketch#design-attribute")
+                .expect("valid authored test fixture"),
+        ),
         AttributeTarget::Document,
         AttributeTarget::Body(full.model.bodies[0].id.clone()),
     ];
     for (index, target) in targets.into_iter().enumerate() {
         full.model.attributes.push(SourceAttribute {
-            id: AttributeId::mint(format!("synthetic:test:attribute#scope-{index}")).unwrap(),
+            id: AttributeId::mint(format!("synthetic:test:attribute#scope-{index}"))
+                .expect("valid authored test fixture"),
             target,
             name: "value".into(),
             values: vec![AttributeValue::Integer(1)],
@@ -352,7 +374,10 @@ fn geometry_projection_removes_only_attributes_owned_by_design_entities() {
     geometry.model.attributes.drain(..3);
     let projected = neutral_view(&full, &[ArenaClass::Design]);
     assert_eq!(
-        projected["model"]["attributes"].as_array().unwrap().len(),
+        projected["model"]["attributes"]
+            .as_array()
+            .expect("valid authored test fixture")
+            .len(),
         2
     );
     assert_eq!(projected, neutral_view(&geometry, &[ArenaClass::Design]));
@@ -362,10 +387,16 @@ fn geometry_projection_removes_only_attributes_owned_by_design_entities() {
     geometry.model.attributes[1].values = vec![AttributeValue::Integer(2)];
     assert_ne!(projected, neutral_view(&geometry, &[ArenaClass::Design]));
     let mut metadata_edit = full.clone();
-    metadata_edit.source.as_mut().unwrap().attributes.insert(
-        cadmpeg_core::text::NonBlankString::new("test.local_digest").unwrap(),
-        "content".into(),
-    );
+    metadata_edit
+        .source
+        .as_mut()
+        .expect("valid authored test fixture")
+        .attributes
+        .insert(
+            cadmpeg_core::text::NonBlankString::new("test.local_digest")
+                .expect("valid authored test fixture"),
+            "content".into(),
+        );
     assert_ne!(
         projected,
         neutral_view(&metadata_edit, &[ArenaClass::Design])

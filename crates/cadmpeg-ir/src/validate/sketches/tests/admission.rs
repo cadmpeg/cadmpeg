@@ -206,7 +206,7 @@ fn sketch_index_helpers_keep_last_duplicate_values() {
         value: Some(ParameterValue::Length(
             crate::scalar::Length::new(2.0).unwrap(),
         )),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
     });
