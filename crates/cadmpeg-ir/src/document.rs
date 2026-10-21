@@ -1518,7 +1518,7 @@ impl Serialize for CadIr {
 
 impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = legacy::deserialize_wire(deserializer)?;
+        let wire = CadIrReadWire::deserialize(deserializer)?;
         if wire.ir_version.is_none() {
             check_ir_version(None)?;
         }
