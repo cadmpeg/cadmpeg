@@ -1841,31 +1841,6 @@ fn compact_surface_reference_at(
     Ok(inline_surface_reference_at(payload, marker))
 }
 
-#[cfg(test)]
-pub(crate) fn surface_reference_matches_at(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    marker: usize,
-    expected: &[FeatureInputComponentPathEntry],
-) -> Result<bool, CodecError> {
-    let candidates = [
-        compact_surface_selection_at(payload, marker),
-        component_vector_path_at(payload, marker),
-        flatten_surface_references(compact_component_reference_list_at(payload, marker)),
-        flatten_surface_references(compact_component_reference_list(payload, marker, false)),
-        counted_surface_component_path_at(payload, marker),
-        compact_termination_reference_path_at(ctx, payload, marker)?,
-        compact_sketch_surface_component_path_at(payload, marker),
-        inline_surface_reference_at(payload, marker),
-    ];
-    for components in candidates.into_iter().flatten() {
-        if components == expected {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 fn repeated_edge_selections(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -3368,36 +3343,6 @@ fn compact_body_selection_vector(
     None
 }
 
-#[cfg(test)]
-pub(crate) fn compact_body_selection_at(payload: &[u8], offset: usize) -> Option<Vec<u32>> {
-    let header_end = offset.checked_add(12)?;
-    let schema_end = offset.checked_add(4)?;
-    if payload.get(offset..schema_end) != Some(11000u32.to_le_bytes().as_slice())
-        || payload.get(schema_end..header_end) != Some(&[0; 8])
-    {
-        if payload.get(offset..schema_end).is_none()
-            || payload.get(schema_end..header_end).is_none()
-        {
-            return None;
-        }
-        return super::direct_edits::move_body_selection_at(payload, offset);
-    }
-    let ids = (|| {
-        let count = usize::try_from(View::u32_le_at(payload, offset.checked_add(12)?)?).ok()?;
-        let ids_start = offset.checked_add(16)?;
-        let ids_end = ids_start.checked_add(count.checked_mul(4)?)?;
-        let sentinel_end = ids_end.checked_add(4)?;
-        let zeros_end = sentinel_end.checked_add(12)?;
-        if payload.get(ids_end..sentinel_end)? != u32::MAX.to_le_bytes()
-            || payload.get(sentinel_end..zeros_end)? != [0; 12]
-        {
-            return None;
-        }
-        payload.get(ids_start..ids_end)
-    })();
-    ids.map(read_compact_body_ids)
-}
-
 pub(super) fn read_compact_body_ids(bytes: &[u8]) -> Vec<u32> {
     let mut result = Vec::new();
     let mut view = View::over_retained(bytes);
@@ -3719,21 +3664,4 @@ fn counted_legacy_profile_line_layout(payload: &[u8], offset: usize) -> bool {
 }
 
 #[cfg(test)]
-pub(super) fn selection_vector_tail(payload: &mut Vec<u8>, entries: &[u32]) -> usize {
-    let count = u32::try_from(entries.len()).expect("selection vector entry count fits u32");
-    payload.extend_from_slice(&count.to_le_bytes());
-    payload.extend_from_slice(&[0, 2, 0, 0]);
-    payload.extend_from_slice(&[0, 0, 0, 0]);
-    let marker = payload.len();
-    payload.extend_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
-    payload.extend_from_slice(&[0, 0]);
-    for local_id in entries {
-        payload.extend_from_slice(&[0x32, 0x80, 0, 0]);
-        payload.extend_from_slice(&[1; 12]);
-        payload.extend_from_slice(&local_id.to_le_bytes());
-    }
-    marker
-}
-
-#[cfg(test)]
-mod tests;
+pub(super) mod tests;

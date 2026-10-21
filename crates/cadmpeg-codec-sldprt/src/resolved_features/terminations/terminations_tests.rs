@@ -1,7 +1,8 @@
 //! Tests for the `terminations` module.
 
+use super::super::selections::compact_surface_selections;
+use super::super::selections::tests::helpers::selection_vector_tail;
 use super::super::selections::COMPACT_EDGE_VECTOR_MARKER;
-use super::super::selections::{compact_surface_selections, selection_vector_tail};
 use super::{
     compact_body_component_path_at, compact_body_path_at, compact_combine_operation_at,
     compact_extrusion_blind_at, compact_extrusion_blind_through_all_second_at,

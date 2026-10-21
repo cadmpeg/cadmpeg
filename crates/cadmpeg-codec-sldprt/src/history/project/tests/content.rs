@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered source content projection and resource refusal.
 
-use super::project_feature_model;
+use super::super::project_feature_model;
 use crate::history::tests::feature;
 use crate::records::{FeatureContent, FeatureHistory};
 use std::collections::BTreeMap;

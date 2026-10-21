@@ -16,6 +16,7 @@ mod configuration_completeness;
 mod configuration_sites;
 mod curves_and_loops;
 mod design_completeness;
+mod digest;
 mod feature_degradation;
 mod feature_snapshots;
 mod geometry_report;
