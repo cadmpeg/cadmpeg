@@ -65,7 +65,11 @@ fn codes(bytes: &[u8], scopes: &HashMap<u32, bool>) -> Vec<(u32, u32, Vec<u32>)>
             (
                 motion.joint_record_index,
                 motion.motion_record_index,
-                motion.freedoms.values().copied().collect(),
+                motion
+                    .freedoms
+                    .iter()
+                    .map(|freedom| freedom.value)
+                    .collect(),
             )
         })
         .collect()
@@ -82,7 +86,6 @@ fn current_generation_motion_names_its_joint_and_limits() {
     scope(&mut bytes, 11, 10);
     joint(&mut bytes, 12, None);
     scope(&mut bytes, 13, 12);
-    let motion_at = bytes.len();
     motion(&mut bytes, *b"368", 20, 10, &[2]);
     motion(&mut bytes, *b"395", 21, 11, &[2]);
     let scopes = HashMap::from([(11, true), (13, true)]);
@@ -90,65 +93,9 @@ fn current_generation_motion_names_its_joint_and_limits() {
     let [motion] = decode_stream(&bytes, "Design/BulkStream.dat", &scopes)
         .try_into()
         .unwrap();
-    let limits = motion.limits.as_ref().expect("limit lanes");
+    let limits = motion.limits.expect("limit lanes");
     assert_eq!((limits.first_flag, limits.second_flag), (1, 1));
     assert_eq!((limits.maximum, limits.minimum), (1.5, -1.5));
-
-    // Source coordinates survive in fidelity, and never in document content.
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    motion.retain_source(&mut fidelity);
-    for (field, expected) in [
-        ("joint_byte_offset", 0),
-        ("motion_byte_offset", motion_at),
-        ("limits.flags_offset", 42),
-        ("limits.values_offset", 54),
-        (
-            "freedom_offsets.0",
-            motion_at + 44 + FREEDOM_ENTRY_PREFIX.len(),
-        ),
-    ] {
-        assert_eq!(
-            fidelity.metadata[&format!("{}.{field}", motion.id)],
-            expected.to_string()
-        );
-    }
-    let wire = serde_json::to_value(&motion).unwrap();
-    assert_eq!(wire["freedoms"], serde_json::json!([2]));
-    for field in ["joint_byte_offset", "motion_byte_offset"] {
-        assert!(wire.get(field).is_none());
-    }
-    for field in ["flags_offset", "values_offset"] {
-        assert!(wire["limits"].get(field).is_none());
-    }
-    let restored: crate::records::feature::joint_motion::DesignJointMotion =
-        serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(restored.joint_byte_offset, None);
-    assert_eq!(restored.motion_byte_offset, None);
-    assert!(restored.freedoms.located_rows().is_none());
-    let limits = restored.limits.as_ref().unwrap();
-    assert_eq!((limits.flags_offset, limits.values_offset), (None, None));
-    assert_eq!((limits.first_flag, limits.second_flag), (1, 1));
-    assert_eq!((limits.maximum, limits.minimum), (1.5, -1.5));
-    let mut unknown = wire.clone();
-    unknown["joint_byte_offset"] = serde_json::json!(0);
-    assert!(
-        serde_json::from_value::<crate::records::feature::joint_motion::DesignJointMotion>(unknown)
-            .is_err()
-    );
-    let mut null = wire.clone();
-    null["limits"] = serde_json::Value::Null;
-    assert!(
-        serde_json::from_value::<crate::records::feature::joint_motion::DesignJointMotion>(null)
-            .is_err()
-    );
-    let mut absent = wire;
-    absent.as_object_mut().unwrap().remove("limits");
-    assert!(
-        serde_json::from_value::<crate::records::feature::joint_motion::DesignJointMotion>(absent)
-            .unwrap()
-            .limits
-            .is_none()
-    );
 
     // The record after the joint is a decoded scope of another family.
     let scopes = HashMap::from([(11, false), (13, true)]);

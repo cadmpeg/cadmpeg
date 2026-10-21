@@ -129,7 +129,7 @@ pub(super) fn encode_design_bulkstream(
     )?;
     let decode_ctx = &decode_ctx;
 
-    let mut projected_parameters =
+    let projected_parameters =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             decode_ctx,
             &crate::design::feature_project::ProjectInputs {
@@ -155,54 +155,22 @@ pub(super) fn encode_design_bulkstream(
             },
         )?
         .parameters;
-    // Active configuration membership is part of the canonical parameter
-    // projection. Apply the same typed configuration bindings used by decode
-    // before comparing it with the regenerated document.
-    let mut configurations =
-        crate::design::configurations::project_configurations(&native.design_configurations)?;
-    crate::design::configurations::bind_configuration_parameter_overrides(
-        &mut configurations,
-        &projected_parameters,
-    )?;
-    let mut features = target.model.features.clone();
-    crate::design::configurations::bind_configuration_suppressed_features(
-        &mut configurations,
-        &features,
-    );
-    crate::design::configurations::canonicalize_active_configuration(
-        &mut configurations,
-        &mut projected_parameters,
-        &mut features,
-    )?;
     if target.model.parameters != projected_parameters {
         return Err(CodecError::Malformed(
             "neutral F3D parameters must equal the projection of native Design parameters".into(),
         ));
     }
-    if (native.design_parameter_scopes.is_empty()
-        && (!native.design_parameter_companions.is_empty()
-            || !native.design_parameter_owners.is_empty()
-            || !native.design_sketch_placements.is_empty()))
+    if !native.design_parameter_companions.is_empty()
         || !native.design_dimension_annotation_frames.is_empty()
         || !native.design_dimension_presentation_frames.is_empty()
         || !native.design_face_source_groups.is_empty()
         || !native.design_dimension_locus_pairs.is_empty()
         || !native.design_dimension_locus_groups.is_empty()
         || !native.design_dimension_null_locus_pairs.is_empty()
-        || native.design_dimension_recipe_records.iter().any(|record| {
-            native.design_parameter_scopes.is_empty()
-                || !record.references.is_empty()
-                || !record.matching_edge_operand_ids.is_empty()
-                || record.program.is_empty()
-                || i32::try_from(record.record_index).is_err()
-                || !native
-                    .design_parameter_companions
-                    .iter()
-                    .any(|companion| companion.record_index() == record.companion_record_index)
-                || !native.construction_recipes.iter().any(|recipe| {
-                    recipe.id == record.recipe_id && recipe.kind == record.recipe_kind
-                })
-        })
+        || !native.design_dimension_recipe_records.is_empty()
+        || !native.design_parameter_owners.is_empty()
+        || !native.design_parameter_scopes.is_empty()
+        || !native.design_sketch_placements.is_empty()
         || native
             .design_entity_headers
             .iter()
@@ -230,50 +198,13 @@ pub(super) fn encode_design_bulkstream(
         && native.sketch_curve_identities.is_empty()
         && native.sketch_relations.is_empty()
         && native.sketch_texts.is_empty()
-        && native.design_parameter_scopes.is_empty()
         && !has_body_visibility
     {
         return Ok(None);
     }
 
-    let mut out = Vec::new();
+    let mut out = parameter_bytes;
     let mut primary_records = Vec::new();
-    // Independent references have no indexed owner. Emit them before every
-    // indexed frame so no curve, text, relation or companion owns their bytes.
-    for reference in independent_persistent_references(native) {
-        out.extend_from_slice(persistent_reference_name(reference.kind));
-        out.extend_from_slice(&2u32.to_le_bytes());
-        out.extend_from_slice(&14u32.to_le_bytes());
-        out.extend_from_slice(&[0; 14]);
-        out.extend_from_slice(&23u32.to_le_bytes());
-        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
-        out.extend_from_slice(&reference.value.to_le_bytes());
-    }
-    for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
-        if let Some(previous) = ordinal
-            .checked_sub(1)
-            .and_then(|ordinal| native.lost_edge_references.get(ordinal))
-        {
-            if previous.next_class_tag != reference.class_tag
-                || previous.next_record_index != reference.record_index
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D lost-edge record {} does not continue the preceding indexed run",
-                    reference.id
-                )));
-            }
-        } else {
-            native_lp_ascii(&mut out, reference.class_tag.as_str())?;
-            out.extend_from_slice(&reference.record_index.to_le_bytes());
-        }
-        out.extend_from_slice(&[0; 14]);
-        out.extend_from_slice(&19u32.to_le_bytes());
-        out.extend_from_slice(b"EDGE_REFERENCE_LOST");
-        native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
-        out.extend_from_slice(&reference.next_record_index.to_le_bytes());
-    }
-    out.extend(parameter_bytes);
-    super::sketch_scopes::encode(&mut out, &mut primary_records, native)?;
     if let Some(body_map) = &registry.body_map {
         let class_tag = body_map.class_tag.as_str();
         let record_index = body_map.record_index;
@@ -294,13 +225,6 @@ pub(super) fn encode_design_bulkstream(
     }
     encode_browser_nodes(&mut out, &mut primary_records, registry)?;
     for recipe in &native.construction_recipes {
-        if native
-            .design_dimension_recipe_records
-            .iter()
-            .any(|record| record.recipe_id == recipe.id)
-        {
-            continue;
-        }
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
         if let Some(design) = &recipe.design {
@@ -443,120 +367,42 @@ pub(super) fn encode_design_bulkstream(
         primary_records.push(primary_record(relation.record_index, out.len())?);
         encode_sketch_relation(&mut out, relation)?;
     }
-    // A companion owns the bytes until the next parameter/owner or stream end.
-    // Independent reference records must precede this run so they cannot become
-    // payload of its terminal companion.
-    if !native.design_parameter_scopes.is_empty() {
-        for parameter in &native.design_parameters {
-            primary_records.push(primary_record(parameter.record_index, out.len())?);
-            out.extend_from_slice(&super::parameters::encode_document_parameters(
-                std::slice::from_ref(parameter),
-            )?);
-            let owner = native
-                .design_parameter_owners
-                .iter()
-                .find(|owner| Some(owner.record_index()) == parameter.owner_record_index())
-                .ok_or_else(|| CodecError::malformed("generated owned parameter has no owner"))?;
-            primary_records.push(primary_record(owner.record_index(), out.len())?);
-            super::parameter_links::encode(&mut out, std::slice::from_ref(owner), &[])?;
-            let companion = native
-                .design_parameter_companions
-                .iter()
-                .find(|companion| companion.record_index() == owner.companion_record_index())
-                .ok_or_else(|| {
-                    CodecError::malformed("generated owned parameter has no companion")
-                })?;
-            primary_records.push(primary_record(companion.record_index(), out.len())?);
-            super::parameter_links::encode(&mut out, &[], std::slice::from_ref(companion))?;
-            let mut recipes = native
-                .design_dimension_recipe_records
-                .iter()
-                .filter(|record| record.companion_record_index == companion.record_index())
-                .collect::<Vec<_>>();
-            recipes.sort_by_key(|record| record.recipe_ordinal);
-            for record in recipes {
-                // Companion-owned auxiliary frames are not primary entities.
-                // Their type and primary registrations must not be invented.
-                // The generated prefix uses the standard self-selector frame.
-                // Neither source prefix bytes nor source coordinates supply content.
-                native_lp_ascii(&mut out, record.class_tag.as_str())?;
-                out.extend_from_slice(&record.record_index.to_le_bytes());
-                let record_index = i32::try_from(record.record_index).map_err(|_| {
-                    CodecError::malformed("dimension recipe index exceeds i32::MAX")
-                })?;
-                out.extend_from_slice(&record_index.to_le_bytes());
-                out.extend_from_slice(&[0; 8]);
-                let name = std::str::from_utf8(construction_recipe_name(record.recipe_kind))
-                    .map_err(|_| CodecError::malformed("dimension recipe family is not ASCII"))?;
-                native_lp_ascii(&mut out, name)?;
-                for word in &record.program {
-                    out.extend_from_slice(&word.to_le_bytes());
-                }
+    for reference in &native.persistent_references {
+        out.extend_from_slice(persistent_reference_name(reference.kind));
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.extend_from_slice(&14u32.to_le_bytes());
+        out.extend_from_slice(&[0; 14]);
+        out.extend_from_slice(&23u32.to_le_bytes());
+        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
+        out.extend_from_slice(&reference.value.to_le_bytes());
+    }
+    for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
+        if let Some(previous) = ordinal
+            .checked_sub(1)
+            .and_then(|ordinal| native.lost_edge_references.get(ordinal))
+        {
+            if previous.next_class_tag != reference.class_tag
+                || previous.next_record_index != reference.record_index
+            {
+                return Err(CodecError::malformed(format_args!(
+                    "F3D lost-edge record {} does not continue the preceding indexed run",
+                    reference.id
+                )));
             }
+        } else {
+            native_lp_ascii(&mut out, reference.class_tag.as_str())?;
+            out.extend_from_slice(&reference.record_index.to_le_bytes());
         }
+        out.extend_from_slice(&[0; 14]);
+        out.extend_from_slice(&19u32.to_le_bytes());
+        out.extend_from_slice(b"EDGE_REFERENCE_LOST");
+        native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
+        out.extend_from_slice(&reference.next_record_index.to_le_bytes());
     }
     Ok(Some(EncodedDesignBulkStream {
         bytes: out,
         primary_records,
     }))
-}
-
-fn independent_persistent_references(
-    native: &F3dNative,
-) -> Vec<&crate::records::references::PersistentReference> {
-    // The flat observation arena also names fields encoded inside retained
-    // Sketch records. Consume one occurrence per actual typed field, within
-    // the same stream; equal independent observations keep their multiplicity.
-    let mut owned = std::collections::BTreeMap::new();
-    for point in &native.sketch_points {
-        if let (Some(scope), Some(value)) =
-            (crate::ids::native_stream(&point.id), point.persistent_id())
-        {
-            *owned
-                .entry((
-                    scope,
-                    persistent_reference_name(PersistentReferenceKind::Point),
-                    value,
-                ))
-                .or_insert(0usize) += 1;
-        }
-    }
-    for curve in &native.sketch_curve_identities {
-        if let Some(scope) = crate::ids::native_stream(&curve.id) {
-            for (kind, value) in [
-                (
-                    PersistentReferenceKind::CurvePrimary,
-                    curve.primary_id.get(),
-                ),
-                (PersistentReferenceKind::CurveSecondary, curve.secondary_id),
-            ] {
-                *owned
-                    .entry((scope, persistent_reference_name(kind), value))
-                    .or_insert(0usize) += 1;
-            }
-        }
-    }
-    native
-        .persistent_references
-        .iter()
-        .filter(|reference| {
-            let Some(scope) = crate::ids::native_stream(&reference.id) else {
-                return true;
-            };
-            let Some(remaining) = owned.get_mut(&(
-                scope,
-                persistent_reference_name(reference.kind),
-                reference.value,
-            )) else {
-                return true;
-            };
-            if *remaining == 0 {
-                return true;
-            }
-            *remaining -= 1;
-            false
-        })
-        .collect()
 }
 
 fn primary_record(
@@ -1116,14 +962,14 @@ pub(super) fn native_lp_utf16(out: &mut Vec<u8>, value: &str) -> Result<(), Code
 
 #[cfg(test)]
 mod tests {
-    // Hand-built typed relations assert the generated bytes.
+    // Hand-built relations assert the written bytes; the drafts are valid by construction.
     #![allow(clippy::unwrap_used)]
     use super::{encode_sketch_relation, SKETCH_RELATION_RECORD_FILLED_LEN};
     use crate::records::{
         identity::ReferenceRun,
         references::DesignClassTag,
         sketch_relations::{
-            SketchRelation, SketchRelationContent, SketchRelationDefinition, SketchRelationMember,
+            SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
             SketchRelationReturnMember,
         },
     };
@@ -1178,12 +1024,15 @@ mod tests {
 
     fn relation(member_count: u32) -> SketchRelation {
         let members = (1..=member_count).collect::<Vec<_>>();
-        SketchRelation::authored(SketchRelationContent {
+        SketchRelation::try_new(SketchRelationDraft {
             id: "f3d:native:sketch-relation#filler".into(),
             record_index: 10,
             class_tag: DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset: 0,
+            state_offset: 0,
             owner_reference: 1,
             owner_entity_id: None,
+            owner_reference_offset: 0,
             auxiliary_references: ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: members
@@ -1202,7 +1051,9 @@ mod tests {
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap(),
+            raw_bytes: vec![0; 160],
         })
+        .unwrap()
     }
 
     fn encoded(member_count: u32) -> Vec<u8> {
@@ -1255,7 +1106,7 @@ mod relation_ordinal_tests {
         identity::ReferenceRun,
         references::DesignClassTag,
         sketch_relations::{
-            SketchRelation, SketchRelationContent, SketchRelationDefinition, SketchRelationMember,
+            SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
             SketchRelationReturnMember,
         },
     };
@@ -1265,12 +1116,15 @@ mod relation_ordinal_tests {
     /// ordinal `0`, which the reader reads back as a stated ordinal.
     #[test]
     fn a_member_with_no_retained_ordinal_is_refused_by_name() {
-        let content = |relation_ordinal: Option<u32>| SketchRelationContent {
+        let draft = |relation_ordinal: Option<u32>| SketchRelationDraft {
             id: "f3d:native:sketch-relation#ordinal".into(),
             record_index: 10,
             class_tag: DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset: 0,
+            state_offset: 0,
             owner_reference: 1,
             owner_entity_id: None,
+            owner_reference_offset: 0,
             auxiliary_references: ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: vec![SketchRelationMember {
@@ -1284,21 +1138,20 @@ mod relation_ordinal_tests {
             return_members: vec![SketchRelationReturnMember::from_index(1)]
                 .try_into()
                 .unwrap(),
+            raw_bytes: vec![0; 160],
         };
 
         let mut out = Vec::new();
-        encode_sketch_relation(&mut out, &SketchRelation::authored(content(Some(0))))
+        encode_sketch_relation(&mut out, &SketchRelation::try_new(draft(Some(0))).unwrap())
             .expect("a stated ordinal writes");
 
         let mut out = Vec::new();
-        let error = encode_sketch_relation(&mut out, &SketchRelation::authored(content(None)))
-            .expect_err("a member that retains no ordinal has no bytes to write");
+        let error =
+            encode_sketch_relation(&mut out, &SketchRelation::try_new(draft(None)).unwrap())
+                .expect_err("a member that retains no ordinal has no bytes to write");
         assert!(
             error.to_string().contains("relation_ordinal"),
             "the refusal names the field: {error}"
         );
     }
 }
-
-#[cfg(test)]
-mod persistent_references_tests;

@@ -35,15 +35,6 @@ const WRITTEN: &[&str] = &[
     "face_sidedness",
     "face_native_keys",
     "design_parameters",
-    "design_parameter_scopes",
-    "design_parameter_owners",
-    "design_parameter_companions",
-    "design_dimension_recipe_records",
-    "design_sketch_placements",
-    "sketch_points",
-    "sketch_curve_identities",
-    "sketch_relations",
-    "sketch_texts",
     "design_configurations",
     "creation_timestamps",
     "edge_ownerships",
@@ -60,13 +51,6 @@ const WRITTEN: &[&str] = &[
 pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
     let original = super::super::primitives::f3d_native(target)?.unwrap_or_default();
     validate_input(target, &original)?;
-    let sketch_graph = if super::design::sketch::admit(target, &original)? {
-        let mut graph = F3dNative::default();
-        super::design::sketch::retain_graph(&mut graph, &original);
-        Some(graph)
-    } else {
-        None
-    };
     // Parameter values have an independent generated stream. The native-only
     // metadata registry can therefore coexist with neutral parameter edits.
     let histories = original
@@ -80,13 +64,10 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                         && state.owner_ref < 0
                         && state.partner_ref.is_none()
                         && state.transition.as_ref().is_none_or(|transition| {
-                            transition.records
-                                == crate::history_records::AsmHistoricalEntityDelta::default()
-                                && transition.topology
-                                    == crate::history_records::AsmHistoricalTopologyDelta::default()
+                            transition.records == Default::default()
+                                && transition.topology == Default::default()
                                 && transition.record_revisions.is_empty()
-                                && transition.rows
-                                    == crate::history_records::AsmHistoricalRowsDelta::default()
+                                && transition.rows == Default::default()
                         })
                 })
         })
@@ -127,24 +108,6 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         persistent_subentity_tags: original.persistent_subentity_tags,
         ..F3dNative::default()
     };
-    if let Some(graph) = &sketch_graph {
-        super::design::sketch::retain_graph(&mut native, graph);
-        for curve in &original.sketch_curve_identities {
-            if !native
-                .sketch_curve_identities
-                .iter()
-                .any(|written| written.id == curve.id)
-            {
-                losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(format!(
-                    "Sketch curve {} has no stated owner or retained containing membership and is omitted; supported Sketch entities and constraints remain",
-                    curve.id,
-                )));
-            }
-        }
-        losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
-            "Sketch identity, geometry and parameter bindings are regenerated; dimensional companion payloads and evaluation invalidation are omitted",
-        ));
-    }
     super::streams::reconcile(&mut native, losses);
     native
         .design_types
@@ -167,7 +130,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         recipe.recipe_index = *ordinal;
         *ordinal += 1;
     }
-    let mut omitted_sketch_records = original
+    let omitted_sketch_records = original
         .sketch_points
         .iter()
         .map(|record| record.record_index)
@@ -190,30 +153,8 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 .map(|record| record.record_index),
         )
         .collect::<std::collections::BTreeSet<_>>();
-    if sketch_graph.is_some() {
-        omitted_sketch_records.clear();
-    }
-    let omitted_curve_indices = original
-        .sketch_curve_identities
-        .iter()
-        .filter(|before| {
-            !native
-                .sketch_curve_identities
-                .iter()
-                .any(|after| after.id == before.id)
-        })
-        .map(|curve| {
-            (
-                crate::ids::design_segment(&curve.id),
-                u64::from(curve.record_index),
-            )
-        })
-        .collect::<std::collections::BTreeSet<_>>();
     native.design_entity_headers.retain(|header| {
-        !omitted_curve_indices.contains(&(
-            crate::ids::design_segment(&header.id),
-            header.entity_id.suffix(),
-        )) && header.member_values().next().is_none()
+        header.member_values().next().is_none()
             && !original
                 .design_material_assignments
                 .iter()
@@ -231,23 +172,14 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 .iter()
                 .any(|after| after.entity_id == before.entity_id)
         })
-        .map(|header| {
-            (
-                crate::ids::design_segment(&header.id),
-                header.entity_id.suffix(),
-            )
-        })
+        .map(|header| header.entity_id.suffix())
         .collect::<std::collections::BTreeSet<_>>();
     for record in &mut native.design_types {
-        let segment = crate::ids::design_segment(record.id());
         let entities = record
             .entities
             .values()
             .copied()
-            .filter(|id| {
-                !omitted_header_entities.contains(&(segment, *id))
-                    && !omitted_curve_indices.contains(&(segment, *id))
-            })
+            .filter(|id| !omitted_header_entities.contains(id))
             .collect();
         record.set_entities(crate::records::identity::ReferenceRun::unlocated(entities));
     }
@@ -280,65 +212,6 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     native
         .design_record_headers
         .retain(|header| reachable.contains(&header.record_index));
-    if sketch_graph.is_some() {
-        let typed_indices = native
-            .sketch_points
-            .iter()
-            .flat_map(|point| [point.record_index, point.paired_reference])
-            .chain(
-                native
-                    .sketch_curve_identities
-                    .iter()
-                    .map(|curve| curve.record_index),
-            )
-            .chain(
-                native
-                    .sketch_relations
-                    .iter()
-                    .map(|relation| relation.record_index),
-            )
-            .chain(native.sketch_texts.iter().map(|text| text.record_index))
-            .chain(
-                native
-                    .design_sketch_placements
-                    .iter()
-                    .map(|placement| placement.record_index),
-            )
-            .chain(
-                native
-                    .design_parameter_scopes
-                    .iter()
-                    .map(|scope| scope.record_index),
-            )
-            .chain(
-                native
-                    .design_dimension_recipe_records
-                    .iter()
-                    .map(|record| record.record_index),
-            )
-            .chain(
-                native
-                    .design_parameters
-                    .iter()
-                    .map(|parameter| parameter.record_index),
-            )
-            .chain(
-                native
-                    .design_parameter_owners
-                    .iter()
-                    .map(crate::records::parameters::DesignParameterOwner::record_index),
-            )
-            .chain(
-                native
-                    .design_parameter_companions
-                    .iter()
-                    .map(crate::records::parameters::DesignParameterCompanion::record_index),
-            )
-            .collect::<std::collections::BTreeSet<_>>();
-        native
-            .design_record_headers
-            .retain(|header| !typed_indices.contains(&header.record_index));
-    }
     // These native lanes select identities or add native-only display facts.
     // Geometry and visibility values are always authored from the neutral model.
     native.body_native_keys.retain(|record| {
@@ -410,11 +283,9 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         *ordinal += 1;
     }
     super::act::reconcile(target, &mut native, losses)?;
-    super::act::prepare_registrations(&mut native, losses);
     super::body_keys::reconcile(target, &mut native)?;
     super::geometry::reconcile(target, &mut native);
     super::design::regenerate(target, &mut native, losses)?;
-    super::design::sketch::reduce_constraint_fields(target, &native, losses)?;
     target.model.assembly_joints.clear();
     target.native.0.remove("f3d");
     super::design::with_context(|ctx| {
@@ -509,7 +380,7 @@ pub(super) fn coverage(
     original: &CadIr,
     written: &CadIr,
     _losses: &mut Vec<LossNote>,
-) -> NativeDispositions {
+) -> Result<NativeDispositions, CodecError> {
     let mut result = NativeDispositions::for_namespace(
         "f3d",
         crate::native::F3D_ARENA_NAMES,
@@ -556,7 +427,7 @@ pub(super) fn coverage(
             }
         }
     }
-    result
+    Ok(result)
 }
 
 /// (C) checks concern relationships inside the typed native document. A

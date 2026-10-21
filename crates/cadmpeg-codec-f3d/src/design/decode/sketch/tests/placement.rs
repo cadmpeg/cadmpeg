@@ -248,7 +248,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         record_index: 20,
         owner_reference: Some(100),
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         coordinate_offset: 141,
         companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),
@@ -266,7 +266,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     let mut identityless_point = point.clone();
     identityless_point.id = "f3d:native:sketch-point#1".into();
     identityless_point.record_index = 21;
-    identityless_point.coordinate_offset = Some(33);
+    identityless_point.coordinate_offset = 33;
     identityless_point
         .try_set_record_form(
             crate::records::sketch_geometry::SketchPointRecordForm::Version0 { flag: false },
@@ -945,7 +945,7 @@ fn sketch_graph_point(record_index: u32) -> SketchPoint {
         record_index,
         owner_reference: None,
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        byte_offset: u64::from(record_index),
+        byte_offset: Some(u64::from(record_index)),
         coordinate_offset: 141,
         companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),

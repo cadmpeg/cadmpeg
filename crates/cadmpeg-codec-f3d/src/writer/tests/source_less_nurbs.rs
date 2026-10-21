@@ -1004,8 +1004,6 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
 
 #[test]
 fn generated_source_less_writes_translational_extrusion_definition() {
-    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
-
     let source = f3d_with_smbh(&synthetic_cyl_spl_sur_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1055,27 +1053,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .expect("source-less extrusion round trip");
     assert_eq!(round_trip.ir().model.procedural_surfaces.len(), 1);
     let actual = &round_trip.ir().model.procedural_surfaces[0];
-    // Omitting the independently invalid source face changes native record
-    // positions. Compare every definition field under its actual typed owner.
-
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(payload) = actual.definition()
-    else {
-        panic!("expected extrusion definition")
-    };
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let mut identities = IdentityMap::new(|id: &str| {
-        Ok(if id == directrix_id.as_str() {
-            payload.directrix().as_str().to_owned()
-        } else {
-            id.to_owned()
-        })
-    });
-    let expected_definition = expected
-        .definition()
-        .clone()
-        .rewrite_identities(&ctx, &mut identities)
-        .unwrap();
-    assert_eq!(actual.definition(), &expected_definition);
+    assert_eq!(actual.definition(), expected.definition());
     assert_eq!(actual.cache_fit_tolerance(), expected.cache_fit_tolerance());
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
         actual.definition()
@@ -1213,33 +1191,10 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("reversed-directrix extrusion round trip");
-    let actual = &round_trip.ir().model.procedural_surfaces[0];
     assert_eq!(
-        expected
-            .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
-        Some(0.02)
+        round_trip.ir().model.procedural_surfaces[0].definition(),
+        expected.definition()
     );
-    assert_eq!(actual.cache_fit_tolerance(), None);
-    let carrier = round_trip
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.geometry.procedural_construction() == Some(&actual.id))
-        .expect("the exact edited extrusion remains a carrier");
-    assert!(carrier.geometry.solved_cache().is_none());
-    assert!(round_trip.report().losses.iter().any(|loss| {
-        loss.code == crate::loss::F3dLossCode::SurfaceCacheRejected.kind()
-            && loss.message.contains(carrier.id.as_str())
-            && loss.message.contains("fit tolerance Some(0.02)")
-    }));
-    let mut uncached = expected.clone();
-    uncached
-        .clear_fitted_cache_contract()
-        .expect("discard only the cache contract contradicted by the edited directrix sense");
-    assert_eq!(actual.definition(), uncached.definition());
-    assert_eq!(source_less.model.procedural_surfaces[0], expected);
 }
 
 /// A form-`2` extrusion stores its parameterization in place of a solved cache.
@@ -1421,63 +1376,13 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     source_less.model.procedural_surfaces[0]
         .set_cache_fit_tolerance(Some(0.01))
         .unwrap();
-    // W1: a valid current construction can produce an exact canonical cache.
-    // The old unconditional cacheless-fit refusal prevented that supported
-    // write. Preserve this exact input and its requested fit in the output.
-    let expected_with_fit = source_less.model.procedural_surfaces[0]
-        .definition()
-        .clone();
-    let validation = cadmpeg_ir::validate_neutral(&source_less, vec![]).unwrap();
-    assert!(validation.is_ok(), "{validation:#?}");
-    let mut encoded_with_fit = Vec::new();
-    F3dCodec
+    let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded_with_fit))
-        .expect("exact canonical cache preserves the requested fit");
-    let with_fit = F3dCodec
-        .decode(
-            &mut Cursor::new(encoded_with_fit),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let validation =
-        cadmpeg_ir::validate_neutral(with_fit.ir(), with_fit.report().losses.clone()).unwrap();
-    assert!(validation.is_ok(), "{validation:#?}");
-    assert_eq!(
-        with_fit.ir().model.procedural_surfaces[0].definition(),
-        &expected_with_fit
-    );
-    assert_eq!(
-        with_fit.ir().model.procedural_surfaces[0]
-            .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
-        Some(0.01)
-    );
-    let surface = with_fit
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| {
-            with_fit
-                .ir()
-                .model
-                .procedural_surface_owner(&with_fit.ir().model.procedural_surfaces[0].id)
-                == Some(&surface.id)
-        })
-        .unwrap();
-    let Some(SolvedSurfaceGeometry::Nurbs(cache)) = surface.geometry.solved_cache() else {
-        panic!("exact canonical cache");
-    };
-    let point = cadmpeg_ir::eval::decode::surface_point_solved(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-        &SolvedSurfaceGeometry::Nurbs(cache.clone()),
-        0.5,
-        0.25,
-    )
-    .unwrap()
-    .get();
-    assert_eq!(point, cadmpeg_ir::math::Point3::new(10.0, 10.0, 5.0));
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("cache-less extrusion tolerance must be rejected");
+    assert!(error
+        .to_string()
+        .contains("cache-less F3D extrusion cannot carry a cache-fit tolerance"));
 }
 
 #[test]

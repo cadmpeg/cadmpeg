@@ -86,39 +86,6 @@ fn generated_f3d_regenerates_neutral_content_when_act_binding_diverges() {
     assert!(crate::test_support::native_test::f3d_native(output.ir())
         .act_entities
         .is_empty());
-    let before = crate::test_support::native_test::f3d_native(&edited);
-    let after = crate::test_support::native_test::f3d_native(output.ir());
-    let guid_values = |native: &crate::native::F3dNative| {
-        let mut values = native
-            .act_guids
-            .iter()
-            .map(|record| (record.ordinal, record.guid.as_str().to_owned()))
-            .collect::<Vec<_>>();
-        values.sort();
-        values
-    };
-    assert!(!before.act_guids.is_empty(), "unrelated valid ACT siblings");
-    assert_eq!(guid_values(&after), guid_values(&before));
-    for record in &before.act_entities {
-        assert_eq!(
-            report
-                .native_dispositions
-                .record_disposition("f3d", "act_entities", record.id()),
-            cadmpeg_ir::codec::write::NativeDisposition::Dropped
-        );
-    }
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code.local_code() == "native.records-omitted"
-            && loss.message.contains("f3d.act_entities")));
-    assert!(after.act_entities.iter().all(|record| {
-        record
-            .channel_group()
-            .channels()
-            .values()
-            .all(|channel| channel.value.as_str() != "dddddddd-1111-2222-3333-eeeeeeeeeeee")
-    }));
     assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
     assert_eq!(
         output.ir().model.appearances[0].base_color,
@@ -143,39 +110,6 @@ fn generated_f3d_synthesizes_an_act_record_index_edit_without_metastream_edit() 
     assert!(crate::test_support::native_test::f3d_native(output.ir())
         .act_entities
         .is_empty());
-    let before = crate::test_support::native_test::f3d_native(&edited);
-    let after = crate::test_support::native_test::f3d_native(output.ir());
-    let guid_values = |native: &crate::native::F3dNative| {
-        let mut values = native
-            .act_guids
-            .iter()
-            .map(|record| (record.ordinal, record.guid.as_str().to_owned()))
-            .collect::<Vec<_>>();
-        values.sort();
-        values
-    };
-    assert!(!before.act_guids.is_empty(), "unrelated valid ACT siblings");
-    assert_eq!(guid_values(&after), guid_values(&before));
-    for record in &before.act_entities {
-        assert_eq!(
-            report
-                .native_dispositions
-                .record_disposition("f3d", "act_entities", record.id()),
-            cadmpeg_ir::codec::write::NativeDisposition::Dropped
-        );
-    }
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code.local_code() == "native.records-omitted"
-            && loss.message.contains("f3d.act_entities")));
-    assert!(after.act_entities.iter().all(|record| {
-        record
-            .channel_group()
-            .channels()
-            .values()
-            .all(|channel| channel.value.as_str() != "dddddddd-1111-2222-3333-eeeeeeeeeeee")
-    }));
     assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
     assert_eq!(
         output.ir().model.appearances[0].base_color,

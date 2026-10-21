@@ -58,7 +58,6 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .procedural_surfaces
         .first()
         .expect("revision surface construction");
-    let expected_construction = procedural.clone();
     let expected = scrubbed_definition(procedural.definition());
     let kind = serde_json::to_value(procedural.definition()).expect("kind")["kind"]
         .as_str()
@@ -71,64 +70,23 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
     let mut encoded = Vec::new();
-    let export = F3dCodec
+    F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less revision surface encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less revision surface round trip");
-    let mut actual = round_trip
-        .ir()
-        .model
-        .procedural_surfaces
-        .first()
-        .expect("round-trip construction")
-        .clone();
-    if actual.cache_fit_tolerance() != expected_construction.cache_fit_tolerance() {
-        let expected_fit = source_less.tolerances.linear.get();
-        assert_eq!(expected_construction.cache_fit_tolerance(), None);
-        assert_eq!(
-            actual
-                .cache_fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
-            Some(expected_fit)
-        );
-        let source_carriers = source_less
+    let actual = scrubbed_definition(
+        round_trip
+            .ir()
             .model
-            .surfaces
-            .iter()
-            .filter(|surface| {
-                surface.geometry.procedural_construction() == Some(&expected_construction.id)
-            })
-            .collect::<Vec<_>>();
-        assert!(!source_carriers.is_empty());
-        assert!(source_carriers
-            .iter()
-            .all(|surface| surface.geometry.solved_cache().is_none()));
-        assert!(export.losses.iter().any(|loss| {
-            loss.code == crate::loss::F3dLossCode::WriterSurfaceCacheGenerated.kind()
-                && loss.message.contains("a new target fit contract is derived from the current document linear tolerance")
-                && loss.message.contains(&format!("fit {:?} mm", Some(expected_fit)))
-        }));
-        for kind in [
-            cadmpeg_ir::schema::EntityKind::Surface,
-            cadmpeg_ir::schema::EntityKind::ProceduralSurface,
-        ] {
-            assert_eq!(
-                export.coverage.disposition(kind),
-                cadmpeg_ir::codec::write::ArenaDisposition::Reported
-            );
-        }
-        assert_eq!(
-            source_less.model.procedural_surfaces[0],
-            expected_construction
-        );
-        actual
-            .clear_fitted_cache_contract()
-            .expect("compare every intrinsic field after removing only the new target contract");
-    }
-    assert_eq!(scrubbed_definition(actual.definition()), expected);
+            .procedural_surfaces
+            .first()
+            .expect("round-trip construction")
+            .definition(),
+    );
+    assert_eq!(actual, expected);
 }
 
 /// Wrap an ASM stream byte blob into a `.f3d` ZIP as `Body1.smbh`.

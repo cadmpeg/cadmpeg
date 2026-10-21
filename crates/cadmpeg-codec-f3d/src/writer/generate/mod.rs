@@ -23,7 +23,6 @@ mod parameters;
 pub(in crate::writer) mod preconditions;
 mod presentation;
 mod records;
-mod sketch_scopes;
 mod smbh;
 use parameters::encode_document_parameters;
 use preconditions::{
@@ -46,14 +45,7 @@ pub(crate) fn write_new(
     let loaded_native = f3d_native(target)?;
     validate_assembly_projection(target, loaded_native.as_ref())?;
     let has_native = loaded_native.is_some();
-    let mut native = loaded_native.unwrap_or_default();
-    // Native arena order follows identity, while a MetaStream type table is
-    // addressed by the explicit segment-local class discriminator. Rebuild
-    // that layout after loading the document, before positional table lookups
-    // or registry encoding.
-    native
-        .design_types
-        .sort_by(|left, right| left.class_tag.as_str().cmp(right.class_tag.as_str()));
+    let native = loaded_native.unwrap_or_default();
     validate_source_less_face_keys(&native)?;
     let attributes = attributes::AttributeIndex::new(target, &native);
     if !target.model.subds.is_empty() {
@@ -75,14 +67,12 @@ pub(crate) fn write_new(
     if has_native {
         validate_configuration_projection(target, &native)?;
         validate_source_less_history_graph(target, &native)?;
-        if native.design_parameter_scopes.is_empty() {
-            parameter_bytes = encode_document_parameters(&native.design_parameters)?;
-            parameter_links::encode(
-                &mut parameter_bytes,
-                &native.design_parameter_owners,
-                &native.design_parameter_companions,
-            )?;
-        }
+        parameter_bytes = encode_document_parameters(&native.design_parameters)?;
+        parameter_links::encode(
+            &mut parameter_bytes,
+            &native.design_parameter_owners,
+            &native.design_parameter_companions,
+        )?;
         validate_source_less_design_ownership(&native)?;
         validate_source_less_sketch_graph(&native)?;
         validate_source_less_recipes(&native)?;
@@ -141,7 +131,7 @@ pub(crate) fn write_new(
             archive.write_all(&payload)?;
         }
     }
-    if !parameter_bytes.is_empty() && native.design_parameter_scopes.is_empty() {
+    if !parameter_bytes.is_empty() {
         archive
             .start_file(
                 format!("{DESIGN_FOLDER}/FusionDesignSegmentType2/BulkStream.dat"),
@@ -239,30 +229,14 @@ fn coverage(
         procedural_surfaces: Written,
         procedural_curves: Written,
         assets: Dropped,
-        features: if native.design_parameter_scopes.is_empty() {
-            Omitted
-        } else {
-            Reported
-        },
+        features: Omitted,
         feature_input_topologies: Omitted,
         feature_result_topologies: Omitted,
         configurations: if has_native { Written } else { Omitted },
         parameters: if has_native { Written } else { Dropped },
-        sketches: if native.design_parameter_scopes.is_empty() {
-            Omitted
-        } else {
-            Reported
-        },
-        sketch_entities: if native.design_parameter_scopes.is_empty() {
-            Omitted
-        } else {
-            Reported
-        },
-        sketch_constraints: if native.design_parameter_scopes.is_empty() {
-            Omitted
-        } else {
-            Reported
-        },
+        sketches: Omitted,
+        sketch_entities: Omitted,
+        sketch_constraints: Omitted,
         spatial_sketches: Omitted,
         spatial_sketch_entities: Omitted,
         spatial_sketch_constraints: Omitted,
@@ -292,11 +266,7 @@ fn coverage(
         tessellations: Dropped,
         appearances: Written,
         appearance_bindings: Omitted,
-        attributes: if attributes::regenerates_attributes(target, native) {
-            Reported
-        } else {
-            Omitted
-        },
+        attributes: Omitted,
         pmi: Omitted,
         presentation_layers: Omitted,
     }

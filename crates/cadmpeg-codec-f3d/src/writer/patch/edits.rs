@@ -2062,7 +2062,7 @@ pub(super) fn validate_construction_recipe_edits(
             .zip(after.design.as_ref())
             .map(|(old, new)| {
                 let mut old = old.clone();
-                old.id.value.clone_from(&new.id.value);
+                old.id.value = new.id.value.clone();
                 old
             });
         if !normalized.content_eq(after) {
@@ -2446,12 +2446,7 @@ pub(super) fn validate_sketch_point_edits(
             })?;
         edits.entry(stream).or_default().push(SketchPointEdit {
             offset: source_position(before.byte_offset, &point.id, "sketch point byte offset")?,
-            coordinate_offset: before.coordinate_offset.ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "F3D patch requires an actual source sketch point coordinate offset for {}",
-                    point.id
-                ))
-            })?,
+            coordinate_offset: before.coordinate_offset,
             coordinates: point.coordinates(),
         });
     }

@@ -301,7 +301,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             owner_reference: Some(1),
             class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             coordinate_offset: 0,
             companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),

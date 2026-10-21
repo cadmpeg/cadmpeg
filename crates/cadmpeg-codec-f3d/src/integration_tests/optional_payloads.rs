@@ -150,10 +150,6 @@ fn unreadable_assets_keep_geometry_and_native_write_omits_unrepresented_payloads
                 .retained_records()
                 .values()
                 .any(|record| record.data() == Some(changed.as_slice())));
-            assert!(decoded
-                .source_fidelity()
-                .unrepresented()
-                .contains(&cadmpeg_ir::ArenaClass::Model));
             let mut replayed = Vec::new();
             let plan = F3dCodec
                 .plan(

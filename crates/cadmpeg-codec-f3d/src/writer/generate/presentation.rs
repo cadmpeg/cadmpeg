@@ -141,12 +141,6 @@ impl GeneratedDesignRegistry {
         );
         used_record_indices.extend(
             native
-                .design_dimension_recipe_records
-                .iter()
-                .map(|record| record.record_index),
-        );
-        used_record_indices.extend(
-            native
                 .design_record_headers
                 .iter()
                 .map(|header| header.record_index),
@@ -400,11 +394,8 @@ mod tests {
             super::GeneratedDesignType::from(&source)
                 .base_type_guid
                 .as_ref()
-                .map(crate::records::mesh::DesignRelaxedGuidText::as_str),
-            source
-                .base_type_guid
-                .value()
-                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+                .map(|guid| guid.as_str()),
+            source.base_type_guid.value().map(|guid| guid.as_str())
         );
     }
 

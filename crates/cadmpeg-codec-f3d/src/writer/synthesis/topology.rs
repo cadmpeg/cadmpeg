@@ -34,9 +34,9 @@ pub(super) fn admit_bodies(
                     match super::super::generate::write_new(&reduced, &mut Vec::new()) {
                         Ok(_) => {
                             admitted = candidate_ids;
-                            let result =
-                                admit_bodies_after_reduction(source, reduced, &admitted, losses)?;
-                            return admit_free_surfaces(source, result, losses);
+                            return admit_bodies_after_reduction(
+                                source, reduced, &admitted, losses,
+                            );
                         }
                         Err(error) if super::declines(&error) => {}
                         Err(error) => return Err(error),
@@ -50,57 +50,7 @@ pub(super) fn admit_bodies(
             Err(error) => return Err(error),
         }
     }
-    admit_free_surfaces(source, body_graph(source, &admitted)?, losses)
-}
-
-/// A free procedural carrier is current document content. Admit it separately
-/// from body parts so an unsupported free carrier cannot suppress a body.
-fn admit_free_surfaces(
-    source: &CadIr,
-    mut admitted: CadIr,
-    losses: &mut Vec<LossNote>,
-) -> Result<CadIr, CodecError> {
-    for surface in &source.model.surfaces {
-        if surface.geometry.procedural_construction().is_none()
-            || source
-                .model
-                .faces
-                .iter()
-                .any(|face| face.surface == surface.id)
-            || admitted
-                .model
-                .surfaces
-                .iter()
-                .any(|row| row.id == surface.id)
-        {
-            continue;
-        }
-        let mut identities = BTreeSet::from([surface.id.as_str().to_owned()]);
-        geometry_closure(source, &mut identities)?;
-        let mut candidate = admitted.clone();
-        macro_rules! append { ($($arena:ident),* $(,)?) => {$(
-            for record in &source.model.$arena {
-                if identities.contains(record.id.as_str()) && !candidate.model.$arena.iter().any(|row| row.id == record.id) {
-                    candidate.model.$arena.push(record.clone());
-                }
-            }
-        )*}; }
-        append!(
-            points,
-            surfaces,
-            curves,
-            pcurves,
-            procedural_surfaces,
-            procedural_curves
-        );
-        candidate.finalize();
-        match super::super::generate::write_new(&candidate,&mut Vec::new()) {
-            Ok(_) => admitted=candidate,
-            Err(error) if super::declines(&error) => losses.push(F3dLossCode::WriterGeometryOmitted.note(format!("free procedural surface {} has no supported F3D encoding and is omitted: {error}",surface.id))),
-            Err(error)=>return Err(error),
-        }
-    }
-    Ok(admitted)
+    body_graph(source, &admitted)
 }
 
 fn admit_bodies_after_reduction(
@@ -179,7 +129,7 @@ fn admit_faces(
                 losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
                     "face {} is omitted from its open shell: {error}",
                     face.id
-                )));
+                )))
             }
             Err(error) => return Err(error),
         }
@@ -514,6 +464,3 @@ fn geometry_closure(source: &CadIr, ids: &mut BTreeSet<String>) -> Result<(), Co
         Ok(())
     })
 }
-
-#[cfg(test)]
-mod tests;

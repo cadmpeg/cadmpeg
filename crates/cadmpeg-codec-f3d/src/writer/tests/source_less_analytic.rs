@@ -82,10 +82,7 @@ fn generated_f3d_synthesizes_only_document_content_and_applies_semantic_edits() 
             .unwrap(),
     );
 
-    // This baseline exercises source-free synthesis. The same unedited,
-    // fully typed document with its sidecar is eligible for exact replay.
-    assert!(decoded.source_fidelity().unrepresented().is_empty());
-    let (output, report) = synthesize_document(decoded.ir(), None);
+    let (output, report) = synthesize_document(decoded.ir(), Some(decoded.source_fidelity()));
     assert_eq!(
         output.ir().model.bodies.len(),
         decoded.ir().model.bodies.len()
@@ -94,29 +91,7 @@ fn generated_f3d_synthesizes_only_document_content_and_applies_semantic_edits() 
         output.ir().model.faces.len(),
         decoded.ir().model.faces.len()
     );
-    // This carrier has no unsupported native content to omit. Every actual
-    // typed record must therefore survive or be regenerated from its neutral home.
-    for (arena, records) in decoded.ir().native.namespace("f3d").unwrap().arenas() {
-        for record in records {
-            assert!(
-                matches!(
-                    report
-                        .native_dispositions
-                        .record_disposition("f3d", arena, record.id()),
-                    cadmpeg_ir::codec::write::NativeDisposition::Written
-                        | cadmpeg_ir::codec::write::NativeDisposition::Regenerated
-                ),
-                "{arena}: {}",
-                record.id()
-            );
-        }
-    }
-    assert!(!report.losses.iter().any(|loss| matches!(
-        loss.code.taxonomy(),
-        cadmpeg_ir::report::loss::LossTaxonomy::RecordNotTyped
-            | cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
-            | cadmpeg_ir::report::loss::LossTaxonomy::ParametricRecordOmitted
-    )));
+    assert_native_omission(&report);
 
     let mut point_edited = decoded.ir().clone();
     let moved = point_edited.model.points[0].position().get();

@@ -11,7 +11,6 @@ use crate::loss::F3dLossCode;
 mod act;
 mod appearance;
 mod body_keys;
-mod cache;
 mod design;
 mod geometry;
 mod native;
@@ -34,7 +33,6 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
     prepare::auxiliary(&mut prepared, &mut losses);
     appearance::prepare(&mut prepared, &mut losses);
     native::reconcile(&mut prepared, &mut losses)?;
-    cache::prepare(&mut prepared, &mut losses)?;
     let mut bytes = Vec::new();
     let coverage = match super::generate::write_new(&prepared, &mut bytes) {
         Ok(coverage) => coverage,
@@ -55,13 +53,9 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
         }
         Err(error) => return Err(error),
     };
-    let native_dispositions = native::coverage(target, &prepared, &mut losses);
+    let native_dispositions = native::coverage(target, &prepared, &mut losses)?;
     let coverage = prepare::dispositions(target, &prepared, coverage, &mut losses);
-    if prepared.model.bodies.is_empty()
-        && prepared.model.surfaces.is_empty()
-        && prepared.model.curves.is_empty()
-        && prepared.model.points.is_empty()
-    {
+    if prepared.model.bodies.is_empty() {
         losses.push(F3dLossCode::WriterNoExportableSolids.note(
             "the document has no body representable by the F3D writer; wrote an empty geometry carrier",
         ));

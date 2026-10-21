@@ -3,7 +3,6 @@
 
 mod assembly_local;
 mod attribute_colors;
-mod cache_admission;
 mod design_containment;
 mod free_surfaces;
 mod history_deltas;
@@ -438,19 +437,10 @@ fn inherit_replays_a_fully_typed_off_catalog_dialect() {
 #[test]
 fn inherit_refuses_an_off_catalog_dialect_when_source_content_is_unrepresented() {
     let result = decode(f3d_with_smbh_and_manifest_version(
-        &synthetic_geometry_with_history_smbh(),
+        &synthetic_geometry_smbh(),
         "3-3-0-0",
     ));
-    assert!(f3d_native(result.ir())
-        .asm_histories
-        .iter()
-        .flat_map(crate::history_records::AsmHistory::states)
-        .flat_map(|state| &state.records)
-        .any(|record| !record.raw_bytes.is_empty()));
-    assert!(result
-        .source_fidelity()
-        .unrepresented()
-        .contains(&cadmpeg_ir::ArenaClass::Design));
+    assert!(!result.source_fidelity().unrepresented().is_empty());
     let error = plan(&result, true, TargetRequest::Inherit).unwrap_err();
     assert!(matches!(
         error,
@@ -565,59 +555,9 @@ fn an_edited_off_catalog_document_synthesizes_the_explicit_target() {
         ))
         .unwrap(),
     );
-    // This fully typed edit is patchable in its original dialect.
-    let inherited = F3dCodec
-        .plan(
-            EncodeInput::new(&edited, Some(result.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .unwrap();
-    assert!(matches!(
-        inherited.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Patched { .. }
-    ));
-    assert_eq!(
-        named_target(&inherited),
-        result
-            .report()
-            .dialects()
-            .unwrap()
-            .primary()
-            .dialect()
-            .as_str()
-    );
-    let mut inherited_bytes = Vec::new();
-    inherited.write_to(&mut inherited_bytes).unwrap();
-    let inherited_output = decode(inherited_bytes);
-    assert_eq!(
-        inherited_output.ir().model.points[0].position().get().x,
-        moved.x + 1.0
-    );
-    let inherited_layers = inherited_output.report().dialects().unwrap();
-    assert_eq!(
-        inherited_layers.primary().dialect(),
-        result.report().dialects().unwrap().primary().dialect()
-    );
-    assert_eq!(
-        inherited_layers.primary().declared()["top_level_manifest_version"],
-        "3-3-0-0"
-    );
-
-    // A real unsupported edit still requires synthesis, which has no target
-    // for this off-catalog dialect. Source bytes cannot provide that content.
-    let mut unsupported = edited.clone();
-    unsupported
-        .model
-        .attributes
-        .push(cadmpeg_ir::attributes::SourceAttribute {
-            id: cadmpeg_ir::ids::AttributeId::mint("authored:model:attribute#999").unwrap(),
-            target: cadmpeg_ir::attributes::AttributeTarget::Document,
-            name: "unsupported-attribute".into(),
-            values: Vec::new(),
-        });
     assert!(matches!(
         F3dCodec.plan(
-            EncodeInput::new(&unsupported, Some(result.source_fidelity())),
+            EncodeInput::new(&edited, Some(result.source_fidelity())),
             TargetRequest::Inherit
         ),
         Err(cadmpeg_core::CodecError::UnsupportedTarget(_))
