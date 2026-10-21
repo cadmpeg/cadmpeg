@@ -62,19 +62,16 @@ fn simple_hole_uses_its_profile_dimension_roles() {
     else {
         panic!("expected a hole definition");
     };
-    let diameter = shape.diameter();
+    let diameter = shape
+        .diameter()
+        .map(|dimension| source_value(dimension, &history.features));
     assert_eq!(
         diameter,
         Some(cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap())
     );
-    assert_eq!(
-        *extent,
-        Some(LinearTermination::Blind {
-            length: cadmpeg_ir::Dimension::Literal(
-                cadmpeg_ir::scalar::NonZeroLength::new(13.2).unwrap()
-            )
-        })
-    );
+    assert!(matches!(extent, Some(LinearTermination::Blind { length })
+        if source_value(length, &history.features)
+            == cadmpeg_ir::scalar::NonZeroLength::new(13.2).unwrap()));
 
     let mut ambiguous = history;
     ambiguous.features[2].parameters.insert(

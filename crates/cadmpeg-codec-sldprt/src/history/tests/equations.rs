@@ -904,7 +904,7 @@ fn configuration_local_modeling_edits_without_brep_are_synthesized() {
         .unwrap();
     assert!(matches!(
         plan.report().write_path(),
-        WritePath::Synthesized { .. }
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     assert!(plan
         .report()
