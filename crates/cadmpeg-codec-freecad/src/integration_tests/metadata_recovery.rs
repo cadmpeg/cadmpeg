@@ -261,7 +261,31 @@ fn large_property_population_preserves_the_complete_checked_model() {
     let result = crate::FcstdCodec
         .decode(&mut Cursor::new(&bytes), &options)
         .unwrap();
-    assert_eq!(result.ir().model, baseline.ir().model);
+    // Rule P gives every readable extra string a neutral attribute. Preserve
+    // the complete original model and add exactly the authored Stress values.
+    let mut expected = baseline.ir().model.clone();
+    let owner = crate::native::native_id("document", "0");
+    for index in 0..32_000 {
+        let name = format!("Stress{index}");
+        let property = crate::native::native_child_id("property", &owner, &name);
+        expected
+            .attributes
+            .push(cadmpeg_ir::attributes::SourceAttribute {
+                id: cadmpeg_ir::ids::AttributeId::mint(crate::native::model_id(
+                    "attribute",
+                    &property,
+                    "property",
+                ))
+                .unwrap(),
+                target: cadmpeg_ir::attributes::AttributeTarget::Document,
+                name,
+                values: vec![cadmpeg_ir::attributes::AttributeValue::String(String::new())],
+            });
+    }
+    expected
+        .attributes
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    assert_eq!(result.ir().model, expected);
     crate::test_support::test_archive::assert_valid_document(result.ir());
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &options.policy).unwrap();

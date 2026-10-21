@@ -49,7 +49,8 @@ fn typed_filename_never_admits_an_opaque_design_payload_to_patch() {
         ));
         assert!(matches!(
             plan.report().synthesis_cause(),
-            Some(SynthesisCause::PatchDeclined { .. })
+            Some(SynthesisCause::SourceUnrepresented { classes })
+                if *classes == ArenaClasses::from([ArenaClass::Design])
         ));
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();
