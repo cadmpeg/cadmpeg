@@ -34,7 +34,10 @@ pub(super) fn construction(
         let mut curve = profile.clone();
         curve
             .try_map_control_points(|_, point| {
-                Ok::<_, String>(point.get().translated(direction, -v_lower))
+                cadmpeg_ir::features::FinitePoint3::new(point.get().translated(direction, -v_lower))
+                    .ok_or_else(|| {
+                        "extrusion construction directrix translation is not finite".to_owned()
+                    })
             })
             .map_err(|error| error.to_string())?;
         let id = CurveId::mint(format!("{}.sweep-origin", directrix.as_str()))
