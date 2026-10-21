@@ -598,10 +598,13 @@ fn semantic_writer_round_trips_generic_pattern_type() {
             panic!("generic linear pattern");
         };
         let mut transform = pattern.definition().clone();
-        let PatternTransform::Linear { spacing, count, .. } = &mut transform else {
+        let PatternTransform::Linear {
+            distance, count, ..
+        } = &mut transform
+        else {
             panic!("pattern form");
         };
-        *spacing = cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap();
+        *distance.dimension_mut() = cadmpeg_ir::scalar::Length::new(6.0).unwrap().into();
         *count = cadmpeg_ir::Dimension::Literal(3);
         *pattern = PatternKind::new(transform).unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
@@ -624,5 +627,5 @@ fn semantic_writer_round_trips_generic_pattern_type() {
     assert_eq!(feature.parameters["Count"], "3");
 }
 
-mod sweep_loft;
 mod feature_input;
+mod sweep_loft;

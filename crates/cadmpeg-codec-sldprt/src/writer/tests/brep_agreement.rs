@@ -20,26 +20,15 @@ fn extrusion_depth_edit_without_brep_edit_is_synthesized() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.features[0]
-        .evaluation
-        .edit(|definition, _| {
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Extrude { extent, .. },
-            ) = definition
-            else {
-                panic!("typed extrusion feature");
-            };
-            *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::Dimension::Literal(
-                            cadmpeg_ir::scalar::NonZeroLength::new(50.0).unwrap(),
-                        ),
-                    },
-                    draft: None,
-                },
-            };
-        });
+    let feature = decoded.ir().model.features[0].id.clone();
+    decoded
+        .ir_mut()
+        .set_dimension(
+            &feature,
+            "/extent/side/termination/length",
+            cadmpeg_ir::scalar::NonZeroLength::new(50.0).unwrap(),
+        )
+        .expect("edit canonical extrusion depth");
     assert_synthesized_design(&decoded);
 }
 
@@ -272,19 +261,26 @@ fn assert_synthesized_design(decoded: &cadmpeg_test_support::EditableDecodeResul
         plan.report().write_path(),
         cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(
-            |loss| loss.code.local_code() == "writer.brep-not-regenerated"
-                && loss.severity == cadmpeg_ir::report::Severity::Warning
-        ));
     let mut output = Vec::new();
     plan.write_to(&mut output).unwrap();
     let written = SldprtCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .unwrap();
+    let expected_stale = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.needs_recompute);
+    assert!(
+        written
+            .ir()
+            .model
+            .features
+            .iter()
+            .all(|feature| feature.needs_recompute == expected_stale),
+        "the stored swConfigurationNeedsUpdate flag states the input evaluation state"
+    );
     assert_eq!(
         written.ir().model.bodies.len(),
         decoded.ir().model.bodies.len()

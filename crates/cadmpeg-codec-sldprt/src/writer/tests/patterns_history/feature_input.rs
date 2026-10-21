@@ -236,7 +236,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
             native.feature_histories[0].part_name = Some("Edited".into());
             let scalar = &mut native.feature_input_lanes[0].scalars[0];
             scalar.value = cadmpeg_ir::scalar::FiniteReal::new(0.05).expect("finite test scalar");
-            let offset = usize::try_from(scalar.offset).unwrap();
+            let offset = usize::try_from(scalar.offset.expect("source scalar offset")).unwrap();
             native.feature_input_lanes[0].native_payload[offset..offset + 8]
                 .copy_from_slice(&0.05f64.to_le_bytes());
         });

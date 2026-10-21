@@ -56,7 +56,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
             Ok(result) => {
-                let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
+                let result = cadmpeg_test_support::EditableDecodeResult::from(result);
                 serde_json::json!({
                     "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
                     "report": serde_json::to_value(result.report()).expect("serialize report"),
@@ -317,48 +317,46 @@ fn fixtures_survive_the_semantic_write_path() {
 /// How far the mutation lane moves an extrusion depth, in millimetres.
 const MUTATION_MM: f64 = 3.0;
 
-/// Every statement of a one-sided blind extrusion depth in `ir`.
-fn visit_blind_extrude_lengths(
-    ir: &mut cadmpeg_ir::CadIr,
-    mut visit: impl FnMut(&mut cadmpeg_ir::scalar::NonZeroLength),
-) -> usize {
-    fn depth(definition: &mut FeatureDefinition) -> Option<&mut cadmpeg_ir::scalar::NonZeroLength> {
-        let FeatureDefinition::Operation(FeatureOperation::Extrude {
-            extent: ExtrudeExtent::OneSided { side },
-            ..
-        }) = definition
-        else {
-            return None;
-        };
-        match &mut side.termination {
-            LinearTermination::Blind { length } => Some(length),
-            _ => None,
-        }
+/// One-sided blind extrusion depth in a definition.
+fn blind_depth(
+    definition: &FeatureDefinition,
+) -> Option<&cadmpeg_ir::Dimension<cadmpeg_ir::scalar::NonZeroLength>> {
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    }) = definition
+    else {
+        return None;
+    };
+    match &side.termination {
+        LinearTermination::Blind { length } => Some(length),
+        _ => None,
     }
-    let mut count = 0;
-    for feature in &mut ir.model.features {
-        feature.evaluation.edit(|definition, _| {
-            if let Some(length) = depth(definition) {
-                count += 1;
-                visit(length);
-            }
-        });
-    }
-    for state in ir
-        .model
-        .configurations
-        .iter_mut()
-        .flat_map(|configuration| configuration.feature_states.values_mut())
-    {
-        if let Some(length) = depth(&mut state.definition) {
-            count += 1;
-            visit(length);
-        }
-    }
-    count
 }
 
-/// A blind-depth edit without a regenerated B-rep is refused.
+/// Canonical edits invalidate each changed feature and its dependents.
+fn edit_blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> usize {
+    let edits = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let length = ir.dimension_value(blind_depth(feature.definition())?)?;
+            Some((feature.id.clone(), length))
+        })
+        .collect::<Vec<_>>();
+    for (feature, length) in &edits {
+        ir.set_dimension(
+            feature,
+            "/extent/side/termination/length",
+            cadmpeg_ir::scalar::NonZeroLength::new(length.get() + MUTATION_MM).unwrap(),
+        )
+        .expect("edit the canonical blind depth");
+    }
+    edits.len()
+}
+
+/// A blind-depth edit retains its solved cache and writes the native stale flag.
 #[test]
 fn edited_blind_depth_writes_design_and_reports_stale_brep() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
@@ -369,10 +367,7 @@ fn edited_blind_depth_writes_design_and_reports_stale_brep() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
         let (mut edited, _, fidelity) = decoded.into_parts();
-        if visit_blind_extrude_lengths(&mut edited, |depth| {
-            *depth = cadmpeg_ir::scalar::NonZeroLength::new(depth.get() + MUTATION_MM).unwrap();
-        }) == 0
-        {
+        if edit_blind_extrude_lengths(&mut edited) == 0 {
             continue;
         }
         let plan = SldprtCodec
@@ -385,22 +380,21 @@ fn edited_blind_depth_writes_design_and_reports_stale_brep() {
             matches!(plan.report().write_path(), WritePath::Synthesized { .. }),
             "fixture {name}"
         );
-        assert!(
-            plan.report()
-                .losses
-                .iter()
-                .any(
-                    |loss| loss.code.local_code() == "writer.brep-not-regenerated"
-                        && loss.severity == cadmpeg_ir::report::Severity::Warning
-                ),
-            "fixture {name}"
-        );
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();
         let written = SldprtCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         let mut written = written.ir().clone();
+        assert!(
+            !written.model.features.is_empty()
+                && written
+                    .model
+                    .features
+                    .iter()
+                    .all(|feature| feature.needs_recompute),
+            "fixture {name}: SolidWorks writes swConfigurationNeedsUpdate=YES for stale evaluation"
+        );
         let expected = depths(&mut edited);
         let actual = depths(&mut written);
         assert_eq!(
@@ -426,9 +420,20 @@ fn edited_blind_depth_writes_design_and_reports_stale_brep() {
 
 /// Every blind depth in `ir`, by value.
 fn depths(ir: &mut cadmpeg_ir::CadIr) -> Vec<f64> {
-    let mut values = Vec::new();
-    visit_blind_extrude_lengths(ir, |length| values.push(length.get()));
-    values
+    ir.model
+        .features
+        .iter()
+        .map(|feature| feature.definition())
+        .chain(
+            ir.model
+                .configurations
+                .iter()
+                .flat_map(|configuration| configuration.feature_states.values())
+                .filter_map(cadmpeg_ir::features::ConfigurationFeatureState::definition),
+        )
+        .filter_map(blind_depth)
+        .map(|dimension| ir.dimension_value(dimension).expect("resolved depth").get())
+        .collect()
 }
 
 /// How many committed fixtures carry a one-sided blind extrusion.

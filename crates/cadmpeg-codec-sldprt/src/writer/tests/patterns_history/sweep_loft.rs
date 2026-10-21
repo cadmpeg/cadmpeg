@@ -617,4 +617,3 @@ fn semantic_writer_round_trips_typed_rib() {
     assert_eq!(feature.parameters["Thickness"], "3mm");
     assert!(!feature.parameters.contains_key("Draft"));
 }
-

@@ -387,7 +387,7 @@ fn semantic_writer_applies_circle_sketch_edits() {
         SketchGeometryDefinition::Circle {
             center,
             radius: actual_radius,
-        } if *center == cadmpeg_ir::math::Point2 { u: 250.0, v: 0.0 } && regenerated.ir().dimension_value(&actual_radius).unwrap().get() == 750.0
+        } if *center == cadmpeg_ir::math::Point2 { u: 250.0, v: 0.0 } && actual_radius.get() == 750.0
     ));
 }
 
@@ -448,7 +448,7 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
             radii,
             bounds: None,
         } if *center == cadmpeg_ir::math::Point2 { u: 0.0, v: 125.0 }
-            && ((regenerated.ir().dimension_value(&angle).unwrap().get() - 0.25).abs() < EPS_SKETCH_ANGLE) && radii.major().get() == 1500.0 && radii.minor().get() == 500.0
+            && ((angle.get() - 0.25).abs() < EPS_SKETCH_ANGLE) && radii.major().get() == 1500.0 && radii.minor().get() == 500.0
     ));
 }
 
@@ -545,7 +545,7 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
                 start_angle: start,
                 end_angle: end,
             } if center == cadmpeg_ir::math::Point2 { u: 100.0, v: 0.0 }
-                && ((start.get() - 0.25).abs() < EPS_SKETCH_ANGLE && (end.get() - 1.25).abs() < EPS_SKETCH_ANGLE) && regenerated.ir().dimension_value(&actual_radius).unwrap().get() == 800.0
+                && ((start.get() - 0.25).abs() < EPS_SKETCH_ANGLE && (end.get() - 1.25).abs() < EPS_SKETCH_ANGLE) && actual_radius.get() == 800.0
         )));
 }
 
