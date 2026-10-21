@@ -79,7 +79,7 @@ pub(crate) fn synthetic_revision_surface_smbh(
     bytes
 }
 
-pub(super) fn scrubbed_definition(
+pub(crate) fn scrubbed_definition(
     definition: &cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
 ) -> String {
     let text = serde_json::to_string(definition).expect("definition JSON");
