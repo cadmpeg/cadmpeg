@@ -6,7 +6,7 @@ use super::{
     DesignBodyRecipeReference, DesignOperandOwner,
 };
 use crate::records::identity::Located;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 fn source_draft() -> DesignBodyRecipeOperandDraft {
     DesignBodyRecipeOperandDraft {
@@ -17,10 +17,16 @@ fn source_draft() -> DesignBodyRecipeOperandDraft {
         },
         record_index: 2,
         byte_offset: 0,
-        class_tag: "365".try_into().unwrap(),
-        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".try_into().unwrap(),
+        class_tag: "365".to_owned().try_into().unwrap(),
+        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+            .to_owned()
+            .try_into()
+            .unwrap(),
         asset_id_offset: 56,
-        context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".try_into().unwrap(),
+        context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+            .to_owned()
+            .try_into()
+            .unwrap(),
         context_id_offset: 150,
         selector_tail: Some(Located {
             value: [7, 0, 0, 0],
@@ -143,13 +149,11 @@ fn body_recipe_untyped_selector_tail_is_retained_outside_the_document() {
         .unwrap();
     assert_eq!(retained.data(), Some(&[7, 0, 0, 0][..]));
     assert_eq!(retained.offset(), 220);
-    assert!(
-        fidelity
-            .unrepresented()
-            .contains(&cadmpeg_ir::document::ArenaClass::Design)
-    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
     let mut fixed = source_draft();
-    fixed.class_tag = "367".try_into().unwrap();
+    fixed.class_tag = "367".to_owned().try_into().unwrap();
     fixed.selector_tail.as_mut().unwrap().value = [1, 0, 0, 0];
     let mut fixed_fidelity = cadmpeg_ir::SourceFidelity::default();
     DesignBodyRecipeOperand::try_new(fixed)

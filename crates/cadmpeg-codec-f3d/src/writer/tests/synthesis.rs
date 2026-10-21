@@ -188,7 +188,8 @@ fn neutral_configurations_and_parameters_are_authored_together() {
             .parameter_overrides
             .values()
             .next()
-            .map(String::as_str),
+            .and_then(cadmpeg_ir::features::Expression::literal_text)
+            .as_deref(),
         Some("24 mm")
     );
     assert!(configuration
@@ -445,14 +446,14 @@ fn independent_native_streams_may_reuse_local_registry_and_recipe_identities() {
                 design: Some(ConstructionRecipeDesign {
                     id: RecordedValue {
                         value: "333".into(),
-                        offset: 0,
+                        offset: Some(0),
                     },
                     selector: None,
                 }),
                 recipe_index: 0,
                 record_index: Some(RecordedValue {
                     value: 777,
-                    offset: 0,
+                    offset: Some(0),
                 }),
             });
         }

@@ -29,12 +29,10 @@ fn persistent_design_text_preserves_decimal_spelling_without_an_integer_bound() 
             assert!(DesignPersistentIdText::try_from(invalid.to_owned()).is_err());
             let mut invalid_wire = wire.clone();
             invalid_wire["design_id"] = invalid.into();
-            assert!(
-                serde_json::from_value::<PersistentDesignLink>(invalid_wire)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("design_id")
-            );
+            assert!(serde_json::from_value::<PersistentDesignLink>(invalid_wire)
+                .unwrap_err()
+                .to_string()
+                .contains("design_id"));
         }
     }
 }
@@ -60,11 +58,9 @@ fn persistent_subentity_tokens_require_content_and_preserve_non_numeric_text() {
         );
         let mut invalid = wire;
         invalid["token"] = "".into();
-        assert!(
-            serde_json::from_value::<PersistentSubentityTag>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("token")
-        );
+        assert!(serde_json::from_value::<PersistentSubentityTag>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("token"));
     }
 }

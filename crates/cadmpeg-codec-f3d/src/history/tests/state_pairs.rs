@@ -704,7 +704,7 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
 
     let missing_carrier = crate::test_support::history::history(
         history.id.clone(),
-        history.byte_offset,
+        history.byte_offset.expect("retained test source"),
         history.preamble,
         false,
         vec![
@@ -1558,7 +1558,12 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     };
     let face_boundaries = face_boundaries.into_records();
     let stored = |state: &AsmDeltaState| AsmFaceBoundary {
-        id: AsmFaceBoundary::identity(&state.id, state.byte_offset, 4).unwrap(),
+        id: AsmFaceBoundary::identity(
+            &state.id,
+            state.byte_offset.expect("retained test source"),
+            4,
+        )
+        .unwrap(),
         parent: state.id.clone(),
         face_slot: boundary.face_slot,
         loops: boundary.loops.clone(),

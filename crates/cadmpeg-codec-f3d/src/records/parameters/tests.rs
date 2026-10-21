@@ -159,7 +159,7 @@ fn authored_parameter_has_semantic_content_without_source_layout() {
     .unwrap();
     let parameter = DesignParameter::authored(DesignParameterContent {
         id: "f3d:Design:design-parameter#12".into(),
-        class_tag: "365".try_into().unwrap(),
+        class_tag: "365".to_owned().try_into().unwrap(),
         record_index: 12,
         source_ordinal: 0,
         source,
@@ -174,12 +174,11 @@ fn authored_parameter_has_semantic_content_without_source_layout() {
     assert!(parameter.unit().unwrap().offset.is_none());
     assert!(parameter.family_discriminator().unwrap().offset.is_none());
     let wire = serde_json::to_value(&parameter).unwrap();
-    assert!(
-        wire.as_object()
-            .unwrap()
-            .keys()
-            .all(|key| !key.ends_with("_offset"))
-    );
+    assert!(wire
+        .as_object()
+        .unwrap()
+        .keys()
+        .all(|key| !key.ends_with("_offset")));
     let restored: DesignParameter = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(restored).unwrap(), wire);
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
@@ -212,13 +211,11 @@ fn semantic_companion_preserves_bound_empty_payload_without_source_layout() {
     assert!(unbound.get("owned_recipe_ids").is_none());
     assert_eq!(bound["owned_recipe_ids"], serde_json::json!([]));
     for value in [unbound, bound] {
-        assert!(
-            value
-                .as_object()
-                .unwrap()
-                .keys()
-                .all(|key| !key.contains("offset") && !key.contains("length"))
-        );
+        assert!(value
+            .as_object()
+            .unwrap()
+            .keys()
+            .all(|key| !key.contains("offset") && !key.contains("length")));
         let restored: DesignParameterCompanion = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(restored.byte_offset(), None);
         assert_eq!(restored.timestamp_micros_offset(), None);

@@ -115,7 +115,7 @@ fn sketch_text_stream_decodes_its_text_records() {
     let bytes = indexed_sketch_text_record(1);
     let types = (0..32)
         .map(|ordinal| SegmentTypeData {
-            class_tag: (class_tag)
+            class_tag: (ordinal + 256)
                 .to_string()
                 .try_into()
                 .expect("fixture class tag"),
@@ -432,7 +432,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let curves = decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat")
         .expect("indexed sketch curves");
     assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].byte_offset, u64_from_index(live_curve_at));
+    assert_eq!(curves[0].byte_offset, Some(u64_from_index(live_curve_at)));
     assert!(matches!(
         curves[0].geometry,
         Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(50.0, 0.0, 0.0)
@@ -441,7 +441,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let texts = decode_sketch_texts_from_stream(&bytes, &meta, "Design/BulkStream.dat")
         .expect("indexed sketch texts");
     assert_eq!(texts.len(), 1);
-    assert_eq!(texts[0].byte_offset, u64_from_index(live_text_at));
+    assert_eq!(texts[0].byte_offset, Some(u64_from_index(live_text_at)));
     assert_eq!(texts[0].text, "live text");
 
     let mut mismatched_primary = bytes.clone();

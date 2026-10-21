@@ -246,17 +246,17 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
         design: Some(ConstructionRecipeDesign {
             id: RecordedValue {
                 value: "301".into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: Some(ConstructionRecipeSelector {
                 value: 9,
-                byte_offset: 0,
+                byte_offset: Some(0),
             }),
         }),
         recipe_index: 0,
         record_index: Some(RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let link = crate::records::sketch_links::PersistentDesignLink {

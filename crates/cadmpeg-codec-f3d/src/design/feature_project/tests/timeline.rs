@@ -80,21 +80,21 @@ fn history_state_predecessors_are_component_qualified() {
         })
         .unwrap();
     let scopes = vec![first, local_predecessor.clone(), second.clone()];
-    let naming_space = |component_record_index, context_uuid: &str| {
+    let naming_space = |component_record_index: u64, context_uuid: &str| {
         crate::records::recipes::DesignComponentNamingSpace {
             id: crate::ids::native_design_component_naming_space_id(
                 bulk_stream,
                 component_record_index,
             ),
-            byte_offset: component_record_index,
+            byte_offset: Some(component_record_index),
             component_record_index,
             context_uuid: context_uuid.to_owned().try_into().expect("GUID"),
-            context_uuid_offset: component_record_index + 12,
+            context_uuid_offset: Some(component_record_index + 12),
         }
     };
     let naming_spaces = [
-        naming_space(10, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"),
-        naming_space(20, "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"),
+        naming_space(Some(10), "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"),
+        naming_space(Some(20), "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"),
     ];
     let graph = ScopeHistoryGraph::new(&scopes, &[], &[], &naming_spaces, &[]);
 
@@ -196,7 +196,10 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     let unrelated = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream("f3d:Other/BulkStream.dat", 10),
         crate::records::entity_header::DesignTimelineFrame::test_items(
-            authored.frame().byte_offset(),
+            authored
+                .frame()
+                .byte_offset()
+                .expect("retained test source"),
             vec![crate::records::identity::Located {
                 value: 9000,
                 offset: 0,
@@ -237,7 +240,10 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     let second = DesignFeatureTimeline::try_new(
         authored.id().clone(),
         crate::records::entity_header::DesignTimelineFrame::test_items(
-            authored.frame().byte_offset(),
+            authored
+                .frame()
+                .byte_offset()
+                .expect("retained test source"),
             vec![crate::records::identity::Located {
                 value: 300,
                 offset: 0,
@@ -340,7 +346,12 @@ fn feature_projection_collapses_internal_scope_history_chains() {
             crate::records::parameters::DesignParameterSource::new(
                 parameter.source_kind_str().to_owned(),
                 Some(40),
-                parameter.family_discriminator(),
+                parameter
+                    .family_discriminator()
+                    .map(|located| crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }),
             )
             .unwrap(),
         )
@@ -495,13 +506,22 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     let mut items = directly_listed.frame().items().to_vec();
     items.push(crate::records::identity::Located {
         value: origin.record_index.into(),
-        offset: 0,
+        offset: Some(0),
     });
     directly_listed = crate::records::entity_header::DesignFeatureTimeline::try_new(
         directly_listed.id().clone(),
         crate::records::entity_header::DesignTimelineFrame::test_items(
-            directly_listed.frame().byte_offset(),
-            items,
+            directly_listed
+                .frame()
+                .byte_offset()
+                .expect("retained test source"),
+            items
+                .into_iter()
+                .map(|item| crate::records::identity::Located {
+                    value: item.value,
+                    offset: item.offset.unwrap(),
+                })
+                .collect(),
         ),
         directly_listed.class_tag.clone(),
         directly_listed.record_index,
@@ -828,7 +848,7 @@ fn move_matrix_decomposes_to_translation_and_axis_angle() {
     ];
     let rotation = crate::design::feature_project::matrix_axis_angle(&transform)
         .expect("nonidentity rotation");
-    assert!((rotation.angle.get() - angle).abs() <= 1.0e-12);
+    assert!((rotation.angle.literal().unwrap().get() - angle).abs() <= 1.0e-12);
     assert!((rotation.direction.x - 0.0).abs() <= 1.0e-12);
     assert!((rotation.direction.y - 1.0).abs() <= 1.0e-12);
     assert!((rotation.direction.z - 0.0).abs() <= 1.0e-12);
@@ -997,7 +1017,10 @@ fn numerical_audit_half_turn_recovers_axis_with_zero_x() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     let rotation = crate::design::feature_project::matrix_axis_angle(&transform).unwrap();
-    assert_eq!(rotation.angle.get(), std::f64::consts::PI);
+    assert_eq!(
+        rotation.angle.literal().unwrap().get(),
+        std::f64::consts::PI
+    );
     let axis = [
         rotation.direction.x,
         rotation.direction.y,
@@ -1028,7 +1051,10 @@ fn numerical_seventh_matrix_angle_preserves_shallow_rotations() {
             [0.0, 0.0, 0.0, 1.0],
         ];
         let rotation = crate::design::feature_project::matrix_axis_angle(&matrix).unwrap();
-        assert!((rotation.angle.get() - angle.abs()).abs() <= 8.0 * f64::EPSILON * angle.abs());
+        assert!(
+            (rotation.angle.literal().unwrap().get() - angle.abs()).abs()
+                <= 8.0 * f64::EPSILON * angle.abs()
+        );
         if angle.abs() < 1.0 {
             assert_eq!(rotation.direction.get().z.signum(), angle.signum());
         }

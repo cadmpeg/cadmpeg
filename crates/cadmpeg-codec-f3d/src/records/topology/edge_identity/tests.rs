@@ -12,12 +12,18 @@ fn edge_identity_source(
         group_member_ordinal: 0,
         record_index: 2,
         byte_offset: 10,
-        class_tag: "346".try_into().unwrap(),
+        class_tag: "346".to_owned().try_into().unwrap(),
         layout,
         local_id: 17,
-        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".try_into().unwrap(),
+        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+            .to_owned()
+            .try_into()
+            .unwrap(),
         asset_id_offset: local_id_offset + 18,
-        context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".try_into().unwrap(),
+        context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+            .to_owned()
+            .try_into()
+            .unwrap(),
         context_id_offset: local_id_offset + 94,
         historical: None,
         treatment_radius_candidates: Vec::new(),

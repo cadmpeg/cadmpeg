@@ -198,7 +198,10 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         panic!("expected repeated recipe-backed dimension")
     };
     let expected_parameter = neutral_parameter_id_parts(stream, parameter.record_index);
-    assert_eq!(projected_parameter.as_str(), expected_parameter.as_str());
+    assert_eq!(
+        projected_parameter.parameter().unwrap().as_str(),
+        expected_parameter.as_str()
+    );
     assert!(matches!(
         measurements.as_slice(),
         [
@@ -215,7 +218,12 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             crate::records::parameters::DesignParameterSource::new(
                 "Radial Dimension-4".into(),
                 radial_parameter.owner_record_index(),
-                radial_parameter.family_discriminator(),
+                radial_parameter.family_discriminator().map(|located| {
+                    crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }
+                }),
             )
             .unwrap(),
         )
@@ -257,7 +265,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 entity,
                 parameter: actual_parameter,
             } if entity == circle.id()
-            && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
+            && actual_parameter.parameter() == Some(&neutral_parameter_id_parts(stream, parameter.record_index))
     )));
 
     let annotation_point =
@@ -376,7 +384,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 entity,
                 parameter: actual_parameter,
             } if entity == circle.id()
-            && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
+            && actual_parameter.parameter() == Some(&neutral_parameter_id_parts(stream, parameter.record_index))
     )));
 
     let curves = [40, 41].map(|record_index| SketchCurveIdentity {
@@ -467,7 +475,12 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             crate::records::parameters::DesignParameterSource::new(
                 "Radial Dimension-2".into(),
                 radial_parameter.owner_record_index(),
-                radial_parameter.family_discriminator(),
+                radial_parameter.family_discriminator().map(|located| {
+                    crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }
+                }),
             )
             .unwrap(),
         )
@@ -593,7 +606,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 ..
             } if native_kind == "Linear Dimension-4"
             && entities.is_empty()
-            && actual_parameter.as_str() == expected_parameter.as_str()
+            && actual_parameter.parameter().unwrap().as_str() == expected_parameter.as_str()
             && native_ref == companion.id()
             && matches!(operands.as_slice(), [cadmpeg_ir::sketches::SketchNativeOperand {
                 native_kind,
@@ -611,7 +624,12 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             crate::records::parameters::DesignParameterSource::new(
                 "Radial Dimension-2".into(),
                 radial_parameter.owner_record_index(),
-                radial_parameter.family_discriminator(),
+                radial_parameter.family_discriminator().map(|located| {
+                    crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }
+                }),
             )
             .unwrap(),
         )
@@ -652,7 +670,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 entity,
                 parameter: actual_parameter,
             } if entity == radial_entity.id()
-            && actual_parameter.as_str() == expected_parameter.as_str()
+            && actual_parameter.parameter().unwrap().as_str() == expected_parameter.as_str()
             && native_ref == companion.id()
     )));
 
@@ -720,7 +738,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 parameter: actual_parameter,
             } if first == line.id()
             && second == line.id()
-            && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
+            && actual_parameter.parameter() == Some(&neutral_parameter_id_parts(stream, parameter.record_index))
     )));
 
     let second_line = SketchEntity::new(
@@ -758,7 +776,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 entities,
                 parameter,
             } if entities.len() == 2
-            && parameter == &neutral_parameter_id_parts(stream, radial_parameter.record_index)
+            && parameter.parameter() == Some(&neutral_parameter_id_parts(stream, radial_parameter.record_index))
     )));
 }
 
@@ -787,7 +805,7 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
         [SketchConstraintDefinitionInput::VerticalDistance { first, second, parameter: actual }]
             if *first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap())
                 && *second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap())
-                && *actual == parameter
+                && *actual == cadmpeg_ir::Dimension::Parameter(parameter)
     ));
     entities.push(point("synthetic:test:id#ambiguous", 10.0, 8.0));
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
@@ -1017,7 +1035,7 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
         Some(SketchConstraintDefinitionInput::HorizontalDistance { first, second, parameter: actual })
             if first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#carrier-start").unwrap())
                 && second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#extension").unwrap())
-                && actual == parameter
+                && actual == cadmpeg_ir::Dimension::Parameter(parameter)
     ));
 
     let mut ambiguous = entities;

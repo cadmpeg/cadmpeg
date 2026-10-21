@@ -273,7 +273,8 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
     {
-        let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
+        let mut wire =
+            crate::records::parameters::DesignParameterOwnerWire::try_from(owner.clone()).unwrap();
         wire.id = "f3d:native/BulkStream.dat:parameter-owner#44".into();
         owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
@@ -359,7 +360,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Extrude,
             parameters,
-        }) if parameters.get("d12").map(String::as_str) == Some("60 mm")
+        }) if parameters.get("d12").and_then(cadmpeg_ir::Dimension::parameter) == Some(&crate::ids::neutral_parameter_id(&native[0]))
     ));
     assert_eq!(
         features[0]
@@ -405,7 +406,8 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
     {
-        let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
+        let mut wire =
+            crate::records::parameters::DesignParameterOwnerWire::try_from(owner.clone()).unwrap();
         wire.id = "f3d:native:parameter-owner#44".into();
         owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
@@ -683,7 +685,8 @@ fn parameter_expressions_hold_forward_edges_without_copying_feature_dependencies
             .unwrap();
         {
             let mut wire =
-                crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
+                crate::records::parameters::DesignParameterOwnerWire::try_from(owner.clone())
+                    .unwrap();
             wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
             wire.record_index = record_index;
             wire.scope_record_index = scope_record_index;

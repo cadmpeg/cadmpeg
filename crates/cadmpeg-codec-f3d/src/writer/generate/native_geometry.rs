@@ -4890,7 +4890,7 @@ mod native_interval_curve_tests {
         target.source = None;
         target.native = cadmpeg_ir::native::Native::default();
         use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
-        let held = SolvedSurfaceGeometry::Nurbs(
+        let held = cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),

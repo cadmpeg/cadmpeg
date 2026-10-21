@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::fmt::Write as _;
-
 mod graphics;
 mod parameter;
 mod parameter_owner;
@@ -171,12 +169,10 @@ fn recipe_design_id_is_usable_without_a_source_location() {
         let recipe: crate::records::recipes::ConstructionRecipe =
             serde_json::from_value(wire.clone()).unwrap();
         assert!(recipe.byte_offset.is_none());
-        assert!(
-            recipe
-                .design
-                .as_ref()
-                .is_none_or(|design| design.id.offset.is_none())
-        );
+        assert!(recipe
+            .design
+            .as_ref()
+            .is_none_or(|design| design.id.offset.is_none()));
         assert_eq!(serde_json::to_value(recipe).unwrap(), wire);
     }
 }
@@ -616,11 +612,9 @@ fn construction_recipe_record_index_does_not_require_a_location() {
         let recipe: crate::records::recipes::ConstructionRecipe =
             serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(recipe.record_index.map(|record| record.value), index);
-        assert!(
-            recipe
-                .record_index
-                .is_none_or(|record| record.offset.is_none())
-        );
+        assert!(recipe
+            .record_index
+            .is_none_or(|record| record.offset.is_none()));
         assert_eq!(serde_json::to_value(recipe).unwrap(), wire);
         wire["record_index_offset"] = serde_json::json!(64);
         assert!(
@@ -780,24 +774,20 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
     assert_eq!(serde_json::to_value(profile).unwrap(), wire);
     let mut mismatch = wire.clone();
     mismatch["entity_suffix"] = 18.into();
-    assert!(
-        serde_json::from_value::<
-            crate::records::topology::sketch_profile::DesignSketchProfileOperand,
-        >(mismatch)
-        .expect_err("mismatched profile suffix")
-        .to_string()
-        .contains("entity_suffix")
-    );
+    assert!(serde_json::from_value::<
+        crate::records::topology::sketch_profile::DesignSketchProfileOperand,
+    >(mismatch)
+    .expect_err("mismatched profile suffix")
+    .to_string()
+    .contains("entity_suffix"));
     let mut invalid_asset = wire;
     invalid_asset["asset_id"] = "asset".into();
-    assert!(
-        serde_json::from_value::<
-            crate::records::topology::sketch_profile::DesignSketchProfileOperand,
-        >(invalid_asset)
-        .expect_err("non-GUID profile asset identity")
-        .to_string()
-        .contains("GUID")
-    );
+    assert!(serde_json::from_value::<
+        crate::records::topology::sketch_profile::DesignSketchProfileOperand,
+    >(invalid_asset)
+    .expect_err("non-GUID profile asset identity")
+    .to_string()
+    .contains("GUID"));
 }
 
 #[test]
@@ -817,14 +807,12 @@ fn sketch_placement_preserves_identity_wire() {
         for invalid in ["", "12", "1234", "1a3", "１２３"] {
             let mut invalid_wire = wire.clone();
             invalid_wire[field] = invalid.into();
-            assert!(
-                serde_json::from_value::<crate::records::sketch_placement::DesignSketchPlacement>(
-                    invalid_wire
-                )
-                .unwrap_err()
-                .to_string()
-                .contains(field)
-            );
+            assert!(serde_json::from_value::<
+                crate::records::sketch_placement::DesignSketchPlacement,
+            >(invalid_wire)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
         }
     }
 }
@@ -907,46 +895,40 @@ fn lost_edge_content_rejects_layout_keys_and_scanner_checks_actual_extent() {
     )
     .unwrap();
     assert_eq!(last.next_byte_offset(), Some(u64::MAX));
-    assert!(
-        crate::records::references::LostEdgeReference::new(
-            "edge".into(),
-            u64::MAX - 47,
-            "419".into(),
-            299,
-            "326".into(),
-            300
-        )
-        .is_err()
-    );
+    assert!(crate::records::references::LostEdgeReference::new(
+        "edge".into(),
+        u64::MAX - 47,
+        "419".into(),
+        299,
+        "326".into(),
+        300
+    )
+    .is_err());
 }
 
 #[test]
 fn lost_edge_reference_requires_three_digit_class_tags() {
     for invalid in ["", "12", "1234", "12a", "１２３"] {
-        assert!(
-            crate::records::references::LostEdgeReference::new(
-                "edge".into(),
-                0,
-                invalid.into(),
-                0,
-                "000".into(),
-                0
-            )
-            .unwrap_err()
-            .contains("class_tag")
-        );
-        assert!(
-            crate::records::references::LostEdgeReference::new(
-                "edge".into(),
-                0,
-                "000".into(),
-                0,
-                invalid.into(),
-                0
-            )
-            .unwrap_err()
-            .contains("next_class_tag")
-        );
+        assert!(crate::records::references::LostEdgeReference::new(
+            "edge".into(),
+            0,
+            invalid.into(),
+            0,
+            "000".into(),
+            0
+        )
+        .unwrap_err()
+        .contains("class_tag"));
+        assert!(crate::records::references::LostEdgeReference::new(
+            "edge".into(),
+            0,
+            "000".into(),
+            0,
+            invalid.into(),
+            0
+        )
+        .unwrap_err()
+        .contains("next_class_tag"));
         assert!(
             serde_json::from_value::<crate::records::references::DesignClassTag>(
                 serde_json::json!(invalid)
@@ -1042,27 +1024,21 @@ fn sketch_placement_extent_and_matrix_are_checked_at_construction() {
     for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let mut matrix = crate::records::identity::IDENTITY_MATRIX;
         matrix[0][3] = invalid;
-        assert!(
-            SketchPlacementMatrix::try_from(matrix)
-                .unwrap_err()
-                .contains("transform")
-        );
+        assert!(SketchPlacementMatrix::try_from(matrix)
+            .unwrap_err()
+            .contains("transform"));
     }
     let mut matrix = crate::records::identity::IDENTITY_MATRIX;
     matrix[3][0] = 1.0;
-    assert!(
-        SketchPlacementMatrix::try_from(matrix)
-            .unwrap_err()
-            .contains("transform")
-    );
+    assert!(SketchPlacementMatrix::try_from(matrix)
+        .unwrap_err()
+        .contains("transform"));
     let mut matrix = crate::records::identity::IDENTITY_MATRIX;
     matrix[0][1] = 1.0;
     matrix[1][1] = 0.0;
-    assert!(
-        SketchPlacementMatrix::try_from(matrix)
-            .unwrap_err()
-            .contains("transform")
-    );
+    assert!(SketchPlacementMatrix::try_from(matrix)
+        .unwrap_err()
+        .contains("transform"));
 }
 
 #[test]
@@ -1207,7 +1183,10 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
                 record_index: index
             })
         );
-        assert_eq!((row.offset, row.relation_ordinal), (offset, Some(ordinal)));
+        assert_eq!(
+            (row.offset, row.relation_ordinal),
+            (Some(offset), Some(ordinal))
+        );
     }
     assert!(
         SketchRelationMembers::try_from(vec![unresolved[0].clone(), resolved[1].clone()]).is_err()
@@ -1218,20 +1197,16 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
     let unresolved_return = SketchRelationReturnMembers::from_indices([(2, 60), (1, 75)]).unwrap();
     let mut resolved_return = unresolved_return.clone();
     resolved_return.resolve(|record_index| SketchRelationOperand::Record { record_index });
-    assert!(
-        SketchRelationReturnMembers::try_from(vec![
-            unresolved_return[0].clone(),
-            resolved_return[1].clone()
-        ])
-        .is_err()
-    );
-    assert!(
-        SketchRelationReturnMembers::try_from(vec![
-            resolved_return[0].clone(),
-            unresolved_return[1].clone()
-        ])
-        .is_err()
-    );
+    assert!(SketchRelationReturnMembers::try_from(vec![
+        unresolved_return[0].clone(),
+        resolved_return[1].clone()
+    ])
+    .is_err());
+    assert!(SketchRelationReturnMembers::try_from(vec![
+        resolved_return[0].clone(),
+        unresolved_return[1].clone()
+    ])
+    .is_err());
     let mut interrupted = unresolved.clone();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         interrupted.resolve(|record_index| {
@@ -1456,15 +1431,15 @@ fn empty_reference_runs_have_one_representation() {
 
     let header = crate::records::entity_header::DesignEntityHeader {
         id: "header".into(),
-        byte_offset: 10,
+        byte_offset: Some(10),
         entity_id: crate::records::identity::DesignEntityId::from_parts("Sketch", 7),
         class_tag: "256".to_owned().try_into().unwrap(),
-        optional_slot_present: false,
+        optional_slot_present: Some(false),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some("MSketch".into()),
             Some(crate::records::entity_header::SketchHeaderReferences {
                 record_reference: None,
-                record_reference_offset: 20,
+                record_reference_offset: Some(20),
                 references: Vec::new(),
             }),
             ReferenceRun::unlocated(Vec::new()),

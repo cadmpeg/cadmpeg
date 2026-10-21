@@ -517,6 +517,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         &by_record,
     )
     .expect("counted spatial offset");
+    let ir = super::length_parameter_document(parameter.clone(), -3.0);
     assert!(matches!(
         definition,
         SpatialSketchConstraintDefinitionInput::Offset {
@@ -524,14 +525,10 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
             results: actual_results,
             normal,
             distance: actual_distance,
-            parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
-                id: actual_parameter,
-                negated: true,
-            }),
         } if (actual_sources == sources.iter().map(|entity| entity.id().clone()).collect::<Vec<_>>()
             && actual_results == results.iter().map(|entity| entity.id().clone()).collect::<Vec<_>>()
-            && normal == Vector3::new(0.0, 0.0, 1.0)
-            && actual_parameter == parameter) && actual_distance.get() == 3.0
+            && actual_distance.parameter() == Some(&parameter))
+            && ir.dimension_value(&actual_distance).is_some_and(|distance| distance.get().abs() == 3.0 && normal.scale(distance.get().signum()) == Vector3::new(0.0, 0.0, 1.0))
     ));
     assert!(spatial_counted_offset_dimension_definition(
         ("Linear Dimension-1", Some(0), &operands),

@@ -19,20 +19,18 @@ fn constraint_parameter_iteration_preserves_empty_optional_and_direction_order()
     let directions = [
         SketchPatternDirection::new(
             [1.0, 0.0],
-            cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
-            Some(SketchPatternDistance::Spacing {
-                parameter: first_distance.clone(),
-            }),
-            Some(first_count.clone()),
+            SketchPatternDistance::Spacing {
+                distance: cadmpeg_ir::Dimension::Parameter(first_distance.clone()),
+            },
+            cadmpeg_ir::Dimension::Parameter(first_count.clone()),
         )
         .unwrap(),
         SketchPatternDirection::new(
             [0.0, 1.0],
-            cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
-            Some(SketchPatternDistance::Span {
-                parameter: second_distance.clone(),
-            }),
-            Some(second_count.clone()),
+            SketchPatternDistance::Span {
+                distance: cadmpeg_ir::Dimension::Parameter(second_distance.clone()),
+            },
+            cadmpeg_ir::Dimension::Parameter(second_count.clone()),
         )
         .unwrap(),
     ];
@@ -61,7 +59,6 @@ fn constraint_parameter_iteration_preserves_empty_optional_and_direction_order()
             SketchEntityId::mint("test:model:sketch-entity#second").unwrap(),
         ),
         distance: (cadmpeg_ir::scalar::Length::new(1.0).unwrap()).into(),
-        parameter: None,
     };
     assert_eq!(super::super::constraint_parameters(&definition).count(), 0);
 }

@@ -366,7 +366,7 @@ fn indent_block(block: &str) -> String {
 fn decode_snapshot(bytes: &[u8]) -> String {
     match decode_result(bytes) {
         Ok(result) => {
-            let mut result = EditableDecodeResult::from(result);
+            let result = EditableDecodeResult::from(result);
             let ir = result
                 .ir()
                 .to_canonical_json()

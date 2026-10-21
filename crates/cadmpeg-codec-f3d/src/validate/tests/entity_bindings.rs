@@ -17,8 +17,14 @@ fn validation_entity_header(
             Some(crate::records::entity_header::DESIGN_MODULE_SKETCH.into()),
             (!references.is_empty()).then_some(SketchHeaderReferences {
                 record_reference: None,
-                record_reference_offset: 10,
-                references,
+                record_reference_offset: Some(10),
+                references: references
+                    .into_iter()
+                    .map(|reference| crate::records::identity::Located {
+                        value: reference.value,
+                        offset: Some(reference.offset),
+                    })
+                    .collect(),
             }),
             ReferenceRun::unlocated(Vec::new()),
         )
@@ -31,7 +37,7 @@ fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
         DesignBodyBinding, DesignBodyBindingWire, DesignBodyBounds, DesignBodyBoundsWire,
     };
     use crate::records::entity_header::{
-        DESIGN_MODULE_BODY, DesignEntityHeader, DesignEntityRegistration,
+        DesignEntityHeader, DesignEntityRegistration, DESIGN_MODULE_BODY,
     };
     use crate::records::identity::{DesignEntityId, ReferenceRun};
 
@@ -57,6 +63,7 @@ fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
     if with_binding {
         native.design_body_bindings.push(
             DesignBodyBinding::try_from(DesignBodyBindingWire {
+                map_ordinal: 0,
                 id: binding_id.into(),
                 stream: "Design/BulkStream.dat".into(),
                 pair_count: 1,

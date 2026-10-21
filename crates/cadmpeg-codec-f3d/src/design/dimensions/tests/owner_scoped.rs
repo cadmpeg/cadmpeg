@@ -176,7 +176,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     assert!(matches!(
         radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter.clone()),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, parameter: ref p })
-            if actual == entity.id() && p == &radius_parameter
+            if actual == entity.id() && p.parameter() == Some(&radius_parameter)
     ));
     assert!(matches!(
         radial_dimension_definition(&entity, "Radial Dimension-3", 0.5, radius_parameter.clone()),
@@ -189,7 +189,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     assert!(matches!(
         radial_dimension_definition(&entity, "Diameter Dimension-2", 1.0, diameter_parameter.clone()),
         Some(SketchConstraintDefinitionInput::Diameter { entity: ref actual, parameter: ref p })
-            if actual == entity.id() && p == &diameter_parameter
+            if actual == entity.id() && p.parameter() == Some(&diameter_parameter)
     ));
     assert!(radial_dimension_definition(
         &entity,
@@ -244,7 +244,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             entities,
             parameter,
         }) if entities == vec![entity.id().clone(), duplicate.id().clone()]
-            && parameter == diameter_parameter
+            && parameter == cadmpeg_ir::Dimension::Parameter(diameter_parameter)
     ));
 
     let radial_parameter = parse_design_parameter_record(&parameter_record(
@@ -262,7 +262,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             entities,
             parameter,
         }) if entities == vec![entity.id().clone(), duplicate.id().clone()]
-            && parameter == radius_parameter
+            && parameter == cadmpeg_ir::Dimension::Parameter(radius_parameter)
     ));
 
     entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
@@ -326,7 +326,7 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
             first: SketchLocus::Start(ref entity),
             second: SketchLocus::End(ref other),
             parameter: ref actual_parameter,
-        }) if entity == first.id() && other == first.id() && actual_parameter == &parameter_id
+        }) if entity == first.id() && other == first.id() && actual_parameter.parameter() == Some(&parameter_id)
     ));
     assert!(matches!(
         owner_scoped_line_length_dimension_definition(&[first.clone(), second.clone()], &sketch, &parameter, &parameter_id, 1.0e-6),
@@ -334,7 +334,7 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
             entities,
             parameter,
         }) if entities == vec![first.id().clone(), second.id().clone()]
-            && parameter == parameter_id
+            && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id)
     ));
 }
 
@@ -373,7 +373,7 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
             first,
             second,
             parameter,
-        }) if first == horizontal.id().clone() && second == sloped.id().clone() && parameter == parameter_id
+        }) if first == horizontal.id().clone() && second == sloped.id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id)
     ));
 
     let other_sloped = line("other-sloped", -std::f64::consts::FRAC_PI_6);
@@ -482,7 +482,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
             first,
             second,
             parameter,
-        }) if first == entities[0].id().clone() && second == entities[1].id().clone() && parameter == parameter_id
+        }) if first == entities[0].id().clone() && second == entities[1].id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id)
     ));
 }
 
@@ -521,7 +521,7 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
             parameter,
-        }) if first == lower.id().clone() && second == upper.id().clone() && parameter == parameter_id
+        }) if first == lower.id().clone() && second == upper.id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id)
     ));
 
     let another_upper = point("another-upper", -40.0, -7.875);
@@ -582,7 +582,7 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
     assert!(matches!(
         radial_locus_dimension_definition(&[&measured, &annotation, &repeated], &all, "Diameter Dimension-3", 1.0, &parameter),
         Some(SketchConstraintDefinitionInput::RepeatedDiameter { entities, parameter: actual })
-            if entities == vec![measured.id().clone(), repeated.id().clone()] && actual == parameter
+            if entities == vec![measured.id().clone(), repeated.id().clone()] && actual == cadmpeg_ir::Dimension::Parameter(parameter)
     ));
     assert!(matches!(
         radial_locus_dimension_definition(&[&center], &all, "Diameter Dimension-2", 1.0, &parameter),
@@ -643,7 +643,12 @@ fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
             crate::records::parameters::DesignParameterSource::new(
                 "Linear Dimension-2".into(),
                 linear.owner_record_index(),
-                linear.family_discriminator(),
+                linear
+                    .family_discriminator()
+                    .map(|located| crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }),
             )
             .unwrap(),
         )
@@ -757,7 +762,7 @@ fn unique_spatial_parallel_line_pair_projects_their_distance() {
         SpatialSketchConstraintDefinitionInput::ParallelLineDistance {
             first: entities[0].id().clone(),
             second: entities[1].id().clone(),
-            parameter: parameter_id.clone(),
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter_id.clone()),
         }
     );
 }
@@ -844,7 +849,7 @@ fn repeated_spatial_profile_sides_project_a_repeated_distance() {
         .unwrap(),
         SpatialSketchConstraintDefinitionInput::RepeatedParallelLineDistance {
             pairs: vec![pair(0, 2), pair(4, 6)],
-            parameter: parameter_id.clone(),
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter_id.clone()),
         }
     );
 }

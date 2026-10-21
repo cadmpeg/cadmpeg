@@ -91,11 +91,9 @@ fn parameter_owner_rejects_nonfinite_values_and_index_overflow() {
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let mut input = wire();
         input.evaluated_value = value;
-        assert!(
-            DesignParameterOwner::try_from(input)
-                .unwrap_err()
-                .contains("evaluated_value")
-        );
+        assert!(DesignParameterOwner::try_from(input)
+            .unwrap_err()
+            .contains("evaluated_value"));
     }
     let mut input = wire();
     input.record_index = u32::MAX;

@@ -570,9 +570,10 @@ fn run_pattern_constructions_fixture() {
 
     let mut invalid_inactive_spacing = rectangular_owners.clone();
     {
-        let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(
+        let mut wire = crate::records::parameters::DesignParameterOwnerWire::try_from(
             invalid_inactive_spacing[3].clone(),
-        );
+        )
+        .unwrap();
         wire.evaluated_value = 1.0;
         invalid_inactive_spacing[3] =
             crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
@@ -588,8 +589,10 @@ fn run_pattern_constructions_fixture() {
     );
     let mut duplicate_lane = rectangular_owners.clone();
     {
-        let mut wire =
-            crate::records::parameters::DesignParameterOwnerWire::from(duplicate_lane[3].clone());
+        let mut wire = crate::records::parameters::DesignParameterOwnerWire::try_from(
+            duplicate_lane[3].clone(),
+        )
+        .unwrap();
         wire.local_ordinal = 2;
         duplicate_lane[3] =
             crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();

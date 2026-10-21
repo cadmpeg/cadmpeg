@@ -236,7 +236,7 @@ fn chain() -> AsmHistory {
     states.swap(0, 2);
     AsmHistory {
         id: "history".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         preamble: None,
         binding_budget_exceeded: false,
         states,

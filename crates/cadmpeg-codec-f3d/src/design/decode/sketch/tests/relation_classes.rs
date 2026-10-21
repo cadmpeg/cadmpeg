@@ -43,7 +43,7 @@ fn sketch_relation_assembly_admits_a_plain_relation() {
             crate::ids::native_scope("BulkStream.dat")
         )
     );
-    assert_eq!(admitted[0].raw_bytes(), record);
+    assert_eq!(admitted[0].raw_bytes(), Some(record.as_slice()));
 }
 
 fn tested_parse_classed_sketch_relation(

@@ -79,7 +79,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
     );
     let mut revision_history = crate::test_support::history::history(
         history.id.clone(),
-        history.byte_offset,
+        history.byte_offset.expect("retained test source"),
         history.preamble,
         false,
         history

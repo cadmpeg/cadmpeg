@@ -64,7 +64,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             .into_record("Design/BulkStream.dat", 0)
             .unwrap();
         {
-            let mut wire = DesignParameterOwnerWire::from(owner.clone());
+            let mut wire = DesignParameterOwnerWire::try_from(owner.clone()).unwrap();
             wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
             wire.record_index = record_index;
             wire.scope_record_index = scope_record_index;
@@ -270,7 +270,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             edges: EdgeSelection::Native(selection),
             radius: RadiusSpec::Constant { radius },
             tangency_weight: None,
-        }] if selection == &scopes[0].id && radius.get() == 5.0
+        }] if selection == &scopes[0].id && radius.literal().unwrap().get() == 5.0
     ));
     let chamfer = features
         .iter()
@@ -282,7 +282,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             if matches!(groups.as_slice(), [ChamferGroup {
                 edges: EdgeSelection::Native(selection),
                 spec: ChamferSpec::TwoDistances { first, second },
-            }] if selection == &chamfer_edge_group.id && first.get() == 1.0 && second.get() == 2.0)
+            }] if selection == &chamfer_edge_group.id && first.literal().unwrap().get() == 1.0 && second.literal().unwrap().get() == 2.0)
     ));
 
     let mut distance_angle_parameters = [
@@ -322,7 +322,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::DistanceAngle { distance, angle },
                 ..
-            }] if distance.get() == 1.6 && angle.get() == 25.0_f64.to_radians())
+            }] if distance.literal().unwrap().get() == 1.6 && angle.literal().unwrap().get() == 25.0_f64.to_radians())
     ));
 
     distance_angle_parameters[0]
@@ -330,7 +330,12 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             DesignParameterSource::new(
                 "leftDistance".into(),
                 distance_angle_parameters[0].owner_record_index(),
-                distance_angle_parameters[0].family_discriminator(),
+                distance_angle_parameters[0]
+                    .family_discriminator()
+                    .map(|located| crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }),
             )
             .unwrap(),
         )
@@ -340,7 +345,12 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             DesignParameterSource::new(
                 "rotateAngle".into(),
                 distance_angle_parameters[1].owner_record_index(),
-                distance_angle_parameters[1].family_discriminator(),
+                distance_angle_parameters[1]
+                    .family_discriminator()
+                    .map(|located| crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }),
             )
             .unwrap(),
         )
@@ -368,7 +378,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::DistanceAngle { distance, angle },
                 ..
-            }] if distance.get() == 1.6 && angle.get() == 25.0_f64.to_radians())
+            }] if distance.literal().unwrap().get() == 1.6 && angle.literal().unwrap().get() == 25.0_f64.to_radians())
     ));
 
     let mut hole_parameters = [
@@ -417,7 +427,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             && placements == &vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
                 position: cadmpeg_ir::features::FinitePoint3::new(Point3 { x: 12.5, y: -25.0, z: 37.5 }).unwrap(),
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3 { x: 0.0, y: 0.0, z: 1.0 }).unwrap(),
-            }]) && actual_diameter.get() == 4.0 && actual_length.get() == 10.0)));
+            }]) && actual_diameter.literal().unwrap().get() == 4.0 && actual_length.literal().unwrap().get() == 10.0)));
 
     hole_parameters[2]
         .try_set_evaluated_value(118.0_f64.to_radians())
@@ -450,7 +460,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::holes::HoleKind::SimpleDrilled { drill_point_angle },
                 ..
-            },) if drill_point_angle.get() == 118.0_f64.to_radians())));
+            },) if drill_point_angle.literal().unwrap().get() == 118.0_f64.to_radians())));
 
     let mut counterbore_parameters = hole_parameters.to_vec();
     counterbore_parameters.extend([
@@ -491,7 +501,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                     drill_point_angle,
                 },
                 ..
-            },) if (drill_point_angle.get() == 118.0_f64.to_radians()) && actual_diameter.get() == 8.0 && actual_depth.get() == 3.0)));
+            },) if (drill_point_angle.literal().unwrap().get() == 118.0_f64.to_radians()) && actual_diameter.literal().unwrap().get() == 8.0 && actual_depth.literal().unwrap().get() == 3.0)));
 
     counterbore_parameters[2]
         .try_set_evaluated_value(std::f64::consts::PI)
@@ -529,7 +539,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                     depth: actual_depth,
                 },
                 ..
-            },) if actual_diameter.get() == 8.0 && actual_depth.get() == 3.0)));
+            },) if actual_diameter.literal().unwrap().get() == 8.0 && actual_depth.literal().unwrap().get() == 3.0)));
 
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
         crate::test_support::with_decode_context(|ctx| {
@@ -557,7 +567,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::TwoDistances { first, second },
                 ..
-            }] if first.get() == 1.0 && second.get() == 2.0)
+            }] if first.literal().unwrap().get() == 1.0 && second.literal().unwrap().get() == 2.0)
     ));
 
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
@@ -583,7 +593,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::Distance { distance },
                 ..
-            }] if distance.get() == 1.0)
+            }] if distance.literal().unwrap().get() == 1.0)
     ));
 
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
@@ -741,6 +751,6 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                     edges: EdgeSelection::Native(selection),
                     spec: ChamferSpec::Distance { distance: actual_distance_2 },
                 },
-            ] if (selection == &construction_groups[0].id) && actual_distance.get() == 2.5 && actual_distance_2.get() == 2.0)
+            ] if (selection == &construction_groups[0].id) && actual_distance.literal().unwrap().get() == 2.5 && actual_distance_2.literal().unwrap().get() == 2.0)
     ));
 }

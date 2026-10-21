@@ -2211,7 +2211,7 @@ mod tests {
         );
         assert_eq!(
             recipes[0].design.as_ref().map(|design| design.id.offset),
-            Some(4)
+            Some(Some(4))
         );
         assert_eq!(
             recipes[0]
@@ -2220,7 +2220,7 @@ mod tests {
                 .and_then(|design| design.selector),
             Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 3,
-                byte_offset: 8,
+                byte_offset: Some(8),
             })
         );
     }

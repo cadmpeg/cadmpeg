@@ -134,11 +134,9 @@ fn move_body_selection_uses_unique_owning_history() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::MoveBody {
                 bodies: BodySelection::Native(group_id.into()),
-                translation: (cadmpeg_ir::features::FiniteVector3::new(
-                    cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
-                )
-                .unwrap())
-                .into(),
+                translation: [1.0, 2.0, 3.0].map(|value| {
+                    cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::new(value).unwrap())
+                }),
                 rotation: None,
                 copies: (0).into(),
             }),

@@ -607,7 +607,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let mut members = curve_point_coincidence.members().to_vec();
     members.push(SketchRelationMember {
         reference: crate::records::sketch_relations::SketchRelationReference::Index(175),
-        offset: 40,
+        offset: Some(40),
         relation_ordinal: None,
     });
     curve_point_coincidence
@@ -654,7 +654,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
                         reference: crate::records::sketch_relations::SketchRelationReference::Index(
                             record_index,
                         ),
-                        offset,
+                        offset: Some(offset),
                         relation_ordinal: Some(0),
                     }
                 })
@@ -672,7 +672,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
                         reference: crate::records::sketch_relations::SketchRelationReference::Index(
                             record_index,
                         ),
-                        offset,
+                        offset: Some(offset),
                     }
                 })
                 .collect::<Vec<_>>())

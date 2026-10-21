@@ -411,7 +411,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     native.design_body_members = vec![
         DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberWire {
             id: "f3d:generated:design-body-member#0".into(),
-            byte_offset: None,
+            byte_offset: 0,
             entity_suffix: 985,
             flags: 0,
         })
@@ -439,7 +439,10 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
                 record_reference_offset: None,
                 references: vec![33, 44]
                     .into_iter()
-                    .map(|value| crate::records::identity::Located { value, offset: 0 })
+                    .map(|value| crate::records::identity::Located {
+                        value,
+                        offset: Some(0),
+                    })
                     .collect(),
             }),
             crate::records::identity::ReferenceRun::unlocated(Vec::new()),
@@ -672,7 +675,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 record_reference_offset: None,
                 references: vec![33]
                     .into_iter()
-                    .map(|value| crate::records::identity::Located { value, offset: 0 })
+                    .map(|value| crate::records::identity::Located {
+                        value,
+                        offset: Some(0),
+                    })
                     .collect(),
             }),
             crate::records::identity::ReferenceRun::unlocated(Vec::new()),
@@ -687,7 +693,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 owner_reference: Some(277),
                 class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned())
                     .unwrap(),
-                byte_offset: None,
+                byte_offset: 0,
                 coordinate_offset: 89,
                 companion: crate::records::sketch_geometry::SketchPointCompanion {
                     incident_curves: Vec::new(),
@@ -789,11 +795,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 record_index: 33,
                 class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
                     .unwrap(),
-                byte_offset: None,
-                state_offset: None,
+                byte_offset: 0,
+                state_offset: 0,
                 owner_reference: 277,
                 owner_entity_id: None,
-                owner_reference_offset: None,
+                owner_reference_offset: 0,
                 auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
                 rectangular_counted_reference_count: None,
                 members: (vec![
@@ -927,6 +933,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert!(
         f3d_native(variable_round_trip.ir()).sketch_relations[0]
             .raw_bytes()
+            .expect("retained test source")
             .len()
             > 101
     );

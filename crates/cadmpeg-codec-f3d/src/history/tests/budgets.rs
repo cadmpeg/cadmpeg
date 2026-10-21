@@ -51,7 +51,7 @@ fn insert_only_state(node_index: i64, next_ref: Option<i64>, inserted: &[i64]) -
             id: format!("record-{node_index}"),
             parent: state_id,
             revision_id: None,
-            byte_offset: offset,
+            byte_offset: Some(offset),
             framing: AsmHistoryRecordFraming::Framed {
                 index: 0,
                 name: "End-of-ASM-History-Section".into(),

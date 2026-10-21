@@ -104,7 +104,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         recipe_index: 7,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 303,
-            offset: recipe_record_at + 8,
+            offset: Some(recipe_record_at + 8),
         }),
     };
 
@@ -194,7 +194,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             0,
             &record,
             std::slice::from_ref(&recipe),
-            Some(recipe.byte_offset),
+            Some(recipe.byte_offset.expect("retained test source")),
         ),
         None
     );
@@ -238,7 +238,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         recipe_index: 9,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 303,
-            offset: vertex_recipe_record_at + 8,
+            offset: Some(vertex_recipe_record_at + 8),
         }),
     };
     let parsed_vertex = parse_vertex_recipe(
@@ -1250,16 +1250,16 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     face_recipe.design = Some(crate::records::recipes::ConstructionRecipeDesign {
         id: crate::records::identity::RecordedValue {
             value: "303".into(),
-            offset: 0,
+            offset: Some(0),
         },
         selector: None,
     });
-    face_recipe.byte_offset = u64_from_index(face_recipe_name_at);
+    face_recipe.byte_offset = Some(u64_from_index(face_recipe_name_at));
     face_recipe.record_index =
         face_recipe
             .record_index
             .map(|index| crate::records::identity::RecordedValue {
-                offset: face_recipe_record_at + 8,
+                offset: Some(face_recipe_record_at + 8),
                 ..index
             });
     let mut operand = parse_face_operand(
@@ -1383,12 +1383,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     }
     header(&mut compact_bytes, *b"306", 104);
     let mut compact_recipe = face_recipe.clone();
-    compact_recipe.byte_offset = u64_from_index(compact_name_at);
+    compact_recipe.byte_offset = Some(u64_from_index(compact_name_at));
     compact_recipe.record_index =
         compact_recipe
             .record_index
             .map(|index| crate::records::identity::RecordedValue {
-                offset: compact_record_at + 8,
+                offset: Some(compact_record_at + 8),
                 ..index
             });
     let compact = parse_face_operand(
@@ -1495,6 +1495,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let mut direct_face = operand.clone();
     direct_face.recipe_kind = ConstructionRecipeKind::Face;
     direct_face.recipe_references = vec![DesignRecipeReference {
+        clause_index: 0,
         selector: 1,
         selector_offset: Some(1_201),
         token: "3".into(),

@@ -108,7 +108,7 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
     let topology = history.topology(&history.states()[0]).unwrap().clone();
     history = crate::test_support::history::history(
         history.id.clone(),
-        history.byte_offset,
+        history.byte_offset.expect("retained test source"),
         history.preamble,
         false,
         vec![

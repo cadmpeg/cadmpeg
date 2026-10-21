@@ -33,11 +33,11 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
         .iter_mut()
         .find(|reference| reference.value == 439)
         .expect("generated persistent reference");
-    assert!(reference.byte_offset > 0);
-    assert!(reference.value_offset > 0);
+    assert!(reference.byte_offset > Some(0));
+    assert!(reference.value_offset > Some(0));
     reference.value = 9_001;
     let recipe = &mut native.construction_recipes[0];
-    assert!(recipe.byte_offset > 0);
+    assert!(recipe.byte_offset > Some(0));
     assert!(recipe.record_index.is_some());
     assert!(recipe
         .design
@@ -142,8 +142,8 @@ fn generated_f3d_preserves_typed_metadata_and_reports_unsupported_graph_edits() 
     lost_edge.class_tag = "420".to_owned().try_into().unwrap();
     lost_edge.record_index = 4_700;
     let assignment = &mut native.design_material_assignments[0];
-    assert!(assignment.entity_id_offset > 0);
-    assert!(assignment.asm_body_key_offset > 0);
+    assert!(assignment.entity_id_offset > Some(0));
+    assert!(assignment.asm_body_key_offset > Some(0));
     assignment
         .physical_token
         .as_mut()

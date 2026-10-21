@@ -257,7 +257,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::Sphere {
             center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
-            radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap().into(),
             op: BooleanOp::NewBody,
         })
     ));
@@ -266,8 +266,8 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         &FeatureDefinition::Operation(FeatureOperation::Torus {
             center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
             axis: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
-            major_radius: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
-            minor_radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+            major_radius: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap().into(),
+            minor_radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap().into(),
             op: BooleanOp::Join,
         })
     ));
@@ -276,7 +276,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         &FeatureDefinition::Operation(FeatureOperation::MoveFace {
             faces: faces.clone(),
             motion: FaceMotion::Offset {
-                distance: Length::new(-2.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(-2.0).unwrap()),
             },
         })
     ));
@@ -284,14 +284,16 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         &FeatureDefinition::Operation(FeatureOperation::MoveFace {
             faces: FaceSelection::Native("native:faces".into()),
             motion: FaceMotion::Offset {
-                distance: Length::new(2.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(2.0).unwrap()),
             },
         })
     ));
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: faces.clone(),
-            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()),
+            thickness: Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()
+            )),
             side: Some(ThickenSide::Forward),
         })
     ));
@@ -331,8 +333,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: bodies.clone(),
-            translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 2.0, 3.0))
-                .unwrap(),
+            translation: [1.0, 2.0, 3.0].map(|value| cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::Length::new(value).unwrap()
+            )),
             rotation: Some(AxisAngle {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .unwrap(),
@@ -340,9 +343,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
                     0.0, 0.0, 1.0
                 ))
                 .unwrap(),
-                angle: cadmpeg_ir::scalar::Angle::new(0.5).unwrap(),
+                angle: cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Angle::new(0.5).unwrap()),
             }),
-            copies: 0,
+            copies: cadmpeg_ir::Dimension::Literal(0),
         })
     ));
 
@@ -357,7 +360,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
             ),
             center: Some(ScaleCenter::ModelOrigin),
             factors: ScaleFactors::Uniform {
-                factor: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()
+                factor: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()
+                )
             },
         })
     ));
@@ -372,7 +377,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
             ),
             center: Some(ScaleCenter::Native("native:center".into())),
             factors: ScaleFactors::Uniform {
-                factor: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()
+                factor: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()
+                )
             },
         })
     ));
@@ -383,14 +390,15 @@ fn knit_surfaces_require_resolved_faces_and_operation_settings() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::scalar::NonNegativeLength;
 
-    let complete = |faces, merge_entities, create_solid, gap_tolerance| {
-        FeatureDefinition::Operation(FeatureOperation::KnitSurface {
-            faces,
-            merge_entities,
-            create_solid,
-            gap_tolerance: (gap_tolerance).map(Into::into),
-        })
-    };
+    let complete =
+        |faces, merge_entities, create_solid, gap_tolerance: Option<NonNegativeLength>| {
+            FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+                faces,
+                merge_entities,
+                create_solid,
+                gap_tolerance: (gap_tolerance).map(Into::into),
+            })
+        };
     let faces = FaceSelection::Faces(vec!["test:model:face#1"
         .try_into()
         .expect("valid identity")]);

@@ -716,7 +716,7 @@ fn generated_source_less_f3d_regenerates_unbacked_design_parameters() {
         .iter()
         .find(|record| record.name == "Width")
         .expect("authored parameter is regenerated");
-    assert_eq!(parameter.expression, "60 mm");
+    assert_eq!(parameter.expression, "60 mm".into());
     assert_eq!(parameter.value, source_less.model.parameters[0].value);
     assert_eq!(
         output.ir().model.bodies.len(),
@@ -988,10 +988,6 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
         format: cadmpeg_ir::CodecFormat::Step,
         object_id: cadmpeg_core::text::NonBlankString::new("object-1")
             .expect("nonempty source identity"),
-        name: Some("exact carrier".into()),
-        color: None,
-        visible: Some(true),
-        layer: None,
         instance_path: Vec::new(),
     };
 

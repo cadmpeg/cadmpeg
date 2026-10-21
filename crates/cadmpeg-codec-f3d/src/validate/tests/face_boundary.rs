@@ -19,7 +19,7 @@ fn state(state_id: i64, byte_offset: u64) -> crate::test_support::history::State
         AsmDeltaState {
             id: format!("f3d:test:asm-delta-state#{byte_offset:010}"),
             parent: "f3d:test:asm-history#0000000000".into(),
-            byte_offset,
+            byte_offset: Some(byte_offset),
             state_id,
             version_flag: 1,
             state_flag: 0,
@@ -39,7 +39,12 @@ fn state(state_id: i64, byte_offset: u64) -> crate::test_support::history::State
 
 fn boundary(state: &AsmDeltaState, face_slot: i64) -> AsmFaceBoundary {
     AsmFaceBoundary {
-        id: AsmFaceBoundary::identity(&state.id, state.byte_offset, face_slot).unwrap(),
+        id: AsmFaceBoundary::identity(
+            &state.id,
+            state.byte_offset.expect("retained test source"),
+            face_slot,
+        )
+        .unwrap(),
         parent: state.id.clone(),
         face_slot,
         loops: vec![DesignHistoricalFaceLoopContext {

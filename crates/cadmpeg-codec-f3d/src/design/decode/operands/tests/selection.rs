@@ -58,7 +58,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             Some(crate::records::entity_header::SketchHeaderReferences {
                 record_reference: Some(200),
-                record_reference_offset: 1010,
+                record_reference_offset: Some(1010),
                 references: Vec::new(),
             }),
             crate::records::identity::ReferenceRun::unlocated(Vec::new()),
@@ -185,7 +185,7 @@ fn sketch_profile_resolves_a_leading_zero_entity_suffix() {
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             Some(crate::records::entity_header::SketchHeaderReferences {
                 record_reference: Some(200),
-                record_reference_offset: 1010,
+                record_reference_offset: Some(1010),
                 references: Vec::new(),
             }),
             crate::records::identity::ReferenceRun::unlocated(Vec::new()),

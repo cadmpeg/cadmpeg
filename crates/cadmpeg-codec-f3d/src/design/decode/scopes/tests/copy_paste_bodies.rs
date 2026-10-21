@@ -19,7 +19,7 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
         &records,
         headers[0].record_index,
         &headers[0].class_tag,
-        headers[0].byte_offset,
+        headers[0].byte_offset.expect("retained test source"),
     )
     .unwrap()
     .expect("scope");

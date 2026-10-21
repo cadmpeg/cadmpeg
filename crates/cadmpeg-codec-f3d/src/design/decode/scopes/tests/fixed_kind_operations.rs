@@ -667,7 +667,8 @@ fn fixed_kind_edge_and_revolve_operations(
     let mut class403_angle = indexed_angle.clone();
     {
         let mut wire =
-            crate::records::parameters::DesignParameterOwnerWire::from(class403_angle.clone());
+            crate::records::parameters::DesignParameterOwnerWire::try_from(class403_angle.clone())
+                .unwrap();
         wire.scope_record_index = class403_scope.record_index;
         wire.byte_offset = u64_from_index(class403_start);
         wire.evaluated_value_offset = u64_from_index(class403_start + 40);
@@ -916,7 +917,9 @@ fn fixed_kind_edge_and_revolve_operations(
     indexed_axis
         .try_set_members(vec![crate::records::identity::Located {
             value: 900,
-            offset: indexed_axis.members()[0].offset,
+            offset: indexed_axis.members()[0]
+                .offset
+                .expect("retained test source"),
         }])
         .unwrap();
     indexed_axis.operand_role =
