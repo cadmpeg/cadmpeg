@@ -392,10 +392,23 @@ pub(super) fn bind_offset_plane_references(
 
     const FRAME_TOLERANCE: f64 = 1.0e-8;
 
+    // Rule D3 leaves consumed source facts in their typed native home. This
+    // decode-time binder must not recover them from neutral source_properties.
+    let native_by_id = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let source_properties = |feature: &cadmpeg_ir::features::Feature| {
+        native_by_id
+            .get(feature.native_ref.as_deref()?)
+            .map(|native| &native.properties)
+    };
     let stored_frame = |feature: &cadmpeg_ir::features::Feature| {
-        let origin = parse_point3_mm(feature.source_properties.get("Origin")?)?.get();
-        let normal = parse_vector3(feature.source_properties.get("Normal")?)?;
-        let u_axis = parse_vector3(feature.source_properties.get("UAxis")?)?;
+        let properties = source_properties(feature)?;
+        let origin = parse_point3_mm(properties.get("Origin")?)?.get();
+        let normal = parse_vector3(properties.get("Normal")?)?;
+        let u_axis = parse_vector3(properties.get("UAxis")?)?;
         valid_plane_frame(normal, u_axis).then_some((origin, normal, u_axis))
     };
     let principal_frame = |plane| match plane {
@@ -460,10 +473,11 @@ pub(super) fn bind_offset_plane_references(
             )
     };
     let serialized_reference_frame = |feature: &cadmpeg_ir::features::Feature| {
+        let properties = source_properties(feature)?;
         Some((
-            parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?.get(),
-            parse_vector3(feature.source_properties.get("ReferenceFaceNormal")?)?,
-            parse_vector3(feature.source_properties.get("ReferenceFaceUAxis")?)?,
+            parse_point3_mm(properties.get("ReferenceFaceOrigin")?)?.get(),
+            parse_vector3(properties.get("ReferenceFaceNormal")?)?,
+            parse_vector3(properties.get("ReferenceFaceUAxis")?)?,
         ))
     };
     let offset_frame_matches = |reference: (Point3, Vector3, Vector3),
@@ -547,8 +561,10 @@ pub(super) fn bind_offset_plane_references(
         }
     }
     for feature in features.iter_mut() {
-        let explicit_native_reference = feature.source_properties.contains_key("Reference")
-            || feature.source_properties.contains_key("Plane");
+        let properties = source_properties(feature);
+        let explicit_native_reference = properties.is_some_and(|properties| {
+            properties.contains_key("Reference") || properties.contains_key("Plane")
+        });
         let result_frame = stored_frame(feature);
         let source_reference_frame = serialized_reference_frame(feature);
         let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -586,13 +602,11 @@ pub(super) fn bind_offset_plane_references(
                     let explicit_principal_identity_without_face_fallback =
                         explicit_native_reference
                             && *is_principal
-                            && !(feature
-                                .source_properties
-                                .contains_key("ReferenceFaceOrigin")
-                                || feature
-                                    .source_properties
-                                    .contains_key("ReferenceFaceNormal")
-                                || feature.source_properties.contains_key("ReferenceFaceUAxis"));
+                            && !properties.is_some_and(|properties| {
+                                properties.contains_key("ReferenceFaceOrigin")
+                                    || properties.contains_key("ReferenceFaceNormal")
+                                    || properties.contains_key("ReferenceFaceUAxis")
+                            });
                     let explicit_frame_identity = explicit_native_reference
                         && *is_base_plane
                         && reference_frame.zip(result_frame).is_some_and(
@@ -799,7 +813,7 @@ pub(super) fn bind_offset_plane_references(
         }
     }
     for feature in features {
-        let properties = &feature.source_properties;
+        let properties = source_properties(feature);
         feature.evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: reference @ None,
@@ -807,6 +821,7 @@ pub(super) fn bind_offset_plane_references(
             }) = definition
             {
                 *reference = (|| {
+                    let properties = properties?;
                     Some(DatumPlaneReference::ResolvedPlane {
                         frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::from_parts(
                             parse_point3_mm(properties.get("ReferenceFaceOrigin")?)?,
@@ -1435,7 +1450,9 @@ pub(crate) fn parameter_dimension<Q: cadmpeg_ir::features::DimensionValue>(
             crate::history::parameters::source_parameter_value(feature, name)
         {
             Q::from_parameter_value(&value)?;
-        } else if let Some(value) = feature.parameters.get(*name)
+        } else if let Some(value) = feature
+            .parameters
+            .get(*name)
             .and_then(|expression| crate::history::literals::parse_parameter_literal(expression))
         {
             Q::from_parameter_value(&value)?;
