@@ -114,10 +114,10 @@ pub(super) fn decode_stream(
         out.push(DesignJointMotion {
             id: format!("f3d:{entry_name}:design-joint-motion#{motion_start}"),
             joint_record_index: joint_index,
-            joint_byte_offset: u64_from_index(joint_start),
+            joint_byte_offset: Some(u64_from_index(joint_start)),
             motion_record_index: motion_index,
-            motion_byte_offset: u64_from_index(motion_start),
-            freedoms,
+            motion_byte_offset: Some(u64_from_index(motion_start)),
+            freedoms: crate::records::identity::ReferenceRun::located(freedoms),
             limits: joint_limits(bytes, joint_start, record_end(joint_start), joint_index),
         });
     }
@@ -205,12 +205,12 @@ fn joint_limits(
         return None;
     }
     Some(DesignJointLimitLanes {
-        flags_offset: u64_from_index(flags_at),
+        flags_offset: Some(u64_from_index(flags_at)),
         first_flag,
         second_flag,
         maximum,
         minimum,
-        values_offset: u64_from_index(values_at),
+        values_offset: Some(u64_from_index(values_at)),
     })
 }
 
