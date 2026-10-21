@@ -339,15 +339,15 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
             let values = bodies
                 .iter()
                 .map(|body| {
-                    xml::element(
+                    Ok(xml::element(
                         "String",
                         &[(
                             "value",
-                            serde_json::to_string(&body.name).expect("optional name serializes"),
+                            serde_json::to_string(&body.name).map_err(CodecError::malformed)?,
                         )],
-                    )
+                    ))
                 })
-                .collect::<String>();
+                .collect::<Result<String, CodecError>>()?;
             object.set(
                 "CadmpegBodyNames",
                 xml::property(

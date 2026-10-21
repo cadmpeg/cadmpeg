@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! GUI synthesis from neutral presentation and typed native value trees.
 
-use std::fmt::Write as _;
 mod colors;
 mod document;
 
@@ -332,7 +331,7 @@ pub(super) fn write(
         let expanded = provider.expanded.map_or(String::new(), |value| {
             format!(" expanded=\"{}\"", u8::from(value))
         });
-        write!(content, "<ViewProvider name=\"{}\"{expanded}><Properties Count=\"{}\">{}</Properties></ViewProvider>",xml::escaped(&provider.name),provider.properties.len(),provider.properties.values().cloned().collect::<String>()).expect("writing to String cannot fail");
+        content.push_str(&format!("<ViewProvider name=\"{}\"{expanded}><Properties Count=\"{}\">{}</Properties></ViewProvider>",xml::escaped(&provider.name),provider.properties.len(),provider.properties.values().cloned().collect::<String>()));
     }
     let (schema, attributes, states) = document::write(ir, losses)?;
     Ok(format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><GuiDocument SchemaVersion=\"{schema}\"{attributes}>{states}<ViewProviderData Count=\"{}\">{content}</ViewProviderData></GuiDocument>",providers.len()))

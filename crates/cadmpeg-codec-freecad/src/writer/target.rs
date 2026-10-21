@@ -70,12 +70,11 @@ pub(crate) fn plan(
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
     let mut reason = None;
-    if resolved.source_preservation_eligible() && input.can_reuse_source() {
-        if let Some(resolution) = retained_baseline(
-            input.ir,
-            input.fidelity.expect("source reuse requires fidelity"),
-            resolved.target_id(),
-        ) {
+    if let Some(fidelity) = input
+        .fidelity
+        .filter(|_| resolved.source_preservation_eligible() && input.can_reuse_source())
+    {
+        if let Some(resolution) = retained_baseline(input.ir, fidelity, resolved.target_id()) {
             let patch =
                 admit_unedited(input.ir, resolution.fidelity()).and_then(|()| finish(&resolution));
             match patch {

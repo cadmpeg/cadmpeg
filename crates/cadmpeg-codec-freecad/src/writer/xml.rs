@@ -4,7 +4,6 @@
 use crate::native::{PropertyBody, PropertyRecord, ValueRecord};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 
 pub(crate) fn escaped(value: &str) -> String {
     let mut result = String::new();
@@ -80,7 +79,7 @@ pub(super) fn report_reductions(
 pub(crate) fn element(tag: &str, attributes: &[(&str, String)]) -> String {
     let mut result = format!("<{tag}");
     for (key, value) in attributes {
-        write!(result, " {key}=\"{}\"", escaped(value)).expect("writing to String cannot fail");
+        result.push_str(&format!(" {key}=\"{}\"", escaped(value)));
     }
     result.push_str("/>");
     result
@@ -218,7 +217,7 @@ pub(crate) fn native_named(
     while let Some((index, close)) = stack.pop() {
         let value: &ValueRecord = &values[index];
         if close {
-            write!(content, "</{}>", value.tag).expect("writing to String cannot fail");
+            content.push_str(&format!("</{}>", value.tag));
             continue;
         }
         content.push('<');
@@ -248,7 +247,7 @@ pub(crate) fn native_named(
             } else {
                 text
             };
-            write!(content, " {key}=\"{}\"", escaped(text)).expect("writing to String cannot fail");
+            content.push_str(&format!(" {key}=\"{}\"", escaped(text)));
         }
         content.push('>');
         if let Some(text) = &value.text {
@@ -283,7 +282,7 @@ pub(crate) fn native_named(
     }
     let mut result = String::from("<Property");
     for (name, value) in attributes {
-        write!(result, " {name}=\"{}\"", escaped(&value)).expect("writing to String cannot fail");
+        result.push_str(&format!(" {name}=\"{}\"", escaped(&value)));
     }
     result.push('>');
     result.push_str(&content);

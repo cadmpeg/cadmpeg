@@ -332,19 +332,12 @@ pub(super) fn common(
     if let Some(orientation) = constraint.orientation {
         attributes.push(("Orientation", orientation.to_string()));
     }
-    // These admitted values include source sentinel spellings as well as finite scalars.
     for (key, value) in [
-        ("LabelDistance", constraint.label_distance.as_ref()),
-        ("LabelPosition", constraint.label_position.as_ref()),
+        ("LabelDistance", constraint.label_distance),
+        ("LabelPosition", constraint.label_position),
     ] {
         if let Some(value) = value {
-            let value = serde_json::to_value(value).expect("infallible sketch label serialization");
-            attributes.push((
-                key,
-                value
-                    .as_str()
-                    .map_or_else(|| value.to_string(), ToOwned::to_owned),
-            ));
+            attributes.push((key, value.get().to_string()));
         }
     }
     if !attributes.iter().any(|(key, _)| *key == "MetaData") {

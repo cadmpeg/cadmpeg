@@ -185,18 +185,20 @@ pub(super) fn spreadsheets(
                     let index = dimension.index.get();
                     let name = if element == "Column" {
                         let address = cadmpeg_ir::CellAddress::new(1, index)
-                            .expect("positive column")
+                            .ok_or_else(|| {
+                                CodecError::malformed("spreadsheet column must be positive")
+                            })?
                             .a1();
                         address.trim_end_matches('1').to_owned()
                     } else {
                         index.to_string()
                     };
-                    xml::element(
+                    Ok(xml::element(
                         element,
                         &[("name", name), (pixels, dimension.pixels.to_string())],
-                    )
+                    ))
                 })
-                .collect::<String>();
+                .collect::<Result<String, CodecError>>()?;
             object.set(
                 name,
                 xml::property(
