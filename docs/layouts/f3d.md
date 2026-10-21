@@ -5037,6 +5037,31 @@ Parsed by:
 | 67 | 1 | `identity_flag` | `u8` | little | spec | an identity flag byte at offset 67 |
 | 68 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid 4×4 transform at offset 68 |
 
+## `canvas_scope_tail_98`
+
+Spec §3.1 · layout: byte offsets · size: 98 B
+
+Offsets are relative to the end of the LP-UTF16 Canvas kind.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `feature_ordinal` | `u32` | little | spec | a positive feature ordinal |
+| 4 | 8 | `zero_prefix` | `bytes[8]` | little | spec | eight zero bytes |
+| 12 | 4 | `member_count` | `u32` | little | spec | member count `1` · value `1` |
+| 16 | 11 | `self_reference` | `bytes[11]` | little | spec | a marked self reference |
+| 27 | 3 | `zero_before_companion` | `bytes[3]` | little | spec | three zero bytes |
+| 30 | 11 | `first_companion` | `bytes[11]` | little | spec | a marked companion reference |
+| 41 | 1 | `zero_before_history` | `u8` | little | spec | a zero separator · value `0` |
+| 42 | 4 | `history_state` | `u32` | little | spec | null history-state identity `0xffffffff` · value `4294967295` |
+| 46 | 4 | `epoch` | `u32` | little | spec | evaluation epoch |
+| 50 | 8 | `duration` | `f64` | little | spec | finite nonnegative evaluation duration |
+| 58 | 4 | `repeated_epoch` | `u32` | little | spec | the repeated evaluation epoch |
+| 62 | 11 | `second_companion` | `bytes[11]` | little | spec | a second marked companion reference |
+| 73 | 2 | `zero_before_third` | `bytes[2]` | little | spec | two zero bytes |
+| 75 | 11 | `third_companion` | `bytes[11]` | little | spec | a third marked companion reference |
+| 86 | 11 | `closing_self_reference` | `bytes[11]` | little | spec | a closing marked self reference |
+| 97 | 1 | `zero_tail` | `u8` | little | spec | and a zero byte · value `0` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

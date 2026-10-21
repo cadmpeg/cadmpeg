@@ -4937,3 +4937,55 @@ pub(crate) mod assembly_wide_operand_path_locator {
     /// Offset of `transform` (`f64[16]`, little-endian). Spec §Assembly operands.
     pub(crate) const TRANSFORM: usize = 68;
 }
+
+/// Byte offsets for the `canvas_scope_tail_98` record.
+///
+/// Spec §3.1. Record length 98 B.
+///
+/// ```text
+/// Offsets are relative to the end of the LP-UTF16 Canvas kind.
+/// ```
+pub(crate) mod canvas_scope_tail_98 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 98;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 0;
+    /// Offset of `zero_prefix` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 4;
+    /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MEMBER_COUNT: usize = 12;
+    /// Stated value of `member_count` (`u32`). Spec §3.1.
+    pub(crate) const MEMBER_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `self_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SELF_REFERENCE: usize = 16;
+    /// Offset of `zero_before_companion` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_COMPANION: usize = 27;
+    /// Offset of `first_companion` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_COMPANION: usize = 30;
+    /// Offset of `zero_before_history` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_HISTORY: usize = 41;
+    /// Stated value of `zero_before_history` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_HISTORY_VALUE: u8 = 0;
+    /// Offset of `history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const HISTORY_STATE: usize = 42;
+    /// Stated value of `history_state` (`u32`). Spec §3.1.
+    pub(crate) const HISTORY_STATE_VALUE: u32 = 0xffff_ffff;
+    /// Offset of `epoch` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EPOCH: usize = 46;
+    /// Offset of `duration` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const DURATION: usize = 50;
+    /// Offset of `repeated_epoch` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REPEATED_EPOCH: usize = 58;
+    /// Offset of `second_companion` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SECOND_COMPANION: usize = 62;
+    /// Offset of `zero_before_third` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_THIRD: usize = 73;
+    /// Offset of `third_companion` (`bytes[11]`). Spec §3.1.
+    pub(crate) const THIRD_COMPANION: usize = 75;
+    /// Offset of `closing_self_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CLOSING_SELF_REFERENCE: usize = 86;
+    /// Offset of `zero_tail` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_TAIL: usize = 97;
+    /// Stated value of `zero_tail` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_TAIL_VALUE: u8 = 0;
+}

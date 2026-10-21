@@ -53,6 +53,7 @@ use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids;
 use crate::ids::native_stream;
+use crate::layout::canvas_scope_tail_98 as canvas_tail;
 use crate::records::feature::assembly;
 use crate::records::feature::coil;
 use crate::records::feature::direct_face;
@@ -870,7 +871,9 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             let Some(tail_length) = paired_at.checked_sub(kind_end) else {
                 continue;
             };
-            let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110);
+            let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110)
+                || (kind == "Canvas"
+                    && exact_canvas_scope_tail(bytes.get(kind_end..paired_at)?, record_index));
             if fixed_tail
                 && parameter_scope_tail_length_is_valid(&kind, tail_length)
                 && fixed_candidate
@@ -1198,6 +1201,33 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         Some(Ok(scope))
     })()
     .transpose()
+}
+
+fn exact_canvas_scope_tail(tail: &[u8], record_index: u32) -> bool {
+    if tail.len() != canvas_tail::LEN {
+        return false;
+    }
+    let reference = |at| super::shared_frames::marked_record_reference(tail, at);
+    View::u32_le_at(tail, canvas_tail::FEATURE_ORDINAL).is_some_and(|ordinal| ordinal != 0)
+        && tail.get(canvas_tail::ZERO_PREFIX..canvas_tail::MEMBER_COUNT) == Some(&[0; 8])
+        && View::u32_le_at(tail, canvas_tail::MEMBER_COUNT) == Some(canvas_tail::MEMBER_COUNT_VALUE)
+        && reference(canvas_tail::SELF_REFERENCE) == Some(record_index)
+        && tail.get(canvas_tail::ZERO_BEFORE_COMPANION..canvas_tail::FIRST_COMPANION)
+            == Some(&[0; 3])
+        && reference(canvas_tail::FIRST_COMPANION).is_some_and(|index| index != 0)
+        && tail.get(canvas_tail::ZERO_BEFORE_HISTORY)
+            == Some(&canvas_tail::ZERO_BEFORE_HISTORY_VALUE)
+        && View::u32_le_at(tail, canvas_tail::HISTORY_STATE)
+            == Some(canvas_tail::HISTORY_STATE_VALUE)
+        && View::f64_le_at(tail, canvas_tail::DURATION)
+            .is_some_and(|value| value.is_finite() && value >= 0.0)
+        && View::u32_le_at(tail, canvas_tail::EPOCH)
+            == View::u32_le_at(tail, canvas_tail::REPEATED_EPOCH)
+        && reference(canvas_tail::SECOND_COMPANION).is_some_and(|index| index != 0)
+        && tail.get(canvas_tail::ZERO_BEFORE_THIRD..canvas_tail::THIRD_COMPANION) == Some(&[0; 2])
+        && reference(canvas_tail::THIRD_COMPANION).is_some_and(|index| index != 0)
+        && reference(canvas_tail::CLOSING_SELF_REFERENCE) == Some(record_index)
+        && tail.get(canvas_tail::ZERO_TAIL) == Some(&canvas_tail::ZERO_TAIL_VALUE)
 }
 
 fn named_parameter_scope_tail_is_valid(

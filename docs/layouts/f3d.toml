@@ -16729,3 +16729,127 @@ type = "f64[16]"
 source = "spec"
 anchor = "a row-major rigid 4×4 transform at offset\n68"
 
+
+[[record]]
+name = "canvas_scope_tail_98"
+kind = "byte"
+section = "3.1"
+anchor = "A `Canvas` scope can have a 98-byte fixed tail"
+size = 98
+note = "Offsets are relative to the end of the LP-UTF16 Canvas kind."
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a positive feature ordinal"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 4
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes"
+
+[[record.field]]
+name = "member_count"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "member count `1`"
+value = 1
+
+[[record.field]]
+name = "self_reference"
+offset = 16
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked self reference"
+
+[[record.field]]
+name = "zero_before_companion"
+offset = 27
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes"
+
+[[record.field]]
+name = "first_companion"
+offset = 30
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked companion reference"
+
+[[record.field]]
+name = "zero_before_history"
+offset = 41
+type = "u8"
+source = "spec"
+anchor = "a zero separator"
+value = 0
+
+[[record.field]]
+name = "history_state"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "null history-state identity `0xffffffff`"
+value = 4294967295
+
+[[record.field]]
+name = "epoch"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "evaluation epoch"
+
+[[record.field]]
+name = "duration"
+offset = 50
+type = "f64"
+source = "spec"
+anchor = "finite nonnegative evaluation duration"
+
+[[record.field]]
+name = "repeated_epoch"
+offset = 58
+type = "u32"
+source = "spec"
+anchor = "the repeated evaluation epoch"
+
+[[record.field]]
+name = "second_companion"
+offset = 62
+type = "bytes[11]"
+source = "spec"
+anchor = "a second marked companion reference"
+
+[[record.field]]
+name = "zero_before_third"
+offset = 73
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes"
+
+[[record.field]]
+name = "third_companion"
+offset = 75
+type = "bytes[11]"
+source = "spec"
+anchor = "a third marked companion reference"
+
+[[record.field]]
+name = "closing_self_reference"
+offset = 86
+type = "bytes[11]"
+source = "spec"
+anchor = "a closing marked self reference"
+
+[[record.field]]
+name = "zero_tail"
+offset = 97
+type = "u8"
+source = "spec"
+anchor = "and a zero byte"
+value = 0

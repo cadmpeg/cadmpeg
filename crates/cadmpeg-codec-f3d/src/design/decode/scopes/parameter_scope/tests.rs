@@ -71,3 +71,77 @@ fn sketch_scope_reference_offsets_refuse_second_unique_marker() {
     assert_eq!(admitted.get(&42), Some(&0));
     assert_eq!(admitted.get(&43), Some(&12));
 }
+
+#[test]
+fn canvas_scope_admits_its_complete_98_byte_tail_and_rejects_broken_links() {
+    use super::parse_parameter_scope;
+    use crate::design::test_support::indexed_record_offsets_for_test;
+    let mut prefix = Vec::new();
+    prefix.extend_from_slice(&3u32.to_le_bytes());
+    prefix.extend_from_slice(b"300");
+    prefix.extend_from_slice(&12u32.to_le_bytes());
+    prefix.extend_from_slice(&[0; 10]);
+    prefix.push(1);
+    prefix.extend_from_slice(&55u32.to_le_bytes());
+    prefix.extend_from_slice(&[0; 6]);
+    prefix.extend_from_slice(&2u32.to_le_bytes());
+    for member in [55u32, 56] {
+        prefix.push(1);
+        prefix.extend_from_slice(&member.to_le_bytes());
+        prefix.extend_from_slice(&[0; 6]);
+    }
+    prefix.extend_from_slice(&u32::MAX.to_le_bytes());
+    lp_utf16(&mut prefix, "Canvas");
+    let mut tail = [0; 98];
+    tail[..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[12..16].copy_from_slice(&1u32.to_le_bytes());
+    for (at, index) in [(16, 12u32), (30, 3), (62, 4), (75, 5), (86, 12)] {
+        tail[at] = 1;
+        tail[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
+    }
+    tail[42..46].copy_from_slice(&u32::MAX.to_le_bytes());
+    tail[46..50].copy_from_slice(&8u32.to_le_bytes());
+    tail[50..58].copy_from_slice(&0.25f64.to_le_bytes());
+    tail[58..62].copy_from_slice(&8u32.to_le_bytes());
+    let parse = |tail: &[u8]| {
+        let mut bytes = prefix.clone();
+        bytes.extend_from_slice(tail);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"260");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        parse_parameter_scope(
+            &bytes,
+            &indexed_record_offsets_for_test(&bytes),
+            12,
+            &"300".to_owned().try_into().unwrap(),
+            0,
+        )
+        .unwrap()
+    };
+    let scope = parse(&tail).expect("Canvas scope with reciprocal self links");
+    assert_eq!(scope.kind().as_str(), "Canvas");
+    assert_eq!(
+        scope
+            .reference_members()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        [55, 56]
+    );
+    assert!(scope.history_state_id().is_none());
+    for offset in [0, 4, 12, 17, 21, 27, 35, 41, 42, 58, 67, 73, 80, 87, 91, 97] {
+        let mut broken = tail;
+        broken[offset] ^= 1;
+        assert!(parse(&broken).is_none(), "tail offset {offset}");
+    }
+    for offset in [31, 63, 76] {
+        let mut broken = tail;
+        broken[offset..offset + 4].fill(0);
+        assert!(parse(&broken).is_none());
+    }
+    for duration in [-0.25, f64::NAN, f64::INFINITY] {
+        let mut broken = tail;
+        broken[50..58].copy_from_slice(&duration.to_le_bytes());
+        assert!(parse(&broken).is_none());
+    }
+}
