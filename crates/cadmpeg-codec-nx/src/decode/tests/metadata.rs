@@ -50,8 +50,7 @@ fn decoded_unknown_limit_error(
             &scan,
             ir,
             body,
-            cadmpeg_ir::Annotations::default(),
-            vec![unknown],
+            (cadmpeg_ir::Annotations::default(), vec![unknown]),
             &mut 0,
         ) {
             Err(error) => error,
