@@ -144,7 +144,7 @@ pub(crate) fn recover(
             }
         }
     }
-    let removed = omit_face_parts(&mut ir.model, &faces)?;
+    let removed = omit_face_parts(ctx, &mut ir.model, &faces)?;
     // These are the only native columns present at this pre-Design boundary.
     macro_rules! retain {
         ($($field:ident),* $(,)?) => {$( retain_references(ctx, &mut native.$field, &removed)?; )*};
@@ -297,10 +297,17 @@ fn retain_references<T: RewriteIdentities>(
 /// Remove only the closure formerly owned by rejected faces. Standalone
 /// geometry and dependencies still used by a sibling remain document content.
 fn omit_face_parts(
+    ctx: &DecodeContext<'_>,
     model: &mut Model,
     faces: &BTreeSet<String>,
 ) -> Result<BTreeSet<String>, CodecError> {
     let mut removed = faces.clone();
+    let possible_surfaces: BTreeSet<_> = model
+        .faces
+        .iter()
+        .filter(|face| faces.contains(face.id.as_str()))
+        .map(|face| face.surface.as_str().to_owned())
+        .collect();
     let loops: BTreeSet<_> = model
         .loops
         .iter()
@@ -522,6 +529,45 @@ fn omit_face_parts(
             )
         };
     }
+    // A solved face-owned carrier has no standalone semantic owner after
+    // its final face is omitted. Preserve it if any surviving typed record
+    // still refers to it; procedural carriers keep their true construction.
+    struct References<'a, 'ctx> {
+        ctx: &'a DecodeContext<'ctx>,
+        used: BTreeSet<String>,
+        candidates: &'a BTreeSet<String>,
+    }
+    impl cadmpeg_ir::document::EntityRewrite for References<'_, '_> {
+        type Error = CodecError;
+        fn rewrite<T: RewriteIdentities>(&mut self, entity: T) -> Result<T, CodecError> {
+            entity.visit_identity_references(self.ctx, &mut |id| {
+                if self.candidates.contains(id) {
+                    self.used.insert(id.to_owned());
+                }
+                Ok(())
+            })?;
+            Ok(entity)
+        }
+    }
+    let mut references = References {
+        ctx,
+        used: BTreeSet::new(),
+        candidates: &possible_surfaces,
+    };
+    let original = std::mem::take(model);
+    model.extend_rewritten(original, &mut references)?;
+    model.surfaces.retain(|surface| {
+        let id = surface.id.as_str();
+        if possible_surfaces.contains(id)
+            && !references.used.contains(id)
+            && matches!(surface.geometry, SurfaceGeometry::Solved(_))
+        {
+            removed.insert(id.to_owned());
+            false
+        } else {
+            true
+        }
+    });
     Ok(removed)
 }
 
