@@ -92,6 +92,141 @@ fn excluded_model_scope_preserves_the_complete_valid_native_act_stream() {
     );
 }
 
+fn act_payloads(native: &crate::native::F3dNative) -> serde_json::Value {
+    let mut content = act_content(native);
+    for records in content.as_object_mut().unwrap().values_mut() {
+        for record in records.as_array_mut().unwrap() {
+            // Generated native identities name their new byte positions.
+            // Compare every payload field, including all record-index joins.
+            record.as_object_mut().unwrap().remove("id").unwrap();
+        }
+    }
+    content
+}
+
+#[test]
+fn native_only_act_reopens_with_exact_payloads_and_reported_unwritten_registration() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
+    let source = include_bytes!("../../../../tests/golden/fixtures/design_appearances_protein.f3d");
+    let decoded = crate::F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native_test::f3d_native(decoded.ir());
+    let act = crate::native::F3dNative {
+        act_tables: native.act_tables,
+        act_types: native.act_types,
+        act_entities: native.act_entities,
+        act_guids: native.act_guids,
+        act_registry_channels: native.act_registry_channels,
+        act_root_components: native.act_root_components,
+        act_table_references: native.act_table_references,
+        ..Default::default()
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.set_scope(cadmpeg_ir::ContentScope::container()).unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        act.store(ctx, ir.native.namespace_mut("f3d")).unwrap();
+    });
+    let mut expected = act_payloads(&act);
+    let part = expected["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|record| record["class_tag"] == "256")
+        .unwrap();
+    assert_eq!(part["entity_ids"], serde_json::json!([2]));
+    // The class membership is typed metadata; no typed Part payload is held.
+    // A source-free writer reports this exact unwritten slot instead of
+    // emitting an invented Part or a dangling MetaStream registration.
+    part["entity_ids"] = serde_json::json!([]);
+    let part_id = act
+        .act_types
+        .iter()
+        .find(|record| record.class_tag.as_str() == "256")
+        .unwrap()
+        .id();
+    let plan = crate::F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.native-records-omitted"
+            && loss.message
+                == format!("ACT type {part_id} omits unwritten instance record indices [2]")
+    }));
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "writer.act-stream-omitted"));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = crate::F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let after = crate::test_support::native_test::f3d_native(written.ir());
+    assert_eq!(act_payloads(&after), expected);
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, written.ir()).unwrap()
+    });
+    assert!(findings.is_empty(), "native findings: {findings:?}");
+    let validation = cadmpeg_ir::validate::validate_neutral(written.ir(), Vec::new()).unwrap();
+    assert!(validation.is_ok(), "{:?}", validation.findings);
+}
+
+#[test]
+fn current_root_index_keeps_its_class_and_reports_only_unresolved_references() {
+    let source = crate::test_support::zip_test::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    );
+    let decoded = crate::F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let mut native = crate::test_support::native_test::f3d_native(&ir);
+    let old_index = native.act_root_components[0].record_index;
+    let class = native.act_root_components[0].class_tag().clone();
+    let current_index = old_index + 1;
+    native.act_root_components[0].record_index = current_index;
+    let guids = native.act_guids.clone();
+    let references = native.act_table_references.clone();
+    ir.model.appearance_bindings.clear();
+    let mut losses = Vec::new();
+    super::reconcile(&ir, &mut native, &mut losses).unwrap();
+    super::prepare_registrations(&mut native, &mut losses);
+    assert_eq!(native.act_guids, guids);
+    assert_eq!(native.act_root_components.len(), 1);
+    assert_eq!(native.act_root_components[0].record_index, current_index);
+    let owner = native
+        .act_types
+        .iter()
+        .find(|record| record.class_tag == class)
+        .unwrap();
+    assert_eq!(
+        owner.entities.values().copied().collect::<Vec<_>>(),
+        [u64::from(current_index)]
+    );
+    assert!(losses.iter().any(|loss| {
+        loss.message
+            == format!(
+                "ACT type {} omits unwritten instance record indices [{old_index}]",
+                owner.id()
+            )
+    }));
+    assert!(!references.is_empty());
+    for reference in references {
+        assert_eq!(reference.target_record, old_index);
+        assert!(losses.iter().any(|loss| {
+            loss.message
+                == format!(
+                    "ACT table reference {} omits unresolved current record index {old_index}",
+                    reference.id()
+                )
+        }));
+    }
+    assert!(native.act_table_references.is_empty());
+}
+
 #[test]
 fn unsupported_copy_paste_products_omit_their_whole_dependent_act_stream() {
     use cadmpeg_ir::codec::write::{

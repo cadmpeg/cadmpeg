@@ -238,27 +238,6 @@ pub(super) fn reconcile(
             )));
             false
         });
-        for record in native.act_types.iter_mut().filter(|record| {
-            ir.scope.model && crate::ids::native_stream(record.id()) == Some(meta_scope.as_str())
-        }) {
-            let entities = record
-                .entities
-                .values()
-                .copied()
-                .filter(|index| {
-                    u32::try_from(*index)
-                        .ok()
-                        .is_some_and(|index| known.contains(&index))
-                })
-                .collect::<Vec<_>>();
-            if entities.len() != record.entities.len() {
-                losses.push(F3dLossCode::WriterNativeRecordsOmitted.note(format!(
-                    "ACT type {} omits unresolved instance references",
-                    record.id()
-                )));
-                record.set_entities(crate::records::identity::ReferenceRun::unlocated(entities));
-            }
-        }
         tables.push(table);
     }
     native.act_tables = tables;
@@ -292,6 +271,57 @@ pub(super) fn reconcile(
         crate::ids::native_stream(record.id()).is_some_and(|scope| meta_scopes.contains(scope))
     });
     Ok(())
+}
+
+/// Limit the emitted registry to records the typed ACT writer actually emits.
+/// An excluded neutral scope does not erase native registration metadata;
+/// this later encoding reduction names every membership without a payload.
+pub(super) fn prepare_registrations(native: &mut F3dNative, losses: &mut Vec<LossNote>) {
+    let mut written = std::collections::BTreeMap::<String, BTreeSet<u64>>::new();
+    for table in &native.act_tables {
+        let Some(scope) = crate::ids::native_stream(&table.id) else {
+            continue;
+        };
+        let records = written.entry(scope.to_owned()).or_default();
+        records.insert(u64::from(table.record_index));
+        records.extend(
+            native
+                .act_entities
+                .iter()
+                .filter(|record| record.stream() == scope)
+                .map(|record| u64::from(record.record_index())),
+        );
+        records.extend(
+            native
+                .act_root_components
+                .iter()
+                .filter(|record| record.stream() == scope)
+                .map(|record| u64::from(record.record_index)),
+        );
+    }
+    for record in &mut native.act_types {
+        let Some(scope) = crate::ids::native_stream(record.id()) else {
+            continue;
+        };
+        let Some(prefix) = scope.strip_suffix("MetaStream.dat") else {
+            continue;
+        };
+        let Some(known) = written.get(&format!("{prefix}BulkStream.dat")) else {
+            continue;
+        };
+        let (entities, omitted): (Vec<_>, Vec<_>) = record
+            .entities
+            .values()
+            .copied()
+            .partition(|index| known.contains(index));
+        if !omitted.is_empty() {
+            losses.push(F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                "ACT type {} omits unwritten instance record indices {omitted:?}",
+                record.id()
+            )));
+            record.set_entities(crate::records::identity::ReferenceRun::unlocated(entities));
+        }
+    }
 }
 
 #[cfg(test)]
