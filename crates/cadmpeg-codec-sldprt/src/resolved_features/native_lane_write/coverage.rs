@@ -3,8 +3,8 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_ir::CadIr;
 use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
+use cadmpeg_ir::CadIr;
 
 use crate::native::SldprtNative;
 
@@ -13,6 +13,7 @@ pub(super) fn neutral_copies(
     ir: &CadIr,
     source: &SldprtNative,
     target: &SldprtNative,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     dispositions: &mut NativeDispositions,
 ) {
     // Arena defaults describe records that survived synthesis. Exceptions
@@ -61,6 +62,7 @@ pub(super) fn neutral_copies(
             }
         }
     }
+    let mut omitted = Vec::new();
     let mut regenerated = |arena: &str, id: &str| {
         dispositions.set_record("sldprt", arena, id, NativeDisposition::Regenerated);
     };
@@ -175,6 +177,38 @@ pub(super) fn neutral_copies(
         for scalar in &lane.scalars {
             if scalars.contains(scalar.id.as_str()) || constraint_refs.contains(scalar.id.as_str())
             {
+                let incompatible = document
+                    .model
+                    .parameters
+                    .iter()
+                    .find(|parameter| parameter.native_ref.as_deref() == Some(scalar.id.as_str()))
+                    .and_then(|parameter| {
+                        ir.model
+                            .parameters
+                            .iter()
+                            .find(|current| current.id == parameter.id)
+                    })
+                    .and_then(|parameter| parameter.value.as_ref())
+                    .is_some_and(|value| {
+                        !super::super::parameters::scalar_quantity_matches(lane, scalar, value)
+                    });
+                if incompatible {
+                    // Keywords can regenerate the canonical name/value, but
+                    // cannot reproduce this native dimensional statement and
+                    // its operand references from an independent real control.
+                    regenerated("feature_input_names", &scalar.name);
+                    omitted.push(("feature_input_scalars", scalar.id.clone()));
+                    omitted.extend(scalar.operands.iter().map(|operand| {
+                        ("feature_input_references", operand.reference_ref.clone())
+                    }));
+                    omitted.extend(
+                        lane.relation_bindings
+                            .iter()
+                            .filter(|binding| binding.scalar_ref == scalar.id)
+                            .map(|binding| ("feature_input_relation_bindings", binding.id.clone())),
+                    );
+                    continue;
+                }
                 regenerated("feature_input_scalars", &scalar.id);
                 regenerated("feature_input_names", &scalar.name);
                 for operand in &scalar.operands {
@@ -190,5 +224,11 @@ pub(super) fn neutral_copies(
                 }
             }
         }
+    }
+    for (arena, id) in omitted {
+        dispositions.set_record("sldprt", arena, &id, NativeDisposition::Dropped);
+        losses.push(crate::loss::SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+            "native {arena} {id}: canonical parameter quantity does not match the retained native scalar quantity"
+        )));
     }
 }

@@ -25,7 +25,7 @@ pub(crate) fn regenerate(
     losses: &mut Vec<LossNote>,
     dispositions: &mut NativeDispositions,
 ) -> Result<(), CodecError> {
-    coverage::neutral_copies(document, ir, source, native, dispositions);
+    coverage::neutral_copies(document, ir, source, native, losses, dispositions);
     let neutral_owners = ir
         .model
         .features
