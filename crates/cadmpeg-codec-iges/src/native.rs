@@ -1292,6 +1292,7 @@ mod occurrence {
         pub(super) neutral_links: Vec<String>,
         pub(super) instance_path: Vec<String>,
         pub(super) local_transform: [[f64; 4]; 3],
+        pub(super) world_transform: [[f64; 4]; 3],
     }
 
     struct OccurrencePath<'a>(&'a [u32]);
@@ -1321,7 +1322,7 @@ mod occurrence {
             neutral_links: Vec<String>,
             frames: ([[f64; 4]; 3], [[f64; 4]; 3]),
         ) -> Self {
-            let (local_transform, _) = frames;
+            let (local_transform, world_transform) = frames;
             let path_key = OccurrencePath(path);
             let (id, role) = match member {
                 Some(member) => (
@@ -1348,6 +1349,7 @@ mod occurrence {
                     .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     .collect(),
                 local_transform,
+                world_transform,
             }
         }
     }
@@ -1364,6 +1366,7 @@ mod occurrence {
                 neutral_links: &'a [String],
                 instance_path: &'a [String],
                 local_transform: [[f64; 4]; 3],
+                world_transform: [[f64; 4]; 3],
             }
             Wire {
                 id: &self.id,
@@ -1374,6 +1377,7 @@ mod occurrence {
                 neutral_links: &self.neutral_links,
                 instance_path: &self.instance_path,
                 local_transform: self.local_transform,
+                world_transform: self.world_transform,
             }
             .serialize(serializer)
         }
