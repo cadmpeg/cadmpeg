@@ -1994,7 +1994,7 @@ fn source_native_record_reduction_is_reported() {
     )
     .unwrap();
     assert!(report.losses.iter().any(|loss| {
-        loss.message
-            .contains("source-native record(s) were not represented in STEP")
+        loss.code.local_code() == "native.records-omitted"
+            && loss.message == "the step write omits 1 native record(s) from `f3d.asm_histories`"
     }));
 }

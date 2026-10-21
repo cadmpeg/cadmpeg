@@ -176,7 +176,14 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
         .expect("decode AP203 sheet");
 
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["schema"],
+        result
+            .ir()
+            .source
+            .as_ref()
+            .unwrap()
+            .dialect()
+            .unwrap()
+            .declared()["file_schema_identifier"],
         "CONFIG_CONTROL_DESIGN"
     );
     assert_eq!(result.ir().model.bodies.len(), 1);
