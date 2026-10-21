@@ -36,9 +36,9 @@ impl Helix {
     }
 
     /// `C(t) = center + s·(major·cos t + minor·sin t) + pitch·q`, with
-    /// `q = (t - t0) / 2π` and `s = 1 + apex_factor·q`.
+    /// `q = t / 2π` and `s = 1 + apex_factor·q`.
     fn point(&self, parameter: f64) -> Point3 {
-        let turns = (parameter - self.angle_range[0]) / std::f64::consts::TAU;
+        let turns = parameter / std::f64::consts::TAU;
         let scale = 1.0 + self.apex_factor * turns;
         let (sin, cos) = parameter.sin_cos();
         Point3::new(

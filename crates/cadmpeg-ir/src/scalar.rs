@@ -740,25 +740,6 @@ impl FiniteReal {
         cadmpeg_core::convert::f64_from_i64(value).map(Self)
     }
 
-    /// The turns from `start` to `self`: `(self - start) / τ`, rounded once
-    /// from the exact difference.
-    ///
-    /// The exact difference of two finite values is at most `2 * f64::MAX`
-    /// in magnitude and `τ` exceeds two, so the quotient is finite and nothing
-    /// is checked. The route lives beside [`FiniteReal`] because only this
-    /// module constructs one.
-    #[must_use]
-    pub(crate) fn turns_from(self, start: Self) -> Self {
-        use crate::math::sum::{ExactSignedSum, ScaledValue};
-        let mut difference = ExactSignedSum::default();
-        difference.add_product(self.0, 1.0);
-        difference.add_product(start.0, -1.0);
-        let turn = ScaledValue::of_nonzero(NonZeroReal(std::f64::consts::TAU));
-        Self(difference.finish().map_or(0.0, |difference| {
-            difference.quotient_shifted_product(turn, 0)
-        }))
-    }
-
     /// Where `self` lies against the segment from `start` to `end`: outside
     /// it, on a segment of zero width, or at the fraction `(self - start) /
     /// (end - start)`, rounded once from the exact differences.
