@@ -208,7 +208,7 @@ fn geometry_depth_agrees_with_full_depth() {
 }
 
 /// Independent fixture expectations: unknown DATA types and the unsupported
-/// NULL_STYLE assignment have no typed document record. Header/signature
+/// `NULL_STYLE` assignment have no typed document record. Header/signature
 /// retention and warnings about typed products or meshes do not add content.
 fn assert_fixture_source_content(name: &str, result: &cadmpeg_ir::codec::DecodeResult) {
     use cadmpeg_ir::{ArenaClass, ArenaClasses};
