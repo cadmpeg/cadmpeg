@@ -129,7 +129,8 @@ fn every_golden_shape_refuses_an_unknown_key() {
 /// says so.
 fn hand_written_documents() -> Vec<(&'static str, Value)> {
     use cadmpeg_ir::features::{
-        Dimension, Expression, Feature, FeatureDefinition, FeatureEvaluation, NativeFeatureKind,
+        Dimension, Expression, Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation,
+        NativeFeatureKind,
     };
     use cadmpeg_ir::presentation::{
         CameraState, PresentationDocument, PresentationState, PresentationStateKind,
@@ -234,13 +235,15 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Native {
-            kind: NativeFeatureKind::Other("zz_source_operation".to_string()),
-            parameters: BTreeMap::from([(
-                cadmpeg_core::nonblank_literal!("zz_source_parameter"),
-                Dimension::Literal(Expression::text("10 mm")),
-            )]),
-        }),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Native {
+                kind: NativeFeatureKind::Other("zz_source_operation".to_string()),
+                parameters: BTreeMap::from([(
+                    cadmpeg_core::nonblank_literal!("zz_source_parameter"),
+                    Dimension::Literal(Expression::text("10 mm")),
+                )]),
+            },
+        )),
         native_ref: None,
     });
 
