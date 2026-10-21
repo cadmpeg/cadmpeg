@@ -159,4 +159,27 @@ fn a_retained_f3d_with_zstandard_members_patches() {
         .decode(&mut Cursor::new(patched), &DecodeOptions::default())
         .expect("decode the patched archive");
     assert_eq!(f3d_native(result.ir()).creation_timestamps, expected);
+
+    // An additional unsupported attribute must still decline preservation.
+    // The supported timestamp and all name carriers are the same as above.
+    let mut unsupported = target.clone();
+    let mut attribute = unsupported.model.attributes[0].clone();
+    attribute.id = cadmpeg_ir::ids::AttributeId::mint("authored:attribute#unsupported").unwrap();
+    attribute.name = "unsupported-attribute".into();
+    unsupported.model.attributes.push(attribute);
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&unsupported, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "writer.auxiliary-omitted"));
 }
