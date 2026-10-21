@@ -21,7 +21,7 @@ use crate::geometry::nurbs::bounds::speed_bound_by;
 use crate::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
     pcurve::PcurveGeometry,
-    CurveGeometry, LawExpression, LawFormula, ProceduralCurveDefinition,
+    CurveGeometry, HelixCurveConstruction, LawExpression, LawFormula, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     SweepSurfaceLayout,
 };
@@ -45,6 +45,9 @@ pub mod admission;
 
 /// Evaluation under the caller decode resource limits.
 pub mod decode;
+
+/// Polynomial B-spline approximation of native helix paths.
+pub mod helix_nurbs;
 
 mod basis;
 mod bezier;
@@ -3813,12 +3816,9 @@ fn differential_at(
 /// reads no derivative, so a tangent or acceleration outside the finite
 /// range is that derivative's own failure.
 fn helix_differential(
-    definition: &ProceduralCurveDefinition,
+    helix_payload: &HelixCurveConstruction,
     parameter: f64,
 ) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
-    let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
-        return Err(EvaluationFailure::NoValue);
-    };
     let [start, end] = helix_payload.angle_range().finite_components();
     let center = helix_payload.center().get();
     let major = helix_payload.major().get();
@@ -3942,8 +3942,8 @@ fn model_curve_differential_by_id_inner(
                         acceleration: differential.acceleration,
                     });
                 }
-                ProceduralCurveDefinition::Helix(_) => {
-                    return helix_differential(procedural.definition(), parameter);
+                ProceduralCurveDefinition::Helix(helix) => {
+                    return helix_differential(helix, parameter);
                 }
                 _ => {}
             }
@@ -4575,9 +4575,8 @@ fn model_curve_point_by_id_inner(
             )?;
             model_curve_point_by_id_inner(admission, index, source, source_parameter)
         }
-        ProceduralCurveDefinition::Helix(_) => {
-            helix_differential(procedural.definition(), parameter)
-                .map(|differential| differential.point)
+        ProceduralCurveDefinition::Helix(helix) => {
+            helix_differential(helix, parameter).map(|differential| differential.point)
         }
         ProceduralCurveDefinition::TolerantIntersection {
             construction: intersection,
@@ -5078,7 +5077,7 @@ fn helix_parameter_near_point(
     let mut parameter = seed;
     for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
         let Some(differential) =
-            finite_or_refusal(helix_differential(definition, parameter.get()))?
+            finite_or_refusal(helix_differential(helix_payload, parameter.get()))?
         else {
             return Ok(None);
         };
@@ -5110,7 +5109,7 @@ fn helix_parameter_near_point(
         parameter = next;
     }
 
-    let Some(differential) = finite_or_refusal(helix_differential(definition, parameter.get()))?
+    let Some(differential) = finite_or_refusal(helix_differential(helix_payload, parameter.get()))?
     else {
         return Ok(None);
     };

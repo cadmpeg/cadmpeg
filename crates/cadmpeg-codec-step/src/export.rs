@@ -7,10 +7,11 @@ use std::io::Write;
 use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
 #[cfg(test)]
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::eval::helix_nurbs::helix_nurbs;
 use cadmpeg_ir::geometry::{
-    analytic::TorusSurface, pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface,
+    analytic::TorusSurface, pcurve::Pcurve, Curve, CurveGeometry, HelixCurveConstruction,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{AppearanceBindingId, OccurrenceId, ProductDefinitionId, ShellId};
 use cadmpeg_ir::pmi::{
@@ -302,6 +303,9 @@ pub(crate) struct Builder<'a> {
     pub(crate) active_curves: BTreeSet<String>,
     written_procedural_surfaces: BTreeSet<String>,
     written_procedural_curves: BTreeSet<String>,
+    /// Helix constructions written as fitted B-splines because they carry no
+    /// solved carrier.
+    fitted_helix_curves: BTreeSet<String>,
     /// Analytic surface records the writer put in the file, in emission order.
     written_analytic_surfaces: Vec<WrittenAnalyticSurface<'a>>,
 
@@ -519,6 +523,7 @@ impl<'a> Builder<'a> {
             active_curves: BTreeSet::new(),
             written_procedural_surfaces: BTreeSet::new(),
             written_procedural_curves: BTreeSet::new(),
+            fitted_helix_curves: BTreeSet::new(),
             written_analytic_surfaces: Vec::new(),
             curveless_edges: BTreeSet::new(),
             point_loop_curves: BTreeSet::new(),
@@ -2754,7 +2759,7 @@ impl<'a> Builder<'a> {
                 );
                 continue;
             };
-            if !geometry::curve_is_supported(&curve.geometry) {
+            if !self.curve_is_writable(curve) {
                 self.curveless_edges.insert(edge_key.to_string());
                 self.topology_relation_loss(
                     format!("edge:{edge_key}:unsupported-curve:{curve_id}"),
@@ -2954,7 +2959,7 @@ impl<'a> Builder<'a> {
         if self
             .curves
             .get(curve_id.as_str())
-            .is_some_and(|curve| !geometry::curve_is_supported(&curve.geometry))
+            .is_some_and(|curve| !self.curve_is_writable(curve))
         {
             self.curveless_edges.insert(edge_id.to_string());
             self.topology_relation_loss(
@@ -3337,6 +3342,12 @@ impl<'a> Builder<'a> {
                         }
                     ),
                 )
+            } else if let Some((id, helix)) = self.unsolved_helix(curve_id) {
+                let fitted = helix_nurbs(helix, self.ir.tolerances.linear).ok()?;
+                let reference =
+                    geometry::curve(&mut self.emitter, &SolvedCurveGeometry::Nurbs(fitted))?;
+                self.fitted_helix_curves.insert(id.to_owned());
+                reference
             } else if !geometry::curve_is_supported(&geometry) {
                 return None;
             } else {
@@ -3350,6 +3361,27 @@ impl<'a> Builder<'a> {
             self.curve_refs.insert(curve_id.to_string(), r);
         }
         result
+    }
+
+    /// Whether `curve` has a STEP carrier: a supported solved carrier, or a
+    /// helix construction the writer fits.
+    fn curve_is_writable(&self, curve: &Curve) -> bool {
+        geometry::curve_is_supported(&curve.geometry)
+            || self.unsolved_helix(curve.id.as_str()).is_some()
+    }
+
+    /// The construction id and helix of a curve whose helix construction
+    /// carries no solved carrier.
+    fn unsolved_helix(&self, curve_id: &str) -> Option<(&'a str, &'a HelixCurveConstruction)> {
+        let curve = self.curves.get(curve_id)?;
+        if curve.geometry.solved().is_some() {
+            return None;
+        }
+        let procedural = self.procedural_curves.get(curve_id)?;
+        match procedural.definition() {
+            ProceduralCurveDefinition::Helix(helix) => Some((procedural.id.as_str(), helix)),
+            _ => None,
+        }
     }
 
     fn emit_procedural_curve(&mut self, definition: &ProceduralCurveDefinition) -> Option<Ref> {
@@ -5101,6 +5133,7 @@ impl<'a> Builder<'a> {
                     && !self
                         .written_procedural_curves
                         .contains(procedural.id.as_str())
+                    && !self.fitted_helix_curves.contains(procedural.id.as_str())
             })
             .map(|(_, procedural)| procedural.id.as_str())
             .collect();
@@ -5125,6 +5158,7 @@ impl<'a> Builder<'a> {
                 !self
                     .written_procedural_curves
                     .contains(procedural.id.as_str())
+                    && !self.fitted_helix_curves.contains(procedural.id.as_str())
                     && !reduced_curves.contains(procedural.id.as_str())
             })
             .count();
@@ -5135,6 +5169,15 @@ impl<'a> Builder<'a> {
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
                     "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers"
+                ),
+            );
+        }
+        if !self.fitted_helix_curves.is_empty() {
+            self.loss(
+                StepLossCode::HelixFittedToBspline,
+                format!(
+                    "{} helix definition(s) without a solved carrier were written as cubic B-splines within the linear tolerance",
+                    self.fitted_helix_curves.len()
                 ),
             );
         }
