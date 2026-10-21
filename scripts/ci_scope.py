@@ -40,6 +40,9 @@ NON_GATE_WORKFLOWS = {
     'prefill-pr-description.yml', 'publish-crates.yml', 'release.yml',
 }
 
+# Single-codec CLI builds in the feature-gate job, by output name.
+SINGLE_CODEC_GATES = {'sldprt_cli': 'cadmpeg-codec-sldprt', 'step_cli': 'cadmpeg-codec-step'}
+
 # Read by the `cadmpeg` package's `layout_tables` test.
 LAYOUT_TABLE_INPUTS = ('docs/formats/', 'docs/layouts/')
 
@@ -99,23 +102,32 @@ def select(root: Path, paths: list[str], *, full: bool = False,
             members[directory.relative_to(root).as_posix()] = package
     names = {package['package']['name'] for package in members.values()}
     reverse = {name: set() for name in names}
+    required = {name: set() for name in names}
     for package in members.values():
         tables = [package]
         tables.extend(package.get('target', {}).values())
         for table in tables:
             for kind in ('dependencies', 'dev-dependencies', 'build-dependencies'):
                 for alias, dependency in table.get(kind, {}).items():
+                    optional = isinstance(dependency, dict) and dependency.get('optional', False)
                     if isinstance(dependency, dict) and dependency.get('workspace'):
                         dependency = manifest['workspace']['dependencies'][alias]
                     name = dependency.get('package', alias) if isinstance(dependency, dict) else alias
                     if name in names:
                         reverse[name].add(package['package']['name'])
+                        if not optional:
+                            required[package['package']['name']].add(name)
+    fuzz_manifest = root / 'crates/cadmpeg-fuzz/Cargo.toml'
+    fuzz_inputs = (set(tomllib.loads(fuzz_manifest.read_text()).get('dependencies', {})) & names
+                   if fuzz_manifest.exists() else set())
     if (cache_writer or tested) and any(is_cache_key_input(path) for path in paths):
         full = True
     elif tested:
-        return {'packages': [], 'rust': False, 'features': False, 'schema': False,
+        return {'packages': [], 'rust': False, 'fuzz': False,
+                **dict.fromkeys(SINGLE_CODEC_GATES, False), 'schema': False,
                 'iges': False, 'full': False, 'static': False, 'audit': False}
     affected = set()
+    tested_only = set()
     fuzz = False
     audit = full
     for path in paths:
@@ -138,7 +150,7 @@ def select(root: Path, paths: list[str], *, full: bool = False,
         elif path in EMBEDDED_BY:
             affected.add(EMBEDDED_BY[path])
         elif path.startswith(LAYOUT_TABLE_INPUTS):
-            affected.add('cadmpeg')
+            tested_only.add('cadmpeg')
         elif path in {'scripts/inventor-evidence.py', 'scripts/test_inventor_evidence.py'}:
             affected.add('cadmpeg-codec-inventor')
         elif path == 'scripts/verify-iges-bounded.py':
@@ -160,17 +172,30 @@ def select(root: Path, paths: list[str], *, full: bool = False,
     if full:
         affected = names.copy()
         fuzz = True
-    cli_changed = bool(affected & {'cadmpeg', 'cadmpeg-registry'})
+    changed = set(affected)
+    affected |= tested_only
+    cli_changed = bool(changed & {'cadmpeg', 'cadmpeg-registry'})
     pending = list(affected)
     while pending:
         for dependent in reverse[pending.pop()]:
             if dependent not in affected:
                 affected.add(dependent)
                 pending.append(dependent)
+    gates = {}
+    for output, codec in SINGLE_CODEC_GATES.items():
+        inputs = {'cadmpeg', codec}
+        pending = list(inputs)
+        while pending:
+            for dependency in required.get(pending.pop(), ()):
+                if dependency not in inputs:
+                    inputs.add(dependency)
+                    pending.append(dependency)
+        gates[output] = bool(changed & inputs)
     return {
         'packages': sorted(affected),
         'rust': full or bool(affected),
-        'features': bool(affected) or fuzz,
+        'fuzz': fuzz or bool(affected & fuzz_inputs),
+        **gates,
         'schema': full or bool(affected & {'cadmpeg-core', 'cadmpeg-ir', 'cadmpeg-asm'}),
         'iges': full or 'cadmpeg-codec-iges' in affected or cli_changed,
         'full': full,

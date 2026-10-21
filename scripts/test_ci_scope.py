@@ -21,6 +21,11 @@ class ScopeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             command(['test'], [])
 
+    def test_nextest_command_keeps_its_subcommand_before_the_scope(self):
+        self.assertEqual(command(['nextest', 'run', '--no-fail-fast'], ['cadmpeg-ir']),
+                         ['cargo', 'nextest', 'run', '--cargo-quiet', '--status-level', 'fail',
+                          '-p', 'cadmpeg-ir', '--no-fail-fast'])
+
     def test_cli_only_has_no_library_doc_tests(self):
         with patch.dict('os.environ', {'CI_PACKAGES': '["cadmpeg"]', 'CI_FULL': 'false'}), \
                 patch('sys.argv', ['ci_cargo.py', 'test', '--doc']), \
@@ -45,7 +50,7 @@ class ScopeTests(unittest.TestCase):
         self.assertTrue(select(ROOT, ['crates/cadmpeg-codec-rhino/Cargo.toml'])['full'])
         scope = select(ROOT, ['crates/cadmpeg-fuzz/Cargo.toml'])
         self.assertFalse(scope['rust'])
-        self.assertTrue(scope['features'])
+        self.assertTrue(scope['fuzz'])
 
     def test_graph_keeps_renamed_workspace_target_build_and_dev_dependencies(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -85,7 +90,7 @@ class ScopeTests(unittest.TestCase):
     def test_python_only_skips_rust(self):
         scope = select(ROOT, ['scripts/check-deny-census.py'])
         self.assertFalse(scope['rust'])
-        self.assertFalse(scope['features'])
+        self.assertFalse(scope['fuzz'])
 
     def test_codec_selects_facade_and_cli_dependents(self):
         scope = select(ROOT, ['crates/cadmpeg-codec-iges/src/reader.rs'])
@@ -94,7 +99,7 @@ class ScopeTests(unittest.TestCase):
         self.assertIn('cadmpeg', scope['packages'])
         self.assertNotIn('cadmpeg-codec-step', scope['packages'])
         self.assertTrue(scope['iges'])
-        self.assertTrue(scope['features'])
+        self.assertTrue(scope['fuzz'])
 
     def test_other_codec_does_not_repeat_bounded_iges_gate(self):
         scope = select(ROOT, ['crates/cadmpeg-codec-rhino/src/reader.rs'])
@@ -112,7 +117,7 @@ class ScopeTests(unittest.TestCase):
     def test_fuzz_only_keeps_independent_workspace_gate(self):
         scope = select(ROOT, ['crates/cadmpeg-fuzz/fuzz_targets/iges.rs'])
         self.assertFalse(scope['rust'])
-        self.assertTrue(scope['features'])
+        self.assertTrue(scope['fuzz'])
         self.assertFalse(scope['schema'])
 
     def test_move_includes_both_old_and_new_owners(self):
@@ -161,7 +166,7 @@ class ScopeTests(unittest.TestCase):
             with self.subTest(path=path):
                 scope = select(ROOT, [path])
                 self.assertFalse(scope['rust'])
-                self.assertFalse(scope['features'])
+                self.assertFalse(scope['fuzz'])
                 self.assertTrue(scope['static'])
 
     def test_workflows_outside_the_gate_skip_rust(self):
@@ -211,10 +216,34 @@ class ScopeTests(unittest.TestCase):
     def test_tested_commit_only_refreshes_cache(self):
         scope = select(ROOT, ['crates/cadmpeg-codec-rhino/src/reader.rs'], tested=True)
         self.assertFalse(scope['rust'])
-        self.assertFalse(scope['features'])
+        self.assertFalse(scope['fuzz'])
         self.assertFalse(scope['static'])
         self.assertFalse(scope['audit'])
         self.assertTrue(select(ROOT, ['Cargo.toml'], tested=True)['full'])
+
+    def test_single_codec_gates_follow_their_build_inputs(self):
+        other = select(ROOT, ['crates/cadmpeg-codec-f3d/src/lib.rs'])
+        self.assertFalse(other['sldprt_cli'])
+        self.assertFalse(other['step_cli'])
+        step = select(ROOT, ['crates/cadmpeg-codec-step/src/lib.rs'])
+        self.assertFalse(step['sldprt_cli'])
+        self.assertTrue(step['step_cli'])
+        for path in ('crates/cadmpeg-registry/src/lib.rs', 'crates/cadmpeg-core/src/lib.rs'):
+            with self.subTest(path=path):
+                scope = select(ROOT, [path])
+                self.assertTrue(scope['sldprt_cli'])
+                self.assertTrue(scope['step_cli'])
+
+    def test_specification_edit_runs_only_the_layout_table_test(self):
+        scope = select(ROOT, ['docs/formats/f3d.md'])
+        self.assertEqual(scope['packages'], ['cadmpeg'])
+        for output in ('fuzz', 'sldprt_cli', 'step_cli', 'iges', 'schema'):
+            with self.subTest(output=output):
+                self.assertFalse(scope[output])
+
+    def test_fuzz_follows_the_fuzz_crate_dependencies(self):
+        self.assertTrue(select(ROOT, ['crates/cadmpeg-codec-f3d/src/lib.rs'])['fuzz'])
+        self.assertFalse(select(ROOT, ['crates/cadmpeg-registry/src/lib.rs'])['fuzz'])
 
 
 if __name__ == '__main__':
