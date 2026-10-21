@@ -179,6 +179,7 @@ terminal:
            optional nonempty LP-UTF16 lineage_urn beginning `urn:`, end of file
   or u8 1, end of file
   or u8 1, LP-UTF16 `NA_EXPORT`, end of file
+  or u8 1, nonempty LP-UTF16 lineage_urn beginning `urn:`, end of file
 ```
 
 `active_asset_guid` is the first asset GUID of the active asset. The active asset can be the Design asset, a simulation case, an animation, or another asset kind. It does not select the Design folder.
