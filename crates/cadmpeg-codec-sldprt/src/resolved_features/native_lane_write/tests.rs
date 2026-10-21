@@ -134,6 +134,38 @@ fn native_control_source(configuration: Option<String>) -> SldprtNative {
 #[test]
 fn native_configuration_statements_join_the_authored_scalar_lane() {
     let mut source = native_control_source(Some("1".into()));
+    let mut other = source.feature_histories[0].features[0].clone();
+    other.id = "sldprt:history:feature#other-control".into();
+    other.ordinal = 1;
+    other.name = "OtherOwner".into();
+    other.source_id = crate::records::FeatureSource::from_value(2);
+    source.feature_histories[0].features.push(other);
+    let mut source_payload = source.feature_input_lanes[0]
+        .native_payload
+        .clone()
+        .into_inner();
+    super::super::write_generate::append_generated_object_name(
+        &mut source_payload,
+        "OtherOwner",
+        2,
+    )
+    .unwrap();
+    super::super::write_generate::append_generated_scalar(
+        &mut source_payload,
+        "moLengthParameter_c",
+        "OtherNative",
+        0.056,
+        24,
+        &[],
+    )
+    .unwrap();
+    source.feature_input_lanes[0] = super::super::write_prepare::generated_native_lane(
+        &source.feature_histories,
+        "sldprt:feature-input#controls",
+        Some("1".into()),
+        source_payload,
+    )
+    .unwrap();
     source.feature_input_lanes[0].scalars[0].value =
         cadmpeg_ir::scalar::FiniteReal::new(0.034).expect("native-only current value");
     let mut target = source.clone();
@@ -151,6 +183,19 @@ fn native_configuration_statements_join_the_authored_scalar_lane() {
             &[],
         )
         .expect("current inactive configuration cache");
+    }
+    super::super::write_generate::append_generated_object_name(&mut payload, "OtherOwner", 2)
+        .unwrap();
+    for (name, value, object) in [("Width", 0.070, 43), ("Depth", 0.140, 44)] {
+        super::super::write_generate::append_generated_scalar(
+            &mut payload,
+            "moLengthParameter_c",
+            name,
+            value,
+            object,
+            &[],
+        )
+        .unwrap();
     }
     target.feature_input_lanes.push(
         super::super::write_prepare::generated_configuration_lane(
@@ -181,22 +226,37 @@ fn native_configuration_statements_join_the_authored_scalar_lane() {
     assert_eq!(target.feature_input_lanes.len(), 1);
     let lane = &target.feature_input_lanes[0];
     assert_eq!(lane.configuration.as_deref(), Some("1"));
-    assert_eq!(lane.scalars.len(), 3);
-    for (name, value) in [("Width", 0.050), ("Depth", 0.100), ("NativeOnly", 0.034)] {
-        let named = lane
-            .names
-            .iter()
-            .find(|record| record.value == name)
-            .unwrap();
+    assert_eq!(lane.scalars.len(), 6);
+    for (owner_index, name, value) in [
+        (0, "Width", 0.050),
+        (0, "Depth", 0.100),
+        (0, "NativeOnly", 0.034),
+        (1, "Width", 0.070),
+        (1, "Depth", 0.140),
+        (1, "OtherNative", 0.056),
+    ] {
+        let owner = &source.feature_histories[0].features[owner_index];
         let scalar = lane
             .scalars
             .iter()
-            .find(|record| record.name == named.id)
+            .find(|scalar| {
+                scalar.feature_ref.as_deref() == Some(owner.id.as_str())
+                    && lane
+                        .names
+                        .iter()
+                        .any(|record| record.id == scalar.name && record.value == name)
+            })
             .unwrap();
         assert_eq!(scalar.value.get(), value);
         assert_eq!(
-            scalar.feature_ref.as_deref(),
-            Some(source.feature_histories[0].features[0].id.as_str())
+            lane.names
+                .iter()
+                .filter(|name| {
+                    name.object_id.and_then(|id| id.value()) == owner.source_value()
+                        && name.value == owner.name
+                })
+                .count(),
+            1
         );
     }
     assert!(lane

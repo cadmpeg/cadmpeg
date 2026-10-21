@@ -399,8 +399,7 @@ fn merge_configuration_lane(
     if let [index] = candidates.as_slice() {
         let previous = &native.feature_input_lanes[*index];
         if previous.id.starts_with("sldprt:generated:") && !previous.native_payload.is_empty() {
-            let mut payload = previous.native_payload.clone().into_inner();
-            payload.extend_from_slice(&generated.native_payload);
+            let payload = combine_authored_owners(previous, &generated, &native.feature_histories)?;
             let combined = super::write_prepare::generated_native_lane(
                 &native.feature_histories,
                 &previous.id,
@@ -413,6 +412,105 @@ fn merge_configuration_lane(
     }
     native.feature_input_lanes.push(generated);
     Ok(())
+}
+
+struct AuthoredOwner<'a> {
+    id: &'a str,
+    start: usize,
+    name_start: usize,
+    name_end: usize,
+    end: usize,
+}
+
+/// These positions belong only to fresh target bytes. Each current native
+/// feature contributes at most one unique object name in either authored lane.
+fn authored_owners<'a>(
+    lane: &'a FeatureInputLane,
+    histories: &'a [crate::records::FeatureHistory],
+) -> Result<Vec<AuthoredOwner<'a>>, CodecError> {
+    let names = super::scalars::FeatureObjectNames::new(&lane.names);
+    let mut owners = Vec::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        let Some(name) = names.of(feature) else {
+            continue;
+        };
+        let name_start = name
+            .offset
+            .and_then(|offset| usize::try_from(offset).ok())
+            .ok_or_else(|| {
+                CodecError::malformed("authored native object has no target position")
+            })?;
+        let start = lane
+            .classes
+            .iter()
+            .filter(|class| class.feature_ref.as_deref() == Some(feature.id.as_str()))
+            .filter_map(|class| class.offset.and_then(|offset| usize::try_from(offset).ok()))
+            .filter(|offset| *offset < name_start)
+            .min()
+            .unwrap_or(name_start);
+        let name_end = name
+            .value
+            .encode_utf16()
+            .count()
+            .checked_mul(2)
+            .and_then(|length| length.checked_add(super::NAME_MARKER.len() + 1 + 12))
+            .and_then(|length| name_start.checked_add(length))
+            .ok_or_else(|| CodecError::malformed("authored native object name extent overflows"))?;
+        owners.push(AuthoredOwner {
+            id: &feature.id,
+            start,
+            name_start,
+            name_end,
+            end: lane.native_payload.len(),
+        });
+    }
+    owners.sort_by_key(|owner| owner.start);
+    for index in 0..owners.len() {
+        if let Some(next) = owners.get(index + 1) {
+            owners[index].end = next.start;
+        }
+        if owners[index].name_end > owners[index].end {
+            return Err(CodecError::malformed(
+                "authored native object framing overlaps another owner",
+            ));
+        }
+    }
+    Ok(owners)
+}
+
+fn combine_authored_owners(
+    previous: &FeatureInputLane,
+    generated: &FeatureInputLane,
+    histories: &[crate::records::FeatureHistory],
+) -> Result<Vec<u8>, CodecError> {
+    let current = authored_owners(previous, histories)?;
+    let extra = authored_owners(generated, histories)?;
+    let mut payload = Vec::new();
+    let prefix_end = current
+        .first()
+        .map_or(previous.native_payload.len(), |owner| owner.start);
+    payload.extend_from_slice(&previous.native_payload[..prefix_end]);
+    let extra_prefix_end = extra
+        .first()
+        .map_or(generated.native_payload.len(), |owner| owner.start);
+    payload.extend_from_slice(&generated.native_payload[..extra_prefix_end]);
+    for owner in &current {
+        payload.extend_from_slice(&previous.native_payload[owner.start..owner.end]);
+        if let Some(addition) = extra.iter().find(|addition| addition.id == owner.id) {
+            // The target already carries this exact native object identity
+            // and name. Retain its other statements inside the same owner.
+            payload
+                .extend_from_slice(&generated.native_payload[addition.start..addition.name_start]);
+            payload.extend_from_slice(&generated.native_payload[addition.name_end..addition.end]);
+        }
+    }
+    for owner in extra
+        .iter()
+        .filter(|owner| !current.iter().any(|current| current.id == owner.id))
+    {
+        payload.extend_from_slice(&generated.native_payload[owner.start..owner.end]);
+    }
+    Ok(payload)
 }
 
 /// Native operations explicitly retain canonical expression bindings. Their
