@@ -1066,7 +1066,7 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         procedural
             .record_bounds()
             .map(cadmpeg_ir::geometry::RecordBounds::get),
-        Some([Some(0.0), Some(2.0), None, None])
+        Some([Some(0.0), Some(1.0), None, None])
     );
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
         procedural.definition()
@@ -1080,6 +1080,14 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         panic!("expected bounded trimmed revolution");
     };
     assert_eq!(*parameter_interval, [0.0, 1.0]);
+    let directrix = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *definition_payload_0.directrix())
+        .expect("retained physical generatrix");
+    assert_eq!(directrix.parameter_range.unwrap().endpoints(), [0.0, 2.0]);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
