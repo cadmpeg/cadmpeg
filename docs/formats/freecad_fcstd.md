@@ -426,14 +426,18 @@ A selector can be empty to denote the object. The restored `shadowed` selector, 
 replaces `sub`; `shadow` alone does not replace the live selector. A cache reference can use the
 mapped name carried by `shadowed` or `shadow`. In a dotted selector, a mapped segment starts with
 `;`; a final dotted legacy element name after that segment is excluded from the mapped cache key.
-The old and mapped cache keys identify the same link. A cache record with a non-empty key belongs
-to the one link with that exact key; aliases that identify different links are ambiguous. One link may own zero, one, or multiple cached carriers;
+The mapped key is the current cache identity; the old spelling is a historical alias. Distinct
+current keys can share an old spelling. Current identity takes precedence over historical aliases.
+A cache record's `RefIndex` on the geometry extension, mirrored by `refIndex` on `Geometry`, is a
+zero-based position in the ordered `ExternalGeometry` link list. It restores reference identity
+when export or import changes object names. A nonnegative index takes precedence over the text
+key. Absence or `-1` denotes no ordinal reference. Both index spellings, when present, are equal.
+Reserved axis records have no nonnegative reference index. One link may own zero, one, or multiple cached carriers;
 carrier order remains `ExternalGeo` order, and each carrier retains that link's single selector. A link with
-no carrier creates an unresolved external-reference entity. A non-empty key with no link is valid
-only when the carrier's `Missing` flag bit is set; its solved geometry is retained without a link.
+no carrier creates an unresolved external-reference entity. The `Missing` flag marks a carrier whose referenced source is unavailable. A cached carrier can
+outlive its live link; its solved geometry remains distinct from reference resolution.
 An empty key is a detached carrier and has no link. A short prefix, wrong reserved id, duplicate
-link match, unmatched non-missing key, or any `GeometryList` count/direct-child mismatch is
-malformed. Constraints can address its entity, endpoint, and center loci without inventing solved
+current link match, or any `GeometryList` count/direct-child mismatch is malformed. Constraints can address its entity, endpoint, and center loci without inventing solved
 coordinates.
 
 Sketch persistence has separate ordered `GeometryList` and `ConstraintList` values. The geometry

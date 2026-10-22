@@ -1285,3 +1285,102 @@ fn external_cache_keys_use_mapped_shadow_without_changing_selector_identity() {
             .any(|loss| loss.code.local_code() == "sketch.external-reference-unresolved"));
     }
 }
+
+#[test]
+fn current_external_keys_survive_ambiguous_legacy_aliases_and_export_indices() {
+    for (reference, index_carriers, expected_selector, unresolved) in [
+        ("Source.;A", "", Some(";A.Edge1"), false),
+        ("Source.;B", "", Some(";B.Edge1"), false),
+        ("Source.Edge1", "", None, true),
+        ("Former.Edge9", r#"refIndex="1""#, Some(";B.Edge1"), false),
+        ("Source.;A", r#"refIndex="9""#, None, true),
+        ("Source.;A", r#"refIndex="-1""#, Some(";A.Edge1"), false),
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::Feature" name="Source"/></Objects><ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Source" sub="Edge1" shadowed=";A.Edge1"/><Link obj="Source" sub="Edge1" shadowed=";B.Edge1"/></LinkSubList></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment" id="-1" ref=""><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="-2" ref=""><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomPoint" id="1" ref="{reference}" {index_carriers}><GeomPoint X="2" Y="3" Z="0"/></Geometry>
+</GeometryList></Property></Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let point = result
+            .ir()
+            .model
+            .sketch_entities
+            .iter()
+            .find(|entity| {
+                matches!(
+                    entity.geometry.definition(),
+                    cadmpeg_ir::sketches::SketchGeometryDefinition::Point { .. }
+                )
+            })
+            .expect("cached point retained");
+        assert_eq!(
+            point.endpoint_refs,
+            expected_selector.into_iter().collect::<Vec<_>>(),
+            "{reference} {index_carriers}"
+        );
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "sketch.external-reference-unresolved"),
+            unresolved
+        );
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "sketch.external-cache-unresolved"));
+    }
+}
+
+#[test]
+fn external_geometry_extension_refindex_is_authoritative_and_mirrors_must_agree() {
+    for (geometry_index, extension_index, valid) in [("1", "1", true), ("0", "1", false)] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::Feature" name="Source"/></Objects><ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Source" sub="Edge1"/><Link obj="Source" sub="Edge2"/></LinkSubList></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment" id="-1" ref=""><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="-2" ref=""><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomPoint" id="1" ref="Previous.Edge1" refIndex="{geometry_index}"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="Previous.Edge1" RefIndex="{extension_index}" Flags="0"/></GeoExtensions><GeomPoint X="2" Y="3" Z="0"/></Geometry>
+</GeometryList></Property></Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let point = result.ir().model.sketch_entities.iter().find(|entity| {
+            matches!(
+                entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Point { .. }
+            )
+        });
+        assert_eq!(point.is_some(), valid);
+        if let Some(point) = point {
+            assert_eq!(point.endpoint_refs, ["Edge2"]);
+        }
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "sketch.external-cache-unresolved"),
+            !valid
+        );
+    }
+}

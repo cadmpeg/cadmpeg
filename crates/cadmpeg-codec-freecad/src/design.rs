@@ -1476,7 +1476,7 @@ fn validate_sketch_carrier(
 fn external_geometry_metadata(
     node: roxmltree::Node<'_, '_>,
     ordinal: usize,
-) -> Result<(Option<String>, bool), CodecError> {
+) -> Result<(Option<String>, Option<usize>, bool), CodecError> {
     let mut extensions = node
         .children()
         .filter(|child| child.has_tag_name("GeoExtensions"))
@@ -1504,6 +1504,35 @@ fn external_geometry_metadata(
         .or(geometry_ref)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
+
+    let parse_index = |value: &str| {
+        let index = value.parse::<i64>().map_err(|_| {
+            CodecError::malformed(format_args!(
+                "sketch ExternalGeo Geometry record {ordinal} has invalid reference index"
+            ))
+        })?;
+        match index {
+            -1 => Ok(None),
+            _ => usize::try_from(index).map(Some).map_err(|_| {
+                CodecError::malformed(format_args!(
+                "sketch ExternalGeo Geometry record {ordinal} has invalid reference index {index}"
+            ))
+            }),
+        }
+    };
+    let extension_index = extension
+        .and_then(|extension| extension.attribute("RefIndex"))
+        .map(parse_index)
+        .transpose()?;
+    let geometry_index = node.attribute("refIndex").map(parse_index).transpose()?;
+    if let (Some(extension_index), Some(geometry_index)) = (extension_index, geometry_index) {
+        if extension_index != geometry_index {
+            return Err(CodecError::malformed(format_args!(
+                "sketch ExternalGeo Geometry record {ordinal} has conflicting RefIndex and refIndex values"
+            )));
+        }
+    }
+    let reference_index = extension_index.or(geometry_index).flatten();
 
     let extension_flags = extension
         .and_then(|extension| extension.attribute("Flags"))
@@ -1533,7 +1562,11 @@ fn external_geometry_metadata(
         }
     }
     let flags = extension_flags.or(geometry_flags).unwrap_or_default();
-    Ok((reference, flags & EXTERNAL_GEOMETRY_MISSING_FLAG != 0))
+    Ok((
+        reference,
+        reference_index,
+        flags & EXTERNAL_GEOMETRY_MISSING_FLAG != 0,
+    ))
 }
 
 fn validate_external_geo_prefix(
@@ -1561,8 +1594,8 @@ fn validate_external_geo_prefix(
                 index + 1
             )));
         }
-        let (reference, _) = external_geometry_metadata(node, index + 1)?;
-        if reference.is_some() {
+        let (reference, reference_index, _) = external_geometry_metadata(node, index + 1)?;
+        if reference.is_some() || reference_index.is_some() {
             return Err(CodecError::malformed(format_args!(
                 "{owner} reserved ExternalGeo record {} has an external reference",
                 index + 1
@@ -1587,10 +1620,25 @@ fn external_link_key(reference: &crate::native::LinkTarget) -> Result<Option<Str
     )))
 }
 
+struct ExternalLinkIndices {
+    current: HashMap<String, usize>,
+    legacy: HashMap<String, Option<usize>>,
+}
+
+impl ExternalLinkIndices {
+    fn get(&self, key: &str) -> Option<usize> {
+        self.current
+            .get(key)
+            .copied()
+            .or_else(|| self.legacy.get(key).copied().flatten())
+    }
+}
+
 fn external_link_indices(
     references: Option<&PropertyRecord>,
-) -> Result<HashMap<String, usize>, CodecError> {
-    let mut indices = HashMap::new();
+) -> Result<ExternalLinkIndices, CodecError> {
+    let mut current = HashMap::new();
+    let mut legacy = HashMap::new();
     if let Some(references) = references {
         let values = references
             .values()
@@ -1601,44 +1649,57 @@ fn external_link_indices(
             let Some(reference) = reference else {
                 continue;
             };
-            let Some(key) = external_link_key(reference)? else {
+            let Some(live_key) = external_link_key(reference)? else {
                 continue;
             };
-            let mut keys = vec![key];
-            if let Some(value) = values.get(index) {
-                for selector in ["sub", "shadowed", "shadow"]
-                    .into_iter()
-                    .filter_map(|attribute| value.attributes.get(attribute))
+            let prefix = reference
+                .object()
+                .map(crate::native::id_key)
+                .unwrap_or_default();
+            let value = values.get(index);
+            let shadow = value.and_then(|value| {
+                value
+                    .attributes
+                    .get("shadowed")
+                    .or_else(|| value.attributes.get("shadow"))
+            });
+            let selector = shadow
+                .map(String::as_str)
+                .unwrap_or(&reference.subelements()[0]);
+            let mapped = match selector.rsplit_once('.') {
+                Some((path, _))
+                    if path
+                        .rsplit('.')
+                        .next()
+                        .is_some_and(|segment| segment.starts_with(';')) =>
                 {
-                    let prefix = reference
-                        .object()
-                        .map(crate::native::id_key)
-                        .unwrap_or_default();
-                    let mapped = match selector.rsplit_once('.') {
-                        Some((path, _))
-                            if path
-                                .rsplit('.')
-                                .next()
-                                .is_some_and(|segment| segment.starts_with(';')) =>
-                        {
-                            path
-                        }
-                        _ => selector,
-                    };
-                    keys.push(format!("{prefix}.{mapped}"));
+                    path
                 }
+                _ => selector,
+            };
+            let current_key = format!("{prefix}.{mapped}");
+            if current.insert(current_key.clone(), index).is_some() {
+                return Err(CodecError::malformed(format_args!(
+                    "sketch ExternalGeometry links contain duplicate current key {current_key}"
+                )));
             }
-            for key in keys {
-                if indices.get(&key).is_some_and(|previous| *previous != index) {
-                    return Err(CodecError::malformed(format_args!(
-                        "sketch ExternalGeometry links contain duplicate key {key}"
-                    )));
-                }
-                indices.insert(key, index);
+            let mut aliases = vec![live_key];
+            if let Some(old) = value.and_then(|value| value.attributes.get("sub")) {
+                aliases.push(format!("{prefix}.{old}"));
+            }
+            for alias in aliases {
+                legacy
+                    .entry(alias)
+                    .and_modify(|previous| {
+                        if *previous != Some(index) {
+                            *previous = None;
+                        }
+                    })
+                    .or_insert(Some(index));
             }
         }
     }
-    Ok(indices)
+    Ok(ExternalLinkIndices { current, legacy })
 }
 
 fn sketch_attributes(carrier: Option<roxmltree::Node<'_, '_>>) -> BTreeMap<String, String> {

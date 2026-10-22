@@ -70,6 +70,12 @@ and external expressions remain native. PartDesign bodies keep membership as par
 order breaks ties between independently ready features. Cyclic native relations remain native and
 use the existing blocking history diagnostic.
 
+External cache association first uses a valid persisted export index, then a current mapped key,
+and finally a unique historical alias. An out-of-range index or ambiguous historical alias leaves
+the solved cached geometry unbound and reports `sketch.external-reference-unresolved`. Other
+cache records and live external links remain available. Historical alias collisions alone do not
+refuse a cache whose current keys are distinct.
+
 ## Implementation checklist
 
 Apply this boundary to every phase:
