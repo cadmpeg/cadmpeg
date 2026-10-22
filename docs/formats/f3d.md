@@ -172,7 +172,9 @@ LP-UTF16  active_asset_guid       36-code-unit hyphenated hexadecimal GUID
 u32       asset_folder_count      nonzero
 repeat asset_folder_count:
   LP-UTF16 asset_folder_base      one archive-path component
-u32       terminal_word           0
+u32       secondary_folder_count  zero or more
+repeat secondary_folder_count:
+  LP-UTF16 asset_folder_base      one archive-path component
 terminal:
   end of file
   or u8 0, nonempty LP-UTF16 document_display_name,
@@ -182,7 +184,7 @@ terminal:
   or u8 1, nonempty LP-UTF16 lineage_urn beginning `urn:`, end of file
 ```
 
-`active_asset_guid` is the first asset GUID of the active asset. The active asset can be the Design asset, a simulation case, an animation, or another asset kind. It does not select the Design folder.
+The two folder runs list distinct bases, and every listed base is an asset folder. `active_asset_guid` is the first asset GUID of the active asset. The active asset can be the Design asset, a simulation case, an animation, or another asset kind. It does not select the Design folder.
 
 Each listed base resolves to exactly one archive folder: either `<base>` or `<base>[Active]`. That folder contains `Manifest.dat`. A **per-asset manifest** starts with its LP-UTF16 base name, a first asset GUID, a second asset GUID, and an LP-ASCII asset type. A `FusionAssetType` prefix continues with a u32 revision.
 

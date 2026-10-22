@@ -374,6 +374,15 @@ the native feature when a fixed lane carries a symmetric distance.
 **Need.** The flag can mark a driven or suppressed parameter. A design that toggles one dimension between driving and driven, saved in each state, fixes the meaning.
 
 
+### DR-88. Secondary asset-folder run
+
+**Question.** What separates the assets of the secondary asset-folder run of the top-level manifest from the assets of the first run?
+
+**Known.** `f3d.md` §1.3 "The asset-folder tail is the unique suffix" gives both runs. The secondary run is empty in most documents. In documents that also store a toolpath, animation, or simulation asset, it lists the `Simulation Model` folder, and the first run lists the Design, toolpath, and animation folders.
+
+**Need.** A writer must place each asset in the correct run. A document with two simulation studies, or with a simulation asset and no toolpath, shows which asset kinds the secondary run holds.
+
+
 ## 2. External references
 
 ### DR-82. Other joint freedom codes and the limit flags
