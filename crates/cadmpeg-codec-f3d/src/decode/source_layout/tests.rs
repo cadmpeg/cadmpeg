@@ -2,7 +2,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{ByteRange, DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::SourceFidelity;
+use cadmpeg_ir::{RetainedBytes, RetainedSourceRecord, SourceFidelity};
 
 use super::{install, PendingLayouts};
 
@@ -94,8 +94,19 @@ fn a_pointer_draft_without_a_capture_refuses_without_partially_updating_fidelity
     );
     let mut fidelity = SourceFidelity::default();
     fidelity
-        .metadata
-        .insert("existing".into(), "unchanged".into());
+        .insert_retained_record(
+            cadmpeg_ir::ids::UnknownId::try_from("f3d:source:record#existing".to_owned())
+                .expect("sentinel identity"),
+            RetainedSourceRecord::from_bytes(
+                "file".to_owned(),
+                0,
+                RetainedBytes::Inline {
+                    data: b"AB".to_vec(),
+                },
+            )
+            .expect("sentinel record"),
+        )
+        .expect("sentinel");
     let before = fidelity.clone();
     assert!(install(&ctx, &mut fidelity, vec![pending]).is_err());
     assert_eq!(fidelity, before);
