@@ -36,7 +36,14 @@ fn actual_database_values_and_record_reads_share_the_source_stage() {
     assert_eq!(records[0].note, "synthetic primary document");
     assert!(losses.is_empty());
     assert_eq!(fidelity.parts().len(), 2);
-    let captures = ctx.take_record_captures().unwrap();
+    // The inventory build also captures each metadata type descriptor
+    // (Appendix C `inventor.type_descriptor`); only the database is asserted.
+    let captures = ctx
+        .take_record_captures()
+        .unwrap()
+        .into_iter()
+        .filter(|capture| capture.id().starts_with("inventor:rse:database#"))
+        .collect::<Vec<_>>();
     assert_eq!(captures.len(), 1);
     assert_eq!(captures[0].id(), records[0].id);
     assert_eq!(captures[0].stream(), expected.stream());

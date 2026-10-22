@@ -11,6 +11,14 @@ use crate::native::{AssemblyOccurrenceRecord, RseRecordRecord};
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
 use crate::test_support::test_fixtures::assembly_envelope_fixture;
 
+fn record_body_parts(fidelity: &cadmpeg_ir::SourceFidelity) -> usize {
+    fidelity
+        .parts()
+        .values()
+        .filter(|part| part.level().as_str() == "inventor.rse_record_body")
+        .count()
+}
+
 #[test]
 fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
     let peer = occurrence_fixture(42, &[0x8000_0008]);
@@ -111,7 +119,9 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
             .count(),
         1
     );
-    assert_eq!(fidelity.parts().len(), 2);
+    // Appendix C `inventor.rse_record_body`: one part per stored record; the
+    // fixture stores 2. The container's metadata parts are not asserted here.
+    assert_eq!(record_body_parts(&fidelity), 2);
     assert_eq!(losses.len(), 1);
     assert!(!losses[0].message.contains(&failed_wrapper));
     assert!(losses[0]
@@ -174,7 +184,13 @@ fn detached_or_foreign_payload_cannot_be_admitted_as_a_source_body() {
     assert!(
         crate::records::source_admission::body(&ctx, bulk.expanded, &table.records[0]).is_err()
     );
-    assert!(ctx.take_record_captures().unwrap().is_empty());
+    // The container open captures only its metadata type descriptors
+    // (Appendix C `inventor.type_descriptor`); no body attempt adds one.
+    assert!(ctx
+        .take_record_captures()
+        .unwrap()
+        .iter()
+        .all(|capture| capture.id().starts_with("inventor:rse:meta-type#")));
 }
 
 #[test]
@@ -271,7 +287,9 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
             .map(|record| RseRecordRecord::from_frame(token, record).unwrap())
             .collect::<Vec<_>>()
     );
-    assert_eq!(fidelity.parts().len(), 3);
+    // Appendix C `inventor.rse_record_body`: one part per stored record; the
+    // fixture stores 3. The container's metadata parts are not asserted here.
+    assert_eq!(record_body_parts(&fidelity), 3);
     assert_eq!(
         fidelity
             .parts()

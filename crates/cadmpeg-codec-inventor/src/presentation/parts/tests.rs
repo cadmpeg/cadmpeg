@@ -119,7 +119,17 @@ fn all_presentation_grammars_form_native_records_and_actual_source_captures() {
     );
     assert!(!ns.arenas().contains_key("presentation_record_issues"));
     fidelity.install_mapped_record_captures(&ctx, Ok).unwrap();
-    assert_eq!(fidelity.record_layout().len(), 10);
+    // Five presentation records (one per grammar) and their five `rse_records`
+    // wrappers. The open's metadata type descriptors (Appendix C
+    // `inventor.type_descriptor`) are not asserted here.
+    assert_eq!(
+        fidelity
+            .record_layout()
+            .keys()
+            .filter(|id| !id.starts_with("inventor:rse:meta-type#"))
+            .count(),
+        10
+    );
     for (arena, records) in ns.arenas() {
         for record in records {
             let layout = &fidelity.record_layout()[record.id()];

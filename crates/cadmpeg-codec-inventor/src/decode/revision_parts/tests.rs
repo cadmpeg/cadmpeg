@@ -108,7 +108,14 @@ fn actual_revision_records_keep_exact_native_fields_and_source_read_ranges() {
         ]
     );
     assert!(losses.is_empty());
-    let captures = ctx.take_record_captures().unwrap();
+    // The container open also captures each metadata type descriptor
+    // (Appendix C `inventor.type_descriptor`); only the revisions are asserted.
+    let captures = ctx
+        .take_record_captures()
+        .unwrap()
+        .into_iter()
+        .filter(|capture| capture.id().starts_with("inventor:rse:revision#"))
+        .collect::<Vec<_>>();
     assert_eq!(captures.len(), 2);
     assert_eq!(captures[0].stream(), expected.stream());
     assert_eq!(captures[0].offset(), expected.offset() + 8);
@@ -238,7 +245,10 @@ fn actual_revision_native_entity_refusal_stays_a_fatal_resource_limit() {
     let bytes = primary_envelope_fixture_with_revisions(&revisions(&[plain()]));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_entities = 0;
+    // The primary fixture has one metadata stream with one type descriptor;
+    // Appendix C `inventor.type_descriptor` forms one `meta_types` record, so
+    // the open admits exactly one entity and the revision stage admits none.
+    policy.limits.max_entities = 1;
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let container = InventorContainer::open(&ctx, root).unwrap();
     let mut output = PartOutput::new(CodecFormat::Inventor);
