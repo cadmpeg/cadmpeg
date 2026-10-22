@@ -312,18 +312,34 @@ fn omitted_unreadable_feature_cannot_leave_a_dangling_dependency() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(input), &DecodeOptions::default())
         .unwrap();
+    let before_namespace = decoded.ir().native.namespace("fcstd").unwrap();
+    let before_objects = before_namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap();
+    let before_bad = before_objects
+        .iter()
+        .find(|object| object.name() == "Bad")
+        .unwrap();
+    let before_properties = before_namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let length = before_properties
+        .iter()
+        .find(|property| property.owner == before_bad.id().as_str() && property.name == "Length")
+        .unwrap();
     let plan = FcstdCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
         .unwrap();
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.local_code() == "feature.not-transferred"
-            && loss.severity == cadmpeg_ir::report::Severity::Error));
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted
+            .note("")
+            .code
+        && loss.severity == cadmpeg_ir::report::Severity::Warning
+        && loss.message.contains(&length.id)
+        && loss.message.contains(&length.owner)));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = FcstdCodec
@@ -336,7 +352,40 @@ fn omitted_unreadable_feature_cannot_leave_a_dangling_dependency() {
         .unwrap()
         .arena_as::<crate::native::ObjectRecord>("objects")
         .unwrap();
-    assert!(objects.iter().all(|object| object.name() != "Bad"));
+    let bad = objects
+        .iter()
+        .find(|object| object.name() == "Bad")
+        .unwrap();
+    assert_eq!(bad.type_name, "Part::Box");
+    let pocket = objects
+        .iter()
+        .find(|object| object.name() == "Pocket")
+        .unwrap();
+    assert_eq!(pocket.type_name, "PartDesign::Pocket");
+    assert_eq!(pocket.dependencies, [bad.id().as_str().to_owned()]);
+    let properties = output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    assert!(!properties
+        .iter()
+        .any(|property| { property.owner == bad.id().as_str() && property.name == "Length" }));
+    for name in ["Width", "Height"] {
+        let property = properties
+            .iter()
+            .find(|property| property.owner == bad.id().as_str() && property.name == name)
+            .unwrap();
+        assert_eq!(property.type_name, "App::PropertyLength");
+        assert_eq!(
+            property.values()[0].attributes["value"]
+                .parse::<f64>()
+                .unwrap(),
+            1.0
+        );
+    }
     assert!(objects
         .iter()
         .all(|object| object.dependencies.iter().all(|dependency| objects

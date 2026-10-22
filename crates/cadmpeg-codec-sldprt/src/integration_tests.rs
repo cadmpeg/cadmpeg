@@ -573,3 +573,5 @@ fn the_generation_path_names_the_catalog_row() {
     plan.write_to(&mut written).unwrap();
     assert_eq!(classify(written), claimed);
 }
+
+mod sketch_native_linkage;

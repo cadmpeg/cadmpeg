@@ -1947,3 +1947,5 @@ fn opennurbs_object_walk_and_transfer_floor() {
         assert_eq!(decode_counts(&path), Some((version, 1, 1)));
     }
 }
+
+mod image_native_linkage;

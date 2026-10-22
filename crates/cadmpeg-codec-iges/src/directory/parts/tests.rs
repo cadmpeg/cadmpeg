@@ -38,6 +38,23 @@ fn second_entry(bytes: &[u8]) -> usize {
         + 162
 }
 
+fn optional_field_columns(bytes: &[u8], base: u64) -> Vec<(u64, u64)> {
+    let cards: Vec<_> = bytes
+        .chunks_exact(81)
+        .enumerate()
+        .filter(|(_, card)| card[72] == b'D')
+        .map(|(index, _)| base + u64::try_from(index * 81).unwrap())
+        .collect();
+    assert!(cards.len().is_multiple_of(2));
+    cards
+        .chunks_exact(2)
+        .flat_map(|pair| {
+            [(0, 3), (0, 4), (0, 5), (0, 7), (1, 1), (1, 2), (1, 8)]
+                .map(|(card, column)| (pair[0], pair[card] + column * 8))
+        })
+        .collect()
+}
+
 #[test]
 fn actual_directory_callbacks_match_original_values_and_independent_source_extents() {
     let original = points();
@@ -84,6 +101,12 @@ fn actual_directory_callbacks_match_original_values_and_independent_source_exten
     let mut actual: Vec<_> = fidelity
         .parts()
         .values()
+        .filter(|part| {
+            matches!(
+                part.level().as_str(),
+                "iges.directory_section" | "iges.directory_entry"
+            )
+        })
         .map(|part| {
             (
                 part.level().as_str(),
@@ -110,6 +133,33 @@ fn actual_directory_callbacks_match_original_values_and_independent_source_exten
         assert_eq!(part.parent(), Some(section_id));
         assert_eq!(part.state(), &PartState::Decoded {});
     }
+    let mut expected_fields: Vec<_> = optional_field_columns(&original, 3)
+        .into_iter()
+        .map(|(parent, offset)| (offset, 8, parent, Vec::<std::ops::Range<u64>>::new()))
+        .collect();
+    assert_eq!(expected_fields.len(), 2 * 7);
+    let mut actual_fields: Vec<_> = fidelity
+        .parts()
+        .values()
+        .filter(|part| part.level().as_str() == "iges.directory_field")
+        .map(|part| {
+            let parent = &fidelity.parts()[part.parent().expect("actual entry parent")];
+            assert_eq!(parent.level().as_str(), "iges.directory_entry");
+            assert_eq!(parent.state(), &PartState::Decoded {});
+            assert_eq!(part.state(), &PartState::Decoded {});
+            assert_eq!(part.stream(), parent.stream());
+            (
+                part.offset(),
+                part.byte_len(),
+                parent.offset(),
+                part.framing_bytes().to_vec(),
+            )
+        })
+        .collect();
+    expected_fields.sort_unstable_by_key(|field| field.0);
+    actual_fields.sort_unstable_by_key(|field| field.0);
+    assert_eq!(actual_fields, expected_fields);
+    assert!(fidelity.record_layout().is_empty());
     assert!(ctx.take_record_captures().unwrap().is_empty());
 }
 
@@ -156,6 +206,10 @@ fn failed_real_pair_has_one_shared_home_and_preserves_the_independent_peer() {
         fidelity
             .parts()
             .values()
+            .filter(|part| matches!(
+                part.level().as_str(),
+                "iges.directory_section" | "iges.directory_entry"
+            ))
             .filter(|part| part.state() == &PartState::Decoded {})
             .count(),
         2
@@ -164,6 +218,64 @@ fn failed_real_pair_has_one_shared_home_and_preserves_the_independent_peer() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "record.unreadable");
     assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Error);
+    let columns = optional_field_columns(&original, 0);
+    let first = columns[0].0;
+    let expected_peer: Vec<_> = columns
+        .iter()
+        .filter(|(parent, _)| *parent == first)
+        .map(|(_, field)| *field)
+        .collect();
+    assert_eq!(expected_peer.len(), 7);
+    let mut actual_peer = Vec::new();
+    let mut actual_covered = Vec::new();
+    for (field_id, part) in fidelity
+        .parts()
+        .iter()
+        .filter(|(_, part)| part.level().as_str() == "iges.directory_field")
+    {
+        let parent = &fidelity.parts()[part.parent().expect("actual entry parent")];
+        assert_eq!(parent.level().as_str(), "iges.directory_entry");
+        assert_eq!(part.byte_len(), 8);
+        assert!(part.framing_bytes().is_empty());
+        assert!(!fidelity.retained_records().contains_key(field_id.as_str()));
+        assert!(!fidelity.record_layout().contains_key(field_id.as_str()));
+        if parent.offset() == first {
+            assert_eq!(parent.state(), &PartState::Decoded {});
+            assert_eq!(part.state(), &PartState::Decoded {});
+            actual_peer.push(part.offset());
+        } else {
+            assert_eq!(parent.offset(), u64::try_from(start).unwrap());
+            assert_eq!(part.parent(), Some(&unknowns[0].id));
+            assert_eq!(
+                part.state(),
+                &PartState::Covered {
+                    by: unknowns[0].id.clone()
+                }
+            );
+            actual_covered.push(part.offset());
+        }
+    }
+    actual_peer.sort_unstable();
+    assert_eq!(actual_peer, expected_peer);
+    let expected_covered: Vec<_> = columns
+        .iter()
+        .filter(|(parent, field)| {
+            *parent == u64::try_from(start).unwrap() && *field < u64::try_from(start + 48).unwrap()
+        })
+        .map(|(_, field)| *field)
+        .collect();
+    assert_eq!(expected_covered.len(), 3);
+    actual_covered.sort_unstable();
+    assert_eq!(actual_covered, expected_covered);
+    assert_eq!(
+        fidelity
+            .record_layout()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        [id]
+    );
+    assert!(ctx.take_record_captures().unwrap().is_empty());
 }
 
 #[test]

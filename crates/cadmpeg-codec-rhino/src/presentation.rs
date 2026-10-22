@@ -771,7 +771,6 @@ struct EmbeddedImageRecord {
     buffer_offset: u64,
     buffer_byte_len: u64,
     buffer_sha256: String,
-    asset: Option<cadmpeg_ir::assets::AssetId>,
 }
 
 #[derive(Debug, Serialize)]
@@ -795,7 +794,6 @@ struct WindowsBitmapRecord {
     pixel_buffer_offset: u64,
     pixel_buffer_byte_len: u64,
     pixel_buffer_sha256: String,
-    asset: Option<cadmpeg_ir::assets::AssetId>,
 }
 
 #[derive(Debug, Serialize)]
@@ -3868,7 +3866,6 @@ fn parse_embedded_image(
         buffer_offset: cadmpeg_core::decode::u64_from_index(buffer_offset),
         buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer_end - buffer_offset),
         buffer_sha256: hex(&cadmpeg_ir::hash::sha256(&data[buffer_offset..buffer_end])),
-        asset: None,
     })
 }
 
@@ -4017,7 +4014,6 @@ fn parse_windows_bitmap(
         pixel_buffer_offset: cadmpeg_core::decode::u64_from_index(pixel_buffer_offset),
         pixel_buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer.len()),
         pixel_buffer_sha256: hex(&cadmpeg_ir::hash::sha256(buffer)),
-        asset: None,
     })
 }
 
@@ -5241,15 +5237,8 @@ pub(crate) fn install(
         };
         group.links.sort();
     }
-    let unresolved_images = assets::project(
-        ctx,
-        root,
-        scan,
-        ir,
-        &mut images,
-        &mut windows_bitmaps,
-        &mut losses,
-    )?;
+    let unresolved_images =
+        assets::project(ctx, root, scan, ir, &images, &windows_bitmaps, &mut losses)?;
     for offset in unresolved_images {
         if let Some((table, record)) = scan.tables.iter().find_map(|table| {
             table

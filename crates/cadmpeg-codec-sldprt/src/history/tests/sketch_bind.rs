@@ -54,10 +54,7 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
             SketchGeometryDefinition::Line { .. }
         )));
     assert!(decoded.ir().model.sketch_entities.iter().all(|entity| {
-        entity
-            .native_ref
-            .as_deref()
-            .is_some_and(|id| id.contains(":sldprt:brep:edge#"))
+        entity.native_ref.is_none()
             && entity.endpoint_refs.len() == 2
             && entity
                 .endpoint_refs

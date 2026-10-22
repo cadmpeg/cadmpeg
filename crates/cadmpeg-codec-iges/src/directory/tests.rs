@@ -304,7 +304,64 @@ fn unreadable_directory_metadata_preserves_independent_point_geometry() {
             serde_json::Value::Null,
             "{field}"
         );
-        assert!(decoded
+        let native = decoded.ir().native.namespace("iges").unwrap();
+        let unknowns = native
+            .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+            .unwrap();
+        assert_eq!(unknowns.len(), 1);
+        let owner = &native.arenas()["entities"][0];
+        assert_eq!(
+            unknowns[0]
+                .links
+                .iter()
+                .map(|link| link.as_str())
+                .collect::<Vec<_>>(),
+            [owner.id()]
+        );
+        let id = unknowns[0].id.as_str();
+        let fidelity = decoded.source_fidelity();
+        let part = &fidelity.parts()[id];
+        assert_eq!(part.level().as_str(), "iges.directory_field");
+        assert_eq!(
+            part.state(),
+            &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+        );
+        assert_eq!(part.stream(), "file");
+        assert_eq!(part.offset(), u64::try_from(start).unwrap());
+        assert_eq!(part.byte_len(), 8);
+        assert!(part.framing_bytes().is_empty());
+        let parent = &fidelity.parts()[part.parent().expect("surviving actual Directory entry")];
+        assert_eq!(parent.level().as_str(), "iges.directory_entry");
+        assert_eq!(parent.offset(), u64::try_from(starts[0]).unwrap());
+        assert_eq!(
+            parent.state(),
+            &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+        );
+        assert_eq!(
+            fidelity.retained_record(id).unwrap().data(),
+            Some(&changed[start..start + 8])
+        );
+        let layout = &fidelity.record_layout()[id];
+        assert_eq!(layout.stream(), part.stream());
+        assert_eq!(layout.offset(), part.offset());
+        assert_eq!(layout.byte_len(), 8);
+        assert!(layout.reads().is_empty());
+        let mut expected_owner = serde_json::to_value(
+            &expected.ir().native.namespace("iges").unwrap().arenas()["entities"][0],
+        )
+        .unwrap();
+        expected_owner[field] = serde_json::Value::Null;
+        assert_eq!(serde_json::to_value(owner).unwrap(), expected_owner);
+        let unreadable: Vec<_> = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect();
+        assert_eq!(unreadable.len(), 1);
+        assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+        assert!(unreadable[0].message.contains("iges.directory_field"));
+        assert!(!decoded
             .report()
             .losses
             .iter()

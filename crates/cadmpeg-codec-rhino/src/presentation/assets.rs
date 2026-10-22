@@ -223,7 +223,7 @@ fn insert(
     name: &str,
     bytes: Vec<u8>,
     ordinal: usize,
-) -> Result<Option<AssetId>, CodecError> {
+) -> Result<(), CodecError> {
     let media_type = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         Some("image/png")
     } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
@@ -234,7 +234,7 @@ fn insert(
         None
     };
     let Some(data) = AssetData::new(bytes) else {
-        return Ok(None);
+        return Ok(());
     };
     let id = AssetId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "model", "image-asset"),
@@ -242,13 +242,13 @@ fn insert(
     );
     ctx.charge_entities(1, "Rhino image assets")?;
     ir.model.assets.push(Asset {
-        id: id.clone(),
+        id,
         name: cadmpeg_core::text::NonBlankString::new(name),
         media_type: media_type.and_then(cadmpeg_core::text::NonBlankString::new),
         content: AssetContent::Embedded { data },
         native_ref: Some(source.to_owned()),
     });
-    Ok(Some(id))
+    Ok(())
 }
 
 pub(super) fn project(
@@ -256,15 +256,15 @@ pub(super) fn project(
     root: View<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-    images: &mut [EmbeddedImageRecord],
-    bitmaps: &mut [WindowsBitmapRecord],
+    images: &[EmbeddedImageRecord],
+    bitmaps: &[WindowsBitmapRecord],
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<u64>, CodecError> {
     let mut unresolved = Vec::new();
-    for (ordinal, image) in images.iter_mut().enumerate() {
+    for (ordinal, image) in images.iter().enumerate() {
         match image_bytes(ctx, root, scan, image) {
             Ok(bytes) => {
-                image.asset = insert(
+                insert(
                     ctx,
                     ir,
                     &image.id,
@@ -287,10 +287,10 @@ pub(super) fn project(
             }
         }
     }
-    for (ordinal, bitmap) in bitmaps.iter_mut().enumerate() {
+    for (ordinal, bitmap) in bitmaps.iter().enumerate() {
         match bitmap_bytes(ctx, root, scan, bitmap) {
             Ok(bytes) => {
-                bitmap.asset = insert(
+                insert(
                     ctx,
                     ir,
                     &bitmap.id,
