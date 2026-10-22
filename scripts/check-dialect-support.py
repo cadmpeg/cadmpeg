@@ -402,15 +402,17 @@ def _fixture_candidates(root: Path, crate: str, stem: str) -> list[Path]:
 
 
 def check_fixture_dir_overrides(root: Path, failures: list[str]) -> None:
-    """Keep codec fixture roots aligned with their harness overrides.
+    """Keep fixture roots aligned with harness overrides.
 
-    The support crate tests the harness with temporary fixture roots. Those
-    inputs do not publish a codec's golden snapshot domain.
+    The scan covers every crate that owns a ``tests/golden/`` directory, the
+    snapshot domain this checker resolves witnesses in. A crate with no such
+    directory publishes no snapshot.
     """
     actual: set[str] = set()
     crates = root / "crates"
     if crates.is_dir():
-        for source in crates.glob("cadmpeg-codec-*/src/**/*.rs"):
+        owners = sorted(path.parent.parent for path in crates.glob("*/tests/golden"))
+        for source in (source for owner in owners for source in owner.glob("src/**/*.rs")):
             try:
                 body = source.read_text(encoding="utf-8")
             except OSError:

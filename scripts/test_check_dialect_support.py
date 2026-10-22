@@ -187,6 +187,19 @@ class TestFileLevel(SupportCase):
             },
         )
 
+    def test_an_override_in_any_crate_with_goldens_requires_registration(self):
+        self.assertFires(
+            GOOD_SUPPORT,
+            "cadmpeg-golden-owner: Harness::with_fixture_dir has no checker fixture-root override",
+            files={
+                FIXTURE: "demo bytes",
+                "crates/cadmpeg-golden-owner/tests/golden/decode/.keep": "",
+                "crates/cadmpeg-golden-owner/src/golden_tests.rs": (
+                    "fn harness() { Harness::new().with_fixture_dir(path); }"
+                ),
+            },
+        )
+
     def test_codec_override_in_a_nested_helper_still_requires_registration(self):
         self.assertFires(
             GOOD_SUPPORT,
