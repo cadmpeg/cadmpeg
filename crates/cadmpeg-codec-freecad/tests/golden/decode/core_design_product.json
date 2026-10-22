@@ -17,7 +17,7 @@
         },
         {
           "id": "fcstd:model:body#Cut:Shape:Cut.Shape.brp:44%40location1",
-          "kind": "general",
+          "kind": "solid",
           "regions": [
             "fcstd:model:region#Cut:Shape:Cut.Shape.brp:43%40location1"
           ]

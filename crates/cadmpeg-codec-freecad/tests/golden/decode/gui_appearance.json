@@ -641,7 +641,7 @@
       "bodies": [
         {
           "id": "fcstd:model:body#ColoredModel:Shape:ColoredModel.Shape.brp:45%40location1",
-          "kind": "general",
+          "kind": "solid",
           "regions": [
             "fcstd:model:region#ColoredModel:Shape:ColoredModel.Shape.brp:44%40location1"
           ],
