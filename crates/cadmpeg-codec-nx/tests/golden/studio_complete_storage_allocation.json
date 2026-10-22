@@ -1760,8 +1760,9 @@
         },
         "nx:source:evidence#099a647d648fa42592cd530bc2feb3d8472cd813ba9e728664a7fa5c436501f0": {
           "bytes": {
-            "data": "8Bg=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "c34bb65413d34a19aa141a2e02b64043d5b0c57cdf70171250a4d7be07b669cc"
           },
           "offset": 0,
           "stream": "native.nx.feature_studio_post_branch_references.nx:feature-history:studio-post-branch-reference#0000000000-0000000000-0000000006.raw_object_index",
@@ -1769,8 +1770,9 @@
         },
         "nx:source:evidence#0ef7c68374f099c60bd985c2dff8b41c60b4fcf807d01b2ec5e054359639f33b": {
           "bytes": {
-            "data": "8AU=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "6b8c70761c214a7fad60deba0d18917b48db81fff8e2640de620f49e32c9c6b7"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000004.raw_object_index",
@@ -1778,8 +1780,9 @@
         },
         "nx:source:evidence#1077d9fafc8afbf66f0bf14984f6d4034735f718ff43a873e9b0898ed9625ed0": {
           "bytes": {
-            "data": "iRw=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "a7b74cf206ddc745cca33fb497027645eaa0cadd63d29937085b32cf9768827b"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_branches.nx:feature-history:surface-construction-branch#0000000000-0000000000-0000000002.suffix",
@@ -1787,8 +1790,9 @@
         },
         "nx:source:evidence#1122e078e057bc0cb435b466de3445b6fe8d6bf8ee88797f21bd0c68d54d1c7c": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[3]",
@@ -1796,8 +1800,9 @@
         },
         "nx:source:evidence#150c195ddf08b3ed243693009b6282adef0f8e9933e6d43637d347bea417b91b": {
           "bytes": {
-            "data": "8Bs=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "e437f38edf0532226f2ac159e11279116426d0cb37ba6265f020d241668eef72"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000012.raw_object_index",
@@ -1805,8 +1810,9 @@
         },
         "nx:source:evidence#1f0acb298a289027ca38e2ecfa379426c3b1d8bd7b70fd4c90c4e500da79453a": {
           "bytes": {
-            "data": "8Ak=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "bb19723d909ba8615934de0206e4e7c0794fdf8ff98992ec193a45c9ec114be4"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000008.raw_object_index",
@@ -1814,8 +1820,9 @@
         },
         "nx:source:evidence#27168c1a9f6ae82eb0a25626ce73a7c16a9cbfd8e07405ae2ec37a6fcadb2485": {
           "bytes": {
-            "data": "8BM=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "cfd5ba6c7cfd9368ae49891f64ef6f8d4ae4a283161828782eede28255f89c81"
           },
           "offset": 0,
           "stream": "native.nx.feature_studio_post_branch_references.nx:feature-history:studio-post-branch-reference#0000000000-0000000000-0000000001.raw_object_index",
@@ -1823,8 +1830,9 @@
         },
         "nx:source:evidence#29cc7f34bc8afcc76c7aec145c913e02d1e647a627e446a0d3bb0d5db8a96970": {
           "bytes": {
-            "data": "8BQ=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "d8c786d34a222fd48404b7cb071df5c28219fcaa4a49c20da1fafd9b485da661"
           },
           "offset": 0,
           "stream": "native.nx.feature_studio_post_branch_references.nx:feature-history:studio-post-branch-reference#0000000000-0000000000-0000000002.raw_object_index",
@@ -1832,8 +1840,9 @@
         },
         "nx:source:evidence#2b01879b3869475c74ed2f24f33fe79088ca0feecdae3e92212224f4c3e1adb8": {
           "bytes": {
-            "data": "gSEBI0VniavN7wY=",
-            "retention": "inline"
+            "byte_len": 11,
+            "retention": "digest",
+            "sha256": "3577471a7217e8fde1557f2db265bab6b34e7b8e563b69fbed40af86e574abb7"
           },
           "offset": 0,
           "stream": "native.nx.class_definitions.nx:om-entry-0:class#51.registry_suffix",
@@ -1841,8 +1850,9 @@
         },
         "nx:source:evidence#406fcb07dfe6b564fe327d6e7e5706fd100841f6518976d15e9d2c23e8541da1": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[2]",
@@ -1850,8 +1860,9 @@
         },
         "nx:source:evidence#4eca5e4475a240cf7bae9d7c6082590c28d70468b11aeaee19b46e17ab62c8a1": {
           "bytes": {
-            "data": "8Aw=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "3629b242adba7b3ceb2b1671781bbf97ac4528828f06615302b3763f9c0d5694"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_branches.nx:feature-history:surface-construction-branch#0000000000-0000000000-0000000000.members[0].raw_object_index",
@@ -1859,8 +1870,9 @@
         },
         "nx:source:evidence#55004a896928ad6d68118388bf440e4b6ef407b4a47aa4eb063200638eec408a": {
           "bytes": {
-            "data": "8BE=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "11c94b7a7fa68f6e5859e2efe319571d24260a8eaca0a4cb03591b364844d337"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_branches.nx:feature-history:surface-construction-branch#0000000000-0000000000-0000000002.terminal.raw_object_index",
@@ -1868,8 +1880,9 @@
         },
         "nx:source:evidence#6539c141e2159d18d848b07d4d5a32f1012dcf74baa97a0758781d30746d8a53": {
           "bytes": {
-            "data": "8AY=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "f475649ea176bf9cf68f6a331e3e726f4f1961bea372681a81cc51dc27311f45"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000005.raw_object_index",
@@ -1877,8 +1890,9 @@
         },
         "nx:source:evidence#6bc945ca96623f4aec6b4df2f652148c16a34d4bfad16f46fd54ba07c7a774f7": {
           "bytes": {
-            "data": "8A8=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "fc7208c835a1668cce9eda979a58310d9c6b63e852813f44266b8c9808c07617"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_branches.nx:feature-history:surface-construction-branch#0000000000-0000000000-0000000001.terminal.raw_object_index",
@@ -1886,8 +1900,9 @@
         },
         "nx:source:evidence#8005f58863e61a1f912037dd1128bfbb5ab3fe4801fe1fdfc428991abbbd028c": {
           "bytes": {
-            "data": "8AI=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "338d940739a4cdd1452c496df95624f7c9e23bedce0d6be7c0ad13ab2dd1d675"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000001.raw_object_index",
@@ -1895,8 +1910,9 @@
         },
         "nx:source:evidence#838197ceb3bb5eb43eb8fc832aeb0e4e4f35fd33095cec52d866e17d413d2c42": {
           "bytes": {
-            "data": "oBBU",
-            "retention": "inline"
+            "byte_len": 3,
+            "retention": "digest",
+            "sha256": "21bbe5aa2fbf243c2b30c94f447f9c65689103b4e2f173bb1345b7674f35dae8"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_branches.nx:feature-history:surface-construction-branch#0000000000-0000000000-0000000000.suffix",
@@ -1904,8 +1920,9 @@
         },
         "nx:source:evidence#8dbc4128376cf01bbc41910b91929aa6b8029ff3ccc39848a4b0cb08f132e331": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[1]",
@@ -1913,8 +1930,9 @@
         },
         "nx:source:evidence#9261277ec9fcfb92d135caf6c866a10cdf15ed3603066d07ddf9a15e32c1366e": {
           "bytes": {
-            "data": "8BA=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "39c32149a7e9bb3254829b03f936b0fd4790cda60712a2cc3a26d2e777953451"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_branches.nx:feature-history:surface-construction-branch#0000000000-0000000000-0000000002.members[0].raw_object_index",
@@ -1922,8 +1940,9 @@
         },
         "nx:source:evidence#931a3f8508efa9193f9517e1f399b528ad8e12c3858244ef946222d175abf7cd": {
           "bytes": {
-            "data": "8A4=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "cf94cffc355f5ed02d51f85cdab539ddc333c83a127a6751c26c777967373972"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_branches.nx:feature-history:surface-construction-branch#0000000000-0000000000-0000000001.members[0].raw_object_index",
@@ -1931,8 +1950,9 @@
         },
         "nx:source:evidence#9b87cd084be27db5fdd839b8bc9b27668a6ec0a8a2967aae7972b8f5dbe90faf": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[0]",
@@ -1940,8 +1960,9 @@
         },
         "nx:source:evidence#9b8d79062f0451d59d973cd6dc3c94e44b1dd846571222f95c500a1493fb7874": {
           "bytes": {
-            "data": "8AQ=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "7ebe9de91f1483d8446f8d8bce8a638d7f258cbef9eda04c1be151f9c5f47d96"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000003.raw_object_index",
@@ -1949,8 +1970,9 @@
         },
         "nx:source:evidence#9d97c1f8f3ce63db9e7881e937f5724698f6f084ea5db3bf1f0e895b5e2757aa": {
           "bytes": {
-            "data": "8BY=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "6e9907989af01ebbd82367a32039a46ab12813bb2a66961f93034255d8069ed8"
           },
           "offset": 0,
           "stream": "native.nx.feature_studio_post_branch_references.nx:feature-history:studio-post-branch-reference#0000000000-0000000000-0000000004.raw_object_index",
@@ -1958,8 +1980,9 @@
         },
         "nx:source:evidence#a55898aa1370d17376a328c16a3e907971f08b281ca1f9a50d00a6deb5f50aed": {
           "bytes": {
-            "data": "8As=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "c210500c9d7a5d504553340ddbcfa0ab4ac44337c56ade39a7b78a33f9032fe0"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000010.raw_object_index",
@@ -1967,8 +1990,9 @@
         },
         "nx:source:evidence#b099586a28884d66c6ea203b03e01d9b28b51c02dce8a985cff21f64b4e155b6": {
           "bytes": {
-            "data": "8AM=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "1719d68d829406021f513a401c5aa40165a83c9038fb7e23bfd2763f78226348"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000002.raw_object_index",
@@ -1976,8 +2000,9 @@
         },
         "nx:source:evidence#b10617f752231a5efc4abb3e67c55a0172591ef51ecb6b0fad96d87db58959d8": {
           "bytes": {
-            "data": "AQI=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "a12871fee210fb8619291eaea194581cbd2531e4b23759d225f6806923f63222"
           },
           "offset": 0,
           "stream": "native.nx.field_definitions.nx:om-entry-0:field#117.registry_suffix",
@@ -1985,8 +2010,9 @@
         },
         "nx:source:evidence#c2e331bdda92b1ef82a881c9b5754d75ec6a76cf55a0a57840aa8d5fa54dab65": {
           "bytes": {
-            "data": "8BI=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "9cc4cbe2c51cbb6bd56fad94a7f2cc7988c50ff4f9e22c0306d0f334fc75532d"
           },
           "offset": 0,
           "stream": "native.nx.feature_studio_post_branch_references.nx:feature-history:studio-post-branch-reference#0000000000-0000000000-0000000000.raw_object_index",
@@ -1994,8 +2020,9 @@
         },
         "nx:source:evidence#d3a68a28e0058a0d609a25d0f18db79d8ca677a5a3c252f5452b8a017be4d665": {
           "bytes": {
-            "data": "8Bw=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "d28ec1ee34a89d8d07bceba48bd17cc683693c973590c24b5676d7e59fe0d401"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000013.raw_object_index",
@@ -2003,8 +2030,9 @@
         },
         "nx:source:evidence#d5019480c9569ef69b2bd53c340b94b6cd7b4cad46f23a2b93c55cec24ae6c07": {
           "bytes": {
-            "data": "8Ao=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "99bf9ac8bb97d53af2bb2336202a905953552cf3b610c64f1f36922431112d8e"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000009.raw_object_index",
@@ -2012,8 +2040,9 @@
         },
         "nx:source:evidence#d9c94a243b33af399771bc848d3b58fd0c2c0dba7f96f3843a706d4bfedbbaf9": {
           "bytes": {
-            "data": "8Bk=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "cdfb8a9ba2960ff95759a28a68453698ba0defb42af7c0c9a9622ad795692c12"
           },
           "offset": 0,
           "stream": "native.nx.feature_studio_post_branch_references.nx:feature-history:studio-post-branch-reference#0000000000-0000000000-0000000007.raw_object_index",
@@ -2021,8 +2050,9 @@
         },
         "nx:source:evidence#de1fe522478cdb6849a9516d7e57de44b12db7baffa35e96cc0e183154431f57": {
           "bytes": {
-            "data": "8Ac=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "d4be2e2426d783fba0bd08fa2beb696c61bff5bd8ac27a5e6f30b8c181bfb5dc"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000006.raw_object_index",
@@ -2030,8 +2060,9 @@
         },
         "nx:source:evidence#e055c19827eeaf76c3889ae0a7af8180e9f011ca05e19e717f5537540d5a8f91": {
           "bytes": {
-            "data": "8Ag=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "f6128032fc31d4d36ae55d2255667e6cb72037991226b29e82974ef729706cf3"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000007.raw_object_index",
@@ -2039,8 +2070,9 @@
         },
         "nx:source:evidence#e384a33cab8198cd30c1d25133fe6fab1401f435d3d420058914e9c63f877cc3": {
           "bytes": {
-            "data": "XQEC",
-            "retention": "inline"
+            "byte_len": 3,
+            "retention": "digest",
+            "sha256": "a932e910a450c6cca0d61348716484ea6db60abaaeb9a3b6939221780bd8589f"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_branches.nx:feature-history:surface-construction-branch#0000000000-0000000000-0000000001.suffix",
@@ -2048,8 +2080,9 @@
         },
         "nx:source:evidence#e6564e4f3bcef28a5f6c7e5ebe18246de5a5823027d5c97841a9e211fdf3c73b": {
           "bytes": {
-            "data": "8Bc=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "737e292749e3d812fd09603a7fd729ab35eb0d315aec56e14866a0b0c8be9e90"
           },
           "offset": 0,
           "stream": "native.nx.feature_studio_post_branch_references.nx:feature-history:studio-post-branch-reference#0000000000-0000000000-0000000005.raw_object_index",
@@ -2057,8 +2090,9 @@
         },
         "nx:source:evidence#eadb6ccb9978c985aa71c1365c04e3ddf8ebabef981e16e89183b98323f5f60b": {
           "bytes": {
-            "data": "8A0=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "a3f3bfd57fc07f7b8f0f56d8fc15d27139f5d91dff604cad5f6aebeacffaa461"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_branches.nx:feature-history:surface-construction-branch#0000000000-0000000000-0000000000.terminal.raw_object_index",
@@ -2066,8 +2100,9 @@
         },
         "nx:source:evidence#eda24f61eceacbf99f68a5a1d1897217a258f819cd2900c24a007f52dc8a483b": {
           "bytes": {
-            "data": "8Bo=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "4158cc471ca59a550e6dfcabfd76d697e948ae5517ce72d6cf93bf297b0d1626"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000011.raw_object_index",
@@ -2075,8 +2110,9 @@
         },
         "nx:source:evidence#f77c6094de74bda6dfe886b59baf32d2d85194662f0fa6f7c9f9926032ce92e0": {
           "bytes": {
-            "data": "8BU=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "5fb4430f63d8087656ecadaf1678752370b6f2ce635b24d1286b826fd5ff254e"
           },
           "offset": 0,
           "stream": "native.nx.feature_studio_post_branch_references.nx:feature-history:studio-post-branch-reference#0000000000-0000000000-0000000003.raw_object_index",
@@ -2084,8 +2120,9 @@
         },
         "nx:source:evidence#ff0361d6b0b19f15a676e2b455e0f64c403f3076adcc5a366f714bcfa72f5602": {
           "bytes": {
-            "data": "8AE=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "f4e15c621abef7aabba8bdc21c1f6321d4e60650dfbc5052ef94d983be09564e"
           },
           "offset": 0,
           "stream": "native.nx.feature_surface_construction_references.nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000000.raw_object_index",

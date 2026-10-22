@@ -240,6 +240,7 @@
                   "d42"
                 ],
                 "expression": "d42+1[deg]",
+                "offset": 310,
                 "target": {
                   "declared_unit": null,
                   "kind": "parameter",
@@ -253,6 +254,7 @@
             "id": "creo:depdb:curve_expression#active-7-269",
             "lines": [
               {
+                "offset": 310,
                 "text": "result=d42+1[deg]"
               }
             ],
@@ -264,12 +266,10 @@
         ],
         "feature_definitions": [
           {
-            "body": {
-              "byte_len": 130,
-              "sha256": "b10582d80060dddc2723bfdfe7f27b541c01aa619b46f8e735eb524a370d9b59"
-            },
+            "body": "666561745f646566735f39313700e001666561745f69640028e0006773656332645f7074720064696d7461625f70747200f802f78102fbe2e00174797065000ae00176616c756500e4e0016469726563740001e0016175785f76616c7565000fe0016578745f6964002af3f78102e20ae401182ae00072656c61745f70747200230a",
             "definition_id": 917,
             "id": "creo:featdefs:feature_definition#917",
+            "offset": 86,
             "outlines": [],
             "owner_feature_id": 40,
             "parameter_frames": [],
@@ -284,15 +284,14 @@
             "feature_id": 40,
             "id": "creo:mdlstatus:feature_state#40:0",
             "identifier_keyword": "id",
+            "offset": 227,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
+            "state_offset": 227,
             "state_ordinal": 0,
             "stored_name": "Extrude id 40",
-            "stored_name_bytes": {
-              "byte_len": 13,
-              "sha256": "d289af463f2b5ddb4921ba261593627999022575f254f25c1c178d55b72ba945"
-            },
+            "stored_name_bytes": "45787472756465206964203430",
             "stored_name_prefix": null
           }
         ],
@@ -305,42 +304,33 @@
             "definition_id": 917,
             "dimensions": [
               {
-                "auxiliary_body": {
-                  "byte_len": 1,
-                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                },
+                "auxiliary_body": "0f",
                 "auxiliary_value": 0.0,
                 "dimension_type": 10,
                 "direction_byte": 1,
                 "external_id": 42,
+                "offset": 144,
                 "references": null,
                 "unit": "radians",
                 "value": 1.0,
-                "value_body": {
-                  "byte_len": 1,
-                  "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-                }
+                "value_body": "e4"
               },
               {
-                "auxiliary_body": {
-                  "byte_len": 1,
-                  "sha256": "452ba1ddef80246c48be7690193c76c1d61185906be9401014fe14f1be64b74f"
-                },
+                "auxiliary_body": "18",
                 "auxiliary_value": 0.0,
                 "dimension_type": 10,
                 "direction_byte": 1,
                 "external_id": 42,
+                "offset": 197,
                 "references": null,
                 "unit": "radians",
                 "value": 1.0,
-                "value_body": {
-                  "byte_len": 1,
-                  "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-                }
+                "value_body": "e4"
               }
             ],
             "equations": [],
             "id": "creo:featdefs:sketch#917",
+            "offset": 86,
             "opaque_segments": [],
             "order_rows": [],
             "owner_feature_id": 40,
@@ -362,6 +352,7 @@
                 "entity_ref": 258,
                 "entry_ref": null,
                 "kind": "dimensions",
+                "offset": 124,
                 "row_count": 2
               }
             ],
@@ -383,14 +374,17 @@
         "file_size": "328",
         "section.0.length": "140",
         "section.0.name": "FeatDefs",
+        "section.0.offset": "76",
         "section.0.raw_name": "FeatDefs",
         "section.0.role": "model-data",
         "section.1.length": "27",
         "section.1.name": "MdlStatus",
+        "section.1.offset": "216",
         "section.1.raw_name": "MdlStatus",
         "section.1.role": "metadata",
         "section.2.length": "85",
         "section.2.name": "DEPDB_DATA",
+        "section.2.offset": "243",
         "section.2.raw_name": "DEPDB_DATA",
         "section.2.role": "metadata",
         "section_count": "3",
@@ -997,20 +991,6 @@
           "tag": "section_sketch_feature"
         }
       }
-    },
-    "metadata": {
-      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-269.assignments[0].offset": "310",
-      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-269.lines[0].offset": "310",
-      "native.creo.feature_definitions.creo:featdefs:feature_definition#917.offset": "86",
-      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#40:0.offset": "227",
-      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#40:0.state_offset": "227",
-      "native.creo.sketches.creo:featdefs:sketch#917.dimensions[0].offset": "144",
-      "native.creo.sketches.creo:featdefs:sketch#917.dimensions[1].offset": "197",
-      "native.creo.sketches.creo:featdefs:sketch#917.offset": "86",
-      "native.creo.sketches.creo:featdefs:sketch#917.table_headers[0].offset": "124",
-      "source.section.0.offset": "76",
-      "source.section.1.offset": "216",
-      "source.section.2.offset": "243"
     },
     "retained_records": {
       "creo:source:image#whole": {

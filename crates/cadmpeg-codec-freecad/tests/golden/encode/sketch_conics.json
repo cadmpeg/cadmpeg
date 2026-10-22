@@ -2,23 +2,18 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 18592,
-      "payload_sha256": "0d392b1a97a18c1d440985c0743458817bca590b795d7af696c919c851b00bf7"
+      "payload_len": 10607,
+      "payload_sha256": "5057bd65b10e4f68756a495a71bba10c27c7f23a82b071168bb32c29642f7107"
     },
     {
-      "name": "ConicWitness.InternalShape.brp",
-      "payload_len": 0,
-      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      "name": "Cadmpeg.StringHasher.0.txt",
+      "payload_len": 22,
+      "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
     },
     {
-      "name": "ConicWitness.Shape.Map.txt",
-      "payload_len": 320,
-      "payload_sha256": "622c4475183c231b0b0cf1db77962ae1055aa05b3202418c8d3bc1cfdef24617"
-    },
-    {
-      "name": "ConicWitness.Shape.brp",
-      "payload_len": 3754,
-      "payload_sha256": "8bf46c3b69b235079bcb6f96578cb1ed5f2c5ee45a8c60aa941b07c85d6e4955"
+      "name": "ConicWitness.brp",
+      "payload_len": 2304,
+      "payload_sha256": "b5864d03103cf908fa67410652d8cf9d203d791b59123acfccd958c32befc426"
     }
   ],
   "report": {
@@ -82,93 +77,264 @@
       }
     },
     "coverage": {
-      "coverage": "complete"
+      "arenas": {
+        "appearance_bindings": "written",
+        "appearances": "written",
+        "assembly_joints": "written",
+        "assets": "dropped",
+        "attributes": "reported",
+        "bodies": "written",
+        "coedges": "written",
+        "configurations": "dropped",
+        "curves": "written",
+        "drawings": "dropped",
+        "edges": "written",
+        "faces": "written",
+        "feature_input_topologies": "dropped",
+        "feature_result_topologies": "dropped",
+        "features": "written",
+        "loops": "written",
+        "occurrences": "written",
+        "parameters": "written",
+        "pcurves": "written",
+        "pmi": "dropped",
+        "points": "written",
+        "presentation_documents": "written",
+        "presentation_layers": "dropped",
+        "procedural_curves": "written",
+        "procedural_surfaces": "written",
+        "product_definitions": "written",
+        "regions": "written",
+        "semantic_annotations": "dropped",
+        "shells": "written",
+        "sketch_constraints": "written",
+        "sketch_entities": "written",
+        "sketches": "written",
+        "spatial_sketch_constraints": "dropped",
+        "spatial_sketch_entities": "dropped",
+        "spatial_sketches": "dropped",
+        "spreadsheets": "written",
+        "subds": "dropped",
+        "surfaces": "written",
+        "tessellations": "dropped",
+        "vertices": "written",
+        "view_presentations": "written"
+      },
+      "coverage": "declared"
     },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#CorpusMetadata:Label:property conflicts with operation property Label",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 3 native record(s) from `fcstd.entries`",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 5 native record(s) from `fcstd.properties`",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.shape_payloads`",
+        "severity": "info"
+      }
+    ],
     "native_dispositions": {
       "namespaces": {
         "fcstd": {
           "arenas": {
             "annotations": {
-              "disposition": "written"
+              "disposition": "dropped"
             },
             "applications": {
-              "disposition": "written"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:application#ConicWitness": "regenerated",
+                "fcstd:native:application#CorpusMetadata": "regenerated"
+              }
             },
             "attachments": {
-              "disposition": "written"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:attachment#ConicWitness": "written"
+              }
             },
             "carrier_census": {
-              "disposition": "written"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:carrier-census#ConicWitness:Shape:ConicWitness.Shape.brp:families": "regenerated"
+              }
             },
             "design_census": {
-              "disposition": "written"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:design-census#ConicWitness:projection": "regenerated"
+              }
             },
             "document": {
-              "disposition": "written"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:document#0": "regenerated"
+              }
             },
             "drawings": {
-              "disposition": "written"
+              "disposition": "dropped"
             },
             "element_maps": {
-              "disposition": "written"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:element-map#ConicWitness:Shape:map": "written"
+              }
             },
             "entries": {
-              "disposition": "written"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:entry#Document.xml": "regenerated"
+              }
             },
             "extensions": {
-              "disposition": "written"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:extension#ConicWitness:0%3AAttachExtension": "written"
+              }
             },
             "gui_documents": {
-              "disposition": "written"
+              "disposition": "dropped"
             },
             "gui_properties": {
-              "disposition": "written"
+              "disposition": "dropped"
             },
             "gui_view_providers": {
-              "disposition": "written"
+              "disposition": "dropped"
             },
             "joints": {
-              "disposition": "written"
+              "disposition": "dropped"
             },
             "objects": {
-              "disposition": "written"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:object#ConicWitness": "regenerated",
+                "fcstd:native:object#CorpusMetadata": "written"
+              }
             },
             "product_nodes": {
-              "disposition": "written"
+              "disposition": "dropped"
             },
             "properties": {
-              "disposition": "written"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:property#0:Comment": "regenerated",
+                "fcstd:native:property#0:Company": "regenerated",
+                "fcstd:native:property#0:CreatedBy": "regenerated",
+                "fcstd:native:property#0:CreationDate": "regenerated",
+                "fcstd:native:property#0:FileName": "written",
+                "fcstd:native:property#0:Id": "regenerated",
+                "fcstd:native:property#0:Label": "regenerated",
+                "fcstd:native:property#0:LastModifiedBy": "regenerated",
+                "fcstd:native:property#0:LastModifiedDate": "regenerated",
+                "fcstd:native:property#0:License": "regenerated",
+                "fcstd:native:property#0:LicenseURL": "regenerated",
+                "fcstd:native:property#0:Material": "written",
+                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:ShowHidden": "regenerated",
+                "fcstd:native:property#0:Tip": "written",
+                "fcstd:native:property#0:TipName": "regenerated",
+                "fcstd:native:property#0:TransientDir": "written",
+                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:UnitSystem": "written",
+                "fcstd:native:property#0:UseHasher": "regenerated",
+                "fcstd:native:property#ConicWitness:ArcFitTolerance": "regenerated",
+                "fcstd:native:property#ConicWitness:AttacherEngine": "written",
+                "fcstd:native:property#ConicWitness:AttacherType": "regenerated",
+                "fcstd:native:property#ConicWitness:AttachmentOffset": "regenerated",
+                "fcstd:native:property#ConicWitness:AttachmentSupport": "written",
+                "fcstd:native:property#ConicWitness:Constraints": "regenerated",
+                "fcstd:native:property#ConicWitness:Exports": "written",
+                "fcstd:native:property#ConicWitness:ExternalTypes": "written",
+                "fcstd:native:property#ConicWitness:FullyConstrained": "regenerated",
+                "fcstd:native:property#ConicWitness:Geometry": "regenerated",
+                "fcstd:native:property#ConicWitness:Label": "regenerated",
+                "fcstd:native:property#ConicWitness:Label2": "regenerated",
+                "fcstd:native:property#ConicWitness:MakeInternals": "regenerated",
+                "fcstd:native:property#ConicWitness:MapMode": "regenerated",
+                "fcstd:native:property#ConicWitness:MapPathParameter": "regenerated",
+                "fcstd:native:property#ConicWitness:MapReversed": "regenerated",
+                "fcstd:native:property#ConicWitness:Placement": "regenerated",
+                "fcstd:native:property#ConicWitness:Shape": "regenerated",
+                "fcstd:native:property#ConicWitness:ShapeMaterial": "written",
+                "fcstd:native:property#ConicWitness:Visibility": "regenerated",
+                "fcstd:native:property#ConicWitness:_ElementMapVersion": "written",
+                "fcstd:native:property#ConicWitness:_ExternalGeoVersion": "regenerated",
+                "fcstd:native:property#CorpusMetadata:InertValue": "written",
+                "fcstd:native:property#CorpusMetadata:Label": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
+                "fcstd:native:property#CorpusMetadata:License": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Proxy": "written",
+                "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Visibility": "regenerated"
+              }
             },
             "shape_payloads": {
-              "disposition": "written"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp": "regenerated"
+              }
             },
             "string_tables": {
-              "disposition": "written"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:string-table#0": "written"
+              }
             },
             "unknowns": {
-              "disposition": "written"
+              "disposition": "dropped"
             },
             "unreadable_entries": {
-              "disposition": "written"
+              "disposition": "dropped"
             }
           }
         }
       }
     },
-    "notes": [
-      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
-      "retained layout reused after current typed and neutral projections agreed"
-    ],
+    "notes": [],
+    "synthesis_cause": {
+      "cause": "patch_declined",
+      "reason": "unsupported writer content: the typed property has no independent projection"
+    },
     "write_path": {
       "fidelity": {
-        "status": "replayed"
+        "status": "not_consumed"
       },
-      "path": "patched"
+      "path": "synthesized"
     }
   }
 }

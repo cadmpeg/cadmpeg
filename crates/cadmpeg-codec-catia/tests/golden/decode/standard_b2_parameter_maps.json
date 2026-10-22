@@ -757,8 +757,9 @@
       },
       "catia:source:evidence#41a6d224f8b2bbddcc09686112bc2085c71ab7f647446335cd4290ae6ba22b16": {
         "bytes": {
-          "data": "ggiAHgh4HguHDQAAAAAAAPA/AAAAAACAUkAAAAAAAAAAAAAAAAAAAPA/AAAAAACAUkAAAAAAAADwPwAAAAAAAAAA",
-          "retention": "inline"
+          "byte_len": 66,
+          "retention": "digest",
+          "sha256": "9a3967e80e5c47b79ca562d55a19a5c3dbe752776656725c2407cce7a103e7b8"
         },
         "offset": 0,
         "stream": "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#3.payload",
@@ -766,8 +767,9 @@
       },
       "catia:source:evidence#cc181e49f6f59654f0c3c31b41b611e7365b207cad47052f2795dabdf97f34d9": {
         "bytes": {
-          "data": "glEIDgEKhhXDt8hvON00QLXvP7fkq1FA8R1aE8Q05T7sGvYB8R9IwOsa9gHxH0hAgsO3yG843TRAte8/t+SrUUDrGvYB8R9IQOwa9gHxH0jAw7fIbzjdNEDxHVoTxDTlPg==",
-          "retention": "inline"
+          "byte_len": 97,
+          "retention": "digest",
+          "sha256": "2f7e99b58ffa553668bd59209c9dade373385af2b72d3ee5eb4da03fd3f3d842"
         },
         "offset": 0,
         "stream": "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#2.payload",
@@ -775,8 +777,9 @@
       },
       "catia:source:evidence#d95564ceb333f8a8a9e6605b881fc5703ee542e8cd21fb65403a29ed41afa60c": {
         "bytes": {
-          "data": "ggkFCocVAAAAAAAAAAAzeOneZDsyQMWSPV+2jkY/AAAAAAAAAAAzeOneZDsyQIIAAAAAAAAAADN46d5kOzJAAAAAAAAAAAAzeOneZDsyQMWSPV+2jkY/",
-          "retention": "inline"
+          "byte_len": 87,
+          "retention": "digest",
+          "sha256": "61118322d2012d62a0005a2a5a4fdb98ba90dc6df912d9fadbf48bbe21c7caac"
         },
         "offset": 0,
         "stream": "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#0.payload",
@@ -784,8 +787,9 @@
       },
       "catia:source:evidence#e3d847ac73f36e894cecc41d7f0cfc4f1f91f4a3ca7b544152f1e1881995c3ca": {
         "bytes": {
-          "data": "ggUKUQEKhA0FdHKmCsJUQCvHCkRSZ1VAxiyUVzEDUT4FdHKmCsJUQCvHCkRSZ1VAAAAAAAAA8D8AAAAAAAAAAH+BIy+UyVRAmBbv8E5WVUD8qfHSTWJQPw==",
-          "retention": "inline"
+          "byte_len": 88,
+          "retention": "digest",
+          "sha256": "98b5d47bd1b074948e864a0b0890df947a121854cc8cb06aabd9efc107be5ee4"
         },
         "offset": 0,
         "stream": "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#1.payload",

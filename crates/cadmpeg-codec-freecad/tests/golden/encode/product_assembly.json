@@ -1903,7 +1903,7 @@
     "notes": [],
     "synthesis_cause": {
       "cause": "patch_declined",
-      "reason": "unsupported writer content: current typed FreeCAD projection disagrees with neutral arena occurrences"
+      "reason": "unsupported writer content: the typed property has no independent projection"
     },
     "write_path": {
       "fidelity": {

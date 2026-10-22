@@ -950,8 +950,9 @@
       "retained_records": {
         "nx:source:evidence#ba73b4c49cf9cf9f0565365a23509fa318cde684c8f0ffd835de3e1d1fb36856": {
           "bytes": {
-            "data": "OQAAAOVbsOC9+9ERo6cAqgDRCVQIFAAAAAEAAAAAAAEAAwMDAwMDAwMDAwMDAwMDAwcAAAAqAAAAAQAAAEcAAABuEN0QyCrREZtrAIDHu1mXBRUAAAABAAAAAEABABMAAABKAFQAXwBMAEwAUABSAE8AUABfAFMASABBAFAARQBJAE0AUABMABAAAAD/////////////////////AQABAAAABQAAABUAAAAUAAAAAAAAAA==",
-            "retention": "inline"
+            "byte_len": 178,
+            "retention": "digest",
+            "sha256": "c317395c5375e363df909365f3690ba844d1de25d9a953953386fbbf5f09e68e"
           },
           "offset": 0,
           "stream": "native.nx.display_jt_compressed_element_sequences.nx:display-jt:segment#0-row-0-0-inflated-sequence.tail",

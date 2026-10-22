@@ -65,14 +65,17 @@
         "principal_unit": "mmNs",
         "section.0.length": "67",
         "section.0.name": "VisibGeom",
+        "section.0.offset": "76",
         "section.0.raw_name": "VisibGeom",
         "section.0.role": "psb-geometry",
         "section.1.length": "15",
         "section.1.name": "NovisGeom",
+        "section.1.offset": "143",
         "section.1.raw_name": "NovisGeom",
         "section.1.role": "psb-geometry",
         "section.2.length": "12",
         "section.2.name": "AllFeatur",
+        "section.2.offset": "158",
         "section.2.raw_name": "AllFeatur",
         "section.2.role": "model-data",
         "section_count": "3",
@@ -582,11 +585,6 @@
           "tag": "psb_geometry_section"
         }
       }
-    },
-    "metadata": {
-      "source.section.0.offset": "76",
-      "source.section.1.offset": "143",
-      "source.section.2.offset": "158"
     },
     "retained_records": {
       "creo:NovisGeom:section#143": {
