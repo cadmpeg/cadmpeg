@@ -149,3 +149,10 @@ fn independently_decoded_preview_has_a_neutral_asset_home() {
     assert!(result.ir().scope.model);
     assert!(!result.ir().scope.design);
 }
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(&CatiaCodec, &inputs());
+}

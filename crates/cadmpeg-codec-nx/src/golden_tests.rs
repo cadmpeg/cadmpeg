@@ -1208,3 +1208,10 @@ fn golden_mesh_only_jt_keeps_projected_neutral_content() {
         .iter()
         .any(|loss| loss.code.local_code().contains("tessellation-dropped")));
 }
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(&NxCodec, &inputs());
+}

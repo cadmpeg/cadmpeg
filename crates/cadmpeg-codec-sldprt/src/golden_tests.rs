@@ -611,3 +611,13 @@ fn geometry_depth_agrees_with_full_depth() {
     );
     assert_eq!(summary.cut, 0, "{summary:?}");
 }
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(
+        &SldprtCodec,
+        &harness().fixture_inputs(),
+    );
+}
