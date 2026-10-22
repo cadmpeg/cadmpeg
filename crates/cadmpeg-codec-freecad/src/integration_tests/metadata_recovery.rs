@@ -266,7 +266,7 @@ fn large_property_population_preserves_the_complete_checked_model() {
         expected
             .attributes
             .push(cadmpeg_ir::attributes::SourceAttribute {
-                native_ref: None,
+                native_ref: Some(property.clone()),
                 id: cadmpeg_ir::ids::AttributeId::mint(crate::native::model_id(
                     "attribute",
                     &property,

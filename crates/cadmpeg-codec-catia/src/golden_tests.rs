@@ -62,8 +62,11 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// fidelity. A decode error is frozen too: refusing a document is
 /// contract-relevant behavior, so this never panics on codec output.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match CatiaCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    {
+    let value = match cadmpeg_test_support::golden::decode(
+        &CatiaCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             serde_json::json!({
@@ -124,9 +127,12 @@ fn independently_decoded_preview_has_a_neutral_asset_home() {
         .into_iter()
         .find(|(name, _)| name == "external_preview")
         .expect("fixture value is valid");
-    let result = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("authored preview document decodes");
+    let result = cadmpeg_test_support::golden::decode(
+        &CatiaCodec,
+        &mut Cursor::new(bytes),
+        &DecodeOptions::default(),
+    )
+    .expect("authored preview document decodes");
     assert!(result.ir().model.assets.iter().any(|asset| asset
         .media_type
         .as_ref()

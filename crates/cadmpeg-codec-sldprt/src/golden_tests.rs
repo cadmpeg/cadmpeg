@@ -53,19 +53,22 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// fidelity. A decode error is frozen too: refusing a document is
 /// contract-relevant behavior, so this never panics on codec output.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value =
-        match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => {
-                let result = cadmpeg_test_support::EditableDecodeResult::from(result);
-                serde_json::json!({
-                    "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-                    "report": serde_json::to_value(result.report()).expect("serialize report"),
-                    "source_fidelity": serde_json::to_value(result.source_fidelity())
-                        .expect("serialize source_fidelity"),
-                })
-            }
-            Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
-        };
+    let value = match cadmpeg_test_support::golden::decode(
+        &SldprtCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
+        Ok(result) => {
+            let result = cadmpeg_test_support::EditableDecodeResult::from(result);
+            serde_json::json!({
+                "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
+                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": serde_json::to_value(result.source_fidelity())
+                    .expect("serialize source_fidelity"),
+            })
+        }
+        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+    };
     snapshot_text(&value)
 }
 
@@ -172,11 +175,14 @@ fn walk_identifiers(value: &mut serde_json::Value, visit: &mut impl FnMut(&str) 
 /// covers the model, units, and tolerances only — not `ir.native` or
 /// `ir.source.attributes`, which describe the rebuilt container.
 fn neutral_document(bytes: &[u8]) -> String {
-    let value =
-        match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => normalized_document(result.ir()),
-            Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
-        };
+    let value = match cadmpeg_test_support::golden::decode(
+        &SldprtCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
+        Ok(result) => normalized_document(result.ir()),
+        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+    };
     snapshot_text(&value)
 }
 
@@ -263,9 +269,12 @@ fn golden_output_is_deterministic() {
 #[test]
 fn fixtures_replay_verbatim() {
     for (name, bytes) in harness().fixture_inputs() {
-        let decoded = SldprtCodec
-            .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
-            .unwrap();
+        let decoded = cadmpeg_test_support::golden::decode(
+            &SldprtCodec,
+            &mut Cursor::new(bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
         if decoded.source_fidelity().unrepresented().is_empty() {
             verbatim_replay_holds(&SldprtCodec, &name, &bytes);
         } else {
@@ -424,9 +433,12 @@ fn edited_blind_depth_writes_design_and_reports_stale_brep() {
     const DEPTH_TOLERANCE_MM: f64 = 1.0e-9;
     let mut edited_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
-        let decoded = SldprtCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
+        let decoded = cadmpeg_test_support::golden::decode(
+            &SldprtCodec,
+            &mut Cursor::new(bytes),
+            &DecodeOptions::default(),
+        )
+        .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
         let (mut edited, _, fidelity) = decoded.into_parts();
         if edit_blind_extrude_lengths(&mut edited) == 0 {
             continue;
@@ -445,9 +457,12 @@ fn edited_blind_depth_writes_design_and_reports_stale_brep() {
         );
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();
-        let written = SldprtCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
+        let written = cadmpeg_test_support::golden::decode(
+            &SldprtCodec,
+            &mut Cursor::new(bytes),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
         let synthesized = SldprtCodec
             .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
             .unwrap();
@@ -461,12 +476,12 @@ fn edited_blind_depth_writes_design_and_reports_stale_brep() {
         let synthesized_report = synthesized.report().clone();
         let mut synthesized_bytes = Vec::new();
         synthesized.write_to(&mut synthesized_bytes).unwrap();
-        let source_free = SldprtCodec
-            .decode(
-                &mut Cursor::new(synthesized_bytes),
-                &DecodeOptions::default(),
-            )
-            .unwrap();
+        let source_free = cadmpeg_test_support::golden::decode(
+            &SldprtCodec,
+            &mut Cursor::new(synthesized_bytes),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
         cadmpeg_test_support::contract::assert_written_arenas_agree(
             &synthesized_report,
             written.ir(),

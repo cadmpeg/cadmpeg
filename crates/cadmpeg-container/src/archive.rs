@@ -325,7 +325,7 @@ impl<'a> ArchiveSnapshot<'a> {
         self.recovery.as_ref().and_then(|recovery| recovery.tail)
     }
 
-    /// Opens an exact entry name as a borrowed stored slice or budgeted expanded view.
+    /// Opens an exact entry name as a named, source-tracked stored or expanded view.
     pub fn open(&self, ctx: &DecodeContext<'a>, name: &str) -> Result<View<'a>, CodecError> {
         let entry = self
             .entry(name)
@@ -360,16 +360,17 @@ impl<'a> ArchiveSnapshot<'a> {
             start: absolute_start,
             end: absolute_end,
         };
+        let stream = self.entry_stream_name(ctx, entry)?;
         match entry.compression {
             ZipCompression::Unsupported(method) => Err(CodecError::NotImplemented(format!(
                 "ZIP compression {method:?} for {}",
                 entry.name
             ))),
-            ZipCompression::Stored => self.open_stored(ctx, entry, range),
+            ZipCompression::Stored => self.open_stored(ctx, entry, range, &stream),
             ZipCompression::Deflate => {
                 let source = self.compressed_source(entry, range)?;
                 let mut decoder = flate2::read::DeflateDecoder::new(source.window());
-                let view = Self::open_expanded(ctx, entry, |chunk| {
+                let view = Self::open_expanded(ctx, entry, source, &stream, |chunk| {
                     let read = decoder.read(chunk).map_err(|error| {
                         CodecError::malformed(format_args!(
                             "cannot inflate {}: {error}",
@@ -389,9 +390,27 @@ impl<'a> ArchiveSnapshot<'a> {
             ZipCompression::Zstd => {
                 let source = self.compressed_source(entry, range)?;
                 let mut decoder = ctx.open_zstd(source)?;
-                Self::open_expanded(ctx, entry, |chunk| decoder.read_chunk(chunk))
+                Self::open_expanded(ctx, entry, source, &stream, |chunk| {
+                    decoder.read_chunk(chunk)
+                })
             }
         }
+    }
+
+    fn entry_stream_name(
+        &self,
+        ctx: &DecodeContext<'_>,
+        entry: &EntryRecord,
+    ) -> Result<String, CodecError> {
+        let archive = ctx.capture_part_extent(self.root)?;
+        Ok(format!(
+            "zip:{}:{}:{}:{}:{}",
+            archive.stream().len(),
+            archive.stream(),
+            archive.offset(),
+            archive.byte_len(),
+            entry.name
+        ))
     }
 
     fn compressed_source(
@@ -416,8 +435,9 @@ impl<'a> ArchiveSnapshot<'a> {
         ctx: &DecodeContext<'a>,
         entry: &EntryRecord,
         range: ByteRange,
+        stream: &str,
     ) -> Result<View<'a>, CodecError> {
-        let view = ctx.register_slice(self.root, range)?;
+        let view = self.compressed_source(entry, range)?;
         if cadmpeg_core::decode::u64_from_index(view.window().len()) != entry.uncompressed_size {
             return Err(CodecError::malformed(format_args!(
                 "stored size mismatch for {}",
@@ -430,15 +450,18 @@ impl<'a> ArchiveSnapshot<'a> {
                 entry.name
             )));
         }
-        Ok(view)
+        ctx.register_named_slice(self.root, range, stream)
     }
 
     fn open_expanded(
         ctx: &DecodeContext<'a>,
         entry: &EntryRecord,
+        source: View<'_>,
+        stream: &str,
         mut read_chunk: impl FnMut(&mut [u8]) -> Result<usize, CodecError>,
     ) -> Result<View<'a>, CodecError> {
         let mut writer = ctx.begin_expand(ExpandSpec::Exact(entry.uncompressed_size))?;
+        let mut checksum = crc32fast::Hasher::new();
         let mut chunk = [0_u8; 16 * 1024];
         loop {
             let read = read_chunk(&mut chunk)?;
@@ -446,15 +469,15 @@ impl<'a> ArchiveSnapshot<'a> {
                 break;
             }
             writer.write(&chunk[..read])?;
+            checksum.update(&chunk[..read]);
         }
-        let view = writer.finalize()?;
-        if crc32fast::hash(view.window()) != entry.crc32 {
+        if writer.written() == entry.uncompressed_size && checksum.finalize() != entry.crc32 {
             return Err(CodecError::malformed(format_args!(
                 "CRC mismatch for {}",
                 entry.name
             )));
         }
-        Ok(view)
+        writer.finalize_from(source, stream)
     }
 
     /// Builds generic entry summaries using a codec-owned role classifier.

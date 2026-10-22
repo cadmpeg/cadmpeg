@@ -39,10 +39,7 @@ pub enum CodecError {
     ///
     /// Never reported as [`CodecError::Malformed`]: a budget refusal is a
     /// statement about policy, not about the input.
-    #[error(
-        "resource limit on {:?}: {:?} (limit {}, used {}, requested {})",
-        .0.dimension, .0.reason, .0.limit, .0.used, .0.additional
-    )]
+    #[error("{0}")]
     ResourceLimit(ResourceLimit),
     /// The document was identified, and its dialect is not supported.
     ///

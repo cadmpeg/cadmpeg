@@ -16,6 +16,8 @@ const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("decode");
 /// A stable, machine-readable identifier for one shared decode loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecodeLossCode {
+    /// One independently framed part could not be decoded.
+    RecordUnreadable,
     /// A sidecar does not match the source document and was not consumed.
     SidecarStale,
     /// The document lacks a class required by the request.
@@ -30,13 +32,14 @@ impl DecodeLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::DepthNotDelivered { .. } => "depth.not-delivered",
+            Self::RecordUnreadable => "record.unreadable",
             Self::SidecarStale => "sidecar.stale",
         }
     }
 
     const fn severity(self) -> Severity {
         match self {
-            Self::DepthNotDelivered { .. } => Severity::Error,
+            Self::DepthNotDelivered { .. } | Self::RecordUnreadable => Severity::Error,
             Self::SidecarStale => Severity::Warning,
         }
     }
@@ -49,6 +52,7 @@ impl DecodeLossCode {
             }
             Self::DepthNotDelivered { .. } => LossTaxonomy::GeometryNotTransferred,
             Self::SidecarStale => LossTaxonomy::PreservedSourceUnavailable,
+            Self::RecordUnreadable => LossTaxonomy::DecodeDiagnostic,
         }
     }
 
@@ -56,7 +60,7 @@ impl DecodeLossCode {
         let kind = NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy());
         match self {
             Self::DepthNotDelivered { .. } => kind.with_strict_floor(Some(Severity::Warning)),
-            Self::SidecarStale => kind,
+            Self::SidecarStale | Self::RecordUnreadable => kind,
         }
         .into()
     }

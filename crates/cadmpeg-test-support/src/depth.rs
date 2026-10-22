@@ -84,8 +84,8 @@ pub fn assert_geometry_agrees_with_full_with<N: AsRef<str>>(
         let name = name.as_ref();
         summary.inputs += 1;
         match (
-            decode(codec, bytes, DecodeDepth::Full),
-            decode(codec, bytes, DecodeDepth::Geometry),
+            decode_at_depth(codec, bytes, DecodeDepth::Full),
+            decode_at_depth(codec, bytes, DecodeDepth::Geometry),
         ) {
             (Ok(full), Ok(geometry)) => {
                 check(&full);
@@ -123,12 +123,13 @@ pub fn assert_geometry_agrees_with_full_with<N: AsRef<str>>(
     summary
 }
 
-fn decode(
+fn decode_at_depth(
     codec: &dyn Codec,
     bytes: &[u8],
     depth: DecodeDepth,
 ) -> Result<DecodeResult, DecodeFailure> {
-    codec.decode(
+    crate::golden::decode(
+        codec,
         &mut Cursor::new(bytes),
         &DecodeOptions {
             depth,

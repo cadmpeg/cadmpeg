@@ -94,9 +94,11 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// fidelity. A decode error is frozen too: refusing a document is
 /// contract-relevant behavior, so this never panics on codec output.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match StepCodec::default()
-        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    {
+    let value = match cadmpeg_test_support::golden::decode(
+        &StepCodec::default(),
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = cadmpeg_test_support::EditableDecodeResult::from(result);
             serde_json::json!({
@@ -127,9 +129,11 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 /// The writer reads no clock: `StepWriteOptions::default()` stamps the fixed
 /// `1970-01-01T00:00:00` into `FILE_NAME`, so no arm needs elision.
 fn encode_snapshot(bytes: &[u8]) -> String {
-    let decoded = match StepCodec::default()
-        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    {
+    let decoded = match cadmpeg_test_support::golden::decode(
+        &StepCodec::default(),
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => result,
         Err(error) => {
             return snapshot_text(&serde_json::json!({ "decode_error": error.to_string() }))

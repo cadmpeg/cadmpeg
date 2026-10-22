@@ -4,16 +4,23 @@
 use std::collections::BTreeMap;
 use std::ops::Range;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit};
 use cadmpeg_core::CodecError;
 
 use super::RecordLayout;
+
+/// Typed source-record ownership and neutral arena links.
+pub mod provenance;
+
+/// Immutable owner-derived classes of unconsumed spans.
+pub mod classification;
 
 const PARTITION: &str = "partition source byte coverage";
 
 /// Disjoint, sorted byte ranges covering one complete source stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamPartition {
+    stream: String,
     byte_len: u64,
     reads: Vec<Range<u64>>,
     exempt: Vec<Range<u64>>,
@@ -21,6 +28,11 @@ pub struct StreamPartition {
 }
 
 impl StreamPartition {
+    /// Exact stream whose bytes were partitioned.
+    pub fn stream(&self) -> &str {
+        &self.stream
+    }
+
     /// Complete length of the stream whose bytes were partitioned.
     pub const fn byte_len(&self) -> u64 {
         self.byte_len
@@ -84,7 +96,20 @@ pub fn partition_stream(
     let exempt = difference(ctx, &exempt, &reads)?;
     let covered = normalize(ctx, reads.iter().chain(&exempt), byte_len)?;
     let b1 = difference(ctx, &[0..byte_len], &covered)?;
+    let stream_bytes = u64_from_index(stream.len());
+    ctx.retain_bytes(stream_bytes, PARTITION)?;
+    let mut stream_name = String::new();
+    stream_name.try_reserve_exact(stream.len()).map_err(|_| {
+        ResourceLimit::allocation_failed(
+            ResourceDimension::RetainedBytes,
+            ctx.policy().limits.max_retained_bytes,
+            stream_bytes,
+            PARTITION,
+        )
+    })?;
+    stream_name.push_str(stream);
     Ok(StreamPartition {
+        stream: stream_name,
         byte_len,
         reads,
         exempt,

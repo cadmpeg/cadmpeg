@@ -98,7 +98,8 @@ fn payload_copy_retains_exact_bytes_without_claiming_semantic_reads() {
     );
     let restored: SourceFidelity = serde_json::from_value(wire).unwrap();
     assert_eq!(restored, fidelity);
-    let (annotations, records, metadata, layouts) = restored.into_parts();
+    let (annotations, records, metadata, layouts, parts) = restored.into_parts();
+    assert!(parts.is_empty());
     assert_eq!(annotations, Default::default());
     assert!(records.is_empty());
     assert!(metadata.is_empty());

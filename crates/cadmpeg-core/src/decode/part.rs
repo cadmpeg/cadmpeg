@@ -79,6 +79,12 @@ impl<T> PartOutcome<T> {
 }
 
 impl DecodeContext<'_> {
+    /// Capture a genuine source view's canonical extent without reading content.
+    pub fn capture_part_extent(&self, extent: View<'_>) -> Result<PartCapture, CodecError> {
+        self.require_source(extent)?;
+        self.budget.part_capture(extent)
+    }
+
     /// Run one explicitly bounded part with transactional read recovery.
     ///
     /// A failed part loses its reads and descendant captures. Only a Part
@@ -90,8 +96,7 @@ impl DecodeContext<'_> {
         extent: View<'_>,
         decode: impl FnOnce() -> Result<T, CodecError>,
     ) -> Result<PartOutcome<T>, CodecError> {
-        self.require_source(extent)?;
-        let capture = self.budget.part_capture(extent)?;
+        let capture = self.capture_part_extent(extent)?;
         let transaction = match self.read_transaction() {
             Ok(transaction) => transaction,
             Err(error) => return self.finish_given_up(capture, error),

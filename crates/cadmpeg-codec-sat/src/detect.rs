@@ -90,7 +90,6 @@ pub(crate) fn header_attributes(
             "acis_save_format_version",
             header.save_format_version.map(u64::from),
         ),
-        ("kernel_entity_count", header.entity_count),
         ("kernel_flags", header.flags),
     ] {
         if let Some(value) = value {
@@ -106,6 +105,17 @@ pub(crate) fn header_attributes(
         if let Some(value) = value {
             attributes.insert(key.to_owned(), value.to_owned());
         }
+    }
+}
+
+fn inspection_header_attributes(
+    header: &KernelHeader,
+    family: Family,
+    attributes: &mut BTreeMap<String, String>,
+) {
+    header_attributes(header, family, attributes);
+    if let Some(count) = header.entity_count {
+        attributes.insert("kernel_entity_count".into(), count.to_string());
     }
 }
 
@@ -128,7 +138,7 @@ pub(crate) fn inspect(
         StreamKind::AsmBinary(header) => {
             crate::loss::binary_header_losses(&header.metadata, &mut losses);
             let stream = crate::dialect::record_stream_start(bytes, Family::Asm, header);
-            header_attributes(&header.metadata, Family::Asm, &mut attributes);
+            inspection_header_attributes(&header.metadata, Family::Asm, &mut attributes);
             if header.metadata.has_history_partition() {
                 notes.push(
                     "the stream declares a construction-history partition; decode reads \
@@ -151,7 +161,7 @@ pub(crate) fn inspect(
                 header,
                 stream,
             };
-            header_attributes(&header.metadata, Family::Acis, &mut attributes);
+            inspection_header_attributes(&header.metadata, Family::Acis, &mut attributes);
             if header.metadata.has_history_partition() {
                 notes.push(
                     "the stream declares a construction-history partition; decode reads \
@@ -185,7 +195,7 @@ pub(crate) fn inspect(
                             .map(|span| span.start),
                         &mut losses,
                     );
-                    header_attributes(kernel, stream.terminator.into(), &mut attributes);
+                    inspection_header_attributes(kernel, stream.terminator.into(), &mut attributes);
                     let scale = match stream.header.units() {
                         sat::TextUnits::Declared(scale) => Some(scale.get().to_string()),
                         sat::TextUnits::Unspecified => None,

@@ -33,6 +33,7 @@ use schema::Admission as GuiSchemaAdmission;
 pub(crate) struct Graph {
     pub(crate) documents: Vec<GuiDocumentRecord>,
     pub(crate) providers: Vec<GuiViewProviderRecord>,
+    pub(crate) provider_sources: Vec<(String, std::ops::Range<usize>)>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
     pub(crate) losses: Vec<LossNote>,
     /// The GUI stream was not admitted into typed records.
@@ -305,6 +306,7 @@ fn transfer_schema_one(
         objects_by_name.insert(object.name().as_str(), object.id().as_str());
     }
     let mut native_providers = Vec::new();
+    let mut provider_sources = Vec::new();
     let mut native_properties = Vec::new();
     let mut losses = Vec::new();
     // Absence declares no camera state; it does not omit a source record.
@@ -365,6 +367,10 @@ fn transfer_schema_one(
                 "GuiDocument.xml has duplicate ViewProvider names".into(),
             ));
         }
+        provider_sources.push((
+            crate::native::native_id("gui-view-provider", name),
+            provider.range(),
+        ));
         let provider_key = provider_identity_key(name);
         let Some(object_id) = objects_by_name.get(name).copied() else {
             append_native_provider(
@@ -623,6 +629,7 @@ fn transfer_schema_one(
     let mut graph = Graph {
         documents: vec![document],
         providers: native_providers,
+        provider_sources,
         properties: native_properties,
         losses,
         untyped: false,
@@ -1297,7 +1304,6 @@ fn append_native_provider(
         name: name.to_owned(),
         expanded: provider.attribute("expanded").and_then(parse_bool),
         order,
-        raw_xml: text[provider.range()].to_owned(),
     });
     let Some(container) = unique_child(provider, "Properties")? else {
         return Err(CodecError::malformed(format_args!(

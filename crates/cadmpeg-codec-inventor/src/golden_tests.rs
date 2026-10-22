@@ -55,7 +55,11 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 }
 
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match InventorCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
+    let value = match cadmpeg_test_support::golden::decode(
+        &InventorCodec,
+        &mut Cursor::new(bytes),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             serde_json::json!({
@@ -109,12 +113,12 @@ fn geometry_depth_agrees_with_full_depth() {
 
 #[test]
 fn source_model_state_has_a_neutral_configuration() {
-    let result = InventorCodec
-        .decode(
-            &mut Cursor::new(crate::test_support::test_fixtures::model_state_envelope_fixture()),
-            &DecodeOptions::default(),
-        )
-        .expect("model-state document decodes");
+    let result = cadmpeg_test_support::golden::decode(
+        &InventorCodec,
+        &mut Cursor::new(crate::test_support::test_fixtures::model_state_envelope_fixture()),
+        &DecodeOptions::default(),
+    )
+    .expect("model-state document decodes");
     let configuration = result
         .ir()
         .model

@@ -20,6 +20,7 @@ use cadmpeg_core::CodecError;
 
 pub mod b1;
 mod part;
+pub mod parts;
 
 pub use part::RecordLayout;
 
@@ -380,6 +381,8 @@ pub struct SourceFidelity {
     record_layout: BTreeMap<String, RecordLayout>,
     /// Native records retained for recovery or replay, keyed by record id.
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
+    /// Every reached independently framed decode part.
+    parts: BTreeMap<UnknownId, parts::PartRecord>,
 }
 
 #[derive(Deserialize)]
@@ -401,6 +404,9 @@ struct SourceFidelityWire {
     /// Native records retained for recovery or replay.
     #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
+    /// Every reached independently framed decode part.
+    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    parts: BTreeMap<UnknownId, parts::PartRecord>,
 }
 
 impl TryFrom<SourceFidelityWire> for SourceFidelity {
@@ -412,7 +418,9 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
             metadata: wire.metadata,
             record_layout: wire.record_layout,
             retained_records: wire.retained_records,
+            parts: wire.parts,
         };
+        parts::validate_tree(&value.parts)?;
         let derived = value.unrepresented();
         if wire.unrepresented != derived {
             return Err(format!(
@@ -438,6 +446,9 @@ impl Serialize for SourceFidelity {
             record_layout: &'a BTreeMap<String, RecordLayout>,
             #[serde(skip_serializing_if = "BTreeMap::is_empty")]
             retained_records: &'a BTreeMap<UnknownId, RetainedSourceRecord>,
+            /// Every reached independently framed decode part.
+            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+            parts: &'a BTreeMap<UnknownId, parts::PartRecord>,
         }
         Wire {
             unrepresented: self.unrepresented(),
@@ -445,6 +456,7 @@ impl Serialize for SourceFidelity {
             metadata: &self.metadata,
             record_layout: &self.record_layout,
             retained_records: &self.retained_records,
+            parts: &self.parts,
         }
         .serialize(serializer)
     }
@@ -458,6 +470,7 @@ impl SourceFidelity {
             metadata: BTreeMap::new(),
             record_layout: BTreeMap::new(),
             retained_records: std::collections::BTreeMap::new(),
+            parts: BTreeMap::new(),
         }
     }
 
@@ -469,12 +482,14 @@ impl SourceFidelity {
         BTreeMap<UnknownId, RetainedSourceRecord>,
         BTreeMap<String, String>,
         BTreeMap<String, RecordLayout>,
+        BTreeMap<UnknownId, parts::PartRecord>,
     ) {
         (
             self.annotations,
             self.retained_records,
             self.metadata,
             self.record_layout,
+            self.parts,
         )
     }
 
@@ -504,6 +519,13 @@ impl SourceFidelity {
     /// Append source metadata after checking all tables for identity collisions.
     /// Failure leaves this source metadata unchanged.
     pub fn append(&mut self, mut other: Self) -> Result<(), cadmpeg_core::CodecError> {
+        for id in other.parts.keys() {
+            if self.parts.contains_key(id) {
+                return Err(CodecError::malformed(format_args!(
+                    "duplicate source part {id}"
+                )));
+            }
+        }
         for id in other.record_layout.keys() {
             if self.record_layout.contains_key(id) {
                 return Err(CodecError::malformed(format_args!(
@@ -529,7 +551,13 @@ impl SourceFidelity {
         self.retained_records.append(&mut other.retained_records);
         self.metadata.append(&mut other.metadata);
         self.record_layout.append(&mut other.record_layout);
+        self.parts.append(&mut other.parts);
         Ok(())
+    }
+
+    /// Read every reached part without changing its delivery state or source extent.
+    pub fn parts(&self) -> &BTreeMap<UnknownId, parts::PartRecord> {
+        &self.parts
     }
 
     /// Borrow source layouts without permitting replacement or read attribution.

@@ -50,7 +50,7 @@ fn pmi_dropped_by_schema_does_not_skip_later_losses() {
             .losses
             .iter()
             .any(|loss| loss.code.local_code() == "native.records-omitted"
-                && loss.message.contains("f3d.asm_histories")),
+                && loss.message == "the step write omits 1 native record(s) from `f3d.asm_histories`: f3d:test:asm-history#0"),
         "{:?}",
         report.losses
     );

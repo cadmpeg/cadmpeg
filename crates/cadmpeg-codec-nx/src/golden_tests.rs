@@ -997,7 +997,11 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
 
 /// Serialize decode + inspect output as stable pretty JSON. Errors are frozen.
 fn snapshot(bytes: &[u8]) -> String {
-    let decode = match NxCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
+    let decode = match cadmpeg_test_support::golden::decode(
+        &NxCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             serde_json::json!({
@@ -1046,7 +1050,11 @@ fn golden_output_is_deterministic() {
 fn covered_arenas() -> BTreeSet<String> {
     let mut covered = BTreeSet::new();
     for (_, bytes) in fixtures() {
-        let Ok(result) = NxCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) else {
+        let Ok(result) = cadmpeg_test_support::golden::decode(
+            &NxCodec,
+            &mut Cursor::new(bytes),
+            &DecodeOptions::default(),
+        ) else {
             continue;
         };
         if let Some(namespace) = result.ir().native.namespace("nx") {
@@ -1185,12 +1193,12 @@ fn geometry_depth_agrees_with_full_depth() {
 
 #[test]
 fn golden_mesh_only_jt_keeps_projected_neutral_content() {
-    let result = NxCodec
-        .decode(
-            &mut Cursor::new(crate::test_support::test_jt_mesh::tetrahedron_prt()),
-            &DecodeOptions::default(),
-        )
-        .expect("authored mesh-only JT part");
+    let result = cadmpeg_test_support::golden::decode(
+        &NxCodec,
+        &mut Cursor::new(crate::test_support::test_jt_mesh::tetrahedron_prt()),
+        &DecodeOptions::default(),
+    )
+    .expect("authored mesh-only JT part");
     assert!(result.ir().scope.model);
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert_eq!(result.ir().model.tessellations[0].triangle_count(), 4);

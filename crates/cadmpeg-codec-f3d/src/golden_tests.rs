@@ -349,7 +349,11 @@ fn read_fixture(name: &str) -> Result<Vec<u8>, String> {
 }
 
 fn decode_result(bytes: &[u8]) -> Result<DecodeResult, DecodeFailure> {
-    F3dCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+    cadmpeg_test_support::golden::decode(
+        &F3dCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    )
 }
 
 fn indent_block(block: &str) -> String {
@@ -920,12 +924,12 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
     use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::geometry::VectorOffsetRoles;
 
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(0, false))),
-            &DecodeOptions::default(),
-        )
-        .expect("skin construction fixture");
+    let decoded = cadmpeg_test_support::golden::decode(
+        &F3dCodec,
+        &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(0, false))),
+        &DecodeOptions::default(),
+    )
+    .expect("skin construction fixture");
     let document = serde_json::to_value(decoded.ir()).expect("skin document JSON");
     serde_json::from_value::<CadIr>(document.clone()).expect("the fixture is a document");
 
@@ -995,14 +999,14 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
 /// a second time.
 #[test]
 fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_full_rolling_ball_smbh(
-                "rb_blend_spl_sur",
-            ))),
-            &DecodeOptions::default(),
-        )
-        .expect("rolling-ball construction fixture");
+    let decoded = cadmpeg_test_support::golden::decode(
+        &F3dCodec,
+        &mut Cursor::new(f3d_with_smbh(&synthetic_full_rolling_ball_smbh(
+            "rb_blend_spl_sur",
+        ))),
+        &DecodeOptions::default(),
+    )
+    .expect("rolling-ball construction fixture");
     let document = serde_json::to_value(decoded.ir()).expect("rolling-ball document JSON");
     serde_json::from_value::<CadIr>(document.clone()).expect("the fixture is a document");
 

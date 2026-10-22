@@ -720,6 +720,17 @@ class WireMirrorDocs(TempSourceCase):
         ]))
         self.assertEqual(self.findings("undocumented_wire_mirror"), [])
 
+    def test_qualified_generic_type_is_not_a_wire_field(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '\n'.join([
+            '#[serde(try_from = "HolderWire")]', "pub struct Holder;", "",
+            "struct HolderWire {", "    /// Reached source parts.",
+            "    parts: BTreeMap<UnknownId, parts::PartRecord>,",
+            "    missing_doc: u8,", "}", "",
+        ]))
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual(len(findings), 1)
+        self.assertIn("`missing_doc`", findings[0].message)
+
     def test_undocumented_field_variant_and_variant_field_are_reported(self) -> None:
         self.write(f"{self.IR}/tagged.rs", '\n'.join([
             '#[serde(from = "TaggedWire")]', "pub enum Tagged { One }", "",

@@ -52,6 +52,7 @@ pub(crate) struct Graph {
     pub(crate) objects: Vec<ObjectRecord>,
     /// Dynamic extensions.
     pub(crate) extensions: Vec<ExtensionRecord>,
+    pub(crate) extension_sources: Vec<(String, std::ops::Range<usize>)>,
     /// Document and object properties.
     pub(crate) properties: Vec<PropertyRecord>,
     /// Diagnostics for source-only persistence metadata.
@@ -302,6 +303,7 @@ pub(crate) fn parse_document(
 
     let mut properties = Vec::new();
     let mut extensions = Vec::new();
+    let mut extension_sources = Vec::new();
     let document_property_nodes = root
         .children()
         .filter(|node| node.has_tag_name("Properties"))
@@ -390,13 +392,13 @@ pub(crate) fn parse_document(
                 let id = extension_id(object.id(), &name, order);
                 extension_ids_by_start.insert(node.range().start, id.clone());
 
+                extension_sources.push((id.clone(), node.range()));
                 extensions.push(ExtensionRecord {
                     id,
                     owner: object.id().to_owned(),
                     name,
                     type_name,
                     order,
-                    raw_xml: text[node.range()].to_owned(),
                 });
             }
         }
@@ -451,6 +453,7 @@ pub(crate) fn parse_document(
     Ok(Graph {
         objects,
         extensions,
+        extension_sources,
         properties,
         losses,
     })

@@ -657,3 +657,4 @@ fn nested_archive_members_keep_distinct_address_spaces() {
 }
 
 mod compression;
+mod provenance;

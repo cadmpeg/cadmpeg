@@ -41,7 +41,7 @@ mod property_policy;
 mod topology_transfer;
 mod writer;
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
@@ -795,6 +795,7 @@ impl CodecBackend for FcstdCodec {
             );
         }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+        let mut layout_payloads = BTreeMap::new();
         for key in [
             "object_count",
             "archive_entry_count",
@@ -922,14 +923,16 @@ impl CodecBackend for FcstdCodec {
                     )?;
                 }
             }
-            for extension in &graph.extensions {
-                fidelity::evidence(
-                    &mut source_fidelity,
-                    &extension.id,
-                    &extension.id,
-                    0,
-                    extension.raw_xml.as_bytes(),
-                    cadmpeg_ir::ArenaClasses::new(),
+            for (id, range) in &graph.extension_sources {
+                fidelity::xml_layout_payload(
+                    ctx,
+                    *scan
+                        .data
+                        .get("Document.xml")
+                        .ok_or_else(|| CodecError::malformed("extension has no source entry"))?,
+                    id,
+                    range.clone(),
+                    &mut layout_payloads,
                 )?;
             }
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
@@ -1116,15 +1119,12 @@ impl CodecBackend for FcstdCodec {
                     )?;
                 }
             }
-            for provider in &gui_graph.providers {
-                fidelity::evidence(
-                    &mut source_fidelity,
-                    &provider.id,
-                    &provider.id,
-                    0,
-                    provider.raw_xml.as_bytes(),
-                    cadmpeg_ir::ArenaClasses::new(),
-                )?;
+            for (id, range) in &gui_graph.provider_sources {
+                let view = scan
+                    .data
+                    .get("GuiDocument.xml")
+                    .ok_or_else(|| CodecError::malformed("GUI provider has no source entry"))?;
+                fidelity::xml_layout_payload(ctx, *view, id, range.clone(), &mut layout_payloads)?;
             }
             for property in &gui_graph.properties {
                 fidelity::evidence(
@@ -1251,6 +1251,7 @@ impl CodecBackend for FcstdCodec {
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
+        fidelity::install_layouts(ctx, &mut source_fidelity, layout_payloads)?;
         let scope = ir.scope;
         Ok(Decoded {
             ir,

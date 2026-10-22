@@ -465,6 +465,38 @@ impl Provenance<SourceLocation> {
         }
     }
 
+    /// Prefix the actual source stream when composing a container member.
+    /// The format, offset and optional tag remain unchanged.
+    pub fn with_stream_prefix(
+        mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: &str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        use cadmpeg_core::CodecError;
+        let source = self.location.stream.as_ref().map_or("", StreamName::as_str);
+        let length = prefix
+            .len()
+            .checked_add(source.len())
+            .ok_or_else(|| CodecError::malformed("composed provenance stream length overflows"))?;
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(length),
+            "composed provenance stream",
+        )?;
+        let mut stream = String::new();
+        stream.try_reserve_exact(length).map_err(|_| {
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                cadmpeg_core::decode::u64_from_index(length),
+                "composed provenance stream",
+            )
+        })?;
+        stream.push_str(prefix);
+        stream.push_str(source);
+        self.location.stream = Some(StreamName::try_from(stream).map_err(CodecError::malformed)?);
+        Ok(self)
+    }
+
     /// Attach a source record or class name.
     #[must_use]
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
