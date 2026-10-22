@@ -531,8 +531,8 @@ impl MillimeterScale {
 /// The coordinate-unit fact carried by a scanned document.
 ///
 /// `None` is a legal Rhino unit system: coordinates remain in model units
-/// without a physical millimetre interpretation. `Unset` and a missing units
-/// record provide no coordinate scale.
+/// without a physical millimetre interpretation. `Unset` provides no
+/// coordinate scale. A missing units record selects millimetres.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum UnitBinding {
     /// The source declares a finite positive scale to millimetres.
@@ -547,7 +547,7 @@ impl UnitBinding {
     /// Classifies a parsed units record, including its legal absence.
     pub(crate) fn from_units(units: Option<&UnitsAndTolerances>) -> Self {
         let Some(units) = units else {
-            return Self::Unavailable;
+            return Self::Millimeters(MillimeterScale::IDENTITY);
         };
         match &units.unit {
             UnitSystem::None => Self::Native,
@@ -584,15 +584,6 @@ impl UnitBinding {
                 "the document {reason}; model coordinates and lengths are unscaled and reported as millimetres"
             )),
         )
-    }
-
-    /// Stable diagnostic label for the binding state.
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::Millimeters(_) => "millimeters",
-            Self::Native => "native",
-            Self::Unavailable => "unavailable",
-        }
     }
 }
 

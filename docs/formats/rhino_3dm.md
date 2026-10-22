@@ -1880,14 +1880,16 @@ present when their gates are met, and later bytes remain within the containing
 Unit system `none` retains native coordinates at scale 1.0 and supplies no
 millimetre binding. Unit system `unset` supplies no coordinate scale. When the
 source reader finds no units record, it keeps the default settings, whose unit
-system is millimeters.
+system is millimeters. This rule applies to every archive version.
 
-CADIR object geometry and the annotation, grid, and render settings records
-of a document with unit system `none` or `unset` use the model coordinates at
-scale 1.0. The document then carries one
+A document with unit system `none` or `unset` uses the model coordinates at
+scale 1.0 for every length-dependent record: object geometry, annotations,
+instance placements, detail views, named and active views, named construction
+planes, lights, linetypes, hatch patterns, dimension styles, and the
+annotation, grid, and render settings. The document then carries one
 `geometry.document-length-unit-undeclared` loss, which states that these
-lengths are not physical millimetres. A V1 archive without a units record uses
-millimeters.
+lengths are not physical millimetres. No record is retained only because the
+document has no physical unit.
 
 Unit values 23, 24, and 25 scale one stored unit to
 `149597870000000`, `9460730472580800000`, and `30856775800000000000`

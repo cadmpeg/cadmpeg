@@ -174,7 +174,7 @@ fn unit_binding_keeps_native_and_unavailable_distinct_from_physical_scale() {
     );
     assert_eq!(
         settings::UnitBinding::from_units(None),
-        settings::UnitBinding::Unavailable
+        settings::UnitBinding::Millimeters(settings::MillimeterScale::IDENTITY)
     );
     assert_eq!(
         settings::UnitBinding::from_units(Some(&physical)).neutral_scale(),

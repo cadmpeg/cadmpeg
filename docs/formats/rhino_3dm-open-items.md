@@ -663,28 +663,6 @@ affected references, or batch candidates and validate once before commit.
 Add a scaling benchmark that varies accumulated entity count and object count,
 with a regression ceiling for a document of this size and topology density.
 
-### UN-01. Unit-dependent records without a physical unit binding
-
-**Question.** Which CADIR length scale applies to a document without a
-physical unit binding, for every record family?
-
-**Known.** Object geometry and the annotation, grid, and render settings
-records use the model coordinates at scale 1.0 and the document carries one
-`geometry.document-length-unit-undeclared` loss. Named views, construction
-planes, viewport lists, lights, linetypes, hatch patterns, dimension styles,
-and annotation text still return their complete source records under
-`presentation.record-dropped` or `annotation.record-dropped` when the unit
-system is `none` or `unset`. A V2 or later archive without a units record is
-classified as `unset`.
-
-**Conflict.** `ON_3dmUnitsAndTolerances::Read` and the default
-`ON_3dmSettings` select millimeters when no units record is present. The
-codec reports such a document as having no usable unit system.
-
-**Need.** Apply the model-unit scale and the single document loss to the
-remaining presentation and annotation records, and bind a missing units
-record to the default millimetre system.
-
 ### AR-01. Non-canonical arc NURBS form misses its arc parameterization
 
 **Question.** Which neutral carrier reproduces `ON_ArcCurve` evaluation at an

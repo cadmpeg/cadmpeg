@@ -374,10 +374,10 @@ fn malformed_viewport_userdata_retains_typed_view_list_record() {
 }
 
 #[test]
-fn view_list_with_native_or_unavailable_units_is_retained_without_scale_one() {
+fn view_list_without_a_physical_unit_transfers_at_model_scale() {
     let archive = ArchiveVersion::V8;
-    for unit in [Some(0), Some(255), None] {
-        let named_views = named_views_record(archive);
+    let named_views = named_views_record(archive);
+    let views_for = |unit: Option<i32>| {
         let settings = unit
             .map(|value| vec![crate::test_support::test_dump::units_record(archive, value)])
             .unwrap_or_default();
@@ -394,33 +394,21 @@ fn view_list_with_native_or_unavailable_units_is_retained_without_scale_one() {
             ],
         );
         let result = decode(bytes);
-        let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
-        assert!(views.is_empty(), "unit {unit:?} unexpectedly entered CADIR");
-        let retained = result
-            .source_fidelity()
-            .retained_records()
-            .iter()
-            .find(|(id, record)| {
-                id.as_str()
-                    .starts_with("rhino:opaque:record#10000015-20008036-")
-                    && record.data() == Some(named_views.as_slice())
-            });
         assert!(
-            retained.is_some(),
-            "unit {unit:?} list source was not retained"
+            !result.report().losses.iter().any(|loss| {
+                loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+            }),
+            "unit {unit:?}"
         );
-        let label = if unit == Some(0) {
-            "native"
-        } else {
-            "unavailable"
-        };
-        assert!(result.report().losses.iter().any(|loss| {
-            loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
-                && loss
-                    .message
-                    .contains(&format!("no physical millimetre binding ({label})"))
-        }));
         assert_valid(&result);
+        crate::test_support::layout_independent_records(
+            &result.ir().native.namespace("rhino").unwrap().arenas()["views"],
+        )
+    };
+    let millimeters = views_for(Some(2));
+    assert!(!millimeters.is_empty());
+    for unit in [Some(0), Some(255), None] {
+        assert_eq!(views_for(unit), millimeters, "unit {unit:?}");
     }
 }
 

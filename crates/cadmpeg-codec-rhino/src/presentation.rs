@@ -417,8 +417,6 @@ struct HatchPatternDistanceSettings {
 #[derive(Debug)]
 enum PatternTransferError {
     Framing(FramingError),
-    NativeDocumentUnits,
-    UnavailableDocumentUnits,
     UnsupportedHatchUnit(u8),
 }
 
@@ -438,25 +436,11 @@ impl std::fmt::Display for PatternTransferError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Framing(error) => error.fmt(formatter),
-            Self::NativeDocumentUnits => {
-                formatter.write_str("document has no physical millimetre binding (native)")
-            }
-            Self::UnavailableDocumentUnits => {
-                formatter.write_str("document has no physical millimetre binding (unavailable)")
-            }
             Self::UnsupportedHatchUnit(code) => write!(
                 formatter,
                 "hatch pattern unit code {code} has no physical length definition",
             ),
         }
-    }
-}
-
-fn pattern_document_scale(binding: UnitBinding) -> Result<MillimeterScale, PatternTransferError> {
-    match binding {
-        UnitBinding::Millimeters(scale) => Ok(scale),
-        UnitBinding::Native => Err(PatternTransferError::NativeDocumentUnits),
-        UnitBinding::Unavailable => Err(PatternTransferError::UnavailableDocumentUnits),
     }
 }
 
@@ -2886,7 +2870,7 @@ fn parse_linetype(
     let mut segments = Vec::new();
     for segment in values {
         let length_millimeters = if always {
-            let scale = pattern_document_scale(binding)?;
+            let scale = binding.model_scale();
             scaled_coordinate(segment.length.get(), scale).ok_or_else(|| {
                 FramingError::structural(
                     source_offset,
@@ -2969,7 +2953,7 @@ fn hatch_pattern_scale(
     binding: UnitBinding,
 ) -> Result<MillimeterScale, PatternTransferError> {
     match settings.map(|settings| settings.pattern_unit_system) {
-        None | Some(0) => pattern_document_scale(binding),
+        None | Some(0) => Ok(binding.model_scale()),
         Some(code) => StandardUnit::from_value(i32::from(code))
             .map(MillimeterScale::from)
             .ok_or(PatternTransferError::UnsupportedHatchUnit(code)),
@@ -4504,30 +4488,13 @@ fn parse_text_style(
     })
 }
 
-/// Results of transferring table-owned presentation records.
-fn retain_unbound_presentation_record(
-    losses: &mut Vec<LossNote>,
-    opaque_records: &mut Vec<OpaqueRecord>,
-    table_typecode: u32,
-    record: &Record,
-    binding: UnitBinding,
-    kind: &str,
-) {
-    push_presentation_loss( losses, RhinoLossCode::PresentationRecordDropped, format_args!(
-        "{kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
-        record.range.start,
-        binding.label()
-    ));
-    push_opaque_record(opaque_records, table_typecode, record);
-}
-
 pub(crate) fn install(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
 ) -> Result<PresentationInstall, CodecError> {
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
-    let physical_scale = binding.neutral_scale();
+    let scale = binding.model_scale();
     let mut groups = Vec::new();
     let mut materials = Vec::new();
     let mut lights = Vec::new();
@@ -4661,17 +4628,6 @@ pub(crate) fn install(
                     }
                 }
             } else if table_type == LIGHT_TABLE {
-                let Some(scale) = physical_scale else {
-                    retain_unbound_presentation_record(
-                        &mut losses,
-                        &mut opaque_records,
-                        table.typecode,
-                        record,
-                        binding,
-                        "light",
-                    );
-                    continue;
-                };
                 if let Some(range) =
                     optional_malformed(class_data_prefix(scan.data, record, scan.archive, LIGHT))?
                 {
@@ -4775,17 +4731,6 @@ pub(crate) fn install(
                     parsed = true;
                 }
             } else if table_type == DIMSTYLE_TABLE {
-                let Some(scale) = physical_scale else {
-                    retain_unbound_presentation_record(
-                        &mut losses,
-                        &mut opaque_records,
-                        table.typecode,
-                        record,
-                        binding,
-                        "dimension style",
-                    );
-                    continue;
-                };
                 if scan.archive.value() < 60 {
                     let mut extra_requires_opaque = false;
                     if let Some((range, userdata)) = optional_malformed(class_data_with_userdata(
@@ -4991,36 +4936,28 @@ pub(crate) fn install(
             }
         }
         if object.class_uuid == LIGHT {
-            if let Some(scale) = physical_scale {
-                match parse_light(
-                    ctx,
-                    scan.data,
-                    object.class_data_range.clone(),
-                    scale,
-                    object.range.start,
-                    Some(source_order),
-                ) {
-                    Ok(light) => push_light(&mut lights, &mut light_indexes, light)?,
-                    Err(FramingError::Resource(limit)) => {
-                        return Err(CodecError::ResourceLimit(limit));
-                    }
-                    Err(error) => {
-                        push_presentation_loss(
-                            &mut losses,
-                            RhinoLossCode::PresentationRecordDropped,
-                            format_args!(
-                                "light object at offset {} could not be transferred: {error}",
-                                object.range.start
-                            ),
-                        );
-                    }
+            match parse_light(
+                ctx,
+                scan.data,
+                object.class_data_range.clone(),
+                scale,
+                object.range.start,
+                Some(source_order),
+            ) {
+                Ok(light) => push_light(&mut lights, &mut light_indexes, light)?,
+                Err(FramingError::Resource(limit)) => {
+                    return Err(CodecError::ResourceLimit(limit));
                 }
-            } else {
-                push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
-                    "light object at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
-                    object.range.start,
-                    binding.label()
-                ));
+                Err(error) => {
+                    push_presentation_loss(
+                        &mut losses,
+                        RhinoLossCode::PresentationRecordDropped,
+                        format_args!(
+                            "light object at offset {} could not be transferred: {error}",
+                            object.range.start
+                        ),
+                    );
+                }
             }
         }
         if let Some(attributes) = object.attributes.parsed() {

@@ -1369,7 +1369,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         assert!(context.unknown(0).is_some());
         assert_eq!(
             context.unit_binding(),
-            crate::settings::UnitBinding::Unavailable
+            crate::settings::UnitBinding::Millimeters(crate::settings::MillimeterScale::IDENTITY)
         );
         assert_eq!(context.archive(), archive);
         context

@@ -34,7 +34,7 @@ fn full_document_unit_binding_transfers_model_units_and_reports_an_undeclared_un
         (Some(2), "millimeters", false),
         (Some(0), "native", true),
         (Some(255), "unavailable", true),
-        (None, "unavailable", true),
+        (None, "millimeters", false),
     ] {
         let (bytes, object) = unit_binding_document(unit);
         let result = decode(bytes);
@@ -64,79 +64,6 @@ fn full_document_unit_binding_transfers_model_units_and_reports_an_undeclared_un
             .losses
             .iter()
             .any(|loss| loss.message.contains("no physical millimetre binding")));
-        assert_valid(&result);
-    }
-}
-
-#[test]
-fn presentation_tables_retain_unit_dependent_records_without_binding() {
-    let archive = ArchiveVersion::V8;
-    for unit in [Some(0), Some(255), None] {
-        let settings = unit
-            .map(|value| vec![crate::test_support::test_dump::units_record(archive, value)])
-            .unwrap_or_default();
-        let table_specs = [
-            (0x1000_0023, 0x2000_8078),
-            (0x1000_0020, 0x2000_8075),
-            (0x1000_0012, 0x2000_8060),
-            (0x1000_0022, 0x2000_8077),
-        ];
-        let records = table_specs
-            .iter()
-            .map(|(_, typecode)| {
-                crate::test_support::test_dump::crc_chunk(archive, *typecode, &[0xde, 0xad])
-            })
-            .collect::<Vec<_>>();
-        let bytes = crate::test_support::test_dump::minimal_document(
-            "80",
-            &[
-                crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
-                crate::test_support::test_dump::table(archive, 0x1000_0015, &settings),
-                crate::test_support::test_dump::table(
-                    archive,
-                    table_specs[0].0,
-                    std::slice::from_ref(&records[0]),
-                ),
-                crate::test_support::test_dump::table(
-                    archive,
-                    table_specs[1].0,
-                    std::slice::from_ref(&records[1]),
-                ),
-                crate::test_support::test_dump::table(
-                    archive,
-                    table_specs[2].0,
-                    std::slice::from_ref(&records[2]),
-                ),
-                crate::test_support::test_dump::table(
-                    archive,
-                    table_specs[3].0,
-                    std::slice::from_ref(&records[3]),
-                ),
-                crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
-            ],
-        );
-        let result = decode(bytes);
-        let namespace = result.ir().native.namespace("rhino").unwrap();
-        for arena in ["lights", "linetypes", "hatch_patterns", "dimension_styles"] {
-            assert!(
-                namespace.arenas()[arena].is_empty(),
-                "unit={unit:?} arena={arena}"
-            );
-        }
-        for record in &records {
-            assert!(
-                result
-                    .source_fidelity()
-                    .retained_records()
-                    .values()
-                    .any(|retained| retained.data() == Some(record.as_slice())),
-                "unit={unit:?} presentation source was not retained"
-            );
-        }
-        assert!(result.report().losses.iter().any(|loss| {
-            loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
-                && loss.message.contains("no physical millimetre binding")
-        }));
         assert_valid(&result);
     }
 }

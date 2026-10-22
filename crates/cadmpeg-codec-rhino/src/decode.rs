@@ -1684,28 +1684,25 @@ impl<'a> DecodeContext<'a> {
         }?;
         let view = &self.scan.data[detail.view_range.clone()];
         let mut view_losses = Vec::new();
-        let typed_view = match self.unit_binding().neutral_scale() {
-            Some(scale) => match crate::views::parse_view_body(
-                self.expand.ctx(),
-                self.scan.data,
-                detail.view_range.clone(),
-                self.archive(),
-                scale,
-                &mut view_losses,
-            ) {
-                Ok((value, _children)) => Some(crate::wire::json(&value)?),
-                Err(crate::chunks::FramingError::Resource(limit)) => {
-                    return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
-                }
-                Err(error) => {
-                    self.scan_warning(
-                        source_order,
-                        format_args!("detail view state retained: {error}"),
-                    );
-                    None
-                }
-            },
-            None => None,
+        let typed_view = match crate::views::parse_view_body(
+            self.expand.ctx(),
+            self.scan.data,
+            detail.view_range.clone(),
+            self.archive(),
+            self.model_scale(),
+            &mut view_losses,
+        ) {
+            Ok((value, _children)) => Some(crate::wire::json(&value)?),
+            Err(crate::chunks::FramingError::Resource(limit)) => {
+                return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+            }
+            Err(error) => {
+                self.scan_warning(
+                    source_order,
+                    format_args!("detail view state retained: {error}"),
+                );
+                None
+            }
         };
         let mut source_properties = BTreeMap::new();
         if let Some(typed_view) = typed_view {

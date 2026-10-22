@@ -861,16 +861,7 @@ pub(crate) fn collect(
             continue;
         };
         let identity = &object.identity;
-        let Some(scale) = binding.neutral_scale() else {
-            annotation_record_dropped(
-                &mut losses,
-                &identity.source_id,
-                object.range.start,
-                object.class_uuid,
-                format_args!("no physical millimetre binding ({})", binding.label()),
-            );
-            continue;
-        };
+        let scale = binding.model_scale();
         let mut v2_key = if matches!(&class, AnnotationClass::V2) {
             Some(source_key(identity, source_order))
         } else {
@@ -1510,7 +1501,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_annotations_require_physical_units_and_keep_located_source_losses() {
+    fn complete_annotations_transfer_at_model_scale_without_a_physical_unit() {
         use crate::test_support::test_dump as support;
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
@@ -1585,12 +1576,12 @@ mod tests {
         ];
         let archive = ArchiveVersion::V8;
         for (class, payload, arena, position_field) in fixtures {
-            for (unit, expected_scale, binding_label) in [
-                (Some(2), Some(1.0), "millimeters"),
-                (Some(3), Some(10.0), "millimeters"),
-                (Some(0), None, "native"),
-                (Some(255), None, "unavailable"),
-                (None, None, "unavailable"),
+            for (unit, expected_scale, undeclared) in [
+                (Some(2), 1.0, false),
+                (Some(3), 10.0, false),
+                (Some(0), 1.0, true),
+                (Some(255), 1.0, true),
+                (None, 1.0, false),
             ] {
                 let object = object_record_with_payload(archive, 0x20, class.to_wire(), &payload);
                 let point = object_record_with_payload(
@@ -1629,21 +1620,26 @@ mod tests {
                 let records = namespace.arenas().get(arena).map_or(&[][..], Vec::as_slice);
                 assert_eq!(
                     records.len(),
-                    usize::from(expected_scale.is_some()),
+                    1,
                     "class={class} unit={unit:?} losses={:?}",
                     decoded.report().losses
                 );
-                let losses = decoded
-                    .report()
-                    .losses
-                    .iter()
-                    .filter(|loss| {
-                        loss.code == super::RhinoLossCode::AnnotationRecordDropped.kind()
-                    })
-                    .collect::<Vec<_>>();
+                let count = |code: super::RhinoLossCode| {
+                    decoded
+                        .report()
+                        .losses
+                        .iter()
+                        .filter(|loss| loss.code == code.kind())
+                        .count()
+                };
                 assert_eq!(
-                    losses.len(),
-                    usize::from(expected_scale.is_none()),
+                    count(super::RhinoLossCode::AnnotationRecordDropped),
+                    0,
+                    "class={class} unit={unit:?}"
+                );
+                assert_eq!(
+                    count(super::RhinoLossCode::DocumentLengthUnitUndeclared),
+                    usize::from(undeclared),
                     "class={class} unit={unit:?}"
                 );
                 assert_eq!(
@@ -1654,44 +1650,21 @@ mod tests {
                         .data(),
                     Some(object.as_slice())
                 );
-                if let Some(scale) = expected_scale {
-                    let record = serde_json::to_value(&records[0]).expect("annotation record JSON");
-                    assert_eq!(
-                        record[position_field][0], scale,
-                        "class={class} unit={unit:?}"
-                    );
-                    assert_eq!(
-                        record["source_offset"],
-                        cadmpeg_core::decode::u64_from_index(source.range.start)
-                    );
-                    assert_eq!(
-                        record["links"],
-                        serde_json::json!(["rhino:object:record#000000"])
-                    );
-                    assert!(record.get("data").is_none());
-                    assert!(record["id"].as_str().is_some_and(|id| !id.is_empty()));
-                } else {
-                    let loss = losses[0];
-                    assert!(loss.message.contains(&source.identity.source_id));
-                    assert!(loss
-                        .message
-                        .contains(&format!("no physical millimetre binding ({binding_label})")));
-                    let provenance = loss.provenance.as_ref().expect("located annotation loss");
-                    assert_eq!(
-                        provenance.offset,
-                        cadmpeg_core::decode::u64_from_index(source.range.start)
-                    );
-                    assert_eq!(
-                        provenance.tag.as_deref(),
-                        Some(
-                            format!(
-                                "ANNOTATION/source={}/class={class}",
-                                source.identity.source_id
-                            )
-                            .as_str()
-                        )
-                    );
-                }
+                let record = serde_json::to_value(&records[0]).expect("annotation record JSON");
+                assert_eq!(
+                    record[position_field][0], expected_scale,
+                    "class={class} unit={unit:?}"
+                );
+                assert_eq!(
+                    record["source_offset"],
+                    cadmpeg_core::decode::u64_from_index(source.range.start)
+                );
+                assert_eq!(
+                    record["links"],
+                    serde_json::json!(["rhino:object:record#000000"])
+                );
+                assert!(record.get("data").is_none());
+                assert!(record["id"].as_str().is_some_and(|id| !id.is_empty()));
             }
         }
     }
