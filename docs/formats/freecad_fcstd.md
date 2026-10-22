@@ -432,13 +432,14 @@ A cache record's `RefIndex` on the geometry extension, mirrored by `refIndex` on
 zero-based position in the ordered `ExternalGeometry` link list. It restores reference identity
 when export or import changes object names. A nonnegative index takes precedence over the text
 key. Absence or `-1` denotes no ordinal reference. Both index spellings, when present, are equal.
-Reserved axis records have no nonnegative reference index. One link may own zero, one, or multiple cached carriers;
-carrier order remains `ExternalGeo` order, and each carrier retains that link's single selector. A link with
-no carrier creates an unresolved external-reference entity. The `Missing` flag marks a carrier whose referenced source is unavailable. A cached carrier can
-outlive its live link; its solved geometry remains distinct from reference resolution.
-An empty key is a detached carrier and has no link. A short prefix, wrong reserved id, duplicate
-current link match, or any `GeometryList` count/direct-child mismatch is malformed. Constraints can address its entity, endpoint, and center loci without inventing solved
-coordinates.
+Reserved axis records have no nonnegative reference index. One link may own zero, one, or multiple
+cached carriers. Carrier order remains `ExternalGeo` order; each associated carrier belongs to
+that link's single selector. The `Missing` flag marks a carrier whose referenced source is
+unavailable. A cached carrier can outlive its live link; its solved geometry remains distinct
+from reference resolution. An empty key with no nonnegative reference index is detached and has
+no link. A short prefix, wrong reserved id, duplicate current link match, or any `GeometryList`
+count/direct-child mismatch is malformed. Constraints address entity, endpoint, and center loci
+independently of cached coordinates.
 
 Sketch persistence has separate ordered `GeometryList` and `ConstraintList` values. The geometry
 list carries source entity order and the constraint list carries append order and geometry-position
