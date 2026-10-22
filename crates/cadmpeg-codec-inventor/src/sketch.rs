@@ -1538,7 +1538,7 @@ fn project_constraint(
         && constraint.header.scalar_map.entries().is_empty()
         && constraint.header.reference_map.metadata().is_none()
         && constraint.header.reference_map.entries().is_empty();
-    if !maps_are_empty && !coincident_solver_hint(constraint) {
+    if !maps_are_empty && !solver_hint(constraint) {
         return None;
     }
     let resolve = |reference: PmDcReference| {
@@ -1907,25 +1907,37 @@ fn project_constraint(
     }))
 }
 
-/// Whether the constraint maps hold only a coincident relation's solver
-/// hint: in each map, at most one entry for each of its two operands, with
-/// null reference values.
-fn coincident_solver_hint(constraint: &PmDcSketchConstraint) -> bool {
-    let PmDcSketchConstraintKind::Coincident { first, second } = constraint.kind else {
-        return false;
+/// Largest unqualified reference-map value of a tangent relation's solver
+/// hint: 0, 1, or 2.
+const TANGENT_HINT_MAX_CODE: u32 = 2;
+
+/// Whether the constraint maps hold only the relation's solver hint: in each
+/// map, at most one entry for each of its two operands. Reference-map values
+/// are null; a tangent relation's values can also be the unqualified codes 1
+/// and 2.
+fn solver_hint(constraint: &PmDcSketchConstraint) -> bool {
+    let (operands, max_code) = match constraint.kind {
+        PmDcSketchConstraintKind::Coincident { first, second }
+        | PmDcSketchConstraintKind::Distance { first, second, .. } => ([first, second], 0),
+        PmDcSketchConstraintKind::Tangent { first, second, .. } => {
+            ([first, second], TANGENT_HINT_MAX_CODE)
+        }
+        PmDcSketchConstraintKind::CircleCenter { entity, center } => ([entity, center], 0),
+        PmDcSketchConstraintKind::Midpoint { entity, point, .. } => ([entity, point], 0),
+        _ => return false,
     };
     let header = &constraint.header;
     distinct_operand_keys(
         header.scalar_map.entries().iter().map(|(key, _)| *key),
-        [first, second],
+        operands,
     ) && header
         .reference_map
         .entries()
         .iter()
-        .all(|(_, value)| value.index() == 0 && !value.qualified())
+        .all(|(_, value)| !value.qualified() && value.index() <= max_code)
         && distinct_operand_keys(
             header.reference_map.entries().iter().map(|(key, _)| *key),
-            [first, second],
+            operands,
         )
 }
 
@@ -2503,10 +2515,11 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 mod tests {
     use super::{
         distinct_operand_keys, inventory, parse_constraint, parse_direction, parse_entity,
-        parse_sketch, parse_transform, project, PmDcSketchConstraintKind, PmDcSketchEntityKind,
-        PmDcSketchEntityPayload, PmDcSketchPayload, PmDcTransformPayload, SketchConstraintTag,
-        SketchEntityTag, SketchInventory, CIRCLE_TYPE, COINCIDENT_TYPE, DIRECTION_TYPE,
-        HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE, SKETCH_TYPE, TRANSFORM_TYPE,
+        parse_sketch, parse_transform, project, solver_hint, PmDcSketchConstraint,
+        PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcSketchEntityPayload, PmDcSketchPayload,
+        PmDcTransformPayload, SketchConstraintTag, SketchEntityTag, SketchInventory, CIRCLE_TYPE,
+        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE,
+        SKETCH_TYPE, TRANSFORM_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcReference, PmDcReferenceList};
@@ -3628,6 +3641,58 @@ mod tests {
             [PmDcReference::new(0, false).expect("null reference")],
             operands
         ));
+    }
+
+    /// A relation keyed by line 8 and point 4 whose maps hold one hint entry
+    /// for the line, with reference-map value `code`.
+    fn hinted_relation(code: u32) -> PmDcSketchConstraint {
+        let mut bytes = content(11);
+        bytes.extend_from_slice(&(-1i32).to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        let map_prefix = |bytes: &mut Vec<u8>| {
+            bytes.extend_from_slice(&6u16.to_le_bytes());
+            bytes.extend_from_slice(&0x3000u16.to_le_bytes());
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&[0; 8]);
+            bytes.extend_from_slice(&8u32.to_le_bytes());
+        };
+        map_prefix(&mut bytes);
+        bytes.extend_from_slice(&1.0f64.to_le_bytes());
+        map_prefix(&mut bytes);
+        bytes.extend_from_slice(&code.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&4u32.to_le_bytes());
+        let parsed = parse(&bytes, |_, source| {
+            parse_constraint(SketchConstraintTag::Coincident, source, 22).expect("relation")
+        });
+        Located::new(
+            parsed,
+            crate::record_identity::RecordTypeId::from_bytes(COINCIDENT_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            11,
+        )
+    }
+
+    /// The same record read as a tangent relation.
+    fn as_tangent(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
+        let mut wire = serde_json::to_value(relation).expect("relation wire");
+        wire["kind"] = serde_json::json!({
+            "form": "tangent",
+            "first": wire["kind"]["first"].clone(),
+            "second": wire["kind"]["second"].clone(),
+        });
+        serde_json::from_value(wire).expect("tangent wire")
+    }
+
+    #[test]
+    fn a_tangent_hint_can_name_a_curve_end() {
+        assert!(solver_hint(&hinted_relation(0)));
+        // Only a tangent hint names a curve end.
+        assert!(!solver_hint(&hinted_relation(2)));
+        assert!(solver_hint(&as_tangent(&hinted_relation(2))));
+        assert!(solver_hint(&as_tangent(&hinted_relation(1))));
+        assert!(!solver_hint(&as_tangent(&hinted_relation(3))));
     }
 
     #[test]
