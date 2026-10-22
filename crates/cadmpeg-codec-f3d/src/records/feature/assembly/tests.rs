@@ -516,48 +516,30 @@ fn assembly_path_wire_pairs_guid_locations() {
         let values: Vec<_> = (0..count)
             .map(|index| format!("{index:08}-1111-4111-8111-111111111111"))
             .collect();
-        let offsets: Vec<_> = (0..count).map(|index| 400 + index * 80).collect();
         let wire = serde_json::json!({
             "link": {
-                "locator_reference_offset": 11, "locator_record_index": 10,
-                "locator_class_tag": "363", "locator_byte_offset": 100,
-                "locator_scope_reference_offset": 111, "wrapper_record_index": 20,
-                "wrapper_reference_offset": 122, "wrapper_class_tag": "388",
-                "wrapper_byte_offset": 200, "path_reference_offset": 211
+                "locator_record_index": 10, "locator_class_tag": "363",
+                "wrapper_record_index": 20, "wrapper_class_tag": "388"
             },
-            "record_index": 30, "class_tag": "329", "byte_offset": 300,
-            "occurrence_guids": values, "occurrence_guid_offsets": offsets
+            "record_index": 30, "class_tag": "329",
+            "occurrence_guids": values
         });
         for identities in [false, true] {
             let mut wire = wire.clone();
             if identities {
                 wire["identity_guids"] = serde_json::json!(vec![values[0].clone(); 4]);
-                wire["identity_guid_offsets"] = serde_json::json!([700, 780, 860, 940]);
             }
             let path: crate::records::feature::assembly::DesignAssemblyOperandPath =
                 serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(path.occurrence_guids().len(), count);
+            assert_eq!(
+                path.occurrence_guids()
+                    .iter()
+                    .map(|value| value.as_str())
+                    .collect::<Vec<_>>(),
+                values.iter().map(String::as_str).collect::<Vec<_>>()
+            );
             assert_eq!(serde_json::to_value(&path).unwrap(), wire);
-            for (value_field, offset_field) in [
-                ("occurrence_guids", "occurrence_guid_offsets"),
-                ("identity_guids", "identity_guid_offsets"),
-            ] {
-                let mut invalid = wire.clone();
-                let mut bad_offsets = invalid
-                    .get(offset_field)
-                    .and_then(serde_json::Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-                bad_offsets.push(serde_json::json!(999));
-                invalid[offset_field] = serde_json::Value::Array(bad_offsets);
-                let error = serde_json::from_value::<
-                    crate::records::feature::assembly::DesignAssemblyOperandPath,
-                >(invalid)
-                .unwrap_err()
-                .to_string();
-                assert!(error.contains(value_field));
-                assert!(error.contains(offset_field));
-            }
         }
     }
 }
@@ -847,19 +829,8 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
     .unwrap();
     let wire = serde_json::to_value(path).unwrap();
     assert!(serde_json::from_value::<DesignAssemblyOperandPath>(wire.clone()).is_ok());
-    for (field, offsets) in [
-        ("occurrence_guid_offsets", vec![300, 480]),
-        ("occurrence_guid_offsets", vec![480, 400]),
-        ("identity_guid_offsets", vec![560, 560, 720, 800]),
-        ("identity_guid_offsets", vec![299, 640, 720, 800]),
-    ] {
-        let mut invalid = wire.clone();
-        invalid[field] = serde_json::json!(offsets);
-        assert!(serde_json::from_value::<DesignAssemblyOperandPath>(invalid).is_err());
-    }
     let mut empty = wire.clone();
     empty["occurrence_guids"] = serde_json::json!([]);
-    empty["occurrence_guid_offsets"] = serde_json::json!([]);
     assert!(serde_json::from_value::<DesignAssemblyOperandPath>(empty).is_err());
     let mut wrong_class = wire;
     wrong_class["link"]["locator_class_tag"] = serde_json::json!("363");

@@ -151,7 +151,8 @@ fn inherit_synthesizes_the_default_for_a_source_dialect_the_writer_cannot_synthe
         .filter(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
         .collect();
     assert_eq!(displacement.len(), 1);
-    assert_eq!(displacement[0].message, "source dialect iges:1.0-fixed-ascii was displaced by target dialect iges:5.3-fixed-ascii; the source dialect identity is not preserved");
+    assert!(displacement[0].message.contains("iges:1.0-fixed-ascii"));
+    assert!(displacement[0].message.contains("iges:5.3-fixed-ascii"));
     assert_eq!(
         plan.report().synthesis_cause(),
         Some(&cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined {

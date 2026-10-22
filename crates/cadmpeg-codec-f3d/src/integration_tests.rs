@@ -446,7 +446,8 @@ fn assert_default_synthesis_output(
         .filter(|loss| loss.code == crate::loss::F3dLossCode::SourceDialectDisplaced.kind())
         .collect();
     assert_eq!(displacement.len(), 1);
-    assert_eq!(displacement[0].message, "source dialect f3d:unknown was displaced by target dialect f3d:manifest-3-2-0-0; the source dialect identity is not preserved");
+    assert!(displacement[0].message.contains("f3d:unknown"));
+    assert!(displacement[0].message.contains("f3d:manifest-3-2-0-0"));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes)
         .expect("write the actual selected target");

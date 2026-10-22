@@ -4,6 +4,7 @@
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{EncodeBuffer, EncodeSession};
+use cadmpeg_ir::document::ArenaName;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::subd::{SubdEdgeTag, SubdSurface, SubdVertexTag};
 use cadmpeg_ir::CadIr;
@@ -14,6 +15,29 @@ use crate::RhinoArchiveVersion;
 const ANONYMOUS: u32 = 0x4000_8000;
 const SUBD_OBJECT: i64 = 0x0004_0000;
 const OPERATION: &str = "retain Rhino SubD bytes";
+
+/// The registered neutral arena that holds SubD records.
+const SUBDS: ArenaName = {
+    let name = b"subds";
+    let mut index = 0;
+    loop {
+        assert!(
+            index < ArenaName::ALL.len(),
+            "subds is a registered neutral arena"
+        );
+        let candidate = ArenaName::ALL[index].as_str().as_bytes();
+        if candidate.len() == name.len() {
+            let mut at = 0;
+            while at < name.len() && candidate[at] == name[at] {
+                at += 1;
+            }
+            if at == name.len() {
+                break ArenaName::ALL[index];
+            }
+        }
+        index += 1;
+    }
+};
 
 pub(super) fn write(
     ctx: &DecodeContext<'_>,
@@ -43,8 +67,7 @@ pub(super) fn write(
         let display = super::presentation::display(
             ir,
             &cadmpeg_ir::appearance::AppearanceTarget::Record {
-                arena: cadmpeg_ir::document::ArenaName::parse("subds")
-                    .expect("subds is a registered neutral arena"),
+                arena: SUBDS,
                 id: surface.id.to_string(),
             },
             surface.source_object.as_ref(),
@@ -121,17 +144,18 @@ fn incidence(
     count: usize,
     values: impl Iterator<Item = Incidence>,
 ) -> Result<Vec<Incidence>, CodecError> {
-    // Partitioned u32 component counts and u16 face rings bound this product.
-    let bytes = u64_from_index(count) * u64_from_index(std::mem::size_of::<Incidence>());
-    ctx.retain_bytes(bytes, "Rhino SubD incidence")?;
     let mut result = ctx.alloc_filled(count, Incidence::default(), "Rhino SubD incidence")?;
     let mut values = values;
-    for slot in &mut result {
-        *slot = values
-            .next()
-            .expect("incidence count equals the admitted edge-use count");
+    let mut staged = 0;
+    for (slot, value) in result.iter_mut().zip(values.by_ref()) {
+        *slot = value;
+        staged += 1;
     }
-    debug_assert!(values.next().is_none(), "every incidence was staged");
+    debug_assert!(
+        staged == count && values.next().is_none(),
+        "the incidence count equals the admitted edge-use count"
+    );
+    result.truncate(staged);
     result.sort_unstable_by_key(|entry| (entry.owner, entry.pointer.id));
     Ok(result)
 }
@@ -176,8 +200,7 @@ fn payload<'a>(
     let vertex_edges = incidence(
         ctx,
         edge_use_count,
-        edges.iter().enumerate().flat_map(|(index, edge)| {
-            let id = p1 + u32::try_from(index).expect("edge count admitted by partitions");
+        edges.iter().zip(p1..p2).flat_map(|(edge, id)| {
             edge.vertices()
                 .into_iter()
                 .enumerate()
@@ -193,8 +216,7 @@ fn payload<'a>(
     let edge_faces = incidence(
         ctx,
         uses,
-        faces.iter().enumerate().flat_map(|(index, face)| {
-            let id = p2 + u32::try_from(index).expect("face count admitted by partitions");
+        faces.iter().zip(p2..p3).flat_map(|(face, id)| {
             face.edges().iter().map(move |use_| Incidence {
                 owner: use_.edge,
                 pointer: Pointer {
@@ -213,8 +235,7 @@ fn payload<'a>(
     let mut vertex_faces = incidence(
         ctx,
         uses,
-        faces.iter().enumerate().flat_map(|(index, face)| {
-            let id = p2 + u32::try_from(index).expect("face count admitted by partitions");
+        faces.iter().zip(p2..p3).flat_map(|(face, id)| {
             face.edges().iter().map(move |use_| {
                 let edge = &edges[cadmpeg_core::decode::index_from_u32(use_.edge)];
                 let ends = edge.vertices();
@@ -257,9 +278,9 @@ fn payload<'a>(
     for partition in [1, p1, p2, p3] {
         output.append(&partition.to_le_bytes(), OPERATION)?;
     }
-    for (index, vertex) in vertices.iter().enumerate() {
-        let index = u32::try_from(index).expect("vertex count admitted by partitions");
-        base(&mut output, 1 + index, 1 + index, version)?;
+    for (vertex, id) in vertices.iter().zip(1..p1) {
+        let index = id - 1;
+        base(&mut output, id, id, version)?;
         output.append(
             &[match vertex.tag {
                 SubdVertexTag::Smooth => 1,
@@ -282,9 +303,9 @@ fn payload<'a>(
         pointers(&mut output, incident_faces)?;
         record_end(&mut output, version)?;
     }
-    for (index, edge) in edges.iter().enumerate() {
-        let index = u32::try_from(index).expect("edge count admitted by partitions");
-        base(&mut output, p1 + index, 1 + index, version)?;
+    for ((edge, id), ordinal) in edges.iter().zip(p1..p2).zip(1..=p2 - p1) {
+        let index = ordinal - 1;
+        base(&mut output, id, ordinal, version)?;
         output.append(
             &[match edge.tag {
                 SubdEdgeTag::Smooth => 1,
@@ -317,11 +338,9 @@ fn payload<'a>(
         }
         record_end(&mut output, version)?;
     }
-    for (index, face) in faces.iter().enumerate() {
-        let index = u32::try_from(index).expect("face count admitted by partitions");
-        let id = p2 + index;
-        base(&mut output, id, 1 + index, version)?;
-        output.append(&(1 + index).to_le_bytes(), OPERATION)?;
+    for ((face, id), ordinal) in faces.iter().zip(p2..p3).zip(1..=p3 - p2) {
+        base(&mut output, id, ordinal, version)?;
+        output.append(&ordinal.to_le_bytes(), OPERATION)?;
         output.append(&0_u32.to_le_bytes(), OPERATION)?;
         let count = count16(face.edges().len())?;
         output.append(&count.to_le_bytes(), OPERATION)?;

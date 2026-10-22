@@ -9,8 +9,6 @@ use std::collections::HashMap;
 
 #[test]
 fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
-    let class_sources = ClassSources::default();
-
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8c44).unwrap());
     let operand = FeatureInputOperand {
         offset: Some(100),
@@ -129,6 +127,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 112)]);
     let carrier = dimensioned_relation_carrier(
         &class_sources,
         std::slice::from_ref(&lane),

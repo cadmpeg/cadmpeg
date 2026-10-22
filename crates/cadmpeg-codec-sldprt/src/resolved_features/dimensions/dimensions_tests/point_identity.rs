@@ -146,8 +146,6 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
 
 #[test]
 fn native_point_identity_rejects_a_declared_radial_marker() {
-    let class_sources = ClassSources::default();
-
     let marker = |id: &str, offset, object_index, local_id, coordinates_m| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
@@ -213,6 +211,7 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         entity_index: 1,
         entity_ref: Some("center".into()),
     };
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 112)]);
     let carrier = dimensioned_relation_carrier(
         &class_sources,
         std::slice::from_ref(&lane),
@@ -242,8 +241,6 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
 
 #[test]
 fn native_radial_identity_selects_one_of_equal_radius_pairs() {
-    let class_sources = ClassSources::default();
-
     let marker = |id: &str, offset, object_index, local_id, coordinates_m| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
@@ -341,6 +338,8 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
         entity_ref: Some("radial-one".into()),
     };
 
+    let class_sources =
+        ClassSources::from_positions([(&lane.classes[0], 112), (&lane.classes[1], 250)]);
     let carrier = dimensioned_relation_carrier(
         &class_sources,
         std::slice::from_ref(&lane),

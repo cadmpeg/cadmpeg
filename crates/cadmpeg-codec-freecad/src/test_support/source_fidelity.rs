@@ -191,69 +191,6 @@ pub(crate) fn layout<T: serde::de::DeserializeOwned>(
     serde_json::from_value(value).expect("source layout has its declared typed shape")
 }
 
-/// Preserve source-value fixture inputs after their field leaves native records.
-pub(crate) fn value_layout_fixture(owner: &str, raw_values: &[&str]) -> cadmpeg_ir::SourceFidelity {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use std::collections::BTreeMap;
-    let xml = format!("<Property>{}</Property>", raw_values.join(""));
-    let document = roxmltree::Document::parse(&xml).expect("source-value fixture XML");
-    let values = document
-        .root_element()
-        .descendants()
-        .filter(|node| node.is_element() && *node != document.root_element())
-        .enumerate()
-        .map(|(order, node)| crate::native::ValueRecord {
-            tag: node.tag_name().name().into(),
-            order,
-            parent: None,
-            attributes: node
-                .attributes()
-                .map(|attribute| (attribute.name().into(), attribute.value().into()))
-                .collect(),
-            decoded_json: None,
-            text: node.text().map(str::to_owned),
-        })
-        .collect::<Vec<_>>();
-    let property = crate::native::PropertyRecord {
-        dynamic: None,
-        id: owner.into(),
-        owner: "fixture".into(),
-        name: "fixture".into(),
-        type_name: "fixture".into(),
-        family: crate::native::PropertyFamily::Unknown,
-        status: None,
-        order: 0,
-        body: Some(crate::native::PropertyBody::Persisted {
-            values,
-            links: Vec::new(),
-            side_entries: Vec::new(),
-        }),
-    };
-    let sources = [
-        crate::fidelity::property_source(document.root_element(), &property)
-            .expect("fixture value ranges"),
-    ];
-    let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service())
-            .expect("fixture source");
-    let mut pending = BTreeMap::new();
-    for source in &sources {
-        crate::fidelity::value_layout_payloads(&ctx, root, source, &mut pending)
-            .expect("fixture source payloads");
-    }
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    crate::fidelity::install_layouts(&ctx, &mut fidelity, pending, BTreeMap::new())
-        .expect("fixture layouts");
-    for (order, raw) in raw_values.iter().enumerate() {
-        assert_eq!(
-            fidelity.record_layout()[owner].payloads()[&format!("values.{order}.raw_xml")].as_ref(),
-            raw.as_bytes()
-        );
-    }
-    fidelity
-}
-
 /// Preserve an authored source-XML fixture after its native wrapper is removed.
 pub(crate) fn xml_layout_fixture(owner: &str, xml: &str) -> cadmpeg_ir::SourceFidelity {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};

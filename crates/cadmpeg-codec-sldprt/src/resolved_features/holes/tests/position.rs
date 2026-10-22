@@ -1,6 +1,7 @@
 //! Hole position-sketch and spatial-locus tests.
 
 use super::{cylinder, lane, lane_with_position_reference, model_hole, native_history};
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use std::collections::BTreeMap;
 
@@ -1846,7 +1847,6 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-
         name: "moAngleParameter_c".into(),
     });
     lane.names.push(FeatureInputName {
@@ -1874,8 +1874,10 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         operands: Vec::new(),
     });
 
+    let class_sources =
+        ClassSources::from_positions([(&lane.classes[lane.classes.len() - 1], 100)]);
     enrich_history_parameters(
-        &crate::test_support::native::class_sources(&[&lane]),
+        &class_sources,
         std::slice::from_mut(&mut history),
         [&lane],
         true,

@@ -328,8 +328,6 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
 
 #[test]
 fn parameter_indexes_match_the_class_name_and_scalar_scans() {
-    let class_sources = ClassSources::default();
-
     let mut state = 0x2545_f491_u64;
     let mut next = |bound: u64| {
         state = state
@@ -355,17 +353,23 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
     };
     let features = ["feature-0", "feature-1", "feature-2"];
     for _ in 0..256 {
-        lane.classes = (0..next(6))
-            .map(|ordinal| FeatureInputClass {
-                feature_ref: None,
-                id: format!("class-{ordinal}"),
-                parent: "lane".into(),
-                ordinal: u32::try_from(ordinal).unwrap(),
-                sequence: u32::try_from(ordinal).unwrap(),
-
-                name: "moLengthParameter_c".into(),
+        let declared = (0..next(6))
+            .map(|ordinal| {
+                let class = FeatureInputClass {
+                    feature_ref: None,
+                    id: format!("class-{ordinal}"),
+                    parent: "lane".into(),
+                    ordinal: u32::try_from(ordinal).unwrap(),
+                    sequence: u32::try_from(ordinal).unwrap(),
+                    name: "moLengthParameter_c".into(),
+                };
+                (class, next(40))
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let class_sources = ClassSources::from_positions(
+            declared.iter().map(|(class, position)| (class, *position)),
+        );
+        lane.classes = declared.into_iter().map(|(class, _)| class).collect();
         lane.names = (0..next(8))
             .map(|ordinal| FeatureInputName {
                 feature_ref: None,

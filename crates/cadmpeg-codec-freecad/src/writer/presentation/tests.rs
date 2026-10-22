@@ -37,14 +37,6 @@ fn typed_gui_values_supply_content_instead_of_retained_xml() {
         }],
         side_entries: Vec::new(),
     };
-    let _xml_fidelity = crate::test_support::source_fidelity::xml_layout_fixture(
-        &record.id,
-        "<Property name=\"Visibility\"><Bool value=\"1\"/></Property>",
-    );
-    let _fidelity = crate::test_support::source_fidelity::value_layout_fixture(
-        &record.id,
-        &["<Bool value=\"contradicting-retained-blob\"/>"],
-    );
     let rendered = native_property(&record)
         .expect("typed property")
         .expect("inline");
@@ -198,12 +190,6 @@ fn view_fields_win_over_duplicate_native_property_values_and_deletions() {
             }],
             side_entries: Vec::new(),
         };
-        let _xml_fidelity =
-            crate::test_support::source_fidelity::xml_layout_fixture(&record.id, "<Property/>");
-        let _fidelity = crate::test_support::source_fidelity::value_layout_fixture(
-            &record.id,
-            &["<Bool value=\"contradicting-retained-blob\"/>"],
-        );
         record
     };
     let mut provider = Provider::new("Shape".into());

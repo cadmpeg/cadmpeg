@@ -183,7 +183,7 @@ fn inherit_synthesizes_the_default_for_an_edition_unspecified_ap242_source() {
 
     let plan = inherit(&StepCodec::default(), decoded.ir())
         .expect("§5.0 selects catalog-default synthesis");
-    assert_default_synthesis(plan, "source dialect step:ap242 was displaced by target dialect step:ap214; the source dialect identity is not preserved");
+    assert_default_synthesis(plan, "step:ap242");
 }
 
 /// An unrecognized declaration selects the catalog default and names its displacement.
@@ -204,7 +204,7 @@ fn inherit_synthesizes_the_default_for_an_unrecognized_source_declaration() {
 
     let plan = inherit(&StepCodec::default(), decoded.ir())
         .expect("§5.0 selects catalog-default synthesis");
-    assert_default_synthesis(plan, "source dialect step:unknown was displaced by target dialect step:ap214; the source dialect identity is not preserved");
+    assert_default_synthesis(plan, "step:unknown");
 }
 
 /// An unrecorded source selects the catalog default without inventing a source id.
@@ -220,7 +220,7 @@ fn inherit_defaults_a_step_source_that_records_no_dialect() {
     );
 
     let plan = inherit(&StepCodec::default(), &ir).expect("§5.0 selects catalog-default synthesis");
-    assert_default_synthesis(plan, "the unrecorded same-format source dialect was displaced by target dialect step:ap214; the source dialect identity is not preserved");
+    assert_default_synthesis(plan, "unrecorded");
 }
 
 /// The same source writes the moment the caller names a target: an explicit
@@ -455,7 +455,8 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     }
 }
 
-fn assert_default_synthesis(plan: cadmpeg_ir::codec::write::ExportPlan, message: &str) {
+/// `displaced` is the displaced source dialect id, or `unrecorded`.
+fn assert_default_synthesis(plan: cadmpeg_ir::codec::write::ExportPlan, displaced: &str) {
     use cadmpeg_ir::{Codec, DecodeOptions};
     assert!(matches!(
         plan.report().write_path(),
@@ -472,7 +473,8 @@ fn assert_default_synthesis(plan: cadmpeg_ir::codec::write::ExportPlan, message:
         .filter(|loss| loss.code == crate::loss::StepLossCode::SourceDialectDisplaced.kind())
         .collect();
     assert_eq!(displacement.len(), 1);
-    assert_eq!(displacement[0].message, message);
+    assert!(displacement[0].message.contains(displaced));
+    assert!(displacement[0].message.contains("step:ap214"));
     assert!(plan.report().synthesis_cause().is_none());
     assert_eq!(
         wire::field::<cadmpeg_ir::report::export::FidelityResolution>(

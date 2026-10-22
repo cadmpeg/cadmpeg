@@ -323,8 +323,6 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
 
 #[test]
 fn direct_feature_input_operations_require_unique_history_bindings() {
-    let class_sources = ClassSources::default();
-
     let class_name = "moExtrusion_c";
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -365,6 +363,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         feature_input_lanes: vec![lane.clone()],
         ..SldprtNative::default()
     };
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 10)]);
     assert_eq!(
         unbound_feature_input_operation_objects(&class_sources, &native),
         1

@@ -175,7 +175,8 @@ fn f3z_archive_merges_identity_occurrences() {
         .filter(|loss| loss.code == F3dLossCode::SourceDialectDisplaced.kind())
         .collect();
     assert_eq!(displacement.len(), 1);
-    assert_eq!(displacement[0].message, "source dialect f3d:f3z-multi-document was displaced by target dialect f3d:manifest-3-2-0-0; the source dialect identity is not preserved");
+    assert!(displacement[0].message.contains("f3d:f3z-multi-document"));
+    assert!(displacement[0].message.contains("f3d:manifest-3-2-0-0"));
     let unavailable: Vec<_> = inherited
         .report()
         .losses

@@ -149,10 +149,6 @@ fn xml_serialization_preserves_normalized_whitespace() {
         );
         property
     };
-    let _fidelity = crate::test_support::source_fidelity::value_layout_fixture(
-        &property.id,
-        &[r#"<String value="old">old</String>"#],
-    );
     let serialized = crate::writer::xml::native(&property).unwrap().unwrap();
     assert!(serialized.contains("a&#9;b&#10;c&#13;d"));
     assert_eq!(serialized.matches("&#9;").count(), 2);

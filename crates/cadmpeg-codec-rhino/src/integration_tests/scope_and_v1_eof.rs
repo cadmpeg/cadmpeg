@@ -38,6 +38,16 @@ fn modern(objects: &[Vec<u8>], history: Option<&[Vec<u8>]>) -> Vec<u8> {
     minimal_document("80", &tables)
 }
 
+/// The scope a request at `depth` delivers when the decoder reaches the parts
+/// of `content`. Every container-only decode delivers `{}` (§4.1).
+fn delivered(depth: DecodeDepth, content: ContentScope) -> ContentScope {
+    if depth == DecodeDepth::Container {
+        ContentScope::container()
+    } else {
+        content
+    }
+}
+
 fn assert_scope(result: &DecodeResult, expected: ContentScope) {
     assert_eq!(result.ir().scope, expected);
     assert_eq!(result.report().scope(), expected);
@@ -56,7 +66,7 @@ fn an_empty_reached_object_table_holds_model_without_claiming_absent_design() {
         DecodeDepth::Full,
     ] {
         let result = decode(&bytes, depth);
-        assert_scope(&result, ContentScope::geometry());
+        assert_scope(&result, delivered(depth, ContentScope::geometry()));
         assert!(result.ir().model.points.is_empty());
         assert!(result.ir().model.features.is_empty());
         assert!(!result.report().geometry_transferred());
@@ -64,7 +74,7 @@ fn an_empty_reached_object_table_holds_model_without_claiming_absent_design() {
 }
 
 #[test]
-fn an_empty_reached_history_table_holds_design_even_on_a_container_request() {
+fn an_empty_reached_history_table_holds_design_on_a_content_request() {
     let bytes = modern(&[], Some(&[]));
     for depth in [
         DecodeDepth::Container,
@@ -72,7 +82,7 @@ fn an_empty_reached_history_table_holds_design_even_on_a_container_request() {
         DecodeDepth::Full,
     ] {
         let result = decode(&bytes, depth);
-        assert_scope(&result, ContentScope::full());
+        assert_scope(&result, delivered(depth, ContentScope::full()));
         assert!(result.ir().model.features.is_empty());
         assert!(!result.report().geometry_transferred());
     }
@@ -84,7 +94,7 @@ fn a_failed_bounded_history_record_does_not_erase_the_reached_design_part() {
     let bytes = modern(&[], Some(&[failed]));
     for depth in [DecodeDepth::Container, DecodeDepth::Full] {
         let result = decode(&bytes, depth);
-        assert_scope(&result, ContentScope::full());
+        assert_scope(&result, delivered(depth, ContentScope::full()));
         assert!(result.ir().model.features.is_empty());
         assert!(result.report().losses.iter().any(
             |loss| loss.message.contains("history record") && loss.message.contains("degraded")
@@ -106,7 +116,7 @@ fn a_bounded_object_history_part_survives_its_inner_parse_failure_for_scope() {
     let bytes = modern(&[object], None);
     for depth in [DecodeDepth::Container, DecodeDepth::Full] {
         let result = decode(&bytes, depth);
-        assert_scope(&result, ContentScope::full());
+        assert_scope(&result, delivered(depth, ContentScope::full()));
         assert!(result.ir().model.points.is_empty());
         assert!(result.ir().model.features.is_empty());
         assert!(!result.report().geometry_transferred());
@@ -127,7 +137,7 @@ fn v1(points: &[[f64; 3]]) -> Vec<u8> {
 }
 
 #[test]
-fn v1_reached_geometry_holds_model_even_when_projection_is_not_requested() {
+fn v1_reached_geometry_holds_model_on_a_content_request() {
     let bytes = v1(&[[1.0, 2.0, 3.0]]);
     for depth in [
         DecodeDepth::Container,
@@ -135,7 +145,7 @@ fn v1_reached_geometry_holds_model_even_when_projection_is_not_requested() {
         DecodeDepth::Full,
     ] {
         let result = decode(&bytes, depth);
-        assert_scope(&result, ContentScope::geometry());
+        assert_scope(&result, delivered(depth, ContentScope::geometry()));
         if depth == DecodeDepth::Container {
             assert!(result.ir().model.points.is_empty());
             assert!(!result.report().geometry_transferred());
@@ -187,7 +197,7 @@ fn both_v1_eof_forms_stop_before_later_geometry_and_unbounded_trailing_bytes() {
             DecodeDepth::Full,
         ] {
             let result = decode(&bytes, depth);
-            assert_scope(&result, ContentScope::geometry());
+            assert_scope(&result, delivered(depth, ContentScope::geometry()));
             assert_eq!(result.source_fidelity().retained_records().len(), 1);
             if depth == DecodeDepth::Container {
                 assert!(result.ir().model.points.is_empty());

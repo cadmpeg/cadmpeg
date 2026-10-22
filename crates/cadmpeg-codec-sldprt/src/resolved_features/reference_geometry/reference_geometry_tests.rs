@@ -20,6 +20,7 @@ use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::BTreeMap;
@@ -470,8 +471,12 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
         sketch_entities: Vec::new(),
     };
 
+    let class_sources = ClassSources::from_positions([(
+        &lane.classes[0],
+        cadmpeg_core::decode::u64_from_index(class_offset),
+    )]);
     super::enrich_history_reference_axes(
-        &crate::test_support::native::class_sources(&[&lane]),
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &mut histories,
         &[lane],

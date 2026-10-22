@@ -28,17 +28,12 @@ use cadmpeg_ir::topology::{Face, Sense};
 use std::collections::{BTreeMap, HashSet};
 
 fn bind_pattern_inputs_test(
-    _class_sources: &ClassSources,
+    class_sources: &ClassSources,
     features: &mut [Feature],
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    bind_pattern_inputs(
-        &crate::test_support::native::class_sources(lanes),
-        features,
-        histories,
-        lanes,
-    )
+    bind_pattern_inputs(class_sources, features, histories, lanes)
 }
 
 #[test]
@@ -876,14 +871,16 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         text: None,
         content: Vec::new(),
     };
-    let class = |offset, name: &str| FeatureInputClass {
-        feature_ref: None,
-        id: format!("class-{offset}"),
-        parent: "sldprt:feature-input:config-objects#1".into(),
-        ordinal: 0,
-        sequence: 0,
-
-        name: name.into(),
+    let class = |offset, name: &str| {
+        let class = FeatureInputClass {
+            feature_ref: None,
+            id: format!("class-{offset}"),
+            parent: "sldprt:feature-input:config-objects#1".into(),
+            ordinal: 0,
+            sequence: 0,
+            name: name.into(),
+        };
+        (class, offset)
     };
     let name = |index, value: &str| FeatureInputName {
         feature_ref: None,
@@ -920,15 +917,21 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         constructed_marker.links = None;
         constructed_marker
     };
+    let declared = [
+        class(100, "moRelMgr_c"),
+        class(200, "sg3DPlaneHandle"),
+        class(500, "suObList"),
+    ];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut sources = crate::resolved_features::body_sources::BodySources::default();
+    for (class, position) in &declared {
+        sources.insert_class(&ctx, &class.id, *position).unwrap();
+    }
     let mut lane = FeatureInputLane {
         id: "sldprt:feature-input:config-objects#1".into(),
         configuration: Some("0".into()),
         native_payload: vec![0; 700].into(),
-        classes: vec![
-            class(100, "moRelMgr_c"),
-            class(200, "sg3DPlaneHandle"),
-            class(500, "suObList"),
-        ],
+        classes: declared.into_iter().map(|(class, _)| class).collect(),
         names: vec![name(0, "D1"), name(1, "D2"), name(2, "D3")],
         scalars: vec![scalar(0, 0.01), scalar(1, 0.02), scalar(2, 0.03)],
         relation_bindings: Vec::new(),
@@ -954,7 +957,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         std::slice::from_ref(&history),
         &HashSet::default(),
         &mut lane,
-        &crate::resolved_features::body_sources::BodySources::default(),
+        &sources,
     )
     .unwrap();
     assert_eq!(
@@ -983,7 +986,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         std::slice::from_ref(&ambiguous_history),
         &HashSet::default(),
         &mut ambiguous,
-        &crate::resolved_features::body_sources::BodySources::default(),
+        &sources,
     )
     .unwrap();
     assert!(ambiguous

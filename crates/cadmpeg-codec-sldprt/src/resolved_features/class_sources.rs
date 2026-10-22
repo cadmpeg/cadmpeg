@@ -82,7 +82,7 @@ impl ClassSources {
         self.pointers.as_deref()?.get(id)?.get("offset").copied()
     }
 
-    pub(super) fn insert(
+    pub(crate) fn insert(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: &str,
@@ -121,7 +121,7 @@ impl ClassSources {
         Ok(())
     }
 
-    pub(super) fn into_pointers(
+    pub(crate) fn into_pointers(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<BTreeMap<String, BTreeMap<String, u64>>, CodecError> {

@@ -1150,8 +1150,6 @@ fn implicit_circle_uses_unique_terminal_radial_point() {
 
 #[test]
 fn declared_entity_handle_uses_one_linked_center_radial_pair() {
-    let class_sources = ClassSources::default();
-
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
         offset: Some(100),
@@ -1166,7 +1164,6 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-
         name: "sgEntHandle".into(),
     };
     let reference = FeatureInputReference {
@@ -1202,6 +1199,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         sketch_entities: vec![center, radial],
     };
 
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 112)]);
     let (resolved, radius) = declared_entity_handle_circular_marker(
         &class_sources,
         std::slice::from_ref(&lane),
@@ -1385,7 +1383,6 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-
         name: "sgEntHandle".into(),
     };
     let mut center = marker("center", Some([0.010, 0.020]));
@@ -1511,8 +1508,9 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     }
     annotations = builder.build();
 
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 312)]);
     bind_sketch_profiles(
-        &crate::test_support::native::class_sources(&[&lane]),
+        &class_sources,
         &mut features,
         crate::resolved_features::profiles::SketchArenas {
             sketches: &mut sketches,

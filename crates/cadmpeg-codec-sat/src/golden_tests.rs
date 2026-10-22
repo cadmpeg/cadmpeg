@@ -87,7 +87,8 @@ fn golden_output_is_deterministic() {
 }
 
 /// A geometry-depth decode agrees with the full decode outside the design
-/// arenas. This codec has no geometry-depth cut, so every input delivers full.
+/// arenas. The decoder derives the delivered scope from the request (§1.1):
+/// a geometry request excludes design, so every geometry decode is a cut.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
@@ -101,7 +102,7 @@ fn geometry_depth_agrees_with_full_depth() {
             assert!(expected.iter().all(|class| result.source_fidelity().unrepresented().contains(class)), "every source-only loss must have retained source evidence carrying its arena class");
         },
     );
-    assert_eq!(summary.cut, 0, "{summary:?}");
+    assert_eq!(summary.cut, summary.inputs, "{summary:?}");
 }
 
 /// Attributes have a neutral home; direct ASM colors remain display colors.

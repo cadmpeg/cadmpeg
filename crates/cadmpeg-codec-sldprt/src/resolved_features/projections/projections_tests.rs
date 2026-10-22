@@ -1377,8 +1377,6 @@ fn split_face_collects_distinct_generated_target_faces() {
 
 #[test]
 fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
-    let class_sources = ClassSources::default();
-
     let signature = |serial: u32| {
         let mut value = [0u8; 12];
         value[..4].copy_from_slice(&[0x38, 0x80, 0x3b, 0]);
@@ -1514,6 +1512,10 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         terminal_feature_ref: None,
     };
 
+    let class_sources = ClassSources::from_positions([(
+        &lane.classes[0],
+        cadmpeg_core::decode::u64_from_index(class_offset),
+    )]);
     let groups = variable_fillet_radius_groups(
         &class_sources,
         "variable",
@@ -1561,7 +1563,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         native_ref: Some("variable".into()),
     }];
     super::project_compact_edge_selections(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &class_sources,
         &mut projected,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -1581,8 +1583,6 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
 
 #[test]
 fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges() {
-    let class_sources = ClassSources::default();
-
     let signature = |serial: u32| {
         let mut value = [0u8; 12];
         value[..4].copy_from_slice(&[0x38, 0x80, 0x3b, 0]);
@@ -1715,6 +1715,10 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         terminal_feature_ref: None,
     };
 
+    let class_sources = ClassSources::from_positions([(
+        &lane.classes[0],
+        cadmpeg_core::decode::u64_from_index(class_offset),
+    )]);
     let groups = variable_fillet_radius_groups(
         &class_sources,
         "variable",

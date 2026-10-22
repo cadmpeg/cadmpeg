@@ -249,11 +249,21 @@ fn an_admitted_ring_that_repeats_an_edge_is_not_written_as_invalid_native_topolo
 }
 
 #[test]
-fn incidence_and_payload_allocations_keep_the_actual_session_budget() {
+fn incidence_scratch_is_not_retained_and_payload_bytes_keep_the_actual_session_budget() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
     let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
+    let staged = incidence(
+        &ctx,
+        3,
+        (0..3).map(|owner| Incidence {
+            owner,
+            pointer: Pointer::default(),
+        }),
+    )
+    .unwrap();
+    assert_eq!(staged.len(), 3);
     let session = EncodeSession::new(policy.limits);
     let error = payload(&ctx, &session, &triangle(), RhinoArchiveVersion::V8)
         .err()
@@ -262,5 +272,5 @@ fn incidence_and_payload_allocations_keep_the_actual_session_budget() {
         panic!("actual budget refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(limit.operation, "Rhino SubD incidence");
+    assert_eq!(limit.operation, OPERATION);
 }

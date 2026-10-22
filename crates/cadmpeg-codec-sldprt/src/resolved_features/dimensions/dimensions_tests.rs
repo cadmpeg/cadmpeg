@@ -29,8 +29,6 @@ use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn declared_entity_handle_precedes_generic_operand_resolution() {
-    let class_sources = ClassSources::default();
-
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
         offset: Some(100),
@@ -98,6 +96,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 112)]);
     let carrier = dimensioned_relation_carrier(
         &class_sources,
         std::slice::from_ref(&lane),
@@ -198,8 +197,6 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
 
 #[test]
 fn declared_entity_handle_accepts_indexed_radial_point_pair() {
-    let class_sources = ClassSources::default();
-
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x80f7).unwrap());
     let operand = FeatureInputOperand {
         offset: Some(100),
@@ -265,6 +262,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 112)]);
     let carrier = dimensioned_relation_carrier(
         &class_sources,
         std::slice::from_ref(&lane),
@@ -319,8 +317,6 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
 
 #[test]
 fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
-    let class_sources = ClassSources::default();
-
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E);
     let operand = FeatureInputOperand {
         offset: Some(100),
@@ -390,6 +386,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 112)]);
     let carrier = dimensioned_relation_carrier(
         &class_sources,
         std::slice::from_ref(&lane),
@@ -488,8 +485,6 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
 
 #[test]
 fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
-    let class_sources = ClassSources::default();
-
     let marker = |id: &str, offset, object_index, local_id, coordinates_m| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
@@ -566,6 +561,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             entity_ref: Some("center".into()),
         };
         let mut lane = lane(kind);
+        let class_sources = ClassSources::from_positions([(&lane.classes[0], 112)]);
         if !strict_point_tag {
             lane.sketch_entities.truncate(1);
         }
@@ -677,8 +673,6 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
 
 #[test]
 fn declared_slot_handle_selects_indexed_dimension_center() {
-    let class_sources = ClassSources::default();
-
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x88e7).unwrap());
     let operand = FeatureInputOperand {
         offset: Some(150),
@@ -817,6 +811,11 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
             ),
         ],
     };
+    let class_sources = ClassSources::from_positions([
+        (&lane.classes[0], 100),
+        (&lane.classes[1], 180),
+        (&lane.classes[2], 250),
+    ]);
     let markers_by_id = lane
         .sketch_entities
         .iter()
@@ -845,17 +844,22 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
             parent: "lane".into(),
             ordinal: 2,
             sequence: 2,
-
             name: "sgSlotHandle".into(),
         },
     );
+    let ambiguous_sources = ClassSources::from_positions([
+        (&ambiguous_lane.classes[0], 100),
+        (&ambiguous_lane.classes[1], 180),
+        (&ambiguous_lane.classes[2], 240),
+        (&ambiguous_lane.classes[3], 250),
+    ]);
     let ambiguous_markers = ambiguous_lane
         .sketch_entities
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
-        &class_sources,
+        &ambiguous_sources,
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
@@ -901,8 +905,6 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
 
 #[test]
 fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
-    let class_sources = ClassSources::default();
-
     use crate::layout::current_geometry_locus_arc_handle_point as arc_handle;
 
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x69bd).unwrap());
@@ -1013,6 +1015,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
+    let class_sources = ClassSources::from_positions([(&lane.classes[0], 200)]);
     let carrier = dimensioned_relation_carrier(
         &class_sources,
         std::slice::from_ref(&lane),
@@ -1059,8 +1062,6 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
 
 #[test]
 fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witness() {
-    let class_sources = ClassSources::default();
-
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8452).unwrap());
     let operand = FeatureInputOperand {
         offset: Some(100),
@@ -1121,6 +1122,8 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         ],
     };
 
+    let declared = lane(SketchInputKind::Arc);
+    let class_sources = ClassSources::from_positions([(&declared.classes[0], 112)]);
     for circular_kind in [SketchInputKind::Arc, SketchInputKind::LineOrCircle] {
         let lane = lane(circular_kind);
         let markers_by_id = lane
@@ -1210,8 +1213,6 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
 
 #[test]
 fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness() {
-    let class_sources = ClassSources::default();
-
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8263).unwrap());
     let operand = FeatureInputOperand {
         offset: Some(100),
@@ -1292,6 +1293,8 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
     lane.sketch_entities[1] = lane.sketch_entities[1].with_test_identity(Some(49), Some(0));
     lane.sketch_entities[2] = lane.sketch_entities[2].with_test_identity(Some(70), Some(69));
     lane.sketch_entities[3] = lane.sketch_entities[3].with_test_identity(Some(69), Some(0));
+    let class_sources =
+        ClassSources::from_positions([(&lane.classes[0], 100), (&lane.classes[1], 25)]);
     let markers_by_id = lane
         .sketch_entities
         .iter()
@@ -1340,16 +1343,20 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         parent: "lane".into(),
         ordinal: 2,
         sequence: 2,
-
         name: "sgLineHandle".into(),
     });
+    let multiple_sources = ClassSources::from_positions([
+        (&multiple_declared.classes[0], 100),
+        (&multiple_declared.classes[1], 25),
+        (&multiple_declared.classes[2], 45),
+    ]);
     let multiple_markers = multiple_declared
         .sketch_entities
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
-        &class_sources,
+        &multiple_sources,
         std::slice::from_ref(&multiple_declared),
         &multiple_markers,
         "feature",

@@ -3078,7 +3078,6 @@ fn container_result(
     let mut records = Vec::new();
     let mut retained_bytes = 0;
     let mut untyped_ids = Vec::new();
-    let mut model_part_seen = false;
     while offset < data.len() {
         let chunk = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
             .map_err(|error| malformed(&error))?;
@@ -3088,7 +3087,6 @@ fn container_result(
         ) {
             break;
         }
-        model_part_seen |= chunk.typecode != TCODE_ENDOFTABLE;
         let untyped = !matches!(chunk.typecode, TCODE_ENDOFTABLE | TCODE_UNIT_AND_TOLERANCES);
         let before = records.len();
         push_v1_record(ctx, &mut records, data, &chunk, &mut retained_bytes)?;
@@ -3106,7 +3104,7 @@ fn container_result(
         primary,
         crate::container::SourceMetaDetail::FlatLegacyArchive,
     )?);
-    let scope = crate::container::scope_from_parts(&ir, model_part_seen, false);
+    let scope = cadmpeg_ir::ContentScope::container();
     ir.scope = scope;
     Ok(Decoded {
         ir,
@@ -4032,11 +4030,7 @@ mod tests {
             },
         )
         .expect("a V1 container request reads chunk boundaries");
-        assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::geometry());
-        assert_eq!(
-            decoded.report().scope(),
-            cadmpeg_ir::ContentScope::geometry()
-        );
+        assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::container());
         assert_eq!(decoded.ir().model, cadmpeg_ir::document::Model::default());
         assert!(!decoded.report().geometry_transferred());
         assert!(decoded

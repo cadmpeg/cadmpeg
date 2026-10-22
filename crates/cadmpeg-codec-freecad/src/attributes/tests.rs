@@ -42,8 +42,6 @@ fn enumeration_projects_selected_index_and_preserves_native_choices() {
             side_entries: Vec::new(),
         }),
     };
-    let _fidelity =
-        crate::test_support::source_fidelity::xml_layout_fixture(&property.id, "<Property/>");
     let before = property.clone();
     assert_eq!(semantic_text(&property).as_deref(), Some("1"));
     assert_eq!(property, before);

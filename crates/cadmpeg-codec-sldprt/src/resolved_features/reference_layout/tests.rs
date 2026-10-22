@@ -90,7 +90,12 @@ fn assert_actual_cell_layout(compact: bool) {
     )
     .unwrap();
     let mut fidelity = SourceFidelity::default();
-    crate::pmi::layout::install(&ctx, sources.into_pointers(&ctx).unwrap(), &mut fidelity).unwrap();
+    crate::pmi::layout::install(
+        &ctx,
+        crate::test_support::native::layout_pointers(&ctx, sources),
+        &mut fidelity,
+    )
+    .unwrap();
     for (ordinal, (reference, position)) in lane.references.iter().zip(old_positions).enumerate() {
         assert_eq!(reference.object_index, [7, 9][ordinal]);
         let layout = &fidelity.record_layout()[&reference.id];

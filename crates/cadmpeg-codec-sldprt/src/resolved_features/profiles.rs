@@ -3907,41 +3907,41 @@ mod detached_legacy_sketch_tests {
             sketch_entities: Vec::new(),
         };
 
-        assert!(TerminalRelationCarriers::new(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
-            &lane
-        )
-        .carries(&carrier));
+        let position = cadmpeg_core::decode::u64_from_index(terminal::LEN);
+        let class_sources = crate::resolved_features::class_sources::ClassSources::from_positions(
+            [(&lane.classes[0], position)],
+        );
+        assert!(TerminalRelationCarriers::new(&class_sources, &lane).carries(&carrier));
 
         let mut wrong_feature = lane.relation_instances[0].clone();
         wrong_feature.feature_ref = "other-feature".into();
         let mut wrong_feature_lane = lane.clone();
         wrong_feature_lane.relation_instances = vec![wrong_feature];
-        assert!(!TerminalRelationCarriers::new(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&wrong_feature_lane)),
-            &wrong_feature_lane
-        )
-        .carries(&carrier));
+        assert!(
+            !TerminalRelationCarriers::new(&class_sources, &wrong_feature_lane).carries(&carrier)
+        );
 
         let mut wrong_class = lane.relation_instances[0].clone();
         wrong_class.class_ref = "other-class".into();
         let mut wrong_class_lane = lane.clone();
         wrong_class_lane.relation_instances = vec![wrong_class];
-        assert!(!TerminalRelationCarriers::new(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&wrong_class_lane)),
-            &wrong_class_lane
-        )
-        .carries(&carrier));
+        assert!(
+            !TerminalRelationCarriers::new(&class_sources, &wrong_class_lane).carries(&carrier)
+        );
 
         let mut shadowed_class = lane.classes[0].clone();
         shadowed_class.id = "earlier-class".into();
         let mut shadowed_class_lane = lane;
         shadowed_class_lane.classes.insert(0, shadowed_class);
-        assert!(!TerminalRelationCarriers::new(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&shadowed_class_lane)),
-            &shadowed_class_lane
-        )
-        .carries(&carrier));
+        let shadowed_sources =
+            crate::resolved_features::class_sources::ClassSources::from_positions([
+                (&shadowed_class_lane.classes[0], position),
+                (&shadowed_class_lane.classes[1], position),
+            ]);
+        assert!(
+            !TerminalRelationCarriers::new(&shadowed_sources, &shadowed_class_lane)
+                .carries(&carrier)
+        );
     }
 
     fn xorshift(state: &mut u64, bound: u64) -> u64 {

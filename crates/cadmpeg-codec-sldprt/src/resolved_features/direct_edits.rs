@@ -400,6 +400,7 @@ mod tests {
         FeatureInputScalarRole,
     };
 
+    use cadmpeg_core::decode::u64_from_index;
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::{
         features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation, FiniteVector3},
@@ -409,13 +410,24 @@ mod tests {
 
     fn enrich_history_move_face_translations_test(
         histories: &mut [FeatureHistory],
-        lanes: &[FeatureInputLane],
+        lanes: &[(FeatureInputLane, Vec<u64>)],
     ) {
-        enrich_history_move_face_translations(
-            &crate::test_support::native::class_sources(lanes),
-            histories,
-            lanes,
-        );
+        let plain = lanes
+            .iter()
+            .map(|(lane, _)| lane.clone())
+            .collect::<Vec<_>>();
+        enrich_history_move_face_translations(&placed_sources(lanes), histories, &plain);
+    }
+
+    /// The class positions that each fixture lane states, in class order.
+    fn placed_sources(
+        lanes: &[(FeatureInputLane, Vec<u64>)],
+    ) -> crate::resolved_features::class_sources::ClassSources {
+        crate::resolved_features::class_sources::ClassSources::from_positions(
+            lanes
+                .iter()
+                .flat_map(|(lane, positions)| lane.classes.iter().zip(positions.iter().copied())),
+        )
     }
 
     fn move_face_history() -> FeatureHistory {
@@ -445,20 +457,20 @@ mod tests {
         }
     }
 
-    fn move_body_enrichment_input() -> (Vec<FeatureHistory>, FeatureInputLane) {
+    fn move_body_enrichment_input() -> (Vec<FeatureHistory>, FeatureInputLane, Vec<u64>) {
         let mut histories = vec![move_face_history()];
         let feature = &mut histories[0].features[0];
         feature.name = "Move Body".into();
         feature.kind = "Body-Move/Copy".into();
         feature.input_class = Some("moMoveCopyBody_c".into());
-        let mut lane = line_reference_lane(&[], 0);
+        let (mut lane, positions) = line_reference_lane(&[], 0);
         lane.names[0].value = "Move Body".into();
-        (histories, lane)
+        (histories, lane, positions)
     }
 
     #[test]
     fn move_body_enrichment_writes_translation() {
-        let (mut histories, mut lane) = move_body_enrichment_input();
+        let (mut histories, mut lane, mut positions) = move_body_enrichment_input();
         let selection_offset = 64;
         let payload = &mut lane.native_payload;
         payload[selection_offset..selection_offset + 4].copy_from_slice(&2u32.to_le_bytes());
@@ -488,12 +500,12 @@ mod tests {
             parent: "lane".into(),
             ordinal: 1,
             sequence: 1,
-
             name: "moMoveCopyBodyData_c".into(),
         });
+        positions.push(u64_from_index(selection_offset));
 
         enrich_history_move_body_translations(
-            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &placed_sources(&[(lane.clone(), positions)]),
             &mut histories,
             std::slice::from_ref(&lane),
         );
@@ -502,7 +514,11 @@ mod tests {
             .contains_key("Translation"));
     }
 
-    fn line_reference_lane(directions: &[Vector3], direction_specs: usize) -> FeatureInputLane {
+    /// A lane with its class positions, in class order.
+    fn line_reference_lane(
+        directions: &[Vector3],
+        direction_specs: usize,
+    ) -> (FeatureInputLane, Vec<u64>) {
         let mut native_payload = vec![0; 640];
         for (index, direction) in directions.iter().enumerate() {
             let handle = 160 + index * 160;
@@ -524,9 +540,11 @@ mod tests {
                 parent: "lane".into(),
                 ordinal: u32::try_from(index).expect("test index fits u32"),
                 sequence: u32::try_from(index).expect("test index fits u32"),
-
                 name: "moDirectionSpec_c".into(),
             })
+            .collect::<Vec<_>>();
+        let mut positions = (0..direction_specs)
+            .map(|index| 32 + u64_from_index(index))
             .collect::<Vec<_>>();
         classes.push(FeatureInputClass {
             feature_ref: None,
@@ -534,10 +552,10 @@ mod tests {
             parent: "lane".into(),
             ordinal: u32::try_from(direction_specs).expect("test direction spec count fits u32"),
             sequence: u32::try_from(direction_specs).expect("test direction spec count fits u32"),
-
             name: "moLineRef_w".into(),
         });
-        FeatureInputLane {
+        positions.push(80);
+        let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
             native_payload: native_payload.into(),
@@ -585,18 +603,19 @@ mod tests {
             generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
-        }
+        };
+        (lane, positions)
     }
 
     #[test]
     fn move_face_translation_requires_one_direction_spec_and_one_direction() {
         let mut histories = vec![move_face_history()];
-        let lane = line_reference_lane(&[Vector3::new(0.0, -1.0, 0.0)], 1);
-        enrich_history_move_face_translations_test(&mut histories, std::slice::from_ref(&lane));
+        let placed = line_reference_lane(&[Vector3::new(0.0, -1.0, 0.0)], 1);
+        enrich_history_move_face_translations_test(&mut histories, std::slice::from_ref(&placed));
         crate::resolved_features::parameters::enrich_history_parameters(
-            &crate::test_support::native::class_sources(&[&lane]),
+            &placed_sources(std::slice::from_ref(&placed)),
             &mut histories,
-            [&lane],
+            [&placed.0],
             true,
         );
         assert_eq!(histories[0].features[0].parameters["D1"], "5mm");
