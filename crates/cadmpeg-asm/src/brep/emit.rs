@@ -138,6 +138,10 @@ use super::topology::{
 };
 use super::{id, inherited_attribute_target, AsmBrep, Carriers, Reachable, WireShellTopology};
 const EPS_EMIT_EMIT_EDGES_E9: f64 = 1.0e-9;
+/// Largest distance, relative to the knot magnitude and at least absolute,
+/// by which a tolerant-coedge interval end may fall outside the knot domain
+/// of its embedded curve and still name that domain end.
+const EPS_TOLERANT_COEDGE_KNOT_END: f64 = 1.0e-12;
 
 /// A copy of `entity`'s attribute-chain name, retained against the session.
 /// Many entities may share one name record, so each copy is charged.
@@ -4717,6 +4721,8 @@ pub(super) fn emit_coedges(
                                     if *curve_reversed {
                                         curve.reverse_parameterization();
                                     }
+                                    let parameter_range =
+                                        clamp_to_knot_domain(parameter_range, &curve);
                                     let curve_id =
                                         brep_id!(format, CurveId, "tolerant-coedge-curve", i);
                                     out.curves.push(Curve {
@@ -5334,6 +5340,38 @@ pub(super) fn count_other_records(
         }
     }
     Ok(())
+}
+
+/// A tolerant-coedge interval whose ends lie outside the knot domain of its
+/// embedded curve only by floating-point noise, moved onto that domain.
+fn clamp_to_knot_domain(
+    interval: cadmpeg_ir::topology::ParameterInterval,
+    curve: &NurbsCurve,
+) -> cadmpeg_ir::topology::ParameterInterval {
+    let Some([lower, upper]) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)
+        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+    else {
+        return interval;
+    };
+    let near = |value: f64, knot: f64| {
+        (value - knot).abs() <= EPS_TOLERANT_COEDGE_KNOT_END * knot.abs().max(1.0)
+    };
+    let [start, end] = interval.endpoints();
+    let start = if start < lower && near(start, lower) {
+        lower
+    } else {
+        start
+    };
+    let end = if end > upper && near(end, upper) {
+        upper
+    } else {
+        end
+    };
+    cadmpeg_ir::units::FiniteVector::new([start, end])
+        .and_then(|endpoints| {
+            cadmpeg_ir::topology::ParameterInterval::from_finite_endpoints(endpoints).ok()
+        })
+        .unwrap_or(interval)
 }
 
 #[cfg(test)]
