@@ -408,6 +408,17 @@ pub(crate) struct DecodeContext<'a> {
     presentation: Option<crate::container::NativeInstall>,
     /// Native annotation arenas, installed at commit.
     annotation_arenas: Option<crate::annotations::NativeArenas>,
+    /// `SubD` channels outside the cage, one per committed `SubD` surface.
+    subd_metadata: Vec<SubdMetadataRecord>,
+}
+
+/// The native record of one committed `SubD` surface's non-cage channels.
+#[derive(Debug, serde::Serialize)]
+struct SubdMetadataRecord {
+    id: String,
+    subd: String,
+    #[serde(flatten)]
+    metadata: crate::subd::SubdMetadata,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -455,6 +466,7 @@ impl<'a> DecodeContext<'a> {
             resources: crate::presentation::ResourceIndex::default(),
             presentation: None,
             annotation_arenas: None,
+            subd_metadata: Vec::new(),
         };
         context.retain_object_records()?;
         context.retain_opaque_records()?;
@@ -1351,6 +1363,17 @@ impl<'a> DecodeContext<'a> {
             format_args!("basepoint"),
             format_args!("{},{}", hatch.basepoint[0].get(), hatch.basepoint[1].get()),
         )?;
+        let pattern_unresolved = match self.resources.hatch_patterns.by_index(hatch.pattern_index) {
+            Some(record) => {
+                insert_feature_property(
+                    &mut parameters,
+                    format_args!("pattern_record"),
+                    format_args!("{record}"),
+                )?;
+                false
+            }
+            None => hatch.pattern_index >= 0,
+        };
         if let Some(gradient) = hatch.gradient.as_ref() {
             let gradient = crate::hatch::gradient_json(gradient)?;
             insert_feature_property_owned(&mut parameters, format_args!("gradient"), gradient)?;
@@ -1416,6 +1439,14 @@ impl<'a> DecodeContext<'a> {
             Ok(()) => {
                 for warning in hatch.warnings {
                     self.scan_diagnostic(source_order, &warning);
+                }
+                if pattern_unresolved {
+                    self.report
+                        .typed_losses
+                        .push(RhinoLossCode::HatchPatternUnresolved.note(format_args!(
+                            "hatch record {source_order} pattern index does not name a decoded \
+                             hatch-pattern record"
+                        )));
                 }
                 let links = hatch_source_links(loop_ids, &feature_id);
                 self.append_links(source_order, &links)?;
@@ -1577,7 +1608,38 @@ impl<'a> DecodeContext<'a> {
             ))
         }?;
         let view = &self.scan.data[detail.view_range.clone()];
+        let mut view_losses = Vec::new();
+        let typed_view = match self.neutral_scale() {
+            Some(scale) => match crate::views::parse_view_body(
+                self.expand.ctx(),
+                self.scan.data,
+                detail.view_range.clone(),
+                self.archive(),
+                scale,
+                &mut view_losses,
+            ) {
+                Ok((value, _children)) => Some(crate::wire::json(&value)?),
+                Err(crate::chunks::FramingError::Resource(limit)) => {
+                    return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+                }
+                Err(error) => {
+                    self.scan_warning(
+                        source_order,
+                        format_args!("detail view state retained: {error}"),
+                    );
+                    None
+                }
+            },
+            None => None,
+        };
         let mut source_properties = BTreeMap::new();
+        if let Some(typed_view) = typed_view {
+            insert_feature_property_owned(
+                &mut source_properties,
+                format_args!("view"),
+                typed_view,
+            )?;
+        }
         insert_feature_property(
             &mut source_properties,
             format_args!("view_bytes"),
@@ -1643,6 +1705,7 @@ impl<'a> DecodeContext<'a> {
         match result {
             Ok(()) => {
                 self.append_links(source_order, &[curve_id, feature_id.to_string()])?;
+                self.report.typed_losses.append(&mut view_losses);
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::DetailViewNotTransferred);
             }
@@ -2655,7 +2718,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<bool, cadmpeg_core::CodecError> {
         let crate::subd::DecodedSubd {
             mut surface,
-            neutral_metadata,
+            metadata,
             enum_diagnostics,
             warnings,
         } = decoded;
@@ -2666,9 +2729,6 @@ impl<'a> DecodeContext<'a> {
             self.report
                 .typed_losses
                 .push(RhinoLossCode::EnumerationValueDegraded.note(format_args!("{diagnostic}")));
-        }
-        if neutral_metadata {
-            self.scan_warning(source_order, format_args!("SubD cache, texture, symmetry, or packing metadata is retained without a neutral-IR mapping"));
         }
         let Some(object) = self.scan.objects.get(source_order) else {
             return Ok(false);
@@ -2703,8 +2763,74 @@ impl<'a> DecodeContext<'a> {
             }
         };
         self.append_link(source_order, &link)?;
+        self.report_subd_metadata(&link, &metadata);
+        self.subd_metadata.push(SubdMetadataRecord {
+            id: format!(
+                "rhino:object:subd_metadata#{}",
+                link.rsplit('#').next().unwrap_or(&link)
+            ),
+            subd: link,
+            metadata,
+        });
         self.geometry_transferred = true;
         Ok(true)
+    }
+
+    /// Reports each `SubD` channel that has no neutral carrier. Levels above
+    /// level zero are derived from it and carry no source state.
+    fn report_subd_metadata(&mut self, subd: &str, metadata: &crate::subd::SubdMetadata) {
+        let channels = &metadata.components;
+        let mut push = |code: RhinoLossCode, detail: std::fmt::Arguments<'_>| {
+            self.report
+                .typed_losses
+                .push(code.note(format_args!("SubD {subd}: {detail}")));
+        };
+        if metadata
+            .obsolete_texture_domain_type
+            .is_some_and(|value| value != 0)
+            || metadata.texture_mapping_id.is_some()
+            || metadata.face_packing_id.is_some()
+            || channels.texture_points > 0
+            || channels.packing_rectangles > 0
+            || channels.pack_ids > 0
+        {
+            push(
+                RhinoLossCode::SubdTextureOmitted,
+                format_args!(
+                    "texture mapping {:?}, face packing {:?}, {} face(s) with texture points, \
+                     {} with packing rectangles, {} with pack IDs",
+                    metadata.texture_mapping_id,
+                    metadata.face_packing_id,
+                    channels.texture_points,
+                    channels.packing_rectangles,
+                    channels.pack_ids
+                ),
+            );
+        }
+        if metadata.symmetry.is_some() || channels.symmetry_links > 0 {
+            push(
+                RhinoLossCode::SubdSymmetryOmitted,
+                format_args!(
+                    "symmetry {:?} with {} symmetry link(s)",
+                    metadata.symmetry, channels.symmetry_links
+                ),
+            );
+        }
+        if channels.material_channels > 0 || channels.colors > 0 {
+            push(
+                RhinoLossCode::SubdFaceAttributeOmitted,
+                format_args!(
+                    "{} face material channel(s), {} face color(s)",
+                    channels.material_channels, channels.colors
+                ),
+            );
+        }
+        if channels.group_ids > 0 {
+            push(
+                RhinoLossCode::SubdComponentGroupOmitted,
+                format_args!("{} component group ID(s)", channels.group_ids),
+            );
+        }
     }
 
     fn decode_extrusion(
@@ -2777,6 +2903,25 @@ impl<'a> DecodeContext<'a> {
             .take()
             .unwrap_or_default()
             .install(ctx, self.session.document_mut()?)?;
+        let committed = self
+            .session
+            .document()
+            .model
+            .subds
+            .iter()
+            .map(|subd| subd.id.as_str().to_owned())
+            .collect::<HashSet<_>>();
+        let subd_metadata = std::mem::take(&mut self.subd_metadata)
+            .into_iter()
+            .filter(|record| committed.contains(&record.subd))
+            .collect::<Vec<_>>();
+        if !subd_metadata.is_empty() {
+            self.session
+                .document_mut()?
+                .native
+                .namespace_mut("rhino")
+                .set_arena(ctx, "subd_metadata", &subd_metadata)?;
+        }
         let document_data =
             crate::document_data::install(ctx, self.scan, self.session.document_mut()?)?;
         self.report.typed_losses.extend(document_data.losses);

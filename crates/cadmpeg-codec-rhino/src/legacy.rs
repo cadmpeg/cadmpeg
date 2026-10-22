@@ -2578,6 +2578,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     let mut diagnostics = Vec::new();
     let mut tolerance_losses = Vec::new();
     let mut scale = MillimeterScale::IDENTITY;
+    let mut presentation_chunks = Vec::new();
     while offset < data.len() {
         let chunk = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
             .map_err(|error| malformed(&error))?;
@@ -2625,8 +2626,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 &mut tolerance_losses,
             );
         } else if is_v1_presentation_setting(chunk.typecode) && !chunk.short() {
-            count_v1_omission(&mut omitted, chunk.typecode);
-            push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
+            presentation_chunks.push(chunk.clone());
         } else if chunk.typecode == TCODE_RH_POINT && !chunk.short() {
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .map_err(|error| malformed(&error))?;
@@ -2956,6 +2956,42 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
         }
         offset = chunk.next_offset();
+    }
+    let mut presentation = Vec::new();
+    for chunk in presentation_chunks {
+        let Some(kind) = crate::views::legacy_v1::kind(chunk.typecode) else {
+            continue;
+        };
+        match crate::views::legacy_v1::parse(data, &chunk, kind, scale) {
+            Ok(record) => {
+                presentation.push(record);
+                push_v1_record(
+                    ctx,
+                    &mut typed_source_records,
+                    data,
+                    &chunk,
+                    &mut retained_bytes,
+                )?;
+            }
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+            Err(error) => {
+                push_v1_diagnostic(
+                    &mut diagnostics,
+                    format_args!(
+                        "V1 presentation record at offset {}: {error}",
+                        chunk.header_start
+                    ),
+                );
+                count_v1_omission(&mut omitted, chunk.typecode);
+                push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
+            }
+        }
+    }
+    if !presentation.is_empty() {
+        ir.native
+            .namespace_mut("rhino")
+            .set_arena(ctx, "legacy_v1_presentation", &presentation)
+            .map_err(CodecError::malformed)?;
     }
     if !direct_records.is_empty() {
         let namespace = ir.native.namespace_mut("rhino");
@@ -3968,22 +4004,21 @@ mod tests {
     }
 
     #[test]
-    fn v1_settings_presentation_records_are_opaque_and_table_end_is_structural() {
+    fn v1_settings_presentation_records_are_typed_and_table_end_is_structural() {
         let result = EditableDecodeResult::from(crate::decode::seal_for_test(
             decode_v1(&v1_settings_archive()).expect("valid V1 settings stream"),
             false,
         ));
         assert_eq!(result.ir().tolerances.linear.get(), 10.0);
         assert_eq!(result.source_fidelity().retained_records().len(), 3);
-        assert_eq!(
-            result
-                .report()
-                .losses
-                .iter()
-                .filter(|loss| { loss.code == RhinoLossCode::PresentationRecordDropped.kind() })
-                .count(),
-            3
-        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != RhinoLossCode::PresentationRecordDropped.kind()));
+        let records =
+            &result.ir().native.namespace("rhino").unwrap().arenas()["legacy_v1_presentation"];
+        assert_eq!(records.len(), 3);
         assert!(!result
             .report()
             .losses

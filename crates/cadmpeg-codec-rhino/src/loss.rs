@@ -246,6 +246,16 @@ pub(crate) enum RhinoLossCode {
     TopologyBodyKindGaugeSubstituted,
     /// Annotation RTF text has no plain-text fragment in neutral text.
     AnnotationRichTextUnflattened,
+    /// A hatch pattern index names no decoded hatch-pattern record.
+    HatchPatternUnresolved,
+    /// `SubD` texture mapping, face packing, or texture points have no neutral carrier.
+    SubdTextureOmitted,
+    /// `SubD` symmetry state has no neutral carrier.
+    SubdSymmetryOmitted,
+    /// `SubD` per-face material channel or color has no neutral carrier.
+    SubdFaceAttributeOmitted,
+    /// `SubD` component group IDs have no neutral carrier.
+    SubdComponentGroupOmitted,
 }
 
 impl RhinoLossCode {
@@ -296,6 +306,11 @@ impl RhinoLossCode {
         Self::SourceDialectDisplaced,
         Self::TopologyBodyKindGaugeSubstituted,
         Self::AnnotationRichTextUnflattened,
+        Self::HatchPatternUnresolved,
+        Self::SubdTextureOmitted,
+        Self::SubdSymmetryOmitted,
+        Self::SubdFaceAttributeOmitted,
+        Self::SubdComponentGroupOmitted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -346,6 +361,11 @@ impl RhinoLossCode {
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::TopologyBodyKindGaugeSubstituted => "topology.body-kind-gauge-substituted",
             Self::AnnotationRichTextUnflattened => "annotation.rich-text-unflattened",
+            Self::HatchPatternUnresolved => "hatch.pattern-unresolved",
+            Self::SubdTextureOmitted => "subd.texture-omitted",
+            Self::SubdSymmetryOmitted => "subd.symmetry-omitted",
+            Self::SubdFaceAttributeOmitted => "subd.face-attribute-omitted",
+            Self::SubdComponentGroupOmitted => "subd.component-group-omitted",
         }
     }
 
@@ -412,6 +432,11 @@ impl RhinoLossCode {
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
             Self::AnnotationRichTextUnflattened => LossTaxonomy::PmiOmitted,
+            Self::HatchPatternUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
+            Self::SubdTextureOmitted => LossTaxonomy::RecordNotTyped,
+            Self::SubdSymmetryOmitted => LossTaxonomy::RecordNotTyped,
+            Self::SubdFaceAttributeOmitted => LossTaxonomy::RecordNotTyped,
+            Self::SubdComponentGroupOmitted => LossTaxonomy::RecordNotTyped,
         }
     }
 
@@ -510,6 +535,11 @@ mod tests {
                 "target.source-dialect-displaced",
                 "topology.body-kind-gauge-substituted",
                 "annotation.rich-text-unflattened",
+                "hatch.pattern-unresolved",
+                "subd.texture-omitted",
+                "subd.symmetry-omitted",
+                "subd.face-attribute-omitted",
+                "subd.component-group-omitted",
             ]
         );
     }

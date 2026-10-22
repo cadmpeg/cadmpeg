@@ -797,52 +797,19 @@ the selected quad diagonal, or add a neutral mesh-face carrier that keeps the
 original face topology. The loss report alone cannot reconstruct which
 triangles belonged to one source face.
 
-### PR-01. Presentation and viewport records have no typed owner
+### CT-01. Hatch fill and detail views have no neutral carrier
 
-**Question.** Which V1 presentation records and viewport userdata fields can
-enter typed CADIR presentation?
+**Question.** Which neutral carrier holds hatch fill appearance and a detail
+view's model-to-page view?
 
-**Known.** `legacy.rs:2413-2425` retains V1 presentation typecodes
-`0x02000005` and `0x02000006` as opaque records. `views.rs:1008-1055` frames
-viewport userdata and reports `viewport.userdata-dropped` when its content has
-no typed CADIR owner. Current documents therefore lose view- and
-presentation-specific behavior even when the records are bounded and readable.
+**Known.** The hatch feature holds typed pattern record, scale, rotation,
+basepoint, gradient, and loop roles, and the detail feature holds the typed
+`ON_3dmView` and page-per-model ratio, both as native feature state. The
+neutral model has no filled-region or page-viewport entity, so
+`hatch.fill-not-transferred` and `detail.view-not-transferred` remain.
 
-**Need.** Identify the fields owned by these records and map each field to a
-typed presentation or view carrier. Keep only genuinely application-owned
-suffixes opaque, with a field-specific loss rather than dropping the complete
-readable record semantically.
-
-### SD-01. SubD cache, texture, symmetry, and packing metadata is untyped
-
-**Question.** Which serialized SubD metadata must remain associated with a
-typed neutral SubD surface?
-
-**Known.** `decode.rs:2256-2276` commits the SubD surface but reduces cache,
-texture, symmetry, or packing state to an `object.decode-diagnostic` warning.
-The neutral SubD has no typed representation of those fields and the generic
-diagnostic does not identify which individual metadata channels were omitted.
-
-**Need.** Map each source-defined SubD metadata channel to a typed neutral or
-native field and emit a field-specific loss for any channel that still has no
-owner. Cache data that is only derived acceleration state must be distinguished
-from symmetry and packing data that changes editing or parameterization.
-
-### CT-01. Hatch fill and detail-view construction state is passthrough only
-
-**Question.** Which hatch and detail-view semantics are represented by the
-neutral model?
-
-**Known.** `decode.rs:1260-1304` transfers hatch boundary curves but records
-the fill as native passthrough. `decode.rs:1424-1473` transfers a detail
-boundary and a native feature but records the detail view itself as not
-transferred. The resulting neutral geometry cannot reproduce hatch fill
-appearance or the detail's model-to-page view behavior.
-
-**Need.** Add typed hatch pattern, scale, rotation, base point, gradient, and
-loop-role state, and add a typed detail viewport with projection, clipping,
-display, and page/model ratio. The boundary curves alone are not equivalent to
-either source object.
+**Need.** A neutral filled-region carrier with pattern and gradient fields, and
+a neutral page viewport with projection, clipping, display, and scale.
 
 ### IN-01. Non-affine instance transforms have no occurrence
 

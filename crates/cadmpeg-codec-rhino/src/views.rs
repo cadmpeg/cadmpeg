@@ -21,6 +21,8 @@ use crate::objects::parse_userdata;
 use crate::settings::{plane, utf16_deferred, utf16_retained, MillimeterScale, Plane, UnitBinding};
 use crate::wire::{flag_i32, scaled_coordinate, uuid};
 
+pub(crate) mod legacy_v1;
+
 const SETTINGS: u32 = 0x1000_0015;
 const NAMED_CPLANES: u32 = 0x2000_8035;
 const NAMED_VIEWS: u32 = 0x2000_8036;
@@ -85,6 +87,13 @@ struct ViewRecord {
     source_offset: u64,
     list_kind: ViewListKind,
     list_index: usize,
+    #[serde(flatten)]
+    view: ViewBody,
+}
+
+/// The `ON_3dmView` child chunks, in a table view record or a detail view.
+#[derive(Debug, Serialize)]
+pub(crate) struct ViewBody {
     name: String,
     target_millimeters: Option<[FiniteReal; 3]>,
     window_position: Option<WindowPosition>,
@@ -130,7 +139,8 @@ fn serialize_view_attributes<S: serde::Serializer>(
 
 struct ViewportUserdataScan {
     children: Vec<std::ops::Range<usize>>,
-    has_untyped_content: bool,
+    /// The class UUID or typecode of each child without a typed owner.
+    untyped: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1022,7 +1032,7 @@ fn scan_viewport_userdata(
 ) -> Result<ViewportUserdataScan, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let mut children = Vec::new();
-    let mut has_untyped_content = false;
+    let mut untyped = Vec::new();
     loop {
         if reader.position() == reader.end() {
             return Err(FramingError::structural(
@@ -1067,8 +1077,14 @@ fn scan_viewport_userdata(
                         ),
                     );
                 }
-                parsed?;
-                has_untyped_content = true;
+                untyped.push(match parsed? {
+                    crate::objects::UserdataDescriptor::Known(userdata) => {
+                        format!("class {}", userdata.class_uuid)
+                    }
+                    crate::objects::UserdataDescriptor::UnknownVersion { version, .. } => {
+                        format!("userdata version {}.{}", version.0, version.1)
+                    }
+                });
             }
             TCODE_CLASS_END => {
                 if !child.short() || child.value()? != 0 {
@@ -1077,10 +1093,7 @@ fn scan_viewport_userdata(
                         "view viewport userdata class end must be a short zero chunk",
                     ));
                 }
-                return Ok(ViewportUserdataScan {
-                    children,
-                    has_untyped_content,
-                });
+                return Ok(ViewportUserdataScan { children, untyped });
             }
             0 => {
                 return Err(FramingError::structural(
@@ -1088,7 +1101,7 @@ fn scan_viewport_userdata(
                     "view viewport userdata contains a zero typecode",
                 ));
             }
-            _ => has_untyped_content = true,
+            typecode => untyped.push(format!("typecode {typecode:#010x}")),
         }
     }
 }
@@ -1106,7 +1119,45 @@ fn parse_view(
         kind: list_kind,
         index: list_index,
     } = slot;
-    let mut offset = record.body().start;
+    let (view, checksum_children) =
+        parse_view_body(ctx, data, record.body(), archive, scale, losses)?;
+    let direct = direct_checksum_ranges(&record.body(), &checksum_children)?;
+    let checksum_warning = match verify_checksum_ranges(data, record, &direct)? {
+        ChecksumStatus::Mismatch { expected, actual } => Some(format!(
+            "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
+            record.header_start, record.typecode
+        )),
+        _ => None,
+    };
+    if let Some(warning) = checksum_warning {
+        push_view_loss(
+            losses,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            record.header_start,
+            "VIEW/RECORD",
+            format_args!("{warning}"),
+        );
+    }
+    Ok(ViewRecord {
+        id: format!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
+        source_offset: cadmpeg_core::decode::u64_from_index(record.header_start),
+        list_kind,
+        list_index,
+        view,
+    })
+}
+
+/// Parses the `ON_3dmView` child chunks in `body`, through the end marker.
+/// Returns the view and the range of every child chunk read.
+pub(crate) fn parse_view_body(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    body: std::ops::Range<usize>,
+    archive: ArchiveVersion,
+    scale: MillimeterScale,
+    losses: &mut Vec<LossNote>,
+) -> Result<(ViewBody, Vec<std::ops::Range<usize>>), FramingError> {
+    let mut offset = body.start;
     let mut name = String::new();
     let mut target = None;
     let mut window_position = None;
@@ -1123,8 +1174,8 @@ fn parse_view(
     let mut checksum_children = Vec::new();
     let mut parse_warnings = Vec::new();
     let mut terminated = false;
-    while offset < record.body().end {
-        let child = chunk_at(data, offset, record.body().end, archive, false)?;
+    while offset < body.end {
+        let child = chunk_at(data, offset, body.end, archive, false)?;
 
         checksum_children.push(child.range());
         if matches!(
@@ -1279,15 +1330,16 @@ fn parse_view(
                                     format_args!("{warning}"),
                                 );
                             }
-                            if scan.has_untyped_content {
+                            if !scan.untyped.is_empty() {
                                 push_view_loss(
                                     losses,
                                     crate::loss::RhinoLossCode::ViewportUserdataDropped,
                                     child.header_start,
                                     "VIEW/VIEWPORT_USERDATA",
                                     format_args!(
-                                        "viewport userdata at offset {} has no typed CADIR owner",
-                                        child.header_start
+                                        "viewport userdata at offset {} has no typed CADIR owner: {}",
+                                        child.header_start,
+                                        scan.untyped.join(", ")
                                     ),
                                 );
                             }
@@ -1336,47 +1388,29 @@ fn parse_view(
     }
     if !terminated {
         return Err(FramingError::structural(
-            record.body().end,
+            body.end,
             "view is missing its end marker",
         ));
     }
-    let direct = direct_checksum_ranges(&record.body(), &checksum_children)?;
-    let checksum_warning = match verify_checksum_ranges(data, record, &direct)? {
-        ChecksumStatus::Mismatch { expected, actual } => Some(format!(
-            "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
-            record.header_start, record.typecode
-        )),
-        _ => None,
-    };
-    if let Some(warning) = checksum_warning {
-        push_view_loss(
-            losses,
-            crate::loss::RhinoLossCode::IntegrityFailure,
-            record.header_start,
-            "VIEW/RECORD",
-            format_args!("{warning}"),
-        );
-    }
-    Ok(ViewRecord {
-        id: format!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
-        source_offset: cadmpeg_core::decode::u64_from_index(record.header_start),
-        list_kind,
-        list_index,
-        name,
-        target_millimeters: target,
-        window_position,
-        show_construction_grid: show_grid,
-        show_construction_axes: show_axes,
-        show_world_axes,
-        legacy_display_mode,
-        attributes: attributes_detail,
-        construction_plane,
-        viewport,
-        trace_image,
-        wallpaper,
-        children,
-        parse_warnings,
-    })
+    Ok((
+        ViewBody {
+            name,
+            target_millimeters: target,
+            window_position,
+            show_construction_grid: show_grid,
+            show_construction_axes: show_axes,
+            show_world_axes,
+            legacy_display_mode,
+            attributes: attributes_detail,
+            construction_plane,
+            viewport,
+            trace_image,
+            wallpaper,
+            children,
+            parse_warnings,
+        },
+        checksum_children,
+    ))
 }
 
 fn parse_list(
@@ -2381,7 +2415,7 @@ mod tests {
         .expect("view list");
         assert_eq!(views.len(), 1);
         assert!(losses.is_empty());
-        assert_eq!(views[0].children.len(), 1);
+        assert_eq!(views[0].view.children.len(), 1);
     }
 
     #[test]

@@ -3985,6 +3985,22 @@ packing rectangle, material channel, color, pack ID, custom texture points, and
 end marker 255. Face rings have at least three uses, valid edges, endpoint
 continuity, and closure.
 
+SubD state falls into four groups:
+
+- Levels above level zero are subdivision results computed from the level-zero
+  cage. They carry no source state that level zero does not determine.
+- Texture parameterization: the obsolete texture-domain type, the texture
+  mapping tag, the face-packing UUID and topology hash, and the per-face
+  packing rectangles, pack IDs, and texture points.
+- Symmetry: the symmetry record, the symmetric flag, and the per-component
+  symmetry-next pointers.
+- Per-face appearance and editing state: material channel, color, and the
+  per-component group IDs.
+
+A mapping tag or face-packing UUID that is nil is not set. The legacy
+geometry serial number and the packing-hash synchronization flag are runtime
+state with no persistent meaning.
+
 ## 18. Instance definitions and references
 
 Instance-definition records are in the instance-definition table. Every
@@ -4359,8 +4375,12 @@ For archive versions below 50, a nonzero base point has no serialized carrier;
 the CADIR basepoint is therefore `[0,0]`. For every accepted hatch object,
 CADIR creates one native hatch feature and one linked neutral curve for each
 ordered loop. The feature retains the pattern archive index, pattern scale,
-pattern rotation, and converted basepoint as native parameters. The hatch
-pattern is not converted into a neutral filled region; the source object record
+pattern rotation, and converted basepoint as native parameters. The pattern
+archive index names the hatch-pattern table record with the same archive
+index; the feature names that native hatch-pattern record as
+`pattern_record`. A nonnegative index that names no decoded record emits
+`hatch.pattern-unresolved`. The hatch pattern is not converted into a neutral
+filled region; the source object record
 remains retained for native fidelity and this boundary emits the
 `hatch.fill-not-transferred` warning.
 
@@ -4396,8 +4416,10 @@ nonnegative count only when every bounded stop fits the userdata payload and
 the allocation cap. The class reader requires major version 1, accepts only
 gradient types 0 through 4, consumes each stop at its child boundary, and
 closes the gradient-data chunk at its own boundary. Gradient start and end
-coordinates use document length conversion. Repeat and stop positions are
-unitless.
+coordinates use document length conversion. A gradient point whose three
+coordinates are each `ON_UNSET_VALUE` (`-1.23432101234321e308`) is
+`ON_3dPoint::UnsetPoint`, the reader default; it denotes an unset point and
+does not take length conversion. Repeat and stop positions are unitless.
 
 The CADIR decision is to expose a recognized gradient userdata item as the
 hatch feature's native `gradient` parameter. Its JSON value contains the
@@ -4445,9 +4467,11 @@ dimensionless; detail minor 0 defaults it to zero.
 
 CADIR creates one native `detail_view` feature and one linked neutral curve for
 each accepted detail object. The feature retains the page-per-model ratio and
-the boundary link. It retains the bounded `ON_3dmView` payload as `view_bytes`
-and `view_sha256` native properties; the view state is not decoded into the
-neutral `views` arena. This is a CADIR transfer boundary and emits
+the boundary link. The view-state child holds the `ON_3dmView` child chunks of
+section 20.4 directly, through their end-of-table marker, without a view
+record wrapper. The feature retains the decoded view as its `view` native
+property and the bounded payload as `view_bytes` and `view_sha256`; the view
+state has no neutral carrier. This is a CADIR transfer boundary and emits
 `detail.view-not-transferred`; the source detail object remains retained for
 native fidelity.
 
@@ -6218,6 +6242,7 @@ long TCODE_NAMED_VIEW
   short TCODE_ENDOFTABLE = 0
 
 long TCODE_VIEWPORT
+  long TCODE_NAME: as above
   long TCODE_CPLANE: as above
   long TCODE_VIEW: as above
   short TCODE_SHOWGRID
@@ -6248,11 +6273,25 @@ marker fails that presentation record. `TCODE_VIEWPORT_TRACEINFO` and
 not a nested `TCODE_NAME` chunk. A V1 file may omit the EOF marker after the
 flat settings stream.
 
+Each record kind reads only its own children: a named construction plane reads
+name and construction plane; a named view also reads view and the three
+display flags; a viewport reads every child above. Projection 2 is perspective
+and every other projection value is parallel. A view size or camera distance
+that is not greater than zero and less than `DBL_MAX / 2` takes the reader
+default: view size 0.125 and camera distance 100. Display mode 0 is wireframe
+and 1 is shaded; other values select no display mode. The construction-plane
+origin and grid spacing, the view target, view size, and camera distance, the
+trace-image origin, width, and height, the snap size, and the near-clip
+distance are model lengths. View angles are radians. Window bounds are
+fractions of the parent window.
+
 CADIR decision: the V1 decoder transfers the unit/tolerance record to neutral
-tolerances, retains complete V1 named-construction-plane, named-view, and
-viewport records as opaque source records, and reports
-`presentation.record-dropped` for each. It does not place these legacy records
-in the modern `views` or `construction_planes` arenas. The top-level short
+tolerances and decodes each V1 named-construction-plane, named-view, and
+viewport record into the native `legacy_v1_presentation` arena, with model
+lengths converted by the document unit. A record that fails its grammar is
+retained as an opaque source record with `presentation.record-dropped`. It
+does not place these legacy records in the modern `views` or
+`construction_planes` arenas. The top-level short
 `TCODE_ENDOFTABLE` is structural and is not retained.
 
 A view record is an ordered child-chunk list terminated by `TCODE_ENDOFTABLE`.
@@ -6330,7 +6369,9 @@ the CRC input. The current view writer emits no direct viewport-userdata bytes,
 so that CRC is the CRC of an empty byte sequence.
 
 The viewport-userdata stream uses the class-userdata framing in section 7.2.
-CADIR has no typed owner for class-owned viewport-userdata payloads. A framed
+OpenNURBS defines no userdata class for `ON_Viewport`; every viewport-userdata
+item is application-owned. CADIR has no typed owner for class-owned
+viewport-userdata payloads, and the loss names the class UUID of each item. A framed
 stream with a class-userdata item or other nonzero child retains the typed view,
 admits no class-owned fields, reports `viewport.userdata-dropped`, and retains
 the complete containing named-view or active-view list record as opaque source
