@@ -86,3 +86,56 @@ fn a_reversed_support_context_traverses_each_pcurve_as_minus_t() {
     }
     assert_eq!(reversed.reversed_about_zero(), Some(context));
 }
+
+#[test]
+fn circle_and_harmonic_support_pcurves_reverse_about_zero() {
+    use crate::geometry::pcurve::{CirclePcurve, HarmonicPcurve};
+    let pcurves = [
+        PcurveGeometry::Circle(
+            CirclePcurve::try_new(
+                Point2::new(1.0, 2.0),
+                Point2::new(0.6, 0.8),
+                Point2::new(-0.8, 0.6),
+                1.5,
+            )
+            .expect("circle"),
+        ),
+        PcurveGeometry::Harmonic(
+            HarmonicPcurve::try_new(
+                Point2::new(0.5, -1.0),
+                Point2::new(2.0, 0.5),
+                Point2::new(-0.25, 1.5),
+            )
+            .expect("harmonic"),
+        ),
+    ];
+    for pcurve in pcurves {
+        let context = IntcurveSupportContext::try_new(
+            [
+                IntcurveSupportSide {
+                    surface: None,
+                    pcurve: Some(SupportPcurve::new(pcurve.clone(), None)),
+                },
+                IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                },
+            ],
+            [0.25, 2.5],
+            std::array::from_fn(|_| Vec::new()),
+        )
+        .expect("context");
+        let reversed = context.reversed_about_zero().expect("reversible pcurve");
+        let mirrored = &reversed.sides()[0]
+            .pcurve
+            .as_ref()
+            .expect("pcurve")
+            .geometry;
+        for parameter in [0.25, 1.0, 2.5] {
+            let original = uv(&pcurve, parameter);
+            let reflected = uv(mirrored, -parameter);
+            assert!((original.u - reflected.u).abs() < EPS_REVERSED_POINT);
+            assert!((original.v - reflected.v).abs() < EPS_REVERSED_POINT);
+        }
+    }
+}

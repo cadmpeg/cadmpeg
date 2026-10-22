@@ -671,6 +671,19 @@ impl AsmEditSet {
         record: &Record,
         definition: &ProceduralCurveDefinition,
     ) -> Result<(), CodecError> {
+        // The decoder states the support contexts of a reversed cache on `-t`;
+        // the record stores them on the subtype parameter.
+        let mut stored;
+        let definition = if crate::brep::geometry::carrier_cache_reversed(&self.records, record) {
+            stored = definition.clone();
+            if stored.reverse_support_contexts().is_some() {
+                &stored
+            } else {
+                definition
+            }
+        } else {
+            definition
+        };
         match definition {
             ProceduralCurveDefinition::Helix(helix) => {
                 patch_helix_definition(bytes, self.ref_width, record, helix)

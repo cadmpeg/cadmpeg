@@ -265,7 +265,7 @@ the record grammar does not identify one construction.
 
 **Known.** `asm.md` §6.3 "**`int_int_cur`** has context-first" states the construction as the intersection of the two ordered supports, each with a BS2 parameter curve. An embedded `spline` support decodes to its solved NURBS cache; its subtype and its cache fit tolerance are not retained. For `rb_blend_spl_sur` and `srf_srf_v_bl_spl_sur` supports the cache fit tolerance is at most `0.01` mm, but the intersection curve endpoints lie up to `0.033` mm from the cache surface, and the support pcurve endpoints mapped through the cache lie up to `0.066` mm from them. The edges on these curves carry no tolerance. `asm.md` §6.3 "**`var_blend_spl_sur` / `srf_srf_v_bl_spl_sur`**" defines an approximation-current integer: `0` marks a cache that does not describe the surface.
 
-**Need.** The validator measures the support pcurves on the decoded cache within the curve cache fit tolerance. A support cache that is not current, or a contract that includes the support's own fit tolerance, changes which of these curves are errors. The approximation-current values of the failing supports, and the exact blend surface evaluated at the pcurve endpoints, give the contract.
+**Need.** The approximation-current values and cache fit tolerances of the failing supports, together with the exact blend surface evaluated at the support pcurve endpoints, show whether the cache or the pcurve departs from the construction. That evidence fixes the endpoint contract of such a support.
 
 ## 2. Topology
 

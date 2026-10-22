@@ -12,12 +12,12 @@ use crate::scalar::FiniteReal;
 use crate::topology::ParameterInterval;
 
 impl ProceduralCurveDefinition {
-    /// Restate every support context of this definition on the reversed
-    /// solved parameter `-t`, as its reversed solved cache is.
+    /// Restate the support context of an intersection or surface-curve
+    /// definition on the reversed solved parameter `-t`, as its reversed
+    /// solved cache is. Other definitions are unchanged.
     ///
-    /// `None` when a context holds a pcurve that has no reversed form; the
-    /// definition is then unchanged. A definition without a support context
-    /// is unchanged.
+    /// `None` when the context holds a pcurve that has no reversed form; the
+    /// definition is then unchanged.
     pub fn reverse_support_contexts(&mut self) -> Option<()> {
         match self {
             Self::Intersection { context, .. } => *context = context.reversed_about_zero()?,
@@ -128,6 +128,10 @@ fn reversed_pcurve(geometry: &PcurveGeometry) -> Option<PcurveGeometry> {
                 LinePcurve::try_new(line.origin().get(), Point2::new(-direction.u, -direction.v))
                     .ok()?,
             )
+        }
+        PcurveGeometry::Circle(circle) => PcurveGeometry::Circle(circle.reversed_about_zero()),
+        PcurveGeometry::Harmonic(harmonic) => {
+            PcurveGeometry::Harmonic(harmonic.reversed_about_zero())
         }
         PcurveGeometry::Ellipse(ellipse) => PcurveGeometry::Ellipse(ellipse.reversed_about_zero()),
         PcurveGeometry::Parabola(parabola) => {

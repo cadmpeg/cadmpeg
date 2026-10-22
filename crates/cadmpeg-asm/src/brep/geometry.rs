@@ -458,6 +458,26 @@ fn decode_curve_carrier(rec: &Record, carrier: &Carrier) -> Option<CurveGeometry
     }
 }
 
+/// Whether the decoder reversed the cache of curve record `curve` an odd
+/// number of times: once for its record sense, and once more when every edge
+/// that uses it runs against it.
+pub(crate) fn carrier_cache_reversed(records: &[Record], curve: &Record) -> bool {
+    let Ok(index) = i64::try_from(curve.index) else {
+        return record_reversed(curve);
+    };
+    let (mut forward, mut reversed) = (false, false);
+    for edge in records
+        .iter()
+        .filter(|record| is_edge_record(record) && record.ref_at(8) == Some(index))
+    {
+        match sense_at(edge, 9) {
+            Sense::Forward => forward = true,
+            Sense::Reversed => reversed = true,
+        }
+    }
+    record_reversed(curve) != (reversed && !forward)
+}
+
 pub(super) fn sense_at(rec: &Record, i: usize) -> Sense {
     match rec.chunk(i) {
         Some(Token::True) => Sense::Reversed,
@@ -470,7 +490,7 @@ pub(super) fn sense_at(rec: &Record, i: usize) -> Sense {
 /// marks geometry as the reverse of its cached definition. A reversed intcurve
 /// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
 /// spline surface flips the cache normal.
-pub(super) fn record_reversed(rec: &Record) -> bool {
+pub(crate) fn record_reversed(rec: &Record) -> bool {
     // Adjacency in chunk space: a freestanding payload identifier (e.g. the
     // embedded curve's type name) can sit between value tokens without
     // separating the sense bit from the scope it precedes.
