@@ -29,7 +29,6 @@ mod sketch;
 mod sketch_ids;
 mod sketch_transfer;
 mod source_carriers;
-mod source_layout;
 mod surfaces;
 mod sweep;
 pub(crate) mod uniqueness;
@@ -128,7 +127,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             untyped.insert(cadmpeg_ir::ArenaClass::Design);
         }
     }
-    source_layout::move_layout(ctx, &mut ir, &mut source_fidelity)?;
     ctx.retain_bytes(
         cadmpeg_core::decode::u64_from_index(root.window().len()),
         "retain Creo source image outside CADIR",

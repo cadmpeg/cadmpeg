@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native-arena nested record types moved from `decode.rs`.
 
-use crate::source_bytes::SourceBytes as NativeBytes;
+use cadmpeg_ir::native::bytes::NativeBytes;
 
 use serde::Serialize;
 
