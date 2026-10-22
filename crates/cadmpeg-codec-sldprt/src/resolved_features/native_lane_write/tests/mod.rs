@@ -265,3 +265,5 @@ fn native_configuration_statements_join_the_authored_scalar_lane() {
         .iter()
         .any(|class| class.name == "moBaseBody_c"));
 }
+
+mod marker_admission;
