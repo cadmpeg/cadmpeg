@@ -233,7 +233,8 @@ fn reverse_v_sphere_negates_the_longitude() {
 }
 
 /// A torus record and its native point at minor angle `first` and major
-/// angle `second`, negated by `reverse_v`.
+/// angle `second`, negated by `reverse_v`. The native point uses the
+/// magnitude of the minor radius.
 fn torus_case(major: f64, minor: f64, reverse_v: bool) {
     let center = [-1.0, 0.5, 2.0];
     let axis = [0.0, 1.0, 0.0];
@@ -261,8 +262,8 @@ fn torus_case(major: f64, minor: f64, reverse_v: bool) {
         let (minor_angle, major_angle) = (end.u, v_sign * end.v);
         mm(Vector3::from(center)
             + (x.scale(major_angle.cos()) + y.scale(major_angle.sin()))
-                .scale(major + minor * minor_angle.cos())
-            + z.scale(minor * minor_angle.sin()))
+                .scale(major + minor.abs() * minor_angle.cos())
+            + z.scale(minor.abs() * minor_angle.sin()))
     });
     assert_endpoints_hit_vertices(&surface, ends, vertices);
 }
@@ -271,6 +272,10 @@ fn torus_case(major: f64, minor: f64, reverse_v: bool) {
 fn torus_pcurve_is_latitude_first() {
     torus_case(4.0, 1.5, false);
     torus_case(4.0, -1.5, false);
+    torus_case(4.0, -1.5, true);
+    // A self-intersecting torus whose minor radius exceeds its major radius.
+    torus_case(2.0, -3.0, false);
+    torus_case(-4.0, -1.5, false);
 }
 
 #[test]
