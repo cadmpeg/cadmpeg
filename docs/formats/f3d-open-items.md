@@ -68,14 +68,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the meaning to build face topology from a recipe without the edge-recipe rule.
 
-### DR-24. Class-365 whole-body operand fields
-
-**Question.** What do the class-365 whole-body operand fields after the asset UUID and the context UUID hold? This question excludes the bounded nested-record join and the body-recipe join.
-
-**Known.** `f3d.md` §3.1 "A class-365 whole-body member" gives the reference count, the ordered `(Design reference, form)` pairs, the asset UUID, the context UUID, the `u32 2`, the four-byte selector-tail member, the paired header, and the nested indexed headers. The `u32 2` is a literal that never varies. Class `365` permits a nonzero selector-tail value; class `367` stores `01 00 00 00`. The selector-tail bytes and their offset are retained in the native operand. The u32 after those bytes takes a broad range of small values. The `0x01`-tagged value before the two UUIDs is a reference whose target is the containing entity plus three, so the two zero bytes after it are that reference's flags.
-
-**Need.** We must know what the two variable u32 select to write a complete class-365 member.
-
 ### DR-25. Base Feature six-byte fields
 
 **Question.** What do the six-byte fields after the Base Feature body suffixes and after the Base Feature record references hold?
@@ -366,4 +358,3 @@ the native feature when a fixed lane carries a symmetric distance.
 **Need.** A neutral radial symmetry carrier still needs a proven mapping from the native map identifiers to cage faces, edges, and vertices before a writer can generate the block from edited topology. The typed native-map carrier preserves source values but does not assert that mapping.
 
 **Conflict.** Treating every radial operand as a local topology slot rejects valid large cages and assigns some native IDs to unrelated neutral elements.
-
