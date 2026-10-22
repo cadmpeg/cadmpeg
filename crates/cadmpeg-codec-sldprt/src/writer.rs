@@ -154,19 +154,6 @@ pub(super) fn write_semantic_at(
         // Keep their transient output buffers out of the CADIR native arena.
         Vec::new()
     } else {
-        // A retained lane must be reconstructible before patching its bytes.
-        // Later preparation authors canonical sketch buffers, including spatial
-        // xyz records whose coordinates are held by the canonical geometry.
-        // Those buffers are output of the current serializer, not input to
-        // the native-only reconstruction proof.
-        if let Some(native) = native.as_ref() {
-            for lane in &native.feature_input_lanes {
-                crate::resolved_features::native_lane_write::require_reconstructible_content(
-                    lane,
-                    &native.feature_histories,
-                )?;
-            }
-        }
         let feature_input_renames =
             crate::history::write::synchronize_feature_records(&digest_ctx, ir, &mut native)?;
         crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
@@ -996,11 +983,6 @@ fn remap_written_geometry_references(
     let mut projected = ir.clone();
     projected.model = model;
     crate::history::write::parameters::synchronize_parameter_records(&projected, native)?;
-    if let Some(native) = native.as_mut() {
-        // Feature synchronization above replaces the generated class lane.
-        // Re-author its dimension cells from the same current, remapped model.
-        crate::resolved_features::write_feature_parameters::synthesize(&projected, native)?;
-    }
 
     Ok(())
 }
