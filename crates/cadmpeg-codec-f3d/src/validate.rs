@@ -5162,8 +5162,18 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             };
             let along_count = parameter_kind_count("AlongDistance");
             let against_count = parameter_kind_count("AgainstDistance");
-            let profile_offset_count = parameter_kind_count("ProfileOffset");
-            let side_one_offset_count = parameter_kind_count("Side1Offset");
+            let fixed_lanes = scope.fixed_extrude_parameters();
+            let profile_offset_count = parameter_kind_count("ProfileOffset")
+                + usize::from(fixed_lanes.is_some_and(|fixed| fixed.profile_offset.is_some()));
+            let side_one_offset_count = parameter_kind_count("Side1Offset")
+                + usize::from(fixed_lanes.is_some_and(|fixed| fixed.side_one_offset.is_some()));
+            // A to-face Extrude's fixed lanes carry only its termination
+            // offset and taper.
+            let fixed_lanes_are_to_face_lanes = fixed_lanes.is_none_or(|fixed| {
+                fixed.along_distance.is_none()
+                    && fixed.against_distance.is_none()
+                    && fixed.side_two_taper_angle.is_none()
+            });
             let omitted_zero_side_one_offset =
                 crate::design::face_resolve::extrude_omits_zero_side_one_offset(
                     scope,
@@ -5220,7 +5230,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 }
                 records::feature::extrude::DesignExtrudeExtent::OneSidedToFace => {
                     along_count == 0
-                        && !has_fixed_extrude_parameters
+                        && fixed_lanes_are_to_face_lanes
                         && against_count == 0
                         && if target_shape_group_count == 1 {
                             side_one_offset_is_absent

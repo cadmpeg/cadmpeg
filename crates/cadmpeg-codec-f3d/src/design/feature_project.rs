@@ -7845,13 +7845,24 @@ fn project_extrude(
         (None, None) => None,
         _ => return Ok(None),
     };
+    let fixed_length =
+        |lane: Option<&crate::records::feature::fixed_parameters::DesignFixedExtrudeScalar>| {
+            lane.map(|lane| Length::new(lane.value.get() * 10.0).ok_or(()))
+                .transpose()
+                .ok()
+        };
+    let fixed_lanes = scope.fixed_extrude_parameters();
     let profile_offset = match or_none!(unique("ProfileOffset")) {
         Some(parameter) => Some(or_none!(design_length(parameter))),
-        None => None,
+        None => or_none!(fixed_length(
+            fixed_lanes.and_then(|fixed| fixed.profile_offset.as_ref())
+        )),
     };
     let side_one_offset = match or_none!(unique("Side1Offset")) {
         Some(parameter) => Some(or_none!(design_length(parameter))),
-        None => None,
+        None => or_none!(fixed_length(
+            fixed_lanes.and_then(|fixed| fixed.side_one_offset.as_ref())
+        )),
     };
     let side_one_offset_count = parameters
         .iter()

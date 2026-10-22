@@ -82,6 +82,8 @@ fn two_sided_distance_extrude_accepts_fixed_distance_lanes() {
         taper_angle: None,
         against_distance,
         side_two_taper_angle: None,
+        profile_offset: None,
+        side_one_offset: None,
     };
     assert!(!conflicts(&fixed_extrude(
         DesignExtrudeExtent::TwoSidedDistance,
