@@ -48,6 +48,7 @@ mod objects;
 mod polyedge;
 mod presentation;
 mod product;
+mod rich_text;
 mod settings;
 mod subd;
 mod surfaces;

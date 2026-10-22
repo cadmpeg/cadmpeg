@@ -778,8 +778,14 @@ pub(crate) fn style_binding(
 }
 
 /// Plain text when `rich` is not RTF content.
-fn plain_text(rich: &str) -> Option<&str> {
-    (!rich.starts_with("{\\rtf")).then_some(rich)
+/// The visible text of a rich-text string: the string itself when it is not
+/// RTF, else the `ON_TextContent` run text when that is exact.
+fn plain_text(rich: &str) -> Option<String> {
+    if rich.starts_with("{\\rtf") {
+        crate::rich_text::plain_text(rich).ok()
+    } else {
+        Some(rich.to_owned())
+    }
 }
 
 fn finite_point(value: [f64; 3]) -> Option<cadmpeg_ir::units::FiniteVector<3>> {
@@ -818,7 +824,7 @@ fn annotation_projection(
     key: String,
     class: Uuid,
     record: &AnnotationRecord,
-    plain: Option<&str>,
+    plain: Option<String>,
     style: StyleReference,
 ) -> Result<Projection, CodecError> {
     let kind = match record.kind {
@@ -826,13 +832,14 @@ fn annotation_projection(
         AnnotationKind::Text => SemanticAnnotationKind::Text,
         AnnotationKind::Annotation => SemanticAnnotationKind::Other,
     };
-    let text = plain.filter(|text| !text.is_empty()).map(str::to_owned);
+    let rich_text_unflattened = plain.is_none();
+    let text = plain.filter(|text| !text.is_empty());
     Ok(Projection {
         source_order,
         key,
         kind,
         runtime_type: runtime_type(class),
-        rich_text_unflattened: text.is_none() && plain_text(&record.rich_text).is_none(),
+        rich_text_unflattened,
         text: text.into_iter().collect(),
         format: (!record.rich_text.is_empty()).then(|| record.rich_text.clone()),
         position: finite_point(record.plane_origin.get()),
@@ -1173,7 +1180,7 @@ pub(crate) fn collect(
                     key,
                     object.class_uuid,
                     &record,
-                    Some(record.rich_text.as_str()),
+                    Some(record.rich_text.clone()),
                     StyleReference::Absent,
                 )?);
                 annotations.push(record);
@@ -1389,9 +1396,13 @@ mod tests {
     }
 
     #[test]
-    fn rtf_rich_text_has_no_plain_text_fragment() {
-        assert_eq!(super::plain_text("Hello"), Some("Hello"));
-        assert_eq!(super::plain_text("{\\rtf1\\ansi Hello}"), None);
+    fn rtf_rich_text_flattens_to_its_run_text() {
+        assert_eq!(super::plain_text("Hello"), Some("Hello".to_owned()));
+        assert_eq!(
+            super::plain_text("{\\rtf1\\ansi Hello}"),
+            Some("Hello".to_owned())
+        );
+        assert_eq!(super::plain_text("{\\rtf1 {a 1/2}}"), None);
     }
 
     fn with_decode_context<R>(

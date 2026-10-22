@@ -4251,6 +4251,54 @@ text string, obsolete plane, rectangle width `f64`, rotation `f64`, horizontal
 alignment `i32`, vertical alignment `i32`, obsolete text height `f64`, and
 wrap `bool`, in that order.
 
+A rich-text string that does not begin with `{\rtf` is its own plain text.
+Every other string yields the plain text of the `ON_TextContent` text runs,
+as follows:
+
+1. `%<` … `>%` becomes a `\field` group. `[[` starts a `\stack` group
+   whose optional first character `/` or `|` selects the delimiter; `]]`
+   ends the group. `[[[` advances by one character.
+2. The parser reads code points left to right. `{` and `}` begin and end
+   groups. A backslash followed by `\`, `{`, or `}` is that literal
+   character. `\~` is a space, `\_` is `-`, and `\-`, `\|`, and `\:`
+   select nothing. A backslash before a line feed, carriage return, U+2028,
+   or U+2029 ends the run and adds one paragraph run.
+3. A control word is ASCII letters followed by an optional value of digits,
+   `.`, and one leading `-`. The first other character ends it and is
+   consumed unless it is `\`, `{`, or `}`. A control word that the string
+   end interrupts is discarded. Names compare without case. Every control word
+   except `\u` first ends the pending text run.
+4. `\rtf` marks a header run. `\par` and `\line` set the current run to a
+   paragraph or newline run, and `\field` to a field run. Text that follows
+   such a tag in the same group resets the run, so the paragraph is lost
+   unless a group or tag boundary ends the run first. `\tab` appends eight
+   spaces. `\lquote`, `\rquote`, `\ldblquote`, `\rdblquote`, `\bullet`,
+   `\endash`, and `\emdash` append U+2018, U+2019, U+201C, U+201D, U+2022,
+   U+2013, and U+2014.
+5. `\uN` appends the UTF-16 unit `N` as a signed or unsigned 16-bit value,
+   or a code point above U+FFFF. A high surrogate waits for the next `\uN`;
+   an unpaired or invalid unit becomes U+FFFD. Only the one terminator
+   character after `N` is consumed; `\ucN` selects nothing.
+6. `\*` followed by an unknown control word skips to the end of its group.
+7. `\fonttbl` starts the font table. Inside it, `\fN` starts a font
+   definition whose text up to `;` is a font name, not run text.
+8. `\'hh` byte sequences decode through Windows code page 1252. An invalid
+   sequence appends U+FFFD.
+9. Unescaped carriage returns, tabs, and line feeds select nothing.
+   U+00A0, U+202F, and U+200B are spaces.
+
+The plain text concatenates the text and field runs. A run that contains
+`/` and is not the first run is preceded by one space. When a text run
+follows a paragraph or newline run, each paragraph or newline run adds
+CR LF.
+
+The dimension style's stack format splits a run at every digit `/` digit
+fraction, so the plain text of such a run depends on the style. A `\'hh`
+byte under a font character set other than 0 or a code page other than 1252
+uses that code page. A code point zero ends the source run string. CADIR
+transfers the plain text when none of these constructs occurs and keeps
+`annotation.rich-text-unflattened` otherwise.
+
 The text-content, annotation, common-dimension, and family chunks are
 independent boundaries. Each reader consumes its known prefix and ends its
 own anonymous child. Bytes after a known prefix remain bounded by that child;

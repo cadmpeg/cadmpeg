@@ -593,22 +593,6 @@ candidate reaches `object.framing-undecodable`.
 route the `TL_Brep` alias to the Brep decoder, and scope candidate admission
 so that findings on committed entities outside the candidate do not reject it.
 
-### AN-01. Annotation RTF text has no plain-text fragment
-
-**Question.** Which plain visible text does an `ON_Text` or `ON_Leader` RTF
-rich-text string carry?
-
-**Known.** `ON_TextContent::Read` stores one rich-text string. A string that
-does not begin with `{\rtf` is plain text. An RTF string is parsed by
-`ON_RtfParser` (`opennurbs_textiterator.cpp`) into text runs; the plain text is
-the concatenation of those runs. The decoder keeps the complete string as the
-annotation format and emits `annotation.rich-text-unflattened` with no plain
-text fragment.
-
-**Need.** The `ON_RtfParser` group, destination, control-word, `\uN`, and
-`\'hh` rules that produce the run text, so that the plain text comes from the
-same parse.
-
 ### CT-01. Hatch fill and detail views have no neutral carrier
 
 **Question.** Which neutral carrier holds hatch fill appearance and a detail
