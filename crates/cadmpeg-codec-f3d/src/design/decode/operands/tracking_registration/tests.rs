@@ -125,3 +125,69 @@ fn registration_rejects_wrong_family_version_membership_and_physical_offsets() {
     wrong_class.wrapper_class_tag = "257".to_owned().try_into().unwrap();
     assert!(!Registry::new(Rc::new(original)).supports(&wrong_class));
 }
+
+#[test]
+fn nonconsecutive_transform_requires_typed_membership_and_the_next_active_primary() {
+    let meta = MetaStream {
+        types: vec![
+            row(
+                "2DF7DA30-A4E4-4260-AFD1-D9C7154CB44B",
+                "872045B4-F653-4691-9752-ABC7684834BF",
+                0,
+                300,
+            ),
+            row(
+                "11111111-2222-3333-4444-555555555555",
+                "872045B4-F653-4691-9752-ABC7684834BF",
+                0,
+                309,
+            ),
+        ],
+        records: vec![
+            RecordIndexEntry {
+                entity_id: 300,
+                bulk_offset: 17,
+            },
+            RecordIndexEntry {
+                entity_id: 309,
+                bulk_offset: 169,
+            },
+        ],
+        secondary_records: Vec::new(),
+    };
+    let transform = serde_json::from_value(serde_json::json!({
+        "record_index":300, "byte_offset":17, "class_tag":"256",
+        "transform":[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]], "transform_offset":39,
+        "following_record_index":309, "following_byte_offset":169, "following_class_tag":"257"
+    }))
+    .unwrap();
+    assert!(Registry::new(Rc::new(meta.clone())).supports_transform(&transform));
+    for mutation in 0..10 {
+        let mut invalid = meta.clone();
+        match mutation {
+            0 => invalid.types[0].version = 1,
+            1 => invalid.types[0].module = "Fusion".into(),
+            2 => invalid.types[0].base_type_guid = BaseTypeGuid::Absent,
+            3 => {
+                invalid.types[0].type_guid = "11111111-2222-3333-4444-555555555555"
+                    .to_owned()
+                    .try_into()
+                    .unwrap()
+            }
+            4 => invalid.types[0].entities = ReferenceRun::unlocated(vec![999]),
+            5 => invalid.records[0].bulk_offset += 1,
+            6 => invalid.records[1].entity_id += 1,
+            7 => invalid.records[1].bulk_offset += 1,
+            8 => invalid.types[1].entities = ReferenceRun::unlocated(vec![999]),
+            9 => invalid.records.insert(
+                1,
+                RecordIndexEntry {
+                    entity_id: 301,
+                    bulk_offset: 18,
+                },
+            ),
+            _ => unreachable!(),
+        }
+        assert!(!Registry::new(Rc::new(invalid)).supports_transform(&transform));
+    }
+}

@@ -617,10 +617,21 @@ fn trailing_transform_rejects_displaced_frames_and_overflow() {
             "record_index",
             "byte_offset",
             "transform_offset",
-            "following_record_index",
             "following_byte_offset",
         ],
     );
+    for index in [0, 6, 7] {
+        let mut invalid = wire.clone();
+        invalid["following_record_index"] = index.into();
+        assert!(serde_json::from_value::<DesignConstructionOperandTransform>(invalid).is_err());
+    }
+    for index in [9, 10, 4000] {
+        let mut independent = wire.clone();
+        independent["following_record_index"] = index.into();
+        let parsed: DesignConstructionOperandTransform =
+            serde_json::from_value(independent).unwrap();
+        assert_eq!(parsed.following_record_index(), index);
+    }
     let mut boundary = wire;
     boundary["record_index"] = (u32::MAX - 1).into();
     boundary["following_record_index"] = u32::MAX.into();

@@ -17743,3 +17743,38 @@ offset = 2
 type = "u32"
 source = "spec"
 anchor = "member:u32"
+
+[[record]]
+name = "construction_operand_affine_transform_frame"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A construction-operand affine transform is a 152-byte indexed record"
+size = 152
+note = "Offsets are relative to the transform's indexed header. The following active indexed record begins at offset 152 and retains an independent record index."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A construction-operand affine transform is a 152-byte indexed record"
+
+[[record.gap]]
+offset = 11
+size = 11
+note = "Eleven zero bytes follow the indexed header."
+
+[[record.field]]
+name = "matrix"
+offset = 22
+type = "bytes[128]"
+source = "spec"
+anchor = "sixteen row-major f64 values"
+
+[[record.field]]
+name = "trailer"
+offset = 150
+type = "bytes[2]"
+source = "spec"
+anchor = "and bytes `01 00`"

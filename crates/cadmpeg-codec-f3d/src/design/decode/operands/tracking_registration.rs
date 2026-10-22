@@ -11,6 +11,7 @@ use std::rc::Rc;
 enum Kind {
     Wrapper,
     Carrier,
+    TrailingTransform,
 }
 
 pub(super) struct Registry {
@@ -40,6 +41,14 @@ fn registration(kind: &SegmentTypeData) -> Option<Kind> {
         && base.eq_ignore_ascii_case("70F5E801-1E8E-436E-8A09-36487F8A2859")
     {
         Some(Kind::Carrier)
+    } else if kind.version == 0
+        && kind
+            .type_guid
+            .as_str()
+            .eq_ignore_ascii_case("2DF7DA30-A4E4-4260-AFD1-D9C7154CB44B")
+        && base.eq_ignore_ascii_case("872045B4-F653-4691-9752-ABC7684834BF")
+    {
+        Some(Kind::TrailingTransform)
     } else {
         None
     }
@@ -74,6 +83,40 @@ impl Registry {
                 .records
                 .binary_search_by_key(&offset, |record| record.bulk_offset)
                 .is_ok_and(|index| self.meta.records[index].entity_id == u64::from(entity))
+    }
+
+    pub(super) fn supports_transform(
+        &self,
+        transform: &crate::records::topology::construction::DesignConstructionOperandTransform,
+    ) -> bool {
+        if !self.header(
+            &transform.class_tag,
+            transform.record_index(),
+            transform.byte_offset(),
+            Kind::TrailingTransform,
+        ) {
+            return false;
+        }
+        let Ok(index) = self
+            .meta
+            .records
+            .binary_search_by_key(&transform.byte_offset(), |record| record.bulk_offset)
+        else {
+            return false;
+        };
+        let Some(next) = self.meta.records.get(index + 1) else {
+            return false;
+        };
+        let Some(ordinal) = transform.following_class_tag.dynamic_ordinal() else {
+            return false;
+        };
+        next.bulk_offset == transform.following_byte_offset()
+            && next.entity_id == u64::from(transform.following_record_index())
+            && self.meta.types.get(ordinal).is_some_and(|row| {
+                row.entities
+                    .values()
+                    .any(|entity| *entity == next.entity_id)
+            })
     }
 
     pub(super) fn supports(&self, path: &DesignConstructionTrackingPath) -> bool {

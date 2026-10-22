@@ -830,6 +830,7 @@ pub(crate) struct DesignConstructionOperandFlag {
 #[serde(try_from = "DesignConstructionOperandTransformDraft")]
 pub(crate) struct DesignConstructionOperandTransform {
     frame: crate::records::frame_chain::RecordFrameChain,
+    following_record_index: u32,
     /// Per-file dynamic transform-record class tag.
     pub(crate) class_tag: DesignClassTag,
     /// Row-major local-to-model affine transform.
@@ -849,6 +850,7 @@ impl Clone for DesignConstructionOperandTransform {
         CONSTRUCTION_TRANSFORM_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             frame: self.frame,
+            following_record_index: self.following_record_index,
             class_tag: self.class_tag.clone(),
             transform: self.transform,
             following_class_tag: self.following_class_tag.clone(),
@@ -885,21 +887,22 @@ impl Serialize for DesignConstructionOperandTransform {
 
 impl DesignConstructionOperandTransform {
     pub(crate) fn try_new(draft: DesignConstructionOperandTransformDraft) -> Result<Self, String> {
+        if draft.following_record_index <= draft.record_index {
+            return Err("following_record_index must exceed record_index".into());
+        }
         let frame = crate::records::frame_chain::RecordFrameChain::try_new(
             draft.record_index,
             draft.byte_offset,
-            1,
+            0,
             152,
         )?;
         let value = Self {
             frame,
+            following_record_index: draft.following_record_index,
             class_tag: draft.class_tag,
             transform: draft.transform,
             following_class_tag: draft.following_class_tag,
         };
-        if value.following_record_index() != draft.following_record_index {
-            return Err("following_record_index disagrees with frame layout".into());
-        }
         if value.transform_offset() != draft.transform_offset {
             return Err("transform_offset disagrees with frame layout".into());
         }
@@ -936,7 +939,7 @@ impl DesignConstructionOperandTransform {
         self.frame.offset(22)
     }
     pub(crate) fn following_record_index(&self) -> u32 {
-        self.frame.index(1)
+        self.following_record_index
     }
     pub(crate) fn following_byte_offset(&self) -> u64 {
         self.frame.offset(152)

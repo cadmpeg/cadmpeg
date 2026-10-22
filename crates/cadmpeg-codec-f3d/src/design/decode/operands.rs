@@ -30,6 +30,7 @@ use crate::layout::class_338_sketch_curve_identity as class_338_curve;
 use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
 use crate::layout::coil_modern_selection_prefix as coil_modern_sel;
+use crate::layout::construction_operand_affine_transform_frame as trailing_affine;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::legacy_loft_body_carrier_class_322 as legacy_loft_322;
@@ -2560,6 +2561,21 @@ fn legacy_body_group_tail(
     Some((variant, tail, paired_class_tag.to_owned()))
 }
 
+fn construction_tracking_registry<'cache>(
+    scan: &ContainerScan,
+    bulk_name: &str,
+    registries: &'cache mut HashMap<String, Option<tracking_registration::Registry>>,
+) -> Result<Option<&'cache tracking_registration::Registry>, CodecError> {
+    let registry = match registries.entry(bulk_name.to_owned()) {
+        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::hash_map::Entry::Vacant(slot) => slot.insert(
+            super::meta::metadata_for_bulk_stream(scan, bulk_name)?
+                .map(tracking_registration::Registry::new),
+        ),
+    };
+    Ok(registry.as_ref())
+}
+
 /// Bind exact typed records selected by construction-group trailing runs.
 pub(crate) fn bind_construction_operand_trailing_records(
     scan: &ContainerScan,
@@ -2567,6 +2583,7 @@ pub(crate) fn bind_construction_operand_trailing_records(
     headers: &[DesignRecordHeader],
 ) -> Result<(), CodecError> {
     let headers = indexed_operand_headers(headers);
+    let mut registries = HashMap::new();
     for group in groups {
         group
             .frame
@@ -2596,6 +2613,15 @@ pub(crate) fn bind_construction_operand_trailing_records(
                 continue;
             };
             if let Some(transform) = parse_construction_operand_transform(bytes, header) {
+                if transform.record_index().checked_add(1)
+                    != Some(transform.following_record_index())
+                {
+                    if !construction_tracking_registry(scan, &entry.name, &mut registries)?
+                        .is_some_and(|registry| registry.supports_transform(&transform))
+                    {
+                        continue;
+                    }
+                }
                 trailing_transforms.push(transform);
             } else if let Some(transform) = parse_construction_operand_dual_transform(bytes, header)
             {
@@ -2767,18 +2793,19 @@ fn parse_construction_operand_transform(
     header: &DesignRecordHeader,
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandTransform> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    if bytes.get(start + 11..start + 22)? != [0; 11]
-        || bytes.get(start + 150..start + 152)? != [1, 0]
+    if bytes.get(start + indexed_header::LEN..start + trailing_affine::MATRIX)?
+        != [0; trailing_affine::MATRIX - indexed_header::LEN]
+        || bytes.get(start + trailing_affine::TRAILER..start + trailing_affine::LEN)? != [1, 0]
     {
         return None;
     }
-    let transform_at = start.checked_add(22)?;
+    let transform_at = start.checked_add(trailing_affine::MATRIX)?;
     let transform = rigid_transform_at(bytes, transform_at)?;
-    let following_at = start.checked_add(152)?;
+    let following_at = start.checked_add(trailing_affine::LEN)?;
     let (following_class_tag, after_tag) =
         lp_ascii_filtered_view(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
     let following_record_index = View::u32_le_at(bytes, after_tag)?;
-    if following_record_index != header.record_index.checked_add(1)? {
+    if following_record_index <= header.record_index {
         return None;
     }
     crate::records::topology::construction::DesignConstructionOperandTransform::try_new(
@@ -2879,31 +2906,16 @@ pub(crate) fn decode_construction_operand_identities(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let registry = construction_tracking_registry(scan, &entry.name, &mut registries)?;
         if let Some(mut identity) =
-            parse_construction_operand_identity(bytes, group, wrapper_header)
+            parse_construction_operand_identity(bytes, group, wrapper_header, registry)
         {
-            if let Some(path) = identity.tracking_path() {
-                let registry = match registries.entry(stream) {
-                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                    std::collections::hash_map::Entry::Vacant(slot) => {
-                        let Some(prefix) = entry.name.strip_suffix("BulkStream.dat") else {
-                            untyped += 1;
-                            continue;
-                        };
-                        let member = format!("{prefix}MetaStream.dat");
-                        if scan.entry_view(&member).is_none() {
-                            untyped += 1;
-                            continue;
-                        }
-                        slot.insert(tracking_registration::Registry::new(
-                            scan.parsed_metastream(&member)?,
-                        ))
-                    }
-                };
-                if !registry.supports(path) {
-                    untyped += 1;
-                    continue;
-                }
+            if identity
+                .tracking_path()
+                .is_some_and(|path| !registry.is_some_and(|registry| registry.supports(path)))
+            {
+                untyped += 1;
+                continue;
             }
             identity.id = design_record_id(
                 &entry.name,
@@ -3007,12 +3019,18 @@ fn parse_construction_operand_identity(
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     wrapper_header: &DesignRecordHeader,
+    registry: Option<&tracking_registration::Registry>,
 ) -> Option<DesignConstructionOperandIdentity> {
     let mut current_at = usize::try_from(wrapper_header.byte_offset).ok()?;
     let mut current_record_index = wrapper_header.record_index;
     let mut current_class_tag = wrapper_header.class_tag.clone();
     let mut chain_started = false;
     if let Some(transform) = parse_construction_operand_transform(bytes, wrapper_header) {
+        if transform.record_index().checked_add(1) != Some(transform.following_record_index())
+            && !registry.is_some_and(|registry| registry.supports_transform(&transform))
+        {
+            return None;
+        }
         current_at = usize::try_from(transform.following_byte_offset()).ok()?;
         current_record_index = transform.following_record_index();
         current_class_tag = transform.following_class_tag;

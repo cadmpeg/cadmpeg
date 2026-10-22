@@ -5323,3 +5323,19 @@ pub(crate) mod base_feature_local_reference_field {
     /// Stated value of `different_segment` (`u8`). Spec §3.1.
     pub(crate) const DIFFERENT_SEGMENT_VALUE: u8 = 0;
 }
+
+/// Byte offsets for the `construction_operand_affine_transform_frame` record.
+///
+/// Spec §3.1. Record length 152 B.
+///
+/// ```text
+/// Offsets are relative to the transform's indexed header. The following active indexed record begins at offset 152 and retains an independent record index.
+/// ```
+pub(crate) mod construction_operand_affine_transform_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 152;
+    /// Offset of `matrix` (`bytes[128]`). Spec §3.1.
+    pub(crate) const MATRIX: usize = 22;
+    /// Offset of `trailer` (`bytes[2]`). Spec §3.1.
+    pub(crate) const TRAILER: usize = 150;
+}

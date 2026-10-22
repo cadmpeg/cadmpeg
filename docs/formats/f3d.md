@@ -1249,7 +1249,7 @@ An `Extrude` or `Extrusion` existing-body group uses role `0x0000000400000000` o
 
 The legacy Boolean-Loft carrier forms above are the exception to the standard Loft role. Their paired role-`0x0000000800000000` group is the existing-body group only when the class-`322`/`262` or class-`411`/`266` carrier occupies scope-reference ordinal zero and the body group occupies ordinal one.
 
-A construction-operand affine transform is a 152-byte indexed record. Its header is followed by eleven zero bytes, sixteen row-major f64 values, and bytes `01 00`. The matrix is finite and rigid, and its last row is `[0, 0, 0, 1]`. The following indexed record has record index `N+1`.
+A construction-operand affine transform is a 152-byte indexed record. Its header is followed by eleven zero bytes, sixteen row-major f64 values, and bytes `01 00`. The matrix is finite and rigid, and its last row is `[0, 0, 0, 1]`. The following indexed record begins at offset 152. Its stored record index is independent of the transform record index; it is greater but need not be consecutive.
 
 The dual construction-operand transform is 278 bytes. Its indexed header is followed by ten zero bytes, two ordered finite rigid row-major 4×4 matrices, and one zero byte. The matrices begin at record offsets 21 and 149. Another indexed record or the end of the Design stream follows at offset 278; its record index is independent of the transform record index.
 

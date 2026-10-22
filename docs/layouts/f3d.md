@@ -5287,6 +5287,25 @@ Spec §3.1 · layout: byte offsets · size: 6 B
 | 1 | 1 | `different_segment` | `u8` | little | spec | different_segment:u8 0 · value `0` |
 | 2 | 4 | `member` | `u32` | little | spec | member:u32 |
 
+## `construction_operand_affine_transform_frame`
+
+Spec §3.1 · layout: byte offsets · size: 152 B
+
+Offsets are relative to the transform's indexed header. The following active indexed record begins at offset 152 and retains an independent record index.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A construction-operand affine transform is a 152-byte indexed record |
+| 22 | 128 | `matrix` | `bytes[128]` | little | spec | sixteen row-major f64 values |
+| 150 | 2 | `trailer` | `bytes[2]` | little | spec | and bytes `01 00` |
+
+Unstated regions:
+
+- `11..22` (11 B): Eleven zero bytes follow the indexed header.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
