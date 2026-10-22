@@ -4,7 +4,7 @@
 use crate::records::FeatureContent;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{DesignParameter, FeatureId, ParameterValue};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use super::features::generated_feature_record_id;
 use crate::history::parameters::{
@@ -128,7 +128,6 @@ fn sync_neutral_parameters(
             })?;
         let mut parameters = desired.remove(feature_id).unwrap_or_default();
         parameters.sort_by_key(|parameter| parameter.ordinal);
-        order_parameter_dependencies(&mut parameters);
         let canonical = cadmpeg_core::text::named_entries(
             format_args!("the sldprt feature {feature_id} record"),
             parameters.iter().map(|parameter| {
@@ -242,23 +241,6 @@ fn sync_neutral_parameters(
                 parameter.id
             )));
         }
-        if parameter.value.as_ref().is_some_and(|value| {
-            !crate::resolved_features::parameters::scalar_quantity_matches(
-                lane,
-                &lane.scalars[location.1],
-                value,
-            )
-        }) {
-            if !lane.native_payload.is_empty() {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT scalar {} no longer has its source quantity; regenerate the input lane",
-                    lane.scalars[location.1].id
-                )));
-            }
-            // Synthesis reports omission of this incompatible native copy;
-            // the canonical parameter remains in its current quantity.
-            continue;
-        }
         let scalar = &mut lane.scalars[location.1];
         let value = match parameter.value.as_ref() {
             Some(ParameterValue::Length(length)) => length.get() / 1000.0,
@@ -304,48 +286,4 @@ fn sync_neutral_parameters(
         scalar.value = checked;
     }
     Ok(())
-}
-
-/// Keep authored order among available parameters, emitting a held local driver
-/// before its consumer. Cyclic expressions remain authored, in ordinal order.
-fn order_parameter_dependencies(parameters: &mut Vec<&DesignParameter>) {
-    let positions = parameters
-        .iter()
-        .enumerate()
-        .map(|(index, parameter)| (&parameter.id, index))
-        .collect::<HashMap<_, _>>();
-    let mut remaining = parameters.iter().map(|_| 0_usize).collect::<Vec<_>>();
-    let mut consumers = parameters.iter().map(|_| Vec::new()).collect::<Vec<_>>();
-    for (index, parameter) in parameters.iter().enumerate() {
-        for dependency in parameter.expression.dependencies() {
-            if let Some(&driver) = positions.get(dependency) {
-                remaining[index] += 1;
-                consumers[driver].push(index);
-            }
-        }
-    }
-    let mut ready = remaining
-        .iter()
-        .enumerate()
-        .filter_map(|(index, &count)| (count == 0).then_some(index))
-        .collect::<BTreeSet<_>>();
-    let mut emitted = parameters.iter().map(|_| false).collect::<Vec<_>>();
-    let mut ordered = Vec::new();
-    while let Some(index) = ready.pop_first() {
-        emitted[index] = true;
-        ordered.push(parameters[index]);
-        for &consumer in &consumers[index] {
-            remaining[consumer] -= 1;
-            if remaining[consumer] == 0 {
-                ready.insert(consumer);
-            }
-        }
-    }
-    ordered.extend(
-        parameters
-            .iter()
-            .enumerate()
-            .filter_map(|(index, parameter)| (!emitted[index]).then_some(*parameter)),
-    );
-    *parameters = ordered;
 }

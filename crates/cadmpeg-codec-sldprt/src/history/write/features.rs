@@ -618,7 +618,6 @@ fn synchronize_features(
     }
     synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
     crate::resolved_features::parameters::sync_feature_scalars(
-        model,
         &native.feature_histories,
         &mut native.feature_input_lanes,
     )?;

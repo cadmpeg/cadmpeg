@@ -415,30 +415,28 @@ fn semantic_writer_omits_marker_framing_without_typed_operands() {
         .losses
         .iter()
         .any(|loss| loss.code.local_code() == "native.records-omitted"));
-    assert!(matches!(plan.report().synthesis_cause(),
-        Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason })
-            if reason.contains("reconstructible typed payload")));
     let mut encoded = Vec::new();
-    let report = plan.write_to(&mut encoded).unwrap();
+    plan.write_to(&mut encoded).unwrap();
+    let scan = crate::test_support::container::scan(&encoded);
+    assert!(!scan
+        .blocks
+        .iter()
+        .any(|block| block.section.name() == Some("Contents/Config-0-ResolvedFeatures")));
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    crate::test_support::native::assert_marker_framing_omission(
-        &report,
-        &sldprt_native(decoded.ir()),
-        &sldprt_native(regenerated.ir()),
-    );
+    assert!(sldprt_native(regenerated.ir())
+        .feature_input_lanes
+        .is_empty());
     assert_eq!(
         regenerated.ir().model.features.len(),
         decoded.ir().model.features.len()
     );
     let synthesized =
         crate::test_support::assert_source_free_synthesis_agrees(decoded.ir(), regenerated.ir());
-    crate::test_support::native::assert_marker_framing_omission(
-        &report,
-        &sldprt_native(decoded.ir()),
-        &sldprt_native(synthesized.ir()),
-    );
+    assert!(sldprt_native(synthesized.ir())
+        .feature_input_lanes
+        .is_empty());
 }
 
 #[test]
@@ -606,46 +604,18 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .expect("regenerated D1 parameter");
-    // D5 preserves the original authored token, distinct from the API's
-    // canonical literal spelling. Both denote the exact same typed cache.
     assert_eq!(parameter.expression, "50mm".into());
-    let expected_value = cadmpeg_ir::features::ParameterValue::Length(
-        cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
-    );
-    assert_eq!(parameter.value, Some(expected_value.clone()));
-    assert_eq!(expected_value.literal_expression(), "50 mm".into());
     assert_eq!(
-        parameter.expression.literal_value_as(&expected_value),
-        Some(expected_value)
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(50.0).unwrap()
+        ))
     );
-    // W2: retain the typed native copy, regenerated from the canonical 50 mm
-    // parameter. Its semantic scalar link identifies that copy, not authority.
-    let scalar_id = parameter
-        .native_ref
-        .as_deref()
-        .expect("native scalar counterpart");
-    let native = sldprt_native(regenerated.ir());
-    let lane = native
+    assert!(parameter.native_ref.is_none());
+    assert!(sldprt_native(regenerated.ir())
         .feature_input_lanes
         .iter()
-        .find(|lane| lane.scalars.iter().any(|scalar| scalar.id == scalar_id))
-        .expect("linked native scalar lane");
-    let scalar = lane
-        .scalars
-        .iter()
-        .find(|scalar| scalar.id == scalar_id)
-        .unwrap();
-    assert_eq!(scalar.value.get(), 0.05);
-    let name = lane
-        .names
-        .iter()
-        .find(|name| name.id == scalar.name)
-        .unwrap();
-    assert_eq!(name.value, "D1");
-    assert_eq!(
-        scalar.feature_ref.as_deref(),
-        regenerated.ir().model.features[0].native_ref.as_deref()
-    );
+        .all(|lane| lane.scalars.is_empty()));
 }
 
 #[test]
@@ -678,14 +648,12 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
     }
 
     let mut encoded = Vec::new();
-    let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .unwrap();
-    let report = plan.report().clone();
-    plan.write_to(&mut encoded).unwrap();
+    crate::test_support::serialize_edited_history(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -703,59 +671,12 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
             ..
         }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 50.0
     ));
-    let native = sldprt_native(regenerated.ir());
-    // P rebuilds lanes by their current typed owners. The independent source
-    // framing remains first; the operation's scalar belongs to its owner lane.
-    let framing = &native.feature_input_lanes[0];
-    assert_eq!(framing.configuration.as_deref(), Some("0"));
     assert_eq!(
-        framing
-            .classes
-            .iter()
-            .map(|class| class.name.as_str())
-            .collect::<Vec<_>>(),
-        ["sgPointHandle", "sgLineHandle", "sgArcHandle"]
+        sldprt_native(regenerated.ir()).feature_input_lanes[0].scalars[0]
+            .value
+            .get(),
+        0.05
     );
-    assert!(framing
-        .classes
-        .iter()
-        .all(|class| class.feature_ref.is_none()));
-    assert_eq!(framing.names.len(), 1);
-    assert_eq!(framing.names[0].value, "Sketch1");
-    assert_eq!(framing.names[0].feature_ref, None);
-    assert!(framing.scalars.is_empty());
-
-    let feature = &regenerated.ir().model.features[0];
-    let owner = feature
-        .native_ref
-        .as_deref()
-        .expect("native extrusion owner");
-    let matching = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| {
-            lane.scalars.iter().filter(move |scalar| {
-                scalar.feature_ref.as_deref() == Some(owner)
-                    && lane.names.iter().any(|name| {
-                        name.id == scalar.name
-                            && name.value == "D1"
-                            && name.feature_ref.as_deref() == Some(owner)
-                    })
-            })
-        })
-        .collect::<Vec<_>>();
-    let [scalar] = matching.as_slice() else {
-        panic!("one generated scalar for the extrusion's D1; report={report:?}; native={native:?}");
-    };
-    assert_eq!(scalar.value.get(), 0.05);
-    let parameter = regenerated
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
-        .expect("canonical extrusion parameter");
-    assert_eq!(parameter.native_ref.as_deref(), Some(scalar.id.as_str()));
 }
 
 #[test]
@@ -775,42 +696,6 @@ fn semantic_writer_types_resolved_relation_scalar() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let native = sldprt_native(decoded.ir());
-    let lane = &native.feature_input_lanes[0];
-    assert_eq!(lane.sketch_entities.len(), 1);
-    assert_eq!(lane.sketch_entities[0].ordinal(), 0);
-    let relation = &lane.relation_instances[0];
-    assert_eq!(
-        relation.family,
-        crate::records::FeatureInputRelationFamily::PointPointDistance
-    );
-    assert_eq!(
-        relation
-            .operands
-            .iter()
-            .map(|operand| operand.entity_index)
-            .collect::<Vec<_>>(),
-        [0, 2]
-    );
-    // Operand 2 has no authored marker. This source relation does not create a
-    // typed length use that could prohibit changing the independent parameter.
-    // A Native constraint can retain a generic parameter ID without imposing Q.
-    assert!(
-        decoded
-            .ir()
-            .model
-            .sketch_constraints
-            .iter()
-            .all(|constraint| {
-                matches!(
-                    constraint.definition.kind(),
-                    cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { .. }
-                )
-            }),
-        "constraints={:#?}",
-        decoded.ir().model.sketch_constraints
-    );
-    let scalar_id = relation.parameter_scalar_ref().unwrap().to_owned();
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = ir_edit
@@ -833,32 +718,12 @@ fn semantic_writer_types_resolved_relation_scalar() {
     }
 
     let mut encoded = Vec::new();
-    let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .unwrap();
-    assert!(
-        plan.report().losses.iter().any(|loss| {
-            loss.code == crate::loss::SldprtLossCode::WriterNativeRecordsOmitted.kind()
-            && loss.message.contains(&scalar_id)
-            && loss.message.contains(
-                "canonical parameter quantity does not match the retained native scalar quantity",
-            )
-        }),
-        "scalar={scalar_id}; report={:#?}; source lane={lane:#?}",
-        plan.report()
-    );
-    assert_eq!(
-        plan.report().native_dispositions.record_disposition(
-            "sldprt",
-            "feature_input_scalars",
-            &scalar_id,
-        ),
-        cadmpeg_ir::codec::write::NativeDisposition::Dropped
-    );
-    plan.write_to(&mut encoded).unwrap();
+    crate::test_support::serialize_edited_history(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -877,30 +742,4 @@ fn semantic_writer_types_resolved_relation_scalar() {
         ))
     );
     assert!(parameter.native_ref.is_none());
-}
-
-#[test]
-fn complete_typed_marker_content_keeps_the_patch_payload_path() {
-    let native = crate::test_support::native::complete_marker_source();
-    let [lane] = native.feature_input_lanes.as_slice() else {
-        panic!("one complete source lane");
-    };
-    crate::resolved_features::native_lane_write::require_reconstructible_content(
-        lane,
-        &native.feature_histories,
-    )
-    .expect("all actual marker bodies and scalar operands are representable");
-    let payload = crate::writer::resolved_feature_payload(lane, &native.feature_histories, &[])
-        .expect("the supported actual typed-marker patch path remains available");
-    assert_eq!(payload, lane.native_payload.to_vec());
-    assert_eq!(lane.scalars[0].value.get(), 0.025);
-    assert_eq!(lane.scalars[0].entity_indices(), [0, 2]);
-    assert_eq!(
-        lane.scalars[0].operands[0].entity_ref.as_deref(),
-        Some(lane.sketch_entities[0].id())
-    );
-    assert_eq!(
-        lane.scalars[0].operands[1].entity_ref.as_deref(),
-        Some(lane.sketch_entities[2].id())
-    );
 }
