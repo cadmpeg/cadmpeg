@@ -405,7 +405,6 @@ impl fmt::Display for TargetRefusal {
             TargetRefusalKind::NoDefault {
                 source: DefaultSource::OffCatalogDialect(dialect),
             } => write!(f, "{format} cannot synthesize inherited source dialect {dialect}: this encoder declares no default")?,
-
         }
         self.write_available(f)
     }
@@ -432,6 +431,45 @@ mod tests {
             ),
             aliases,
         }
+    }
+
+    #[test]
+    fn target_refusal_serializes_request_state_and_the_complete_catalog() {
+        let refusal = TargetRefusal::unknown_explicit("5", TargetCatalog::new(TARGETS, None));
+
+        assert_eq!(
+            serde_json::to_value(refusal).expect("target refusal serializes"),
+            serde_json::json!({
+                "format": "fcstd",
+                "refusal": {
+                    "kind": "unknown_explicit",
+                    "requested": "5",
+                },
+                "available": [{
+                    "id": "fcstd:schema-4",
+                    "aliases": ["4"],
+                    "default": false
+                }]
+            })
+        );
+    }
+
+    #[test]
+    fn missing_default_names_an_unrecorded_or_off_catalog_source_dialect() {
+        let refusal = |source| {
+            TargetRefusal::new(
+                TargetRefusalKind::NoDefault { source },
+                TargetCatalog::new(TARGETS, None),
+            )
+        };
+        assert_eq!(
+            refusal(DefaultSource::UnrecordedDialect).to_string(),
+            "fcstd cannot select an inherited write target: the same-format source records no dialect and this encoder declares no default; available targets: fcstd:schema-4"
+        );
+        assert_eq!(
+            refusal(DefaultSource::OffCatalogDialect(crate::dialect_id!("fcstd:schema-2"))).to_string(),
+            "fcstd cannot synthesize inherited source dialect fcstd:schema-2: this encoder declares no default; available targets: fcstd:schema-4"
+        );
     }
 
     #[test]
