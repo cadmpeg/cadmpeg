@@ -416,24 +416,30 @@ fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
     .to_string()
 }
 
-/// Fully typed geometry can replay its original off-catalog dialect. The bare
-/// EOF ``delta_state`` boundary contains no omitted history/design record.
+/// The flagship case: `convert in.f3d -o out.f3d` on an archive that is not the
+/// catalog row keeps the archive it was handed, and says so.
+///
+/// The command line builds `Inherit` for a same-format conversion, and the
+/// resolved dialect is then the source's by construction, so the replay law
+/// admits preservation. Before resolution the report named no dialect at all,
+/// so the bytes went out with the claim unstated.
 #[test]
-fn inherit_replays_a_fully_typed_off_catalog_dialect() {
+fn inherit_replays_an_off_catalog_dialect_and_names_it() {
     let source = f3d_with_smbh_and_manifest_version(&synthetic_geometry_smbh(), "3-3-0-0");
     let result = decode(source.clone());
-    assert!(result.source_fidelity().unrepresented().is_empty());
-    let plan = plan(&result, true, TargetRequest::Inherit).unwrap();
+    let plan = plan(&result, true, TargetRequest::Inherit).expect("preservation is available");
+
     assert!(matches!(
         plan.report().write_path(),
         cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
     ));
-    let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
-    assert_eq!(bytes, source);
+    assert_eq!(named_target(&plan), "f3d:unknown");
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(written, source);
 }
 
-/// An actual opaque history payload cannot be supplied from retained bytes.
+/// An unresolvable inherited target cannot replay source-only content.
 #[test]
 fn inherit_refuses_an_off_catalog_dialect_when_source_content_is_unrepresented() {
     let result = decode(f3d_with_smbh_and_manifest_version(

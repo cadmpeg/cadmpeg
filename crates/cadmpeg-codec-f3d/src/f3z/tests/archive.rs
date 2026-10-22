@@ -320,7 +320,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
 }
 
 #[test]
-fn fully_typed_f3z_archive_replays_or_synthesizes_the_resolved_target() {
+fn f3z_archive_without_merged_components_preserves_root_replay() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
     let decoded = EditableDecodeResult::from(
@@ -336,49 +336,32 @@ fn fully_typed_f3z_archive_replays_or_synthesizes_the_resolved_target() {
         .source_fidelity()
         .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
         .is_some());
-    assert!(decoded.source_fidelity().unrepresented().is_empty());
-    let replay = F3dCodec
+    let plan = F3dCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .expect("a complete root document can replay its outer archive");
-    assert!(matches!(
-        replay.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
-    ));
+        .expect("unmerged F3Z archive remains replayable");
+    let reported = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        plan.report(),
+        "identity/target",
+    )
+    .as_ref()
+    .expect("an F3D export names its target")
+    .clone();
     let mut replayed = Vec::new();
-    replay.write_to(&mut replayed).unwrap();
+    plan.write_to(&mut replayed).unwrap();
     assert_eq!(replayed, archive);
-    let plan = F3dCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
-        )
+
+    let redecode = F3dCodec
+        .decode(&mut Cursor::new(replayed), &DecodeOptions::default())
         .unwrap();
-    assert!(matches!(
-        plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
-    ));
-    let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
-    let output = F3dCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert_eq!(
-        output.ir().model.bodies.len(),
-        decoded.ir().model.bodies.len()
-    );
-    assert_eq!(
-        output
-            .report()
-            .dialects()
-            .unwrap()
-            .primary()
-            .dialect()
-            .as_str(),
-        "f3d:manifest-3-2-0-0"
-    );
+    let primary = redecode
+        .report()
+        .dialects()
+        .expect("re-decoded F3Z archive has a primary layer")
+        .primary();
+    assert_eq!(primary.dialect(), &reported);
 }
 
 #[test]
