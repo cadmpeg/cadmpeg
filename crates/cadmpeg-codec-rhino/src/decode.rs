@@ -6618,45 +6618,59 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+            // `ON_Plane::Transform`: the axes map as vectors and
+            // `CreateFromFrame` rebuilds the frame from their images, so the
+            // `(u, v)` parameterization follows the transform even when it
+            // reverses orientation.
             let source_origin = plane_surface.origin().get();
-            let u_axis = *plane_surface.frame().reference().as_raw();
+            let frame = plane_surface.frame();
+            let u_axis = *frame.reference().as_raw();
+            let v_axis = frame.axis().as_raw().cross(u_axis);
             let origin = placed_finite_point(transform, plane_surface.origin())?;
-            let unit_normal = transform
-                .apply_unit_normal(*plane_surface.frame().axis())
-                .ok_or_else(|| {
-                    "instance plane normal transform could not produce a finite unit normal"
-                        .to_string()
-                })?;
-            let normal = *unit_normal.as_raw();
-            let endpoint = placed_point(
-                transform,
-                Point3::new(
-                    source_origin.x + u_axis.x,
-                    source_origin.y + u_axis.y,
-                    source_origin.z + u_axis.z,
-                ),
-            )?;
-            let projected = cadmpeg_ir::math::Vector3::new(
-                endpoint.x - origin.x,
-                endpoint.y - origin.y,
-                endpoint.z - origin.z,
+            let image = |axis: cadmpeg_ir::math::Vector3| {
+                placed_point(
+                    transform,
+                    Point3::new(
+                        source_origin.x + axis.x,
+                        source_origin.y + axis.y,
+                        source_origin.z + axis.z,
+                    ),
+                )
+                .map(|endpoint| {
+                    cadmpeg_ir::math::Vector3::new(
+                        endpoint.x - origin.x,
+                        endpoint.y - origin.y,
+                        endpoint.z - origin.z,
+                    )
+                })
+            };
+            let x_image = image(u_axis)?;
+            let y_image = image(v_axis)?;
+            let collapsed = || "instance plane transform collapsed its frame".to_string();
+            let x_length = PositiveReal::new(x_image.norm()).ok_or_else(collapsed)?;
+            let x_axis = UnitVector3::normalized_with_admitted_length(x_image, x_length)
+                .ok_or_else(collapsed)?;
+            let x = *x_axis.as_raw();
+            let along = y_image.dot(x);
+            let y_value = cadmpeg_ir::math::Vector3::new(
+                y_image.x - along * x.x,
+                y_image.y - along * x.y,
+                y_image.z - along * x.z,
             );
-            let dot = projected.x * normal.x + projected.y * normal.y + projected.z * normal.z;
-            let value = cadmpeg_ir::math::Vector3::new(
-                projected.x - dot * normal.x,
-                projected.y - dot * normal.y,
-                projected.z - dot * normal.z,
-            );
-            let length = PositiveReal::new(value.norm())
-                .ok_or_else(|| "instance plane transform collapsed its frame".to_string())?;
+            let y_length = PositiveReal::new(y_value.norm()).ok_or_else(collapsed)?;
+            let y = *UnitVector3::normalized_with_admitted_length(y_value, y_length)
+                .ok_or_else(collapsed)?
+                .as_raw();
+            let normal = x.cross(y);
+            let normal_length = PositiveReal::new(normal.norm()).ok_or_else(collapsed)?;
+            let unit_normal = UnitVector3::normalized_with_admitted_length(normal, normal_length)
+                .ok_or_else(collapsed)?;
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(
                     origin,
-                    UnitVector3::normalized_with_admitted_length(value, length)
-                        .and_then(|u_axis| OrthonormalFrame3::from_units(unit_normal, u_axis))
-                        .ok_or_else(|| {
-                            "PlaneSurface.normal/u_axis must form an orthonormal frame".to_string()
-                        })?,
+                    OrthonormalFrame3::from_units(unit_normal, x_axis).ok_or_else(|| {
+                        "PlaneSurface.normal/u_axis must form an orthonormal frame".to_string()
+                    })?,
                 ),
             ))
         }
