@@ -90,6 +90,7 @@ fn label(
             index: record,
             participants: reference_list(&one_based),
             name: name.to_owned(),
+            name_units: None,
             class_id: class_id.into(),
         })
         .expect("valid label fixture"),
