@@ -5162,8 +5162,40 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             };
             let along_count = parameter_kind_count("AlongDistance");
             let against_count = parameter_kind_count("AgainstDistance");
-            let profile_offset_count = parameter_kind_count("ProfileOffset");
-            let side_one_offset_count = parameter_kind_count("Side1Offset");
+            let fixed_lanes = scope.fixed_extrude_parameters();
+            // A fixed lane is usually also the parameter owner of its source
+            // kind; it adds a carrier only when it is not.
+            let lane_count = |source_kind: &str,
+                              lane: Option<
+                &records::feature::fixed_parameters::DesignFixedExtrudeScalar,
+            >| {
+                let lane_is_owner = lane.is_some_and(|lane| {
+                    native.design_parameter_owners.iter().any(|owner| {
+                        design_stream(owner.id()) == native_stream
+                            && owner.scope_record_index() == scope.record_index
+                            && owner.record_index() == lane.record_index
+                            && parameters_by_index
+                                .get(&(native_stream, owner.parameter_record_index()))
+                                .is_some_and(|parameter| parameter.source_kind() == source_kind)
+                    })
+                });
+                parameter_kind_count(source_kind) + usize::from(lane.is_some() && !lane_is_owner)
+            };
+            let profile_offset_count = lane_count(
+                "ProfileOffset",
+                fixed_lanes.and_then(|fixed| fixed.profile_offset.as_ref()),
+            );
+            let side_one_offset_count = lane_count(
+                "Side1Offset",
+                fixed_lanes.and_then(|fixed| fixed.side_one_offset.as_ref()),
+            );
+            // A to-face Extrude's fixed lanes carry only its termination
+            // offset and taper.
+            let fixed_lanes_are_to_face_lanes = fixed_lanes.is_none_or(|fixed| {
+                fixed.along_distance.is_none()
+                    && fixed.against_distance.is_none()
+                    && fixed.side_two_taper_angle.is_none()
+            });
             let omitted_zero_side_one_offset =
                 crate::design::face_resolve::extrude_omits_zero_side_one_offset(
                     scope,
@@ -5220,7 +5252,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 }
                 records::feature::extrude::DesignExtrudeExtent::OneSidedToFace => {
                     along_count == 0
-                        && !has_fixed_extrude_parameters
+                        && fixed_lanes_are_to_face_lanes
                         && against_count == 0
                         && if target_shape_group_count == 1 {
                             side_one_offset_is_absent

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fixed scalar lanes of symmetric and two-sided distance Extrudes.
+//! Fixed scalar lanes of distance and to-face Extrudes.
 
 use crate::design::decode::scopes::fixed_parameters::exact_fixed_extrude_parameters;
 use crate::records::feature::extrude::{
@@ -131,6 +131,8 @@ fn two_sided_distance_extrude_decodes_four_fixed_lanes() {
             taper_angle: Some(lane(14, 0.0, offsets[1])),
             against_distance: Some(distance_lane(17, 0.2, offsets[2])),
             side_two_taper_angle: Some(lane(20, 0.0, offsets[3])),
+            profile_offset: None,
+            side_one_offset: None,
         })
     );
 
@@ -160,6 +162,149 @@ fn symmetric_distance_extrude_decodes_two_fixed_lanes() {
             taper_angle: Some(lane(14, 0.0, offsets[1])),
             against_distance: None,
             side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: None,
+        })
+    );
+}
+
+/// A reference-aware prologue at offset zero whose seven nullable slots
+/// start at offset 70, followed by `lanes`. Returns the bytes, the lane value
+/// offsets, and the offset of the first-side extent value.
+fn slotted_prologue(
+    slots: [Option<u32>; 7],
+    payload_reference: Option<u32>,
+    lanes: &[(u32, u8, f64)],
+) -> (Vec<u8>, Vec<u64>, u64) {
+    let mut bytes = vec![0; 70];
+    for slot in slots {
+        match slot {
+            None => bytes.push(0),
+            Some(record_index) => {
+                bytes.push(1);
+                bytes.extend_from_slice(&record_index.to_le_bytes());
+                bytes.extend_from_slice(&[0; 6]);
+            }
+        }
+    }
+    let extent_at = bytes.len();
+    match payload_reference {
+        Some(record_index) => {
+            bytes.extend_from_slice(&2u32.to_le_bytes());
+            bytes.push(1);
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+        None => bytes.extend_from_slice(&1u32.to_le_bytes()),
+    }
+    bytes.resize(bytes.len() + 16, 0);
+    let prologue_len = bytes.len();
+    let (lane_bytes, offsets) = scalar_lanes(lanes);
+    bytes.extend_from_slice(&lane_bytes);
+    let offsets = offsets
+        .into_iter()
+        .map(|offset| offset + u64_from_index(prologue_len))
+        .collect();
+    (bytes, offsets, u64_from_index(extent_at))
+}
+
+fn slotted_extrude(
+    extent: DesignExtrudeExtent,
+    start: DesignExtrudeStart,
+    extent_at: u64,
+    references: Vec<u32>,
+) -> DesignParameterScope {
+    let mut scope = distance_extrude(extent, references);
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(Some(slot)) =
+        scope.payload_mut()
+    {
+        if let Some(DesignExtrudePrologue::ReferenceAware {
+            side_extent_discriminators,
+            side_extent_discriminator_offsets,
+            start: prologue_start,
+            ..
+        }) = &mut slot.extrude_prologue
+        {
+            *side_extent_discriminators = match extent {
+                DesignExtrudeExtent::OneSidedToFace => [2, 0],
+                _ => [1, 0],
+            };
+            *side_extent_discriminator_offsets = [extent_at, extent_at + 13];
+            *prologue_start = start;
+        }
+    }
+    scope
+}
+
+/// A face-start one-sided distance Extrude stores its start offset, distance,
+/// and taper in the lanes that nullable slots zero, two, and five name; their
+/// lane ordinals do not follow the distance-lane order.
+#[test]
+fn face_start_extrude_assigns_lanes_by_prologue_slot() {
+    let (bytes, offsets, extent_at) = slotted_prologue(
+        [Some(11), None, Some(14), Some(30), None, Some(17), None],
+        None,
+        &[(11, 0, 0.0), (14, 1, -0.29), (17, 2, 0.0)],
+    );
+    let scope = slotted_extrude(
+        DesignExtrudeExtent::OneSidedDistance,
+        DesignExtrudeStart::FromFace,
+        extent_at,
+        vec![11, 14, 17, 30],
+    );
+    assert_eq!(
+        decoded(&bytes, &scope),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(distance_lane(
+                14, -0.29, offsets[1]
+            ))),
+            taper_angle: Some(lane(17, 0.0, offsets[2])),
+            against_distance: None,
+            side_two_taper_angle: None,
+            profile_offset: Some(lane(11, 0.0, offsets[0])),
+            side_one_offset: None,
+        })
+    );
+
+    // A lane that no slot names is not assigned.
+    let (bytes, _, extent_at) = slotted_prologue(
+        [None, None, Some(14), Some(30), None, Some(17), None],
+        None,
+        &[(11, 0, 0.0), (14, 1, -0.29), (17, 2, 0.0)],
+    );
+    let scope = slotted_extrude(
+        DesignExtrudeExtent::OneSidedDistance,
+        DesignExtrudeStart::FromFace,
+        extent_at,
+        vec![11, 14, 17, 30],
+    );
+    assert_eq!(decoded(&bytes, &scope), None);
+}
+
+/// A to-face Extrude names its termination offset by the first reference of
+/// the extent target payload and its taper by nullable slot five.
+#[test]
+fn to_face_extrude_assigns_offset_and_taper_lanes() {
+    let (bytes, offsets, extent_at) = slotted_prologue(
+        [None, None, None, Some(30), None, Some(17), Some(40)],
+        Some(11),
+        &[(11, 0, 0.25), (17, 1, 0.0)],
+    );
+    let scope = slotted_extrude(
+        DesignExtrudeExtent::OneSidedToFace,
+        DesignExtrudeStart::ProfilePlane,
+        extent_at,
+        vec![11, 17, 30, 40],
+    );
+    assert_eq!(
+        decoded(&bytes, &scope),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: None,
+            taper_angle: Some(lane(17, 0.0, offsets[1])),
+            against_distance: None,
+            side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: Some(lane(11, 0.25, offsets[0])),
         })
     );
 }
