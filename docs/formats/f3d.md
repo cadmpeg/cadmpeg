@@ -39,7 +39,28 @@ A `TSplines.BlobParts/*.tsm` entry is a UTF-8, line-oriented `TS0200` control-ca
 
 Topology uses zero-based indices in record order. An `f root flags` record defines a face and one half-edge in its boundary. An `e root scalar` record defines an edge and one of its two half-edges; `scalar` is a positive f64 knot interval, symmetric for both half-edges, and is nominally one. A `v root direction` record defines a control vertex. An `l next previous mate vertex face edge flags` record defines a half-edge: `next` and `previous` are reciprocal within a face ring, `mate` is reciprocal across an edge, `vertex` is the half-edge's terminal control vertex, `face` is the owning face index or `-1` on a boundary mate, and `edge` is the index of the owning edge. An `e` root and its mate carry the same `edge` value, and that value is the `e` record's own index. Starting at an `f` root and following `next` yields that face's directed edge ring. For an `e` root, the directed edge runs from the mate's terminal vertex to the root's terminal vertex. Every half-edge belongs to exactly one `e` root pair. An `ec edge flags` record marks the indexed edge as a crease. Vertex subdivision tags follow crease incidence: zero crease edges is smooth, one is dart, two is crease, and three or more is corner.
 
-For `end-conditions SUBD_CREASES`, each `106ek value` record is one positional edge-knot mirror. The run has one record for every `e` slot, including deleted slots. A live slot repeats the positive `e` knot interval; a deleted slot has value `-1`. The mirror has no independent neutral field. A run whose values or arity do not satisfy this invariant remains native T-spline state.
+Each `106ek value` record is one cell of extension 106, the user-knot-interval
+override vector. Its ordinal addresses the same ordinal `e` slot, including
+deleted slots. Exact `-1.0` means no override: the effective interval is the
+base interval stored by `e`. A finite value greater than or equal to zero is
+an explicit override. Zero is a present interval and produces a repeated
+knot. An explicit value equal to the base interval remains present. A deleted
+edge slot requires exact `-1.0`.
+
+A typed user-knot run has exactly one record per `e` slot, forms one
+uninterrupted block after the final `e` record, and has valid finite values.
+An incomplete, split, displaced, or invalid run remains native T-spline state.
+An end-condition declaration does not create extension 106. The
+`SUBD_CREASES` mirror form explicitly repeats each live edge's base interval
+and stores `-1` for each deleted slot; these values have the same override
+semantics as the independent intervals in a `MULTIPLE_KNOTS` form.
+
+The user override follows the edge through an identity-preserving edit. A
+writer emits one value per source edge slot when the extension is present:
+the preserved override for a live edge, or `-1` for an inherited interval,
+a deleted slot, or a new edge with no supplied override. Removing the extension
+and assigning zero to every live edge are distinct operations. Neither
+operation changes the base interval stored by `e`.
 
 A bare `f`, `e`, `v`, `l`, or `0g` token with no operands is a deleted slot, not a malformed line. It consumes an index in its record order and defines no element, so every index in the program counts bare and populated records alike; half-edge reciprocity closes only under that rule, and no half-edge names a deleted `l` slot. A deleted slot has no counterpart in the Design segment's per-element records, whose counts equal the populated token counts alone.
 

@@ -367,12 +367,3 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** Treating every radial operand as a local topology slot rejects valid large cages and assigns some native IDs to unrelated neutral elements.
 
-### TS-07. `106ek` edge-slot state form
-
-**Question.** What state does a non-interval `106ek` run carry?
-
-**Known.** In `SUBD_CREASES` cages, the `106ek value` run is a positional mirror of the `e` knot intervals, including `-1` for deleted `e` slots. A distinct form occurs with `MULTIPLE_KNOTS`: it also has one value per `e` slot, including deleted slots, but its populated values are signed `-1`, `0`, or `1` and do not equal the `e` knot intervals. The value is not assigned to crease state, boundary state, or symmetry-plane side.
-
-**Need.** A controlled operation that changes the `MULTIPLE_KNOTS` `106ek` values while topology, symmetry, crease tags, knot intervals, and selection stay fixed must identify the state. The reader can then bind each value to the positional neutral edge, and the writer can regenerate the run after an edit.
-
-**Conflict.** Treating the `MULTIPLE_KNOTS` values as knot intervals, crease flags, boundary flags, or symmetry-plane sides assigns a field that the record does not carry.
