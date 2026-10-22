@@ -225,6 +225,16 @@ the record grammar does not identify one construction.
 
 **Need.** A stream with one of these pcurves present, together with the surface whose chart reproduces a known point of the construction, gives the chart. A pcurve on an analytic support then converts with the rule of §6.2, and the F3D writer inverts it.
 
+### GC-40. Support parameters of a revolved conic
+
+**Question.** How does the neutral model state an intersection support whose pcurves use the parameters of a `rot_spl_sur` construction with an `ellipse` profile, when the solved B-spline surface of that construction has other parameters at the same points?
+
+**Known.** `asm.md` §6.3 `rot_spl_sur` gives the profile curve, axis, and solved surface. In an `int_int_cur` whose support is such a surface, the support pcurve stores the conic angle of the profile `ellipse` as U and the right-handed revolution angle about the stored axis direction as V. The solved surface uses rational quadratic arcs whose knots are the same angles; between knots its parameter is not the angle. One stream with an oblate revolved ellipse misses its intcurve end points by 0.065 mm and 0.104 mm when the pcurve is evaluated on the solved surface, and by less than `1e-8` mm when the same parameters are evaluated on the exact revolution or mapped through the half-angle relation of each rational arc.
+
+**Need.** The support contract and the pcurve evaluation require the exact construction. The decoder can state the exact revolution with a conic directrix, but a direct procedural carrier cannot keep the solved surface and its fit tolerance, and a procedural carrier with a solved cache evaluates on the cache.
+
+**Conflict.** `cad-ir.md` reads `cache_fit_tolerance` as the deviation between the construction and its solved carrier at the same parameters. These solved surfaces agree with the construction in position, not in parameters. The model needs a decision: retain such a cache without evaluation precedence, map pcurves into the cache parameters, or keep the support pcurve out of the contract.
+
 ## 2. Topology
 
 ### TG-01. Missing partner coedge substitution
