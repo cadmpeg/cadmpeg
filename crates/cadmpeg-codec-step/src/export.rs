@@ -255,10 +255,10 @@ struct WrittenSurface {
 
 mod pcurves;
 
-/// One coedge's parameter-space use, including its own parameter interval.
 /// A pcurve's parameter-space start and end.
 type PcurveEnds = ([f64; 2], [f64; 2]);
 
+/// One coedge's parameter-space use, including its own parameter interval.
 #[derive(Clone, Copy)]
 struct PcurveUse<'a> {
     use_: &'a cadmpeg_ir::topology::PcurveUse,

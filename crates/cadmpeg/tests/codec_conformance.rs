@@ -696,18 +696,23 @@ mod product_roundtrip {
 /// whose angle 0 is off the ellipse axes, and a parabola subset with no local
 /// cache. Each is the curve of one unit-cube edge, through both of its
 /// vertices, in either sense.
-#[cfg(all(feature = "step", feature = "iges"))]
+#[cfg(all(feature = "step", feature = "iges", feature = "f3d"))]
 mod subset_carriers {
     #![allow(clippy::unwrap_used)]
+
+    use std::io::Cursor;
 
     use cadmpeg_codec_iges::IgesCodec;
     use cadmpeg_codec_step::StepCodec;
     use cadmpeg_ir::codec::write::target::TargetRequest;
     use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::eval::admission::EvaluationAdmission;
     use cadmpeg_ir::eval::decode::curve_point;
+    use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::{EllipseCurve, ParabolaCurve};
     use cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction;
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
     use cadmpeg_ir::geometry::{
         CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
     };
@@ -720,9 +725,13 @@ mod subset_carriers {
     enum Basis {
         Ellipse,
         Parabola,
+        Nurbs,
     }
 
     const RANGE: [f64; 2] = [0.7, 2.0];
+
+    /// Absolute tolerance for an edge range to lie in its subset interval.
+    const EPS_SUBSET_RANGE: f64 = 1.0e-9;
 
     fn canonical(
         basis: Basis,
@@ -738,6 +747,30 @@ mod subset_carriers {
             Basis::Parabola => SolvedCurveGeometry::Parabola(
                 ParabolaCurve::try_new(origin, normal, x, size).unwrap(),
             ),
+            Basis::Nurbs => {
+                let y = cross(normal, x);
+                let poles = [[0.0, 0.0], [1.0, 1.0], [2.0, 0.0], [3.0, 1.0]]
+                    .into_iter()
+                    .map(|[u, v]| {
+                        let offset = sum(scaled(x, u * size), scaled(y, v * size));
+                        FinitePoint3::new(Point3::new(
+                            origin.x + offset.x,
+                            origin.y + offset.y,
+                            origin.z + offset.z,
+                        ))
+                        .unwrap()
+                    })
+                    .collect();
+                SolvedCurveGeometry::Nurbs(
+                    NurbsCurve::new(
+                        2,
+                        vec![0.0, 0.0, 0.0, 1.5, 3.0, 3.0, 3.0],
+                        NurbsPoles3::Polynomial { points: poles },
+                        false,
+                    )
+                    .unwrap(),
+                )
+            }
         }
     }
 
@@ -802,6 +835,19 @@ mod subset_carriers {
 
     /// The unit cube with its first edge on a subset of `basis`.
     fn cube(basis: Basis, sense: bool) -> CadIr {
+        chain(basis, &[(RANGE, sense)])
+    }
+
+    /// The links of a two-level chain whose outer local range maps onto
+    /// `RANGE` of the basis through an inner subset over `[0.5, 3.0]`.
+    fn nested_links(inner: bool, outer: bool) -> [([f64; 2], bool); 2] {
+        let outer_range = if inner { [0.2, 1.5] } else { [1.0, 2.3] };
+        [([0.5, 3.0], inner), (outer_range, outer)]
+    }
+
+    /// The unit cube with its first edge on a chain of subsets over `basis`,
+    /// innermost first, that maps the edge onto `RANGE` of the basis.
+    fn chain(basis: Basis, links: &[([f64; 2], bool)]) -> CadIr {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let edge = ir.model.edges[0].clone();
         let position = |vertex: &cadmpeg_ir::ids::VertexId| {
@@ -821,56 +867,101 @@ mod subset_carriers {
         } else {
             Vector3::new(0.0, 1.0, 0.0)
         };
-        let (first, second) = if sense { (start, end) } else { (end, start) };
-        let source = through(basis, first, second, normal);
-        let subset = SubsetCurveConstruction::try_new(
-            cadmpeg_ir::ids::CurveId::mint("test:model:curve#subset-source").unwrap(),
-            RANGE,
-            sense,
-            None,
-        )
-        .unwrap();
-        let cache = subset.local_cache(&source);
-        assert_eq!(
-            matches!(cache, Some(SolvedCurveGeometry::Transformed(_))),
-            matches!(basis, Basis::Ellipse),
-            "{basis:?}"
-        );
+        let forward = links.iter().filter(|(_, sense)| !sense).count() % 2 == 0;
+        let (first, second) = if forward { (start, end) } else { (end, start) };
+        let root = cadmpeg_ir::ids::CurveId::mint("test:model:curve#subset-source").unwrap();
+        let mut source = (root.clone(), Some(through(basis, first, second, normal)));
         ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-            id: subset.source().clone(),
-            geometry: CurveGeometry::Solved(source),
+            id: root,
+            geometry: CurveGeometry::Solved(source.1.clone().unwrap()),
             parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new(RANGE),
             source_object: None,
         });
-        let curve_id = edge.curve().unwrap().clone();
-        let construction = ProceduralCurveId::mint("test:model:construction#subset").unwrap();
+        let edge_curve = edge.curve().unwrap().clone();
+        let mut span = 0.0;
+        for (index, (range, sense)) in links.iter().enumerate() {
+            let curve_id = if index + 1 == links.len() {
+                edge_curve.clone()
+            } else {
+                let curve_id =
+                    cadmpeg_ir::ids::CurveId::mint(format!("test:model:curve#subset-{index}"))
+                        .unwrap();
+                ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+                    id: curve_id.clone(),
+                    geometry: CurveGeometry::Solved(line_placeholder()),
+                    parameter_range: None,
+                    source_object: None,
+                });
+                curve_id
+            };
+            let subset =
+                SubsetCurveConstruction::try_new(source.0.clone(), *range, *sense, None).unwrap();
+            let cache = source
+                .1
+                .as_ref()
+                .and_then(|geometry| subset.local_cache(geometry));
+            if links.len() == 1 {
+                assert_eq!(
+                    matches!(cache, Some(SolvedCurveGeometry::Transformed(_))),
+                    matches!(basis, Basis::Ellipse),
+                    "{basis:?}"
+                );
+            }
+            let construction =
+                ProceduralCurveId::mint(format!("test:model:construction#subset-{index}")).unwrap();
+            ir.model
+                .curves
+                .iter_mut()
+                .find(|curve| curve.id == curve_id)
+                .unwrap()
+                .geometry = match &cache {
+                Some(cache) => CurveGeometry::Solved(cache.clone()),
+                None => CurveGeometry::Procedural {
+                    construction: construction.clone(),
+                    cache: None,
+                },
+            };
+            let mut definition = ProceduralCurveDefinition::Subset(subset);
+            if cache.is_some() {
+                definition
+                    .set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(
+                        cadmpeg_ir::geometry::FitTolerance::ZERO,
+                    ))
+                    .unwrap();
+            }
+            ir.model
+                .add_procedural_curve(&curve_id, ProceduralCurve::new(construction, definition))
+                .unwrap();
+            span = range[1] - range[0];
+            source = (curve_id, cache);
+        }
+        ir.model.edges[0].set_param_range(Some(ParameterInterval::new([0.0, span]).unwrap()));
         ir.model
             .curves
-            .iter_mut()
-            .find(|curve| curve.id == curve_id)
-            .unwrap()
-            .geometry = match cache {
-            Some(cache) => CurveGeometry::Solved(cache),
-            None => CurveGeometry::Procedural {
-                construction: construction.clone(),
-                cache: None,
-            },
-        };
-        let mut definition = ProceduralCurveDefinition::Subset(subset);
-        if matches!(basis, Basis::Ellipse) {
-            definition
-                .set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(
-                    cadmpeg_ir::geometry::FitTolerance::ZERO,
-                ))
-                .unwrap();
-        }
-        ir.model
-            .add_procedural_curve(&curve_id, ProceduralCurve::new(construction, definition))
-            .unwrap();
-        ir.model.edges[0].set_param_range(Some(
-            ParameterInterval::new([0.0, RANGE[1] - RANGE[0]]).unwrap(),
-        ));
+            .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         ir
+    }
+
+    /// A carrier that `chain` replaces before the curve is used.
+    fn line_placeholder() -> SolvedCurveGeometry {
+        SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )
+    }
+
+    fn assert_valid(ir: &CadIr, label: &str) {
+        let validation = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
+        let errors = validation
+            .findings
+            .iter()
+            .filter(|finding| finding.severity == cadmpeg_ir::report::Severity::Error)
+            .map(|finding| finding.message.as_str())
+            .collect::<Vec<_>>();
+        assert!(errors.is_empty(), "{label}: {errors:#?}");
     }
 
     #[test]
@@ -926,6 +1017,79 @@ mod subset_carriers {
                     .unwrap_or_else(|error| panic!("{basis:?} {sense}: {error}"));
                 assert!(!iges.is_empty());
             }
+        }
+    }
+
+    #[test]
+    fn iges_writes_a_nested_subset_edge_on_its_root_carrier() {
+        for inner in [true, false] {
+            for outer in [true, false] {
+                let label = format!("inner {inner} outer {outer}");
+                let ir = chain(Basis::Ellipse, &nested_links(inner, outer));
+                assert_valid(&ir, &label);
+                let mut iges = Vec::new();
+                IgesCodec
+                    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                    .and_then(|plan| plan.write_to(&mut iges))
+                    .unwrap_or_else(|error| panic!("{label}: {error}"));
+                let decoded = IgesCodec
+                    .decode(&mut Cursor::new(iges), &DecodeOptions::default())
+                    .unwrap_or_else(|error| panic!("{label}: {error}"));
+                assert_valid(decoded.ir(), &label);
+            }
+        }
+    }
+
+    #[test]
+    fn f3d_writes_nurbs_subset_edges_on_the_parameter_of_their_source() {
+        let mut models = vec![
+            ("sense true".to_owned(), cube(Basis::Nurbs, true)),
+            ("sense false".to_owned(), cube(Basis::Nurbs, false)),
+        ];
+        for inner in [true, false] {
+            for outer in [true, false] {
+                models.push((
+                    format!("inner {inner} outer {outer}"),
+                    chain(Basis::Nurbs, &nested_links(inner, outer)),
+                ));
+            }
+        }
+        for (label, ir) in models {
+            assert_valid(&ir, &label);
+            let mut f3d = Vec::new();
+            cadmpeg_codec_f3d::F3dCodec
+                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .and_then(|plan| plan.write_to(&mut f3d))
+                .unwrap_or_else(|error| panic!("{label}: {error}"));
+            let decoded = cadmpeg_codec_f3d::F3dCodec
+                .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+                .unwrap_or_else(|error| panic!("{label}: {error}"));
+            assert_valid(decoded.ir(), &label);
+            let decoded = decoded.ir();
+            let mut subset_edges = 0;
+            for procedural in &decoded.model.procedural_curves {
+                let ProceduralCurveDefinition::Subset(subset) = procedural.definition() else {
+                    continue;
+                };
+                let [first, last] = subset.parameter_range().endpoints();
+                let span = last - first;
+                let owner = decoded.model.procedural_curve_owner(&procedural.id);
+                for edge in decoded
+                    .model
+                    .edges
+                    .iter()
+                    .filter(|edge| edge.curve() == owner)
+                {
+                    let [start, end] = edge.param_range().unwrap().get();
+                    assert!(
+                        start >= -EPS_SUBSET_RANGE && end <= span + EPS_SUBSET_RANGE,
+                        "{label}: edge range {:?} outside the local subset domain [0, {span}]",
+                        [start, end]
+                    );
+                    subset_edges += 1;
+                }
+            }
+            assert_eq!(subset_edges, 1, "{label}");
         }
     }
 }

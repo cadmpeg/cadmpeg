@@ -166,7 +166,7 @@ Procedural surface definitions are:
 
 A blend radius law is constant, linear between endpoint radii, or an explicit NURBS law. An unresolved support occupies its fixed side as `null`; omission of the semantic source is reported as decode loss.
 
-Procedural curve definitions are intersection, projection, offset, blend spine, or unknown. Intersection keeps two fixed optional support slots. Projection identifies source curve, support surface, and optional projection direction. Offset identifies its source curve, signed distance, optional support surface, and an optional fixed plane-normal direction when the source defines a free-space planar offset.
+Procedural curve definitions are intersection, projection, offset, blend spine, or unknown. Intersection keeps two fixed optional support slots. Projection identifies source curve, support surface, and optional projection direction. Offset identifies its source curve, signed distance, optional support surface, and an optional fixed plane-normal direction when the source defines a free-space planar offset. Subset identifies its source curve, an ordered interval `[first, last]` on the source parameter `t`, and a sense. A subset curve runs on its local parameter `s`, which is `0` at the first trim: `s = t - first` for a true sense and `s = last - t` for a false sense, over `[0, last - first]`. The subset's solved cache, `Curve.parameter_range`, the `Edge.param_range` of each edge on the subset, and each coedge use-curve interval on it are on `s`. A codec whose trimmed-curve record keeps the source parameter maps between `t` and `s` at decode and encode.
 
 ## Source-fidelity annotations
 

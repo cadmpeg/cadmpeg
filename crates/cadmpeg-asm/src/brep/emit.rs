@@ -3336,11 +3336,15 @@ fn emit_carrier_curve(
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source)),
                             source_object: None,
                         });
+                        // The carrier of a curve that only reversed edges use
+                        // runs against its parent.
+                        let sense =
+                            !reversed_curve_refs.contains(&i) || forward_curve_refs.contains(&i);
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(
                             cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
                                 source_id,
                                 parameter_range,
-                                true,
+                                sense,
                                 None,
                             )
                             .map_err(|_| "subset-curve range is not finite and ordered")?,
