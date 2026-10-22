@@ -305,7 +305,6 @@ fn compact_generated_edges_match_the_linear_repeat_check() {
                 parent: "lane".into(),
                 ordinal,
                 sequence: ordinal,
-                offset: Some(u64::from(ordinal)),
                 object_name_ref: "name".into(),
                 feature_ref: "fillet".into(),
                 local_edge_ids: (0..next(3)).map(|_| next(4)).collect(),

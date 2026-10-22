@@ -124,23 +124,8 @@ fn stored_views_host_real_step_and_freecad_member_framers() {
     ]);
     source(&bytes, |ctx, view| {
         let mut frames = Vec::new();
-        let entries = frame(ctx, view, &mut frames).expect("real archive parents");
-        crate::framing::step::frame_zip_root(
-            ctx,
-            entries[0].payload(),
-            entries[0].name(),
-            entries[0].frame_index(),
-            &mut frames,
-        )
-        .expect("original STEP payload");
-        crate::framing::freecad::frame_xml_member(
-            ctx,
-            entries[1].payload(),
-            entries[1].name(),
-            entries[1].frame_index(),
-            &mut frames,
-        )
-        .expect("original XML payload");
+        crate::contract::zip::frame_stored_members(ctx, view, &mut frames)
+            .expect("real archive parents and embedded source members");
         PartTable::load()
             .expect("table")
             .validate(ctx, &frames)
@@ -361,3 +346,5 @@ fn edit_boundary_compression_encryption_and_source_provenance_are_enforced() {
 mod zip64;
 
 mod signature;
+
+mod recovery;

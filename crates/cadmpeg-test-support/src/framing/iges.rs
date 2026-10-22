@@ -11,16 +11,18 @@ use cards::{Card, Kind};
 
 mod cards;
 mod global;
+mod parameter;
 mod rebuild;
 
 pub use global::frame_global;
-pub use rebuild::{rebuild, Edit};
+pub use parameter::frame_parameters;
+pub use rebuild::{rebuild, rebuild_fields, Edit, FieldEdit};
 
 /// Append actual physical ASCII cards, sections and Directory fields.
 ///
-/// This slice covers nine Appendix C levels. Use [`frame_global`] for Global
-/// fields. Parameter fields, compressed ASCII and binary IGES are not
-/// implemented here. A cut-short
+/// This slice covers nine Appendix C levels. Use [`frame_global`] and
+/// [`frame_parameters`] for the corresponding field grammars. Compressed ASCII
+/// and binary IGES are not implemented here. A cut-short
 /// card needs its actual column-73 marker; an earlier cut is an unmarked line.
 /// Overlong marked lines that do not meet the packed-card rule have no frame.
 /// This scan copies no source bytes and attributes no semantic reads.

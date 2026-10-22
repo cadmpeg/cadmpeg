@@ -39,14 +39,24 @@ fn pattern_scalar(name: &str, value: f64) -> crate::test_support::source_fidelit
 fn uniform_pattern_intervals_yield_one_location_per_occurrence() {
     let length = pattern_scalar("Length", 12.0);
     let properties = [&length.property];
-    let admitted = crate::test_support::source_fidelity::with_property_reader(
+    let admitted = crate::test_support::source_fidelity::with_decode_sources(
         &[0],
         &[&length],
+        &[],
         &DecodePolicy::default(),
-        |ctx| {
-            crate::design::pattern_locations(ctx, &properties, "", 4, 0, ("Length", "Offset"), &[])
-                .expect("compute the pattern locations")
-                .expect("uniform locations")
+        |ctx, sources| {
+            crate::design::pattern_locations(
+                ctx,
+                &properties,
+                "",
+                4,
+                0,
+                ("Length", "Offset"),
+                &[],
+                sources,
+            )
+            .expect("compute the pattern locations")
+            .expect("uniform locations")
         },
     );
     assert_eq!(admitted.len(), 4);

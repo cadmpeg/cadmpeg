@@ -56,9 +56,17 @@ pub(super) fn finalize(
         names,
         scalars,
         relation_instances,
-        edge_selections,
         surface_selections,
     );
+    for record in &lane.edge_selections {
+        let position = source_pointers
+            .get(&record.id)
+            .and_then(|fields| fields.get("offset"))
+            .ok_or_else(|| {
+                CodecError::malformed("edge selection lacks its source-layout pointer")
+            })?;
+        positions.insert(*position);
+    }
     for record in &lane.references {
         let position = source_pointers
             .get(&record.id)
@@ -123,9 +131,17 @@ pub(super) fn finalize(
         names,
         scalars,
         relation_instances,
-        edge_selections,
         surface_selections,
     );
+    for record in &mut lane.edge_selections {
+        if let Some(rank) = source_pointers
+            .get(&record.id)
+            .and_then(|fields| fields.get("offset"))
+            .and_then(|position| ranks.get(position))
+        {
+            record.sequence = *rank;
+        }
+    }
     for record in &mut lane.references {
         if let Some(rank) = source_pointers
             .get(&record.id)

@@ -2316,6 +2316,7 @@ pub(crate) fn parse_payloads(
     ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
+    sources: &crate::entry_sources::EntrySources<'_>,
 ) -> Result<Vec<ShapePayloadRecord>, CodecError> {
     let mut entries_by_name = BTreeMap::new();
     for entry in entries {
@@ -2334,16 +2335,18 @@ pub(crate) fn parse_payloads(
                 "missing exact-shape entry {name}"
             )));
         };
-        let payload = if entry.data().is_empty() {
+        let source = sources.view(entry)?;
+        let bytes = source.window();
+        let payload = if bytes.is_empty() {
             ShapePayload::Empty
         } else if name
             .rsplit_once('.')
             .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("bin"))
         {
-            let (facts, version) = parse_binary_prefix(entry.data())?;
+            let (facts, version) = parse_binary_prefix(bytes)?;
             ShapePayload::Binary { facts, version }
         } else {
-            let (facts, version) = parse_text(entry.data())?;
+            let (facts, version) = parse_text(bytes)?;
             ShapePayload::Text { facts, version }
         };
         payloads.push(ShapePayloadRecord {

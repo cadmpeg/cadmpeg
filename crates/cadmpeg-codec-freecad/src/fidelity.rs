@@ -37,8 +37,8 @@ pub(crate) fn retain(
         .map_err(CodecError::malformed)
 }
 
-/// Record a subrange without retaining its image twice. The complete logical
-/// entry image remains available in fidelity for layout reuse.
+/// Record an unknown subrange without another image. Source processing reopens
+/// its genuine member from the one retained original archive when necessary.
 pub(crate) fn evidence(
     fidelity: &mut SourceFidelity,
     id: &str,

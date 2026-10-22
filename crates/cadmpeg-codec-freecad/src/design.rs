@@ -4,7 +4,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, VecDeque};
 
-use cadmpeg_core::decode::{View, WorkBudget};
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -80,6 +80,7 @@ pub(crate) fn transfer(
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     entries: &[EntryRecord],
+    entry_sources: &crate::entry_sources::EntrySources<'_>,
     program_version: Option<&str>,
 ) -> Result<(BTreeSet<String>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
     let mut losses = Vec::new();
@@ -191,8 +192,14 @@ pub(crate) fn transfer(
             imported_geometry_definition(ctx, &object.type_name, &owned)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_part_construction_geometry(&object.type_name) {
-            part_construction_geometry_definition(ctx, &object.type_name, &owned, entries)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            part_construction_geometry_definition(
+                ctx,
+                &object.type_name,
+                &owned,
+                entries,
+                entry_sources,
+            )?
+            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_primitive(&object.type_name) {
             primitive_definition(ctx, &object.type_name, &owned)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
@@ -239,6 +246,7 @@ pub(crate) fn transfer(
                     objects,
                     properties_by_owner: &properties_by_owner,
                     entries,
+                    entry_sources,
                 },
             )?
             .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
@@ -330,13 +338,20 @@ pub(crate) fn transfer(
             draft_definition(ctx, &owned, objects, &properties_by_owner)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_fillet(&object.type_name) {
-            fillet_definition(ctx, &object.type_name, &owned, entries)?
+            fillet_definition(ctx, &object.type_name, &owned, entries, entry_sources)?
                 .or_else(|| cached_shape_definition(&owned))
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_chamfer(&object.type_name) {
-            chamfer_definition(ctx, &object.type_name, &owned, entries, program_version)?
-                .or_else(|| cached_shape_definition(&owned))
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            chamfer_definition(
+                ctx,
+                &object.type_name,
+                &owned,
+                entries,
+                entry_sources,
+                program_version,
+            )?
+            .or_else(|| cached_shape_definition(&owned))
+            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else {
             native_definition(ctx, &object.type_name, &owned)?
         };
@@ -4340,6 +4355,7 @@ fn vector_list_property(
     properties: &[&PropertyRecord],
     name: &str,
     entries: &[EntryRecord],
+    entry_sources: &crate::entry_sources::EntrySources<'_>,
 ) -> Result<Option<Vec<cadmpeg_ir::features::FinitePoint3>>, CodecError> {
     let Some(property) = property(properties, name) else {
         return Ok(None);
@@ -4361,14 +4377,10 @@ fn vector_list_property(
             if property.side_entries() != [file] {
                 return Ok(None);
             }
-            let Some(data) = entries
-                .iter()
-                .find(|entry| entry.name() == file)
-                .map(crate::native::EntryRecord::data)
-            else {
+            let Some(entry) = entries.iter().find(|entry| entry.name() == file) else {
                 return Ok(None);
             };
-            let mut view = View::over_retained(data);
+            let mut view = entry_sources.view(entry)?;
             let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
                 return Ok(None);
             };
@@ -4403,9 +4415,10 @@ fn part_construction_geometry_definition(
     kind: &str,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
+    entry_sources: &crate::entry_sources::EntrySources<'_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let polygon_points = if kind == "Part::Polygon" {
-        vector_list_property(ctx, properties, "Nodes", entries)?
+        vector_list_property(ctx, properties, "Nodes", entries, entry_sources)?
     } else {
         None
     };
@@ -5209,6 +5222,7 @@ fn fillet_definition(
     kind: &str,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
+    entry_sources: &crate::entry_sources::EntrySources<'_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some(edges) = dress_up_edge_selection(ctx, kind, properties)? else {
         return Ok(None);
@@ -5217,7 +5231,7 @@ fn fillet_definition(
         return Ok(None);
     }
     let part_values = if kind == "Part::Fillet" {
-        part_fillet_edge_values(properties, entries)?
+        part_fillet_edge_values(properties, entries, entry_sources)?
     } else {
         None
     };
@@ -5256,6 +5270,7 @@ fn chamfer_definition(
     kind: &str,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
+    entry_sources: &crate::entry_sources::EntrySources<'_>,
     program_version: Option<&str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some(edges) = dress_up_edge_selection(ctx, kind, properties)? else {
@@ -5265,7 +5280,7 @@ fn chamfer_definition(
         return Ok(None);
     }
     let part_values = if kind == "Part::Chamfer" {
-        part_fillet_edge_values(properties, entries)?
+        part_fillet_edge_values(properties, entries, entry_sources)?
     } else {
         None
     };
@@ -5321,6 +5336,7 @@ fn chamfer_definition(
 fn part_fillet_edge_values(
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
+    entry_sources: &crate::entry_sources::EntrySources<'_>,
 ) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
     let Some(property) = property(properties, "Edges") else {
         return Ok(None);
@@ -5328,14 +5344,10 @@ fn part_fillet_edge_values(
     let Some(entry_name) = property.side_entries().first() else {
         return Ok(None);
     };
-    let Some(data) = entries
-        .iter()
-        .find(|entry| entry.name() == *entry_name)
-        .map(crate::native::EntryRecord::data)
-    else {
+    let Some(entry) = entries.iter().find(|entry| entry.name() == *entry_name) else {
         return Ok(None);
     };
-    let mut view = View::over_retained(data);
+    let mut view = entry_sources.view(entry)?;
     let Some(count) = view.u32_le() else {
         return Ok(None);
     };
@@ -7137,6 +7149,7 @@ struct PatternSources<'a, 'b> {
     objects: &'a [ObjectRecord],
     properties_by_owner: &'a HashMap<&'b str, Vec<&'b PropertyRecord>>,
     entries: &'a [EntryRecord],
+    entry_sources: &'a crate::entry_sources::EntrySources<'a>,
 }
 
 fn pattern_definition(
@@ -7345,6 +7358,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         objects,
         properties_by_owner,
         entries,
+        entry_sources,
     } = sources;
     if kind.ends_with("Mirrored") {
         if let Some((plane_origin, plane_normal)) =
@@ -7469,6 +7483,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
             mode,
             ("Angle", "Offset"),
             entries,
+            entry_sources,
         )?
         else {
             return Ok(None);
@@ -7539,6 +7554,7 @@ fn linear_pattern_axis(
         objects,
         properties_by_owner,
         entries,
+        entry_sources,
     } = sources;
     let name = |base: &str| format!("{base}{suffix}");
     let mut direction = axis_reference(
@@ -7564,6 +7580,7 @@ fn linear_pattern_axis(
         mode,
         ("Length", "Offset"),
         entries,
+        entry_sources,
     )?
     else {
         return Ok(None);
@@ -7631,6 +7648,7 @@ fn pattern_locations(
     mode: u64,
     value_fields: (&str, &str),
     entries: &[EntryRecord],
+    entry_sources: &crate::entry_sources::EntrySources<'_>,
 ) -> Result<Option<Vec<FiniteReal>>, CodecError> {
     let (extent_base, offset_base) = value_fields;
     if count == 0 {
@@ -7665,14 +7683,14 @@ fn pattern_locations(
                 return Ok(None);
             };
             let spacings = match property(properties, &name("Spacings")) {
-                Some(property) => numeric_list(ctx, property, entries)?,
+                Some(property) => numeric_list(ctx, property, entries, entry_sources)?,
                 None => Some(Vec::new()),
             };
             let Some(spacings) = spacings else {
                 return Ok(None);
             };
             let pattern = match property(properties, &name("SpacingPattern")) {
-                Some(property) => numeric_list(ctx, property, entries)?,
+                Some(property) => numeric_list(ctx, property, entries, entry_sources)?,
                 None => Some(Vec::new()),
             };
             let Some(pattern) = pattern else {
@@ -7970,6 +7988,7 @@ fn numeric_list(
     ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
     entries: &[EntryRecord],
+    entry_sources: &crate::entry_sources::EntrySources<'_>,
 ) -> Result<Option<Vec<FiniteReal>>, CodecError> {
     if property.type_name != "App::PropertyFloatList" {
         return Ok(None);
@@ -7988,14 +8007,10 @@ fn numeric_list(
             if property.side_entries() != [file] {
                 return Ok(None);
             }
-            let Some(data) = entries
-                .iter()
-                .find(|entry| entry.name() == file)
-                .map(crate::native::EntryRecord::data)
-            else {
+            let Some(entry) = entries.iter().find(|entry| entry.name() == file) else {
                 return Ok(None);
             };
-            let mut view = View::over_retained(data);
+            let mut view = entry_sources.view(entry)?;
             let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
                 return Ok(None);
             };

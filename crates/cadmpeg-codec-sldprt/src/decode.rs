@@ -2435,6 +2435,7 @@ fn build_geometry_ir(
         &lanes,
         &supplemental_config_lanes,
     )?;
+    body_sources.capture_classes(ctx, lanes.iter().chain(&supplemental_config_lanes))?;
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
@@ -3489,6 +3490,7 @@ fn build_metadata_ir(
         &lanes,
         &supplemental_config_lanes,
     )?;
+    body_sources.capture_classes(ctx, lanes.iter().chain(&supplemental_config_lanes))?;
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,

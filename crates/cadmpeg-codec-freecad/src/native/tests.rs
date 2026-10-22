@@ -3,7 +3,7 @@
 
 mod value_text;
 
-use super::{model_id, native_child_id, native_id, sha256_hex, ValueRecord};
+use super::{model_id, native_child_id, native_id, ValueRecord};
 
 #[test]
 fn decoded_json_wire_distinguishes_absence_from_held_null() {
@@ -43,7 +43,7 @@ fn entries_check_names_identities_references_and_cache_the_digest() {
             vec!["invalid".to_owned()],
         ),
     ] {
-        assert!(super::EntryRecord::new(
+        assert!(crate::test_support::source_fidelity::EntryFixture::try_new(
             id.into(),
             name.into(),
             cadmpeg_core::container::ContainerRole::Auxiliary,
@@ -52,7 +52,7 @@ fn entries_check_names_identities_references_and_cache_the_digest() {
         )
         .is_err());
     }
-    let record = super::EntryRecord::new(
+    let record = crate::test_support::source_fidelity::EntryFixture::try_new(
         "fcstd:native:entry#safe".into(),
         "safe".into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
@@ -60,9 +60,10 @@ fn entries_check_names_identities_references_and_cache_the_digest() {
         vec![1, 2, 3],
     )
     .expect("entry");
-    let wire = serde_json::to_value(&record).expect("wire");
+    let fidelity = crate::test_support::source_fidelity::entry_layout_fixture(&record);
+    let wire = serde_json::to_value(&record.record).expect("wire");
     assert_eq!(
-        wire["sha256"],
+        fidelity.retained_record(record.id()).unwrap().sha256(),
         "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81"
     );
     for (key, value) in [
@@ -804,7 +805,7 @@ fn a_property_record_writes_its_payload_and_a_transient_declaration_without_one(
 
 #[test]
 fn an_entry_record_writes_evidence_without_opaque_bytes() {
-    let wire = serde_json::json!({
+    let mut wire = serde_json::json!({
         "id": "fcstd:native:entry#Document.xml",
         "name": "Document.xml",
         "role": "document",
@@ -812,6 +813,9 @@ fn an_entry_record_writes_evidence_without_opaque_bytes() {
         "sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
         "referenced_by": ["fcstd:native:property#A:Shape"]
     });
+    assert!(serde_json::from_value::<super::EntryRecord>(wire.clone()).is_err());
+    wire.as_object_mut().unwrap().remove("byte_len");
+    wire.as_object_mut().unwrap().remove("sha256");
     let record = serde_json::from_value::<super::EntryRecord>(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&record).unwrap(), wire);
 
@@ -826,22 +830,35 @@ fn an_entry_record_writes_evidence_without_opaque_bytes() {
     empty["sha256"] =
         serde_json::json!("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
     empty["referenced_by"] = serde_json::json!([]);
+    assert!(serde_json::from_value::<super::EntryRecord>(empty.clone()).is_err());
+    empty.as_object_mut().unwrap().remove("byte_len");
+    empty.as_object_mut().unwrap().remove("sha256");
     let record = serde_json::from_value::<super::EntryRecord>(empty.clone()).unwrap();
     assert_eq!(serde_json::to_value(record).unwrap(), empty);
 }
 
 #[test]
 fn entry_evidence_rejects_invalid_digests_without_needing_the_payload() {
-    let record = crate::test_support::entry_record(
+    let record = crate::test_support::entry_fixture(
         "fcstd:native:entry#Payload.bin".into(),
         "Payload.bin".into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
         Vec::new(),
         vec![0xab],
     );
-    let wire = serde_json::to_value(record).unwrap();
+    let fidelity = crate::test_support::source_fidelity::entry_layout_fixture(&record);
+    let source = fidelity.retained_record(record.id()).unwrap();
+    let id = record.id().to_owned();
+    let wire = serde_json::to_value(record.record).unwrap();
     assert!(wire.get("data").is_none());
     for digest in ["a", "ag", "AB", &"A".repeat(64)] {
+        let mut source_evidence =
+            serde_json::to_value(cadmpeg_ir::source_fidelity::SourceEvidence::of(&[0xab])).unwrap();
+        source_evidence["sha256"] = serde_json::json!(digest);
+        assert!(
+            serde_json::from_value::<cadmpeg_ir::source_fidelity::SourceEvidence>(source_evidence)
+                .is_err()
+        );
         let mut invalid = wire.clone();
         invalid["sha256"] = serde_json::json!(digest);
         assert!(serde_json::from_value::<super::EntryRecord>(invalid)
@@ -850,37 +867,47 @@ fn entry_evidence_rejects_invalid_digests_without_needing_the_payload() {
             .contains("sha256"));
     }
     let record: super::EntryRecord = serde_json::from_value(wire).unwrap();
-    assert_eq!(record.byte_len(), 1);
-    assert_eq!(record.sha256(), cadmpeg_ir::hash::sha256_hex(&[0xab]));
-    assert!(record.data().is_empty());
+    assert_eq!(fidelity.record_layout()[&id].byte_len(), 1);
+    assert_eq!(source.sha256(), cadmpeg_ir::hash::sha256_hex(&[0xab]));
+    assert!(serde_json::to_value(record).unwrap().get("data").is_none());
 }
 
 #[test]
 fn entry_wire_keeps_evidence_and_references_without_payload_bytes() {
     let bytes: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
-    let record = crate::test_support::entry_record(
+    let record = crate::test_support::entry_fixture(
         "fcstd:native:entry#Payload.bin".into(),
         "Payload.bin".into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
         Vec::new(),
         bytes.clone(),
     );
-    assert_eq!(record.data(), bytes);
+    let fidelity = crate::test_support::source_fidelity::entry_layout_fixture(&record);
+    let source = fidelity.retained_record(record.id()).unwrap();
+    assert_eq!(source.data().unwrap(), bytes);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     namespace
-        .set_arena(&ctx, "entries", &[record])
+        .set_arena(&ctx, "entries", &[record.record])
         .expect("entry arena");
     let records = namespace.arena_as::<super::EntryRecord>("entries").unwrap();
-    assert!(records[0].data().is_empty());
-    assert_eq!(records[0].byte_len(), u64::try_from(bytes.len()).unwrap());
-    assert_eq!(records[0].sha256(), cadmpeg_ir::hash::sha256_hex(&bytes));
+    assert!(serde_json::to_value(&records[0])
+        .unwrap()
+        .get("data")
+        .is_none());
+    assert_eq!(
+        fidelity.record_layout()[records[0].id()].byte_len(),
+        u64::try_from(bytes.len()).unwrap()
+    );
+    assert_eq!(source.sha256(), cadmpeg_ir::hash::sha256_hex(&bytes));
     let wire = namespace.arena_as::<serde_json::Value>("entries").unwrap();
     assert!(wire[0].get("data").is_none());
-    assert_eq!(wire[0]["byte_len"], bytes.len());
+    assert_eq!(source.byte_len(), u64::try_from(bytes.len()).unwrap());
+    assert!(wire[0].get("byte_len").is_none());
+    assert!(wire[0].get("sha256").is_none());
 }
 
 #[test]
@@ -934,14 +961,6 @@ fn a_product_node_writes_occurrence_fields_and_a_container_without_them() {
     });
     let record = serde_json::from_value::<super::ProductNodeRecord>(container.clone()).unwrap();
     assert_eq!(serde_json::to_value(record).unwrap(), container);
-}
-
-impl super::EntryRecord {
-    pub(crate) fn replace_data(&mut self, bytes: Vec<u8>) {
-        self.length = cadmpeg_core::decode::u64_from_index(bytes.len());
-        self.sha256 = sha256_hex(&bytes);
-        self.data = bytes.into();
-    }
 }
 
 mod provenance;

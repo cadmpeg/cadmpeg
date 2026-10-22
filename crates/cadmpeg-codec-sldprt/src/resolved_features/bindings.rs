@@ -1310,12 +1310,13 @@ pub(crate) fn finalize_lane_bindings(
     let intervals = feature_intervals(histories, lane);
     lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &intervals)?;
     lane.relation_instances = relation_instances(histories, lane)?;
-    lane.edge_selections = compact_edge_selections(ctx, histories, lane)?;
+    lane.edge_selections = compact_edge_selections(ctx, histories, lane)?.records;
     lane.surface_selections = compact_surface_selections(ctx, histories, lane)?;
     lane.generated_surface_identities =
         generated_surface_identities(&lane.id, &lane.classes, &lane.native_payload)?.records;
     super::relation_layout::capture(ctx, lane, sources)?;
     super::generated_surface_layout::capture(ctx, lane, sources)?;
+    super::edge_selection_layout::capture(ctx, histories, lane, sources)?;
     source_order::finalize(histories, lane, sources.pointers())?;
     Ok(())
 }

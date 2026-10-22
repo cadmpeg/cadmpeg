@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assertions over source-only bytes and layout retained by the codec.
 
+use std::collections::BTreeMap;
+
 pub(crate) fn bytes<'a>(fidelity: &'a cadmpeg_ir::SourceFidelity, id: &str) -> &'a [u8] {
     if let Some(layout) = fidelity.record_layout().get(id) {
         if let Some(bytes) = layout.payloads().get("raw_xml") {
@@ -85,6 +87,52 @@ pub(crate) fn bytes<'a>(fidelity: &'a cadmpeg_ir::SourceFidelity, id: &str) -> &
         record.byte_len()
     );
     assert_eq!(cadmpeg_ir::hash::sha256_hex(bytes), record.sha256());
+    bytes
+}
+
+/// Reopen an original member without retaining a second expanded image.
+pub(crate) fn entry_bytes(fidelity: &cadmpeg_ir::SourceFidelity, id: &str) -> Vec<u8> {
+    if let Some(bytes) = fidelity
+        .retained_record(id)
+        .and_then(|record| record.data())
+    {
+        return bytes.to_vec();
+    }
+    let layout = fidelity
+        .record_layout()
+        .get(id)
+        .expect("entry source layout");
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let image = crate::source_archive::image(fidelity).expect("original archive image");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) = DecodeContext::from_root_bytes(image, &arena, &policy)
+        .expect("genuine original archive source");
+    let archive = crate::source_archive::OriginalArchive::new(&ctx, root, fidelity)
+        .expect("original archive");
+    let view = archive.stream(&ctx, layout).expect("original named member");
+    let capture = ctx
+        .capture_part_extent(view)
+        .expect("original entry capture");
+    assert_eq!(capture.stream(), layout.stream());
+    let relative = layout
+        .offset()
+        .checked_sub(capture.offset())
+        .expect("source offset within entry");
+    let from = usize::try_from(relative).expect("entry source offset");
+    let length = usize::try_from(layout.byte_len()).expect("entry source length");
+    let to = from.checked_add(length).expect("entry source end");
+    let bytes = view
+        .window()
+        .get(from..to)
+        .expect("entry source range")
+        .to_vec();
+    assert_eq!(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        layout.byte_len()
+    );
+    ctx.finish_session()
+        .expect("original entry source verification budget");
     bytes
 }
 
@@ -209,46 +257,158 @@ impl std::ops::DerefMut for PropertyFixture {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct EntryFixture {
+    pub(crate) record: crate::native::EntryRecord,
+    pub(crate) source: Vec<u8>,
+}
+
+impl EntryFixture {
+    pub(crate) fn try_new(
+        id: String,
+        name: String,
+        role: cadmpeg_core::container::ContainerRole,
+        referenced_by: Vec<String>,
+        source: Vec<u8>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            record: crate::native::EntryRecord::new(id, name, role, referenced_by)?,
+            source,
+        })
+    }
+}
+
+pub(crate) fn entry_layout_fixture(entry: &EntryFixture) -> cadmpeg_ir::SourceFidelity {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let (context, source) =
+        DecodeContext::from_root_bytes(&entry.source, &arena, &DecodePolicy::service()).unwrap();
+    let source = context.name_stream(source, entry.name()).unwrap();
+    context
+        .record(
+            entry.id(),
+            source,
+            || Ok::<(), cadmpeg_core::CodecError>(()),
+        )
+        .unwrap();
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    crate::fidelity::retain(
+        &mut fidelity,
+        entry.id(),
+        entry.name(),
+        0,
+        source.window(),
+        cadmpeg_ir::ArenaClasses::new(),
+    )
+    .unwrap();
+    crate::fidelity::install_layouts(&context, &mut fidelity, BTreeMap::new(), BTreeMap::new())
+        .unwrap();
+    let layout = &fidelity.record_layout()[entry.id()];
+    assert_eq!(
+        layout.byte_len(),
+        u64::try_from(entry.source.len()).unwrap()
+    );
+    assert!(layout.payloads().is_empty());
+    assert!(layout.reads().is_empty());
+    fidelity
+}
+
+impl std::ops::Deref for EntryFixture {
+    type Target = crate::native::EntryRecord;
+    fn deref(&self) -> &Self::Target {
+        &self.record
+    }
+}
+
+impl std::ops::DerefMut for EntryFixture {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.record
+    }
+}
+
 pub(crate) fn with_property_reader<T>(
     input: &[u8],
     properties: &[&PropertyFixture],
     policy: &cadmpeg_core::decode::DecodePolicy,
     use_reader: impl FnOnce(&crate::property_reader::PropertyReader<'_, '_>) -> T,
 ) -> T {
+    with_decode_sources(input, properties, &[], policy, |reader, _| {
+        use_reader(reader)
+    })
+}
+
+pub(crate) fn with_decode_sources<T>(
+    input: &[u8],
+    properties: &[&PropertyFixture],
+    entries: &[&EntryFixture],
+    policy: &cadmpeg_core::decode::DecodePolicy,
+    use_sources: impl FnOnce(
+        &crate::property_reader::PropertyReader<'_, '_>,
+        &crate::entry_sources::EntrySources<'_>,
+    ) -> T,
+) -> T {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext};
     use std::collections::BTreeMap;
     let mut bytes = input.to_vec();
-    let mut ranges = BTreeMap::new();
+    let mut property_ranges = BTreeMap::new();
     for property in properties {
-        let range = if let Some(start) = input
-            .windows(property.source.len())
-            .position(|window| window == property.source.as_bytes())
-        {
-            start..start + property.source.len()
-        } else {
-            let start = bytes.len();
-            bytes.extend_from_slice(property.source.as_bytes());
-            start..bytes.len()
-        };
+        let range = fixture_range(&mut bytes, input, property.source.as_bytes());
         assert!(
-            ranges.insert(property.id.clone(), range).is_none(),
+            property_ranges.insert(property.id.clone(), range).is_none(),
             "unique source fixture id"
+        );
+    }
+    let mut entry_ranges = BTreeMap::new();
+    for entry in entries {
+        let range = fixture_range(&mut bytes, input, &entry.source);
+        assert!(
+            entry_ranges
+                .insert(entry.name().to_owned(), range)
+                .is_none(),
+            "unique source entry fixture name"
         );
     }
     let arena = DecodeArena::new();
     let (context, root) = DecodeContext::from_root_bytes(&bytes, &arena, policy)
         .expect("authored source bytes fit the test policy");
-    let sources = ranges
+    let properties = property_ranges
         .into_iter()
         .map(|(id, range)| {
             (
                 id,
                 root.child(range.start, range.end)
-                    .expect("original fixture source extent"),
+                    .expect("original property source extent"),
             )
         })
         .collect();
-    let reader = crate::property_reader::PropertyReader::fixtures(&context, sources)
-        .expect("fixture Views belong to the real source session");
-    use_reader(&reader)
+    let entries = entry_ranges
+        .into_iter()
+        .map(|(name, range)| {
+            (
+                name,
+                root.child(range.start, range.end)
+                    .expect("original entry source extent"),
+            )
+        })
+        .collect();
+    let reader = crate::property_reader::PropertyReader::fixtures(&context, properties)
+        .expect("property Views belong to the real source session");
+    let sources = crate::entry_sources::EntrySources::new(&context, &entries)
+        .expect("entry Views belong to the real source session");
+    use_sources(&reader, &sources)
+}
+
+fn fixture_range(bytes: &mut Vec<u8>, input: &[u8], source: &[u8]) -> std::ops::Range<usize> {
+    if source.is_empty() {
+        return bytes.len()..bytes.len();
+    }
+    if let Some(start) = input
+        .windows(source.len())
+        .position(|window| window == source)
+    {
+        return start..start + source.len();
+    }
+    let start = bytes.len();
+    bytes.extend_from_slice(source);
+    start..bytes.len()
 }

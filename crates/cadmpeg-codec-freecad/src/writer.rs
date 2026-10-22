@@ -70,27 +70,27 @@ fn write_seekable(
     let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
     let fidelity = resolution.fidelity();
+    let archive_image = crate::source_archive::image(fidelity)?;
+    let source_arena = cadmpeg_core::decode::DecodeArena::new();
+    let source_policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (source_context, source_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        archive_image,
+        &source_arena,
+        &source_policy,
+    )?;
+    let source_archive =
+        crate::source_archive::OriginalArchive::new(&source_context, source_root, fidelity)?;
     let mut payloads = HashMap::new();
     for entry in &entries {
-        let retained = fidelity.retained_record(entry.id()).ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
-                "retained entry {} is unavailable",
-                entry.name()
-            ))
-        })?;
-        let bytes = retained.data().ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
-                "retained entry {} has evidence but no bytes",
-                entry.name()
-            ))
-        })?;
-        if retained.byte_len() != entry.byte_len() || retained.sha256() != entry.sha256() {
-            return Err(CodecError::UnsupportedContent(format!(
-                "retained entry {} disagrees with current typed evidence",
-                entry.name()
-            )));
+        if entry.id() != crate::native::native_id("entry", entry.name()) {
+            return Err(CodecError::malformed(
+                "current entry identity differs from its original archive member",
+            ));
         }
-        payloads.insert(entry.name().to_owned(), bytes);
+        payloads.insert(
+            entry.name().to_owned(),
+            source_archive.open(&source_context, entry.name())?,
+        );
     }
     validate_entry_names(&entries)?;
     let source_document = entries
@@ -104,6 +104,7 @@ fn write_seekable(
         .ok_or_else(|| {
             CodecError::UnsupportedContent("the source document image is unavailable".into())
         })?
+        .window()
         .to_vec();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
@@ -122,10 +123,7 @@ fn write_seekable(
     )?;
     let mut entry_views = std::collections::BTreeMap::new();
     for entry in &entries {
-        entry_views.insert(
-            entry.name().to_owned(),
-            cadmpeg_core::decode::View::over_retained(payloads[entry.name()]),
-        );
+        entry_views.insert(entry.name().to_owned(), payloads[entry.name()]);
     }
     crate::persistence::resolve_side_entries(
         &mut written_graph.properties,
@@ -162,7 +160,7 @@ fn write_seekable(
             archive.write_all(if entry.name() == "Document.xml" {
                 &document_xml
             } else {
-                payloads[entry.name()]
+                payloads[entry.name()].window()
             })?;
         }
         archive.finish().map_err(|error| {

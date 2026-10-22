@@ -16,6 +16,8 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
     let objects = namespace.arena_as::<native::ObjectRecord>("objects")?;
     let properties = namespace.arena_as::<native::PropertyRecord>("properties")?;
     let property_reader = crate::property_reader::PropertyReader::typed(ctx);
+    let entry_views = BTreeMap::new();
+    let entry_sources = crate::entry_sources::EntrySources::new(ctx, &entry_views)?;
     for property in &properties {
         if super::super::xml::native(property)?.is_none() {
             return decline("the typed property has no independent projection");
@@ -64,6 +66,7 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
             &properties,
             &payloads,
             &[],
+            &entry_sources,
             version,
         )?;
     }

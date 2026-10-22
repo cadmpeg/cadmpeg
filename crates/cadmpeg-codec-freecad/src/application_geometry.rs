@@ -43,6 +43,7 @@ pub(crate) fn transfer(
     ir: &mut CadIr,
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
+    sources: &crate::entry_sources::EntrySources<'_>,
     admitted_entities: &mut u64,
 ) -> Result<bool, CodecError> {
     let mut transferred = false;
@@ -76,16 +77,16 @@ pub(crate) fn transfer(
                 property.id
             )));
         };
+        let source = sources.view(entry)?;
+        let bytes = source.window();
         if geometry_kind == GeometryKind::Mesh {
-            ir.model
-                .tessellations
-                .push(parse_mesh(property, entry.data())?);
+            ir.model.tessellations.push(parse_mesh(property, bytes)?);
             transferred = true;
         } else if geometry_kind == GeometryKind::Points {
             let points = parse_points(
                 ctx,
                 property,
-                entry.data(),
+                bytes,
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 admitted_entities,
             )?;

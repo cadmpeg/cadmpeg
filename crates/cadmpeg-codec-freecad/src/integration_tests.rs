@@ -199,10 +199,10 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
             "Edited & encoded",
         )
         .unwrap();
-    crate::test_support::mutation::replace_entry(
+    crate::test_support::mutation::assert_entry_source_fields_rejected(
         &mut ir,
         "Payload.bin",
-        b"second payload".to_vec(),
+        &[b"first payload", b"second payload"],
     )
     .unwrap();
 
@@ -217,10 +217,7 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
         .arena_as::<crate::native::EntryRecord>("entries")
         .unwrap();
     assert_eq!(
-        entries
-            .iter()
-            .find(|entry| entry.name() == "Payload.bin")
-            .map(crate::native::EntryRecord::data),
+        entries.iter().find(|entry| entry.name() == "Payload.bin"),
         None
     );
     assert!(report

@@ -75,8 +75,6 @@ struct ApplicationPropertyWire<'a> {
 struct ApplicationPayloadWire<'a> {
     entry: &'a str,
     name: &'a str,
-    byte_len: u64,
-    sha256: &'a str,
 }
 
 fn wire_records<'a>(
@@ -115,8 +113,6 @@ fn wire_records<'a>(
                     payloads.push(ApplicationPayloadWire {
                         entry: entry.id(),
                         name: entry.name(),
-                        byte_len: entry.byte_len(),
-                        sha256: entry.sha256(),
                     });
                 }
             }

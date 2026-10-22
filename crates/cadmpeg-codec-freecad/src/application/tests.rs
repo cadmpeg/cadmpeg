@@ -219,7 +219,10 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
     );
     assert_eq!(span.classification.as_str(), "named_opaque");
     assert_eq!(span.classification.owner(), Some(entry.id()));
-    assert_eq!(entry.data(), payload);
+    assert_eq!(
+        crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), entry.id()),
+        payload
+    );
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
@@ -338,9 +341,12 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
             .iter()
             .find(|entry| entry.name() == name)
             .expect("side entry");
-        assert_eq!(entry.data(), payload);
         assert_eq!(
-            entry.byte_len(),
+            crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), entry.id()),
+            payload
+        );
+        assert_eq!(
+            result.source_fidelity().record_layout()[entry.id()].byte_len(),
             cadmpeg_core::decode::u64_from_index(payload.len())
         );
         let span = spans
@@ -359,7 +365,7 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
 }
 
 #[test]
-fn application_repeated_payloads_borrow_the_cached_digest() {
+fn repeated_application_payloads_borrow_entry_identity_without_source_evidence() {
     let object = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
             "fcstd:native:object#Owner".into(),
@@ -394,20 +400,25 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
             crate::test_support::source_fidelity::xml_layout_fixture(&property.id, "<Property/>");
         property
     });
-    let entry = crate::test_support::entry_record(
+    let entry = crate::test_support::entry_fixture(
         "fcstd:native:entry#shared.bin".into(),
         "shared.bin".into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
         Vec::new(),
         vec![7; 4096],
     );
-    let digest = entry.sha256().as_ptr();
+    let identity = entry.id().as_ptr();
     let objects = [object];
-    let entries = [entry];
+    let entries = [entry.record];
     let records = super::wire_records(&objects, &properties, &entries);
     for property in &records[0].property_records {
-        assert_eq!(property.payloads[0].sha256.as_ptr(), digest);
-        assert_eq!(property.payloads[0].sha256, entries[0].sha256());
+        assert_eq!(property.payloads[0].entry.as_ptr(), identity);
+        assert_eq!(property.payloads[0].entry, entries[0].id());
+        assert_eq!(property.payloads[0].name, entries[0].name());
+        let wire = serde_json::to_value(&property.payloads[0]).unwrap();
+        assert!(wire.get("sha256").is_none());
+        assert!(wire.get("byte_len").is_none());
+        assert!(wire.get("data").is_none());
     }
 }
 
