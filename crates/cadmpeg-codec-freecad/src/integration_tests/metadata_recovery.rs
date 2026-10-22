@@ -80,9 +80,14 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
         .arena_as::<crate::container::UnreadableEntry>("unreadable_entries")
         .unwrap();
     assert_eq!(unreadable.len(), 1);
-    let physical = namespace
-        .arena_as::<crate::native::ArchiveSpan>("physical_ledger")
-        .unwrap();
+    let physical = decoded
+        .source_fidelity()
+        .freecad_ledgers()
+        .values()
+        .next()
+        .expect("FCStd source ledgers")
+        .physical_ledger
+        .clone();
     assert!(physical.last().unwrap().span.end() < unreadable[0].data_end);
     let start = usize::try_from(unreadable[0].data_start).unwrap();
     let end = usize::try_from(unreadable[0].data_end).unwrap();

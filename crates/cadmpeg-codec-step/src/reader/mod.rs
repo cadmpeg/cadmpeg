@@ -144,22 +144,15 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         let primary = StepDialect::classify(exchange);
         let dialect_loss = crate::dialect::dialect_loss(&primary);
         let mut ir = CadIr::empty();
-        ir.scope = if ctx.container_only() {
-            cadmpeg_ir::ContentScope::container()
-        } else {
-            cadmpeg_ir::ContentScope::full()
+        let requested = ctx.depth().required_scope();
+        ir.scope = cadmpeg_ir::ContentScope {
+            model: requested.model && !exchange.data().is_empty(),
+            design: requested.design,
         };
 
-        let mut body = DecodeBody::new(if ctx.container_only() {
-            cadmpeg_ir::report::decode::DecodeTransfer {
-                scope: cadmpeg_ir::ContentScope::container(),
-                geometry_transferred: false,
-            }
-        } else {
-            cadmpeg_ir::report::decode::DecodeTransfer {
-                scope: cadmpeg_ir::ContentScope::full(),
-                geometry_transferred: false,
-            }
+        let mut body = DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: ir.scope,
+            geometry_transferred: false,
         });
         for entry in exchange.references() {
             body.notes.push(format!(
@@ -181,6 +174,8 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 }
             }
         }
+        ir.scope.model |= !ir.model.assets.is_empty();
+        body.transfer.scope = ir.scope;
         if let Some(loss) = dialect_loss {
             body.losses.push(loss);
         }
@@ -481,10 +476,7 @@ fn decode_exchange_mode(
         || !session.ir.model.bodies.is_empty()
         || !session.ir.model.tessellations.is_empty()
     {
-        session.body.transfer = cadmpeg_ir::report::decode::DecodeTransfer {
-            scope: cadmpeg_ir::ContentScope::full(),
-            geometry_transferred: true,
-        };
+        session.body.transfer.geometry_transferred = true;
     }
 
     // Keep the established report order while every pass contributes through

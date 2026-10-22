@@ -185,3 +185,257 @@ fn unproved_symbol_resolution_is_exposed_as_a_limitation_instead_of_global_name_
     assert!(unresolved[0].contains("unknown_reexport::emit"));
     assert!(unresolved[0].contains("classification remains unresolved"));
 }
+
+#[test]
+fn a_public_function_reexport_reaches_its_real_forbidden_helper() {
+    let graph = fixture(
+        r#"
+        mod implementation { pub fn emit() { CodecError::WrongFormat("actual helper".into()); } }
+        mod facade { pub use crate::implementation::emit as write; }
+        impl EncoderBackend for Writer { fn plan(&self) { crate::facade::write(); } }
+        mod unrelated { fn write() { CodecError::WrongFormat("unrelated".into()); } }
+    "#,
+    );
+    let found = graph.findings();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("implementation::emit"));
+    assert!(found[0].contains("CodecError construction"));
+    assert_eq!(graph.reachable().len(), 2);
+}
+
+#[test]
+fn chained_function_and_module_reexports_forward_into_the_owned_call_graph() {
+    let graph = fixture(
+        r#"
+        mod implementation { pub fn emit() { CodecError::WrongFormat("actual helper".into()); } }
+        mod first { pub use super::implementation::{self as body, emit as dispatch}; }
+        mod second { pub use crate::first as facade; pub use crate::first::dispatch as write; }
+        impl EncoderBackend for Writer { fn plan(&self) {
+            crate::second::write(); crate::second::facade::body::emit();
+        } }
+    "#,
+    );
+    assert_eq!(
+        graph.findings().len(),
+        1,
+        "one actual site on both real routes"
+    );
+    assert_eq!(graph.reachable().len(), 2);
+    assert!(graph
+        .unresolved_symbols()
+        .iter()
+        .all(|path| !path.contains("second::write") && !path.contains("second::facade")));
+}
+
+#[test]
+fn reexported_associated_types_and_simple_type_aliases_keep_the_real_owner() {
+    let graph = fixture(
+        r#"
+        mod implementation { pub struct Engine; impl Engine {
+            pub fn emit() { CodecError::WrongFormat("actual associated helper".into()); }
+        } pub type Alias = Engine; }
+        mod facade { pub use crate::implementation::Alias as Writer; }
+        impl EncoderBackend for Writer { fn plan(&self) { crate::facade::Writer::emit(); } }
+        mod unrelated { struct Writer; impl Writer { fn emit() { CodecError::WrongFormat("wrong owner".into()); } } }
+    "#,
+    );
+    let found = graph.findings();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("Engine::emit"));
+    assert_eq!(graph.reachable().len(), 2);
+}
+
+#[test]
+fn constructor_reexports_are_checked_even_without_a_function_symbol() {
+    let graph = fixture(
+        r#"
+        mod first { pub use cadmpeg_core::CodecError::WrongFormat as fail; }
+        mod second { pub use crate::first::fail as reject; }
+        impl EncoderBackend for Writer { fn plan(&self) { crate::second::reject("actual constructor".into()); } }
+    "#,
+    );
+    let found = graph.findings();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("CodecError construction"));
+    assert!(found[0].contains("Writer::plan"));
+    assert_eq!(
+        graph.reachable().len(),
+        1,
+        "enum constructor has no invented body"
+    );
+}
+
+#[test]
+fn self_and_super_constructor_reexport_paths_retain_the_owned_binding() {
+    let graph = fixture(
+        r#"
+        mod writer {
+            mod facade { pub use cadmpeg_core::CodecError::WrongFormat as fail; }
+            impl EncoderBackend for Writer { fn plan(&self) { self::facade::fail("actual constructor".into()); } }
+            mod nested { impl EncoderBackend for Nested { fn plan(&self) { super::facade::fail("second actual constructor".into()); } } }
+        }
+    "#,
+    );
+    let found = graph.findings();
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(found
+        .iter()
+        .all(|site| site.contains("CodecError construction")));
+}
+
+#[test]
+fn equally_named_reexports_in_other_modules_do_not_pollute_a_safe_owned_call() {
+    let graph = fixture(
+        r#"
+        mod safe { pub fn emit() {} }
+        mod dangerous { pub fn emit() { CodecError::WrongFormat("not reached".into()); } }
+        mod chosen { pub use crate::safe::emit as write; }
+        mod other { pub use crate::dangerous::emit as write; }
+        impl EncoderBackend for Writer { fn plan(&self) { crate::chosen::write(); } }
+    "#,
+    );
+    assert!(graph.findings().is_empty());
+    assert_eq!(graph.reachable().len(), 2);
+    assert!(graph
+        .reachable()
+        .keys()
+        .all(|&index| !graph.functions[index]
+            .scope
+            .iter()
+            .any(|part| part == "dangerous")));
+}
+
+#[test]
+fn alias_cycles_stay_explicitly_unresolved_without_borrowing_an_unrelated_target() {
+    let graph = fixture(
+        r#"
+        mod first { pub use crate::second::emit as emit; }
+        mod second { pub use crate::first::emit as emit; }
+        mod unrelated { fn emit() { CodecError::WrongFormat("not the cycle target".into()); } }
+        impl EncoderBackend for Writer { fn plan(&self) { crate::first::emit(); } }
+    "#,
+    );
+    assert!(graph.findings().is_empty());
+    assert_eq!(graph.reachable().len(), 1);
+    let unresolved = graph.unresolved_symbols();
+    assert_eq!(unresolved.len(), 1);
+    assert!(unresolved[0].contains("first::emit"));
+    assert!(unresolved[0].contains("classification remains unresolved"));
+}
+
+#[test]
+fn path_growing_alias_cycles_are_bounded_and_remain_an_unresolved_limitation() {
+    let graph = fixture(
+        r#"
+        mod recursive { pub use crate::recursive::forward::forward as forward; }
+        impl EncoderBackend for Writer { fn plan(&self) { crate::recursive::forward::emit(); } }
+        mod unrelated { fn emit() { CodecError::WrongFormat("not a proved target".into()); } }
+    "#,
+    );
+    assert!(graph.findings().is_empty());
+    assert_eq!(graph.reachable().len(), 1);
+    assert_eq!(graph.unresolved_symbols().len(), 1);
+}
+
+#[test]
+fn conditional_reexport_bindings_conservatively_reach_both_actual_targets() {
+    let graph = fixture(
+        r#"
+        mod first { pub fn emit() { CodecError::WrongFormat("first actual branch".into()); } }
+        mod second { pub fn emit() { CodecError::WrongFormat("second actual branch".into()); } }
+        mod facade {
+            #[cfg(feature="first")] pub use crate::first::emit as write;
+            #[cfg(not(feature="first"))] pub use crate::second::emit as write;
+        }
+        impl EncoderBackend for Writer { fn plan(&self) { crate::facade::write(); } }
+    "#,
+    );
+    let found = graph.findings();
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(found.iter().any(|site| site.contains("first::emit")));
+    assert!(found.iter().any(|site| site.contains("second::emit")));
+}
+
+#[test]
+fn a_shadowing_local_value_is_not_a_reexported_error_constructor() {
+    let graph = fixture(
+        r#"
+        mod facade { pub use cadmpeg_core::CodecError::WrongFormat as result; }
+        use crate::facade::result;
+        impl EncoderBackend for Writer { fn plan(&self) { let result = 5; return result; } }
+    "#,
+    );
+    assert!(graph.findings().is_empty());
+    assert_eq!(graph.reachable().len(), 1);
+}
+
+#[test]
+fn repeated_self_module_aliases_resolve_when_each_step_consumes_a_real_path_segment() {
+    let graph = fixture(
+        r#"
+        mod actual {
+            pub use crate::actual as again;
+            pub fn emit() { CodecError::WrongFormat("real repeated module alias".into()); }
+        }
+        impl EncoderBackend for Writer { fn plan(&self) { crate::actual::again::again::emit(); } }
+    "#,
+    );
+    let found = graph.findings();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("actual::emit"));
+    assert_eq!(graph.reachable().len(), 2);
+    assert!(graph
+        .unresolved_symbols()
+        .iter()
+        .all(|path| !path.contains("actual::again")));
+}
+
+#[test]
+fn a_chained_renamed_encoder_backend_trait_is_an_actual_encode_root() {
+    let graph = fixture(
+        r#"
+        mod facade { pub use cadmpeg_ir::codec::write::EncoderBackend as Backend; }
+        mod public { pub use crate::facade::Backend as WriterBackend; }
+        mod implementation { pub fn emit() { CodecError::WrongFormat("actual encode helper".into()); } }
+        impl crate::public::WriterBackend for Writer { fn plan(&self) { crate::implementation::emit(); } }
+    "#,
+    );
+    let roots: Vec<_> = graph
+        .functions
+        .iter()
+        .filter(|function| graph.is_root(function))
+        .collect();
+    assert_eq!(roots.len(), 1);
+    assert_eq!(roots[0].name, "plan");
+    let found = graph.findings();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("implementation::emit"));
+    assert!(found[0].contains("Writer::plan"));
+    assert_eq!(graph.reachable().len(), 2);
+}
+
+#[test]
+fn an_unrelated_trait_with_the_same_export_alias_is_not_an_encoder_root() {
+    let graph = fixture(
+        r#"
+        mod encoder { pub use cadmpeg_ir::codec::write::EncoderBackend as Backend; }
+        mod inspection { pub use other_crate::EncoderBackend as Backend; }
+        impl crate::encoder::Backend for SafeWriter { fn plan(&self) {} }
+        impl crate::inspection::Backend for Inspector { fn plan(&self) { CodecError::WrongFormat("not encode reachable".into()); } }
+    "#,
+    );
+    let roots: Vec<_> = graph
+        .functions
+        .iter()
+        .filter(|function| graph.is_root(function))
+        .collect();
+    assert_eq!(roots.len(), 1);
+    assert!(roots[0]
+        .owner
+        .as_ref()
+        .expect("owner")
+        .iter()
+        .any(|name| name == "SafeWriter"));
+    assert_eq!(graph.reachable().len(), 1);
+    assert!(graph.findings().is_empty());
+}

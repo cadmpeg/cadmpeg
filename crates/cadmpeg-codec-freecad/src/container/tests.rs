@@ -315,7 +315,7 @@ fn inspects_and_closes_physical_ledger() {
         )
         .expect("decode");
     assert!(result.report().losses.is_empty());
-    let ledger: Vec<crate::native::ArchiveSpan> =
+    let ledger: Vec<cadmpeg_ir::source_fidelity::freecad::ArchiveSpan> =
         crate::test_support::source_fidelity::layout(result.source_fidelity(), "physical-ledger");
     assert_eq!(ledger.first().map(|span| span.span.start()), Some(0));
     assert_eq!(ledger.last().map(|span| span.span.end()), Some(archive_len));
@@ -459,7 +459,7 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .iter()
         .find(|entry| entry.name() == "Shared.bin")
         .expect("shared entry");
-    let spans: Vec<crate::native::LogicalSpan> =
+    let spans: Vec<cadmpeg_ir::source_fidelity::freecad::LogicalSpan> =
         crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
     let span = spans
         .iter()

@@ -279,8 +279,12 @@ impl<'a> PhysicalParse<'a> {
             Some(source) => card::scan_source(source, ctx)?,
             None => card::scan(bytes)?,
         };
-        let (global, mut global_losses) = global::parse(&scan)?;
         let mut parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+        let (global, mut global_losses) = if scan.source_view().is_some() {
+            global::parts::parse(&scan, ctx, &mut parts)?
+        } else {
+            global::parse(&scan)?
+        };
         let (directory, quarantined_directory) = if scan.source_view().is_some() {
             (
                 directory::parts::parse(&scan, global.global_table(), ctx, &mut parts)?,
@@ -295,7 +299,18 @@ impl<'a> PhysicalParse<'a> {
             trailing_pointer_analysis,
             quarantined: quarantined_parameters,
             recoveries: parameter_recoveries,
-        } = parameter::assemble(&scan, &directory, &quarantined_directory, &global)?;
+        } = if scan.source_view().is_some() {
+            parameter::parts::assemble(
+                &scan,
+                &directory,
+                &quarantined_directory,
+                &global,
+                ctx,
+                &mut parts,
+            )?
+        } else {
+            parameter::assemble(&scan, &directory, &quarantined_directory, &global)?
+        };
         let conditional_losses = global
             .conditional_double_precision_losses(parameter::uses_double_precision(&parameters));
 
@@ -582,6 +597,12 @@ fn decode_with_occurrence_limits(
         destination.append(&mut records);
     }
     source_fidelity.append(part_fidelity)?;
+    if parse.scan.source_view().is_some() {
+        for capture in ctx.take_record_captures()? {
+            let (id, layout) = cadmpeg_ir::source_fidelity::RecordLayout::from_capture(capture);
+            source_fidelity.insert_record_layout(id, layout)?;
+        }
+    }
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
     ir.finalize();

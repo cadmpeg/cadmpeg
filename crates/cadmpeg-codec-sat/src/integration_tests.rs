@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+mod scope;
+
 use crate::loss::SatLossCode;
 use crate::SatCodec;
 use cadmpeg_ir::codec::{Codec, DecodeResult};

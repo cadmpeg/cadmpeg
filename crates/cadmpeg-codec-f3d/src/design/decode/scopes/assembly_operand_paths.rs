@@ -86,20 +86,12 @@ pub(super) fn exact_assembly_operand_paths<'a>(
         let [Some(first), Some(second)] = paths else {
             return None;
         };
-        let first_start = usize::try_from(first.content.link().locator_byte_offset).ok()?;
-        let first_end = next_indexed_record_offset(
-            bytes,
-            usize::try_from(first.content.link().wrapper_byte_offset)
-                .ok()?
-                .checked_add(1)?,
-        )?;
-        let second_start = usize::try_from(second.content.link().locator_byte_offset).ok()?;
-        let second_end = next_indexed_record_offset(
-            bytes,
-            usize::try_from(second.content.link().wrapper_byte_offset)
-                .ok()?
-                .checked_add(1)?,
-        )?;
+        let first_start = first.source.locator_start()?;
+        let first_end =
+            next_indexed_record_offset(bytes, first.source.wrapper_start()?.checked_add(1)?)?;
+        let second_start = second.source.locator_start()?;
+        let second_end =
+            next_indexed_record_offset(bytes, second.source.wrapper_start()?.checked_add(1)?)?;
         if first.content.link().locator_record_index == second.content.link().locator_record_index
             || (first_start < second_end && second_start < first_end)
         {
@@ -330,16 +322,10 @@ fn exact_assembly_operand_path_envelope<'a>(
             path_reference_offset,
         )?;
         let link = DesignAssemblyOperandPathLink {
-            locator_reference_offset,
             locator_record_index,
             locator_class_tag: locator_class_tag.try_into().ok()?,
-            locator_byte_offset: u64::try_from(locator_at).ok()?,
-            locator_scope_reference_offset,
             wrapper_record_index,
-            wrapper_reference_offset,
             wrapper_class_tag: wrapper_class_tag.try_into().ok()?,
-            wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
-            path_reference_offset,
         };
         let mut paths = path_spans.into_iter().map(|(record_index, start, limit)| {
             let type_guid = stream_types
@@ -413,10 +399,7 @@ fn exact_assembly_operand_path<'a>(
                         Err(error) => return Some(Err(error)),
                     };
                 draft.occurrence(position, after_occurrence)?;
-                occurrence_guids.push(crate::records::identity::Located {
-                    value: occurrence.into(),
-                    offset: u64::try_from(position + 4).ok()?,
-                });
+                occurrence_guids.push(occurrence.into());
                 position = after_occurrence;
                 for _ in 0..2 {
                     let (guid, after_guid) =
@@ -426,10 +409,7 @@ fn exact_assembly_operand_path<'a>(
                             Err(error) => return Some(Err(error)),
                         };
                     draft.identity(position, after_guid)?;
-                    identity_guids.push(crate::records::identity::Located {
-                        value: guid,
-                        offset: u64::try_from(position + 4).ok()?,
-                    });
+                    identity_guids.push(guid);
                     position = after_guid;
                 }
                 if View::u64_le_at(bytes, position)? != 2 {
@@ -444,10 +424,7 @@ fn exact_assembly_operand_path<'a>(
                             Err(error) => return Some(Err(error)),
                         };
                     draft.identity(position, after_guid)?;
-                    identity_guids.push(crate::records::identity::Located {
-                        value: guid,
-                        offset: u64::try_from(position + 4).ok()?,
-                    });
+                    identity_guids.push(guid);
                     position = after_guid;
                 }
                 if View::u32_le_at(bytes, position)? != 2
@@ -476,10 +453,7 @@ fn exact_assembly_operand_path<'a>(
                         Err(error) => return Some(Err(error)),
                     };
                     draft.occurrence(position, after_guid)?;
-                    occurrence_guids.push(crate::records::identity::Located {
-                        value: guid,
-                        offset: u64::try_from(position + 4).ok()?,
-                    });
+                    occurrence_guids.push(guid);
                     position = after_guid;
                 }
                 if position == limit {
@@ -495,10 +469,7 @@ fn exact_assembly_operand_path<'a>(
                                 Err(error) => return Some(Err(error)),
                             };
                         draft.identity(position, after_guid)?;
-                        identity_guids.push(crate::records::identity::Located {
-                            value: guid,
-                            offset: u64::try_from(position + 4).ok()?,
-                        });
+                        identity_guids.push(guid);
                         position = after_guid;
                     }
                     if View::u64_le_at(bytes, position)? != 2 {
@@ -513,10 +484,7 @@ fn exact_assembly_operand_path<'a>(
                                 Err(error) => return Some(Err(error)),
                             };
                         draft.identity(position, after_guid)?;
-                        identity_guids.push(crate::records::identity::Located {
-                            value: guid,
-                            offset: u64::try_from(position + 4).ok()?,
-                        });
+                        identity_guids.push(guid);
                         position = after_guid;
                     }
                     if View::u32_le_at(bytes, position)? != 2 {
@@ -551,10 +519,7 @@ fn exact_assembly_operand_path<'a>(
                                         Err(error) => return Some(Err(error)),
                                     };
                                 draft.pair(position, after_key)?;
-                                paired_occurrence_keys.push(crate::records::identity::Located {
-                                    value: key,
-                                    offset: u64::try_from(position + 4).ok()?,
-                                });
+                                paired_occurrence_keys.push(key);
                                 position = after_key;
                             }
                         }
@@ -570,12 +535,12 @@ fn exact_assembly_operand_path<'a>(
             Some(guid) => Some(guid.to_owned().try_into().ok()?),
             None => None,
         };
+        draft.validate_positions()?;
         DesignAssemblyOperandPath::try_new_typed(
             link,
             record_index,
             crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
             type_guid,
-            u64::try_from(start).ok()?,
             occurrence_guids,
             identity_guids,
         )

@@ -46,11 +46,11 @@ fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
         .unwrap();
     assert_eq!(archive_part.offset(), 0);
     assert_eq!(archive_part.byte_len(), u64::try_from(bytes.len()).unwrap());
-    assert_eq!(archive_part.state(), &PartState::Decoded);
+    assert_eq!(archive_part.state(), &PartState::Decoded {});
     assert!(archive_part.parent().is_none());
     let failed = &parts[&unknown.id];
     assert_eq!(failed.level().as_str(), "zip.entry");
-    assert_eq!(failed.state(), &PartState::GivenUp);
+    assert_eq!(failed.state(), &PartState::GivenUp {});
     assert_eq!(failed.parent(), Some(archive_id));
     assert_eq!(failed.offset(), range.start);
     assert_eq!(
@@ -67,7 +67,7 @@ fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
         .values()
         .find(|part| part.level().as_str() == "zip.entry" && part.offset() == peer_range.start)
         .unwrap();
-    assert_eq!(peer.state(), &PartState::Decoded);
+    assert_eq!(peer.state(), &PartState::Decoded {});
     assert_eq!(peer.parent(), Some(archive_id));
     assert_eq!(
         peer.byte_len(),

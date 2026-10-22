@@ -8,18 +8,26 @@ use syn::spanned::Spanned;
 use syn::visit::{self, Visit};
 
 use super::bindings::{Bindings, Value};
-use super::{Call, Site};
+use super::{Call, PathCheck, Site};
 
 pub(super) const CAPACITY: &str =
     "EncodeError::TargetCapacity outside its declared CAPACITY_FIELDS helper";
 pub(super) type Aliases = BTreeMap<String, Vec<String>>;
 
 pub(super) fn path(path: &syn::Path, aliases: &Aliases, owner: Option<&[String]>) -> Vec<String> {
-    let mut result: Vec<_> = path
+    let result: Vec<_> = path
         .segments
         .iter()
         .map(|part| part.ident.to_string())
         .collect();
+    resolve_names(result, aliases, owner)
+}
+
+pub(super) fn resolve_names(
+    mut result: Vec<String>,
+    aliases: &Aliases,
+    owner: Option<&[String]>,
+) -> Vec<String> {
     let mut seen = BTreeSet::new();
     while let Some(first) = result.first().cloned() {
         if !seen.insert(first.clone()) {
@@ -45,13 +53,19 @@ pub(super) fn import(tree: &syn::UseTree, prefix: &[String], aliases: &mut Alias
             import(&part.tree, &path, aliases);
         }
         syn::UseTree::Name(name) => {
-            let mut path = prefix.to_vec();
-            path.push(name.ident.to_string());
-            aliases.insert(name.ident.to_string(), path);
+            if name.ident == "self" && !prefix.is_empty() {
+                aliases.insert(prefix[prefix.len() - 1].clone(), prefix.to_vec());
+            } else {
+                let mut path = prefix.to_vec();
+                path.push(name.ident.to_string());
+                aliases.insert(name.ident.to_string(), path);
+            }
         }
         syn::UseTree::Rename(rename) => {
             let mut path = prefix.to_vec();
-            path.push(rename.ident.to_string());
+            if rename.ident != "self" || prefix.is_empty() {
+                path.push(rename.ident.to_string());
+            }
             aliases.insert(rename.rename.to_string(), path);
         }
         syn::UseTree::Group(group) => {
@@ -97,12 +111,77 @@ pub(super) fn import(tree: &syn::UseTree, prefix: &[String], aliases: &mut Alias
     }
 }
 
+pub(super) fn check(parts: &[String], span: proc_macro2::Span, construction: bool) -> Vec<Site> {
+    let mut sites = Vec::new();
+    let Some(name) = parts.last().map(String::as_str) else {
+        return sites;
+    };
+    let parent = parts.iter().rev().nth(1).map(String::as_str);
+    let mut rules = BTreeSet::new();
+    if construction && parent == Some("CodecError") {
+        rules.insert("reachable CodecError construction candidate (fidelity-to-synthesis catch boundary not proved)");
+    }
+    if matches!(
+        name,
+        "NotImplemented" | "UnsupportedContent" | "Malformed" | "malformed" | "Truncated"
+    ) {
+        rules.insert("forbidden encode-path error spelling");
+    }
+    if (construction && name == "ResourceLimit")
+        || (parent == Some("ResourceLimit") && name == "new")
+    {
+        // EncodeError::ResourceLimit wraps a session-issued value; it does
+        // not construct the core budget finding.
+        if parent != Some("EncodeError") && parent != Some("CodecError") {
+            rules.insert("manufactured ResourceLimit");
+        }
+    }
+    if parent == Some("ErrorKind") {
+        rules.insert("manufactured io::ErrorKind");
+    }
+    if parent == Some("Error")
+        && parts.iter().any(|part| part == "io")
+        && matches!(name, "new" | "other" | "from")
+    {
+        rules.insert("manufactured io::Error");
+    }
+    if parent == Some("EncodeError") && construction {
+        if name == "Io" {
+            rules.insert("explicit EncodeError::Io (only Write/Seek ? may construct Io)");
+        }
+        if name == "TargetCapacity" {
+            rules.insert(CAPACITY);
+        }
+    }
+    if parent == Some("TargetRefusalKind")
+        && matches!(
+            name,
+            "ExplicitUnavailable"
+                | "InheritedUnavailable"
+                | "DefaultUnavailable"
+                | "UnrecordedSource"
+        )
+    {
+        rules.insert("removed TargetRefusalKind variant use");
+    }
+    for rule in rules {
+        let at = span.start();
+        sites.push(Site {
+            line: at.line,
+            column: at.column + 1,
+            rule: rule.to_owned(),
+        });
+    }
+    sites
+}
+
 pub(super) struct Body<'a> {
     pub aliases: Aliases,
     pub owner: Option<&'a [String]>,
     pub bindings: Bindings,
     pub calls: BTreeSet<Call>,
     pub sites: Vec<Site>,
+    pub path_checks: Vec<PathCheck>,
 }
 impl<'a> Body<'a> {
     pub(super) fn new(aliases: Aliases, owner: Option<&'a [String]>) -> Self {
@@ -112,69 +191,17 @@ impl<'a> Body<'a> {
             bindings: Bindings::default(),
             calls: BTreeSet::new(),
             sites: Vec::new(),
+            path_checks: Vec::new(),
         }
     }
 
     fn check(&mut self, parts: &[String], span: proc_macro2::Span, construction: bool) {
-        let Some(name) = parts.last().map(String::as_str) else {
-            return;
-        };
-        let parent = parts.iter().rev().nth(1).map(String::as_str);
-        let mut rules = BTreeSet::new();
-        if construction && parent == Some("CodecError") {
-            rules.insert("reachable CodecError construction candidate (fidelity-to-synthesis catch boundary not proved)");
-        }
-        if matches!(
-            name,
-            "NotImplemented" | "UnsupportedContent" | "Malformed" | "malformed" | "Truncated"
-        ) {
-            rules.insert("forbidden encode-path error spelling");
-        }
-        if (construction && name == "ResourceLimit")
-            || (parent == Some("ResourceLimit") && name == "new")
-        {
-            // EncodeError::ResourceLimit wraps a session-issued value; it does
-            // not construct the core budget finding.
-            if parent != Some("EncodeError") && parent != Some("CodecError") {
-                rules.insert("manufactured ResourceLimit");
-            }
-        }
-        if parent == Some("ErrorKind") {
-            rules.insert("manufactured io::ErrorKind");
-        }
-        if parent == Some("Error")
-            && parts.iter().any(|part| part == "io")
-            && matches!(name, "new" | "other" | "from")
-        {
-            rules.insert("manufactured io::Error");
-        }
-        if parent == Some("EncodeError") && construction {
-            if name == "Io" {
-                rules.insert("explicit EncodeError::Io (only Write/Seek ? may construct Io)");
-            }
-            if name == "TargetCapacity" {
-                rules.insert(CAPACITY);
-            }
-        }
-        if parent == Some("TargetRefusalKind")
-            && matches!(
-                name,
-                "ExplicitUnavailable"
-                    | "InheritedUnavailable"
-                    | "DefaultUnavailable"
-                    | "UnrecordedSource"
-            )
-        {
-            rules.insert("removed TargetRefusalKind variant use");
-        }
-        for rule in rules {
-            let at = span.start();
-            self.sites.push(Site {
-                line: at.line,
-                column: at.column + 1,
-                rule: rule.to_owned(),
-            });
-        }
+        self.path_checks.push(PathCheck {
+            path: parts.to_vec(),
+            span,
+            construction,
+        });
+        self.sites.extend(check(parts, span, construction));
     }
 
     fn value(&self, expression: &syn::Expr) -> Value {
@@ -292,6 +319,11 @@ impl<'a> Body<'a> {
 impl<'ast> Visit<'ast> for Body<'_> {
     fn visit_item(&mut self, _item: &'ast syn::Item) {}
     fn visit_expr_path(&mut self, value: &'ast syn::ExprPath) {
+        if value.path.get_ident().is_some_and(|name| {
+            matches!(self.bindings.get(&name.to_string()), Some(Value::Unknown))
+        }) {
+            return;
+        }
         let names = path(&value.path, &self.aliases, self.owner);
         self.check(&names, value.span(), true);
         visit::visit_expr_path(self, value);

@@ -185,40 +185,41 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
     };
     let path = crate::records::feature::assembly::DesignAssemblyOperandPath::try_new(
         crate::records::feature::assembly::DesignAssemblyOperandPathLink {
-            locator_reference_offset: 11,
             locator_record_index: 10,
             locator_class_tag: crate::records::references::DesignClassTag::try_from(
                 "363".to_owned(),
             )
             .unwrap(),
-            locator_byte_offset: 100,
-            locator_scope_reference_offset: 111,
+
             wrapper_record_index: 20,
-            wrapper_reference_offset: 122,
+
             wrapper_class_tag: crate::records::references::DesignClassTag::try_from(
                 "388".to_owned(),
             )
             .unwrap(),
-            wrapper_byte_offset: 200,
-            path_reference_offset: 211,
         },
         30,
         crate::records::references::DesignClassTag::try_from("386".to_owned()).unwrap(),
-        300,
-        vec![crate::records::identity::Located {
+        (vec![crate::records::identity::Located {
             value: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
             offset: 311,
-        }],
-        vec![crate::records::identity::Located {
+        }])
+        .into_iter()
+        .map(|field| field.value)
+        .collect(),
+        (vec![crate::records::identity::Located {
             value: "22222222-2222-4222-8222-222222222222"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
             offset: 322,
-        }],
+        }])
+        .into_iter()
+        .map(|field| field.value)
+        .collect(),
     )
     .unwrap();
     let limits: crate::records::feature::assembly::DesignAssemblyLimits =
@@ -818,9 +819,14 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
                 link.clone(),
                 30,
                 tag.to_owned().try_into().unwrap(),
-                300,
-                guids(&[400]),
-                guids(&offsets),
+                (guids(&[400]))
+                    .into_iter()
+                    .map(|field| field.value)
+                    .collect(),
+                (guids(&offsets))
+                    .into_iter()
+                    .map(|field| field.value)
+                    .collect(),
             );
             assert_eq!(result.is_ok(), valid);
         }
@@ -829,9 +835,14 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
         link,
         30,
         "390".to_owned().try_into().unwrap(),
-        300,
-        guids(&[400, 480]),
-        guids(&[560, 640, 720, 800]),
+        (guids(&[400, 480]))
+            .into_iter()
+            .map(|field| field.value)
+            .collect(),
+        (guids(&[560, 640, 720, 800]))
+            .into_iter()
+            .map(|field| field.value)
+            .collect(),
     )
     .unwrap();
     let wire = serde_json::to_value(path).unwrap();

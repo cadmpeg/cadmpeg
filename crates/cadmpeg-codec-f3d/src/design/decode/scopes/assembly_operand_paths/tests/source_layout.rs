@@ -197,3 +197,59 @@ fn admitted_locator_wrapper_and_path_links_keep_their_actual_source_slots() {
         ),])
     );
 }
+
+#[test]
+fn native_path_keeps_ordered_identity_values_without_source_coordinates() {
+    let bytes = paired_path_bytes();
+    let arena = DecodeArena::new();
+    let (_ctx, source) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let parsed = super::super::exact_assembly_operand_path(
+        source,
+        0,
+        65,
+        bytes.len(),
+        path_link(),
+        Some(TYPED_OCCURRENCE_PATH_TYPE_GUID),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(parsed.content).unwrap(),
+        serde_json::json!({
+            "link": {"locator_record_index":64, "locator_class_tag":"304",
+                "wrapper_record_index":66, "wrapper_class_tag":"382"},
+            "record_index":65, "class_tag":"366", "type_guid":TYPED_OCCURRENCE_PATH_TYPE_GUID,
+            "occurrence_guids":["11111111-1111-1111-1111-111111111111"],
+            "identity_guids":["22222222-2222-2222-2222-222222222222",
+                "33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444",
+                "55555555-5555-5555-5555-555555555555"],
+            "paired_occurrence_keys":["43", "66666666-6666-6666-6666-666666666666"]
+        })
+    );
+}
+
+#[test]
+fn source_order_admission_rejects_reversed_actual_record_fields() {
+    let first = super::path_bytes();
+    let mut bytes = first.clone();
+    bytes.extend_from_slice(&first);
+    let arena = DecodeArena::new();
+    let (_ctx, source) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let early =
+        super::super::exact_assembly_operand_path(source, 0, 65, first.len(), path_link(), None)
+            .unwrap()
+            .unwrap();
+    let mut late = super::super::exact_assembly_operand_path(
+        source,
+        first.len(),
+        65,
+        bytes.len(),
+        path_link(),
+        None,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(late.source.append(early.source).is_none());
+}

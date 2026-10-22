@@ -26,6 +26,13 @@ struct Site {
 }
 
 #[derive(Debug)]
+struct PathCheck {
+    path: Vec<String>,
+    span: proc_macro2::Span,
+    construction: bool,
+}
+
+#[derive(Debug)]
 struct Function {
     file: String,
     scope: Vec<String>,
@@ -33,9 +40,11 @@ struct Function {
     name: String,
     line: usize,
     root: bool,
+    root_trait: Option<Vec<String>>,
     is_macro: bool,
     calls: BTreeSet<Call>,
     sites: Vec<Site>,
+    path_checks: Vec<PathCheck>,
 }
 impl Function {
     fn label(&self) -> String {
@@ -57,9 +66,55 @@ struct Graph {
     functions: Vec<Function>,
     capacities: Vec<(String, String)>,
     global: Vec<String>,
+    aliases: BTreeMap<Vec<String>, BTreeSet<Vec<String>>>,
 }
 
 impl Graph {
+    fn forwarded_paths(&self, path: &[String]) -> BTreeSet<Vec<String>> {
+        let mut found = BTreeSet::new();
+        let mut pending = VecDeque::from([(path.to_vec(), BTreeMap::<Vec<String>, usize>::new())]);
+        while let Some((path, used)) = pending.pop_front() {
+            found.insert(path.clone());
+            for length in (1..=path.len()).rev() {
+                let prefix = &path[..length];
+                let Some(targets) = self.aliases.get(prefix) else {
+                    continue;
+                };
+                if used
+                    .get(prefix)
+                    .is_some_and(|previous| path.len() >= *previous)
+                {
+                    break;
+                }
+                let mut used = used.clone();
+                used.insert(prefix.to_vec(), path.len());
+                for target in targets {
+                    let mut forwarded = target.clone();
+                    forwarded.extend_from_slice(&path[length..]);
+                    pending.push_back((forwarded, used.clone()));
+                }
+                break;
+            }
+        }
+        found
+    }
+
+    fn is_root(&self, function: &Function) -> bool {
+        function.root
+            || function.root_trait.as_ref().is_some_and(|path| {
+                symbol_candidates(path, function).iter().any(|candidate| {
+                    self.forwarded_paths(candidate).iter().any(|path| {
+                        path.iter().map(String::as_str).eq([
+                            "cadmpeg_ir",
+                            "codec",
+                            "write",
+                            "EncoderBackend",
+                        ])
+                    })
+                })
+            })
+    }
+
     fn reachable(&self) -> BTreeMap<usize, Option<usize>> {
         let mut methods: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
         let mut symbols: BTreeMap<Vec<String>, Vec<usize>> = BTreeMap::new();
@@ -82,7 +137,7 @@ impl Graph {
         let mut previous = BTreeMap::new();
         let mut pending = VecDeque::new();
         for (index, function) in self.functions.iter().enumerate() {
-            if function.root {
+            if self.is_root(function) {
                 previous.insert(index, None);
                 pending.push_back(index);
             }
@@ -100,8 +155,14 @@ impl Graph {
                     Call::UnresolvedValue(_) => {}
                     Call::Function(path) => {
                         for candidate in symbol_candidates(path, &self.functions[index]) {
-                            if let Some(found) = symbols.get(&candidate) {
-                                groups.push(found);
+                            let mut resolved = false;
+                            for candidate in self.forwarded_paths(&candidate) {
+                                if let Some(found) = symbols.get(&candidate) {
+                                    groups.push(found);
+                                    resolved = true;
+                                }
+                            }
+                            if resolved {
                                 break;
                             }
                         }
@@ -140,7 +201,15 @@ impl Graph {
                     ));
                 }
             }
-            for site in &function.sites {
+            let mut sites = function.sites.clone();
+            for check in &function.path_checks {
+                for candidate in symbol_candidates(&check.path, function) {
+                    for path in self.forwarded_paths(&candidate) {
+                        sites.extend(rules::check(&path, check.span, check.construction));
+                    }
+                }
+            }
+            for site in &sites {
                 if site.rule == rules::CAPACITY && self.capacity_owner(function) {
                     continue;
                 }
@@ -177,10 +246,11 @@ impl Graph {
             let function = &self.functions[index];
             for call in &function.calls {
                 if let Call::Function(path) = call {
-                    if !symbol_candidates(path, function)
-                        .iter()
-                        .any(|path| symbols.contains(path))
-                    {
+                    if !symbol_candidates(path, function).iter().any(|path| {
+                        self.forwarded_paths(path)
+                            .iter()
+                            .any(|path| symbols.contains(path))
+                    }) {
                         unresolved.insert(format!("{}: {} (no workspace target proved; external/constructor/reexport/function-flow classification remains unresolved)", function.label(), path.join("::")));
                     }
                 }
@@ -278,7 +348,10 @@ fn encode_path_constructions_follow_the_typed_error_contract() {
         .expect("workspace root");
     let graph = source::workspace(root);
     assert!(
-        graph.functions.iter().any(|function| function.root),
+        graph
+            .functions
+            .iter()
+            .any(|function| graph.is_root(function)),
         "no EncoderBackend roots found"
     );
     let found = graph.findings();

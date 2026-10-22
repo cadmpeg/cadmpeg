@@ -108,3 +108,5 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
         .iter()
         .any(|loss| loss.code.local_code() == "source.preserved-image-unavailable"));
 }
+
+mod fallback;

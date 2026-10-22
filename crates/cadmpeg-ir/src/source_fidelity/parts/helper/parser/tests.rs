@@ -48,7 +48,7 @@ fn parser_scope_keeps_real_parentage_and_one_failed_child_home_with_its_sibling(
         .iter()
         .find(|(_, p)| p.level.as_str() == "zip.archive")
         .expect("actual archive parent");
-    assert_eq!(parent.state, PartState::Decoded);
+    assert_eq!(parent.state, PartState::Decoded {});
     assert!(parent.parent.is_none());
     let children = parts
         .values()
@@ -61,7 +61,7 @@ fn parser_scope_keeps_real_parentage_and_one_failed_child_home_with_its_sibling(
     assert_eq!(
         children
             .iter()
-            .filter(|p| p.state == PartState::GivenUp)
+            .filter(|p| p.state == PartState::GivenUp {})
             .count(),
         1
     );
@@ -106,7 +106,7 @@ fn parent_give_up_covers_nested_success_and_failure_without_extra_source_homes()
     let (parent_id, _) = fidelity
         .parts
         .iter()
-        .find(|(_, p)| p.state == PartState::GivenUp)
+        .find(|(_, p)| p.state == PartState::GivenUp {})
         .expect("one parent give-up");
     assert_eq!(fidelity.parts.len(), 3);
     assert!(fidelity

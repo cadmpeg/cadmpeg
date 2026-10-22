@@ -5,8 +5,8 @@ use crate::schema::rewrite::typed::prune::ReferencePruneEffect;
 use crate::source_fidelity::parts::{
     DecodeParts, PartDependencyPruning, PartLevel, PartOutput, PartSpec,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use cadmpeg_core::decode::{DecodeContext, View, XmlElementScan, XmlEncoding, u64_from_index};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View, XmlElementScan, XmlEncoding};
 use cadmpeg_ir::source_fidelity::parts::PartLevel;
 
 use super::{FrameParent, FramedPart};

@@ -61,7 +61,7 @@ fn real_record_callback_keeps_later_typed_parameters_and_one_exact_failed_statem
     );
     let node = &fidelity.parts()[&stub.id];
     assert_eq!(node.level().as_str(), "step.simple_entity_instance");
-    assert_eq!(node.state(), &PartState::GivenUp);
+    assert_eq!(node.state(), &PartState::GivenUp {});
     assert_eq!(node.offset(), u64::try_from(start).expect("source offset"));
     assert_eq!(
         node.byte_len(),
@@ -71,7 +71,7 @@ fn real_record_callback_keeps_later_typed_parameters_and_one_exact_failed_statem
         fidelity
             .parts()
             .values()
-            .filter(|node| node.state() == &PartState::Decoded)
+            .filter(|node| node.state() == &PartState::Decoded {})
             .count(),
         2
     );
@@ -122,7 +122,7 @@ fn complex_callback_preserves_real_partials_and_recovers_after_duplicate_partial
     let (failed_id, failed) = fidelity
         .parts()
         .iter()
-        .find(|(_, part)| part.state() == &PartState::GivenUp)
+        .find(|(_, part)| part.state() == &PartState::GivenUp {})
         .expect("one duplicate-partial failure");
     assert_eq!(failed.level().as_str(), "step.complex_entity_instance");
     assert_eq!(fidelity.parts().len(), 3);
@@ -210,7 +210,7 @@ fn cut_short_entities_use_real_parent_or_eof_without_synthesized_framing() {
         let stub = &stubs[0];
         let node = &fidelity.parts()[&stub.id];
         assert_eq!(node.level().as_str(), level);
-        assert_eq!(node.state(), &PartState::GivenUp);
+        assert_eq!(node.state(), &PartState::GivenUp {});
         assert_eq!(
             node.framing_bytes()
                 .iter()

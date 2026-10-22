@@ -205,9 +205,14 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
         .iter()
         .find(|entry| entry.name() == "Payload.bin")
         .expect("payload entry");
-    let spans = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    let spans = result
+        .source_fidelity()
+        .freecad_ledgers()
+        .values()
+        .next()
+        .expect("FCStd source ledgers")
+        .logical_ledger
+        .clone();
     let span = spans
         .iter()
         .find(|span| span.entry == entry.name())
@@ -333,9 +338,14 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
-    let spans = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    let spans = result
+        .source_fidelity()
+        .freecad_ledgers()
+        .values()
+        .next()
+        .expect("FCStd source ledgers")
+        .logical_ledger
+        .clone();
     for (name, _, _, payload) in cases {
         let entry = entries
             .iter()

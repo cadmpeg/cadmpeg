@@ -72,7 +72,7 @@ pub(crate) fn project_local_components(
                 let Some(guid) = path.occurrence_guids().first() else {
                     continue;
                 };
-                let key = guid.value.as_str().to_ascii_lowercase();
+                let key = guid.as_str().to_ascii_lowercase();
                 let root = projector.native_by_guid.get(&key).copied().flatten();
                 let Some(root) = root else {
                     continue;

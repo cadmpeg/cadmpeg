@@ -18,8 +18,10 @@ use crate::brep::ShapePayloadRecord;
 use crate::gui;
 use crate::native::element_map::ElementMapRecord;
 use crate::native::{
-    ArchiveSpan, ByteCoverageRecord, DocumentFacts, EntryRecord, LogicalClassification,
-    LogicalSpan, PropertyFamily, PropertyRecord, StringTableRecord,
+    DocumentFacts, EntryRecord, PropertyFamily, PropertyRecord, StringTableRecord,
+};
+use cadmpeg_ir::source_fidelity::freecad::{
+    ArchiveSpan, ArchiveSpanRole, ByteCoverageRecord, LogicalClassification, LogicalSpan,
 };
 
 pub(crate) mod parts;
@@ -222,9 +224,9 @@ fn scan_impl<'a>(
     for (index, span) in physical_ledger.into_iter().enumerate() {
         ledger.push(ArchiveSpan {
             id: crate::native::native_id("archive-span", index.to_string()),
-            span: crate::native::ByteSpan::try_new(span.start, span.end)
+            span: cadmpeg_ir::source_fidelity::freecad::ByteSpan::try_new(span.start, span.end)
                 .map_err(CodecError::Malformed)?,
-            role: crate::native::ArchiveSpanRole::from(&span.role),
+            role: archive_span_role(&span.role),
         });
     }
     Ok(Scan {
@@ -875,7 +877,8 @@ fn push_logical_span(
     output.push(LogicalSpan {
         id: crate::native::native_id("logical-span", output.len().to_string()),
         entry: entry.name().to_owned(),
-        span: crate::native::ByteSpan::try_new(start, end).map_err(CodecError::Malformed)?,
+        span: cadmpeg_ir::source_fidelity::freecad::ByteSpan::try_new(start, end)
+            .map_err(CodecError::Malformed)?,
         classification,
     });
     Ok(())
@@ -883,3 +886,27 @@ fn push_logical_span(
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+fn archive_span_role(role: &cadmpeg_container::ZipSpanRole) -> ArchiveSpanRole {
+    use cadmpeg_container::ZipSpanRole;
+    match role {
+        ZipSpanRole::LocalSignature(entry) => ArchiveSpanRole::LocalSignature(entry.clone()),
+        ZipSpanRole::LocalFields(entry) => ArchiveSpanRole::LocalFields(entry.clone()),
+        ZipSpanRole::LocalName(entry) => ArchiveSpanRole::LocalName(entry.clone()),
+        ZipSpanRole::LocalExtra(entry) => ArchiveSpanRole::LocalExtra(entry.clone()),
+        ZipSpanRole::CompressedPayload(entry) => ArchiveSpanRole::CompressedPayload(entry.clone()),
+        ZipSpanRole::DataDescriptor(entry) => ArchiveSpanRole::DataDescriptor(entry.clone()),
+        ZipSpanRole::CentralSignature(entry) => ArchiveSpanRole::CentralSignature(entry.clone()),
+        ZipSpanRole::CentralFields(entry) => ArchiveSpanRole::CentralFields(entry.clone()),
+        ZipSpanRole::CentralName(entry) => ArchiveSpanRole::CentralName(entry.clone()),
+        ZipSpanRole::CentralExtra(entry) => ArchiveSpanRole::CentralExtra(entry.clone()),
+        ZipSpanRole::CentralComment(entry) => ArchiveSpanRole::CentralComment(entry.clone()),
+        ZipSpanRole::Padding { entry: Some(entry) } => {
+            ArchiveSpanRole::EntryArchivePadding(entry.clone())
+        }
+        ZipSpanRole::Padding { entry: None } => ArchiveSpanRole::ArchivePadding,
+        ZipSpanRole::Zip64EndRecord => ArchiveSpanRole::Zip64EndRecord,
+        ZipSpanRole::Zip64EndLocator => ArchiveSpanRole::Zip64EndLocator,
+        ZipSpanRole::EndRecord => ArchiveSpanRole::EndRecord,
+    }
+}

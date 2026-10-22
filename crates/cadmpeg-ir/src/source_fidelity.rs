@@ -19,6 +19,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
 pub mod b1;
+pub mod freecad;
 mod part;
 pub mod parts;
 
@@ -385,6 +386,8 @@ pub struct SourceFidelity {
     parts: BTreeMap<UnknownId, parts::PartRecord>,
     /// Owner-derived maximal B1 spans for finalized source streams.
     b1_spans: BTreeMap<String, b1::finalization::ClassifiedStream>,
+    /// Closed FCStd source-ledger arenas keyed by their actual archive stream.
+    freecad_ledgers: BTreeMap<String, freecad::FreecadSourceLedgers>,
 }
 
 #[derive(Deserialize)]
@@ -412,6 +415,9 @@ struct SourceFidelityWire {
     /// Owner-derived maximal B1 spans for finalized source streams.
     #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     b1_spans: BTreeMap<String, b1::finalization::ClassifiedStream>,
+    /// Closed FCStd source-ledger arenas keyed by actual archive stream.
+    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    freecad_ledgers: BTreeMap<String, freecad::FreecadSourceLedgers>,
 }
 
 impl TryFrom<SourceFidelityWire> for SourceFidelity {
@@ -425,8 +431,14 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
             retained_records: wire.retained_records,
             parts: wire.parts,
             b1_spans: wire.b1_spans,
+            freecad_ledgers: wire.freecad_ledgers,
         };
         parts::validate_tree(&value.parts)?;
+        for stream in value.freecad_ledgers.keys() {
+            if stream.is_empty() {
+                return Err("FCStd source ledgers require a named archive stream".into());
+            }
+        }
         if value.b1_spans.keys().any(String::is_empty) {
             return Err("B1 coverage requires a named source stream".into());
         }
@@ -460,6 +472,8 @@ impl Serialize for SourceFidelity {
             parts: &'a BTreeMap<UnknownId, parts::PartRecord>,
             #[serde(skip_serializing_if = "BTreeMap::is_empty")]
             b1_spans: &'a BTreeMap<String, b1::finalization::ClassifiedStream>,
+            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+            freecad_ledgers: &'a BTreeMap<String, freecad::FreecadSourceLedgers>,
         }
         Wire {
             unrepresented: self.unrepresented(),
@@ -469,6 +483,7 @@ impl Serialize for SourceFidelity {
             retained_records: &self.retained_records,
             parts: &self.parts,
             b1_spans: &self.b1_spans,
+            freecad_ledgers: &self.freecad_ledgers,
         }
         .serialize(serializer)
     }
@@ -484,6 +499,7 @@ impl SourceFidelity {
             retained_records: std::collections::BTreeMap::new(),
             parts: BTreeMap::new(),
             b1_spans: BTreeMap::new(),
+            freecad_ledgers: BTreeMap::new(),
         }
     }
 
@@ -497,6 +513,7 @@ impl SourceFidelity {
         BTreeMap<String, RecordLayout>,
         BTreeMap<UnknownId, parts::PartRecord>,
         BTreeMap<String, b1::finalization::ClassifiedStream>,
+        BTreeMap<String, freecad::FreecadSourceLedgers>,
     ) {
         (
             self.annotations,
@@ -505,6 +522,7 @@ impl SourceFidelity {
             self.record_layout,
             self.parts,
             self.b1_spans,
+            self.freecad_ledgers,
         )
     }
 
@@ -540,6 +558,13 @@ impl SourceFidelity {
     /// Append source metadata after checking all tables for identity collisions.
     /// Failure leaves this source metadata unchanged.
     pub fn append(&mut self, mut other: Self) -> Result<(), cadmpeg_core::CodecError> {
+        for stream in other.freecad_ledgers.keys() {
+            if self.freecad_ledgers.contains_key(stream) {
+                return Err(CodecError::malformed(format_args!(
+                    "duplicate FCStd source ledgers for stream {stream}"
+                )));
+            }
+        }
         for stream in other.b1_spans.keys() {
             if self.b1_spans.contains_key(stream) {
                 return Err(CodecError::malformed(format_args!(
@@ -581,7 +606,33 @@ impl SourceFidelity {
         self.record_layout.append(&mut other.record_layout);
         self.parts.append(&mut other.parts);
         self.b1_spans.append(&mut other.b1_spans);
+        self.freecad_ledgers.append(&mut other.freecad_ledgers);
         Ok(())
+    }
+
+    /// The three closed FCStd source-ledger arenas by actual archive stream.
+    pub fn freecad_ledgers(&self) -> &BTreeMap<String, freecad::FreecadSourceLedgers> {
+        &self.freecad_ledgers
+    }
+
+    /// Retain one complete set of FCStd source ledgers without replacing a stream.
+    pub fn insert_freecad_ledgers(
+        &mut self,
+        stream: String,
+        ledgers: freecad::FreecadSourceLedgers,
+    ) -> Result<(), CodecError> {
+        let stream =
+            String::from(crate::StreamName::try_from(stream).map_err(CodecError::malformed)?);
+        match self.freecad_ledgers.entry(stream) {
+            Entry::Vacant(entry) => {
+                entry.insert(ledgers);
+                Ok(())
+            }
+            Entry::Occupied(entry) => Err(CodecError::malformed(format_args!(
+                "duplicate FCStd source ledgers for stream {}",
+                entry.key()
+            ))),
+        }
     }
 
     /// Borrow exact source coverage without permitting arbitrary class assignment.

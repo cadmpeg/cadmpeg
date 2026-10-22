@@ -84,6 +84,8 @@ pub(crate) enum FreecadLossCode {
     AppearancePrimitiveSizeNotTransferred,
     /// The declared persistence schema names no dialect this codec has a strategy for.
     SourceDialectUnverified,
+    /// Synthesis writes a different dialect from the current source identity.
+    SourceDialectDisplaced,
     /// The GUI document used schema-1 vocabulary under another declaration.
     SourceGuiSchemaUnverified,
     /// A GUI property states a blank key, so its value has no name to carry.
@@ -137,6 +139,7 @@ impl FreecadLossCode {
         Self::AppearanceTopologyColorCountMismatch,
         Self::AppearancePrimitiveSizeNotTransferred,
         Self::SourceDialectUnverified,
+        Self::SourceDialectDisplaced,
         Self::SourceGuiSchemaUnverified,
         Self::SourceGuiPropertyKeyBlank,
         Self::SourceGuiMetadataUnresolved,
@@ -185,6 +188,7 @@ impl FreecadLossCode {
                 "appearance.primitive-size-not-transferred"
             }
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
             Self::SourceGuiPropertyKeyBlank => "source.gui-property-key-blank",
             Self::SourceGuiMetadataUnresolved => "source.gui-metadata-unresolved",
@@ -231,6 +235,7 @@ impl FreecadLossCode {
             | Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred
             | Self::SourceDialectUnverified
+            | Self::SourceDialectDisplaced
             | Self::SourceGuiSchemaUnverified
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
@@ -284,6 +289,7 @@ impl FreecadLossCode {
             | Self::FileVersionUnverified => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ElementMapVersionUnresolved => LossTaxonomy::RecordNotTyped,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
         }
     }
@@ -452,6 +458,10 @@ const SOURCE_RECORD_COVERAGE: &[(FreecadLossCode, SourceRecordCoverage)] = &[
     (
         FreecadLossCode::SourceDialectUnverified,
         SourceRecordCoverage::Metadata,
+    ),
+    (
+        FreecadLossCode::SourceDialectDisplaced,
+        SourceRecordCoverage::Writer,
     ),
     (
         FreecadLossCode::SourceGuiSchemaUnverified,
@@ -648,6 +658,7 @@ mod tests {
                 "appearance.topology-color-count-mismatch",
                 "appearance.primitive-size-not-transferred",
                 "source.dialect-unverified",
+                "target.source-dialect-displaced",
                 "source.gui-schema-unverified",
                 "source.gui-property-key-blank",
                 "source.gui-metadata-unresolved",

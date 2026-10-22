@@ -35,6 +35,7 @@ mod layer_userdata;
 mod mesh_modifiers_userdata;
 mod mesh_userdata;
 mod object_attributes_userdata;
+mod scope_and_v1_eof;
 mod settings_userdata;
 mod standalone_line;
 mod standalone_line_closure;

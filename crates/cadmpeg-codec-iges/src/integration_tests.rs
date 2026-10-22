@@ -986,3 +986,7 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
 }
 
 mod directory_parts;
+
+mod global_parts;
+
+mod parameter_parts;

@@ -135,9 +135,56 @@ impl Loader<'_> {
     ) {
         let aliases = imports(items, inherited, scope);
         for item in items {
+            let syn::Item::Use(item) = item else { continue };
+            if test_only(&item.attrs) {
+                continue;
+            }
+            let mut declared = Aliases::new();
+            rules::import(&item.tree, &[], &mut declared);
+            for (name, target) in declared {
+                let mut binding = scope.to_vec();
+                binding.push(name.clone());
+                let mut referenced = aliases.clone();
+                referenced.remove(&name);
+                let target = absolute(&rules::resolve_names(target, &referenced, None), scope);
+                if target != binding {
+                    self.graph
+                        .aliases
+                        .entry(binding)
+                        .or_default()
+                        .insert(target);
+                }
+            }
+        }
+        for item in items {
+            if let syn::Item::Type(item) = item {
+                if !test_only(&item.attrs) {
+                    if let syn::Type::Path(ty) = item.ty.as_ref() {
+                        let mut binding = scope.to_vec();
+                        binding.push(item.ident.to_string());
+                        let target = absolute(&rules::path(&ty.path, &aliases, None), scope);
+                        if target != binding {
+                            self.graph
+                                .aliases
+                                .entry(binding)
+                                .or_default()
+                                .insert(target);
+                        }
+                    }
+                }
+            }
+        }
+        for item in items {
             match item {
                 syn::Item::Fn(item) if !test_only(&item.attrs) => {
-                    self.function(file, scope, (None, false), &item.sig, &item.block, &aliases);
+                    self.function(
+                        file,
+                        scope,
+                        (None, false, None),
+                        &item.sig,
+                        &item.block,
+                        &aliases,
+                    );
                 }
                 syn::Item::Impl(item) if !test_only(&item.attrs) => {
                     let owner = match item.self_ty.as_ref() {
@@ -146,10 +193,12 @@ impl Loader<'_> {
                         }
                         _ => None,
                     };
-                    let root = item.trait_.as_ref().is_some_and(|(path, _)| {
-                        rules::path(path, &aliases, None)
-                            .last()
-                            .is_some_and(|name| name == "EncoderBackend")
+                    let root_trait = item
+                        .trait_
+                        .as_ref()
+                        .map(|(path, _)| rules::path(path, &aliases, None));
+                    let root = root_trait.as_ref().is_some_and(|path| {
+                        path.last().is_some_and(|name| name == "EncoderBackend")
                     });
                     if owner
                         .as_ref()
@@ -178,7 +227,7 @@ impl Loader<'_> {
                                 self.function(
                                     file,
                                     scope,
-                                    (owner.clone(), root),
+                                    (owner.clone(), root, root_trait.clone()),
                                     &method.sig,
                                     &method.block,
                                     &aliases,
@@ -198,6 +247,7 @@ impl Loader<'_> {
                                         (
                                             Some(owner_path(vec![item.ident.to_string()], scope)),
                                             false,
+                                            None,
                                         ),
                                         &method.sig,
                                         block,
@@ -267,9 +317,11 @@ impl Loader<'_> {
                             name: name.to_string(),
                             line: item.span().start().line,
                             root: false,
+                            root_trait: None,
                             is_macro: true,
                             calls: scan.calls,
                             sites: scan.sites,
+                            path_checks: scan.path_checks,
                         });
                     }
                 }
@@ -289,7 +341,7 @@ impl Loader<'_> {
         &mut self,
         file: &Path,
         scope: &[String],
-        (owner, root): (Option<Vec<String>>, bool),
+        (owner, root, root_trait): (Option<Vec<String>>, bool, Option<Vec<String>>),
         signature: &syn::Signature,
         block: &syn::Block,
         aliases: &Aliases,
@@ -332,9 +384,11 @@ impl Loader<'_> {
             name: name.to_string(),
             line: span.start().line,
             root,
+            root_trait,
             is_macro: false,
             calls: scan.calls,
             sites: scan.sites,
+            path_checks: scan.path_checks,
         });
         for item in nested.0 {
             self.items(

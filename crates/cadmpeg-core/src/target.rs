@@ -258,9 +258,7 @@ impl fmt::Display for TargetToken {
 
 /// One target-refusal reason, independent of the catalog presented with it.
 ///
-/// Each request state is distinct. In particular, absence of an explicit
-/// token does not conflate an unclassified same-format source with a foreign
-/// source and a missing cross-format default.
+/// Only an unknown explicit token or a missing catalog default refuses a target.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case", tag = "kind")]
@@ -270,37 +268,10 @@ pub enum TargetRefusalKind {
         /// Token supplied by the caller, retained verbatim.
         requested: TargetToken,
     },
-    /// A catalog target was selected explicitly but this input cannot reach it.
-    ExplicitUnavailable {
-        /// Canonical catalog target selected by the token.
-        target: DialectId,
-        /// Token supplied by the caller, retained verbatim.
-        requested: TargetToken,
-        /// Input-conditioned reason the writer cannot deliver the target.
-        reason: String,
-    },
-    /// Same-format inheritance selected a source dialect the writer cannot preserve.
-    InheritedUnavailable {
-        /// Recorded source dialect selected by inheritance.
-        source: DialectId,
-        /// Input-conditioned reason the writer cannot preserve it.
-        reason: String,
-    },
-    /// Same-format inheritance found source metadata without a dialect.
-    UnrecordedSource,
-    /// Inheritance had no same-format source and the catalog declares no default.
+    /// Inheritance needs synthesis but the catalog declares no default.
     NoDefault {
         /// Why no same-format source identity was available to inherit.
         source: DefaultSource,
-    },
-    /// A cross-format default was selected but this input cannot reach it.
-    DefaultUnavailable {
-        /// Canonical catalog default.
-        target: DialectId,
-        /// Why the catalog default, rather than source inheritance, was selected.
-        source: DefaultSource,
-        /// Input-conditioned reason the writer cannot deliver the target.
-        reason: String,
     },
 }
 
@@ -332,13 +303,36 @@ impl Serialize for TargetRefusal {
 }
 
 /// Why inheritance must select an encoder catalog default.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case", tag = "kind", content = "format")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DefaultSource {
     /// The document records no source metadata.
     NoSource,
     /// The document's source belongs to another format.
     ForeignFormat(String),
+    /// A same-format source records no dialect.
+    UnrecordedDialect,
+    /// A recorded same-format dialect has no synthesis row.
+    OffCatalogDialect(DialectId),
+}
+
+impl Serialize for DefaultSource {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "snake_case", tag = "kind")]
+        enum Wire<'a> {
+            NoSource,
+            ForeignFormat { format: &'a str },
+            UnrecordedDialect,
+            OffCatalogDialect { dialect: &'a DialectId },
+        }
+        match self {
+            Self::NoSource => Wire::NoSource,
+            Self::ForeignFormat(format) => Wire::ForeignFormat { format },
+            Self::UnrecordedDialect => Wire::UnrecordedDialect,
+            Self::OffCatalogDialect(dialect) => Wire::OffCatalogDialect { dialect },
+        }
+        .serialize(serializer)
+    }
 }
 
 impl TargetRefusal {
@@ -393,23 +387,6 @@ impl fmt::Display for TargetRefusal {
                 f,
                 "{format} cannot write {requested}: not a target this encoder can synthesize"
             )?,
-            TargetRefusalKind::ExplicitUnavailable {
-                target,
-                requested,
-                reason,
-                ..
-            } => write!(
-                f,
-                "{format} cannot write explicit target {requested} ({target}): {reason}"
-            )?,
-            TargetRefusalKind::InheritedUnavailable { source, reason } => write!(
-                f,
-                "{format} cannot preserve source dialect {source}: {reason}"
-            )?,
-            TargetRefusalKind::UnrecordedSource => write!(
-                f,
-                "{format} cannot inherit a write target: the {format} source records no dialect; name an explicit target"
-            )?,
             TargetRefusalKind::NoDefault {
                 source: DefaultSource::ForeignFormat(source_format),
             } => write!(
@@ -422,17 +399,13 @@ impl fmt::Display for TargetRefusal {
                 f,
                 "{format} cannot select an inherited write target: the document records no source format and this encoder declares no default"
             )?,
-            TargetRefusalKind::DefaultUnavailable {
-                target,
-                source,
-                reason,
-            } => {
-                write!(f, "{format} cannot write default target {target}")?;
-                if let DefaultSource::ForeignFormat(source_format) = source {
-                    write!(f, " selected for source format {source_format}")?;
-                }
-                write!(f, ": {reason}")?;
-            }
+            TargetRefusalKind::NoDefault {
+                source: DefaultSource::UnrecordedDialect,
+            } => write!(f, "{format} cannot select an inherited write target: the same-format source records no dialect and this encoder declares no default")?,
+            TargetRefusalKind::NoDefault {
+                source: DefaultSource::OffCatalogDialect(dialect),
+            } => write!(f, "{format} cannot synthesize inherited source dialect {dialect}: this encoder declares no default")?,
+
         }
         self.write_available(f)
     }
@@ -442,10 +415,7 @@ impl std::error::Error for TargetRefusal {}
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        DefaultSource, TargetCatalog, TargetDescriptor, TargetRefusal, TargetRefusalKind,
-        TargetToken,
-    };
+    use super::{DefaultSource, TargetCatalog, TargetDescriptor, TargetRefusal, TargetRefusalKind};
     use crate::dialect::DialectId;
 
     const NO_ALIASES: &[&str] = &[];
@@ -462,36 +432,6 @@ mod tests {
             ),
             aliases,
         }
-    }
-
-    #[test]
-    fn target_refusal_serializes_request_state_and_the_complete_catalog() {
-        let refusal = TargetRefusal::new(
-            TargetRefusalKind::ExplicitUnavailable {
-                target: crate::dialect_id!("fcstd:schema-4"),
-                requested: TargetToken::new("4"),
-                reason: "the source image cannot be patched".into(),
-            },
-            TargetCatalog::new(TARGETS, None),
-        );
-
-        assert_eq!(
-            serde_json::to_value(refusal).expect("target refusal serializes"),
-            serde_json::json!({
-                "format": "fcstd",
-                "refusal": {
-                    "kind": "explicit_unavailable",
-                    "target": "fcstd:schema-4",
-                    "requested": "4",
-                    "reason": "the source image cannot be patched",
-                },
-                "available": [{
-                    "id": "fcstd:schema-4",
-                    "aliases": ["4"],
-                    "default": false
-                }]
-            })
-        );
     }
 
     #[test]
@@ -621,19 +561,6 @@ mod tests {
         assert_eq!(
             refusal.to_string(),
             "fcstd cannot inherit a write target from source format step: this encoder declares no cross-format default; available targets: fcstd:schema-4"
-        );
-    }
-
-    #[test]
-    fn unrecorded_same_format_source_is_not_a_missing_default() {
-        let refusal = TargetRefusal::new(
-            TargetRefusalKind::UnrecordedSource,
-            TargetCatalog::new(TARGETS, None),
-        );
-
-        assert_eq!(
-            refusal.to_string(),
-            "fcstd cannot inherit a write target: the fcstd source records no dialect; name an explicit target; available targets: fcstd:schema-4"
         );
     }
 }

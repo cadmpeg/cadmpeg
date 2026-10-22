@@ -129,42 +129,95 @@ fn f3z_archive_merges_identity_occurrences() {
         .provenance
         .keys()
         .all(|id| id.starts_with(&prefix)));
-    // A merged F3Z has no retained image of itself, so there is nothing to
-    // preserve, and `f3d:f3z-multi-document` is not a row the generator can
-    // synthesize. `Inherit` therefore refuses by name rather than quietly
-    // handing back a single-document archive under the F3Z document's identity.
-    let error = F3dCodec
+    let inherited = F3dCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .expect_err("the F3Z row is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
+        .expect("§5.0 selects catalog-default synthesis without a retained F3Z image");
+    assert!(matches!(
+        inherited.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
     assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("f3d:f3z-multi-document")
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            inherited.report(),
+            "identity/target"
+        )
+        .as_ref()
+        .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some("f3d:manifest-3-2-0-0")
     );
-    assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "f3d:manifest-3-2-0-0"),
-        "{:?}",
-        refusal.available()
+    assert_eq!(
+        wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            inherited.report().write_path(),
+            "fidelity"
+        ),
+        cadmpeg_ir::report::export::FidelityResolution::Degraded {
+            reason: "preserved F3D source image is unavailable".into(),
+        }
+    );
+    let unrepresented = decoded.source_fidelity().unrepresented();
+    let cause = if unrepresented.is_empty() {
+        None
+    } else {
+        Some(
+            cadmpeg_ir::codec::write::SynthesisCause::SourceUnrepresented {
+                classes: unrepresented,
+            },
+        )
+    };
+    assert_eq!(inherited.report().synthesis_cause(), cause.as_ref());
+    let displacement: Vec<_> = inherited
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::SourceDialectDisplaced.kind())
+        .collect();
+    assert_eq!(displacement.len(), 1);
+    assert_eq!(displacement[0].message, "source dialect f3d:f3z-multi-document was displaced by target dialect f3d:manifest-3-2-0-0; the source dialect identity is not preserved");
+    let unavailable: Vec<_> = inherited
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::SourcePreservedImageUnavailable.kind())
+        .collect();
+    assert_eq!(unavailable.len(), 1);
+    assert_eq!(
+        unavailable[0].message,
+        "preserved F3D source image is unavailable; regenerated from IR"
+    );
+    let mut inherited_bytes = Vec::new();
+    inherited
+        .write_to(&mut inherited_bytes)
+        .expect("the default synthesis writes");
+    let inherited_output = F3dCodec
+        .decode(&mut Cursor::new(inherited_bytes), &DecodeOptions::default())
+        .expect("actual synthesized target grammar reads");
+    assert_eq!(
+        inherited_output
+            .report()
+            .dialects()
+            .expect("native classification")
+            .primary()
+            .dialect()
+            .as_str(),
+        "f3d:manifest-3-2-0-0"
+    );
+    assert_eq!(
+        inherited_output.ir().model.bodies.len(),
+        decoded.ir().model.bodies.len()
+    );
+    assert_eq!(
+        inherited_output.ir().model.faces.len(),
+        decoded.ir().model.faces.len()
+    );
+    assert_eq!(
+        inherited_output.ir().model.points.len(),
+        decoded.ir().model.points.len()
     );
 
-    // Naming the row is the escape, and it still regenerates the merged model
-    // as a single-document archive — now with the report saying so.
+    // An explicit row independently regenerates the same merged model.
     let mut regenerated = Vec::new();
     let report = F3dCodec
         .plan(

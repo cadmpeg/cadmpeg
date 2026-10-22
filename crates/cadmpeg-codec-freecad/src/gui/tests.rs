@@ -1180,7 +1180,7 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
             .collect::<Vec<_>>(),
         ["VisualLayerList", "VisualLayer", "VisualLayer"]
     );
-    let logical: Vec<crate::native::LogicalSpan> =
+    let logical: Vec<cadmpeg_ir::source_fidelity::freecad::LogicalSpan> =
         crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
     let span = logical
         .iter()
@@ -1678,7 +1678,7 @@ fn validates_the_complete_loaded_dynamic_gui_registry() {
     }));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
-    let logical: Vec<crate::native::LogicalSpan> =
+    let logical: Vec<cadmpeg_ir::source_fidelity::freecad::LogicalSpan> =
         crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
     assert!(properties.iter().all(|property| {
         logical.iter().any(|span| {
@@ -1779,7 +1779,7 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         payload
     );
 
-    let logical: Vec<crate::native::LogicalSpan> =
+    let logical: Vec<cadmpeg_ir::source_fidelity::freecad::LogicalSpan> =
         crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
     let span = logical
         .iter()

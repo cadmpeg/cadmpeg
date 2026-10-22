@@ -13,29 +13,22 @@ mod coverage;
 use crate::loss::RhinoLossCode;
 use crate::RhinoArchiveVersion;
 
-/// Why this writer cannot reproduce a source archive version outside
-/// [`RhinoArchiveVersion::TARGETS`].
-///
-/// Archives 1, 2, 3, 4, 5 and 90 decode without a writer, unknown words decode
-/// as residual, and 3DM has no retained-image path that could write any of
-/// them back.
-const OFF_CATALOG_SOURCE_REASON: &str =
-    "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
-     path that could preserve it";
-
-/// Synthesize the resolved archive version.
-///
-/// Every catalog resolution names its `RhinoArchiveVersion::ALL` row by
-/// position; the preserved resolution has no row and is refused here because
-/// 3DM has no replay path.
+/// Synthesize the selected catalog archive version.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let Some(index) = target.index() else {
-        return Err(target.unavailable(OFF_CATALOG_SOURCE_REASON));
+    let synthesis = target.for_synthesis()?;
+    let target = synthesis.resolution();
+    let index = synthesis.index();
+    debug_assert!(
+        index < RhinoArchiveVersion::ALL.len(),
+        "Rhino catalog rows match archive grammars"
+    );
+    let version = match RhinoArchiveVersion::ALL.get(index) {
+        Some(version) => *version,
+        None => RhinoArchiveVersion::ALL[0],
     };
-    let version = RhinoArchiveVersion::ALL[index];
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         mode: DecodeMode::Salvage,

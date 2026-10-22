@@ -17,7 +17,22 @@ pub(super) struct PathLinkSources<'a> {
     scope_reference: View<'a>,
     wrapper_reference: View<'a>,
     wrapper: View<'a>,
-    path_reference: View<'a>,
+    path_reference: PathReferenceSource<'a>,
+}
+
+#[derive(Clone, Copy)]
+enum PathReferenceSource<'a> {
+    Index(View<'a>),
+    Occurrence(View<'a>),
+}
+
+/// These are the actual encodings accepted by the corresponding exact parser.
+#[derive(Clone, Copy)]
+pub(super) enum PathSourceForm {
+    Counted,
+    Legacy383,
+    Legacy388,
+    Carrier363,
 }
 
 impl<'a> PathLinkSources<'a> {
@@ -36,13 +51,29 @@ impl<'a> PathLinkSources<'a> {
             scope_reference: field(source, usize::try_from(scope_reference).ok()?, 4)?,
             wrapper_reference: field(source, usize::try_from(wrapper_reference).ok()?, 4)?,
             wrapper: header(source, wrapper, 4)?,
-            path_reference: field(source, usize::try_from(path_reference).ok()?, 4)?,
+            path_reference: PathReferenceSource::Index(field(
+                source,
+                usize::try_from(path_reference).ok()?,
+                4,
+            )?),
         })
+    }
+
+    pub(super) fn occurrence_reference(
+        mut self,
+        source: View<'a>,
+        text_count_at: usize,
+        text_end: usize,
+    ) -> Option<Self> {
+        self.path_reference =
+            PathReferenceSource::Occurrence(text(source, text_count_at, text_end)?);
+        Some(self)
     }
 }
 
 pub(super) struct PathSourceDraft<'a> {
     bulk: View<'a>,
+    form: PathSourceForm,
     origins: Vec<View<'a>>,
     header: View<'a>,
     link: Option<PathLinkSources<'a>>,
@@ -55,6 +86,7 @@ impl<'a> PathSourceDraft<'a> {
     pub(super) fn new(source: View<'a>, start: usize) -> Option<Self> {
         Some(Self {
             bulk: source,
+            form: PathSourceForm::Counted,
             origins: Vec::from([source]),
             header: header(source, start, 8)?,
             link: None,
@@ -62,6 +94,58 @@ impl<'a> PathSourceDraft<'a> {
             identities: Vec::new(),
             pairs: Vec::new(),
         })
+    }
+
+    pub(super) fn legacy(source: View<'a>, start: usize, form: PathSourceForm) -> Option<Self> {
+        let mut draft = Self::new(source, start)?;
+        draft.form = form;
+        draft.header = header(source, start, 4)?;
+        Some(draft)
+    }
+
+    pub(super) fn locator_start(&self) -> Option<usize> {
+        self.link
+            .as_ref()?
+            .locator
+            .start()
+            .checked_sub(self.bulk.start())
+    }
+    pub(super) fn wrapper_start(&self) -> Option<usize> {
+        self.link
+            .as_ref()?
+            .wrapper
+            .start()
+            .checked_sub(self.bulk.start())
+    }
+
+    pub(super) fn validate_positions(&self) -> Option<()> {
+        for fields in [&self.occurrences, &self.identities, &self.pairs] {
+            if fields
+                .windows(2)
+                .any(|pair| pair[0].start() >= pair[1].start())
+            {
+                return None;
+            }
+        }
+        if matches!(self.form, PathSourceForm::Counted)
+            && self
+                .occurrences
+                .iter()
+                .chain(&self.identities)
+                .any(|field| field.start() <= self.header.start())
+        {
+            return None;
+        }
+        let first = self.occurrences.first()?;
+        if !self.pairs.len().is_multiple_of(2)
+            || self
+                .pairs
+                .iter()
+                .any(|field| field.start() <= first.start())
+        {
+            return None;
+        }
+        Some(())
     }
 
     pub(super) fn set_link(&mut self, source: PathLinkSources<'a>) {
@@ -83,6 +167,20 @@ impl<'a> PathSourceDraft<'a> {
         Some(())
     }
 
+    pub(super) fn prepend_occurrences(&mut self, preceding: Self) -> Option<()> {
+        if !std::ptr::eq(self.bulk.window(), preceding.bulk.window())
+            || self.bulk.start() != preceding.bulk.start()
+            || self.bulk.end() != preceding.bulk.end()
+        {
+            return None;
+        }
+        self.origins.extend(preceding.origins);
+        let mut occurrences = preceding.occurrences;
+        occurrences.append(&mut self.occurrences);
+        self.occurrences = occurrences;
+        self.validate_positions()
+    }
+
     pub(super) fn append(&mut self, continuation: Self) -> Option<()> {
         if !std::ptr::eq(self.bulk.window(), continuation.bulk.window())
             || self.bulk.start() != continuation.bulk.start()
@@ -94,7 +192,7 @@ impl<'a> PathSourceDraft<'a> {
         self.occurrences.extend(continuation.occurrences);
         self.identities.extend(continuation.identities);
         self.pairs.extend(continuation.pairs);
-        Some(())
+        self.validate_positions()
     }
 
     pub(super) fn read(
@@ -108,7 +206,35 @@ impl<'a> PathSourceDraft<'a> {
         for origin in &self.origins {
             ctx.capture_part_extent(*origin)?;
         }
-        read_header(self.header, path.class_tag().as_str(), path.record_index)?;
+        self.validate_positions()
+            .ok_or_else(|| CodecError::malformed("assembly path source field order is invalid"))?;
+        match self.form {
+            PathSourceForm::Counted => {
+                read_header(self.header, path.class_tag().as_str(), path.record_index)?
+            }
+            PathSourceForm::Legacy388 => {
+                read_link_header(self.header, path.class_tag().as_str(), path.record_index)?
+            }
+            PathSourceForm::Legacy383
+                if path.class_tag().as_str() == "386"
+                    && path.link().locator_class_tag.as_str() == "378"
+                    && path.link().wrapper_class_tag.as_str() == "359" =>
+            {
+                read_link_header(self.header, "359", path.record_index)?;
+            }
+            PathSourceForm::Carrier363
+                if path.class_tag().as_str() == "386"
+                    && path.link().locator_class_tag.as_str() == "363"
+                    && path.link().wrapper_class_tag.as_str() == "388" =>
+            {
+                read_link_header(self.header, "386", path.record_index)?;
+            }
+            _ => {
+                return Err(CodecError::malformed(
+                    "assembly source form differs from path content",
+                ))
+            }
+        }
         self.point(pointers, prefix, "byte_offset", self.header, false)?;
         if let Some(link) = &self.link {
             self.read_link(
@@ -126,7 +252,7 @@ impl<'a> PathSourceDraft<'a> {
                 self.occurrences.as_slice(),
                 path.occurrence_guids()
                     .iter()
-                    .map(|key| key.value.as_str())
+                    .map(|key| key.as_str())
                     .collect::<Vec<_>>(),
             ),
             (
@@ -134,7 +260,7 @@ impl<'a> PathSourceDraft<'a> {
                 self.identities.as_slice(),
                 path.identity_guids()
                     .iter()
-                    .map(|key| key.value.as_str())
+                    .map(|key| key.as_str())
                     .collect::<Vec<_>>(),
             ),
             (
@@ -142,7 +268,7 @@ impl<'a> PathSourceDraft<'a> {
                 self.pairs.as_slice(),
                 path.paired_occurrence_keys()
                     .iter()
-                    .map(|key| key.value.as_str())
+                    .map(|key| key.as_str())
                     .collect::<Vec<_>>(),
             ),
         ] {
@@ -190,7 +316,6 @@ impl<'a> PathSourceDraft<'a> {
                 sources.wrapper_reference,
                 link.wrapper_record_index,
             ),
-            ("path_reference_offset", sources.path_reference, path_index),
         ] {
             let actual = source.u32_le().ok_or_else(|| {
                 CodecError::malformed("assembly path source reference is truncated")
@@ -201,6 +326,33 @@ impl<'a> PathSourceDraft<'a> {
                 ));
             }
             self.point(pointers, prefix, &format!("link.{field}"), source, false)?;
+        }
+        match sources.path_reference {
+            PathReferenceSource::Index(mut source) => {
+                if source.u32_le() != Some(path_index) {
+                    return Err(CodecError::malformed(
+                        "assembly path source reference differs from content",
+                    ));
+                }
+                self.point(
+                    pointers,
+                    prefix,
+                    "link.path_reference_offset",
+                    source,
+                    false,
+                )?;
+            }
+            PathReferenceSource::Occurrence(source) => {
+                if self.occurrences.first().is_none_or(|first| {
+                    first.start() != source.start() || first.end() != source.end()
+                }) {
+                    return Err(CodecError::malformed(
+                        "assembly path reference names a different occurrence field",
+                    ));
+                }
+                // Its actual counted text is read and compared with native content below.
+                self.point(pointers, prefix, "link.path_reference_offset", source, true)?;
+            }
         }
         for (field, source, tag, index) in [
             (

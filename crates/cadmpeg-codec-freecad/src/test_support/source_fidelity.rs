@@ -140,8 +140,17 @@ pub(crate) fn layout<T: serde::de::DeserializeOwned>(
     fidelity: &cadmpeg_ir::SourceFidelity,
     name: &str,
 ) -> T {
-    let id = crate::native::native_id("source-layout", name);
-    serde_json::from_slice(bytes(fidelity, &id)).expect("retained source layout")
+    let mut all = fidelity.freecad_ledgers().values();
+    let ledgers = all.next().expect("FCStd source ledgers");
+    assert!(all.next().is_none(), "one original FCStd archive");
+    let value = match name {
+        "physical-ledger" => serde_json::to_value(&ledgers.physical_ledger),
+        "logical-ledger" => serde_json::to_value(&ledgers.logical_ledger),
+        "byte-coverage" => serde_json::to_value(&ledgers.byte_coverage),
+        _ => panic!("unknown FCStd source-ledger name {name}"),
+    }
+    .expect("typed source-ledger value");
+    serde_json::from_value(value).expect("source layout has its declared typed shape")
 }
 
 /// Preserve source-value fixture inputs after their field leaves native records.

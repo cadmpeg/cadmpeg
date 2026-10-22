@@ -585,18 +585,24 @@ pub(crate) fn capture_assembly_path_layouts(
         let Some(draft) = drafts.remove(&scope.id) else {
             continue;
         };
-        let paths = scope
+        let Some(assembly::DesignAssemblyAlignmentForm::Qualified(operands)) = scope
             .assembly_alignment()
-            .and_then(assembly::DesignAssemblyAlignment::operand_path_refs)
-            .ok_or_else(|| {
-                CodecError::malformed("assembly source draft has no admitted path content")
-            })?;
+            .and_then(|alignment| alignment.form.as_ref())
+        else {
+            return Err(CodecError::malformed(
+                "assembly source draft has no admitted path content",
+            ));
+        };
         let mut pointers = std::collections::BTreeMap::new();
         ctx.record(&scope.id, draft.extent, || {
             for (ordinal, source) in &draft.paths {
-                let path = paths.get(*ordinal).ok_or_else(|| {
-                    CodecError::malformed("assembly path source ordinal is invalid")
-                })?;
+                let Some(assembly::DesignAssemblyOperandQualifier::OccurrencePath { path }) =
+                    operands.get(*ordinal).map(|operand| &operand.qualifier)
+                else {
+                    return Err(CodecError::malformed(
+                        "assembly path source ordinal is invalid",
+                    ));
+                };
                 source.read(
                     ctx,
                     path,

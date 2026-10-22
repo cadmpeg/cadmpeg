@@ -62,12 +62,12 @@ pub(crate) fn plan(
             super::synthesis::SynthesisCause::SourceImageUnavailable,
         );
     }
-    if let Err(error) = check_honesty(resolved, &written) {
+    if !check_honesty(resolved, &written) {
         return super::synthesis::plan(
             input,
             resolved,
             super::synthesis::SynthesisCause::PatchDeclined {
-                reason: error.to_string(),
+                reason: "the semantic source envelope differs from the selected target".into(),
             },
         );
     }
@@ -115,19 +115,12 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
     Ok((written, bytes))
 }
 
-/// Refuse a semantic write whose emitted `swSolidWorks` envelope does not land
-/// on the resolved target.
-fn check_honesty(resolved: &ResolvedWrite<'_>, written: &Written) -> Result<(), CodecError> {
-    let Written::Semantic { dialect: got, .. } = written else {
-        return Ok(());
-    };
-    if got == resolved.target_id() {
-        return Ok(());
+/// Whether a semantic write emitted the selected source envelope.
+fn check_honesty(resolved: &ResolvedWrite<'_>, written: &Written) -> bool {
+    match written {
+        Written::Semantic { dialect, .. } => dialect == resolved.target_id(),
+        _ => true,
     }
-    Err(resolved.unavailable(format!(
-        "the retained document blocks decide the swSolidWorks envelope this writer emits, \
-             and from this input that envelope is {got}"
-    )))
 }
 
 fn finish(

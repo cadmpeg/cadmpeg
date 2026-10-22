@@ -35,6 +35,8 @@ pub(super) fn plan(
     resolved: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
     cause: SynthesisCause,
 ) -> Result<ExportBody, CodecError> {
+    let synthesis_target = resolved.for_synthesis()?;
+    let resolved = synthesis_target.resolution();
     let mut projected = input.ir.clone();
     let mut losses = Vec::new();
     let validation = cadmpeg_ir::validate::validate_neutral(&projected, Vec::new())?;
@@ -211,8 +213,15 @@ pub(super) fn plan(
         prepared_native = Some(native);
     }
     let mut bytes = Vec::new();
-    let target = crate::dialect::SldprtDialect::from_id(resolved.target_id())
-        .ok_or_else(|| resolved.unavailable("no SLDPRT synthesis grammar for this target"))?;
+    let selected = crate::dialect::SldprtDialect::from_id(resolved.target_id());
+    debug_assert!(
+        selected.is_some(),
+        "SLDPRT catalog rows match envelope grammars"
+    );
+    let target = match selected {
+        Some(target) => target,
+        None => crate::dialect::SldprtDialect::Unknown,
+    };
     let source_declaration = input
         .ir
         .source
@@ -233,9 +242,11 @@ pub(super) fn plan(
         prepared_native,
         &mut bytes,
     )?;
-    if output.dialect != *resolved.target_id() {
-        return Err(resolved.unavailable(format!("synthesis emits {}", output.dialect)));
-    }
+    debug_assert_eq!(
+        output.dialect,
+        *resolved.target_id(),
+        "SLDPRT synthesis emits its selected catalog envelope"
+    );
     let mut coverage = output.coverage;
     macro_rules! changed_arena {
         ($($arena:ident),* $(,)?) => {$(

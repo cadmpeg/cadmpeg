@@ -21,32 +21,19 @@ use crate::loss::SatLossCode;
 use crate::FORMAT;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
-    let mut decoded = match classify(bytes) {
+    match classify(bytes) {
         Some(StreamKind::AsmBinary(header)) => decode_asm_binary(ctx, bytes, &header),
         Some(StreamKind::Text) => decode_text(ctx, bytes),
         Some(StreamKind::AcisBinary(header)) => decode_acis_binary(ctx, bytes, &header),
         None => Err(CodecError::WrongFormat(
             "not an ASM stream: no binary magic and no text header lines".to_string(),
         )),
-    }?;
-    if ctx.container_only() {
-        // The partition was not framed. Preserve the real source image's
-        // identity and state that its model records were not projected.
-        decoded.source_fidelity.insert_retained_record(
-            cadmpeg_ir::ids::UnknownId::mint("sat:source:omitted-partition#0")
-                .map_err(CodecError::malformed)?,
-            cadmpeg_ir::source_fidelity::RetainedSourceRecord::from_bytes(
-                "sat:source",
-                0,
-                cadmpeg_ir::source_fidelity::RetainedBytes::Digest {
-                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
-                },
-            )?
-            .with_untyped([cadmpeg_ir::ArenaClass::Model].into_iter().collect()),
-        )?;
     }
-    Ok(decoded)
+}
+
+struct FramedStream {
+    brep: AsmBrep,
+    has_entities: bool,
 }
 
 fn decode_asm_binary(
@@ -95,6 +82,7 @@ fn decode_asm_binary(
                 CodecError::malformed(format_args!("SAB framing failed: {error}"))
             })
         })?;
+        let has_entities = !records.is_empty();
         let brep = decode_with_header(
             ctx,
             &records,
@@ -104,7 +92,7 @@ fn decode_asm_binary(
             cadmpeg_asm::asm_format!("sat"),
             DecodePurpose::Model,
         )?;
-        Some(brep)
+        Some(FramedStream { brep, has_entities })
     };
     let mut attributes = BTreeMap::new();
     header_attributes(&header.metadata, Family::Asm, &mut attributes);
@@ -177,6 +165,7 @@ fn decode_acis_binary(
                 CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
             })
         })?;
+        let has_entities = !records.is_empty();
         let brep = decode_with_header(
             ctx,
             &records,
@@ -186,7 +175,7 @@ fn decode_acis_binary(
             cadmpeg_asm::asm_format!("sat"),
             DecodePurpose::Model,
         )?;
-        Some(brep)
+        Some(FramedStream { brep, has_entities })
     };
     let mut attributes = BTreeMap::new();
     header_attributes(&header.metadata, Family::Acis, &mut attributes);
@@ -301,15 +290,19 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         }
     }
     let payload = match records {
-        Some(records) => Some(decode_with_header(
-            ctx,
-            &records,
-            bytes,
-            Some(&header),
-            "stream",
-            cadmpeg_asm::asm_format!("sat"),
-            DecodePurpose::Model,
-        )?),
+        Some(records) => {
+            let has_entities = !records.is_empty();
+            let brep = decode_with_header(
+                ctx,
+                &records,
+                bytes,
+                Some(&header),
+                "stream",
+                cadmpeg_asm::asm_format!("sat"),
+                DecodePurpose::Model,
+            )?;
+            Some(FramedStream { brep, has_entities })
+        }
         None => None,
     };
     let mut result = build_result(
@@ -443,7 +436,7 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
 
 fn build_result(
     ctx: &DecodeContext<'_>,
-    payload: Option<AsmBrep>,
+    payload: Option<FramedStream>,
     attributes: BTreeMap<String, String>,
     header: &KernelHeader,
     text_dialect: Option<sat::Terminator>,
@@ -460,10 +453,9 @@ fn build_result(
             })?,
         cadmpeg_core::text::named_entries("the acis header", attributes)?,
     ));
-    ir.scope = if ctx.container_only() {
-        cadmpeg_ir::ContentScope::container()
-    } else {
-        cadmpeg_ir::ContentScope::full()
+    ir.scope = cadmpeg_ir::ContentScope {
+        model: payload.is_some(),
+        design: ctx.depth().required_scope().design,
     };
     let mut losses = Vec::new();
     if text_dialect.is_none() {
@@ -488,7 +480,7 @@ fn build_result(
         }
     }
 
-    let Some(brep) = payload else {
+    let Some(FramedStream { brep, has_entities }) = payload else {
         return Ok(Decoded {
             ir,
             body: DecodeBody {
@@ -538,13 +530,12 @@ fn build_result(
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
     losses.extend(dialect_loss(kernel));
-    if !geometry_transferred && (!unknowns.is_empty() || stats.other_records() != 0) {
+    if has_entities && !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {
             format!(" The stream ends with `{}`.", terminator_line(dialect))
         });
         losses.push(SatLossCode::GeometryFramedWithoutCarriers.note(format!(
-            "the stream framed but its records decoded no surfaces, points, or faces; its \
-             version or branch is outside the ASM decoders' coverage.{branch}"
+            "the framed stream contains entity records but decoded no surfaces, points, or faces.{branch}"
         )));
     }
     if stats.unknown_surface_faces() > 0 {

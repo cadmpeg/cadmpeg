@@ -347,3 +347,5 @@ fn malformed_typed_native_records_are_input_preconditions() {
         .expect_err("invalid own typed schema cannot supply synthesis content");
     assert!(matches!(error, CodecError::Malformed(_)), "{error}");
 }
+
+mod fallback;

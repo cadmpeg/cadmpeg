@@ -19,6 +19,7 @@ pub(crate) fn decode_losses(
     ir: &CadIr,
     sources: &crate::entry_sources::EntrySources<'_>,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
+    legacy_evidence: bool,
 ) -> Result<Vec<LossNote>, CodecError> {
     let Some(native) = ir.native.namespace("fcstd") else {
         return Ok(Vec::new());
@@ -193,7 +194,7 @@ pub(crate) fn decode_losses(
         if classes.is_empty() {
             classes.extend([ArenaClass::Model, ArenaClass::Design]);
         }
-        if fidelity.retained_record(entry.id()).is_none() {
+        if legacy_evidence && fidelity.retained_record(entry.id()).is_none() {
             let source = sources.view(entry)?;
             let capture = ctx.capture_part_extent(source)?;
             crate::fidelity::evidence(
@@ -209,9 +210,11 @@ pub(crate) fn decode_losses(
     }
     let mut losses = Vec::new();
     for ((id, entry), classes) in opaque {
-        fidelity
-            .mark_untyped(&id, classes.iter().copied())
-            .map_err(CodecError::malformed)?;
+        if legacy_evidence {
+            fidelity
+                .mark_untyped(&id, classes.iter().copied())
+                .map_err(CodecError::malformed)?;
+        }
         for class in classes {
             let code = match class {
                 ArenaClass::Model => FreecadLossCode::SourceModelPayloadUnrepresented,

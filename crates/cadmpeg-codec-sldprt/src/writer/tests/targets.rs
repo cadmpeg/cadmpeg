@@ -166,3 +166,5 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
         .expect("missing sidecar charges image unavailability");
     assert!(unavailable.message.contains("regenerated from IR"));
 }
+
+mod fallback;

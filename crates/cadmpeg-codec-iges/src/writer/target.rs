@@ -16,19 +16,28 @@ pub(crate) fn plan(
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
     match resolved.target() {
-        // Off-catalog same-format source: only a verbatim replay can honor it.
+        // A successful replay retains the source dialect; synthesis selects its catalog default.
         ResolvedTarget::Preserved { .. } => match replay_bytes(input.ir, input.fidelity)? {
             Replay::Replayed { bytes } => Ok(replayed_body(input.ir, bytes)),
-            Replay::Declined(reason) => Err(resolved.unavailable(match reason {
-                DeclineReason::Rejected(reason) => {
-                    format!("{reason}; the semantic writer cannot synthesize the inherited dialect")
+            Replay::Declined(reason) => {
+                let synthesis = resolved.for_synthesis()?;
+                let index = synthesis.index();
+                debug_assert!(
+                    index < crate::IgesVersion::ALL.len(),
+                    "IGES catalog rows match version grammars"
+                );
+                let version = match crate::IgesVersion::ALL.get(index) {
+                    Some(version) => *version,
+                    None => crate::IgesVersion::ALL[0],
+                };
+                let mut body =
+                    synthesized_body(input, version, SynthesisCause::ReplayDeclined(reason))?;
+                if let Some(message) = synthesis.resolution().displacement_message() {
+                    body.losses
+                        .push(IgesLossCode::SourceDialectDisplaced.note(message));
                 }
-                DeclineReason::SourceImageUnavailable => {
-                    "its retained source image is unavailable for byte replay and the \
-                     semantic writer cannot synthesize it"
-                        .to_owned()
-                }
-            })),
+                Ok(body)
+            }
         },
         ResolvedTarget::Explicit { index, .. }
         | ResolvedTarget::Inherited { index, .. }

@@ -3,12 +3,12 @@
 
 use super::NativeRecord;
 use crate::schema::rewrite::typed::{
-    RewriteIdentities,
     prune::{self, DependencyReference, ReferencePruneEffect},
+    RewriteIdentities,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::DecodeContext;
-use serde::{Serialize, de::DeserializeOwned};
+use cadmpeg_core::CodecError;
+use serde::{de::DeserializeOwned, Serialize};
 use std::collections::BTreeSet;
 
 pub(crate) struct Prepared<T> {
