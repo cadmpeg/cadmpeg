@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::analytic::{
-    CircleCurve, ConeSurface, CylinderSurface, LineCurve, PlaneSurface,
+    CircleCurve, ConeSurface, CylinderSurface, LineCurve, PlaneSurface, SphereSurface, TorusSurface,
 };
 use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, WeightedPole3};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
@@ -400,6 +400,55 @@ impl Builder {
         self.surface(SolvedSurfaceGeometry::Cone(
             ConeSurface::try_new(origin, axis, reference, radius, 1.0, half_angle).expect("cone"),
         ))
+    }
+
+    /// A sphere surface of signed `radius` about the frame origin.
+    pub(crate) fn sphere(&mut self, frame: Frame, radius: f64) -> SurfaceId {
+        let (origin, axis, reference) = frame.vectors();
+        self.surface(SolvedSurfaceGeometry::Sphere(
+            SphereSurface::try_new(origin, axis, reference, radius).expect("sphere"),
+        ))
+    }
+
+    /// A torus surface about the frame origin.
+    pub(crate) fn torus(&mut self, frame: Frame, major: f64, minor: f64) -> SurfaceId {
+        let (origin, axis, reference) = frame.vectors();
+        self.surface(SolvedSurfaceGeometry::Torus(
+            TorusSurface::try_new(origin, axis, reference, major, minor).expect("torus"),
+        ))
+    }
+
+    /// A face on `surface` bounded only by vertex loops at `vertices`.
+    pub(crate) fn vertex_face(
+        &mut self,
+        surface: &SurfaceId,
+        sense: Sense,
+        vertices: &[VertexId],
+    ) -> FaceId {
+        let face = self.face(surface, sense, &[], false);
+        let mut loops = Vec::new();
+        for vertex in vertices {
+            let m = self.serial();
+            let loop_id = id(LoopId::mint, "loop", m);
+            self.ir.model.loops.push(Loop {
+                id: loop_id.clone(),
+                face: face.clone(),
+                boundary: LoopBoundary::Vertex {
+                    vertex: vertex.clone(),
+                    pcurves: Vec::new(),
+                },
+            });
+            loops.push(loop_id);
+        }
+        let record = self
+            .ir
+            .model
+            .faces
+            .iter_mut()
+            .find(|candidate| candidate.id == face)
+            .expect("face");
+        record.loops = FaceLoops::unspecified(loops);
+        face
     }
 
     /// A NURBS surface from its two axes `(degree, knots)` and its pole

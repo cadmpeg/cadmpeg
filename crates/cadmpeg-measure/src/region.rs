@@ -9,10 +9,13 @@
 //! every loop. Cylinders and cones follow the periodic rules of
 //! [`periodic`], NURBS carriers the finite-domain rules of [`finite`].
 
+mod closed;
 mod finite;
+mod membership;
 mod periodic;
 
 pub(crate) use finite::FiniteContext;
+pub(crate) use membership::Indicator;
 
 use std::cmp::Ordering;
 
@@ -165,6 +168,65 @@ pub(crate) struct Region {
     /// The factor, 0 or 1, of the whole domain's area in the region's area:
     /// 1 when the region reaches the domain's natural edges.
     pub(crate) exterior: f64,
+    /// What a region on a sphere or torus adds to its loops.
+    pub(crate) closed: Option<ClosedRegion>,
+}
+
+/// What a region on a closed domain adds to its loops. The domain is
+/// `u ∈ [0, 2π)` by `v ∈ [base, base + span]`; Green's theorem on it adds
+/// the parts of the upper edge in the region to the loops' integrals.
+pub(crate) struct ClosedRegion {
+    /// The `u`-intervals of the upper edge `v = base + span` in the region.
+    pub(crate) top: Vec<[f64; 2]>,
+    /// The cut of a doubly periodic domain.
+    pub(crate) wrap: Option<Wrap>,
+    /// Which points of the domain are members.
+    pub(crate) membership: Membership,
+}
+
+/// A doubly periodic domain cut at `v = base`: every piece's `v` is taken
+/// in `[base, base + period)`.
+pub(crate) struct Wrap {
+    pub(crate) period: f64,
+    /// Per loop and piece, the piece parameters where the piece crosses
+    /// the cut.
+    pub(crate) breaks: Vec<Vec<Vec<f64>>>,
+}
+
+/// Which points of a closed domain belong to a region.
+pub(crate) enum Membership {
+    /// Every point.
+    Whole,
+    /// The points where the indicator of the oriented loops is 1.
+    Loops(Indicator),
+}
+
+impl Membership {
+    /// Whether the parameter point `uv`, off the boundary, is a member.
+    pub(crate) fn member(&self, uv: [f64; 2]) -> bool {
+        match self {
+            Self::Whole => true,
+            Self::Loops(indicator) => indicator.at(uv) == 1,
+        }
+    }
+
+    /// Whether the region reaches the lower (`toward = −1`) or upper
+    /// (`toward = 1`) end of a domain whose `v` is not periodic, beyond
+    /// every boundary point.
+    pub(crate) fn end(&self, toward: f64) -> bool {
+        match self {
+            Self::Whole => true,
+            Self::Loops(indicator) => indicator.beyond(toward) == 1,
+        }
+    }
+}
+
+/// What the region rules read beyond the loops' polylines.
+pub(crate) struct RegionInput<'a, 'ir> {
+    pub(crate) eval: Eval<'a, 'ir>,
+    pub(crate) context: FiniteContext,
+    /// Per loop and piece, whether the piece lies on a seam of the face.
+    pub(crate) seams: &'a [Vec<bool>],
 }
 
 /// The ring loops of a face, or the first loop failure.
@@ -197,8 +259,9 @@ pub(crate) fn classify(
     resolved: &ResolvedFace<'_>,
     shapes: &[Option<LoopShape>],
     v_tolerance: f64,
-    context: FiniteContext,
+    input: &RegionInput<'_, '_>,
 ) -> Measure<Region> {
+    let context = input.context;
     if context.implicit_outer
         && matches!(chart, Chart::Plane(_) | Chart::Cylinder(_) | Chart::Cone(_))
     {
@@ -214,11 +277,9 @@ pub(crate) fn classify(
             periodic::classify(face, chart, resolved, shapes, v_tolerance)
         }
         Chart::Nurbs(_) => finite::classify(face, chart, resolved, shapes, context),
-        Chart::Sphere(_) | Chart::Torus(_) => Err(MeasureFailure::unavailable(
-            UnavailableReason::RegionDomainUnsupported,
-            Some(face.id.as_str()),
-            "regions on this carrier are not classified in this build",
-        )),
+        Chart::Sphere(_) | Chart::Torus(_) => {
+            closed::classify(face, chart, resolved, shapes, input)
+        }
     }
 }
 
@@ -319,6 +380,7 @@ fn planar(
         classification: classification(face, resolved, *outer),
         apex: None,
         exterior: 0.0,
+        closed: None,
     })
 }
 

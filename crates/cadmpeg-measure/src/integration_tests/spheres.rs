@@ -1,0 +1,409 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Sphere faces: caps, a band, a sphere with a hole, a lune and whole
+//! spheres, with expectations from geometry.
+
+use std::f64::consts::{FRAC_PI_2, PI};
+
+use cadmpeg_ir::ids::{EdgeId, VertexId};
+use cadmpeg_ir::topology::{BodyKind, Sense};
+use cadmpeg_ir::CadIr;
+
+use crate::reason::CaveatCode;
+use crate::report::{FaceMeasures, MeasureReport, RegionRule};
+use crate::select::Selection;
+use crate::test_support::{
+    assert_measured, assert_range, assert_tight_box, measure, Builder, Circle, Frame,
+    TEST_ABSOLUTE_FLOOR,
+};
+use crate::value::{BoxValue, Quantity, Reading, Scalar};
+
+fn faces() -> Selection {
+    Selection {
+        all_faces: true,
+        ..Selection::default()
+    }
+}
+
+fn only_face(report: &MeasureReport) -> &FaceMeasures {
+    let [face] = report.faces().as_slice() else {
+        panic!("one face row");
+    };
+    face
+}
+
+/// The value of the one complement candidate of a measured scalar.
+fn complement(quantity: &Quantity<Scalar>) -> f64 {
+    let measured = quantity.measured().expect("measured");
+    assert_eq!(measured.reading(), Some(Reading::Declared));
+    let [candidate] = measured.candidates() else {
+        panic!("one candidate");
+    };
+    assert_eq!(candidate.reading(), Reading::Complement);
+    candidate.value().value.get()
+}
+
+/// A box candidate under the complement reading.
+fn complement_box(quantity: &Quantity<BoxValue>) -> BoxValue {
+    let measured = quantity.measured().expect("measured box");
+    assert_eq!(measured.reading(), Some(Reading::Declared));
+    let [candidate] = measured.candidates() else {
+        panic!("one candidate");
+    };
+    *candidate.value()
+}
+
+fn assert_box_value(value: &BoxValue, min: [f64; 3], max: [f64; 3], scale: f64) {
+    let (low, high) = (value.min.get(), value.max.get());
+    for (computed, expected) in [
+        (low.x, min[0]),
+        (low.y, min[1]),
+        (low.z, min[2]),
+        (high.x, max[0]),
+        (high.y, max[1]),
+        (high.z, max[2]),
+    ] {
+        assert!(
+            (computed - expected).abs() <= TEST_ABSOLUTE_FLOOR * scale,
+            "computed {computed}, expected {expected}"
+        );
+    }
+}
+
+/// The sphere `R = 10` about the origin with the circle of radius 8 at
+/// `z = 6` as its one loop, traversed counterclockwise about `+z` when
+/// `sense` is forward.
+fn cap(sense: Sense) -> CadIr {
+    let mut builder = Builder::new();
+    let vertex = builder.vertex([8.0, 0.0, 6.0]);
+    let circle = builder.circle(
+        [0.0, 0.0, 6.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        8.0,
+        &vertex,
+    );
+    let sphere = builder.sphere(Frame::z_up([0.0; 3]), 10.0);
+    builder.face(&sphere, Sense::Forward, &[vec![(circle, sense)]], true);
+    builder.finish(BodyKind::Sheet)
+}
+
+#[test]
+fn a_cap_reads_its_declared_side_with_the_complement() {
+    let latitude = 0.6_f64.asin();
+    let north = 2.0 * PI * 100.0 * (1.0 - 0.6);
+    let south = 2.0 * PI * 100.0 * (1.0 + 0.6);
+    for (sense, area, other, range, low, high) in [
+        (
+            Sense::Forward,
+            north,
+            south,
+            [latitude, FRAC_PI_2],
+            [-8.0, -8.0, 6.0],
+            [8.0, 8.0, 10.0],
+        ),
+        (
+            Sense::Reversed,
+            south,
+            north,
+            [-FRAC_PI_2, latitude],
+            [-10.0, -10.0, -10.0],
+            [10.0, 10.0, 6.0],
+        ),
+    ] {
+        let report = measure(&cap(sense), &faces());
+        let face = only_face(&report);
+        let measures = face.measures();
+        assert_eq!(*measures.region(), Some(RegionRule::DeclaredOrientation));
+        assert_measured(measures.area(), area, 400.0);
+        assert!((complement(measures.area()) - other).abs() <= TEST_ABSOLUTE_FLOOR * 400.0);
+        assert_range(measures.latitude_range().as_ref(), range, 1.0);
+        let sweep = measures
+            .angular_sweep()
+            .as_ref()
+            .and_then(Quantity::measured)
+            .expect("sweep");
+        assert!(sweep.value().full);
+        let bbox = measures.bbox().measured().expect("box");
+        assert_box_value(bbox.value(), low, high, 10.0);
+        assert_eq!(*face.orientation().consistent(), None);
+        assert!(face
+            .caveats()
+            .iter()
+            .any(|caveat| caveat.code() == CaveatCode::OrientationUnconfirmed));
+        let report = measure(&cap(sense), &Selection::default());
+        let [body] = report.bodies().as_slice() else {
+            panic!("one body row");
+        };
+        let body_area = body.area().as_ref().expect("body area");
+        assert_measured(body_area, area, 400.0);
+        assert!((complement(body_area) - other).abs() <= TEST_ABSOLUTE_FLOOR * 400.0);
+    }
+}
+
+#[test]
+fn a_band_between_two_latitudes_rests_on_its_orientation() {
+    let mut builder = Builder::new();
+    let low = builder.vertex([8.0, 0.0, -6.0]);
+    let high = builder.vertex([8.0, 0.0, 6.0]);
+    let lower = builder.circle(
+        [0.0, 0.0, -6.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        8.0,
+        &low,
+    );
+    let upper = builder.circle(
+        [0.0, 0.0, 6.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        8.0,
+        &high,
+    );
+    let sphere = builder.sphere(Frame::z_up([0.0; 3]), 10.0);
+    builder.face(
+        &sphere,
+        Sense::Forward,
+        &[
+            vec![(lower, Sense::Forward)],
+            vec![(upper, Sense::Reversed)],
+        ],
+        false,
+    );
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &faces());
+    let measures = only_face(&report).measures();
+    assert_measured(measures.area(), 2.0 * PI * 10.0 * 12.0, 400.0);
+    let whole = 4.0 * PI * 100.0;
+    assert!(
+        (complement(measures.area()) - (whole - 240.0 * PI)).abs() <= TEST_ABSOLUTE_FLOOR * whole
+    );
+    let latitude = 0.6_f64.asin();
+    assert_range(
+        measures.latitude_range().as_ref(),
+        [-latitude, latitude],
+        1.0,
+    );
+    let bbox = measures.bbox().measured().expect("box");
+    assert_box_value(bbox.value(), [-10.0, -10.0, -6.0], [10.0, 10.0, 6.0], 10.0);
+    assert_box_value(
+        &complement_box(measures.bbox()),
+        [-8.0, -8.0, -10.0],
+        [8.0, 8.0, 10.0],
+        10.0,
+    );
+}
+
+#[test]
+fn a_sphere_with_a_hole_keeps_its_poles() {
+    let mut builder = Builder::new();
+    let vertex = builder.vertex([6.0, 8.0, 0.0]);
+    let circle = builder.circle(
+        [6.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        8.0,
+        &vertex,
+    );
+    let sphere = builder.sphere(Frame::z_up([0.0; 3]), 10.0);
+    builder.face(
+        &sphere,
+        Sense::Forward,
+        &[vec![(circle, Sense::Reversed)]],
+        false,
+    );
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &faces());
+    let measures = only_face(&report).measures();
+    let hole = 2.0 * PI * 10.0 * 4.0;
+    assert_measured(measures.area(), 400.0 * PI - hole, 400.0);
+    assert!((complement(measures.area()) - hole).abs() <= TEST_ABSOLUTE_FLOOR * 400.0);
+    assert_range(
+        measures.latitude_range().as_ref(),
+        [-FRAC_PI_2, FRAC_PI_2],
+        1.0,
+    );
+    let bbox = measures.bbox().measured().expect("box");
+    assert_box_value(bbox.value(), [-10.0, -10.0, -10.0], [6.0, 10.0, 10.0], 10.0);
+    assert_box_value(
+        &complement_box(measures.bbox()),
+        [6.0, -8.0, -8.0],
+        [10.0, 8.0, 8.0],
+        10.0,
+    );
+}
+
+/// The meridian half-circle of the sphere `R` about the origin at angle
+/// `u` from `+x`, from the south pole to the north pole.
+fn meridian(builder: &mut Builder, radius: f64, u: f64, poles: [&VertexId; 2]) -> EdgeId {
+    let (sine, cosine) = u.sin_cos();
+    builder.arc(
+        Circle {
+            frame: Frame {
+                origin: [0.0; 3],
+                axis: [sine, -cosine, 0.0],
+                reference: [cosine, sine, 0.0],
+            },
+            radius,
+        },
+        [-FRAC_PI_2, FRAC_PI_2],
+        poles[0],
+        poles[1],
+    )
+}
+
+#[test]
+fn a_lune_between_two_meridians_and_its_complement() {
+    let mut builder = Builder::new();
+    let south = builder.vertex([0.0, 0.0, -10.0]);
+    let north = builder.vertex([0.0, 0.0, 10.0]);
+    let first = meridian(&mut builder, 10.0, 0.0, [&south, &north]);
+    let second = meridian(&mut builder, 10.0, FRAC_PI_2, [&south, &north]);
+    let north_pole = builder.bare_edge(&north, &north);
+    let south_pole = builder.bare_edge(&south, &south);
+    let sphere = builder.sphere(Frame::z_up([0.0; 3]), 10.0);
+    let face = builder.face(
+        &sphere,
+        Sense::Forward,
+        &[vec![
+            (second, Sense::Forward),
+            (north_pole, Sense::Forward),
+            (first, Sense::Reversed),
+            (south_pole, Sense::Forward),
+        ]],
+        false,
+    );
+    builder.line_pcurve(
+        &face,
+        [0, 1],
+        [FRAC_PI_2, FRAC_PI_2],
+        [-1.0, 0.0],
+        [0.0, FRAC_PI_2],
+    );
+    builder.line_pcurve(
+        &face,
+        [0, 3],
+        [0.0, -FRAC_PI_2],
+        [1.0, 0.0],
+        [0.0, FRAC_PI_2],
+    );
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &faces());
+    let measures = only_face(&report).measures();
+    let lune = 2.0 * 100.0 * FRAC_PI_2;
+    assert_measured(measures.area(), lune, 400.0);
+    assert!(
+        (complement(measures.area()) - (400.0 * PI - lune)).abs() <= TEST_ABSOLUTE_FLOOR * 400.0
+    );
+    let sweep = measures
+        .angular_sweep()
+        .as_ref()
+        .and_then(Quantity::measured)
+        .expect("sweep");
+    assert!(!sweep.value().full);
+    assert!((sweep.value().value.get() - FRAC_PI_2).abs() <= TEST_ABSOLUTE_FLOOR);
+    let [candidate] = sweep.candidates() else {
+        panic!("one sweep candidate");
+    };
+    assert!((candidate.value().value.get() - 3.0 * FRAC_PI_2).abs() <= TEST_ABSOLUTE_FLOOR);
+    let bbox = measures.bbox().measured().expect("box");
+    assert_box_value(bbox.value(), [0.0, 0.0, -10.0], [10.0, 10.0, 10.0], 10.0);
+    assert_box_value(
+        &complement_box(measures.bbox()),
+        [-10.0, -10.0, -10.0],
+        [10.0, 10.0, 10.0],
+        10.0,
+    );
+}
+
+#[test]
+fn a_seam_meridian_with_pole_edges_bounds_the_whole_sphere() {
+    let radius = 5.0;
+    let mut builder = Builder::new();
+    let south = builder.vertex([0.0, 0.0, -radius]);
+    let north = builder.vertex([0.0, 0.0, radius]);
+    let seam = meridian(&mut builder, radius, 0.0, [&south, &north]);
+    let north_pole = builder.bare_edge(&north, &north);
+    let south_pole = builder.bare_edge(&south, &south);
+    let sphere = builder.sphere(Frame::z_up([0.0; 3]), radius);
+    let face = builder.face(
+        &sphere,
+        Sense::Forward,
+        &[vec![
+            (seam.clone(), Sense::Forward),
+            (north_pole, Sense::Forward),
+            (seam, Sense::Reversed),
+            (south_pole, Sense::Forward),
+        ]],
+        false,
+    );
+    builder.line_pcurve(&face, [0, 1], [0.0, FRAC_PI_2], [1.0, 0.0], [0.0, 2.0 * PI]);
+    builder.line_pcurve(
+        &face,
+        [0, 3],
+        [0.0, -FRAC_PI_2],
+        [1.0, 0.0],
+        [0.0, 2.0 * PI],
+    );
+    let ir = builder.finish(BodyKind::Solid);
+    let report = measure(&ir, &Selection::default());
+    let [body] = report.bodies().as_slice() else {
+        panic!("one body row");
+    };
+    assert_measured(
+        body.volume().as_ref().expect("volume"),
+        4.0 * PI * radius.powi(3) / 3.0,
+        radius.powi(3),
+    );
+    let report = measure(&ir, &faces());
+    let measures = only_face(&report).measures();
+    assert_eq!(*measures.region(), Some(RegionRule::WholeSurface));
+    assert_measured(measures.area(), 4.0 * PI * radius * radius, radius * radius);
+    assert_measured(measures.seam_length(), PI * radius, radius);
+    assert_range(
+        measures.latitude_range().as_ref(),
+        [-FRAC_PI_2, FRAC_PI_2],
+        1.0,
+    );
+    assert_tight_box(measures.bbox(), [-radius; 3], [radius; 3], radius);
+}
+
+#[test]
+fn pole_vertex_loops_bound_the_whole_sphere() {
+    let radius = 5.0;
+    let mut builder = Builder::new();
+    let south = builder.vertex([1.0, 2.0, 3.0 - radius]);
+    let north = builder.vertex([1.0, 2.0, 3.0 + radius]);
+    let sphere = builder.sphere(Frame::z_up([1.0, 2.0, 3.0]), radius);
+    builder.vertex_face(&sphere, Sense::Forward, &[south, north]);
+    let ir = builder.finish(BodyKind::Solid);
+    let report = measure(&ir, &Selection::default());
+    let [body] = report.bodies().as_slice() else {
+        panic!("one body row");
+    };
+    assert_measured(
+        body.volume().as_ref().expect("volume"),
+        4.0 * PI * radius.powi(3) / 3.0,
+        radius.powi(3),
+    );
+    let centroid = body
+        .centroid()
+        .as_ref()
+        .and_then(Quantity::measured)
+        .expect("centroid")
+        .value()
+        .value
+        .get();
+    for (computed, expected) in [(centroid.x, 1.0), (centroid.y, 2.0), (centroid.z, 3.0)] {
+        assert!((computed - expected).abs() <= TEST_ABSOLUTE_FLOOR * 10.0);
+    }
+    let report = measure(&ir, &faces());
+    let measures = only_face(&report).measures();
+    assert_eq!(*measures.region(), Some(RegionRule::WholeSurface));
+    assert_measured(measures.area(), 4.0 * PI * radius * radius, radius * radius);
+    assert_tight_box(
+        measures.bbox(),
+        [1.0 - radius, 2.0 - radius, 3.0 - radius],
+        [1.0 + radius, 2.0 + radius, 3.0 + radius],
+        radius,
+    );
+}

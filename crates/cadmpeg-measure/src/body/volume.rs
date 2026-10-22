@@ -47,7 +47,7 @@ impl BodyReading {
 pub(super) struct Member<'a> {
     pub(super) id: &'a str,
     pub(super) shell: usize,
-    pub(super) result: &'a FaceResult,
+    pub(super) result: &'a FaceResult<'a>,
 }
 
 fn sign(reading: NormalReading) -> Option<f64> {
@@ -116,7 +116,7 @@ impl VolumeInput<'_> {
         match reading {
             BodyReading::FaceSense => Ok((flux.declared, declared)),
             BodyReading::LoopWinding => match result.verdict {
-                Verdict::Conflict => complement(declared),
+                Verdict::Conflict | Verdict::Contradicted => complement(declared),
                 Verdict::Confirmed | Verdict::Unconfirmed => Ok((flux.declared, declared)),
                 Verdict::Settled => Ok((
                     flux.declared,
@@ -256,7 +256,9 @@ impl VolumeInput<'_> {
                 result.row.measures.region,
                 result.row.orientation.consistent,
             ) {
-                (Verdict::Conflict, ..) | (_, _, Some(false)) => conflict.push(member.id),
+                (Verdict::Conflict | Verdict::Contradicted, ..) | (_, _, Some(false)) => {
+                    conflict.push(member.id);
+                }
                 (Verdict::Unconfirmed, ..) => unverified.push(member.id),
                 (_, Some(RegionRule::WholeSurface), _) | (_, _, Some(true)) => {}
                 (_, _, None) => unverified.push(member.id),
@@ -455,7 +457,9 @@ impl VolumeInput<'_> {
                 row.orientation.consistent,
                 row.orientation.loop_normal,
             ) {
-                (Verdict::Conflict, ..) => orientation.conflict.push(member.id.to_owned()),
+                (Verdict::Conflict | Verdict::Contradicted, ..) => {
+                    orientation.conflict.push(member.id.to_owned());
+                }
                 (Verdict::Unconfirmed, ..) => {
                     orientation.unconfirmed.push(member.id.to_owned());
                     undetermined = true;

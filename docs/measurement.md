@@ -221,16 +221,84 @@ On a NURBS carrier's finite parameter domain:
 
 Loops on a periodic NURBS domain are `region.domain-unsupported`.
 
+On a sphere or a ring torus both regions that the loops bound are bounded,
+so the loops do not choose a side:
+
+| Loops | Region |
+| --- | --- |
+| No ring loop, or ring loops of seam and synthesized pieces only | `whole_surface`: the face covers the whole carrier, `4πR²` or `4π²R\|r\|`, with the method `closed_form`. |
+| Other ring loops | `declared_orientation`: the region lies on the left of every loop, after each loop is reversed when the declared normal is reversed. |
+
+On a torus the net shifts of the loops sum to zero, else the face is
+`boundary.nesting-invalid`. Horn and spindle tori are
+`region.domain-unsupported`.
+
+Membership of a parameter point in such a region uses the region
+indicator. The indicator is 1 at a reference point just left of a loop
+segment. A path from the reference point runs along `v` to the point's `v`,
+then along `u` to the point. Each crossing of a loop segment adds 1 when the
+path enters the left side of the segment and subtracts 1 when it leaves it.
+The reference point is offset from the midpoint of one of the longest
+segments by `1e-6` of the loop's parameter-plane box diagonal. Up to 8
+segments are tried; a reference whose indicator beyond the loops is not 0
+or 1 is rejected. When every reference is rejected, the face's bounded
+quantities are `evaluation.work-exhausted`.
+
+Area and flux on a sphere or torus use Green's theorem on the strip
+`u ∈ [0, 2π)` by `v ∈ [base, base + span]`. The parts of the upper edge in
+the region add to the loops' integrals; each `u` interval `I` of the edge
+adds `W·|I|`, where `W` is the area of one unit of `u`. On a sphere
+`base = −π/2`, and the upper edge is the north pole. The edge is in the
+region when the region indicator beyond every boundary point toward the
+north pole is 1. A torus is cut at a level `base` midway in the widest gap
+between the loops' `v` values. Each piece is split where it crosses the cut,
+and its `v` is taken in `[base, base + 2π)`. An interval of the cut circle
+starts at each crossing in `−v` and ends at the next crossing in `+v`.
+Crossings of seam pieces do not count, and crossings that do not alternate
+make the face `boundary.nesting-invalid`. Without crossings, the indicator
+at one point of the cut decides the whole circle.
+
 ### Readings
 
 A `declared_orientation` face has two readings: the `declared` region and
 its `complement` in the domain. When one reading has zero area within its
 error, the other is the face's region whatever the orientation: the witness
 `empty_reading` confirms the declared reading, or puts the face in conflict
-with the complement's values. Otherwise the area is measured under
-`reading: declared` with the `complement` as a candidate, and the face has
-the caveat `orientation.unconfirmed`. When both readings give one value
-within error, the value has no reading and no candidate.
+with the complement's values. Otherwise the area, box, latitude range and
+sweep are measured under `reading: declared` with the `complement` value as
+a candidate, and the face has the caveat `orientation.unconfirmed`. When
+both readings give one value within error, the value has no reading and no
+candidate. A body with one unconfirmed face reports its area under
+`reading: declared` with the area under that face's complement as a
+candidate; with several, the body area stays under the declared readings and
+the body's caveat count states them.
+
+### Witnesses
+
+A face is established when its loops and its sense agree, when its region
+is `whole_surface`, or when a witness confirms its declared reading.
+Witnesses run over each shell that holds an unconfirmed face, so a face row
+reads the whole shell.
+
+- Tangent edge. A non-seam edge used by exactly two coedges with opposite
+  senses, one in the unconfirmed face and one in an established face, is a
+  witness edge when the two oriented normals are parallel within
+  `1e-2` rad at its two vertices and its midpoint. A singular point is
+  skipped; the midpoint is required. The edge votes `agree` when the
+  normals point the same way at every point, and `disagree` when they point
+  opposite ways at every point. A face with votes that all agree is
+  confirmed. A face with a disagreeing vote is in conflict. A tangent edge
+  is taken as a smooth continuation of the two faces; at a cusp edge the
+  vote is wrong.
+- Shell sign. In a closed shell whose faces are all established except one
+  unconfirmed face, the shell volume is positive for an outer shell and
+  negative for a void. When exactly one reading of that face gives the
+  required sign beyond the volume error, that reading is the face's.
+
+Confirmed values have no reading and no candidate. A face in conflict by a
+witness has `consistent: false`; its values that depend on the reading are
+`region.orientation-conflict` with the `declared` and `complement` values
+as candidates.
 
 ### Procedural carriers
 
@@ -256,12 +324,26 @@ is 0 when the apex is a member of the region. On an elliptic cone,
 `angular_sweep` is `sweep.unsupported-carrier` and `radius_range` is
 `carrier.elliptic-cone`.
 
+On a sphere `latitude_range` is the range of `v` over the face, in radians
+from the equator, and `angular_sweep` is about the sphere's axis. Both start
+from the boundary pieces' ranges; pole pieces carry no direction and do not
+enter the sweep. A latitude circle or meridian that misses the boundary lies
+wholly in the region or wholly out of it, so one membership test decides
+each gap between the boundary's ranges. A loop that goes around the axis
+makes the sweep full. On a torus `angular_sweep` is
+`sweep.unsupported-carrier`.
+
 ## Boxes
 
 A face box is the box of the boundary pieces joined with the carrier's
 interior critical points that lie in the region. A plane or a cylinder has no
 interior critical point, and its box has the method `boundary_extremum`. On a
 cone the apex is the only one, and the box has the method `critical_points`.
+On a sphere the candidates are the six points at the radius along the
+model axes; on a ring torus, the points where a model coordinate is
+stationary, four per axis. A candidate at a sphere pole is a member when the
+region indicator beyond the boundary toward that pole is 1. The box of the
+complement reading joins the candidates that are not members.
 On a NURBS carrier the box is the box of the placed control net,
 `conservative` with the method `control_hull`; a weight that is not
 positive makes it `bbox.nonpositive-weights`. `bbox.boundary` is the box of
@@ -308,8 +390,9 @@ Each face region gives four flux integrals over the face, with
 Green's theorem each is `∮ F du` over the region's loops with the inner
 integral `F(u, v) = −∫_{v₀}^{v} f(u, s) ds` from the region's base `v₀`,
 plus the whole domain when the region reaches the domain's natural edges.
-`P_ref` is the centre of the body's edge and vertex box, or the origin when
-the body has neither.
+`P_ref` is the centre of the body's edge and vertex box; for a body with
+neither, the centre of its faces' whole carriers (the critical points of a
+sphere or torus, the control net of a NURBS carrier); else the origin.
 
 A body sums its faces' fluxes with the sign `σ` of each face's oriented
 normal, times the sign of the determinant of the body placement:

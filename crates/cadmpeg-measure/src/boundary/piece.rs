@@ -385,10 +385,25 @@ impl<'ir> Piece<'ir> {
         chart: &Chart<'_>,
         deviation: f64,
     ) -> Measure<Vec<[f64; 2]>> {
+        Ok(self
+            .parameter_polyline(eval, chart, deviation)?
+            .into_iter()
+            .map(|(_, uv)| uv)
+            .collect())
+    }
+
+    /// The polyline of [`Piece::polyline`] with the piece parameter of each
+    /// point.
+    pub(crate) fn parameter_polyline(
+        &self,
+        eval: &Eval<'_, '_>,
+        chart: &Chart<'_>,
+        deviation: f64,
+    ) -> Measure<Vec<(f64, [f64; 2])>> {
         if self.synthesized() {
             let start = self.uv(eval, chart, self.t0)?;
             let end = self.uv(eval, chart, self.t1)?;
-            return Ok(vec![start, end]);
+            return Ok(vec![(self.t0, start), (self.t1, end)]);
         }
         let mut points: Vec<(f64, [f64; 2])> = match &self.source {
             Source::Pcurve { span, .. } => {
@@ -426,7 +441,7 @@ impl<'ir> Piece<'ir> {
                 index += 1;
             }
         }
-        Ok(points.into_iter().map(|(_, uv)| uv).collect())
+        Ok(points)
     }
 }
 

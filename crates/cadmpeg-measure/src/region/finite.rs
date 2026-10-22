@@ -25,10 +25,7 @@ use crate::canonical::surface::Chart;
 use crate::failure::{Measure, MeasureFailure};
 use crate::reason::UnavailableReason;
 use crate::report::{Classification, LoopRole, NormalReading, RegionRule};
-
-/// Offset of the membership sample from its loop segment, relative to the
-/// loop's parameter-space size.
-const MEMBER_OFFSET_RELATIVE: f64 = 1.0e-6;
+use crate::tolerance::MEMBER_OFFSET_RELATIVE;
 
 /// The region of a face on a NURBS carrier.
 pub(super) fn classify(
@@ -58,6 +55,7 @@ pub(super) fn classify(
             classification: Classification::Unspecified,
             apex: None,
             exterior: 1.0,
+            closed: None,
         });
     }
     if chart.periods().iter().any(Option::is_some) {
@@ -113,6 +111,7 @@ pub(super) fn classify(
             classification: Classification::Unspecified,
             apex: None,
             exterior: 1.0,
+            closed: None,
         });
     }
     if matches!(face.loops, FaceLoops::Classified { .. }) {
@@ -144,6 +143,7 @@ pub(super) fn classify(
         classification: Classification::Unspecified,
         apex: None,
         exterior,
+        closed: None,
     })
 }
 

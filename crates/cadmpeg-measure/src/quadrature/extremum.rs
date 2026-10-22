@@ -137,6 +137,36 @@ pub(crate) fn extrema(
     Ok(Extrema { min, max, error })
 }
 
+/// A root of `g` between `a` and `b`, where `g(a)` and `g(b)` differ in
+/// sign, refined by bisection until the bracket is below the parameter
+/// resolution of `span`.
+pub(crate) fn root(
+    charge: &mut dyn FnMut(usize) -> Measure<()>,
+    g: &mut dyn FnMut(f64) -> Measure<f64>,
+    [mut a, mut b]: [f64; 2],
+    span: f64,
+) -> Measure<f64> {
+    charge(1)?;
+    let low = g(a)?;
+    let resolution = EXTREMUM_PARAMETER_RESOLUTION * span.abs();
+    let mut steps = 0;
+    while (b - a).abs() > resolution && steps < MAX_EXTREMUM_REFINEMENT_STEPS {
+        let middle = a.midpoint(b);
+        charge(1)?;
+        let value = g(middle)?;
+        if value == 0.0 {
+            return Ok(middle);
+        }
+        if value.signum() == low.signum() {
+            a = middle;
+        } else {
+            b = middle;
+        }
+        steps += 1;
+    }
+    Ok(a.midpoint(b))
+}
+
 #[cfg(test)]
 mod tests {
     use super::extrema;

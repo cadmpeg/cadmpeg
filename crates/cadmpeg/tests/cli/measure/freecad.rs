@@ -124,3 +124,37 @@ fn freecad_volumes() {
         assert_volume_or_candidate(&body["volume"], "loop_winding", expected);
     }
 }
+
+/// The `Compound` body: the sphere of radius 4 and the torus `R = 6`,
+/// `r = 2` about `(15, 0, 0)`, each one face covering its whole carrier.
+#[test]
+fn freecad_compound_whole_faces() {
+    let path = corpus("geometry_topology.FCStd");
+    let report = measure_json(&[path.to_str().unwrap(), "--faces"]);
+    let compound = faces_of(&report, "#Compound:");
+    let sphere_area = 4.0 * PI * 16.0;
+    let torus_area = 4.0 * PI * PI * 6.0 * 2.0;
+    for face in &compound {
+        assert_eq!(face["measures"]["region"], "whole_surface");
+        let expected = match face["carrier"]["kind"].as_str().unwrap() {
+            "sphere" => sphere_area,
+            "torus" => torus_area,
+            other => panic!("unexpected carrier {other}"),
+        };
+        assert_measured(&face["measures"]["area"], expected, 100.0);
+    }
+    assert_eq!(compound.len(), 2);
+    let report = measure_json(&[path.to_str().unwrap()]);
+    let bodies: Vec<&Value> = report["measure"]["bodies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|body| body["body"].as_str().unwrap().contains("#Compound:"))
+        .collect();
+    let [body] = bodies.as_slice() else {
+        panic!("one compound body");
+    };
+    let sphere_volume = 4.0 * PI * 64.0 / 3.0;
+    let torus_volume = 2.0 * PI * PI * 6.0 * 4.0;
+    assert_measured(&body["volume"], sphere_volume + torus_volume, 1.0);
+}

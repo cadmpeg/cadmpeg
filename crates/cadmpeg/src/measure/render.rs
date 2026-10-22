@@ -406,13 +406,11 @@ fn scalar_text(quantity: &Quantity<Scalar>, unit: &str) -> String {
     } else {
         String::new()
     };
-    let reading = measured.reading().map_or_else(String::new, |reading| {
-        format!(", reading {}", name(&reading))
-    });
     format!(
-        "{} {unit}{degrees}  {}{reading}{}",
+        "{} {unit}{degrees}  {}{}{}",
         number(value),
         name(&measured.method()),
+        reading_text(measured),
         errors(measured)
     )
 }
@@ -450,15 +448,58 @@ fn box_text(quantity: &Quantity<BoxValue>) -> String {
     let value = measured.value();
     let (min, max) = (value.min.get(), value.max.get());
     format!(
-        "({}, {}, {}) .. ({}, {}, {}) mm  {}",
+        "({}, {}, {}) .. ({}, {}, {}) mm  {}{}",
         number(min.x),
         number(min.y),
         number(min.z),
         number(max.x),
         number(max.y),
         number(max.z),
-        name(&value.kind)
+        name(&value.kind),
+        reading_text(measured)
     )
+}
+
+/// The corners of a box value.
+fn box_corners(value: &BoxValue) -> String {
+    let (min, max) = (value.min.get(), value.max.get());
+    format!(
+        "({}, {}, {}) .. ({}, {}, {}) mm",
+        number(min.x),
+        number(min.y),
+        number(min.z),
+        number(max.x),
+        number(max.y),
+        number(max.z)
+    )
+}
+
+/// `, reading R` for a value measured under a named reading.
+fn reading_text<T>(measured: &Measured<T>) -> String {
+    measured.reading().map_or_else(String::new, |reading| {
+        format!(", reading {}", name(&reading))
+    })
+}
+
+/// One line per candidate reading of a value.
+fn candidates_text<T>(
+    out: &mut impl Write,
+    quantity: &Quantity<T>,
+    show: impl Fn(&T) -> String,
+) -> io::Result<()> {
+    let candidates = match quantity {
+        Quantity::Measured(measured) => measured.candidates(),
+        Quantity::Unavailable(unavailable) => unavailable.candidates(),
+    };
+    for candidate in candidates {
+        writeln!(
+            out,
+            "                  {:<13} {}",
+            name(&candidate.reading()),
+            show(candidate.value())
+        )?;
+    }
+    Ok(())
 }
 
 fn range_text(quantity: &Quantity<Range>, unit: &str) -> String {
@@ -479,10 +520,11 @@ fn range_text(quantity: &Quantity<Range>, unit: &str) -> String {
         String::new()
     };
     format!(
-        "{} .. {} {unit}{degrees}  {}{}",
+        "{} .. {} {unit}{degrees}  {}{}{}",
         number(min),
         number(max),
         name(&measured.method()),
+        reading_text(measured),
         errors(measured)
     )
 }
@@ -507,10 +549,11 @@ fn sweep_text(quantity: &Quantity<Sweep>) -> String {
         intervals.join(" ")
     };
     format!(
-        "{} rad ({}°) {coverage}  {}{}",
+        "{} rad ({}°) {coverage}  {}{}{}",
         number(value),
         significant(value.to_degrees(), 5),
         name(&measured.method()),
+        reading_text(measured),
         errors(measured)
     )
 }
@@ -648,6 +691,9 @@ fn face_text(out: &mut impl Write, face: &FaceMeasures) -> io::Result<()> {
     parameters_text(out, carrier.parameters())?;
     let measures = face.measures();
     line(out, "area", &scalar_text(measures.area(), "mm²"))?;
+    candidates_text(out, measures.area(), |area| {
+        format!("{} mm²", number(area.value.get()))
+    })?;
     line(
         out,
         "boundary",
@@ -661,6 +707,7 @@ fn face_text(out: &mut impl Write, face: &FaceMeasures) -> io::Result<()> {
         line(out, "seam", &scalar_text(measures.seam_length(), "mm"))?;
     }
     line(out, "bbox", &box_text(measures.bbox()))?;
+    candidates_text(out, measures.bbox(), box_corners)?;
     if let Some(axial) = measures.axial_range() {
         line(out, "axial range", &range_text(axial, "mm"))?;
     }
@@ -669,9 +716,19 @@ fn face_text(out: &mut impl Write, face: &FaceMeasures) -> io::Result<()> {
     }
     if let Some(sweep) = measures.angular_sweep() {
         line(out, "sweep", &sweep_text(sweep))?;
+        candidates_text(out, sweep, |sweep| {
+            format!("{} rad", number(sweep.value.get()))
+        })?;
     }
     if let Some(latitude) = measures.latitude_range() {
         line(out, "latitude", &range_text(latitude, "rad"))?;
+        candidates_text(out, latitude, |range| {
+            format!(
+                "{} .. {} rad",
+                number(range.min.get()),
+                number(range.max.get())
+            )
+        })?;
     }
     if let Some(radius) = measures.radius_range() {
         line(out, "radius range", &range_text(radius, "mm"))?;
@@ -688,7 +745,27 @@ fn face_text(out: &mut impl Write, face: &FaceMeasures) -> io::Result<()> {
     for entry in measures.loops() {
         loop_text(out, entry)?;
     }
-    line(out, "orientation", face_orientation_cell(face))?;
+    let witness = face
+        .orientation()
+        .witness()
+        .as_ref()
+        .map_or_else(String::new, |witness| {
+            format!(
+                "; witness {} {} ({})",
+                name(witness.kind()),
+                witness.entity(),
+                if *witness.agrees() {
+                    "agrees"
+                } else {
+                    "disagrees"
+                }
+            )
+        });
+    line(
+        out,
+        "orientation",
+        &format!("{}{witness}", face_orientation_cell(face)),
+    )?;
     for caveat in face.caveats() {
         line(
             out,
@@ -712,27 +789,6 @@ fn edge_text(out: &mut impl Write, edge: &EdgeMeasures) -> io::Result<()> {
     line(out, "end", &point_text(edge.end(), "mm"))?;
     line(out, "bbox", &box_text(edge.bbox()))?;
     line(out, "faces", &edge.faces().join(", "))
-}
-
-/// One line per candidate reading of a scalar.
-fn scalar_candidates(
-    out: &mut impl Write,
-    quantity: &Quantity<Scalar>,
-    unit: &str,
-) -> io::Result<()> {
-    let candidates = match quantity {
-        Quantity::Measured(measured) => measured.candidates(),
-        Quantity::Unavailable(unavailable) => unavailable.candidates(),
-    };
-    for candidate in candidates {
-        writeln!(
-            out,
-            "                  {:<13} {} {unit}",
-            name(&candidate.reading()),
-            number(candidate.value().value.get())
-        )?;
-    }
-    Ok(())
 }
 
 fn body_orientation_text(orientation: &BodyOrientation) -> String {
@@ -801,7 +857,9 @@ fn body_text(out: &mut impl Write, body: &BodyMeasures) -> io::Result<()> {
     }
     if let Some(volume) = body.volume() {
         line(out, "volume", &scalar_text(volume, "mm³"))?;
-        scalar_candidates(out, volume, "mm³")?;
+        candidates_text(out, volume, |volume| {
+            format!("{} mm³", number(volume.value.get()))
+        })?;
     }
     if let Some(centroid) = body.centroid() {
         line(out, "centroid", &point_text(centroid, "mm"))?;

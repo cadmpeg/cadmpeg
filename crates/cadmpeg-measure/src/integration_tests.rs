@@ -8,4 +8,7 @@ mod cylinders;
 mod nurbs;
 mod pcurves;
 mod serialization;
+mod spheres;
+mod tori;
 mod volume;
+mod witnesses;

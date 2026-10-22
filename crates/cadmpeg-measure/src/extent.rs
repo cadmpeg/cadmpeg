@@ -18,7 +18,7 @@ use crate::canonical::surface::{Axis, Chart};
 use crate::context::Eval;
 use crate::failure::Measure;
 use crate::quadrature::extrema;
-use crate::region::Region;
+use crate::region::{Membership, Region};
 
 /// The axial coordinate range of a face, in millimetres from the axis
 /// origin.
@@ -190,6 +190,118 @@ pub(crate) fn angular_sweep(
         tolerance,
         2.0 * numeric_error,
     ))
+}
+
+/// The latitude range and angular sweep of a sphere face.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SphereExtent {
+    pub(crate) latitude: AxialRange,
+    pub(crate) sweep: AngularSweep,
+}
+
+/// The latitude range and angular sweep of a sphere face under its region,
+/// or under the complement region when `complement` is set. A latitude
+/// circle or meridian that misses the boundary lies wholly in the region or
+/// wholly out of it, so one membership test decides each gap between the
+/// boundary's ranges. Pole pieces carry no direction and do not enter the
+/// sweep.
+pub(crate) fn sphere_extent(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    resolved: &ResolvedFace<'_>,
+    membership: &Membership,
+    complement: bool,
+    tolerance: f64,
+) -> Measure<SphereExtent> {
+    let half = std::f64::consts::FRAC_PI_2;
+    let period = std::f64::consts::TAU;
+    let member = |uv: [f64; 2]| membership.member(uv) != complement;
+    let mut low = f64::INFINITY;
+    let mut high = f64::NEG_INFINITY;
+    let mut latitude_error: f64 = 0.0;
+    let mut ranges = Vec::new();
+    let mut sweep_error: f64 = 0.0;
+    let mut wraps = false;
+    for resolution in &resolved.loops {
+        let resolved_loop = resolution.outcome.as_ref().map_err(Clone::clone)?;
+        if resolved_loop.net_shift[0] != 0 {
+            wraps = true;
+        }
+        if let LoopKind::Vertex(point) = resolved_loop.kind {
+            if let Some([_, v]) = chart.invert(eval, point, None, 0.0)? {
+                low = low.min(v);
+                high = high.max(v);
+            }
+        }
+        for piece in &resolved_loop.pieces {
+            let ([start, end], error) = piece_range(eval, chart, piece, 1)?;
+            low = low.min(start);
+            high = high.max(end);
+            latitude_error = latitude_error.max(error);
+            if !piece.synthesized() {
+                let (range, error) = piece_range(eval, chart, piece, 0)?;
+                ranges.push(range);
+                sweep_error = sweep_error.max(error);
+            }
+        }
+    }
+    let latitude = if low > high {
+        if !member([0.0, 0.0]) {
+            return Err(crate::failure::MeasureFailure::unavailable(
+                crate::reason::UnavailableReason::BoundaryUnboundedFace,
+                None,
+                "the region has no point",
+            ));
+        }
+        AxialRange {
+            min: -half,
+            max: half,
+            numeric_error: 0.0,
+        }
+    } else {
+        AxialRange {
+            min: if low > -half && member([0.0, low.midpoint(-half)]) {
+                -half
+            } else {
+                low
+            },
+            max: if high < half && member([0.0, high.midpoint(half)]) {
+                half
+            } else {
+                high
+            },
+            numeric_error: latitude_error,
+        }
+    };
+    let sweep = if wraps {
+        full_sweep(period)
+    } else {
+        let boundary = union_on_circle(&ranges, period, tolerance, 2.0 * sweep_error);
+        if boundary.full {
+            boundary
+        } else if boundary.intervals.is_empty() {
+            if member([0.0, 0.0]) {
+                full_sweep(period)
+            } else {
+                boundary
+            }
+        } else {
+            let mut covered = ranges;
+            let count = boundary.intervals.len();
+            for (index, interval) in boundary.intervals.iter().enumerate() {
+                let next = if index + 1 == count {
+                    boundary.intervals[0][0] + period
+                } else {
+                    boundary.intervals[index + 1][0]
+                };
+                if next > interval[1] && member([interval[1].midpoint(next), 0.0]) {
+                    covered.push([interval[1], next]);
+                }
+            }
+            union_on_circle(&covered, period, tolerance, 2.0 * sweep_error)
+        }
+    };
+    Ok(SphereExtent { latitude, sweep })
 }
 
 fn full_sweep(period: f64) -> AngularSweep {

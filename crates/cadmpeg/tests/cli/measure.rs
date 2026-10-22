@@ -6,7 +6,7 @@
 
 #[cfg(feature = "step")]
 use std::fs;
-#[cfg(any(feature = "step", feature = "fcstd"))]
+#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
 use std::path::Path;
 #[cfg(feature = "step")]
 use std::path::PathBuf;
@@ -776,4 +776,96 @@ fn orientation_conflict_is_visible() {
         unavailable["volume.orientation-conflict"].as_u64() >= Some(1),
         "{unavailable:#}"
     );
+}
+
+/// Assert a measured range equals `[min, max]` within its numeric error and
+/// the test floor.
+#[cfg(any(feature = "step", feature = "iges"))]
+fn assert_range(quantity: &Value, [min, max]: [f64; 2]) {
+    assert_eq!(quantity["status"], "measured", "{quantity:#}");
+    let numeric = quantity["numeric_error"].as_f64().unwrap();
+    for (key, expected) in [("min", min), ("max", max)] {
+        let value = quantity[key].as_f64().unwrap();
+        let bound = numeric + TEST_ABSOLUTE_FLOOR * expected.abs().max(1.0);
+        assert!(
+            (value - expected).abs() <= bound,
+            "{key}: {value} differs from {expected} by more than {bound}"
+        );
+    }
+}
+
+/// A sphere face that covers its whole carrier: region, area, latitude,
+/// sweep, and the body's volume.
+#[cfg(any(feature = "step", feature = "iges"))]
+fn assert_whole_sphere(path: &Path, radius: f64) {
+    let pi = std::f64::consts::PI;
+    let report = measure_json(&[path.to_str().unwrap(), "--faces"]);
+    let faces = report["measure"]["faces"].as_array().unwrap();
+    let [face] = faces.as_slice() else {
+        panic!("one face row");
+    };
+    let measures = &face["measures"];
+    assert_eq!(measures["region"], "whole_surface");
+    assert_measured(&measures["area"], 4.0 * pi * radius * radius, 1.0);
+    let half = std::f64::consts::FRAC_PI_2;
+    assert_range(&measures["latitude_range"], [-half, half]);
+    assert_eq!(measures["angular_sweep"]["full"], true);
+    let report = measure_json(&[path.to_str().unwrap()]);
+    assert_measured(
+        &only_body(&report)["volume"],
+        4.0 * pi * radius.powi(3) / 3.0,
+        1.0,
+    );
+}
+
+/// The cap of the sphere `R = 10` above `z = 6`, bounded by the circle of
+/// radius 8: area `2πR²(1 − 0.6)`, complement `2πR²(1 + 0.6)`.
+#[cfg(feature = "step")]
+#[test]
+fn measures_sphere_cap() {
+    let cap = fixture("measure_sphere_cap.p21");
+    let report = measure_json(&[cap.to_str().unwrap(), "--face", "face#27"]);
+    let row = face(&report, "step:data:face#27");
+    let measures = &row["measures"];
+    let pi = std::f64::consts::PI;
+    let area = &measures["area"];
+    assert_measured(area, 80.0 * pi, 100.0);
+    assert_eq!(area["reading"], "declared");
+    let candidates = area["candidates"].as_array().unwrap();
+    let [candidate] = candidates.as_slice() else {
+        panic!("one candidate");
+    };
+    assert_eq!(candidate["reading"], "complement");
+    let complement = candidate["value"].as_f64().unwrap();
+    assert!((complement - 320.0 * pi).abs() <= TEST_ABSOLUTE_FLOOR * 400.0 * pi);
+    assert!(row["caveats"].as_array().unwrap().iter().any(|caveat| {
+        caveat["code"] == "orientation.unconfirmed" && caveat["category"] == "unsupported"
+    }));
+    assert_measured(&measures["boundary_length"], 16.0 * pi, 10.0);
+    assert_range(
+        &measures["latitude_range"],
+        [0.6_f64.asin(), std::f64::consts::FRAC_PI_2],
+    );
+    assert_eq!(measures["angular_sweep"]["full"], true);
+    let bbox = &measures["bbox"];
+    assert_eq!(bbox["status"], "measured");
+    for (corner, expected) in [("min", [-8.0, -8.0, 6.0]), ("max", [8.0, 8.0, 10.0])] {
+        for (axis, expected) in ["x", "y", "z"].into_iter().zip(expected) {
+            let value = bbox[corner][axis].as_f64().unwrap();
+            assert!(
+                (value - expected).abs() <= TEST_ABSOLUTE_FLOOR * 10.0,
+                "{corner}.{axis}: {value}"
+            );
+        }
+    }
+    assert!(row["orientation"]["consistent"].is_null());
+}
+
+/// The sphere of radius 5 bounded by two pole vertex loops.
+#[cfg(feature = "step")]
+#[test]
+fn vertex_loop_sphere() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../cadmpeg-codec-step/tests/fixtures/ap242_vertex_loop.p21");
+    assert_whole_sphere(&path, 5.0);
 }

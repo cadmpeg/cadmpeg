@@ -14,7 +14,7 @@ use crate::context::Eval;
 use crate::failure::{Measure, MeasureFailure};
 use crate::quadrature::{integrate, Target};
 use crate::reason::UnavailableReason;
-use crate::region::{LoopIntegral, LoopShape, Region};
+use crate::region::{ClosedRegion, LoopIntegral, LoopShape, Region};
 use crate::tolerance::QUADRATURE_ACCEPTANCE_RELATIVE;
 
 /// An area and its quadrature error estimate.
@@ -50,22 +50,60 @@ pub(crate) fn loop_integral(
     if let Chart::Nurbs(nurbs) = chart {
         return generic_loop_integral(eval, chart, nurbs, resolved, base, scale);
     }
+    cut_loop_integral(eval, chart, resolved, base, None, scale)
+}
+
+/// A loop's cut: the period its pieces' `v` is taken modulo, from `base`,
+/// and per piece the parameters where the piece crosses the cut.
+#[derive(Clone, Copy)]
+pub(crate) struct LoopCut<'a> {
+    pub(crate) period: f64,
+    pub(crate) breaks: &'a [Vec<f64>],
+}
+
+impl LoopCut<'_> {
+    /// `v` taken in `[base, base + period)`.
+    pub(crate) fn wrap(&self, base: f64, v: f64) -> f64 {
+        base + (v - base).rem_euclid(self.period)
+    }
+
+    /// The piece's own breaks and its cut crossings.
+    pub(crate) fn breaks(cut: Option<&Self>, position: usize, own: Vec<f64>) -> Vec<f64> {
+        let mut breaks = own;
+        if let Some(crossings) = cut.and_then(|cut| cut.breaks.get(position)) {
+            breaks.extend(crossings.iter().copied());
+        }
+        breaks
+    }
+}
+
+/// `∮ (G(v) − G(base)) du` over one loop on an analytic chart, with each
+/// piece's `v` taken modulo the cut's period when the domain is cut.
+fn cut_loop_integral(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    resolved: &ResolvedLoop<'_>,
+    base: f64,
+    cut: Option<LoopCut<'_>>,
+    scale: f64,
+) -> Measure<LoopIntegral> {
     let g0 = antiderivative(chart, base)?;
     let target = Target::outer([scale * scale]);
     let mut value = 0.0_f64;
     let mut error = 0.0_f64;
-    for piece in &resolved.pieces {
+    for (position, piece) in resolved.pieces.iter().enumerate() {
         let mut charge = |units| eval.charge(units);
         let mut integrand = |t: f64| -> Measure<[f64; 1]> {
             let sample = piece.sample(eval, chart, t)?;
-            Ok([(antiderivative(chart, sample.uv[1])? - g0) * sample.duv[0]])
+            let v = cut.map_or(sample.uv[1], |cut| cut.wrap(base, sample.uv[1]));
+            Ok([(antiderivative(chart, v)? - g0) * sample.duv[0]])
         };
         let integral = integrate(
             &mut charge,
             &mut integrand,
             piece.t0,
             piece.t1,
-            &piece.breaks(),
+            &LoopCut::breaks(cut.as_ref(), position, piece.breaks()),
             target,
         )?;
         value += integral.value[0];
@@ -159,8 +197,15 @@ fn generic_loop_integral(
     Ok(LoopIntegral { value, error, base })
 }
 
-/// The area of a NURBS chart's whole domain, `∫∫ |N| du dv`.
+/// The area of a chart's whole domain, `∫∫ |N| du dv`: closed forms on a
+/// sphere and a torus, a quadrature on a NURBS chart.
 pub(crate) fn domain_area(eval: &Eval<'_, '_>, chart: &Chart<'_>, scale: f64) -> Measure<Area> {
+    if let Some(value) = chart.closed_area() {
+        return Ok(Area {
+            value,
+            numeric_error: 0.0,
+        });
+    }
     let Chart::Nurbs(nurbs) = chart else {
         return Err(MeasureFailure::unavailable(
             UnavailableReason::RegionDomainUnsupported,
@@ -202,6 +247,9 @@ pub(crate) fn region_area(
     resolved: &[Option<&ResolvedLoop<'_>>],
     scale: f64,
 ) -> Measure<Area> {
+    if let Some(closed) = &region.closed {
+        return closed_region_area(eval, chart, region, closed, resolved, scale);
+    }
     let period = chart.periods()[0];
     let mut value = 0.0_f64;
     let mut numeric_error = 0.0_f64;
@@ -231,6 +279,51 @@ pub(crate) fn region_area(
         value += region.exterior * domain.value;
         numeric_error += domain.numeric_error;
     }
+    Ok(Area {
+        value,
+        numeric_error,
+    })
+}
+
+/// The area of a region on a closed domain: each loop by its factor from
+/// the region's base, plus `W·|I|` for each interval `I` of the upper edge
+/// in the region, where `W = G(base) − G(base + span)` is the area of one
+/// unit of `u`.
+fn closed_region_area(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    region: &Region,
+    closed: &ClosedRegion,
+    resolved: &[Option<&ResolvedLoop<'_>>],
+    scale: f64,
+) -> Measure<Area> {
+    let Some(span) = chart.closed_span() else {
+        return Err(MeasureFailure::unavailable(
+            UnavailableReason::RegionDomainUnsupported,
+            None,
+            "the carrier has no closed domain",
+        ));
+    };
+    let mut value = 0.0_f64;
+    let mut numeric_error = 0.0_f64;
+    for (index, member) in region.loops.iter().enumerate() {
+        if member.factor == 0.0 {
+            continue;
+        }
+        let Some(Some(resolved)) = resolved.get(index) else {
+            continue;
+        };
+        let cut = closed.wrap.as_ref().map(|wrap| LoopCut {
+            period: wrap.period,
+            breaks: wrap.breaks.get(index).map_or(&[], Vec::as_slice),
+        });
+        let integral = cut_loop_integral(eval, chart, resolved, region.base, cut, scale)?;
+        value += member.factor * integral.value;
+        numeric_error += integral.error;
+    }
+    let width = antiderivative(chart, region.base)? - antiderivative(chart, region.base + span)?;
+    let top: f64 = closed.top.iter().map(|[start, end]| end - start).sum();
+    value += width * top;
     Ok(Area {
         value,
         numeric_error,

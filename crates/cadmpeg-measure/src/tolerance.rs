@@ -33,6 +33,14 @@ pub(crate) const SIMILARITY_RELATIVE_TOLERANCE: f64 = 1.0e-8;
 /// to the loop's parameter-space box diagonal.
 pub(crate) const NESTING_SAMPLE_RELATIVE_DEVIATION: f64 = 1.0e-3;
 
+/// Offset of a membership reference point from its loop segment, relative
+/// to the loop's parameter-space box diagonal.
+pub(crate) const MEMBER_OFFSET_RELATIVE: f64 = 1.0e-6;
+
+/// Normals parallel within this angle, in radians, make an edge a tangent
+/// witness.
+pub(crate) const TANGENT_WITNESS_ANGLE: f64 = 1.0e-2;
+
 /// A ring loop that encloses less than this fraction of its 3D box diagonal
 /// squared encloses no area.
 pub(crate) const LOOP_DEGENERATE_RELATIVE_AREA: f64 = 1.0e-12;

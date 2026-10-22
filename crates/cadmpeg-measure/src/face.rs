@@ -16,14 +16,14 @@ use crate::canonical::surface::Chart;
 use crate::canonical::{Carrier, Sources};
 use crate::context::Eval;
 use crate::edges::EdgeGeometry;
-use crate::extent::{angular_sweep, axial_range, parameter_ranges};
+use crate::extent::{angular_sweep, axial_range, parameter_ranges, sphere_extent};
 use crate::failure::{settle, Measure, Missing, Outcome};
 use crate::flux::{Flux, FluxFrame};
 use crate::geom::Aabb;
 use crate::orientation::{declared_normal, face_orientation, opposite};
 use crate::owners::Owners;
 use crate::reason::{CaveatCode, UnavailableReason};
-use crate::region::{classify, loop_shape, winding, FiniteContext, LoopShape, Region};
+use crate::region::{classify, loop_shape, winding, FiniteContext, LoopShape, Region, RegionInput};
 use crate::report::{
     CarrierMeasures, CarrierParameters, Caveat, CoedgeMeasures, FaceMeasures, FaceOrientation,
     FaceQuantities, ListedOrder, LoopMeasures, LoopRole, RegionRule, StatusTally, Witness,
@@ -36,13 +36,22 @@ use crate::value::{
     Sweep, Unit,
 };
 pub(crate) use readings::Verdict;
-use readings::{face_area, AreaInput};
+use readings::{face_area, AreaInput, Readings};
 
 /// Everything measured about one face.
-pub(crate) struct FaceResult {
+pub(crate) struct FaceResult<'ir> {
     pub(crate) row: FaceMeasures,
-    /// The face's box, when measured.
+    /// The face's box under its reported reading, when measured.
     pub(crate) aabb: Option<Aabb>,
+    /// The face's box under the declared and the complement reading.
+    aabbs: [Option<Aabb>; 2],
+    /// The values that depend on the reading of a declared-orientation
+    /// face, under both readings.
+    readings: FaceReadings,
+    /// The face's chart, when it resolves.
+    pub(crate) chart: Option<Chart<'ir>>,
+    /// The allowance of the face's boundary.
+    pub(crate) alpha: f64,
     /// The model tolerance of the face's boundary.
     pub(crate) tau: f64,
     /// The radius `--radius` matches, when the carrier has one.
@@ -57,6 +66,76 @@ pub(crate) struct FaceResult {
     pub(crate) tau_b: f64,
     /// The non-seam boundary length.
     pub(crate) boundary_length: f64,
+}
+
+impl FaceResult<'_> {
+    /// Report the face's values and orientation under `verdict`, decided by
+    /// `witness`.
+    pub(crate) fn settle_reading(&mut self, verdict: Verdict, witness: Option<Witness>) {
+        let id = self.row.face.clone();
+        self.verdict = verdict;
+        let readings = &self.readings;
+        let measures = &mut self.row.measures;
+        measures.area = readings.area.reported(verdict, &id);
+        measures.bbox = readings.bbox.reported(verdict, &id);
+        if let Some(latitude) = &readings.latitude {
+            measures.latitude_range = Some(latitude.reported(verdict, &id));
+        }
+        if let Some(sweep) = &readings.sweep {
+            measures.angular_sweep = Some(sweep.reported(verdict, &id));
+        }
+        self.aabb = match &measures.bbox {
+            Quantity::Unavailable(_) => None,
+            Quantity::Measured(_)
+                if verdict == Verdict::Conflict && readings.bbox.complement.is_some() =>
+            {
+                self.aabbs[1]
+            }
+            Quantity::Measured(_) => self.aabbs[0],
+        };
+        let orientation = &mut self.row.orientation;
+        let declared = orientation.declared_normal;
+        match verdict {
+            Verdict::Settled => {}
+            Verdict::Confirmed => {
+                orientation.witness = witness;
+                orientation.consistent = Some(true);
+                orientation.loop_normal = declared;
+            }
+            Verdict::Conflict | Verdict::Contradicted => {
+                orientation.witness = witness;
+                orientation.consistent = Some(false);
+                orientation.loop_normal = opposite(declared);
+            }
+            Verdict::Unconfirmed => {
+                orientation.witness = None;
+                orientation.consistent = None;
+            }
+        }
+        self.row
+            .caveats
+            .retain(|caveat| caveat.code != CaveatCode::OrientationUnconfirmed);
+        if verdict == Verdict::Unconfirmed {
+            self.row.caveats.push(Caveat::new(
+                CaveatCode::OrientationUnconfirmed,
+                Some(&id),
+                "the face's region rests on its declared orientation and no witness confirms it",
+            ));
+            self.row.caveats.sort();
+        }
+        let mut tally = StatusTally::default();
+        self.row.carrier.parameters.visit(&mut tally);
+        self.row.measures.visit(&mut tally);
+        self.row.status = tally.status();
+    }
+}
+
+/// The values of a face that depend on its reading.
+struct FaceReadings {
+    area: Readings<Scalar>,
+    bbox: Readings<BoxValue>,
+    latitude: Option<Readings<Range>>,
+    sweep: Option<Readings<Sweep>>,
 }
 
 /// A face's fluxes under its readings.
@@ -97,7 +176,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         &self,
         eval: &Eval<'_, '_>,
         face: &'ir Face,
-    ) -> Result<FaceResult, ResourceLimit> {
+    ) -> Result<FaceResult<'ir>, ResourceLimit> {
         let id = face.id.as_str();
         let owners = self.owners;
         let coedges: Vec<_> = face
@@ -171,9 +250,32 @@ impl<'ir> FaceInput<'_, 'ir> {
         let region: Outcome<Region> = match (&chart, &boundary) {
             (Ok(chart), Ok(boundary)) => {
                 let v_tolerance = chart.axis().map_or(alpha, |axis| alpha / axis.h);
-                let context = FiniteContext {
-                    implicit_outer: carrier.as_ref().is_ok_and(|carrier| carrier.implicit_outer),
-                    declared,
+                let seams: Vec<Vec<bool>> = boundary
+                    .resolved
+                    .loops
+                    .iter()
+                    .map(|resolution| match &resolution.outcome {
+                        Ok(resolved) => resolved
+                            .pieces
+                            .iter()
+                            .map(|piece| {
+                                piece
+                                    .coedge
+                                    .is_some_and(|coedge| FaceFrame::is_seam(owners, face, coedge))
+                            })
+                            .collect(),
+                        Err(_) => Vec::new(),
+                    })
+                    .collect();
+                let input = RegionInput {
+                    eval: *eval,
+                    context: FiniteContext {
+                        implicit_outer: carrier
+                            .as_ref()
+                            .is_ok_and(|carrier| carrier.implicit_outer),
+                        declared,
+                    },
+                    seams: &seams,
                 };
                 settle(
                     classify(
@@ -182,7 +284,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                         &boundary.resolved,
                         &boundary.shapes,
                         v_tolerance,
-                        context,
+                        &input,
                     )
                     .map_err(|failure| failure.at(id)),
                 )?
@@ -206,6 +308,11 @@ impl<'ir> FaceInput<'_, 'ir> {
             Ok(Chart::Nurbs(nurbs)) => Some(nurbs.control_hull()),
             _ => None,
         };
+        let carrier_size = chart
+            .as_ref()
+            .ok()
+            .and_then(Chart::critical_box)
+            .map_or(0.0, |aabb| aabb.diagonal());
         let scale = match (&hull, &boundary) {
             (Some(Ok(hull)), _) => hull.diagonal(),
             (_, Ok(boundary)) => boundary
@@ -213,8 +320,8 @@ impl<'ir> FaceInput<'_, 'ir> {
                 .iter()
                 .flatten()
                 .map(|shape| shape.diagonal)
-                .fold(0.0, f64::max),
-            _ => 0.0,
+                .fold(carrier_size, f64::max),
+            _ => carrier_size,
         };
         let scale = if scale > 0.0 { scale } else { alpha };
 
@@ -245,86 +352,40 @@ impl<'ir> FaceInput<'_, 'ir> {
                 };
                 match settle(face_area(eval, &input).map_err(|failure| failure.at(id)))? {
                     Ok(face_area) => (face_area.area, face_area.verdict),
-                    Err(missing) => (missing.quantity(), Verdict::Settled),
+                    Err(missing) => (Readings::single(missing.quantity()), Verdict::Settled),
                 }
             }
             (Err(missing), _, _) | (_, Err(missing), _) | (_, _, Err(missing)) => {
-                (missing.quantity(), Verdict::Settled)
+                (Readings::single(missing.quantity()), Verdict::Settled)
             }
         };
 
-        let (bbox, aabb) = match (&chart, &region) {
-            (Ok(Chart::Plane(_) | Chart::Cylinder(_)), Ok(_)) => self.boundary_box(
+        let (bbox, aabbs) = match (&chart, &region) {
+            (Ok(chart @ (Chart::Sphere(_) | Chart::Torus(_))), Ok(region)) => self.closed_box(
                 face,
                 &coedges,
                 &boundary,
-                BoxBasis {
+                ClosedBox {
+                    chart,
+                    region,
                     tau_b,
-                    member: None,
-                    method: Method::BoundaryExtremum,
+                    alpha,
                 },
             ),
-            (Ok(Chart::Cone(_)), Ok(region)) => self.boundary_box(
-                face,
-                &coedges,
-                &boundary,
-                BoxBasis {
-                    tau_b,
-                    member: region.apex,
-                    method: Method::CriticalPoints,
-                },
-            ),
-            (Ok(Chart::Nurbs(_)), Ok(_)) => match hull {
-                Some(Ok(hull)) => {
-                    let (boundary_box, _) = self.boundary_box(
-                        face,
-                        &coedges,
-                        &boundary,
-                        BoxBasis {
-                            tau_b,
-                            member: None,
-                            method: Method::BoundaryExtremum,
-                        },
-                    );
-                    let boundary_aabb = boundary_box.measured().map(|measured| {
-                        let value = measured.value();
-                        let mut aabb = Aabb::of_point(value.min.get());
-                        aabb.include(value.max.get());
-                        aabb
-                    });
-                    (
-                        measured(
-                            box_value(hull, BoxKind::Conservative, boundary_aabb),
-                            Unit::Millimeter,
-                            Method::ControlHull,
-                            Errors::new(0.0, tau_b),
-                            id,
-                        ),
-                        Some(hull),
-                    )
-                }
-                Some(Err(reason)) => (
-                    unavailable(reason, id, "the control net bounds no box"),
-                    None,
-                ),
-                None => (
-                    unavailable(
-                        UnavailableReason::BboxInteriorUnbounded,
-                        id,
-                        "the carrier has no control net",
-                    ),
-                    None,
-                ),
-            },
-            (Ok(_), Ok(_)) => (
-                unavailable(
-                    UnavailableReason::RegionDomainUnsupported,
-                    id,
-                    "boxes on this carrier are not computed in this build",
-                ),
-                None,
-            ),
-            (Err(missing), _) | (_, Err(missing)) => (missing.quantity(), None),
+            (chart, region) => {
+                let (bbox, aabb) = self.plain_box(
+                    face,
+                    &coedges,
+                    &boundary,
+                    PlainBox {
+                        chart,
+                        region,
+                        tau_b,
+                        hull,
+                    },
+                );
+                (Readings::single(bbox), [aabb, None])
+            }
         };
 
         let directed: Vec<bool> = match &boundary {
@@ -341,27 +402,9 @@ impl<'ir> FaceInput<'_, 'ir> {
                 .collect(),
             Err(_) => Vec::new(),
         };
-        let mut orientation: FaceOrientation =
+        let orientation: FaceOrientation =
             face_orientation(declared, region.as_ref().ok(), &directed);
         let mut caveats = Vec::new();
-        match verdict {
-            Verdict::Settled => {}
-            Verdict::Confirmed | Verdict::Conflict => {
-                let agrees = verdict == Verdict::Confirmed;
-                orientation.witness = Some(Witness {
-                    kind: WitnessKind::EmptyReading,
-                    entity: id.to_owned(),
-                    agrees,
-                });
-                orientation.consistent = Some(agrees);
-                orientation.loop_normal = if agrees { declared } else { opposite(declared) };
-            }
-            Verdict::Unconfirmed => caveats.push(Caveat::new(
-                CaveatCode::OrientationUnconfirmed,
-                Some(id),
-                "the face's region rests on its declared orientation and no witness confirms it",
-            )),
-        }
         let loops = self.loops(face, &boundary, region.as_ref().ok(), &mut caveats);
         caveats.sort();
 
@@ -405,15 +448,24 @@ impl<'ir> FaceInput<'_, 'ir> {
                 placement: self.placement.as_ref().ok(),
             },
         )?;
-        let measures = FaceQuantities {
+        let readings = FaceReadings {
             area,
+            bbox,
+            latitude: extents.latitude_range,
+            sweep: extents.angular_sweep,
+        };
+        let measures = FaceQuantities {
+            area: readings.area.declared.clone(),
             boundary_length,
             seam_length,
-            bbox,
+            bbox: readings.bbox.declared.clone(),
             axial_range: extents.axial_range,
             axial_extent: extents.axial_extent,
-            angular_sweep: extents.angular_sweep,
-            latitude_range: extents.latitude_range,
+            angular_sweep: readings.sweep.as_ref().map(|sweep| sweep.declared.clone()),
+            latitude_range: readings
+                .latitude
+                .as_ref()
+                .map(|latitude| latitude.declared.clone()),
             radius_range: extents.radius_range,
             u_range: extents.u_range,
             v_range: extents.v_range,
@@ -421,9 +473,6 @@ impl<'ir> FaceInput<'_, 'ir> {
             loops,
         };
         let radius = radius_of(&carrier_row);
-        let mut tally = StatusTally::default();
-        carrier_row.parameters.visit(&mut tally);
-        measures.visit(&mut tally);
         let row = FaceMeasures {
             face: id.to_owned(),
             name: face.name.clone(),
@@ -434,7 +483,7 @@ impl<'ir> FaceInput<'_, 'ir> {
             measures,
             orientation,
             caveats,
-            status: tally.status(),
+            status: crate::report::RowStatus::Measured,
         };
         let flux = match (self.flux_origin, &chart, &boundary, &region) {
             (None, ..) => None,
@@ -459,9 +508,13 @@ impl<'ir> FaceInput<'_, 'ir> {
             | (Some(_), _, _, Err(missing)) => Some(Err(missing.clone())),
         };
         let natural = region.as_ref().is_ok_and(|region| region.exterior != 0.0);
-        Ok(FaceResult {
+        let mut result = FaceResult {
             row,
-            aabb,
+            aabb: aabbs[0],
+            aabbs,
+            readings,
+            chart: chart.as_ref().ok().copied(),
+            alpha,
             tau,
             radius,
             flux,
@@ -469,7 +522,14 @@ impl<'ir> FaceInput<'_, 'ir> {
             natural,
             tau_b,
             boundary_length: lengths.boundary,
-        })
+        };
+        let witness = matches!(verdict, Verdict::Confirmed | Verdict::Conflict).then(|| Witness {
+            kind: WitnessKind::EmptyReading,
+            entity: id.to_owned(),
+            agrees: verdict == Verdict::Confirmed,
+        });
+        result.settle_reading(verdict, witness);
+        Ok(result)
     }
 
     fn boundary(
@@ -542,6 +602,205 @@ impl<'ir> FaceInput<'_, 'ir> {
         lengths.method = combined(&methods);
         lengths.seam_method = combined(&seam_methods);
         lengths
+    }
+
+    /// The box of a face on a plane, cylinder, cone or NURBS carrier.
+    fn plain_box(
+        &self,
+        face: &Face,
+        coedges: &[&'ir cadmpeg_ir::topology::Coedge],
+        boundary: &Outcome<Boundary<'ir>>,
+        basis: PlainBox<'_, '_>,
+    ) -> (Quantity<BoxValue>, Option<Aabb>) {
+        let id = face.id.as_str();
+        let PlainBox {
+            chart,
+            region,
+            tau_b,
+            hull,
+        } = basis;
+        match (chart, region) {
+            (Ok(Chart::Plane(_) | Chart::Cylinder(_)), Ok(_)) => self.boundary_box(
+                face,
+                coedges,
+                boundary,
+                BoxBasis {
+                    tau_b,
+                    member: None,
+                    method: Method::BoundaryExtremum,
+                },
+            ),
+            (Ok(Chart::Cone(_)), Ok(region)) => self.boundary_box(
+                face,
+                coedges,
+                boundary,
+                BoxBasis {
+                    tau_b,
+                    member: region.apex,
+                    method: Method::CriticalPoints,
+                },
+            ),
+            (Ok(Chart::Nurbs(_)), Ok(_)) => match hull {
+                Some(Ok(hull)) => {
+                    let (boundary_box, _) = self.boundary_box(
+                        face,
+                        coedges,
+                        boundary,
+                        BoxBasis {
+                            tau_b,
+                            member: None,
+                            method: Method::BoundaryExtremum,
+                        },
+                    );
+                    let boundary_aabb = boundary_box.measured().map(|measured| {
+                        let value = measured.value();
+                        let mut aabb = Aabb::of_point(value.min.get());
+                        aabb.include(value.max.get());
+                        aabb
+                    });
+                    (
+                        measured(
+                            box_value(hull, BoxKind::Conservative, boundary_aabb),
+                            Unit::Millimeter,
+                            Method::ControlHull,
+                            Errors::new(0.0, tau_b),
+                            id,
+                        ),
+                        Some(hull),
+                    )
+                }
+                Some(Err(reason)) => (
+                    unavailable(reason, id, "the control net bounds no box"),
+                    None,
+                ),
+                None => (
+                    unavailable(
+                        UnavailableReason::BboxInteriorUnbounded,
+                        id,
+                        "the carrier has no control net",
+                    ),
+                    None,
+                ),
+            },
+            (Ok(_), Ok(_)) => (
+                unavailable(
+                    UnavailableReason::RegionDomainUnsupported,
+                    id,
+                    "boxes on this carrier are not computed",
+                ),
+                None,
+            ),
+            (Err(missing), _) | (_, Err(missing)) => (missing.quantity(), None),
+        }
+    }
+
+    /// The edge boxes and vertex-loop points of a face, and the largest
+    /// numeric error of the edge boxes; `None` without boundary pieces.
+    fn boundary_aabb(
+        &self,
+        coedges: &[&'ir cadmpeg_ir::topology::Coedge],
+        boundary: &Outcome<Boundary<'ir>>,
+    ) -> Result<(Option<Aabb>, f64), Missing> {
+        let mut aabb: Option<Aabb> = None;
+        let mut numeric_error: f64 = 0.0;
+        let mut include = |other: Aabb| {
+            aabb = Some(aabb.map_or(other, |aabb| aabb.union(other)));
+        };
+        for coedge in coedges {
+            let Some(edge) = self.edges.get(coedge.edge.as_str()) else {
+                continue;
+            };
+            match &edge.bbox {
+                Ok(curve_box) => {
+                    include(curve_box.aabb);
+                    numeric_error = numeric_error.max(curve_box.numeric_error);
+                }
+                Err(missing) => return Err(missing.clone()),
+            }
+        }
+        if let Ok(boundary) = boundary {
+            for resolution in &boundary.resolved.loops {
+                if let Ok(ResolvedLoop {
+                    kind: LoopKind::Vertex(point),
+                    ..
+                }) = &resolution.outcome
+                {
+                    include(Aabb::of_point(*point));
+                }
+            }
+        }
+        Ok((aabb, numeric_error))
+    }
+
+    /// The box of a sphere or torus face under both readings: the boundary
+    /// box joined with the critical points that are members of each
+    /// reading's region.
+    fn closed_box(
+        &self,
+        face: &Face,
+        coedges: &[&'ir cadmpeg_ir::topology::Coedge],
+        boundary: &Outcome<Boundary<'ir>>,
+        basis: ClosedBox<'_, '_>,
+    ) -> (Readings<BoxValue>, [Option<Aabb>; 2]) {
+        let id = face.id.as_str();
+        let ClosedBox {
+            chart,
+            region,
+            tau_b,
+            alpha,
+        } = basis;
+        let (edges, numeric_error) = match self.boundary_aabb(coedges, boundary) {
+            Ok(found) => found,
+            Err(missing) => return (Readings::single(missing.quantity()), [None, None]),
+        };
+        let Some(closed) = &region.closed else {
+            return (
+                Readings::single(unavailable(
+                    UnavailableReason::RegionDomainUnsupported,
+                    id,
+                    "the region has no closed-domain membership",
+                )),
+                [None, None],
+            );
+        };
+        let poles = chart.poles();
+        let mut boxes = [edges, edges];
+        for (uv, point) in chart.critical_points() {
+            let pole = poles.and_then(|poles| {
+                poles
+                    .iter()
+                    .position(|(_, pole)| pole.distance(point) <= alpha)
+            });
+            let member = match pole {
+                Some(0) => closed.membership.end(-1.0),
+                Some(_) => closed.membership.end(1.0),
+                None => closed.membership.member(uv),
+            };
+            let slot = &mut boxes[usize::from(!member)];
+            *slot = Some(slot.map_or(Aabb::of_point(point), |aabb| {
+                aabb.union(Aabb::of_point(point))
+            }));
+        }
+        let quantity = |aabb: Option<Aabb>| match aabb {
+            Some(aabb) => measured(
+                box_value(aabb, BoxKind::Tight, edges),
+                Unit::Millimeter,
+                Method::CriticalPoints,
+                Errors::new(numeric_error, tau_b),
+                id,
+            ),
+            None => unavailable(
+                UnavailableReason::BoundaryUnboundedFace,
+                id,
+                "the region has no point",
+            ),
+        };
+        let readings = Readings {
+            declared: quantity(boxes[0]),
+            complement: (region.rule == RegionRule::DeclaredOrientation)
+                .then(|| quantity(boxes[1])),
+        };
+        (readings, boxes)
     }
 
     /// The box of the face's boundary pieces (its edges and vertex loops),
@@ -715,7 +974,7 @@ fn face_flux(
 ) -> Measure<FaceFlux> {
     let declared = frame.region_flux(eval, region, resolved)?;
     let complement = if region.rule == RegionRule::DeclaredOrientation {
-        Some(frame.domain_flux(eval)?.add(declared, -1.0))
+        Some(frame.domain_flux(eval, region)?.add(declared, -1.0))
     } else {
         None
     };
@@ -723,6 +982,25 @@ fn face_flux(
         declared,
         complement,
     })
+}
+
+/// What the box of a face on a plane, cylinder, cone or NURBS carrier
+/// reads.
+#[derive(Clone, Copy)]
+struct PlainBox<'a, 'ir> {
+    chart: &'a Outcome<Chart<'ir>>,
+    region: &'a Outcome<Region>,
+    tau_b: f64,
+    hull: Option<Result<Aabb, UnavailableReason>>,
+}
+
+/// What the box of a face on a sphere or torus reads.
+#[derive(Clone, Copy)]
+struct ClosedBox<'a, 'ir> {
+    chart: &'a Chart<'ir>,
+    region: &'a Region,
+    tau_b: f64,
+    alpha: f64,
 }
 
 /// What a face box joins to its boundary box, and how.
@@ -759,8 +1037,8 @@ impl ExtentInput<'_, '_> {
 struct Extents {
     axial_range: Option<Quantity<Range>>,
     axial_extent: Option<Quantity<Scalar>>,
-    angular_sweep: Option<Quantity<Sweep>>,
-    latitude_range: Option<Quantity<Range>>,
+    angular_sweep: Option<Readings<Sweep>>,
+    latitude_range: Option<Readings<Range>>,
     radius_range: Option<Quantity<Range>>,
     u_range: Option<Quantity<Range>>,
     v_range: Option<Quantity<Range>>,
@@ -813,24 +1091,17 @@ fn extent_quantities(
                 extents.v_range = Some(missing.quantity());
             }
         },
-        Chart::Sphere(_) => {
-            let missing = match &upstream {
-                Err(missing) => missing.clone(),
-                Ok(_) => Missing {
-                    reason: UnavailableReason::RegionDomainUnsupported,
-                    entity: Some(id.to_owned()),
-                    message: "regions on spheres are not classified in this build".to_owned(),
-                },
-            };
-            extents.angular_sweep = Some(missing.quantity());
-            extents.latitude_range = Some(missing.quantity());
+        Chart::Sphere(sphere) => {
+            let (latitude, sweep) = sphere_readings(eval, input, chart, sphere.radius.abs())?;
+            extents.latitude_range = Some(latitude);
+            extents.angular_sweep = Some(sweep);
         }
         Chart::Torus(_) => {
-            extents.angular_sweep = Some(unavailable(
+            extents.angular_sweep = Some(Readings::single(unavailable(
                 UnavailableReason::SweepUnsupportedCarrier,
                 id,
                 "the angular sweep of a torus face is not computed",
-            ));
+            )));
         }
         Chart::Cylinder(_) | Chart::Cone(_) => {
             let Some(axis) = chart.axis() else {
@@ -841,7 +1112,7 @@ fn extent_quantities(
                 Err(missing) => {
                     extents.axial_range = Some(missing.quantity());
                     extents.axial_extent = Some(missing.quantity());
-                    extents.angular_sweep = Some(missing.quantity());
+                    extents.angular_sweep = Some(Readings::single(missing.quantity()));
                     if matches!(chart, Chart::Cone(_)) {
                         extents.radius_range = Some(missing.quantity());
                     }
@@ -919,7 +1190,7 @@ fn extent_quantities(
                     ),
                 });
             }
-            extents.angular_sweep = Some(if chart.elliptic() {
+            extents.angular_sweep = Some(Readings::single(if chart.elliptic() {
                 unavailable(
                     UnavailableReason::SweepUnsupportedCarrier,
                     id,
@@ -952,10 +1223,94 @@ fn extent_quantities(
                     ),
                     Err(missing) => missing.quantity(),
                 }
-            });
+            }));
         }
     }
     Ok(extents)
+}
+
+/// The latitude range and angular sweep of a sphere face under both
+/// readings.
+fn sphere_readings(
+    eval: &Eval<'_, '_>,
+    input: &ExtentInput<'_, '_>,
+    chart: &Chart<'_>,
+    radius: f64,
+) -> Result<(Readings<Range>, Readings<Sweep>), ResourceLimit> {
+    let id = input.id;
+    let failed = |missing: Missing| {
+        (
+            Readings::single(missing.quantity()),
+            Readings::single(missing.quantity()),
+        )
+    };
+    let (boundary, region) = match (input.boundary, input.region) {
+        (Ok(boundary), Ok(region)) => (boundary, region),
+        (Err(missing), _) | (_, Err(missing)) => return Ok(failed(missing.clone())),
+    };
+    let Some(closed) = &region.closed else {
+        return Ok(failed(Missing {
+            reason: UnavailableReason::RegionDomainUnsupported,
+            entity: Some(id.to_owned()),
+            message: "the region has no closed-domain membership".to_owned(),
+        }));
+    };
+    let tolerance = input.angular.max(input.alpha / radius);
+    let model = input.tau_b / radius;
+    let reading = |complement: bool| -> Result<(Quantity<Range>, Quantity<Sweep>), ResourceLimit> {
+        let found = settle(
+            sphere_extent(
+                eval,
+                chart,
+                &boundary.resolved,
+                &closed.membership,
+                complement,
+                tolerance,
+            )
+            .map_err(|failure| failure.at(id)),
+        )?;
+        Ok(match found {
+            Ok(extent) => (
+                measured(
+                    Range::new(extent.latitude.min, extent.latitude.max),
+                    Unit::Radian,
+                    Method::BoundaryExtremum,
+                    Errors::new(extent.latitude.numeric_error, model),
+                    id,
+                ),
+                measured(
+                    Sweep::new(
+                        extent.sweep.value,
+                        extent.sweep.full,
+                        &extent.sweep.intervals,
+                    ),
+                    Unit::Radian,
+                    Method::BoundaryExtremum,
+                    Errors::new(extent.sweep.numeric_error, model),
+                    id,
+                ),
+            ),
+            Err(missing) => (missing.quantity(), missing.quantity()),
+        })
+    };
+    let (latitude, sweep) = reading(false)?;
+    let (latitude_complement, sweep_complement) = if region.rule == RegionRule::DeclaredOrientation
+    {
+        let (latitude, sweep) = reading(true)?;
+        (Some(latitude), Some(sweep))
+    } else {
+        (None, None)
+    };
+    Ok((
+        Readings {
+            declared: latitude,
+            complement: latitude_complement,
+        },
+        Readings {
+            declared: sweep,
+            complement: sweep_complement,
+        },
+    ))
 }
 
 /// Boundary and seam length sums of one face.

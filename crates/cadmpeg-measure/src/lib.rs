@@ -53,6 +53,7 @@ mod session;
 mod tolerance;
 mod traversal;
 pub mod value;
+mod witness;
 
 mod bbox;
 

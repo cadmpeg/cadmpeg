@@ -485,11 +485,116 @@ impl Chart<'_> {
         }
     }
 
+    /// The sphere poles: the `v` and the model point of the south and the
+    /// north pole. `None` on other charts.
+    pub(crate) fn poles(&self) -> Option<[(f64, Point3); 2]> {
+        match self {
+            Self::Sphere(sphere) => {
+                let half = std::f64::consts::FRAC_PI_2;
+                Some([-1.0, 1.0].map(|side| {
+                    (
+                        side * half,
+                        offset(sphere.center, sphere.axis.scale(side * sphere.radius)),
+                    )
+                }))
+            }
+            _ => None,
+        }
+    }
+
     /// Whether `point` lies within `tolerance` of a point where `u` is not
-    /// defined.
+    /// defined: a cone apex or a sphere pole.
     pub(crate) fn singular_at(&self, point: Point3, tolerance: f64) -> bool {
         self.apex()
             .is_some_and(|(_, apex)| apex.distance(point) <= tolerance)
+            || self.poles().is_some_and(|poles| {
+                poles
+                    .iter()
+                    .any(|(_, pole)| pole.distance(point) <= tolerance)
+            })
+    }
+
+    /// The `v` extent of a closed domain from its lower edge `base`: `π` on
+    /// a sphere, one period on a torus. `None` on other charts.
+    pub(crate) fn closed_span(&self) -> Option<f64> {
+        match self {
+            Self::Sphere(_) => Some(std::f64::consts::PI),
+            Self::Torus(_) => Some(std::f64::consts::TAU),
+            _ => None,
+        }
+    }
+
+    /// The area of a whole sphere or ring torus, `4πR²` or `4π²R|r|`.
+    pub(crate) fn closed_area(&self) -> Option<f64> {
+        match self {
+            Self::Sphere(sphere) => {
+                Some(4.0 * std::f64::consts::PI * sphere.radius * sphere.radius)
+            }
+            Self::Torus(torus) => Some(
+                std::f64::consts::TAU * std::f64::consts::TAU * torus.major * torus.minor.abs(),
+            ),
+            _ => None,
+        }
+    }
+
+    /// The points of a sphere or torus where a model coordinate is
+    /// stationary, with their parameters: the extremes of a face's box lie
+    /// on its boundary or at the members among them.
+    pub(crate) fn critical_points(&self) -> Vec<([f64; 2], Point3)> {
+        let axes = [
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ];
+        let mut points = Vec::new();
+        match self {
+            Self::Sphere(sphere) => {
+                for axis in axes {
+                    for side in [-1.0, 1.0] {
+                        let point = offset(sphere.center, axis.scale(side * sphere.radius.abs()));
+                        if let Some(uv) = self.closed_invert(point) {
+                            points.push((uv, point));
+                        }
+                    }
+                }
+            }
+            Self::Torus(torus) => {
+                for axis in axes {
+                    let (d1, d2, d3) =
+                        (axis.dot(torus.e1), axis.dot(torus.e2), axis.dot(torus.axis));
+                    let u_star = d2.atan2(d1);
+                    for u in [u_star, u_star + std::f64::consts::PI] {
+                        let (sine, cosine) = u.sin_cos();
+                        let v_star = d3.atan2(cosine * d1 + sine * d2);
+                        for v in [v_star, v_star + std::f64::consts::PI] {
+                            if let Some(partials) = self.closed_partials(u, v) {
+                                points.push(([u, v], partials.point));
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        points
+    }
+
+    /// The box of the critical points of a sphere or torus, which is the
+    /// box of the whole carrier.
+    pub(crate) fn critical_box(&self) -> Option<Aabb> {
+        let mut aabb: Option<Aabb> = None;
+        for (_, point) in self.critical_points() {
+            aabb = Some(aabb.map_or(Aabb::of_point(point), |aabb| {
+                aabb.union(Aabb::of_point(point))
+            }));
+        }
+        aabb
+    }
+
+    /// Whether a torus chart is a horn or spindle torus, whose minor radius
+    /// reaches the axis.
+    pub(crate) fn self_intersecting(&self) -> bool {
+        matches!(self, Self::Torus(torus) if torus.minor.abs() >= torus.major)
     }
 
     /// The axis of a cylinder or cone.

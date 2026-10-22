@@ -9,8 +9,11 @@
 //! the domain's natural edges. A body sums its faces' fluxes with the sign
 //! of each face's oriented normal reading.
 
+use std::f64::consts::TAU;
+
 use cadmpeg_ir::math::Point3;
 
+use crate::area::LoopCut;
 use crate::boundary::ResolvedLoop;
 use crate::canonical::surface::{Chart, Partials};
 use crate::context::Eval;
@@ -155,19 +158,22 @@ impl FluxFrame<'_, '_> {
         Ok((integral.value, integral.error))
     }
 
-    /// `∮ F du` over one loop with `F` based at `base`.
+    /// `∮ F du` over one loop with `F` based at `base`, with each piece's
+    /// `v` taken modulo the cut's period when the domain is cut.
     pub(crate) fn loop_flux(
         &self,
         eval: &Eval<'_, '_>,
         resolved: &ResolvedLoop<'_>,
         base: f64,
+        cut: Option<LoopCut<'_>>,
     ) -> Measure<Flux> {
         let mut flux = Flux::ZERO;
-        for piece in &resolved.pieces {
+        for (position, piece) in resolved.pieces.iter().enumerate() {
             let mut charge = |units| eval.charge(units);
             let mut integrand = |t: f64| -> Measure<[f64; TRACKED]> {
                 let sample = piece.sample(eval, self.chart, t)?;
-                let (value, error) = self.inner(eval, sample.uv[0], [base, sample.uv[1]])?;
+                let v = cut.map_or(sample.uv[1], |cut| cut.wrap(base, sample.uv[1]));
+                let (value, error) = self.inner(eval, sample.uv[0], [base, v])?;
                 let speed = sample.duv[0];
                 Ok(std::array::from_fn(|k| {
                     if k < FLUX {
@@ -182,7 +188,7 @@ impl FluxFrame<'_, '_> {
                 &mut integrand,
                 piece.t0,
                 piece.t1,
-                &piece.breaks(),
+                &LoopCut::breaks(cut.as_ref(), position, piece.breaks()),
                 Target::outer(scales(self.scale)),
             )?;
             if !integral.converged {
@@ -201,16 +207,36 @@ impl FluxFrame<'_, '_> {
         Ok(flux)
     }
 
-    /// The flux over a NURBS chart's whole domain.
-    pub(crate) fn domain_flux(&self, eval: &Eval<'_, '_>) -> Measure<Flux> {
-        let Chart::Nurbs(nurbs) = self.chart else {
-            return Err(MeasureFailure::unavailable(
-                UnavailableReason::RegionDomainUnsupported,
-                None,
-                "the carrier has no finite domain",
-            ));
+    /// The flux over the whole domain of a NURBS chart, or of a sphere or
+    /// torus from the region's base.
+    pub(crate) fn domain_flux(&self, eval: &Eval<'_, '_>, region: &Region) -> Measure<Flux> {
+        let (u, v, u_breaks) = match self.chart {
+            Chart::Nurbs(nurbs) => {
+                let [u, v] = nurbs.domain;
+                (u, v, nurbs.u_breaks())
+            }
+            chart => match chart.closed_span() {
+                Some(span) => ([0.0, TAU], [region.base, region.base + span], Vec::new()),
+                None => {
+                    return Err(MeasureFailure::unavailable(
+                        UnavailableReason::RegionDomainUnsupported,
+                        None,
+                        "the carrier has no finite domain",
+                    ))
+                }
+            },
         };
-        let [[u0, u1], v] = nurbs.domain;
+        self.strip_flux(eval, u, v, &u_breaks)
+    }
+
+    /// `∫_u0^u1 ∫_v0^v1 f du dv` over a parameter rectangle.
+    fn strip_flux(
+        &self,
+        eval: &Eval<'_, '_>,
+        [u0, u1]: [f64; 2],
+        v: [f64; 2],
+        u_breaks: &[f64],
+    ) -> Measure<Flux> {
         let mut charge = |units| eval.charge(units);
         let mut integrand = |u: f64| -> Measure<[f64; TRACKED]> {
             let (value, error) = self.inner(eval, u, v)?;
@@ -227,7 +253,7 @@ impl FluxFrame<'_, '_> {
             &mut integrand,
             u0,
             u1,
-            &nurbs.u_breaks(),
+            u_breaks,
             Target::outer(scales(self.scale)),
         )?;
         if !integral.converged {
@@ -240,8 +266,9 @@ impl FluxFrame<'_, '_> {
     }
 
     /// The flux of a region: each loop by its factor, every loop based at
-    /// the region's base, plus the domain when the region reaches the
-    /// domain's natural edges.
+    /// the region's base; plus the domain when the region reaches the
+    /// domain's natural edges, and on a closed domain the strip under each
+    /// interval of the upper edge in the region.
     pub(crate) fn region_flux(
         &self,
         eval: &Eval<'_, '_>,
@@ -249,6 +276,10 @@ impl FluxFrame<'_, '_> {
         resolved: &[Option<&ResolvedLoop<'_>>],
     ) -> Measure<Flux> {
         let mut flux = Flux::ZERO;
+        let wrap = region
+            .closed
+            .as_ref()
+            .and_then(|closed| closed.wrap.as_ref());
         for (index, member) in region.loops.iter().enumerate() {
             if member.factor == 0.0 {
                 continue;
@@ -256,10 +287,24 @@ impl FluxFrame<'_, '_> {
             let Some(Some(resolved)) = resolved.get(index) else {
                 continue;
             };
-            flux = flux.add(self.loop_flux(eval, resolved, region.base)?, member.factor);
+            let cut = wrap.map(|wrap| LoopCut {
+                period: wrap.period,
+                breaks: wrap.breaks.get(index).map_or(&[], Vec::as_slice),
+            });
+            flux = flux.add(
+                self.loop_flux(eval, resolved, region.base, cut)?,
+                member.factor,
+            );
         }
         if region.exterior != 0.0 {
-            flux = flux.add(self.domain_flux(eval)?, region.exterior);
+            flux = flux.add(self.domain_flux(eval, region)?, region.exterior);
+        }
+        if let (Some(closed), Some(span)) = (&region.closed, self.chart.closed_span()) {
+            for interval in &closed.top {
+                let strip =
+                    self.strip_flux(eval, *interval, [region.base, region.base + span], &[])?;
+                flux = flux.add(strip, 1.0);
+            }
         }
         Ok(flux)
     }

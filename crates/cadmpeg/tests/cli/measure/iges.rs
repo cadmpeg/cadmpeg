@@ -185,3 +185,9 @@ fn iges_no_geometry_transferred() {
         caveat["code"] == "measure.geometry-not-transferred" && caveat["category"] == "input"
     }));
 }
+
+/// The unit sphere bounded by one pole vertex loop.
+#[test]
+fn iges_vertex_loop_sphere() {
+    super::assert_whole_sphere(&iges("explicit_vertex_loop.igs"), 1.0);
+}

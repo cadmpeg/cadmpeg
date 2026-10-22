@@ -13,6 +13,8 @@ use cadmpeg_ir::CadIr;
 use crate::body::BodyInput;
 use crate::budget::{PassAllowance, WorkProfile};
 use crate::canonical::placement::Placement;
+use crate::canonical::surface::Chart;
+use crate::canonical::Carrier;
 use crate::context::Eval;
 use crate::edges::{measure_edge, EdgeGeometry};
 use crate::face::{box_value, FaceInput, FaceResult, Verdict};
@@ -26,6 +28,7 @@ use crate::report::{
 };
 use crate::select::Selection;
 use crate::value::{measured, BoxKind, Errors, Method, Quantity, Scalar, Unavailable, Unit};
+use crate::witness::WitnessInput;
 
 /// The document a measurement pass reads.
 #[derive(Clone, Copy)]
@@ -147,6 +150,9 @@ impl<'ir> Measurer<'ir> {
             needed_faces.extend(self.owners.body_faces(body.id.as_str()));
             needed_edges.extend(self.owners.body_edges(body.id.as_str()));
         }
+        for face in &face_rows {
+            needed_faces.extend(self.witness_shell(face));
+        }
         for face in &needed_faces {
             if let Some(face) = self.owners.face(face) {
                 for loop_id in &face.loops {
@@ -208,14 +214,16 @@ impl<'ir> Measurer<'ir> {
             edges.insert(edge_id, geometry);
         }
 
-        let flux_origins: HashMap<&'ir str, cadmpeg_ir::math::Point3> = body_rows
+        let flux_bodies: BTreeSet<&'ir str> = needed_faces
             .iter()
-            .map(|body| {
-                let id = body.id.as_str();
-                (id, self.flux_origin(id, &edges, &placement_of(Some(id))))
-            })
+            .filter_map(|face| self.owners.face(face))
+            .filter_map(|face| self.owners.face_body(face))
             .collect();
-        let mut faces: HashMap<&'ir str, FaceResult> = HashMap::new();
+        let flux_origins: HashMap<&'ir str, cadmpeg_ir::math::Point3> = flux_bodies
+            .into_iter()
+            .map(|id| (id, self.flux_origin(id, &edges, &placement_of(Some(id)))))
+            .collect();
+        let mut faces: HashMap<&'ir str, FaceResult<'ir>> = HashMap::new();
         for face_id in &needed_faces {
             let Some(face) = self.owners.face(face_id) else {
                 continue;
@@ -237,6 +245,18 @@ impl<'ir> Measurer<'ir> {
             };
             faces.insert(face_id, input.measure(&eval, face)?);
         }
+        let witness_slice = pass.face_slice();
+        WitnessInput {
+            owners: &self.owners,
+            edges: &edges,
+            pass: &pass,
+            eval: Eval {
+                ctx,
+                index: &self.index,
+                work: &witness_slice,
+            },
+        }
+        .run(&mut faces)?;
         if let Some(limit) = ctx.resource_refusal() {
             return Err(limit.into());
         }
@@ -318,27 +338,69 @@ impl<'ir> Measurer<'ir> {
         })
     }
 
+    /// The faces of the shell of a face whose region may rest on its
+    /// declared orientation: their witnesses read the whole shell. A face
+    /// on a plane, cylinder or cone has none.
+    fn witness_shell(&self, face: &str) -> Vec<&'ir str> {
+        let Some(face) = self.owners.face(face) else {
+            return Vec::new();
+        };
+        let settled = self
+            .owners
+            .surface(face.surface.as_str())
+            .is_some_and(|surface| {
+                matches!(
+                    &surface.geometry,
+                    cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(_)
+                            | cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cylinder(_)
+                            | cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cone(_)
+                    )
+                )
+            });
+        if settled {
+            return Vec::new();
+        }
+        self.owners
+            .shell(face.shell.as_str())
+            .map(|shell| {
+                shell
+                    .faces()
+                    .iter()
+                    .map(cadmpeg_ir::ids::FaceId::as_str)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// The reference point of a body's fluxes: the centre of the box of its
-    /// edges and vertices, else the origin. No orientation reading enters
-    /// it, so every reading of the body uses the same point.
+    /// edges and vertices, else of its faces' whole carriers, else the
+    /// origin. No orientation reading enters it, so every reading of the
+    /// body uses the same point.
     fn flux_origin(
         &self,
         body: &str,
         edges: &HashMap<&'ir str, EdgeGeometry<'ir>>,
         placement: &Outcome<Placement>,
     ) -> cadmpeg_ir::math::Point3 {
+        let union =
+            |aabb: Option<Aabb>, other: Aabb| Some(aabb.map_or(other, |aabb| aabb.union(other)));
         let mut aabb: Option<Aabb> = None;
-        let mut include = |other: Aabb| {
-            aabb = Some(aabb.map_or(other, |aabb| aabb.union(other)));
-        };
         for edge in self.owners.body_edges(body) {
             if let Some(Ok(curve_box)) = edges.get(edge).map(|geometry| &geometry.bbox) {
-                include(curve_box.aabb);
+                aabb = union(aabb, curve_box.aabb);
             }
         }
         if let Ok(placement) = placement {
             for point in self.owners.body_vertex_points(body) {
-                include(Aabb::of_point(placement.point(point)));
+                aabb = union(aabb, Aabb::of_point(placement.point(point)));
+            }
+            if aabb.is_none() {
+                for face in self.owners.body_faces(body) {
+                    if let Some(carrier_box) = self.carrier_box(face, *placement) {
+                        aabb = union(aabb, carrier_box);
+                    }
+                }
             }
         }
         aabb.map_or(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0), |aabb| {
@@ -349,6 +411,19 @@ impl<'ir> Measurer<'ir> {
                 low.z.midpoint(high.z),
             )
         })
+    }
+
+    /// The box of a face's whole carrier: the critical points of a sphere
+    /// or torus, the control net of a NURBS carrier.
+    fn carrier_box(&self, face: &str, placement: Placement) -> Option<Aabb> {
+        let face = self.owners.face(face)?;
+        let surface = self.owners.surface(face.surface.as_str())?;
+        let carrier = Carrier::resolve_in(&self.owners, surface, placement).ok()?;
+        let chart = carrier.chart().ok()?;
+        match chart {
+            Chart::Nurbs(nurbs) => nurbs.control_hull().ok(),
+            other => other.critical_box(),
+        }
     }
 
     /// The body scope, or `None` for every body.
@@ -407,7 +482,7 @@ impl<'ir> Measurer<'ir> {
 
     fn document(
         rows: &Rows<'_>,
-        face_results: &HashMap<&'ir str, FaceResult>,
+        face_results: &HashMap<&'ir str, FaceResult<'ir>>,
         pass: &PassAllowance,
         counts: [usize; 2],
     ) -> DocumentMeasures {
@@ -447,7 +522,7 @@ impl<'ir> Measurer<'ir> {
                 face.orientation.loop_normal,
                 result.verdict,
             ) {
-                (_, _, Verdict::Conflict) => {}
+                (_, _, Verdict::Conflict | Verdict::Contradicted) => {}
                 (Some(false), NormalReading::Mixed, _) => {
                     orientation.mixed.push(face.face.clone());
                 }
@@ -456,7 +531,9 @@ impl<'ir> Measurer<'ir> {
             }
             match result.verdict {
                 Verdict::Unconfirmed => orientation.unconfirmed.push(face.face.clone()),
-                Verdict::Conflict => orientation.conflict.push(face.face.clone()),
+                Verdict::Conflict | Verdict::Contradicted => {
+                    orientation.conflict.push(face.face.clone());
+                }
                 Verdict::Settled | Verdict::Confirmed => {}
             }
             if face.measures.loops.iter().any(|entry| {
@@ -496,7 +573,7 @@ struct Rows<'a> {
 }
 
 /// Whether a face row passes the kind and radius filters.
-fn filter_matches(selection: &Selection, result: &FaceResult) -> bool {
+fn filter_matches(selection: &Selection, result: &FaceResult<'_>) -> bool {
     let filter = &selection.face_filter;
     if !filter.kinds.is_empty() && !filter.kinds.contains(&result.row.carrier.kind) {
         return false;
