@@ -2451,6 +2451,8 @@ pub(crate) mod attribute_definition_short_refs {
     pub(crate) const NEXT_DEFINITION: usize = 6;
     /// Offset of `identifier` (`u16`, big-endian). Spec §5.
     pub(crate) const IDENTIFIER: usize = 8;
+    /// Offset of `actions` (`bytes[8]`). Spec §5.
+    pub(crate) const ACTIONS: usize = 14;
     /// Offset of `field_names` (`u16`, big-endian). Spec §5.
     pub(crate) const FIELD_NAMES: usize = 22;
     /// Offset of `legal_owners` (`bytes[14]`). Spec §5.

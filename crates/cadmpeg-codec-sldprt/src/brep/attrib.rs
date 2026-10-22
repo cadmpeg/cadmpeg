@@ -3,7 +3,7 @@
 //! it carries ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
 //!
 //! A partition stream declares its attribute families inline. Each family is a
-//! name record `00 4f` immediately followed by a definition record `00 50`.
+//! definition record `00 50` whose identifier points to a name record `00 4f`.
 //! Attribute instances `00 51` name their definition and the entity they hang
 //! on. Integer payloads live in separate `00 52` list records the instance
 //! references by node id.
@@ -165,7 +165,17 @@ fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
         };
         if let Some(frame) = definition_frame(buf, p) {
             consistent_insert(&mut definitions, node, frame);
-        } else {
+        } else if short_index(buf, p + attr_def::IDENTIFIER)
+            .is_some_and(|identifier| names.contains_key(&identifier))
+            && View::u16_be_at(buf, p + attr_def::NEXT_DEFINITION)
+                .is_some_and(|next| next <= i16::MAX.unsigned_abs())
+            && View::u32_be_at(buf, p + attr_def::FIELD_COUNT).is_some_and(|count| {
+                u64::from(count) <= cadmpeg_core::decode::u64_from_index(buf.len() - p)
+            })
+            && buf
+                .get(p + attr_def::ACTIONS..p + attr_def::FIELD_NAMES)
+                .is_some_and(|actions| actions.iter().all(|action| *action <= 6))
+        {
             definitions.insert(node, None);
         }
     }
@@ -611,6 +621,20 @@ mod tests {
         let mut bad_field = bytes;
         *bad_field.last_mut().expect("field type") = 11;
         assert!(!definition_table(&bad_field).values().any(Option::is_some));
+    }
+
+    #[test]
+    fn unframed_definition_tag_in_character_values_does_not_replace_a_name() {
+        let mut bytes = Vec::new();
+        append_definition(&mut bytes, ATOM_ID, 41, 91);
+        bytes.extend([0, 0x54]);
+        bytes.extend(8_u32.to_be_bytes());
+        bytes.extend(99_u16.to_be_bytes());
+        bytes.extend([0, 0x50, 0, 0, 0, 1, 0, 91]);
+        assert_eq!(
+            definition_table(&bytes).get(&91).and_then(Option::as_deref),
+            Some(ATOM_ID)
+        );
     }
 
     #[test]
