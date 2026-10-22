@@ -2709,6 +2709,17 @@ impl<'a> F3dDecodeSession<'a> {
             scan,
             &prereqs.design_component_naming_spaces,
         )?;
+        let revised_definitions = local_components
+            .values()
+            .map(|components| components.revised_definitions)
+            .sum::<usize>();
+        if revised_definitions != 0 {
+            self.report.losses.push(
+                crate::loss::F3dLossCode::ComponentDefinitionRevised.note(format!(
+                    "{revised_definitions} later revision(s) of component definition records bind their own context UUID; the earliest record defines each component, and every bound UUID selects its naming space."
+                )),
+            );
+        }
         let bodies = self
             .ir
             .model

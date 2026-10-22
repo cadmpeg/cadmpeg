@@ -365,6 +365,9 @@ pub(crate) struct StreamComponents {
     pub(crate) roots: std::collections::BTreeMap<u64, ComponentDefinition>,
     /// Component definition placed by the root instance, when exactly one names it.
     pub(crate) root_component: Option<u64>,
+    /// Later revisions of a component definition record whose context binding
+    /// is not the one that defines the component.
+    pub(crate) revised_definitions: usize,
 }
 
 /// Join every Design stream's component definition records to their naming
@@ -396,6 +399,9 @@ pub(crate) fn decode_local_components(
             continue;
         };
         let mut components = StreamComponents::default();
+        // The earliest binding in a definition frame defines the component; a
+        // later revision's binding selects the same naming space.
+        let mut root_offsets = std::collections::BTreeMap::<u64, u64>::new();
         for space in spaces {
             components
                 .root_entities
@@ -409,6 +415,13 @@ pub(crate) fn decode_local_components(
             else {
                 continue;
             };
+            if let Some(earlier) = root_offsets.get(&frame.entity_id) {
+                components.revised_definitions += 1;
+                if *earlier < space.byte_offset {
+                    continue;
+                }
+            }
+            root_offsets.insert(frame.entity_id, space.byte_offset);
             components.roots.insert(
                 frame.entity_id,
                 ComponentDefinition {
