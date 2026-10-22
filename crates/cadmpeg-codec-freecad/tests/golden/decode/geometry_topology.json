@@ -6687,7 +6687,7 @@
               "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:20%3A1"
             ]
           },
-          "sense": "forward",
+          "sense": "reversed",
           "shell": "fcstd:model:shell#Revolved:Shape:Revolved.Shape.brp:23",
           "surface": "fcstd:model:surface#Revolved:Shape:Revolved.Shape.brp:2",
           "tolerance": 1e-7
@@ -6726,7 +6726,7 @@
               "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:7%3A1"
             ]
           },
-          "sense": "forward",
+          "sense": "reversed",
           "shell": "fcstd:model:shell#Revolved:Shape:Revolved.Shape.brp:23",
           "surface": "fcstd:model:surface#Revolved:Shape:Revolved.Shape.brp:1",
           "tolerance": 1e-7

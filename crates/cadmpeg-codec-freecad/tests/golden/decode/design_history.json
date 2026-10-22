@@ -5247,7 +5247,7 @@
               "fcstd:model:loop#Body:Shape:Body.Shape.brp:24%3A1"
             ]
           },
-          "sense": "reversed",
+          "sense": "forward",
           "shell": "fcstd:model:shell#Body:Shape:Body.Shape.brp:50",
           "surface": "fcstd:model:surface#Body:Shape:Body.Shape.brp:2",
           "tolerance": 1e-7
@@ -5352,7 +5352,7 @@
               "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:23%3A1"
             ]
           },
-          "sense": "reversed",
+          "sense": "forward",
           "shell": "fcstd:model:shell#Fillet:Shape:Fillet.Shape.brp:45",
           "surface": "fcstd:model:surface#Fillet:Shape:Fillet.Shape.brp:2"
         },
