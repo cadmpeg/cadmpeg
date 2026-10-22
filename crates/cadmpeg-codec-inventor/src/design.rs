@@ -33,7 +33,7 @@ const EXPRESSION_DIVIDE_TYPE: [u8; 16] = expression_id(0xf8a7_7a09);
 const EXPRESSION_MODULO_TYPE: [u8; 16] = expression_id(0xf8a7_7a0a);
 const EXPRESSION_POWER_TYPE: [u8; 16] = expression_id(0xf8a7_7a0b);
 const EXPRESSION_NEGATE_TYPE: [u8; 16] = expression_id(0xf8a7_7a0c);
-const EXPRESSION_POWER_IDENTITY_TYPE: [u8; 16] = expression_id(0xf8a7_7a0d);
+const EXPRESSION_PARENTHESES_TYPE: [u8; 16] = expression_id(0xf8a7_7a0d);
 const UNIT_TYPE: [u8; 16] = expression_id(0xf8a7_79fd);
 
 /// Builds an expression or unit type identifier from the `time_low` field of
@@ -133,7 +133,8 @@ pub(crate) enum PmDcExpressionKind {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PmDcUnaryOperation {
     Negate,
-    PowerIdentity,
+    /// An explicit parenthesized group; its value is its operand's value.
+    Parentheses,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -900,12 +901,9 @@ impl<'a, 'b> ExpressionRenderer<'a, 'b> {
             PmDcExpressionKind::Unary { operation, operand } => {
                 let operand = self.measure(token, operand.index())?;
                 let shape = match operand.shape {
-                    ExpressionShape::Text(_) if *operation == PmDcUnaryOperation::PowerIdentity => {
-                        ExpressionShape::Open
-                    }
-                    ExpressionShape::Text(length) => {
-                        ExpressionShape::of_length(length.checked_add("-()".len()))
-                    }
+                    ExpressionShape::Text(length) => ExpressionShape::of_length(
+                        length.checked_add(unary_prefix(*operation).len() + ")".len()),
+                    ),
                     unrendered => unrendered,
                 };
                 MeasuredExpression {
@@ -986,10 +984,10 @@ impl<'a, 'b> ExpressionRenderer<'a, 'b> {
                     }
                     text.push_str(&target.name);
                 }
-                PmDcExpressionKind::Unary { operand, .. } => pending.extend([
+                PmDcExpressionKind::Unary { operation, operand } => pending.extend([
                     ExpressionPiece::Literal(")"),
                     ExpressionPiece::Node(operand.index()),
-                    ExpressionPiece::Literal("-("),
+                    ExpressionPiece::Literal(unary_prefix(*operation)),
                 ]),
                 PmDcExpressionKind::Binary {
                     operation,
@@ -1272,10 +1270,18 @@ fn base_unit(type_id: [u8; 16]) -> Option<(PmDcUnitDimension, &'static str, f64)
     }
 }
 
+/// The text that opens a unary node; `)` closes it.
+const fn unary_prefix(operation: PmDcUnaryOperation) -> &'static str {
+    match operation {
+        PmDcUnaryOperation::Negate => "-(",
+        PmDcUnaryOperation::Parentheses => "(",
+    }
+}
+
 fn unary_operation(type_id: [u8; 16]) -> Option<PmDcUnaryOperation> {
     match type_id {
         EXPRESSION_NEGATE_TYPE => Some(PmDcUnaryOperation::Negate),
-        EXPRESSION_POWER_IDENTITY_TYPE => Some(PmDcUnaryOperation::PowerIdentity),
+        EXPRESSION_PARENTHESES_TYPE => Some(PmDcUnaryOperation::Parentheses),
         _ => None,
     }
 }
@@ -1812,10 +1818,7 @@ mod tests {
             ));
         }
 
-        for operation in [
-            PmDcUnaryOperation::Negate,
-            PmDcUnaryOperation::PowerIdentity,
-        ] {
+        for operation in [PmDcUnaryOperation::Negate, PmDcUnaryOperation::Parentheses] {
             let mut bytes = header(3);
             bytes.extend_from_slice(&0x8000_0004u32.to_le_bytes());
             let arena = DecodeArena::new();
@@ -2392,6 +2395,26 @@ mod tests {
         .expect("closed graph");
         assert_eq!(result.0, "(x) + (x)");
         assert_eq!(result.1.len(), 1);
+    }
+
+    #[test]
+    fn a_parenthesized_group_renders_its_operand_in_parentheses() {
+        let kinds = vec![
+            reference_leaf(),
+            shared_add(1),
+            PmDcExpressionKind::Unary {
+                operation: PmDcUnaryOperation::Parentheses,
+                operand: reference(2, false),
+            },
+            PmDcExpressionKind::Unary {
+                operation: PmDcUnaryOperation::Negate,
+                operand: reference(3, false),
+            },
+        ];
+        let result = render_graph(&DecodePolicy::service(), kinds, 4)
+            .expect("admitted graph")
+            .expect("closed graph");
+        assert_eq!(result.0, "-(((x) + (x)))");
     }
 
     #[test]
