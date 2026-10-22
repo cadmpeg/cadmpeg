@@ -504,7 +504,11 @@ as application records. Product dispatch uses the exact runtime registry: `Assem
 not enter the product arena. CADIR components separate reusable definitions from occurrences.
 Ordered container membership resolves to component or occurrence ids, and each link-array element
 becomes its own occurrence with a stable array index, scale, local transform, and transform
-resolved through its containing components exactly once. Local prototypes resolve to component ids;
+resolved through its containing components exactly once. An assembly's members include its
+`Assembly::JointGroup` and its joint objects; those constrain the components and are neither
+components nor occurrences. A component gets its own occurrence when it is a product container, a
+container member, or an object a joint names directly; an object reached only as a link prototype
+is a definition placed by its links. Local prototypes resolve to component ids;
 cross-document links keep the document token and target object without attempting to open the
 document. Missing local targets, invalid array counts, non-finite transforms, and container cycles
 are validation errors; external targets remain intentionally unresolved. The native graph retains
