@@ -230,11 +230,7 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
         assert_eq!(result.ir().ir_version(), IR_VERSION);
         assert!(result.ir().model.bodies.is_empty());
         assert!(result.ir().model.subds.is_empty());
-        assert_eq!(result.ir().scope, cadmpeg_ir::ContentScope::geometry());
-        assert_eq!(
-            result.report().scope(),
-            cadmpeg_ir::ContentScope::geometry()
-        );
+        assert!(result.report().container_only());
         assert!(!result.report().geometry_transferred());
         assert_eq!(result.report().format(), "rhino");
     }
@@ -267,11 +263,7 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
         assert_eq!(result.ir().ir_version(), IR_VERSION);
         assert!(result.ir().model.bodies.is_empty());
         assert!(result.ir().model.subds.is_empty());
-        assert_eq!(result.ir().scope, cadmpeg_ir::ContentScope::geometry());
-        assert_eq!(
-            result.report().scope(),
-            cadmpeg_ir::ContentScope::geometry()
-        );
+        assert!(result.report().container_only());
         assert!(!result.report().geometry_transferred());
     }
 }
@@ -309,14 +301,7 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
             },
         )
         .expect("V2 container-only decode");
-    assert_eq!(
-        container_only.ir().scope,
-        cadmpeg_ir::ContentScope::geometry()
-    );
-    assert_eq!(
-        container_only.report().scope(),
-        cadmpeg_ir::ContentScope::geometry()
-    );
+    assert!(container_only.report().container_only());
     assert!(!container_only.report().geometry_transferred());
     assert!(container_only.ir().model.points.is_empty());
 
@@ -365,11 +350,7 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
             },
         )
         .expect("archive word 5 reaches chunked container decode");
-    assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::geometry());
-    assert_eq!(
-        decoded.report().scope(),
-        cadmpeg_ir::ContentScope::geometry()
-    );
+    assert!(decoded.report().container_only());
     assert!(!decoded.report().geometry_transferred());
     assert_eq!(
         decoded

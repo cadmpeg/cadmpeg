@@ -1697,7 +1697,7 @@ pub(crate) fn container_only_result(
         losses.push(loss);
     }
     let mut ir = CadIr::decoded(source_meta(primary, SourceMetaDetail::ContainerOnly(scan))?);
-    let scope = scan.content_scope(&ir);
+    let scope = cadmpeg_ir::ContentScope::container();
     ir.scope = scope;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     let mut untyped = cadmpeg_ir::ArenaClasses::new();

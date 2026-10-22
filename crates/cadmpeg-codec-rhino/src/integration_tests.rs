@@ -123,11 +123,7 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
                 )
                 .expect("container-only 3DM decode"),
         );
-        assert_eq!(container.ir().scope, cadmpeg_ir::ContentScope::geometry());
-        assert_eq!(
-            container.report().scope(),
-            cadmpeg_ir::ContentScope::geometry()
-        );
+        assert!(container.report().container_only());
         assert!(!container.report().geometry_transferred());
         assert!(container.ir().model.points.is_empty());
     }
