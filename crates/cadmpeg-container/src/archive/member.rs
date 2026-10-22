@@ -63,17 +63,13 @@ impl<'a> ArchiveSnapshot<'a> {
     /// A bad signature can still have a bounded header, whose parser then fails.
     ///
     /// # Errors
-    /// Rejects foreign source views and storage or allocation limit failures.
+    /// Rejects foreign source views and allocation failures.
     pub fn member_frames(
         &self,
         ctx: &DecodeContext<'a>,
     ) -> Result<Vec<Option<MemberFrame<'a>>>, CodecError> {
-        ctx.capture_part_extent(self.root)?;
+        ctx.require_source(self.root)?;
         let count = self.entries.len();
-        let bytes = count
-            .checked_mul(size_of::<usize>() + size_of::<Option<MemberFrame<'_>>>())
-            .ok_or_else(|| CodecError::malformed("ZIP member frame storage overflows"))?;
-        ctx.retain_bytes(u64_from_index(bytes), STORAGE)?;
         let mut order = ctx.alloc_filled(count, 0_usize, STORAGE)?;
         for (index, value) in order.iter_mut().enumerate() {
             *value = index;
@@ -164,8 +160,8 @@ impl<'a> ArchiveSnapshot<'a> {
         ctx: &DecodeContext<'a>,
         frame: &MemberFrame<'a>,
     ) -> Result<&EntryRecord, CodecError> {
-        ctx.capture_part_extent(self.root)?;
-        ctx.capture_part_extent(frame.archive)?;
+        ctx.require_source(self.root)?;
+        ctx.require_source(frame.archive)?;
         if self.root.location() != frame.archive.location()
             || self.root.end() != frame.archive.end()
         {

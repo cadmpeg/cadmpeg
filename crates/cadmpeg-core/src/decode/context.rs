@@ -169,7 +169,11 @@ impl<'a> DecodeContext<'a> {
         Ok(view)
     }
 
-    pub(super) fn require_source(&self, view: View<'_>) -> Result<(), CodecError> {
+    /// Check that `view` belongs to this decode session. Charges nothing.
+    ///
+    /// # Errors
+    /// Rejects a fused session and a foreign or detached view.
+    pub fn require_source(&self, view: View<'_>) -> Result<(), CodecError> {
         if let Some(limit) = self.budget.fused() {
             return Err(limit.into());
         }

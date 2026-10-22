@@ -115,3 +115,22 @@ fn header_and_payload_proofs_refuse_another_archive_or_session() {
     let payload = first.read_member_header(&ctx, frame).unwrap();
     assert!(first.open_member(&foreign, payload).is_err());
 }
+
+#[test]
+fn member_framing_and_header_checks_retain_no_bytes() {
+    let zip = zip_fixture::archive(&[
+        RawEntry::stored("first", b"one"),
+        RawEntry::stored("second", b"two"),
+    ]);
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&zip, &arena, &DecodePolicy::service()).unwrap();
+    let snapshot = ArchiveSnapshot::new(&ctx, root).unwrap();
+    let available = ctx.retained_bytes_available();
+    for _ in 0..2 {
+        for frame in snapshot.member_frames(&ctx).unwrap() {
+            snapshot.read_member_header(&ctx, frame.unwrap()).unwrap();
+        }
+    }
+    assert_eq!(ctx.retained_bytes_available(), available);
+}
