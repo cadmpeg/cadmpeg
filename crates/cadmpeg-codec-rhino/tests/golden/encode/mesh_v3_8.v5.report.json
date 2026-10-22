@@ -117,6 +117,16 @@
         "namespace": "export",
         "scope": "namespaced"
       },
+      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`",
+      "severity": "info"
+    },
+    {
+      "code": {
+        "code": "native.records-omitted",
+        "kind": "record_not_typed",
+        "namespace": "export",
+        "scope": "namespaced"
+      },
       "message": "the rhino write omits 1 native record(s) from `rhino.unknowns`",
       "severity": "info"
     }
@@ -147,10 +157,7 @@
             "disposition": "dropped"
           },
           "document_settings": {
-            "disposition": "dropped",
-            "records": {
-              "rhino:document:settings#current": "regenerated"
-            }
+            "disposition": "dropped"
           },
           "embedded_images": {
             "disposition": "dropped"

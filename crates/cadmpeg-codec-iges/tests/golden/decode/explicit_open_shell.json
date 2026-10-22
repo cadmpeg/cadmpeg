@@ -91,20 +91,6 @@
           ]
         },
         {
-          "id": "iges:application:attribute#D23:0:0",
-          "name": "iges.directory_label",
-          "target": {
-            "id": "iges:model:body#D23",
-            "kind": "body"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "SHELL"
-            }
-          ]
-        },
-        {
           "id": "iges:application:attribute#D5:0:0",
           "name": "name",
           "target": {
@@ -1645,9 +1631,6 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "neutral_label": [
-              "iges:application:attribute#D23:0:0"
-            ],
             "parameter_line_count": 1,
             "parameters": [
               {
@@ -2000,6 +1983,9 @@
       "attributes": {
         "native_file_name": "part.igs",
         "native_units": "MM",
+        "parameter_delimiter": ",",
+        "record_delimiter": ";",
+        "representation": "fixed-ascii",
         "sender_product": "product"
       },
       "identity": {
@@ -2169,13 +2155,10 @@
   "source_fidelity": {
     "annotations": {},
     "metadata": {
-      "document_local_sha256": "97d621d5686b852755cada94be98c90c1b0140448563c11e9ab941756dfd2dde",
+      "document_local_sha256": "7a71c4f93e91576e43fe03baaf6ed475d4b5a66ba412e946f2324dc2eb5bd2d3",
       "iges.card_layout": "[[1,0,80,1],[2,81,80,1],[3,162,80,1],[4,243,80,1],[5,324,80,1],[6,405,80,1],[7,486,80,1],[8,567,80,1],[9,648,80,1],[10,729,80,1],[11,810,80,1],[12,891,80,1],[13,972,80,1],[14,1053,80,1],[15,1134,80,1],[16,1215,80,1],[17,1296,80,1],[18,1377,80,1],[19,1458,80,1],[20,1539,80,1],[21,1620,80,1],[22,1701,80,1],[23,1782,80,1],[24,1863,80,1],[25,1944,80,1],[26,2025,80,1],[27,2106,80,1],[28,2187,80,1],[29,2268,80,1],[30,2349,80,1],[31,2430,80,1],[32,2511,80,1],[33,2592,80,1],[34,2673,80,1],[35,2754,80,1],[36,2835,80,1],[37,2916,80,1],[38,2997,80,1],[39,3078,80,1],[40,3159,80,1]]",
       "iges.entity_layout": "[[1,1,1],[3,2,1],[5,3,1],[7,4,1],[9,5,1],[11,6,1],[13,7,1],[15,8,1],[17,9,1],[19,10,1],[21,11,1],[23,12,1]]",
-      "iges.parameter_delimiter": ",",
-      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9}]],[5,{\"start\":3,\"end\":4},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7}]],[7,{\"start\":4,\"end\":5},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15}]],[9,{\"start\":5,\"end\":6},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15}]],[11,{\"start\":6,\"end\":7},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15}]],[13,{\"start\":7,\"end\":8},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15}]],[15,{\"start\":8,\"end\":9},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":19},{\"start\":20,\"end\":21},{\"start\":22,\"end\":23},{\"start\":24,\"end\":25},{\"start\":26,\"end\":27},{\"start\":28,\"end\":29}]],[17,{\"start\":9,\"end\":10},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":10},{\"start\":11,\"end\":12},{\"start\":13,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":19},{\"start\":20,\"end\":22},{\"start\":23,\"end\":24},{\"start\":25,\"end\":27},{\"start\":28,\"end\":29},{\"start\":30,\"end\":32},{\"start\":33,\"end\":35},{\"start\":36,\"end\":37},{\"start\":38,\"end\":40},{\"start\":41,\"end\":42},{\"start\":43,\"end\":45},{\"start\":46,\"end\":48},{\"start\":49,\"end\":50},{\"start\":51,\"end\":53},{\"start\":54,\"end\":55}]],[19,{\"start\":10,\"end\":11},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":10},{\"start\":11,\"end\":12},{\"start\":13,\"end\":14},{\"start\":15,\"end\":16},{\"start\":17,\"end\":18},{\"start\":19,\"end\":21},{\"start\":22,\"end\":23},{\"start\":24,\"end\":25},{\"start\":26,\"end\":27},{\"start\":28,\"end\":29},{\"start\":30,\"end\":32},{\"start\":33,\"end\":34},{\"start\":35,\"end\":36},{\"start\":37,\"end\":38},{\"start\":39,\"end\":40},{\"start\":41,\"end\":43},{\"start\":44,\"end\":45},{\"start\":46,\"end\":47},{\"start\":48,\"end\":49}]],[21,{\"start\":11,\"end\":12},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":12}]],[23,{\"start\":12,\"end\":13},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":8},{\"start\":9,\"end\":10}]]]",
-      "iges.record_delimiter": ";",
-      "iges.representation": "fixed-ascii"
+      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9}]],[5,{\"start\":3,\"end\":4},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7}]],[7,{\"start\":4,\"end\":5},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15}]],[9,{\"start\":5,\"end\":6},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15}]],[11,{\"start\":6,\"end\":7},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15}]],[13,{\"start\":7,\"end\":8},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15}]],[15,{\"start\":8,\"end\":9},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":19},{\"start\":20,\"end\":21},{\"start\":22,\"end\":23},{\"start\":24,\"end\":25},{\"start\":26,\"end\":27},{\"start\":28,\"end\":29}]],[17,{\"start\":9,\"end\":10},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":10},{\"start\":11,\"end\":12},{\"start\":13,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":19},{\"start\":20,\"end\":22},{\"start\":23,\"end\":24},{\"start\":25,\"end\":27},{\"start\":28,\"end\":29},{\"start\":30,\"end\":32},{\"start\":33,\"end\":35},{\"start\":36,\"end\":37},{\"start\":38,\"end\":40},{\"start\":41,\"end\":42},{\"start\":43,\"end\":45},{\"start\":46,\"end\":48},{\"start\":49,\"end\":50},{\"start\":51,\"end\":53},{\"start\":54,\"end\":55}]],[19,{\"start\":10,\"end\":11},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":10},{\"start\":11,\"end\":12},{\"start\":13,\"end\":14},{\"start\":15,\"end\":16},{\"start\":17,\"end\":18},{\"start\":19,\"end\":21},{\"start\":22,\"end\":23},{\"start\":24,\"end\":25},{\"start\":26,\"end\":27},{\"start\":28,\"end\":29},{\"start\":30,\"end\":32},{\"start\":33,\"end\":34},{\"start\":35,\"end\":36},{\"start\":37,\"end\":38},{\"start\":39,\"end\":40},{\"start\":41,\"end\":43},{\"start\":44,\"end\":45},{\"start\":46,\"end\":47},{\"start\":48,\"end\":49}]],[21,{\"start\":11,\"end\":12},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":12}]],[23,{\"start\":12,\"end\":13},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":8},{\"start\":9,\"end\":10}]]]"
     },
     "retained_records": {
       "iges:file:source-image#0": {

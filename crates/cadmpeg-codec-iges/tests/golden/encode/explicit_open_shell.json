@@ -194,16 +194,6 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D23:0:0 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
         "message": "IGES attribute iges:application:attribute#D5:0:0 is omitted: its current owner has no emitted entity",
         "severity": "warning"
       },

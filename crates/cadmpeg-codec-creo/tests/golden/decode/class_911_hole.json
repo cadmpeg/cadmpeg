@@ -97,34 +97,40 @@
             "feature_id": 4,
             "id": "creo:mdlstatus:feature_state#4:0",
             "identifier_keyword": "id",
-            "offset": 163,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 163,
             "state_ordinal": 0,
             "stored_name": "Hole id 4",
-            "stored_name_bytes": "486f6c652069642034",
+            "stored_name_bytes": {
+              "byte_len": 9,
+              "sha256": "8cadb68c300dac7aaaafdc8886bcf141a0f586b9d4420034f7670ac5fdbc4d3c"
+            },
             "stored_name_prefix": null
           }
         ],
         "feature_rows": [
           {
-            "body": "eb04001001808000e4e3f6838fe1230a",
-            "body_offset": 136,
-            "header": "eb04",
+            "body": {
+              "byte_len": 16,
+              "sha256": "f4423b778df5ad3fbe84a903524e892d008c44f7b416b76ba9ccb7a17fdd0115"
+            },
+            "header": {
+              "byte_len": 2,
+              "sha256": "5ef69160aabb06532056c414c41fefb47f9405fe0d1295cda6c56210611142d0"
+            },
             "id": "creo:allfeatur:feature_row#135",
-            "offset": 135,
             "owner_feature_id": 4,
             "root_schema_class": 911,
-            "source_section": "AllFeatur",
-            "stream_offset": 124
+            "source_section": "AllFeatur"
           }
         ],
         "surface_parameters": [
           {
-            "body": "230a",
-            "body_offset": 122,
+            "body": {
+              "byte_len": 2,
+              "sha256": "32c4858e22cc2c967b42150fa550562a2c839c2cebcaab91cabdf6f4da020022"
+            },
             "boundary": "section_end",
             "cone_half_angle_override": null,
             "extrusion_direction": null,
@@ -132,15 +138,16 @@
             "opaque_spans": [
               {
                 "length": 2,
-                "offset": 0,
-                "raw": "230a"
+                "raw": {
+                  "byte_len": 2,
+                  "sha256": "32c4858e22cc2c967b42150fa550562a2c839c2cebcaab91cabdf6f4da020022"
+                }
               }
             ],
             "positional_cone_frame": null,
             "positional_cylinder_frame": null,
             "positional_torus_frame": null,
             "replayed_torus_minor_radius": null,
-            "row_offset": 116,
             "scalar_frames": [],
             "slots": [],
             "source_section": "VisibGeom",
@@ -162,7 +169,6 @@
             "feature_id": 4,
             "id": "creo:visibgeom:surface_row#7",
             "next_surface": 0,
-            "offset": 116,
             "reversed": false,
             "source_section": "VisibGeom",
             "surface_family": "cylinder",
@@ -190,17 +196,14 @@
         "file_size": "173",
         "section.0.length": "48",
         "section.0.name": "VisibGeom",
-        "section.0.offset": "76",
         "section.0.raw_name": "VisibGeom",
         "section.0.role": "psb-geometry",
         "section.1.length": "28",
         "section.1.name": "AllFeatur",
-        "section.1.offset": "124",
         "section.1.raw_name": "AllFeatur",
         "section.1.role": "model-data",
         "section.2.length": "21",
         "section.2.name": "MdlStatus",
-        "section.2.offset": "152",
         "section.2.raw_name": "MdlStatus",
         "section.2.role": "metadata",
         "section_count": "3",
@@ -757,6 +760,20 @@
         }
       }
     },
+    "metadata": {
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#4:0.offset": "163",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#4:0.state_offset": "163",
+      "native.creo.feature_rows.creo:allfeatur:feature_row#135.body_offset": "136",
+      "native.creo.feature_rows.creo:allfeatur:feature_row#135.offset": "135",
+      "native.creo.feature_rows.creo:allfeatur:feature_row#135.stream_offset": "124",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.body_offset": "122",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[0].offset": "0",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.row_offset": "116",
+      "native.creo.surface_rows.creo:visibgeom:surface_row#7.offset": "116",
+      "source.section.0.offset": "76",
+      "source.section.1.offset": "124",
+      "source.section.2.offset": "152"
+    },
     "retained_records": {
       "creo:VisibGeom:section#76": {
         "bytes": {
@@ -766,6 +783,18 @@
         "offset": 76,
         "stream": "creo:VisibGeom",
         "untyped": []
+      },
+      "creo:source:evidence#e85034c3324fe87af915c5d5012c6888b87d22ee1f1afa4bbd9c354b17f454b0": {
+        "bytes": {
+          "byte_len": 2,
+          "retention": "digest",
+          "sha256": "32c4858e22cc2c967b42150fa550562a2c839c2cebcaab91cabdf6f4da020022"
+        },
+        "offset": 0,
+        "stream": "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[0].raw",
+        "untyped": [
+          "model"
+        ]
       },
       "creo:source:image#whole": {
         "bytes": {

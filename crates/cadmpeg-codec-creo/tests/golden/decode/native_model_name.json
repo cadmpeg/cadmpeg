@@ -81,7 +81,9 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {},
+    "native": {
+      "creo": {}
+    },
     "scope": {
       "design": true,
       "model": true

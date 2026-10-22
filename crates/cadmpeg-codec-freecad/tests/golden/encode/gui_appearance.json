@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 5573,
-      "payload_sha256": "a821a1f210732c75f66d91972a052af75c26296926837294451a56483e6eec14"
+      "payload_len": 6251,
+      "payload_sha256": "6abc5cd5f6b2923e9962a692c0c4437974c8bd1b0700e39839d7b6a10b0cd85c"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -39,7 +39,7 @@
         "appearances": 2,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 30,
+        "attributes": 21,
         "bodies": 1,
         "coedges": 30,
         "configurations": 0,
@@ -143,16 +143,6 @@
       "target": "fcstd:schema-4"
     },
     "losses": [
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#0:UnitSystem:property (UnitSystem) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
       {
         "code": {
           "code": "attribute.not-transferred",
@@ -740,7 +730,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 3 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`",
         "severity": "info"
       },
       {
@@ -863,26 +853,27 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "regenerated",
-                "fcstd:native:property#0:Meta": "regenerated",
+                "fcstd:native:property#0:Material": "written",
+                "fcstd:native:property#0:Meta": "written",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "regenerated",
+                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:UnitSystem": "written",
                 "fcstd:native:property#0:UseHasher": "regenerated",
                 "fcstd:native:property#ColoredModel:Label": "regenerated",
                 "fcstd:native:property#ColoredModel:Label2": "regenerated",
                 "fcstd:native:property#ColoredModel:Placement": "regenerated",
                 "fcstd:native:property#ColoredModel:Shape": "regenerated",
-                "fcstd:native:property#ColoredModel:ShapeMaterial": "regenerated",
+                "fcstd:native:property#ColoredModel:ShapeMaterial": "written",
                 "fcstd:native:property#ColoredModel:Visibility": "regenerated",
                 "fcstd:native:property#ColoredModel:_ElementMapVersion": "written",
-                "fcstd:native:property#CorpusMetadata:InertValue": "regenerated",
+                "fcstd:native:property#CorpusMetadata:InertValue": "written",
                 "fcstd:native:property#CorpusMetadata:Label": "regenerated",
                 "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
                 "fcstd:native:property#CorpusMetadata:License": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Proxy": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Proxy": "written",
                 "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
                 "fcstd:native:property#CorpusMetadata:Visibility": "regenerated"
               }

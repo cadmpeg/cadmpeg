@@ -139,14 +139,15 @@
             "feature_id": 40,
             "id": "creo:mdlstatus:feature_state#40:0",
             "identifier_keyword": "id",
-            "offset": 94,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 93,
             "state_ordinal": 0,
             "stored_name": "xProtrusion id 40",
-            "stored_name_bytes": "7850726f74727573696f6e206964203430",
+            "stored_name_bytes": {
+              "byte_len": 17,
+              "sha256": "e6efe6a18d5dc9fc46dfc1aadf8a4cc4ee25ff193f151941bda288ba3dfe1d70"
+            },
             "stored_name_prefix": "x"
           },
           {
@@ -157,14 +158,15 @@
             "feature_id": 40,
             "id": "creo:mdlstatus:feature_state#40:1",
             "identifier_keyword": "id",
-            "offset": 174,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 174,
             "state_ordinal": 1,
             "stored_name": "Hole id 40",
-            "stored_name_bytes": "486f6c65206964203430",
+            "stored_name_bytes": {
+              "byte_len": 10,
+              "sha256": "44dcf311956d94744bde2d0a2e950d5ba82e55c6324d225417c7291416681010"
+            },
             "stored_name_prefix": null
           },
           {
@@ -174,14 +176,15 @@
             "feature_id": 41,
             "id": "creo:mdlstatus:feature_state#41:0",
             "identifier_keyword": "id",
-            "offset": 111,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 111,
             "state_ordinal": 0,
             "stored_name": "Round id 41",
-            "stored_name_bytes": "526f756e64206964203431",
+            "stored_name_bytes": {
+              "byte_len": 11,
+              "sha256": "08bcadd5a88661982edeeb7d53be7ee706131e5f3179d60be00a707e6b50333f"
+            },
             "stored_name_prefix": null
           },
           {
@@ -191,14 +194,15 @@
             "feature_id": 42,
             "id": "creo:mdlstatus:feature_state#42:0",
             "identifier_keyword": "id",
-            "offset": 123,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 123,
             "state_ordinal": 0,
             "stored_name": "Future Feature id 42",
-            "stored_name_bytes": "4675747572652046656174757265206964203432",
+            "stored_name_bytes": {
+              "byte_len": 20,
+              "sha256": "1d7254414625f71fa6f68bec1af5978a7caa8a617c8de445495b3ef273727ed4"
+            },
             "stored_name_prefix": null
           },
           {
@@ -208,14 +212,15 @@
             "feature_id": 43,
             "id": "creo:mdlstatus:feature_state#43:0",
             "identifier_keyword": "id",
-            "offset": 144,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 144,
             "state_ordinal": 0,
             "stored_name": "Datum Plane id 43",
-            "stored_name_bytes": "446174756d20506c616e65206964203433",
+            "stored_name_bytes": {
+              "byte_len": 17,
+              "sha256": "eeac9c12fe0647f6d404c7ab4aaece99831261af7ddb49cc52c4de7adc8184ec"
+            },
             "stored_name_prefix": null
           },
           {
@@ -225,14 +230,15 @@
             "feature_id": 44,
             "id": "creo:mdlstatus:feature_state#44:0",
             "identifier_keyword": "id",
-            "offset": 162,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 162,
             "state_ordinal": 0,
             "stored_name": "Draft id 44",
-            "stored_name_bytes": "4472616674206964203434",
+            "stored_name_bytes": {
+              "byte_len": 11,
+              "sha256": "2c602428d7f707a884347051e58fd5360e56cd51458e5d22dcc52a5a7cbf36e0"
+            },
             "stored_name_prefix": null
           },
           {
@@ -242,14 +248,15 @@
             "feature_id": 45,
             "id": "creo:mdlstatus:feature_state#45:0",
             "identifier_keyword": "id",
-            "offset": 186,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 185,
             "state_ordinal": 0,
             "stored_name": "ySurface id 45",
-            "stored_name_bytes": "7953757266616365206964203435",
+            "stored_name_bytes": {
+              "byte_len": 14,
+              "sha256": "9d94f9875e0bbec8ab0b78b3a658fff4d5dae70f60d778c2fecfe66dab399ab2"
+            },
             "stored_name_prefix": "y"
           }
         ]
@@ -266,7 +273,6 @@
         "file_size": "200",
         "section.0.length": "124",
         "section.0.name": "MdlStatus",
-        "section.0.offset": "76",
         "section.0.raw_name": "MdlStatus",
         "section.0.role": "metadata",
         "section_count": "1",
@@ -856,6 +862,23 @@
           "tag": "feature_operation_name"
         }
       }
+    },
+    "metadata": {
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#40:0.offset": "94",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#40:0.state_offset": "93",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#40:1.offset": "174",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#40:1.state_offset": "174",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#41:0.offset": "111",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#41:0.state_offset": "111",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#42:0.offset": "123",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#42:0.state_offset": "123",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#43:0.offset": "144",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#43:0.state_offset": "144",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#44:0.offset": "162",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#44:0.state_offset": "162",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#45:0.offset": "186",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#45:0.state_offset": "185",
+      "source.section.0.offset": "76"
     },
     "retained_records": {
       "creo:source:image#whole": {

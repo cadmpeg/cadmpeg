@@ -727,6 +727,9 @@
       "attributes": {
         "native_file_name": "part.igs",
         "native_units": "MM",
+        "parameter_delimiter": ",",
+        "record_delimiter": ";",
+        "representation": "fixed-ascii",
         "sender_product": "product"
       },
       "identity": {
@@ -818,13 +821,10 @@
   "source_fidelity": {
     "annotations": {},
     "metadata": {
-      "document_local_sha256": "1085b76a1ef1191122685083639310dcaf7f8fa18de0caaabddc369ac55214c2",
+      "document_local_sha256": "712b24c0af5db3634bbeeea44745a083f1337bbfcd20846ca226f94dc66c4b1a",
       "iges.card_layout": "[[1,0,80,1],[2,81,80,1],[3,162,80,1],[4,243,80,1],[5,324,80,1],[6,405,80,1],[7,486,80,1],[8,567,80,1],[9,648,80,1],[10,729,80,1],[11,810,80,1],[12,891,80,1],[13,972,80,1]]",
       "iges.entity_layout": "[[1,1,1],[3,2,1],[5,3,1]]",
-      "iges.parameter_delimiter": ",",
-      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":7},{\"start\":8,\"end\":14},{\"start\":15,\"end\":15},{\"start\":16,\"end\":18},{\"start\":19,\"end\":20},{\"start\":21,\"end\":23},{\"start\":24,\"end\":25},{\"start\":26,\"end\":27},{\"start\":28,\"end\":29},{\"start\":30,\"end\":30},{\"start\":31,\"end\":32},{\"start\":33,\"end\":34},{\"start\":35,\"end\":36},{\"start\":37,\"end\":38},{\"start\":39,\"end\":41},{\"start\":42,\"end\":43},{\"start\":44,\"end\":45},{\"start\":46,\"end\":47},{\"start\":48,\"end\":50},{\"start\":51,\"end\":52},{\"start\":53,\"end\":54},{\"start\":55,\"end\":56}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":7},{\"start\":8,\"end\":13},{\"start\":14,\"end\":16},{\"start\":17,\"end\":19},{\"start\":20,\"end\":21},{\"start\":22,\"end\":24},{\"start\":25,\"end\":26},{\"start\":27,\"end\":28},{\"start\":29,\"end\":30},{\"start\":31,\"end\":32},{\"start\":33,\"end\":34},{\"start\":35,\"end\":36},{\"start\":37,\"end\":37},{\"start\":38,\"end\":39},{\"start\":40,\"end\":42}]],[5,{\"start\":3,\"end\":4},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":10},{\"start\":11,\"end\":29},{\"start\":30,\"end\":31},{\"start\":32,\"end\":33},{\"start\":34,\"end\":35},{\"start\":36,\"end\":37},{\"start\":38,\"end\":39},{\"start\":40,\"end\":41}]]]",
-      "iges.record_delimiter": ";",
-      "iges.representation": "fixed-ascii"
+      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":7},{\"start\":8,\"end\":14},{\"start\":15,\"end\":15},{\"start\":16,\"end\":18},{\"start\":19,\"end\":20},{\"start\":21,\"end\":23},{\"start\":24,\"end\":25},{\"start\":26,\"end\":27},{\"start\":28,\"end\":29},{\"start\":30,\"end\":30},{\"start\":31,\"end\":32},{\"start\":33,\"end\":34},{\"start\":35,\"end\":36},{\"start\":37,\"end\":38},{\"start\":39,\"end\":41},{\"start\":42,\"end\":43},{\"start\":44,\"end\":45},{\"start\":46,\"end\":47},{\"start\":48,\"end\":50},{\"start\":51,\"end\":52},{\"start\":53,\"end\":54},{\"start\":55,\"end\":56}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":7},{\"start\":8,\"end\":13},{\"start\":14,\"end\":16},{\"start\":17,\"end\":19},{\"start\":20,\"end\":21},{\"start\":22,\"end\":24},{\"start\":25,\"end\":26},{\"start\":27,\"end\":28},{\"start\":29,\"end\":30},{\"start\":31,\"end\":32},{\"start\":33,\"end\":34},{\"start\":35,\"end\":36},{\"start\":37,\"end\":37},{\"start\":38,\"end\":39},{\"start\":40,\"end\":42}]],[5,{\"start\":3,\"end\":4},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":10},{\"start\":11,\"end\":29},{\"start\":30,\"end\":31},{\"start\":32,\"end\":33},{\"start\":34,\"end\":35},{\"start\":36,\"end\":37},{\"start\":38,\"end\":39},{\"start\":40,\"end\":41}]]]"
     },
     "retained_records": {
       "iges:file:source-image#0": {

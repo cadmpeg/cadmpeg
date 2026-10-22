@@ -159,7 +159,6 @@
                 "activation": "active",
                 "dependencies": [],
                 "expression": "rel_model_name()",
-                "offset": 166,
                 "target": {
                   "declared_unit": null,
                   "kind": "parameter",
@@ -173,7 +172,6 @@
             "id": "creo:depdb:curve_expression#active-7-125",
             "lines": [
               {
-                "offset": 166,
                 "text": "name=rel_model_name()"
               }
             ],
@@ -197,7 +195,6 @@
         "model_name": "widget.prt ",
         "section.0.length": "89",
         "section.0.name": "DEPDB_DATA",
-        "section.0.offset": "99",
         "section.0.raw_name": "DEPDB_DATA",
         "section.0.role": "metadata",
         "section_count": "1",
@@ -729,6 +726,11 @@
           "tag": "part_product"
         }
       }
+    },
+    "metadata": {
+      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-125.assignments[0].offset": "166",
+      "native.creo.curve_expressions.creo:depdb:curve_expression#active-7-125.lines[0].offset": "166",
+      "source.section.0.offset": "99"
     },
     "retained_records": {
       "creo:source:image#whole": {

@@ -137,32 +137,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#0:Material:property",
-          "name": "Material",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#0:Material"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#0:Meta:property",
-          "name": "Meta",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#0:Meta"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#0:ShowHidden:property",
           "name": "ShowHidden",
           "target": {
@@ -189,32 +163,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#0:Uid:property",
-          "name": "Uid",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "00000000-0000-0000-0000-000000000001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#0:UnitSystem:property",
-          "name": "UnitSystem",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 0
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#0:UseHasher:property",
           "name": "UseHasher",
           "target": {
@@ -224,38 +172,6 @@
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#CorpusMetadata:ExpressionEngine"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:InertValue:property",
-          "name": "InertValue",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#CorpusMetadata:InertValue"
             }
           ]
         },
@@ -308,22 +224,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#CorpusMetadata:Proxy:property",
-          "name": "Proxy",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#CorpusMetadata:Proxy"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
           "name": "Purpose",
           "target": {
@@ -368,22 +268,6 @@
             {
               "kind": "string",
               "value": "Extension retention fixture"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ExtensionPayload:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ExtensionPayload"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#ExtensionPayload:ExpressionEngine"
             }
           ]
         },
@@ -448,54 +332,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#ExtensionPayload:Payload:property",
-          "name": "Payload",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ExtensionPayload"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#ExtensionPayload:Payload"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ExtensionPayload:Proxy:property",
-          "name": "Proxy",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ExtensionPayload"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#ExtensionPayload:Proxy"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#ExtensionPayload:SerializedState:property",
-          "name": "SerializedState",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#ExtensionPayload"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#ExtensionPayload:SerializedState"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#ExtensionPayload:Visibility:property",
           "name": "Visibility",
           "target": {
@@ -508,22 +344,6 @@
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#FemAnalysis:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#FemAnalysis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#FemAnalysis:ExpressionEngine"
             }
           ]
         },
@@ -576,22 +396,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#FemAnalysis:Uid:property",
-          "name": "Uid",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#FemAnalysis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "00000000-0000-0000-0000-000000000002"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#FemAnalysis:Visibility:property",
           "name": "Visibility",
           "target": {
@@ -604,22 +408,6 @@
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Mesh:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Mesh"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Mesh:ExpressionEngine"
             }
           ]
         },
@@ -672,22 +460,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#PointCloud:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PointCloud"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#PointCloud:ExpressionEngine"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#PointCloud:Label2:property",
           "name": "Label2",
           "target": {
@@ -732,22 +504,6 @@
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#TemperatureConstraint:AmplitudeValues:property",
-          "name": "AmplitudeValues",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#TemperatureConstraint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#TemperatureConstraint:AmplitudeValues"
             }
           ]
         },
@@ -800,22 +556,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#TemperatureConstraint:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#TemperatureConstraint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#TemperatureConstraint:ExpressionEngine"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#TemperatureConstraint:Label2:property",
           "name": "Label2",
           "target": {
@@ -864,54 +604,6 @@
                 0.0,
                 1.0
               ]
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#TemperatureConstraint:Normals:property",
-          "name": "Normals",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#TemperatureConstraint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#TemperatureConstraint:Normals"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#TemperatureConstraint:Points:property",
-          "name": "Points",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#TemperatureConstraint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#TemperatureConstraint:Points"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#TemperatureConstraint:References:property",
-          "name": "References",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#TemperatureConstraint"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#TemperatureConstraint:References"
             }
           ]
         },
@@ -980,22 +672,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Toolpath:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Toolpath"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Toolpath:ExpressionEngine"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Toolpath:Label2:property",
           "name": "Label2",
           "target": {
@@ -1024,22 +700,6 @@
             {
               "kind": "string",
               "value": "Toolpath"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Toolpath:Path:property",
-          "name": "Path",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Toolpath"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Toolpath:Path"
             }
           ]
         },
@@ -1489,6 +1149,226 @@
         },
         "message": "design object Toolpath of type Path::Feature was not projected into neutral features; its typed native object and properties remain",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:InertValue (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ExtensionPayload:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ExtensionPayload:Payload (App::PropertyFileIncluded) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ExtensionPayload:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ExtensionPayload:SerializedState (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#FemAnalysis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#FemAnalysis:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Mesh:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PointCloud:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#TemperatureConstraint:AmplitudeValues (App::PropertyStringList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#TemperatureConstraint:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#TemperatureConstraint:Normals (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#TemperatureConstraint:Points (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#TemperatureConstraint:References (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Toolpath:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Toolpath:Path (Path::PropertyPath) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
       },
       {
         "code": {

@@ -182,8 +182,10 @@
       "creo": {
         "surface_parameters": [
           {
-            "body": "7372665f7072696d5f7074722873706c7372662900",
-            "body_offset": 112,
+            "body": {
+              "byte_len": 21,
+              "sha256": "d90b1a50fd3adfd15631c80418fbbc0d5ca0d6f550cab87349c2ce3555eafca4"
+            },
             "boundary": "named_record",
             "cone_half_angle_override": null,
             "extrusion_direction": null,
@@ -191,39 +193,44 @@
             "opaque_spans": [
               {
                 "length": 6,
-                "offset": 7,
-                "raw": "6d5f70747228"
+                "raw": {
+                  "byte_len": 6,
+                  "sha256": "3c3392b17ef4a99ea0e78bc160f5beb86cdd5deec0affb8cd7467886a8f4eefd"
+                }
               },
               {
                 "length": 1,
-                "offset": 20,
-                "raw": "00"
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+                }
               }
             ],
             "positional_cone_frame": null,
             "positional_cylinder_frame": null,
             "positional_torus_frame": null,
             "replayed_torus_minor_radius": null,
-            "row_offset": 106,
             "scalar_frames": [
               {
-                "offset": 0,
                 "slots": [
                   {
                     "length": 7,
-                    "offset": 0,
-                    "raw": "7372665f707269",
+                    "raw": {
+                      "byte_len": 7,
+                      "sha256": "d59bbcd9d4a9ef13bfef0206adb2bcbc0df224b83a325ac6e2c32baa1ec40e61"
+                    },
                     "value": 0.7639648307845849
                   }
                 ]
               },
               {
-                "offset": 13,
                 "slots": [
                   {
                     "length": 7,
-                    "offset": 13,
-                    "raw": "73706c73726629",
+                    "raw": {
+                      "byte_len": 7,
+                      "sha256": "ddc0ff0a1388d8485cfc7c931c30994d1e4071291ee8dea4fb9c0f8860046497"
+                    },
                     "value": 0.7637235884496408
                   }
                 ]
@@ -232,14 +239,18 @@
             "slots": [
               {
                 "length": 7,
-                "offset": 0,
-                "raw": "7372665f707269",
+                "raw": {
+                  "byte_len": 7,
+                  "sha256": "d59bbcd9d4a9ef13bfef0206adb2bcbc0df224b83a325ac6e2c32baa1ec40e61"
+                },
                 "value": 0.7639648307845849
               },
               {
                 "length": 7,
-                "offset": 13,
-                "raw": "73706c73726629",
+                "raw": {
+                  "byte_len": 7,
+                  "sha256": "ddc0ff0a1388d8485cfc7c931c30994d1e4071291ee8dea4fb9c0f8860046497"
+                },
                 "value": 0.7637235884496408
               }
             ],
@@ -261,29 +272,69 @@
             "declared_family": "splsrf",
             "family": "spline",
             "id": "creo:visibgeom:surface_prototype#112",
-            "offset": 112,
             "parameters": [
               {
-                "body": "f904030f0f0f0fe4e4e40fe4e4e42f0000",
+                "body": {
+                  "byte_len": 17,
+                  "sha256": "32e1d0dd21562de1f1f6eca4c4df4ffc8113c3b882ec9621ba18ab2846006e0e"
+                },
                 "compact_values": [],
                 "name": "i_points",
-                "offset": 133,
-                "opaque": "",
+                "opaque": {
+                  "byte_len": 0,
+                  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                },
                 "scalar_count": 3,
                 "scalar_dimensions": 4,
                 "scalar_tokens": [
-                  "0f",
-                  "0f",
-                  "0f",
-                  "0f",
-                  "e4",
-                  "e4",
-                  "e4",
-                  "0f",
-                  "e4",
-                  "e4",
-                  "e4",
-                  "2f0000"
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 3,
+                    "sha256": "06324978685c1bea71ac1fcd6e7accac8b785ce2109a4ff4622e31457431db33"
+                  }
                 ],
                 "scalar_values": [
                   0.0,
@@ -299,30 +350,70 @@
                   1.0,
                   2.0
                 ],
-                "value_kind": "scalar_array",
-                "value_offset": 144
+                "value_kind": "scalar_array"
               },
               {
-                "body": "f90403e40fe4e40fe4e40fe4e40fe4",
+                "body": {
+                  "byte_len": 15,
+                  "sha256": "5cef103311aad13614c8a5f4916a77cae1f970689216d90abbbdb59011a9cce1"
+                },
                 "compact_values": [],
                 "name": "end_u_tangts",
-                "offset": 161,
-                "opaque": "",
+                "opaque": {
+                  "byte_len": 0,
+                  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                },
                 "scalar_count": 3,
                 "scalar_dimensions": 4,
                 "scalar_tokens": [
-                  "e4",
-                  "0f",
-                  "e4",
-                  "e4",
-                  "0f",
-                  "e4",
-                  "e4",
-                  "0f",
-                  "e4",
-                  "e4",
-                  "0f",
-                  "e4"
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  }
                 ],
                 "scalar_values": [
                   1.0,
@@ -338,30 +429,70 @@
                   0.0,
                   1.0
                 ],
-                "value_kind": "scalar_array",
-                "value_offset": 176
+                "value_kind": "scalar_array"
               },
               {
-                "body": "f904030fe4e40fe4e40fe4e40fe4e4",
+                "body": {
+                  "byte_len": 15,
+                  "sha256": "885038300d0a9430716466d11cfdd67502cb8a9c7520c16599174dd1818bba3b"
+                },
                 "compact_values": [],
                 "name": "end_v_tangts",
-                "offset": 191,
-                "opaque": "",
+                "opaque": {
+                  "byte_len": 0,
+                  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                },
                 "scalar_count": 3,
                 "scalar_dimensions": 4,
                 "scalar_tokens": [
-                  "0f",
-                  "e4",
-                  "e4",
-                  "0f",
-                  "e4",
-                  "e4",
-                  "0f",
-                  "e4",
-                  "e4",
-                  "0f",
-                  "e4",
-                  "e4"
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  }
                 ],
                 "scalar_values": [
                   0.0,
@@ -377,30 +508,70 @@
                   1.0,
                   1.0
                 ],
-                "value_kind": "scalar_array",
-                "value_offset": 206
+                "value_kind": "scalar_array"
               },
               {
-                "body": "f904030f0f0f0f0f0f0f0f0f0f0f0f",
+                "body": {
+                  "byte_len": 15,
+                  "sha256": "30068080582f1e66848339efde743d9305b15ec527bc6f3c6b12c41e2f0e260f"
+                },
                 "compact_values": [],
                 "name": "end_uv_deriv",
-                "offset": 221,
-                "opaque": "",
+                "opaque": {
+                  "byte_len": 0,
+                  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                },
                 "scalar_count": 3,
                 "scalar_dimensions": 4,
                 "scalar_tokens": [
-                  "0f",
-                  "0f",
-                  "0f",
-                  "0f",
-                  "0f",
-                  "0f",
-                  "0f",
-                  "0f",
-                  "0f",
-                  "0f",
-                  "0f",
-                  "0f"
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  }
                 ],
                 "scalar_values": [
                   0.0,
@@ -416,46 +587,65 @@
                   0.0,
                   0.0
                 ],
-                "value_kind": "scalar_array",
-                "value_offset": 236
+                "value_kind": "scalar_array"
               },
               {
-                "body": "f8020fe4",
+                "body": {
+                  "byte_len": 4,
+                  "sha256": "4f0cba89b8fd467beacc9d431fd2c5dd00e2311d35f522ac8e32fe89249a8cdf"
+                },
                 "compact_values": [],
                 "name": "u_params",
-                "offset": 251,
-                "opaque": "",
+                "opaque": {
+                  "byte_len": 0,
+                  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                },
                 "scalar_count": 2,
                 "scalar_dimensions": null,
                 "scalar_tokens": [
-                  "0f",
-                  "e4"
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  }
                 ],
                 "scalar_values": [
                   0.0,
                   1.0
                 ],
-                "value_kind": "counted_scalar_array",
-                "value_offset": 262
+                "value_kind": "counted_scalar_array"
               },
               {
-                "body": "f8020fe4",
+                "body": {
+                  "byte_len": 4,
+                  "sha256": "4f0cba89b8fd467beacc9d431fd2c5dd00e2311d35f522ac8e32fe89249a8cdf"
+                },
                 "compact_values": [],
                 "name": "v_params",
-                "offset": 266,
-                "opaque": "",
+                "opaque": {
+                  "byte_len": 0,
+                  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                },
                 "scalar_count": 2,
                 "scalar_dimensions": null,
                 "scalar_tokens": [
-                  "0f",
-                  "e4"
+                  {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
+                  {
+                    "byte_len": 1,
+                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                  }
                 ],
                 "scalar_values": [
                   0.0,
                   1.0
                 ],
-                "value_kind": "counted_scalar_array",
-                "value_offset": 277
+                "value_kind": "counted_scalar_array"
               }
             ],
             "source_section": "VisibGeom"
@@ -467,7 +657,6 @@
             "feature_id": 4,
             "id": "creo:visibgeom:surface_row#7",
             "next_surface": 0,
-            "offset": 106,
             "reversed": false,
             "source_section": "VisibGeom",
             "surface_family": "spline",
@@ -495,7 +684,6 @@
         "file_size": "294",
         "section.0.length": "218",
         "section.0.name": "VisibGeom",
-        "section.0.offset": "76",
         "section.0.raw_name": "ND:0:VisibGeom:0",
         "section.0.role": "psb-geometry",
         "section_count": "1",
@@ -1025,6 +1213,33 @@
         }
       }
     },
+    "metadata": {
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.body_offset": "112",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[0].offset": "7",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[1].offset": "20",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.row_offset": "106",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].offset": "0",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[0].offset": "0",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].offset": "13",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].slots[0].offset": "13",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[0].offset": "0",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[1].offset": "13",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.offset": "112",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.parameters[0].offset": "133",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.parameters[0].value_offset": "144",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.parameters[1].offset": "161",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.parameters[1].value_offset": "176",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.parameters[2].offset": "191",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.parameters[2].value_offset": "206",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.parameters[3].offset": "221",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.parameters[3].value_offset": "236",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.parameters[4].offset": "251",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.parameters[4].value_offset": "262",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.parameters[5].offset": "266",
+      "native.creo.surface_prototypes.creo:visibgeom:surface_prototype#112.parameters[5].value_offset": "277",
+      "native.creo.surface_rows.creo:visibgeom:surface_row#7.offset": "106",
+      "source.section.0.offset": "76"
+    },
     "retained_records": {
       "creo:VisibGeom:section#76": {
         "bytes": {
@@ -1034,6 +1249,30 @@
         "offset": 76,
         "stream": "creo:VisibGeom",
         "untyped": []
+      },
+      "creo:source:evidence#e85034c3324fe87af915c5d5012c6888b87d22ee1f1afa4bbd9c354b17f454b0": {
+        "bytes": {
+          "byte_len": 6,
+          "retention": "digest",
+          "sha256": "3c3392b17ef4a99ea0e78bc160f5beb86cdd5deec0affb8cd7467886a8f4eefd"
+        },
+        "offset": 0,
+        "stream": "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[0].raw",
+        "untyped": [
+          "model"
+        ]
+      },
+      "creo:source:evidence#f91862f22c85e78ed9a8e0db0f612f9c51d4c458d65f7f357592da4a6f06eabc": {
+        "bytes": {
+          "byte_len": 1,
+          "retention": "digest",
+          "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+        },
+        "offset": 0,
+        "stream": "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[1].raw",
+        "untyped": [
+          "model"
+        ]
       },
       "creo:source:image#whole": {
         "bytes": {

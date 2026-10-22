@@ -48,8 +48,7 @@
             "expanded_length": 3,
             "id": "creo:container:expanded_section#SolidPrimdata:211",
             "name": "SolidPrimdata",
-            "sha256": "b5d4045c3f466fa91fe2cc6abe79232a1a57cdf104f7a26e716e0a1e2789df78",
-            "source_offset": 211
+            "sha256": "b5d4045c3f466fa91fe2cc6abe79232a1a57cdf104f7a26e716e0a1e2789df78"
           }
         ]
       }
@@ -65,7 +64,6 @@
         "file_size": "218",
         "section.0.length": "22",
         "section.0.name": "SolidPrimdata",
-        "section.0.offset": "196",
         "section.0.raw_name": "SolidPrimdata",
         "section.0.role": "metadata",
         "section_count": "1",
@@ -566,6 +564,10 @@
           "tag": "unix_compress_expanded_section"
         }
       }
+    },
+    "metadata": {
+      "native.creo.expanded_sections.creo:container:expanded_section#SolidPrimdata:211.source_offset": "211",
+      "source.section.0.offset": "196"
     },
     "retained_records": {
       "creo:source:image#whole": {

@@ -115,8 +115,10 @@
       "creo": {
         "surface_parameters": [
           {
-            "body": "0f0fe4000c9a0f0f0f2f00000f0f",
-            "body_offset": 129,
+            "body": {
+              "byte_len": 14,
+              "sha256": "bbbe37d591a751d04a45d1e3515414f12d6d73d2b5a3ba484a9fd4c2e2281c2a"
+            },
             "boundary": "compound_close",
             "cone_half_angle_override": null,
             "extrusion_direction": [
@@ -128,76 +130,93 @@
             "opaque_spans": [
               {
                 "length": 3,
-                "offset": 3,
-                "raw": "000c9a"
+                "raw": {
+                  "byte_len": 3,
+                  "sha256": "eece0346e3ab27f65f6d937a9f3731b93a493b6a31831e0ce9c402cd3459661e"
+                }
               }
             ],
             "positional_cone_frame": null,
             "positional_cylinder_frame": null,
             "positional_torus_frame": null,
             "replayed_torus_minor_radius": null,
-            "row_offset": 123,
             "scalar_frames": [
               {
-                "offset": 0,
                 "slots": [
                   {
                     "length": 1,
-                    "offset": 0,
-                    "raw": "0f",
+                    "raw": {
+                      "byte_len": 1,
+                      "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                    },
                     "value": 0.0
                   },
                   {
                     "length": 1,
-                    "offset": 1,
-                    "raw": "0f",
+                    "raw": {
+                      "byte_len": 1,
+                      "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                    },
                     "value": 0.0
                   },
                   {
                     "length": 1,
-                    "offset": 2,
-                    "raw": "e4",
+                    "raw": {
+                      "byte_len": 1,
+                      "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                    },
                     "value": 1.0
                   }
                 ]
               },
               {
-                "offset": 6,
                 "slots": [
                   {
                     "length": 1,
-                    "offset": 6,
-                    "raw": "0f",
+                    "raw": {
+                      "byte_len": 1,
+                      "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                    },
                     "value": 0.0
                   },
                   {
                     "length": 1,
-                    "offset": 7,
-                    "raw": "0f",
+                    "raw": {
+                      "byte_len": 1,
+                      "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                    },
                     "value": 0.0
                   },
                   {
                     "length": 1,
-                    "offset": 8,
-                    "raw": "0f",
+                    "raw": {
+                      "byte_len": 1,
+                      "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                    },
                     "value": 0.0
                   },
                   {
                     "length": 3,
-                    "offset": 9,
-                    "raw": "2f0000",
+                    "raw": {
+                      "byte_len": 3,
+                      "sha256": "06324978685c1bea71ac1fcd6e7accac8b785ce2109a4ff4622e31457431db33"
+                    },
                     "value": 2.0
                   },
                   {
                     "length": 1,
-                    "offset": 12,
-                    "raw": "0f",
+                    "raw": {
+                      "byte_len": 1,
+                      "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                    },
                     "value": 0.0
                   },
                   {
                     "length": 1,
-                    "offset": 13,
-                    "raw": "0f",
+                    "raw": {
+                      "byte_len": 1,
+                      "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                    },
                     "value": 0.0
                   }
                 ]
@@ -206,56 +225,74 @@
             "slots": [
               {
                 "length": 1,
-                "offset": 0,
-                "raw": "0f",
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                },
                 "value": 0.0
               },
               {
                 "length": 1,
-                "offset": 1,
-                "raw": "0f",
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                },
                 "value": 0.0
               },
               {
                 "length": 1,
-                "offset": 2,
-                "raw": "e4",
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
+                },
                 "value": 1.0
               },
               {
                 "length": 1,
-                "offset": 6,
-                "raw": "0f",
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                },
                 "value": 0.0
               },
               {
                 "length": 1,
-                "offset": 7,
-                "raw": "0f",
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                },
                 "value": 0.0
               },
               {
                 "length": 1,
-                "offset": 8,
-                "raw": "0f",
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                },
                 "value": 0.0
               },
               {
                 "length": 3,
-                "offset": 9,
-                "raw": "2f0000",
+                "raw": {
+                  "byte_len": 3,
+                  "sha256": "06324978685c1bea71ac1fcd6e7accac8b785ce2109a4ff4622e31457431db33"
+                },
                 "value": 2.0
               },
               {
                 "length": 1,
-                "offset": 12,
-                "raw": "0f",
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                },
                 "value": 0.0
               },
               {
                 "length": 1,
-                "offset": 13,
-                "raw": "0f",
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                },
                 "value": 0.0
               }
             ],
@@ -265,7 +302,10 @@
             "surface_id": 7,
             "surface_type_byte": 44,
             "tabulated_cylinder_frame": {
-              "prefixes": "0f0f0f2f0f0f",
+              "prefixes": {
+                "byte_len": 6,
+                "sha256": "0b6b7c3aadd93c7bf70c5720492ff51671b799d872324088d1ab2c5ad7f67a77"
+              },
               "values": [
                 0.0,
                 0.0,
@@ -276,42 +316,53 @@
               ]
             },
             "terminal_scalar_frame": {
-              "offset": 6,
               "slots": [
                 {
                   "length": 1,
-                  "offset": 6,
-                  "raw": "0f",
+                  "raw": {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
                   "value": 0.0
                 },
                 {
                   "length": 1,
-                  "offset": 7,
-                  "raw": "0f",
+                  "raw": {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
                   "value": 0.0
                 },
                 {
                   "length": 1,
-                  "offset": 8,
-                  "raw": "0f",
+                  "raw": {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
                   "value": 0.0
                 },
                 {
                   "length": 3,
-                  "offset": 9,
-                  "raw": "2f0000",
+                  "raw": {
+                    "byte_len": 3,
+                    "sha256": "06324978685c1bea71ac1fcd6e7accac8b785ce2109a4ff4622e31457431db33"
+                  },
                   "value": 2.0
                 },
                 {
                   "length": 1,
-                  "offset": 12,
-                  "raw": "0f",
+                  "raw": {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
                   "value": 0.0
                 },
                 {
                   "length": 1,
-                  "offset": 13,
-                  "raw": "0f",
+                  "raw": {
+                    "byte_len": 1,
+                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                  },
                   "value": 0.0
                 }
               ]
@@ -328,7 +379,6 @@
             "feature_id": 4,
             "id": "creo:visibgeom:surface_row#7",
             "next_surface": 0,
-            "offset": 123,
             "reversed": false,
             "source_section": "VisibGeom",
             "surface_family": "extrusion",
@@ -356,7 +406,6 @@
         "file_size": "144",
         "section.0.length": "68",
         "section.0.name": "VisibGeom",
-        "section.0.offset": "76",
         "section.0.raw_name": "ND:0:VisibGeom:0",
         "section.0.role": "psb-geometry",
         "section_count": "1",
@@ -899,6 +948,40 @@
         }
       }
     },
+    "metadata": {
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.body_offset": "129",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[0].offset": "3",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.row_offset": "123",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].offset": "0",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[0].offset": "0",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[1].offset": "1",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[2].offset": "2",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].offset": "6",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].slots[0].offset": "6",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].slots[1].offset": "7",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].slots[2].offset": "8",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].slots[3].offset": "9",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].slots[4].offset": "12",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].slots[5].offset": "13",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[0].offset": "0",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[1].offset": "1",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[2].offset": "2",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[3].offset": "6",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[4].offset": "7",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[5].offset": "8",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[6].offset": "9",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[7].offset": "12",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[8].offset": "13",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.offset": "6",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[0].offset": "6",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[1].offset": "7",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[2].offset": "8",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[3].offset": "9",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[4].offset": "12",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[5].offset": "13",
+      "native.creo.surface_rows.creo:visibgeom:surface_row#7.offset": "123",
+      "source.section.0.offset": "76"
+    },
     "retained_records": {
       "creo:VisibGeom:section#76": {
         "bytes": {
@@ -908,6 +991,18 @@
         "offset": 76,
         "stream": "creo:VisibGeom",
         "untyped": []
+      },
+      "creo:source:evidence#e85034c3324fe87af915c5d5012c6888b87d22ee1f1afa4bbd9c354b17f454b0": {
+        "bytes": {
+          "byte_len": 3,
+          "retention": "digest",
+          "sha256": "eece0346e3ab27f65f6d937a9f3731b93a493b6a31831e0ce9c402cd3459661e"
+        },
+        "offset": 0,
+        "stream": "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[0].raw",
+        "untyped": [
+          "model"
+        ]
       },
       "creo:source:image#whole": {
         "bytes": {

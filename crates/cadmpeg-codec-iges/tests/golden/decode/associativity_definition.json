@@ -275,6 +275,9 @@
       "attributes": {
         "native_file_name": "part.igs",
         "native_units": "MM",
+        "parameter_delimiter": ",",
+        "record_delimiter": ";",
+        "representation": "fixed-ascii",
         "sender_product": "product"
       },
       "identity": {
@@ -348,13 +351,10 @@
   "source_fidelity": {
     "annotations": {},
     "metadata": {
-      "document_local_sha256": "6992c6be75fc5a4747883b14b5e8ae6587677d5c2e9b3c7a0d40306550741808",
+      "document_local_sha256": "2536347c1fed38e5b9e05de18c960e93e9ac02f07d8009cdd93d987fa7eca07b",
       "iges.card_layout": "[[1,0,80,1],[2,81,80,1],[3,162,80,1],[4,243,80,1],[5,324,80,1],[6,405,80,1],[7,486,80,1]]",
       "iges.entity_layout": "[[1,1,1]]",
-      "iges.parameter_delimiter": ",",
-      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":19},{\"start\":20,\"end\":21},{\"start\":22,\"end\":23}]]]",
-      "iges.record_delimiter": ";",
-      "iges.representation": "fixed-ascii"
+      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":19},{\"start\":20,\"end\":21},{\"start\":22,\"end\":23}]]]"
     },
     "retained_records": {
       "iges:file:source-image#0": {

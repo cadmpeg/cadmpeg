@@ -61,7 +61,6 @@
         "file_size": "123",
         "section.0.length": "47",
         "section.0.name": "VisibGeom",
-        "section.0.offset": "76",
         "section.0.raw_name": "ND:0:VisibGeom:1",
         "section.0.role": "psb-geometry",
         "section_count": "1",
@@ -551,6 +550,9 @@
           "tag": "psb_geometry_section"
         }
       }
+    },
+    "metadata": {
+      "source.section.0.offset": "76"
     },
     "retained_records": {
       "creo:VisibGeom:section#76": {

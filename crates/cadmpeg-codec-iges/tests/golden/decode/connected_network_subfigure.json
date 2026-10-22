@@ -896,6 +896,9 @@
       "attributes": {
         "native_file_name": "part.igs",
         "native_units": "MM",
+        "parameter_delimiter": ",",
+        "record_delimiter": ";",
+        "representation": "fixed-ascii",
         "sender_product": "product"
       },
       "identity": {
@@ -996,13 +999,10 @@
   "source_fidelity": {
     "annotations": {},
     "metadata": {
-      "document_local_sha256": "b9e5d97a40f8124284644252dd52909f1a862aef8760e9c5ec66a2519629b5b5",
+      "document_local_sha256": "fec67ca538e91cd851727ce42b241a0364679f88242d1731c4c02f93b8c80db7",
       "iges.card_layout": "[[1,0,80,1],[2,81,80,1],[3,162,80,1],[4,243,80,1],[5,324,80,1],[6,405,80,1],[7,486,80,1],[8,567,80,1],[9,648,80,1],[10,729,80,1],[11,810,80,1],[12,891,80,1],[13,972,80,1],[14,1053,80,1],[15,1134,80,1],[16,1215,80,1]]",
       "iges.entity_layout": "[[1,1,1],[3,2,1],[5,3,1],[7,4,1]]",
-      "iges.parameter_delimiter": ",",
-      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":22},{\"start\":23,\"end\":24},{\"start\":25,\"end\":30},{\"start\":31,\"end\":32},{\"start\":33,\"end\":34},{\"start\":35,\"end\":36},{\"start\":37,\"end\":38},{\"start\":39,\"end\":40}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":20},{\"start\":21,\"end\":22},{\"start\":23,\"end\":24},{\"start\":25,\"end\":26}]],[5,{\"start\":3,\"end\":4},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":22},{\"start\":23,\"end\":24},{\"start\":25,\"end\":30},{\"start\":31,\"end\":32},{\"start\":33,\"end\":34},{\"start\":35,\"end\":36},{\"start\":37,\"end\":38},{\"start\":39,\"end\":40}]],[7,{\"start\":4,\"end\":5},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":8},{\"start\":9,\"end\":11},{\"start\":12,\"end\":14},{\"start\":15,\"end\":16},{\"start\":17,\"end\":17},{\"start\":18,\"end\":18},{\"start\":19,\"end\":20},{\"start\":21,\"end\":25},{\"start\":26,\"end\":27},{\"start\":28,\"end\":29},{\"start\":30,\"end\":31}]]]",
-      "iges.record_delimiter": ";",
-      "iges.representation": "fixed-ascii"
+      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":22},{\"start\":23,\"end\":24},{\"start\":25,\"end\":30},{\"start\":31,\"end\":32},{\"start\":33,\"end\":34},{\"start\":35,\"end\":36},{\"start\":37,\"end\":38},{\"start\":39,\"end\":40}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":20},{\"start\":21,\"end\":22},{\"start\":23,\"end\":24},{\"start\":25,\"end\":26}]],[5,{\"start\":3,\"end\":4},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":22},{\"start\":23,\"end\":24},{\"start\":25,\"end\":30},{\"start\":31,\"end\":32},{\"start\":33,\"end\":34},{\"start\":35,\"end\":36},{\"start\":37,\"end\":38},{\"start\":39,\"end\":40}]],[7,{\"start\":4,\"end\":5},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":8},{\"start\":9,\"end\":11},{\"start\":12,\"end\":14},{\"start\":15,\"end\":16},{\"start\":17,\"end\":17},{\"start\":18,\"end\":18},{\"start\":19,\"end\":20},{\"start\":21,\"end\":25},{\"start\":26,\"end\":27},{\"start\":28,\"end\":29},{\"start\":30,\"end\":31}]]]"
     },
     "retained_records": {
       "iges:file:source-image#0": {
