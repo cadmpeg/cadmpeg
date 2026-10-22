@@ -468,6 +468,10 @@ impl AsmHistoricalTransition {
                     &old_topology.point_positions,
                     &new.point_positions,
                 )?,
+                edge_samples: AsmHistoricalRowDelta::between(
+                    &old_topology.edge_samples,
+                    &new.edge_samples,
+                )?,
             },
         })
     }
@@ -571,6 +575,7 @@ impl AsmHistoricalTransition {
         self.rows
             .point_positions
             .apply(&mut topology.point_positions)?;
+        self.rows.edge_samples.apply(&mut topology.edge_samples)?;
         let tags = &self.rows.persistent_subentity_tags;
         if !tags.is_empty() {
             if tags.set.iter().any(|group| {
@@ -813,6 +818,7 @@ impl AsmHistoricalRowsDelta {
         self.edge_vertices = AsmHistoricalRowDelta::default();
         self.vertex_points = AsmHistoricalRowDelta::default();
         self.point_positions = AsmHistoricalRowDelta::default();
+        self.edge_samples = AsmHistoricalRowDelta::default();
     }
 }
 
