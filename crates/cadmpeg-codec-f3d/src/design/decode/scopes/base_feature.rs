@@ -906,14 +906,23 @@ pub(super) fn exact_base_feature_construction(
             (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
             ("420", "258") | ("452", "266")
         );
+        let body_run_length = u64::try_from(body_count.checked_mul(52)?).ok()?;
         let base_length = if legacy_290_261 {
-            261
+            Some(261)
         } else if expanded || compact || legacy_444_263 {
-            262
+            Some(262)
         } else {
-            271
+            None
         };
-        if scope.frame_length() != base_length + u64::try_from(body_count.checked_mul(52)?).ok()? {
+        // The ordinary form is measured to its scope kind, which the fixed
+        // scope tail of either length follows.
+        let sized = match base_length {
+            Some(base_length) => scope.frame_length() == base_length + body_run_length,
+            None => {
+                scope.kind_offset().checked_sub(scope.byte_offset()) == Some(169 + body_run_length)
+            }
+        };
+        if !sized {
             return None;
         }
         let mut cursor = start + result_body::LEN;
