@@ -1203,6 +1203,10 @@ The legacy face-group envelope stores no independent current-active-face bit. Th
 
 A face-recipe continuation header carries `N+4` in the ordinary envelope. A serialized envelope can omit `N+4` and carry `N+5` instead. When neither expected continuation occurs before the enclosing boundary, the first following valid indexed-record header terminates the envelope; its record index has no fixed delta from `N`.
 
+The root and first prelude value of a face-recipe node form an ordered pair of zero-based prefix-operand ordinals. The second prelude value is the endpoint-clause count and equals two. The pair names the two face occurrences incident to one oriented boundary edge. Neither lane has a fixed target-face role. A pair `[0, 0]` can name two distinct faces supplied by operand zero. Zero is an ordinal, and repeated values retain distinct face occurrences.
+
+Each endpoint clause stores a cyclic face fan as `[header_value, *scalars]`. Its `field_count` includes `header_value`. Every fan value is a zero-based prefix-operand ordinal. Fan rotation, direction, field order, and multiplicity are retained. The ordinal namespace is the ordered list of prefix operands, grouped by equal selector-field and token-field offsets. Several Design references in one group occupy one ordinal; one operand can supply several faces. A topology binding requires candidate face occurrences in one topology state that satisfy both the ordered incident pair and the endpoint fans. Multiple remaining bindings leave the recipe unresolved.
+
 A face recipe node may carry an optional postlude exactly `[-1, t, -1, 0, 0, -1]` after its two topology side clauses. The signed scalar `t` and every postlude word are retained.
 
 An extended topology field program is complete only when it contains one or more repetitions of a nonempty nonnegative field whose first word is positive, `-1`, the exact zero field `[0, 0]`, and a final `-1`. A prefix that merely ends with `-1` is not a complete field program. The compact form is the single word `[0]`.
