@@ -306,3 +306,46 @@ fn model_registry_closure_preserves_every_unaffected_cube_carrier_value() {
     assert_eq!(output.losses().len(), 1);
     assert!(output.losses()[0].message.contains(&body_id));
 }
+
+#[test]
+fn unformed_dependents_of_a_given_up_part_are_named_by_its_one_loss() {
+    let source = b"#3=UNKNOWN();";
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::service()).expect("root");
+    let mut output = PartOutput::new(CodecFormat::Step);
+    failure(&ctx, &mut output, root);
+    let part = output
+        .fidelity()
+        .parts()
+        .keys()
+        .next()
+        .expect("given-up part")
+        .as_str()
+        .to_owned();
+    assert!(output
+        .drop_with_given_up(
+            &ctx,
+            "step:part#absent",
+            ["step:native:record#9".to_owned()]
+        )
+        .is_err());
+    output
+        .drop_with_given_up(
+            &ctx,
+            &part,
+            [
+                "step:native:record#5".to_owned(),
+                "step:native:record#4".to_owned(),
+            ],
+        )
+        .expect("named dependents");
+    assert!(matches!(
+        output.prune_dependencies(&ctx).expect("closure"),
+        PartDependencyPruning::Complete { .. }
+    ));
+    assert_eq!(output.losses().len(), 1);
+    assert!(output.losses()[0].message.ends_with(
+        r#"dropped=["step:native:record#3","step:native:record#4","step:native:record#5"]"#
+    ));
+}

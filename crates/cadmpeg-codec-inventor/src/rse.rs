@@ -737,6 +737,7 @@ fn frame_segment_records<'a>(
                             source_parts,
                             &bulk,
                             meta,
+                            segment.pair.token.as_str(),
                             segment.registry.map(|registry| registry.version_major),
                         )? {
                             Some((table, source_record_count)) => RecordFrameState::Partial {

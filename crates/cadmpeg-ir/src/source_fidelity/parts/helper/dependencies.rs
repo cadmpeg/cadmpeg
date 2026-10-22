@@ -122,6 +122,47 @@ impl PartOutput {
         Ok(())
     }
 
+    /// Name records that need the given-up part `part` and are never formed.
+    ///
+    /// They join that part's dropped set, so its one `record.unreadable` loss
+    /// names them (#215 §4.5 rules 2-3).
+    ///
+    /// # Errors
+    /// Rejects a part that has no failure home in this output.
+    pub fn drop_with_given_up(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        part: &str,
+        dependents: impl IntoIterator<Item = String>,
+    ) -> Result<(), CodecError> {
+        let failure = self
+            .failures
+            .iter_mut()
+            .find(|failure| failure.id.as_str() == part)
+            .ok_or_else(|| CodecError::malformed("dependent records name no given-up part"))?;
+        for id in dependents {
+            if !failure.dropped.contains(&id) {
+                ctx.retain_bytes(
+                    storage_bytes(&[id.len(), size_of::<String>()])?,
+                    "given-up part dependent identity",
+                )?;
+                failure.dropped.insert(id);
+            }
+        }
+        let message = format!(
+            "{} dropped={}",
+            failure.prefix,
+            serde_json::to_string(&failure.dropped).map_err(CodecError::malformed)?
+        );
+        ctx.retain_bytes(u64_from_index(message.len()), "part dependency diagnostic")?;
+        let loss = self
+            .losses
+            .get_mut(failure.loss_index)
+            .ok_or_else(|| CodecError::malformed("given-up part has no diagnostic"))?;
+        loss.message = message;
+        Ok(())
+    }
+
     /// Drop transitively required records, then prune only typed reference lists.
     ///
     /// All list edits are prepared and re-admitted through their actual owning

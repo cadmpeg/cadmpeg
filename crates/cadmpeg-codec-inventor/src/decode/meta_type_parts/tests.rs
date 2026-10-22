@@ -268,25 +268,15 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
         .values()
         .filter(|part| matches!(part.state(), PartState::GivenUp {}))
         .collect::<Vec<_>>();
-    assert_eq!(given_up.len(), 301);
-    let section = *given_up
-        .iter()
-        .find(|part| part.level().as_str() == "inventor.meta_forward_section")
-        .unwrap();
-    let mut bodies = given_up
-        .iter()
-        .filter(|part| part.level().as_str() == "inventor.rse_record_body")
-        .copied()
-        .collect::<Vec<_>>();
-    bodies.sort_by_key(|part| part.offset());
-    assert_eq!(bodies.len(), 300);
-    for (index, body) in bodies.iter().enumerate() {
-        assert_eq!(body.offset(), u64::try_from(index).unwrap() * 8);
-        assert_eq!(body.byte_len(), 8);
-        assert!(body.framing_bytes().is_empty());
-        let parent = &fidelity.parts()[body.parent().unwrap()];
-        assert_eq!(parent.level().as_str(), "inventor.bulk_body");
-    }
+    // #215 §4.5 rules 2-3: the type table is the one given-up part; the
+    // records that need its descriptors are dropped with it and are not
+    // parts of their own.
+    assert_eq!(given_up.len(), 1);
+    let section = given_up[0];
+    assert!(!fidelity
+        .parts()
+        .values()
+        .any(|part| part.level().as_str() == "inventor.rse_record_body"));
     let trailer = fidelity
         .parts()
         .values()
@@ -312,21 +302,7 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
     let unknowns = namespace
         .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
         .unwrap();
-    assert_eq!(unknowns.len(), 301);
-    let mut retained_bodies = unknowns
-        .iter()
-        .map(|unknown| fidelity.retained_record(unknown.id.as_str()).unwrap())
-        .filter(|record| record.data().unwrap().len() == 8)
-        .collect::<Vec<_>>();
-    retained_bodies.sort_by_key(|record| record.offset());
-    assert_eq!(retained_bodies.len(), 300);
-    for (index, record) in retained_bodies.iter().enumerate() {
-        let mut expected_body = u32::try_from(index).unwrap().to_le_bytes().to_vec();
-        expected_body.extend(0_u32.to_le_bytes());
-        assert_eq!(record.offset(), u64::try_from(index).unwrap() * 8);
-        assert_eq!(record.stream(), bodies[index].stream());
-        assert_eq!(record.data(), Some(expected_body.as_slice()));
-    }
+    assert_eq!(unknowns.len(), 1);
     let mut expected = 300_u32.to_le_bytes().to_vec();
     for _ in 0..300 {
         expected.extend([0x11; 16]);
@@ -356,24 +332,16 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
             .data(),
         Some(expected.as_slice())
     );
-    assert_eq!(losses.len(), 301);
-    assert!(losses
-        .iter()
-        .all(|loss| loss.code.to_string() == "decode/record.unreadable"));
-    assert_eq!(
-        losses
-            .iter()
-            .filter(|loss| loss.message.contains("more than 256"))
-            .count(),
-        1
-    );
-    assert_eq!(
-        losses
-            .iter()
-            .filter(|loss| loss.message.contains("given-up metadata type table"))
-            .count(),
-        300
-    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
+    assert!(losses[0].message.contains("more than 256"));
+    // Section 1 holds 300 stored block descriptors, so the bulk stream holds
+    // the records of ordinals 0..300; each needs a descriptor of the table.
+    let (_, dropped) = losses[0].message.rsplit_once(" dropped=").unwrap();
+    let dropped: Vec<String> = serde_json::from_str(dropped).unwrap();
+    for ordinal in 0..300 {
+        assert!(dropped.contains(&format!("inventor:rse:record#dc-{ordinal}")));
+    }
     let captures = ctx.take_record_captures().unwrap();
     assert_eq!(captures.len(), 1);
     assert_eq!(captures[0].id(), "inventor:rse:meta-type#seg-0");

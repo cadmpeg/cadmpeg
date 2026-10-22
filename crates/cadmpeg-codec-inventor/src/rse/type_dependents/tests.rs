@@ -150,7 +150,7 @@ fn successful_source_descriptor_facts_keep_their_indices_and_exact_dependent_pee
     for descriptor in &mut meta.tables.types {
         descriptor.id = [0xff; 16];
     }
-    let (table, source_count) = super::stage(&ctx, &mut output, &bulk, &meta, Some(version))
+    let (table, source_count) = super::stage(&ctx, &mut output, &bulk, &meta, "dc", Some(version))
         .unwrap()
         .unwrap();
     assert_eq!(source_count, 3);
@@ -173,31 +173,17 @@ fn successful_source_descriptor_facts_keep_their_indices_and_exact_dependent_pee
     assert_eq!(records[0].type_id, "11111111111111111111111111111111");
     assert_eq!(records[1].index, 2);
     assert_eq!(records[1].type_id, "33333333333333333333333333333333");
-    assert_eq!(losses.len(), 2);
-    assert!(losses
-        .iter()
-        .all(|loss| loss.code.to_string() == "decode/record.unreadable"));
-    assert!(losses
-        .iter()
-        .any(|loss| loss.message.contains("inventor:rse:meta-type#dc-1")));
-    assert!(losses
-        .iter()
-        .any(|loss| loss.message.contains("given-up metadata type table")));
-    let body = fidelity
+    // #215 §4.5 rules 2-3: the record of ordinal 1 needs the given-up
+    // descriptor 1, so it is dropped with it and the descriptor's one loss
+    // names it; it is not a part of its own.
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
+    assert!(losses[0].message.contains("inventor:rse:meta-type#dc-1"));
+    assert!(losses[0].message.contains("inventor:rse:record#dc-1"));
+    assert!(!fidelity
         .parts()
-        .iter()
-        .find(|(_, part)| part.level().as_str() == "inventor.rse_record_body")
-        .unwrap();
-    assert_eq!(body.1.offset(), 8);
-    assert_eq!(body.1.byte_len(), 8);
-    assert_eq!(
-        fidelity.retained_record(body.0.as_str()).unwrap().data(),
-        Some(
-            [1_u32.to_le_bytes(), 0_u32.to_le_bytes()]
-                .concat()
-                .as_slice()
-        )
-    );
+        .values()
+        .any(|part| part.level().as_str() == "inventor.rse_record_body"));
     let captures = ctx.take_record_captures().unwrap();
     assert_eq!(captures.len(), 2);
     assert!(captures

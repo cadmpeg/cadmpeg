@@ -21,6 +21,13 @@ pub(crate) struct BlockDescriptor<'a> {
     payload_len: u32,
 }
 
+impl BlockDescriptor<'_> {
+    /// Position of this block in section 1, which is its record's ordinal.
+    pub(crate) const fn ordinal(&self) -> u32 {
+        self.ordinal
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TypeDescriptor {
     pub(crate) index: u32,
