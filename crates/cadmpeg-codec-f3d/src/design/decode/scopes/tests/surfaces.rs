@@ -1298,6 +1298,7 @@ fn surface_patch_boundary_settings_decode_the_fixed_payload() {
     bytes[38] = 1;
     bytes[39..43].copy_from_slice(&100_u32.to_le_bytes());
 
+    crate::test_support::indexed_header(&mut bytes, *b"998", 42);
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let mut expected = DesignSurfacePatchBoundary {
         scope_reference_ordinal: 0,
@@ -1335,6 +1336,7 @@ fn surface_patch_boundary_settings_reject_invalid_fixed_fields() {
     bytes[38] = 1;
     bytes[39..43].copy_from_slice(&100_u32.to_le_bytes());
 
+    crate::test_support::indexed_header(&mut bytes, *b"998", 42);
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     bytes[21] = 2;
     assert!(surface_patch_boundaries(&bytes, &records, &[42]).is_empty());

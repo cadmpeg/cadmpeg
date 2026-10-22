@@ -6507,6 +6507,16 @@ fn project_surface_patch(
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
         return Ok(None);
     }
+    if scope.surface_patch_normal().is_some_and(|normal| {
+        !matches!(
+            normal,
+            crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Explicit {
+                reversed: crate::records::identity::Located { value: false, .. }
+            }
+        )
+    }) {
+        return Ok(None);
+    }
     let Some(stream) = native_stream(&scope.id) else {
         return Ok(None);
     };

@@ -4894,7 +4894,7 @@ Only type version 7 assigns normal reversal to primary-scope offset 31.
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 31 | `scope_prefix` | `bytes[31]` | little | spec | In a version-7 `SurfacePatch` type |
 | 31 | 1 | `normal_flip` | `u8` | little | spec | the byte at primary-scope offset `P + 31` reverses the whole created surface normal |
-| 32 | 4 | `following_word` | `u32` | little | spec | The following `u32le` at `P + 32` is `4` |
+| 32 | 4 | `following_word` | `u32` | little | spec | The following `u32le` at `P + 32` is `4` · value `4` |
 
 ## `hem_common_controls`
 

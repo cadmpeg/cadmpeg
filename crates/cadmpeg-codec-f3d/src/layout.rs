@@ -4804,6 +4804,44 @@ pub(crate) mod canvas_geometry_prefix {
     pub(crate) const LABEL_CODE_UNIT_COUNT: usize = 213;
 }
 
+/// Byte offsets for the `surface_patch_boundary_settings_prefix` record.
+///
+/// Spec §3.1. Record length 38 B.
+///
+/// ```text
+/// Offsets are relative to the settings record's primary header R. The marked model reference begins at 38 and has a variable GUID carrier.
+/// ```
+pub(crate) mod surface_patch_boundary_settings_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 38;
+    /// Offset of `prologue` (`bytes[2]`). Spec §3.1.
+    pub(crate) const PROLOGUE: usize = 19;
+    /// Offset of `is_seed_selection` (`u8`). Spec §3.1.
+    pub(crate) const IS_SEED_SELECTION: usize = 21;
+    /// Offset of `continuity` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONTINUITY: usize = 22;
+    /// Offset of `side_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SIDE_ORDINAL: usize = 26;
+    /// Offset of `raw_weight` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const RAW_WEIGHT: usize = 30;
+}
+
+/// Byte offsets for the `surface_patch_v7_normal_flip_prefix` record.
+///
+/// Spec §3.1. Record length 36 B.
+///
+/// ```text
+/// Only type version 7 assigns normal reversal to primary-scope offset 31.
+/// ```
+pub(crate) mod surface_patch_v7_normal_flip_prefix {
+    /// Offset of `normal_flip` (`u8`). Spec §3.1.
+    pub(crate) const NORMAL_FLIP: usize = 31;
+    /// Offset of `following_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FOLLOWING_WORD: usize = 32;
+    /// Stated value of `following_word` (`u32`). Spec §3.1.
+    pub(crate) const FOLLOWING_WORD_VALUE: u32 = 0x0000_0004;
+}
+
 /// Byte offsets for the `hem_common_controls` record.
 ///
 /// Spec §3.1. Record length 41 B.

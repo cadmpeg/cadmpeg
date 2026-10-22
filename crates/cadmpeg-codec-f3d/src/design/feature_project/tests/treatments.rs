@@ -902,6 +902,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             model_reference,
         };
     if let DesignScopePayloadMut::SurfacePatch(slot) = patch_scope.payload_mut() {
+        let slot = &mut slot.boundaries;
         *slot = vec![patch_boundary(2, 300, 100)];
     }
     let mut patch_group = group(100, 0, vec![200]);
@@ -920,6 +921,45 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             && native == &patch_group.id
             && faces.is_empty()
     ));
+    for normal in [
+        crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Explicit {
+            reversed: crate::records::identity::Located {
+                value: false,
+                offset: patch_scope.byte_offset() + 31,
+            },
+        },
+        crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Explicit {
+            reversed: crate::records::identity::Located {
+                value: true,
+                offset: patch_scope.byte_offset() + 31,
+            },
+        },
+        crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Unsupported,
+    ] {
+        let mut variant = patch_scope.clone();
+        if let DesignScopePayloadMut::SurfacePatch(patch) = variant.payload_mut() {
+            patch.normal = Some(normal);
+        }
+        let projected = crate::test_support::with_decode_context(|ctx| {
+            crate::design::feature_project::project_surface_patch(
+                ctx,
+                &variant,
+                std::slice::from_ref(&patch_group),
+                &[],
+                &[],
+            )
+        })
+        .unwrap();
+        assert_eq!(
+            projected.is_some(),
+            matches!(
+                normal,
+                crate::records::feature::surface_ops::DesignSurfacePatchNormalState::Explicit {
+                    reversed: crate::records::identity::Located { value: false, .. }
+                }
+            )
+        );
+    }
 
     patch_scope
         .try_edit(|draft| {
@@ -932,6 +972,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         })
         .unwrap();
     if let DesignScopePayloadMut::SurfacePatch(slot) = patch_scope.payload_mut() {
+        let slot = &mut slot.boundaries;
         *slot = vec![patch_boundary(2, 300, 100), patch_boundary(5, 301, 101)];
     }
     let mut second_patch_group = group(101, 3, vec![201]);
@@ -1019,6 +1060,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         })
         .unwrap();
     if let DesignScopePayloadMut::SurfacePatch(slot) = patch_scope.payload_mut() {
+        let slot = &mut slot.boundaries;
         *slot = vec![patch_boundary(2, 300, 100)];
     }
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
@@ -1066,6 +1108,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         })
         .unwrap();
     if let DesignScopePayloadMut::SurfacePatch(slot) = patch_scope.payload_mut() {
+        let slot = &mut slot.boundaries;
         *slot = vec![patch_boundary(2, 300, 100)];
     }
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
@@ -1109,7 +1152,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         .try_edit(|draft| {
             draft.frame_length = 343;
             draft.reference_members = ReferenceRun::unlocated(vec![100, 200, 201, 202, 203, 300]);
-            draft.payload = DesignScopePayload::SurfacePatch(Vec::new());
+            draft.payload = DesignScopePayload::SurfacePatch(Default::default());
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();

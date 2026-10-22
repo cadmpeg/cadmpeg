@@ -958,6 +958,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         if let crate::records::feature::scope::DesignScopePayloadMut::SurfacePatch(slot) =
             scope.payload_mut()
         {
+            let slot = &mut slot.boundaries;
             *slot = boundaries;
         }
         scope
@@ -1036,6 +1037,7 @@ fn surface_patch_weights_preserve_source_encoding_and_boundary_order() {
         (DesignPatchContinuity::Curvature, 0.5),
     ];
     if let DesignScopePayloadMut::SurfacePatch(boundaries) = scope.payload_mut() {
+        let boundaries = &mut boundaries.boundaries;
         *boundaries = raw
             .into_iter()
             .map(|(continuity, scale)| DesignSurfacePatchBoundary {
@@ -1091,6 +1093,7 @@ fn surface_patch_abstains_on_unsupported_active_weights() {
             let mut scope =
                 DesignParameterScope::empty("f3d:test:scope#1", DesignFeatureKind::SurfacePatch, 1);
             if let DesignScopePayloadMut::SurfacePatch(boundaries) = scope.payload_mut() {
+                let boundaries = &mut boundaries.boundaries;
                 *boundaries = vec![DesignSurfacePatchBoundary {
                     scope_reference_ordinal: 0,
                     record_index: 0,
@@ -1147,6 +1150,7 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
     if let crate::records::feature::scope::DesignScopePayloadMut::SurfacePatch(slot) =
         scope.payload_mut()
     {
+        let slot = &mut slot.boundaries;
         *slot = vec![
             DesignSurfacePatchBoundary {
                 scope_reference_ordinal: 3,
@@ -1255,7 +1259,7 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
     else {
         panic!("SurfacePatch fixture");
     };
-    for (boundary, ordinal) in boundaries.iter_mut().zip([2_u32, 5, 8]) {
+    for (boundary, ordinal) in boundaries.boundaries.iter_mut().zip([2_u32, 5, 8]) {
         boundary.scope_reference_ordinal = ordinal;
     }
     let endpoint_groups = [group(100, 0, 101), group(110, 3, 111), group(120, 6, 121)];

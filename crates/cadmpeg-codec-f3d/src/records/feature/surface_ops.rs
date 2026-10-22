@@ -422,6 +422,23 @@ impl DesignPatchContinuity {
     }
 }
 
+/// Versioned whole-surface normal state, independent of boundary-side ordinals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum DesignSurfacePatchNormalState {
+    Explicit {
+        reversed: crate::records::identity::Located<bool>,
+    },
+    Unsupported,
+}
+
+/// Boundary settings and whole-surface normal state of one SurfacePatch.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct DesignSurfacePatchScope {
+    pub(crate) boundaries: Vec<DesignSurfacePatchBoundary>,
+    pub(crate) normal: Option<DesignSurfacePatchNormalState>,
+}
+
 /// Settings a `SurfacePatch` scope carries for one boundary component.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSurfacePatchBoundary {

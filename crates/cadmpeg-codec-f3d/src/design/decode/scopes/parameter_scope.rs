@@ -118,6 +118,14 @@ pub(crate) fn decode_parameter_scopes(
             };
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
+            let normal = super::super::patch::surface_patch_normal(
+                bytes,
+                &scope,
+                stream_types.get(&u64::from(scope.record_index)).copied(),
+            );
+            if let scope::DesignScopePayloadMut::SurfacePatch(patch) = scope.payload_mut() {
+                patch.normal = normal;
+            }
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
@@ -1200,7 +1208,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             {
                 let construction = surface_patch_boundaries;
                 if let scope::DesignScopePayloadMut::SurfacePatch(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    slot.boundaries = construction;
                 }
             }
         }
