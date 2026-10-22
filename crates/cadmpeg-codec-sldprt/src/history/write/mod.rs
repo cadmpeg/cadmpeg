@@ -142,19 +142,47 @@ fn project_features_with_native_inputs(
     Ok(project_feature_model_with_native_inputs(native, sketches)?.features)
 }
 
+/// Admit the class positions of each distinct lane from its own payload, as
+/// the decoder admits them from the lane View.
+fn lane_class_sources(
+    ctx: &DecodeContext<'_>,
+    root: cadmpeg_core::decode::View<'_>,
+    lanes: &[crate::records::FeatureInputLane],
+) -> Result<ClassSources, CodecError> {
+    let mut class_sources = ClassSources::default();
+    let mut start = root.start();
+    let mut admitted = HashSet::new();
+    for lane in lanes {
+        let end = start
+            .checked_add(lane.native_payload.len())
+            .ok_or_else(|| CodecError::malformed("feature-input lane source length overflow"))?;
+        let source = root
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("feature-input lane source exceeds root"))?;
+        if admitted.insert(lane.id.as_str()) {
+            class_sources.admit_source(ctx, source, &lane.classes)?;
+        }
+        start = end;
+    }
+    Ok(class_sources)
+}
+
 fn project_feature_model_with_native_inputs(
     native: &crate::native::SldprtNative,
     sketches: &[cadmpeg_ir::sketches::Sketch],
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
-    let class_sources = ClassSources::default();
     let projection_bytes = native
         .feature_input_lanes
         .iter()
         .flat_map(|lane| lane.native_payload.iter().copied())
         .collect::<Vec<_>>();
     let arena = DecodeArena::new();
-    let (ctx, _) =
+    let (ctx, root) =
         DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
+    // Class positions that the lane bytes do not admit select the
+    // position-free projection; they never refuse the write.
+    let class_sources =
+        lane_class_sources(&ctx, root, &native.feature_input_lanes).unwrap_or_default();
     let mut histories = native.feature_histories.clone();
     enrich_history_semantic(
         &class_sources,
