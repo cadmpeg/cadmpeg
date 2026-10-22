@@ -143,6 +143,7 @@ pub(super) struct DesignNative {
     design_extrude_selection_members: Vec<DesignExtrudeSelectionMember>,
     design_entity_selection_operands: Vec<DesignEntitySelectionOperand>,
     design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
+    design_body_reference_tails: Vec<crate::records::body_reference_tail::DesignBodyReferenceTail>,
     design_edge_operands: Vec<DesignEdgeOperand>,
     design_edge_treatment_vertex_operands: Vec<DesignEdgeTreatmentVertexOperand>,
     design_face_operands: Vec<DesignFaceOperand>,
@@ -194,6 +195,7 @@ impl DesignNative {
             design_extrude_selection_members,
             design_entity_selection_operands,
             design_body_recipe_operands,
+            design_body_reference_tails,
             design_edge_operands,
             design_edge_treatment_vertex_operands,
             design_face_operands,
@@ -233,6 +235,7 @@ impl DesignNative {
         native.design_extrude_selection_members = design_extrude_selection_members;
         native.design_entity_selection_operands = design_entity_selection_operands;
         native.design_body_recipe_operands = design_body_recipe_operands;
+        native.design_body_reference_tails = design_body_reference_tails;
         native.design_edge_operands = design_edge_operands;
         native.design_edge_treatment_vertex_operands = design_edge_treatment_vertex_operands;
         native.design_face_operands = design_face_operands;
@@ -555,6 +558,16 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     }
     design.design_sheet_metal_settings =
         crate::design::decode::sheet_metal_settings::decode_settings(scan)?;
+    let tails = crate::design::decode::body_reference_tails::decode(ctx, scan)?;
+    design.design_body_reference_tails = tails.records;
+    if tails.unparsed != 0 {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::BodyReferenceTailUntyped,
+            format_args!("{} whole-body reference tail(s) remain source-only because no complete standard reference-run frame was admitted.", tails.unparsed),
+        );
+    }
+
     let indices = crate::design::decode::sheet_metal_settings::linked_record_indices(
         &design.design_sheet_metal_settings,
     );

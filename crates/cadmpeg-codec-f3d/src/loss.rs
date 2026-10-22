@@ -26,6 +26,8 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// Payload-bearing Design dimension companions have no typed locus frame.
     DimensionCompanionUntyped,
+    /// A whole-body reference tail has no admitted standard reference-run frame.
+    BodyReferenceTailUntyped,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
     /// Design configuration rules have no unambiguous activation target.
@@ -228,6 +230,7 @@ impl F3dLossCode {
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
         Self::DimensionCompanionUntyped,
+        Self::BodyReferenceTailUntyped,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
@@ -331,6 +334,7 @@ impl F3dLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
+            Self::BodyReferenceTailUntyped => "body-reference.tail-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
@@ -462,6 +466,7 @@ impl F3dLossCode {
             | Self::TopologyNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::DimensionCompanionUntyped
+            | Self::BodyReferenceTailUntyped
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
@@ -545,6 +550,7 @@ impl F3dLossCode {
         match self {
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
+            | Self::BodyReferenceTailUntyped
             | Self::ParameterRecordUnparsed
             | Self::HistoryRecordFramingFailed
             | Self::SolvedRecordUntyped
@@ -693,6 +699,7 @@ mod tests {
             codes,
             [
                 "dimension.companion-untyped",
+                "body-reference.tail-untyped",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",

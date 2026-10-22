@@ -5237,3 +5237,21 @@ pub(crate) mod assembly_compact_wide_scope {
     /// Offset of `second_operand_transform` (`f64[16]`, little-endian). Spec §Assembly operands.
     pub(crate) const SECOND_OPERAND_TRANSFORM: usize = 272;
 }
+
+/// Byte offsets for the `body_reference_tail_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+pub(crate) mod body_reference_tail_prefix {
+    /// Offset of `zero_prefix` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 21;
+}
+
+/// Byte offsets for the `body_reference_persistent_pair` record.
+///
+/// Spec §3.1. Record length 12 B.
+pub(crate) mod body_reference_persistent_pair {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 12;
+}

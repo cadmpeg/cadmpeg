@@ -17577,3 +17577,52 @@ type = "f64[16]"
 source = "spec"
 anchor = "row-major transforms start at offsets 50 and 272"
 
+
+[[record]]
+name = "body_reference_tail_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A class-365 whole-body member starts after its indexed header with ten zero bytes"
+size = 25
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A class-365 whole-body member starts after its indexed header with ten zero bytes"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "A class-365 whole-body member starts after its indexed header with ten zero bytes"
+
+[[record.field]]
+name = "reference_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "A class-365 whole-body member starts after its indexed header with ten zero bytes"
+
+[[record]]
+name = "body_reference_persistent_pair"
+kind = "byte"
+section = "3.1"
+anchor = "ordered `(u64 persistent Design reference, u32 form)` pairs"
+size = 12
+
+[[record.field]]
+name = "reference"
+offset = 0
+type = "u64"
+source = "spec"
+anchor = "ordered `(u64 persistent Design reference, u32 form)` pairs"
+
+[[record.field]]
+name = "form"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "ordered `(u64 persistent Design reference, u32 form)` pairs"

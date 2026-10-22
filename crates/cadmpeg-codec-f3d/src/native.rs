@@ -121,6 +121,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_body_bounds",
     "design_body_members",
     "design_body_recipe_operands",
+    "design_body_reference_tails",
     "design_canvas_images",
     "design_component_naming_spaces",
     "design_component_occurrences",
@@ -501,6 +502,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(ctx, row.arena, &model.design_body_recipe_operands)
         },
         len: |model| model.design_body_recipe_operands.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_body_reference_tails",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_body_reference_tails)
+        },
+        len: |model| model.design_body_reference_tails.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1223,6 +1234,10 @@ pub(crate) struct F3dNative {
     /// Whole-body operands joined to persistent body construction recipes.
     #[serde(default)]
     pub(crate) design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
+    /// Independent reference runs after whole-body operand UUIDs.
+    #[serde(default)]
+    pub(crate) design_body_reference_tails:
+        Vec<crate::records::body_reference_tail::DesignBodyReferenceTail>,
     /// Exact role-less body carriers paired with legacy Boolean-Loft groups.
     #[serde(default)]
     pub(crate) design_loft_legacy_body_carriers: Vec<DesignLoftLegacyBodyCarrier>,
@@ -1490,6 +1505,7 @@ impl F3dNative {
             design_component_occurrences: read_arena!("design_component_occurrences"),
             design_component_naming_spaces: read_arena!("design_component_naming_spaces"),
             design_body_recipe_operands: read_arena!("design_body_recipe_operands"),
+            design_body_reference_tails: read_arena!("design_body_reference_tails"),
             design_loft_legacy_body_carriers: read_arena!("design_loft_legacy_body_carriers"),
             design_dimension_annotation_frames: read_arena!("design_dimension_annotation_frames"),
             design_dimension_presentation_frames: read_arena!(

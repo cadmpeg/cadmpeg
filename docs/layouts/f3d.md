@@ -5219,6 +5219,25 @@ Parsed by:
 | 265 | 7 | `second_reference_zero_run` | `bytes[7]` | little | spec | seven zero bytes follow each reference |
 | 272 | 128 | `second_operand_transform` | `f64[16]` | little | spec | row-major transforms start at offsets 50 and 272 |
 
+## `body_reference_tail_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | A class-365 whole-body member starts after its indexed header with ten zero bytes |
+| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | A class-365 whole-body member starts after its indexed header with ten zero bytes |
+| 21 | 4 | `reference_count` | `u32` | little | spec | A class-365 whole-body member starts after its indexed header with ten zero bytes |
+
+## `body_reference_persistent_pair`
+
+Spec §3.1 · layout: byte offsets · size: 12 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `reference` | `u64` | little | spec | ordered `(u64 persistent Design reference, u32 form)` pairs |
+| 8 | 4 | `form` | `u32` | little | spec | ordered `(u64 persistent Design reference, u32 form)` pairs |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
