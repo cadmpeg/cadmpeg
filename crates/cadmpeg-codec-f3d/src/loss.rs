@@ -52,6 +52,9 @@ pub(crate) enum F3dLossCode {
     /// Projected Design assembly joints whose operand paths carry occurrence
     /// identity pairs of unknown effect on the joint, retained natively.
     AssemblyOperandPathPairsNative,
+    /// Projected Design assembly joints whose scope states how their operand
+    /// frames mate; the neutral joint does not carry that sense yet.
+    AssemblyJointFrameSenseUnprojected,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -245,6 +248,7 @@ impl F3dLossCode {
         Self::AssemblyJointUnprojected,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyOperandPathPairsNative,
+        Self::AssemblyJointFrameSenseUnprojected,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
@@ -354,6 +358,7 @@ impl F3dLossCode {
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
+            Self::AssemblyJointFrameSenseUnprojected => "assembly.joint-frame-sense-unprojected",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
@@ -483,6 +488,7 @@ impl F3dLossCode {
             | Self::AssemblyJointUnprojected
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyOperandPathPairsNative
+            | Self::AssemblyJointFrameSenseUnprojected
             | Self::DrawingDocumentOmitted
             | Self::DesignBodyBindingUnresolved
             | Self::ReferenceImageNativeRetained
@@ -614,7 +620,8 @@ impl F3dLossCode {
             | Self::FeaturePatternInstanceSearchCapped
             | Self::AssemblyJointUnprojected
             | Self::AssemblyJointMotionUndecoded
-            | Self::AssemblyOperandPathPairsNative => LossTaxonomy::FeatureHistoryRetained,
+            | Self::AssemblyOperandPathPairsNative
+            | Self::AssemblyJointFrameSenseUnprojected => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
@@ -718,6 +725,7 @@ mod tests {
                 "assembly.joint-unprojected",
                 "assembly.joint-motion-undecoded",
                 "assembly.operand-path-pairs-native",
+                "assembly.joint-frame-sense-unprojected",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",

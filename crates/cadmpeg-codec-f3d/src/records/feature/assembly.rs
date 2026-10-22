@@ -294,6 +294,19 @@ pub(crate) struct DesignAssemblyAlignment {
     pub(crate) owners: Vec<Located<u32>>,
     /// Datum, legacy solved-carrier, or qualified-operand form.
     pub(crate) form: Option<DesignAssemblyAlignmentForm>,
+    /// How the two operand frames mate, when the scope stores it.
+    pub(crate) frame_sense: Option<DesignJointFrameSense>,
+}
+
+/// How a joint's two operand frames mate: with their z axes opposed or
+/// aligned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignJointFrameSense {
+    /// `z₁ = −z₀`.
+    Opposed,
+    /// `z₁ = z₀`.
+    Aligned,
 }
 
 /// One assembly operand frame and its source qualifier.
@@ -367,7 +380,13 @@ impl DesignAssemblyAlignment {
             offset,
             owners,
             form,
+            frame_sense: None,
         })
+    }
+    /// This alignment with the mate sense its scope stores.
+    pub(crate) fn with_frame_sense(mut self, sense: Option<DesignJointFrameSense>) -> Self {
+        self.frame_sense = sense;
+        self
     }
     pub(crate) fn angle(&self) -> f64 {
         self.angle.get()
@@ -497,7 +516,19 @@ struct DesignAssemblyAlignmentSerde {
         deserialize_with = "deserialize_joint_origin_scope_record_index"
     )]
     joint_origin_scope_record_index: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_frame_sense"
+    )]
+    frame_sense: Option<DesignJointFrameSense>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_frame_sense,
+    DesignJointFrameSense,
+    "frame_sense"
+);
 
 impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
     type Error = String;
@@ -546,13 +577,16 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             (None, None, None, None, None, None) => None,
             _ => return Err("assembly alignment operand_frames, legacy_operand_carriers, solved_frame, operand_qualifiers, limits, and joint_origin_scope_record_index disagree with one form".into()),
         };
-        Self::try_new(wire.angle, wire.offset, owners, form)
+        Ok(
+            Self::try_new(wire.angle, wire.offset, owners, form)?
+                .with_frame_sense(wire.frame_sense),
+        )
     }
 }
 
 impl Serialize for DesignAssemblyAlignment {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 10)?;
+        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 11)?;
         record.serialize_field("angle", &self.angle.get())?;
         record.serialize_field("offset", &self.offset.map(FiniteReal::get))?;
         record.serialize_field("owner_record_indices", &OwnerRecordIndices(&self.owners))?;
@@ -631,6 +665,9 @@ impl Serialize for DesignAssemblyAlignment {
                 record.serialize_field("operand_frames", &frames)?;
                 record.serialize_field("operand_qualifiers", &qualifiers)?;
             }
+        }
+        if let Some(sense) = &self.frame_sense {
+            record.serialize_field("frame_sense", sense)?;
         }
         record.end()
     }

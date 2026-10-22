@@ -212,18 +212,30 @@ fn compact_wide_assemble_scope_reads_owners_frames_and_wide_operand_paths() {
 }
 
 #[test]
-fn compact_wide_operand_flag_is_zero_or_one() {
+fn compact_wide_operand_flag_is_the_frame_sense() {
     use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use crate::records::feature::assembly::DesignJointFrameSense;
     let types = std::collections::HashMap::new();
-    let frames = |flag: u8| {
+    let alignment = |flag: u8| {
         let (mut bytes, scope, owners) = compact_wide_scope_fixture(true);
         bytes[21] = flag;
         let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
-        exact_assembly_alignment_with_types(&bytes, &records, &scope, &owners, &types)
-            .unwrap()
-            .and_then(|alignment| alignment.operand_frames())
+        exact_assembly_alignment_with_types(&bytes, &records, &scope, &owners, &types).unwrap()
     };
-    assert!(frames(0).is_some());
-    assert!(frames(1).is_some());
-    assert!(frames(2).is_none());
+    // 0: the operand frames mate with their z axes aligned; 1: opposed.
+    for (flag, sense) in [
+        (0, DesignJointFrameSense::Aligned),
+        (1, DesignJointFrameSense::Opposed),
+    ] {
+        let alignment = alignment(flag).expect("alignment");
+        assert!(alignment.operand_frames().is_some());
+        assert_eq!(alignment.frame_sense, Some(sense));
+        let wire = serde_json::to_value(&alignment).unwrap();
+        let back: crate::records::feature::assembly::DesignAssemblyAlignment =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(back.frame_sense, Some(sense));
+    }
+    assert!(alignment(2)
+        .and_then(|alignment| alignment.operand_frames())
+        .is_none());
 }
