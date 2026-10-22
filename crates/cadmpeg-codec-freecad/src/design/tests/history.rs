@@ -1073,3 +1073,65 @@ Ve 0.001 0 0 0 0 0 1001000 *
     }
     assert_valid_document(result.ir());
 }
+
+#[test]
+fn spreadsheet_cells_state_quantities_and_literal_text_names_nothing() {
+    use cadmpeg_ir::features::ParameterValue;
+
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Spreadsheet::Sheet" name="Params" id="1"/></Objects>
+<ObjectData Count="1">
+ <Object name="Params"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="5" xlink="1">
+  <Cell address="A1" content="'plate_w"/>
+  <Cell address="B1" content="=20 mm" alias="plate_w"/>
+  <Cell address="B2" content="=2in" alias="inch"/>
+  <Cell address="B3" content="=90 deg" alias="turn"/>
+  <Cell address="B4" content="=plate_w / 2" alias="half"/>
+ </Cells></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("spreadsheet");
+    let cell = |name: &str| {
+        result
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap_or_else(|| panic!("{name} cell"))
+    };
+    assert_eq!(
+        cell("A1").value,
+        Some(ParameterValue::String("plate_w".into()))
+    );
+    assert!(cell("A1").dependencies.is_empty());
+    assert_eq!(
+        cell("plate_w").value,
+        Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(20.0).unwrap()
+        ))
+    );
+    assert_eq!(
+        cell("inch").value,
+        Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(50.8).unwrap()
+        ))
+    );
+    assert_eq!(
+        cell("turn").value,
+        Some(ParameterValue::Angle(
+            cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap()
+        ))
+    );
+    // A computed cell keeps its reference and states no value of its own.
+    assert_eq!(cell("half").value, None);
+    assert_eq!(
+        cell("half").dependencies.iter().collect::<Vec<_>>(),
+        [&cell("plate_w").id]
+    );
+    assert_valid_document(result.ir());
+}
