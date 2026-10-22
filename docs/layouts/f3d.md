@@ -3228,6 +3228,31 @@ Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding marker-one Revolve envelope are outside this field run.
 
+## `referenced_angle_revolve_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 50 B
+
+Offsets are relative to the Revolve primary indexed header. The marked angle-owner reference occupies offsets 39 through 49.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 1 | `marker` | `u8` | little | spec | It uses the marker-one prologue through offset 33 |
+| 21 | 4 | `zero_value` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
+| 25 | 4 | `operation` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
+| 29 | 4 | `extent_kind` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
+| 33 | 1 | `direction_kind` | `u8` | little | spec | It uses the marker-one prologue through offset 33 |
+| 34 | 1 | `flag` | `u8` | little | spec | Offset 34 is marker `1` |
+| 35 | 4 | `structural_constant` | `u32` | little | spec | offset 35 stores u32 one |
+| 39 | 1 | `angle_reference_marker` | `u8` | little | spec | The marked angle-owner reference starts at offset 39 |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and the preceding Revolve envelope are outside this field run.
+- `40..50` (10 B): The marked reference stores the u32 angle-owner record index followed by six zero bytes.
+
 ## `current_extrude_operation_fields`
 
 Spec §3.1 · layout: byte offsets · size: 42 B

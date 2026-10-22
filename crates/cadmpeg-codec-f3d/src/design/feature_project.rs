@@ -5268,7 +5268,16 @@ pub(super) fn project_fixed_revolve_with_entities(
             entity_selection_operands,
             placements,
             curve_identities,
-        );
+        )
+        .or_else(|| {
+            design_geometry_axis_selection(
+                scope,
+                axis_group,
+                *axis_member,
+                entity_selection_operands,
+                placements,
+            )
+        });
         if resolved.is_none()
             && !unresolved_historical_face_axis_selection(
                 scope,
@@ -5486,6 +5495,46 @@ fn analytic_surface_axis(
     };
     Some(cadmpeg_ir::features::RevolutionAxis {
         origin,
+        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
+        reference: None,
+    })
+}
+
+/// Resolve a Revolve axis selection that names a Design Geometry origin axis.
+///
+/// The identity is admitted only when no Sketch placement in the stream owns
+/// it and the selection has no historical edge or face candidate, so an ASM
+/// topology identity with the same value keeps its historical resolution.
+fn design_geometry_axis_selection(
+    scope: &DesignParameterScope,
+    axis_group: &DesignConstructionOperandGroup,
+    axis_member: u32,
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    placements: &[DesignSketchPlacement],
+) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+    let stream = native_stream(&scope.id)?;
+    let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.scope_record_index == scope.record_index
+            && operand.group_record_index == axis_group.record_index
+            && operand.group_member_ordinal == 0
+            && operand.record_index() == axis_member
+    }))?;
+    if !selection.historical_edge_candidates.is_empty()
+        || !selection.historical_face_candidates.is_empty()
+        || placements.iter().any(|placement| {
+            native_stream(&placement.id) == Some(stream)
+                && placement.entity_id.suffix() == selection.primary_identity
+        })
+    {
+        return None;
+    }
+    let direction = match selection.primary_identity {
+        41 => cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        _ => return None,
+    };
+    Some(cadmpeg_ir::features::RevolutionAxis {
+        origin: cadmpeg_ir::features::FinitePoint3::ZERO,
         direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
         reference: None,
     })
