@@ -108,9 +108,9 @@ fn render_settings_userdata_future_payload_retains_complete_record() {
 }
 
 #[test]
-fn document_length_render_settings_are_retained_without_a_physical_binding() {
+fn document_length_render_settings_use_model_units_without_a_physical_binding() {
     let archive = ArchiveVersion::V8;
-    for unit in [Some(0), Some(255), None] {
+    for (unit, undeclared) in [(Some(0), true), (Some(255), true), (None, true)] {
         let render = render_settings_record(archive);
         let settings = unit
             .map(|value| vec![crate::test_support::test_dump::units_record(archive, value)])
@@ -126,31 +126,23 @@ fn document_length_render_settings_are_retained_without_a_physical_binding() {
         );
         let result = decode(bytes);
         let namespace = result.ir().native.namespace("rhino").unwrap();
-        assert!(namespace.arenas()["render_settings"].is_empty());
-        let retained = result
-            .source_fidelity()
-            .retained_records()
-            .iter()
-            .find(|(id, record)| {
-                id.as_str()
-                    .starts_with("rhino:opaque:record#10000015-2000803d-")
-                    && record.data() == Some(render.as_slice())
-            });
-        assert!(
-            retained.is_some(),
-            "unit {unit:?} render source was not retained"
+        assert_eq!(
+            namespace.arenas()["render_settings"].len(),
+            1,
+            "unit {unit:?}"
         );
-        let label = if unit == Some(0) {
-            "native"
-        } else {
-            "unavailable"
-        };
-        assert!(result.report().losses.iter().any(|loss| {
-            loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
-                && loss
-                    .message
-                    .contains(&format!("no physical millimetre binding ({label})"))
-        }));
+        assert_eq!(
+            result.report().losses.iter().any(|loss| {
+                loss.code == crate::loss::RhinoLossCode::DocumentLengthUnitUndeclared.kind()
+            }),
+            undeclared,
+            "unit {unit:?}"
+        );
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("no physical millimetre binding")));
         assert_valid(&result);
     }
 }

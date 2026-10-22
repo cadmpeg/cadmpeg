@@ -2604,7 +2604,8 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     let mut retained_bytes = 0_usize;
     let mut diagnostics = Vec::new();
     let mut tolerance_losses = Vec::new();
-    let mut scale = MillimeterScale::IDENTITY;
+    let mut binding = crate::settings::UnitBinding::Millimeters(MillimeterScale::IDENTITY);
+    let mut scale = binding.model_scale();
     while offset < data.len() {
         let chunk = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
             .map_err(|error| malformed(&error))?;
@@ -2625,15 +2626,16 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 )));
             }
             let unit = reader.i32().map_err(|error| malformed(&error))?;
-            scale = if unit == 0 {
-                MillimeterScale::IDENTITY
+            binding = if unit == 0 {
+                crate::settings::UnitBinding::Native
             } else {
                 crate::settings::StandardUnit::from_value(unit)
-                    .map(MillimeterScale::from)
+                    .map(|unit| crate::settings::UnitBinding::Millimeters(unit.into()))
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!("unsupported V1 unit system {unit}"))
                     })?
             };
+            scale = binding.model_scale();
             let linear = reader.f64().map_err(|error| malformed(&error))? * scale.value();
             ir.tolerances.linear = crate::decode::admitted_tolerance(
                 cadmpeg_ir::scalar::PositiveLength::new(linear),
@@ -3020,6 +3022,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         });
     }
 
+    losses.extend(binding.undeclared_unit_loss());
     losses.append(&mut tolerance_losses);
     let mut notes = Vec::new();
     notes.push(format!("decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"));
@@ -3089,17 +3092,17 @@ fn v1_nurbs_object<T>(
 #[cfg(test)]
 mod tests {
     use super::{
-        TCODE_ANGULAR_DIMENSION, TCODE_ANNOTATION_LEADER, TCODE_COMMENT, TCODE_ENDOFFILE,
-        TCODE_ENDOFTABLE, TCODE_LEGACY_BND, TCODE_LEGACY_BNDSTUFF, TCODE_LEGACY_CRV,
+        TCODE_ANGULAR_DIMENSION, TCODE_ANNOTATION_LEADER, TCODE_ANNOTATION_SETTINGS,
+        TCODE_BITMAPPREVIEW, TCODE_COMMENT, TCODE_CURRENTLAYER, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+        TCODE_LAYER, TCODE_LEGACY_BND, TCODE_LEGACY_BNDSTUFF, TCODE_LEGACY_CRV,
         TCODE_LEGACY_CRVSTUFF, TCODE_LEGACY_FAC, TCODE_LEGACY_FACSTUFF, TCODE_LEGACY_SHL,
         TCODE_LEGACY_SHLSTUFF, TCODE_LEGACY_SPL, TCODE_LEGACY_SPLSTUFF, TCODE_LEGACY_SRF,
         TCODE_LEGACY_SRFSTUFF, TCODE_LEGACY_TRM, TCODE_LEGACY_TRMSTUFF, TCODE_LINEAR_DIMENSION,
-        TCODE_NAMED_CPLANE, TCODE_NAMED_VIEW, TCODE_RADIAL_DIMENSION, TCODE_RHINOIO_OBJECT_BREP,
-        TCODE_RHINOIO_OBJECT_DATA, TCODE_RHINOIO_OBJECT_NURBS_CURVE,
-        TCODE_RHINOIO_OBJECT_NURBS_SURFACE, TCODE_RH_POINT, TCODE_TEXT_BLOCK,
-        TCODE_UNIT_AND_TOLERANCES, TCODE_VIEWPORT, TCODE_ANNOTATION_SETTINGS, TCODE_BITMAPPREVIEW,
-        TCODE_CURRENTLAYER, TCODE_LAYER, TCODE_NOTES, TCODE_RENDERMESHPARAMS, TCODE_RH_SPOTLIGHT,
-        TCODE_SUMMARY,
+        TCODE_NAMED_CPLANE, TCODE_NAMED_VIEW, TCODE_NOTES, TCODE_RADIAL_DIMENSION,
+        TCODE_RENDERMESHPARAMS, TCODE_RHINOIO_OBJECT_BREP, TCODE_RHINOIO_OBJECT_DATA,
+        TCODE_RHINOIO_OBJECT_NURBS_CURVE, TCODE_RHINOIO_OBJECT_NURBS_SURFACE, TCODE_RH_POINT,
+        TCODE_RH_SPOTLIGHT, TCODE_SUMMARY, TCODE_TEXT_BLOCK, TCODE_UNIT_AND_TOLERANCES,
+        TCODE_VIEWPORT,
     };
     use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
     use crate::loss::RhinoLossCode;
@@ -3182,6 +3185,37 @@ mod tests {
                 .body
                 .losses
                 .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn v1_unit_system_none_keeps_model_units_and_reports_the_undeclared_unit() {
+        let mut units = Vec::new();
+        units.extend(1_i32.to_le_bytes());
+        units.extend(0_i32.to_le_bytes());
+        units.extend(0.01_f64.to_le_bytes());
+        units.extend(0.02_f64.to_le_bytes());
+        units.extend(0.03_f64.to_le_bytes());
+        let mut data = archive(&[]);
+        data.extend(chunk(TCODE_UNIT_AND_TOLERANCES, &units));
+        let mut point = Vec::new();
+        for value in [1.0_f64, 2.0, 3.0] {
+            point.extend(value.to_le_bytes());
+        }
+        data.extend(chunk(TCODE_RH_POINT, &point));
+        let decoded = decode_v1(&data).expect("decode the version 1 archive");
+        assert_eq!(
+            decoded.ir.model.points[0].position().get(),
+            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+        );
+        assert_eq!(
+            decoded
+                .body
+                .losses
+                .iter()
+                .filter(|loss| loss.code == RhinoLossCode::DocumentLengthUnitUndeclared.kind())
+                .count(),
             1
         );
     }

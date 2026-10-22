@@ -493,9 +493,9 @@ impl<'a> DecodeContext<'a> {
         crate::settings::UnitBinding::from_units(self.scan.metadata.settings.units.as_ref())
     }
 
-    /// Returns the scale that is safe for canonical millimetre geometry.
-    fn neutral_scale(&self) -> Option<MillimeterScale> {
-        self.unit_binding().neutral_scale()
+    /// Returns the scale from model units to CADIR lengths.
+    fn model_scale(&self) -> MillimeterScale {
+        self.unit_binding().model_scale()
     }
 
     /// Looks up a scanned object by deterministic source order.
@@ -790,10 +790,7 @@ impl<'a> DecodeContext<'a> {
             {
                 continue;
             }
-            let Some(scale) = self.neutral_scale() else {
-                self.scan_unbound_unit_warning(source_order, "simple geometry");
-                continue;
-            };
+            let scale = self.model_scale();
             if crate::mesh::supported_class(object.class_uuid) {
                 let identity = &object.identity;
                 let Some(key) = self.checked_object_key(identity, source_order) else {
@@ -961,10 +958,7 @@ impl<'a> DecodeContext<'a> {
                 self.scan_warning(source_order, format_args!("definition-member dimension retained because annotation instance expansion is unsupported"));
                 continue;
             }
-            let Some(scale) = self.neutral_scale() else {
-                self.scan_unbound_unit_warning(source_order, "dimension");
-                continue;
-            };
+            let scale = self.model_scale();
             let identity = &object.identity;
             let Some(key) = self.checked_object_key(identity, source_order) else {
                 continue;
@@ -1086,10 +1080,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), cadmpeg_core::CodecError> {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
-        let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "hatch");
-            return Ok(());
-        };
+        let scale = self.model_scale();
         let identity = &object.identity;
         let mut hatch = match crate::hatch::decode(
             self.expand,
@@ -1518,10 +1509,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), cadmpeg_core::CodecError> {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
-        let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "NURBS cage");
-            return Ok(());
-        };
+        let scale = self.model_scale();
         let identity = &object.identity;
         let cage = match crate::cage::decode(
             self.expand,
@@ -1648,10 +1636,7 @@ impl<'a> DecodeContext<'a> {
         source_order: usize,
         object: &ObjectDescriptor,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "morph control");
-            return Ok(());
-        };
+        let scale = self.model_scale();
         let identity = &object.identity;
         let morph = match crate::morph::decode(
             self.expand,
@@ -1728,10 +1713,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), cadmpeg_core::CodecError> {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
-        let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "curve-on-surface");
-            return Ok(());
-        };
+        let scale = self.model_scale();
         let identity = &object.identity;
         let construction = match crate::curve_on_surface::decode(
             self.expand.ctx(),
@@ -2154,14 +2136,7 @@ impl<'a> DecodeContext<'a> {
         if stack.contains(&definition.id()) {
             return Err(format!("definition cycle reaches {}", definition.id()).into());
         }
-        let binding = self.unit_binding();
-        let crate::settings::UnitBinding::Millimeters(scale) = binding else {
-            return Err(format!(
-                "document has no physical millimetre binding ({})",
-                binding.label()
-            )
-            .into());
-        };
+        let scale = self.model_scale();
         let local = crate::instances::scale_translation(reference.transform(), scale)
             .ok_or_else(|| "scaled instance transform is invalid".to_string())?;
         let transform = parent.compose(local).map_err(|error| error.to_string())?;
@@ -2410,10 +2385,7 @@ impl<'a> DecodeContext<'a> {
         source_order: usize,
         object: &ObjectDescriptor,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "SubD");
-            return Ok(());
-        };
+        let scale = self.model_scale();
         let identity = &object.identity;
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(());
@@ -2532,11 +2504,7 @@ impl<'a> DecodeContext<'a> {
         source_order: usize,
         object: &ObjectDescriptor,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "extrusion");
-            self.commit_unknown_surface(source_order)?;
-            return Ok(());
-        };
+        let scale = self.model_scale();
         let decoded = crate::extrusion::decode(
             self.expand,
             self.scan.data,
@@ -2810,39 +2778,6 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
-    /// Retains complete history records whose embedded geometry cannot enter
-    /// canonical millimetre IR.  The feature projection still keeps the
-    /// scalar history values and points to this source boundary by ID.
-    fn retain_unbound_history_geometry(&mut self) -> Result<(), cadmpeg_core::CodecError> {
-        if self.neutral_scale().is_some() {
-            return Ok(());
-        }
-        let binding = self.unit_binding();
-        for index in 0..self.scan.history.len() {
-            let record = &self.scan.history[index];
-            if !record.values.iter().any(|value| {
-                matches!(&value.value, crate::history::Value::Geometries(values) if !values.is_empty())
-            }) {
-                continue;
-            }
-            let range = record.source_range.clone();
-            let id = UnknownId::compose(
-                &cadmpeg_ir::identity_namespace!("rhino", "history", "source"),
-                IdentityKey::zero_padded(cadmpeg_core::decode::u64_from_index(range.start), 12),
-            );
-
-            let retained = self.source_record(id, range.clone())?;
-            self.opaque_records.push(retained);
-            self.report.phase_warnings.push_coded(RhinoLossCode::HistoryGeometryNotTransferred, format_args!(
-                "history record at source range {}..{} retained as complete source for {} unit binding",
-                range.start,
-                range.end,
-                binding.label()
-            ));
-        }
-        Ok(())
-    }
-
     fn retain_opaque_record(
         &mut self,
         source: &OpaqueRecord,
@@ -2902,17 +2837,6 @@ impl<'a> DecodeContext<'a> {
         self.report
             .phase_warnings
             .push(format_args!("{class}: {message}"));
-    }
-
-    fn scan_unbound_unit_warning(&mut self, source_order: usize, kind: &str) {
-        let binding = self.unit_binding();
-        self.scan_warning(
-            source_order,
-            format_args!(
-                "{kind} retained because the document has no physical millimetre binding ({})",
-                binding.label()
-            ),
-        );
     }
 
     fn scan_diagnostic(&mut self, source_order: usize, diagnostic: &crate::loss::RhinoDiagnostic) {
@@ -3642,10 +3566,7 @@ impl<'a> DecodeContext<'a> {
             copied.message = format!("{}: {}", object.class_uuid, loss.message);
             self.report.phase_losses.push(copied);
         }
-        let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "Brep");
-            return Ok(());
-        };
+        let scale = self.model_scale();
         let association = self.source_association(identity)?;
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(());
@@ -6333,15 +6254,15 @@ pub(crate) fn decode(
     let mut context = DecodeContext::new(scan, expand)?;
     context.decode_geometry()?;
     context.decode_dimensions()?;
-    context.retain_unbound_history_geometry()?;
-    let geometry_context = context.neutral_scale().map(|scale| {
-        (
-            expand,
-            scan.archive,
-            scan.metadata.properties.writer_version,
-            scale,
-        )
-    });
+    if let Some(note) = context.unit_binding().undeclared_unit_loss() {
+        context.report.typed_losses.push(note);
+    }
+    let geometry_context = Some((
+        expand,
+        scan.archive,
+        scan.metadata.properties.writer_version,
+        context.model_scale(),
+    ));
     let mut history_warnings = Diagnostics::new();
     let untyped = context.validate_candidate_fallible(|candidate, _annotations| {
         crate::history::project(

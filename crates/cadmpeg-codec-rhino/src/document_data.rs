@@ -644,7 +644,7 @@ pub(crate) fn install(
     let mut annotations = Vec::new();
     let mut grids = Vec::new();
     let mut renders = Vec::new();
-    let mut losses = Vec::new();
+    let losses = Vec::new();
     let mut opaque_records = Vec::new();
     let mut render_settings_seen = false;
     for table in &scan.tables {
@@ -652,40 +652,8 @@ pub(crate) fn install(
             continue;
         }
         for record in &table.records {
-            if matches!(
-                record.typecode,
-                ANNOTATION_SETTINGS | GRID_DEFAULTS | RENDER_SETTINGS
-            ) && binding.neutral_scale().is_none()
-            {
-                let message = format!("setting record {:#010x} at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
-                record.typecode,
-                record.range.start,
-                binding.label());
-
-                losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(&message));
-
-                opaque_records.push(OpaqueRecord {
-                    table_typecode: table.typecode,
-                    record: record.clone(),
-                });
-
-                setting_records.push(SettingRecord {
-                    id: numbered_id(
-                        "rhino:document:setting#unit-binding-",
-                        setting_records.len(),
-                    ),
-                    source_offset: cadmpeg_core::decode::u64_from_index(record.range.start),
-                    byte_len: cadmpeg_core::decode::u64_from_index(record.range.len()),
-                    typecode: typecode_text(record.typecode),
-                    sha256: sha256_text(&scan.data[record.range.clone()]),
-                    parse_error: Some(message),
-                });
-                continue;
-            }
             let result = if record.typecode == ANNOTATION_SETTINGS {
-                let Some(scale) = binding.neutral_scale() else {
-                    continue;
-                };
+                let scale = binding.model_scale();
                 match annotation_settings(ctx, scan.data, record.body(), record.range.start, scale)
                 {
                     Ok(value) => {
@@ -695,9 +663,7 @@ pub(crate) fn install(
                     Err(error) => Err(error),
                 }
             } else if record.typecode == GRID_DEFAULTS {
-                let Some(scale) = binding.neutral_scale() else {
-                    continue;
-                };
+                let scale = binding.model_scale();
                 match grid_defaults(scan.data, record.body(), record.range.start, scale) {
                     Ok(value) => {
                         grids.push(value);
@@ -706,9 +672,7 @@ pub(crate) fn install(
                     Err(error) => Err(error),
                 }
             } else if record.typecode == RENDER_SETTINGS {
-                let Some(scale) = binding.neutral_scale() else {
-                    continue;
-                };
+                let scale = binding.model_scale();
                 match render_settings(
                     ctx,
                     scan.data,

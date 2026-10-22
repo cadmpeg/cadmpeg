@@ -219,8 +219,7 @@ struct MeshChannels {
 /// The serialized topology caches after the mapping tag: manifold and
 /// oriented are 0 unset, 1 true, 2 false; solid is 0 unset, 1 outward, 2
 /// inward, 3 not solid.
-const MESH_TOPOLOGY_CACHE_FLAGS: [(&str, u8); 3] =
-    [("manifold", 2), ("oriented", 2), ("solid", 3)];
+const MESH_TOPOLOGY_CACHE_FLAGS: [(&str, u8); 3] = [("manifold", 2), ("oriented", 2), ("solid", 3)];
 
 /// Returns whether a UUID is `ON_Mesh`.
 pub(crate) fn supported_class(uuid: Uuid) -> bool {
@@ -1652,11 +1651,10 @@ mod tests {
 
     use super::{
         consume_optional_chunk, decode, parse_f32_points, parse_mesh_correspondence_userdata,
-        DecodedMesh,
         quad_face_count, read_buffer, read_faces, read_mapping_tag, read_ngons,
-        read_v4v5_ngon_userdata, synchronization_ok, triangulate_faces, MeshBudget, MeshBufferSpec,
-        MeshDecodeOptions, MeshExpand, MAX_BUFFER_OUTPUT, OPENNURBS4, V4V5_MESH_NGON_USERDATA,
-        V5_MESH_DOUBLE_VERTICES,
+        read_v4v5_ngon_userdata, synchronization_ok, triangulate_faces, DecodedMesh, MeshBudget,
+        MeshBufferSpec, MeshDecodeOptions, MeshExpand, MAX_BUFFER_OUTPUT, OPENNURBS4,
+        V4V5_MESH_NGON_USERDATA, V5_MESH_DOUBLE_VERTICES,
     };
     use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
     use crate::curves::GeometryError;

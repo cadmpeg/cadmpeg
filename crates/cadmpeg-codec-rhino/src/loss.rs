@@ -244,6 +244,9 @@ pub(crate) enum RhinoLossCode {
     /// Body kind came from the closed-shell gauge or from an unverified stored
     /// solid flag rather than from a flag the writer stamp vouches for.
     TopologyBodyKindGaugeSubstituted,
+    /// The document declares no physical length unit; model units stand in
+    /// for millimetres.
+    DocumentLengthUnitUndeclared,
 }
 
 impl RhinoLossCode {
@@ -293,6 +296,7 @@ impl RhinoLossCode {
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
         Self::TopologyBodyKindGaugeSubstituted,
+        Self::DocumentLengthUnitUndeclared,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -342,6 +346,7 @@ impl RhinoLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::TopologyBodyKindGaugeSubstituted => "topology.body-kind-gauge-substituted",
+            Self::DocumentLengthUnitUndeclared => "geometry.document-length-unit-undeclared",
         }
     }
 
@@ -350,7 +355,9 @@ impl RhinoLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::ObjectRecordCensus => Severity::Info,
-            Self::ObjectFramingUndecodable | Self::IntegrityFailure => Severity::Error,
+            Self::ObjectFramingUndecodable
+            | Self::IntegrityFailure
+            | Self::DocumentLengthUnitUndeclared => Severity::Error,
             _ => Severity::Warning,
         }
     }
@@ -404,7 +411,9 @@ impl RhinoLossCode {
             Self::SourceWriterStampUnverified | Self::SourceDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
-            Self::WriterSupportGeometryWithheld => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterSupportGeometryWithheld | Self::DocumentLengthUnitUndeclared => {
+                LossTaxonomy::GeometryNotTransferred
+            }
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
         }
@@ -504,6 +513,7 @@ mod tests {
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",
                 "topology.body-kind-gauge-substituted",
+                "geometry.document-length-unit-undeclared",
             ]
         );
     }
