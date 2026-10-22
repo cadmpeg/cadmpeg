@@ -96,7 +96,7 @@ fn snapshot_frame() -> (Vec<u8>, DesignParameterScope) {
     bytes[19] = 1;
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
     let mut cursor = 24;
-    for (value, field) in [(101u64, [1u8, 2, 3, 4, 5, 6]), (202, [6u8, 5, 4, 3, 2, 1])] {
+    for (value, field) in [(101u64, [0u8, 0, 3, 4, 5, 6]), (202, [0u8, 0, 4, 3, 2, 1])] {
         bytes[cursor] = 1;
         bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
         bytes[cursor + 9..cursor + 15].copy_from_slice(&field);
@@ -185,4 +185,49 @@ fn base_feature_snapshot_admits_two_bodies() {
         panic!("unexpected BaseFeature construction");
     };
     assert_eq!(bodies.len(), 2);
+}
+
+#[test]
+fn local_base_feature_entries_preserve_per_element_members() {
+    let mut bytes = Vec::new();
+    for (target, member) in [(2485u64, 0u32), (2493, 1), (2494, u32::MAX)] {
+        bytes.push(1);
+        bytes.extend_from_slice(&target.to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+        bytes.extend_from_slice(&member.to_le_bytes());
+    }
+    let mut cursor = 0;
+    for (target, member) in [(2485u64, 0u32), (2493, 1), (2494, u32::MAX)] {
+        let entry = super::read_base_feature_entry_at(&bytes, &mut cursor).unwrap();
+        assert_eq!(entry.value, target);
+        assert_eq!(&entry.field[2..], &member.to_le_bytes());
+    }
+    assert_eq!(cursor, bytes.len());
+    for (slot, value) in [(9, 1), (10, 1), (9, 2), (10, 2), (9, 36)] {
+        let mut widened = bytes.clone();
+        widened[slot] = value;
+        let mut cursor = 0;
+        assert!(super::read_base_feature_entry_at(&widened, &mut cursor).is_none());
+        assert_eq!(cursor, 0);
+    }
+}
+
+#[test]
+fn base_feature_fixed_body_runs_refuse_nonlocal_reference_flags() {
+    let (snapshot, snapshot_scope) = snapshot_frame();
+    let (result, result_scope) = result_body_frame();
+    for (bytes, scope, marker_offsets) in [
+        (snapshot, snapshot_scope, vec![24, 39]),
+        (result, result_scope, vec![24, 39, 54, 69, 84, 99]),
+    ] {
+        for marker in marker_offsets {
+            for (flag, value) in [(9, 1), (10, 1), (9, 36)] {
+                let mut widened = bytes.clone();
+                widened[marker + flag] = value;
+                assert!(exact_base_feature_construction(&widened, &scope)
+                    .unwrap()
+                    .is_none());
+            }
+        }
+    }
 }

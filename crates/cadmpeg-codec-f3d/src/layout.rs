@@ -5255,3 +5255,17 @@ pub(crate) mod body_reference_persistent_pair {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 12;
 }
+
+/// Byte offsets for the `base_feature_local_reference_field` record.
+///
+/// Spec §3.1. Record length 6 B.
+pub(crate) mod base_feature_local_reference_field {
+    /// Offset of `cross_document` (`u8`). Spec §3.1.
+    pub(crate) const CROSS_DOCUMENT: usize = 0;
+    /// Stated value of `cross_document` (`u8`). Spec §3.1.
+    pub(crate) const CROSS_DOCUMENT_VALUE: u8 = 0;
+    /// Offset of `different_segment` (`u8`). Spec §3.1.
+    pub(crate) const DIFFERENT_SEGMENT: usize = 1;
+    /// Stated value of `different_segment` (`u8`). Spec §3.1.
+    pub(crate) const DIFFERENT_SEGMENT_VALUE: u8 = 0;
+}

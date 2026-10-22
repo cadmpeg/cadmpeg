@@ -51,7 +51,7 @@ fn construction_wires() -> Vec<serde_json::Value> {
         }),
         json!({
             "body_entity_suffixes":[101,202], "body_entity_suffix_offsets":[22,37],
-            "body_entity_fields":["010203040506","060504030201"],
+            "body_entity_fields":["000003040506","000004030201"],
             "related_guids":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 "cccccccc-cccc-4ccc-8ccc-cccccccccccc"],
@@ -93,4 +93,31 @@ fn base_feature_construction_native_retained_limit_refuses_before_clone() {
         || super::BASE_FEATURE_CONSTRUCTION_CLONE_COUNT.with(|count| count.set(0)),
         || super::BASE_FEATURE_CONSTRUCTION_CLONE_COUNT.with(std::cell::Cell::get),
     );
+}
+
+#[test]
+fn base_feature_native_fixed_body_fields_refuse_nonlocal_flags() {
+    for wire in construction_wires() {
+        for name in ["body_entity_fields", "body_reference_fields"] {
+            let Some(fields) = wire.get(name).and_then(serde_json::Value::as_array) else {
+                continue;
+            };
+            if fields.is_empty() {
+                continue;
+            }
+            for encoding in ["010000000000", "000100000000", "240000000000"] {
+                let mut invalid = wire.clone();
+                invalid[name][0] = json!(encoding);
+                assert!(serde_json::from_value::<DesignBaseFeatureConstruction>(invalid).is_err());
+            }
+            let mut maximum_member = wire.clone();
+            maximum_member[name][0] = json!("0000ffffffff");
+            let admitted: DesignBaseFeatureConstruction =
+                serde_json::from_value(maximum_member).unwrap();
+            assert_eq!(
+                serde_json::to_value(admitted).unwrap()[name][0],
+                "0000ffffffff"
+            );
+        }
+    }
 }

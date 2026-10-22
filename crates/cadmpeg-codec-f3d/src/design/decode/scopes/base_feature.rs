@@ -2,10 +2,12 @@ use crate::design::decode::text::{fixed_guid_end, fixed_relaxed_guid_text, fixed
 use crate::layout::base_feature_class_377_prefix as class_377;
 use crate::layout::base_feature_class_452_262_compact as class_452_compact;
 use crate::layout::base_feature_class_452_262_expanded as class_452_expanded;
-use crate::records::feature::base_feature::DesignBaseFeatureBodyReferenceForm;
 use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
 use crate::records::feature::base_feature::DesignBaseFeatureEntry;
 use crate::records::feature::base_feature::DesignLegacyBaseFeatureBody;
+use crate::records::feature::base_feature::{
+    local_reference_field, DesignBaseFeatureBodyReferenceForm,
+};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
 use cadmpeg_core::decode::View;
@@ -154,13 +156,10 @@ fn exact_base_feature_legacy_compact(
         if body_entity_suffix == 0 {
             return None;
         }
-        let body_entity_field = bytes
-            .get(
-                start + class_452_compact::BODY_ENTITY_REFERENCE_FIELD
-                    ..start + class_452_compact::TAG_BODY_BASED_ON_FACES_MARKER,
-            )?
-            .try_into()
-            .ok()?;
+        let body_entity_field = local_reference_field(bytes.get(
+            start + class_452_compact::BODY_ENTITY_REFERENCE_FIELD
+                ..start + class_452_compact::TAG_BODY_BASED_ON_FACES_MARKER,
+        )?)?;
         exact_body_based_on_faces_property(
             bytes,
             start,
@@ -326,20 +325,14 @@ fn exact_base_feature_legacy_expanded(
             return None;
         }
         let body_entity_fields = [
-            bytes
-                .get(
-                    start + class_452_expanded::BODY_ENTITY_ONE_FIELD
-                        ..start + class_452_expanded::BODY_ENTITY_TWO_MARKER,
-                )?
-                .try_into()
-                .ok()?,
-            bytes
-                .get(
-                    start + class_452_expanded::BODY_ENTITY_TWO_FIELD
-                        ..start + class_452_expanded::TAG_BODY_BASED_ON_FACES_MARKER,
-                )?
-                .try_into()
-                .ok()?,
+            local_reference_field(bytes.get(
+                start + class_452_expanded::BODY_ENTITY_ONE_FIELD
+                    ..start + class_452_expanded::BODY_ENTITY_TWO_MARKER,
+            )?)?,
+            local_reference_field(bytes.get(
+                start + class_452_expanded::BODY_ENTITY_TWO_FIELD
+                    ..start + class_452_expanded::TAG_BODY_BASED_ON_FACES_MARKER,
+            )?)?,
         ];
         exact_body_based_on_faces_property(
             bytes,
@@ -693,13 +686,10 @@ fn read_base_feature_entry_at(
     let entry = DesignBaseFeatureEntry {
         value: View::u64_le_at(bytes, at.checked_add(result_body_entry::REFERENCE_VALUE)?)?,
         offset: u64::try_from(at.checked_add(result_body_entry::REFERENCE_VALUE)?).ok()?,
-        field: bytes
-            .get(
-                at.checked_add(result_body_entry::REFERENCE_FIELD)?
-                    ..at.checked_add(result_body_entry::LEN)?,
-            )?
-            .try_into()
-            .ok()?,
+        field: local_reference_field(bytes.get(
+            at.checked_add(result_body_entry::REFERENCE_FIELD)?
+                ..at.checked_add(result_body_entry::LEN)?,
+        )?)?,
     };
     *cursor = at.checked_add(result_body_entry::LEN)?;
     Some(entry)
@@ -1104,13 +1094,9 @@ fn exact_base_feature_body_snapshot(
                 crate::records::feature::base_feature::DesignBaseFeatureEntry {
                     value: View::u64_le_at(bytes, cursor + snapshot_entry::BODY_ENTITY_SUFFIX)?,
                     offset: u64::try_from(cursor + snapshot_entry::BODY_ENTITY_SUFFIX).ok()?,
-                    field: bytes
-                        .get(
-                            cursor + snapshot_entry::BODY_ENTITY_FIELD
-                                ..cursor + snapshot_entry::LEN,
-                        )?
-                        .try_into()
-                        .ok()?,
+                    field: local_reference_field(bytes.get(
+                        cursor + snapshot_entry::BODY_ENTITY_FIELD..cursor + snapshot_entry::LEN,
+                    )?)?,
                 },
             );
             cursor += snapshot_entry::LEN;

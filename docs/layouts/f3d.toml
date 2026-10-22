@@ -17626,3 +17626,33 @@ offset = 8
 type = "u32"
 source = "spec"
 anchor = "ordered `(u64 persistent Design reference, u32 form)` pairs"
+
+[[record]]
+name = "base_feature_local_reference_field"
+kind = "byte"
+section = "3.1"
+anchor = "the six-byte trailing field is `cross_document:u8 0`, `different_segment:u8 0`, and `member:u32`"
+size = 6
+
+[[record.field]]
+name = "cross_document"
+offset = 0
+type = "u8"
+value = 0
+source = "spec"
+anchor = "cross_document:u8 0"
+
+[[record.field]]
+name = "different_segment"
+offset = 1
+type = "u8"
+value = 0
+source = "spec"
+anchor = "different_segment:u8 0"
+
+[[record.field]]
+name = "member"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "member:u32"

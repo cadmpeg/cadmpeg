@@ -5238,6 +5238,16 @@ Spec §3.1 · layout: byte offsets · size: 12 B
 | 0 | 8 | `reference` | `u64` | little | spec | ordered `(u64 persistent Design reference, u32 form)` pairs |
 | 8 | 4 | `form` | `u32` | little | spec | ordered `(u64 persistent Design reference, u32 form)` pairs |
 
+## `base_feature_local_reference_field`
+
+Spec §3.1 · layout: byte offsets · size: 6 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `cross_document` | `u8` | little | spec | cross_document:u8 0 · value `0` |
+| 1 | 1 | `different_segment` | `u8` | little | spec | different_segment:u8 0 · value `0` |
+| 2 | 4 | `member` | `u32` | little | spec | member:u32 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
