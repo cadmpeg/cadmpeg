@@ -5900,6 +5900,7 @@ fn validate_edge_identity_operands<'a>(
         &native.design_parameter_scopes,
         history::BindingHistories::Shared(&native.asm_histories),
         &scope_histories,
+        &HashSet::new(),
     );
     history::selection::bind_edge_identity_bounded_face_rules(
         &mut expected_edge_identity_operands,

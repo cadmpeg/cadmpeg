@@ -5374,3 +5374,31 @@ pub(crate) mod sheet_metal_region_carrier_scalar_lane {
     /// Offset of `repeated_discriminator` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REPEATED_DISCRIMINATOR: usize = 12;
 }
+
+/// Byte offsets for the `compact_owner_body_wrapper` record.
+///
+/// Spec §3.1. Record length 33 B.
+pub(crate) mod compact_owner_body_wrapper {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 33;
+    /// Offset of `zero_prefix` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_MARKER: usize = 21;
+    /// Offset of `carrier_record_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const CARRIER_RECORD_INDEX: usize = 22;
+    /// Offset of `zero_suffix` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_SUFFIX: usize = 30;
+}
+
+/// Byte offsets for the `compact_owner_body_carrier` record.
+///
+/// Spec §3.1. Record length 29 B.
+pub(crate) mod compact_owner_body_carrier {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `zero_prefix` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `body_suffix` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const BODY_SUFFIX: usize = 21;
+}

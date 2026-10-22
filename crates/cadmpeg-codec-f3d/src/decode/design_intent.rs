@@ -635,11 +635,29 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.configurations,
         &model.parameters,
     );
-    let scope_histories = crate::history::bind_scope_histories(
+    let mut scope_histories = crate::history::bind_scope_histories(
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
         &design.asm_histories,
+    );
+    let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
+        scan,
+        &design.design_construction_operand_groups,
+        &design.design_construction_operand_identities,
+        &prereqs.design_body_bindings,
+    )?;
+    let _lineage_scopes = crate::history::compact_lineage::bind(
+        crate::history::compact_lineage::Inputs {
+            scopes: &design.design_parameter_scopes,
+            groups: &design.design_construction_operand_groups,
+            identities: &design.design_construction_operand_identities,
+            operands: &design.design_edge_identity_operands,
+            recipes: &design.design_body_recipe_operands,
+            owners: &owner_sources,
+            histories: &design.asm_histories,
+        },
+        &mut scope_histories,
     );
     model.feature_input_topologies = crate::history::project_feature_input_topologies(
         &model.features,
@@ -1314,11 +1332,29 @@ fn extend_related_design_records(
         &prereqs.design_body_bindings,
         &design.asm_histories,
     );
-    let scope_histories = crate::history::bind_scope_histories(
+    let mut scope_histories = crate::history::bind_scope_histories(
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
         &design.asm_histories,
+    );
+    let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
+        scan,
+        &design.design_construction_operand_groups,
+        &design.design_construction_operand_identities,
+        &prereqs.design_body_bindings,
+    )?;
+    let lineage_scopes = crate::history::compact_lineage::bind(
+        crate::history::compact_lineage::Inputs {
+            scopes: &design.design_parameter_scopes,
+            groups: &design.design_construction_operand_groups,
+            identities: &design.design_construction_operand_identities,
+            operands: &design.design_edge_identity_operands,
+            recipes: &design.design_body_recipe_operands,
+            owners: &owner_sources,
+            histories: &design.asm_histories,
+        },
+        &mut scope_histories,
     );
     crate::history::selection::bind_circular_pattern_axes(
         &mut design.design_parameter_scopes,
@@ -1331,6 +1367,7 @@ fn extend_related_design_records(
         &design.design_parameter_scopes,
         crate::history::BindingHistories::Release(&mut design.asm_histories),
         &scope_histories,
+        &lineage_scopes,
     );
     design.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
         ctx,

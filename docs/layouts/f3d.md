@@ -5538,6 +5538,28 @@ Spec §3.1 · layout: byte offsets · size: 16 B
 | 4 | 8 | `scalar` | `f64` | little | spec | a finite f64 scalar |
 | 12 | 4 | `repeated_discriminator` | `u32` | little | spec | an equal repeated u32 discriminator |
 
+## `compact_owner_body_wrapper`
+
+Spec §3.1 · layout: byte offsets · size: 33 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | The compact owner-body wrapper has EntityTracking type GUID |
+| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | The compact owner-body wrapper has EntityTracking type GUID |
+| 21 | 1 | `reference_marker` | `u8` | little | spec | The compact owner-body wrapper has EntityTracking type GUID |
+| 22 | 8 | `carrier_record_index` | `u64` | little | spec | The compact owner-body wrapper has EntityTracking type GUID |
+| 30 | 3 | `zero_suffix` | `bytes[3]` | little | spec | The compact owner-body wrapper has EntityTracking type GUID |
+
+## `compact_owner_body_carrier`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | The adjacent carrier has EntityTracking type GUID |
+| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | The adjacent carrier has EntityTracking type GUID |
+| 21 | 8 | `body_suffix` | `u64` | little | spec | The adjacent carrier has EntityTracking type GUID |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

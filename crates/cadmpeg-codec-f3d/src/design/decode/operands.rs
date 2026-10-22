@@ -3017,6 +3017,7 @@ fn take_record_reference(bytes: &[u8], at: &mut usize) -> Option<(u32, u64)> {
     Some((u32::try_from(target).ok()?, u64::try_from(target_at).ok()?))
 }
 
+pub(crate) mod compact_owner;
 mod tracking_registration;
 
 /// Decode the persistent identity frame named by each construction-operand group.

@@ -337,11 +337,41 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         std::slice::from_ref(&scope),
         crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
+        &HashSet::new(),
     );
 
     assert_eq!(operands[0].transition_edge_candidates, [17, 19]);
     assert_eq!(operands[1].transition_edge_candidates, [17, 19]);
     assert!(operands[2].transition_edge_candidates.is_empty());
+
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(8, AsmHistoricalTopology::default(), Some(7)),
+            state(
+                7,
+                AsmHistoricalTopology {
+                    edges: vec![17],
+                    ..AsmHistoricalTopology::default()
+                },
+                None,
+            ),
+        ],
+    );
+    let mut lineage_operand = operands[2].clone();
+    bind_edge_identity_history(
+        std::slice::from_mut(&mut lineage_operand),
+        &[],
+        std::slice::from_ref(&scope),
+        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        &HashMap::from([(scope.id.clone(), history.id.clone())]),
+        &HashSet::from([scope.id.clone()]),
+    );
+    assert!(lineage_operand.transition_edge_candidates.is_empty());
+    assert!(lineage_operand.resolved_edge_slot.is_none());
 }
 
 #[test]

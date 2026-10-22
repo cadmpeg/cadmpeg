@@ -1940,6 +1940,7 @@ pub(crate) fn bind_edge_identity_history(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: super::BindingHistories<'_>,
     scope_histories: &HashMap<String, String>,
+    lineage_scopes: &HashSet<String>,
 ) {
     struct EdgeTreatmentTransitionCandidates {
         radii: Vec<crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate>,
@@ -2143,7 +2144,12 @@ pub(crate) fn bind_edge_identity_history(
                             // The geometric chain is transition-scoped. The deleted-
                             // set fallback is group-scoped because its proof depends
                             // on this operand group's compact member count.
-                            if treatment_edges.is_empty() {
+                            if lineage_scopes.contains(&scope.id) {
+                                if treatment_edges.len() != 1 {
+                                    treatment_edges.clear();
+                                    operand.treatment_radius_candidates.clear();
+                                }
+                            } else if treatment_edges.is_empty() {
                                 let is_edge_treatment = matches!(
                                     crate::design::design_feature_family(&scope.kind()),
                                     Some(

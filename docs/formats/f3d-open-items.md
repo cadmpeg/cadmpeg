@@ -114,21 +114,6 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Need.** Controlled saves must vary side and result choice independently while holding the sketch, regions, thickness, and rule fixed. Complete carrier, settings, and profile programs must be compared, with exact result topology confirming each intended change. Until the selected region, thickness, material side, and result choice are independently resolved, retain the operation as native sheet-metal Base Face data.
 
-### DR-69. Single-member edge-treatment identity
-
-**Question.** Which serialized operand identity binds the sole edge member of a
-`Fillet` or `Chamfer` scope when its recipe and persistent-selection fields do
-not resolve the edge?
-
-**Known.** The complete ASM history transition identifies every predecessor
-edge deleted by the operation. Deletion is operation-level topology evidence;
-it is not by itself an operand-to-edge identity relation. The decoder retains
-an unresolved sole operand as native even when the complete transition deletes
-one predecessor edge.
-
-**Need.** We must decode the operand binding before assigning a deleted
-predecessor edge as the selected treatment edge.
-
 ### DR-74. Lost-edge runs shorter than the operand list
 
 **Question.** Which operands of a counted edge group do the records of a
