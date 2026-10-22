@@ -186,16 +186,16 @@ fn decoded(
         ir.scope = cadmpeg_ir::ContentScope::container();
     } else {
         document_projection::project(ctx, &mut ir, &mut body.losses)?;
-    }
-    ir.scope.model = body.transfer.geometry_transferred
-        || ir
+        ir.scope.model = body.transfer.geometry_transferred
+            || ir
+                .model
+                .populated_arena(cadmpeg_ir::ArenaClass::Model)
+                .is_some();
+        ir.scope.design |= ir
             .model
-            .populated_arena(cadmpeg_ir::ArenaClass::Model)
+            .populated_arena(cadmpeg_ir::ArenaClass::Design)
             .is_some();
-    ir.scope.design |= ir
-        .model
-        .populated_arena(cadmpeg_ir::ArenaClass::Design)
-        .is_some();
+    }
     body.transfer.scope = ir.scope;
     ctx.admit_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),

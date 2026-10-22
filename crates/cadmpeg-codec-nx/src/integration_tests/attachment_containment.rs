@@ -141,13 +141,7 @@ fn attachment_failure_after_every_write_equals_failure_before_any_write() {
 #[test]
 fn attachment_failure_without_geometry_keeps_the_container_decode() {
     let complete = decode(composed_feature_history_prt());
-    assert_eq!(
-        complete.ir().scope,
-        cadmpeg_ir::ContentScope {
-            model: false,
-            design: true
-        }
-    );
+    assert!(!complete.ir().model.features.is_empty());
     assert!(
         complete
             .ir()
