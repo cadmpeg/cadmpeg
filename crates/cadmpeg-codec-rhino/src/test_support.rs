@@ -80,3 +80,28 @@ pub(crate) fn plan_at(
         TargetRequest::Explicit(version.descriptor().id.as_str()),
     )
 }
+
+/// The record ids an omission loss lists after its count (#217 §5.6).
+///
+/// Asserts that the count equals the number of listed ids and that the ids
+/// are sorted.
+pub(crate) fn omitted_record_ids(message: &str) -> Vec<&str> {
+    let mut offset = 0;
+    let (count, count_end) = message
+        .split(' ')
+        .find_map(|word| {
+            let start = offset;
+            offset += word.len() + 1;
+            word.parse::<usize>()
+                .ok()
+                .map(|count| (count, start + word.len()))
+        })
+        .unwrap_or_else(|| panic!("omission loss states no count: {message}"));
+    let (_, list) = message[count_end..]
+        .split_once(": ")
+        .unwrap_or_else(|| panic!("omission loss lists no ids after its count: {message}"));
+    let ids: Vec<&str> = list.split(", ").collect();
+    assert_eq!(ids.len(), count, "{message}");
+    assert!(ids.windows(2).all(|pair| pair[0] < pair[1]), "{message}");
+    ids
+}
