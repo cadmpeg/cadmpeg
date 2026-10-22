@@ -37,8 +37,8 @@ use cadmpeg_ir::sketches::SketchTextVerticalAlignment as Vertical;
 const EPS_POINT_PROJECTION: f64 = 1.0e-6;
 
 #[test]
-fn original_text_styles_project_only_representable_states() {
-    for case in crate::test_support::sketch_text::original_text_records() {
+fn fixture_text_styles_project_only_representable_states() {
+    for case in crate::test_support::sketch_text::text_fixture_records() {
         let text = case.decode();
         let placement = DesignSketchPlacement {
             frame: crate::records::sketch_placement::DesignSketchFrame::new(

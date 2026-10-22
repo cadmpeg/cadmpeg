@@ -10,28 +10,28 @@ fn source_kinds<'a>(kinds: &'a [(u32, &'a str)]) -> impl Fn(u32, &str) -> bool +
 }
 
 #[test]
-fn authored_hem_direction_controls_keep_flip_separate_from_compatibility_lanes() {
-    let controls: [(&[u8], &[u32], bool); 2] = [
+fn hem_direction_fixtures_keep_flip_separate_from_compatibility_lanes() {
+    let controls: [(Vec<u8>, &[u32], bool); 2] = [
         (
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/test_support/hem/flat.bin"
-            )),
+            crate::test_support::verification::bytes(
+                "hem/flat.bin",
+                include_bytes!("../../../../test_support/hem/flat.bin"),
+            ),
             &[703, 706, 708, 710, 713, 717, 720, 724],
             false,
         ),
         (
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/test_support/hem/flipped.bin"
-            )),
+            crate::test_support::verification::bytes(
+                "hem/flipped.bin",
+                include_bytes!("../../../../test_support/hem/flipped.bin"),
+            ),
             &[703, 706, 708, 717, 720, 724, 754, 757],
             true,
         ),
     ];
     for (bytes, references, expected_flip) in controls {
         let operation = super::exact_hem_operation(
-            bytes,
+            &bytes,
             0,
             bytes.len(),
             &references.iter().copied(),

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
-fn original_attributed_frames_retain_reference_namespaces_and_independent_ordinals() {
+fn fixture_attributed_frames_retain_reference_namespaces_and_independent_ordinals() {
     #[derive(serde::Deserialize)]
     struct Case {
         label: String,
@@ -16,8 +16,9 @@ fn original_attributed_frames_retain_reference_namespaces_and_independent_ordina
         owner: u64,
         matrix: Option<[f64; 16]>,
     }
-    let cases: Vec<Case> = serde_json::from_str(include_str!(
-        "../../../../test_support/xref/attributed_records.json"
+    let cases: Vec<Case> = serde_json::from_str(&crate::test_support::verification::text(
+        "xref/attributed_records.json",
+        include_str!("../../../../test_support/xref/attributed_records.json"),
     ))
     .unwrap();
     for case in cases {

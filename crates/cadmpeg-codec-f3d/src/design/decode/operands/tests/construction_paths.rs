@@ -18,28 +18,28 @@ fn source_trailing_transforms_preserve_nonconsecutive_following_records() {
     use cadmpeg_ir::native::bytes::NativeBytes;
 
     for fixture in [
-        include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/test_support/construction_transforms/translation.json"
-        )),
-        include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/test_support/construction_transforms/rotation.json"
-        )),
-        include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/test_support/construction_transforms/identity.json"
-        )),
-        include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/test_support/construction_transforms/offset-three.json"
-        )),
-        include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/test_support/construction_transforms/offset-four.json"
-        )),
+        crate::test_support::verification::text(
+            "construction_transforms/translation.json",
+            include_str!("../../../../test_support/construction_transforms/translation.json"),
+        ),
+        crate::test_support::verification::text(
+            "construction_transforms/rotation.json",
+            include_str!("../../../../test_support/construction_transforms/rotation.json"),
+        ),
+        crate::test_support::verification::text(
+            "construction_transforms/identity.json",
+            include_str!("../../../../test_support/construction_transforms/identity.json"),
+        ),
+        crate::test_support::verification::text(
+            "construction_transforms/offset-three.json",
+            include_str!("../../../../test_support/construction_transforms/offset-three.json"),
+        ),
+        crate::test_support::verification::text(
+            "construction_transforms/offset-four.json",
+            include_str!("../../../../test_support/construction_transforms/offset-four.json"),
+        ),
     ] {
-        let fixture: serde_json::Value = serde_json::from_str(fixture).unwrap();
+        let fixture: serde_json::Value = serde_json::from_str(&fixture).unwrap();
         let raw: NativeBytes<Vec<u8>> =
             serde_json::from_value(fixture["source_bytes"].clone()).unwrap();
         let expected: DesignConstructionOperandTransform =

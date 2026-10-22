@@ -3,8 +3,8 @@ use super::{DesignPlacementConstruction, PlacementReference};
 
 #[test]
 fn native_placement_frames_retain_source_references_and_reject_inconsistent_locations() {
-    for frame in crate::test_support::placement_construction::FRAMES {
-        let fixture: serde_json::Value = serde_json::from_str(frame).unwrap();
+    for frame in crate::test_support::placement_construction::frames() {
+        let fixture: serde_json::Value = serde_json::from_str(&frame).unwrap();
         let native = fixture["native"].clone();
         let record: DesignPlacementConstruction = serde_json::from_value(native.clone()).unwrap();
         assert_eq!(serde_json::to_value(&record).unwrap(), native);

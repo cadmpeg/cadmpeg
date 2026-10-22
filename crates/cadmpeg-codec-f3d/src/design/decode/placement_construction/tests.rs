@@ -6,8 +6,8 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 #[test]
 fn placement_source_frames_preserve_versioned_members_and_absolute_offsets() {
     crate::test_support::with_decode_context(|ctx| {
-        for fixture in crate::test_support::placement_construction::FRAMES {
-            let fixture: serde_json::Value = serde_json::from_str(fixture).unwrap();
+        for fixture in crate::test_support::placement_construction::frames() {
+            let fixture: serde_json::Value = serde_json::from_str(&fixture).unwrap();
             let raw: NativeBytes<Vec<u8>> =
                 serde_json::from_value(fixture["source_bytes"].clone()).unwrap();
             let expected: DesignPlacementConstruction =
@@ -36,8 +36,8 @@ fn placement_source_frames_preserve_versioned_members_and_absolute_offsets() {
 
 #[test]
 fn placement_registration_requires_semantic_identity_matching_headers_and_a_paired_bound() {
-    use crate::test_support::placement_construction::{metadata, FRAMES};
-    let fixture: serde_json::Value = serde_json::from_str(FRAMES[0]).unwrap();
+    use crate::test_support::placement_construction::{frames, metadata};
+    let fixture: serde_json::Value = serde_json::from_str(&frames()[0]).unwrap();
     let raw: NativeBytes<Vec<u8>> =
         serde_json::from_value(fixture["source_bytes"].clone()).unwrap();
     let expected: DesignPlacementConstruction =
@@ -105,7 +105,7 @@ fn placement_registration_requires_semantic_identity_matching_headers_and_a_pair
 #[test]
 fn placement_reader_refuses_invalid_identity_and_unbounded_reference_counts() {
     let fixture: serde_json::Value =
-        serde_json::from_str(crate::test_support::placement_construction::FRAMES[0]).unwrap();
+        serde_json::from_str(&crate::test_support::placement_construction::frames()[0]).unwrap();
     let raw: NativeBytes<Vec<u8>> =
         serde_json::from_value(fixture["source_bytes"].clone()).unwrap();
     let expected: DesignPlacementConstruction =

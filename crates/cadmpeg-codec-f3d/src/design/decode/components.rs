@@ -743,9 +743,12 @@ mod tests {
     }
 
     #[test]
-    fn original_attributed_occurrence_retains_all_three_typed_properties() {
-        let bytes = include_bytes!("../../test_support/xref/attributed-occurrence.bin");
-        let occurrence = attributed_component_occurrence(bytes, 0, "f3d:Design/BulkStream.dat")
+    fn fixture_attributed_occurrence_retains_all_three_typed_properties() {
+        let bytes = crate::test_support::verification::bytes(
+            "xref/attributed-occurrence.bin",
+            include_bytes!("../../test_support/xref/attributed-occurrence.bin"),
+        );
+        let occurrence = attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat")
             .expect("original attributed occurrence");
         let wire = serde_json::to_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["key_segment_index"], 10);
@@ -763,9 +766,12 @@ mod tests {
     }
 
     #[test]
-    fn original_named_root_instance_uses_the_root_component_reader() {
-        let bytes = include_bytes!("../../test_support/xref/root-instance.bin");
-        assert_eq!(root_instance_component(bytes, 0, bytes.len()), Some(3));
-        assert!(attributed_component_occurrence(bytes, 0, "f3d:Design/BulkStream.dat").is_none());
+    fn fixture_named_root_instance_uses_the_root_component_reader() {
+        let bytes = crate::test_support::verification::bytes(
+            "xref/root-instance.bin",
+            include_bytes!("../../test_support/xref/root-instance.bin"),
+        );
+        assert_eq!(root_instance_component(&bytes, 0, bytes.len()), Some(3));
+        assert!(attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat").is_none());
     }
 }

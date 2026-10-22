@@ -2,7 +2,7 @@
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 #[derive(serde::Deserialize)]
-pub(crate) struct OriginalTextRecord {
+pub(crate) struct TextRecordCase {
     pub(crate) label: String,
     pub(crate) class_tag: String,
     pub(crate) class_version: u32,
@@ -15,7 +15,7 @@ pub(crate) struct OriginalTextRecord {
     pub(crate) neutral_state: bool,
 }
 
-impl OriginalTextRecord {
+impl TextRecordCase {
     pub(crate) fn decode(&self) -> crate::records::sketch_geometry::SketchText {
         crate::design::decode::sketch::decode_sketch_text_record(
             self.source_hex.as_ref(),
@@ -30,8 +30,12 @@ impl OriginalTextRecord {
     }
 }
 
-pub(crate) fn original_text_records() -> Vec<OriginalTextRecord> {
-    serde_json::from_str(include_str!("sketch_text/original_records.json")).unwrap()
+pub(crate) fn text_fixture_records() -> Vec<TextRecordCase> {
+    serde_json::from_str(&crate::test_support::verification::text(
+        "sketch_text/original_records.json",
+        include_str!("sketch_text/original_records.json"),
+    ))
+    .unwrap()
 }
 
 pub(crate) fn neutral_text_record() -> crate::records::sketch_geometry::SketchText {

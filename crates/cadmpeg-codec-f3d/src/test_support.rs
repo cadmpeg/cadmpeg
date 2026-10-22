@@ -23,6 +23,7 @@ use crate::F3dCodec;
 
 pub(crate) mod sketch_relations;
 pub(crate) mod sketch_text;
+pub(crate) mod verification;
 
 pub(crate) fn with_decode_context<T>(
     f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,

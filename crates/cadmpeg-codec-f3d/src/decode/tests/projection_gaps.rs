@@ -26,9 +26,9 @@ fn design_projection_gaps(
 }
 
 #[test]
-fn original_text_style_gaps_have_a_distinct_loss_count() {
+fn fixture_text_style_gaps_have_a_distinct_loss_count() {
     let ir = cadmpeg_ir::document::CadIr::empty();
-    for case in crate::test_support::sketch_text::original_text_records() {
+    for case in crate::test_support::sketch_text::text_fixture_records() {
         let mut native = F3dNative::default();
         native.sketch_texts.push(case.decode());
         let gaps = design_projection_gaps(&ir, &native);
@@ -1032,9 +1032,9 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
 }
 
 #[test]
-fn original_pattern_states_have_a_distinct_native_retention_loss_count() {
+fn fixture_pattern_states_have_a_distinct_native_retention_loss_count() {
     let ir = cadmpeg_ir::document::CadIr::empty();
-    for case in crate::test_support::sketch_relations::original_relation_records() {
+    for case in crate::test_support::sketch_relations::relation_fixture_records() {
         let Some(neutral_state) = case.pattern_neutral_state else {
             continue;
         };

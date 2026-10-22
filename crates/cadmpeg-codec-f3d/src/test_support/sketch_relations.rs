@@ -2,7 +2,7 @@
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 #[derive(serde::Deserialize)]
-pub(crate) struct OriginalRelationRecord {
+pub(crate) struct RelationRecordCase {
     pub(crate) label: String,
     pub(crate) type_guid: String,
     pub(crate) class_version: u32,
@@ -13,7 +13,7 @@ pub(crate) struct OriginalRelationRecord {
     pub(crate) pattern_neutral_state: Option<bool>,
 }
 
-impl OriginalRelationRecord {
+impl RelationRecordCase {
     pub(crate) fn decode(&self) -> crate::records::sketch_relations::SketchRelation {
         let record = crate::records::decal::DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:design-record-header#0".into(),
@@ -36,8 +36,12 @@ impl OriginalRelationRecord {
     }
 }
 
-pub(crate) fn original_relation_records() -> Vec<OriginalRelationRecord> {
-    serde_json::from_str(include_str!("sketch_relations/original_records.json")).unwrap()
+pub(crate) fn relation_fixture_records() -> Vec<RelationRecordCase> {
+    serde_json::from_str(&crate::test_support::verification::text(
+        "sketch_relations/original_records.json",
+        include_str!("sketch_relations/original_records.json"),
+    ))
+    .unwrap()
 }
 
 pub(crate) fn rectangular_pattern_record(

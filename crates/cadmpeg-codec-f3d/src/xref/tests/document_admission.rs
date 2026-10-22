@@ -36,7 +36,7 @@ fn single_type_metadata(
 }
 
 #[test]
-fn original_placement_frames_require_registered_component_types() {
+fn fixture_placement_frames_require_registered_component_types() {
     #[derive(serde::Deserialize)]
     struct Case {
         label: String,
@@ -49,8 +49,9 @@ fn original_placement_frames_require_registered_component_types() {
         role: Option<String>,
         matrix: Option<[f64; 16]>,
     }
-    let cases: Vec<Case> = serde_json::from_str(include_str!(
-        "../../test_support/xref/original_records.json"
+    let cases: Vec<Case> = serde_json::from_str(&crate::test_support::verification::text(
+        "xref/original_records.json",
+        include_str!("../../test_support/xref/original_records.json"),
     ))
     .unwrap();
     for case in cases {

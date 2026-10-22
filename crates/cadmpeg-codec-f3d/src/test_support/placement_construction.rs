@@ -1,11 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
-pub(crate) const FRAMES: [&str; 5] = [
+const FRAMES: [&str; 5] = [
     include_str!("placement_construction/extra-scalar-v14.json"),
     include_str!("placement_construction/unmarked-v4.json"),
     include_str!("placement_construction/explicit-v4.json"),
     include_str!("placement_construction/identity-v6.json"),
     include_str!("placement_construction/unmarked-alignment-v4.json"),
 ];
+
+pub(crate) fn frames() -> [String; 5] {
+    let names = [
+        "extra-scalar-v14",
+        "unmarked-v4",
+        "explicit-v4",
+        "identity-v6",
+        "unmarked-alignment-v4",
+    ];
+    std::array::from_fn(|index| {
+        crate::test_support::verification::text(
+            &format!("placement_construction/{}.json", names[index]),
+            FRAMES[index],
+        )
+    })
+}
 
 pub(crate) fn metadata(
     frame: crate::metastream::PrimaryRecordFrame,

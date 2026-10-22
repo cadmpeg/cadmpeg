@@ -703,9 +703,12 @@ fn text_path_glyph_constructor_rejects_non_finite_source_coefficients() {
 }
 
 #[test]
-fn original_relation_frames_retain_source_bytes_and_rectangular_flags() {
-    let cases = crate::test_support::sketch_relations::original_relation_records();
-    assert_eq!(cases.len(), 300);
+fn fixture_relation_frames_retain_source_bytes_and_rectangular_flags() {
+    let cases = crate::test_support::sketch_relations::relation_fixture_records();
+    assert_eq!(
+        cases.len(),
+        crate::test_support::verification::case_count(8, 300)
+    );
     for case in cases {
         let relation = case.decode();
         assert_eq!(

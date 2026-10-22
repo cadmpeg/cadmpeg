@@ -14,9 +14,12 @@ use crate::design::decode::sketch::decode_sketch_texts_from_stream;
 use crate::design::decode::sketch::decode_sketch_curve_identities_from_stream;
 
 #[test]
-fn original_text_records_preserve_styles_and_refuse_unrepresented_orientation() {
-    let cases = crate::test_support::sketch_text::original_text_records();
-    assert_eq!(cases.len(), 65);
+fn text_fixture_records_preserve_styles_and_refuse_unrepresented_orientation() {
+    let cases = crate::test_support::sketch_text::text_fixture_records();
+    assert_eq!(
+        cases.len(),
+        crate::test_support::verification::case_count(6, 65)
+    );
     for case in cases {
         let text = case.decode();
         assert_eq!(text.text, case.text, "{}", case.label);
@@ -43,21 +46,22 @@ fn original_text_records_preserve_styles_and_refuse_unrepresented_orientation() 
 
 #[test]
 fn txt_tag_font_weight_is_retained_without_a_neutral_weight_assignment() {
-    let case = crate::test_support::sketch_text::original_text_records()
-        .into_iter()
-        .find(|case| case.label == "synthetic text record")
-        .unwrap();
-    let mut bytes = case.source_hex.as_ref().to_vec();
-    assert_eq!(bytes.len(), 429);
-    assert_eq!(bytes[376..380], 400i32.to_le_bytes());
+    let mut bytes = txt_tag_sketch_text_record(&[("txt_tag", 115)], &[261], &[261], (0.0, 0.0));
+    let weight_offsets: Vec<_> = bytes
+        .windows(4)
+        .enumerate()
+        .filter_map(|(offset, value)| (value == 400i32.to_le_bytes()).then_some(offset))
+        .collect();
+    assert_eq!(weight_offsets.len(), 1);
+    let weight_offset = weight_offsets[0];
     for weight in [i32::MIN, -1, 0, 700, 701, 900, i32::MAX] {
-        bytes[376..380].copy_from_slice(&weight.to_le_bytes());
+        bytes[weight_offset..weight_offset + 4].copy_from_slice(&weight.to_le_bytes());
         let text = super::super::decode_sketch_text_record(
             &bytes,
             "Design/BulkStream.dat",
-            case.class_tag.clone().try_into().unwrap(),
-            case.class_version,
-            case.record_index,
+            "329".to_owned().try_into().unwrap(),
+            4,
+            304,
             0,
         )
         .unwrap()
