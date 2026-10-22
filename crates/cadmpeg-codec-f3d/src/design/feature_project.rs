@@ -105,6 +105,8 @@ pub(crate) struct ProjectInputs<'a> {
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
     pub(crate) face_boundaries:
         &'a [crate::records::topology::historical_context::AsmFaceBoundary],
+    pub(crate) sheet_metal_settings:
+        &'a [crate::records::sheet_metal_settings::DesignSheetMetalSettings],
 }
 
 /// Authored construction ordinal of every parameter scope represented by a
@@ -577,6 +579,9 @@ pub(crate) struct ProjectedParameterDesign {
     /// Owner scopes whose parameter ordering exceeded [`PARAMETER_ORDER_WORK`].
     /// Each keeps its source ordinals and loses its same-scope dependency edges.
     pub(crate) unordered_parameter_scopes: usize,
+    /// `BaseFlange` scopes projected with their stored thickness copy because
+    /// their sheet-metal rule states no thickness.
+    pub(crate) unruled_flange_thicknesses: usize,
 }
 
 /// Project Design parameters and feature scopes, including fixed edge identities.
@@ -608,8 +613,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         body_bindings,
         component_naming_spaces,
         histories,
+        sheet_metal_settings,
         ..
     } = inputs;
+    let unruled_flange_thicknesses = std::cell::Cell::new(0_usize);
 
     let source_ordinals = authored_scope_ordinals(scopes, timelines)?;
 
@@ -1132,12 +1139,25 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::BaseFlange
                     {
-                        project_base_flange(scope, construction_groups, placements).unwrap_or_else(
+                        project_base_flange(
+                            scope,
+                            construction_groups,
+                            placements,
+                            sheet_metal_settings,
+                        )
+                        .map_or_else(
                             || {
                                 FeatureDefinition::Operation(FeatureOperation::Native {
                                     kind: scope.kind_name().into(),
                                     parameters: BTreeMap::new(),
                                 })
+                            },
+                            |(definition, ruled)| {
+                                if !ruled {
+                                    unruled_flange_thicknesses
+                                        .set(unruled_flange_thicknesses.get() + 1);
+                                }
+                                definition
                             },
                         )
                     } else if scope.kind()
@@ -1678,6 +1698,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         features,
         parameters,
         unordered_parameter_scopes,
+        unruled_flange_thicknesses: unruled_flange_thicknesses.get(),
     })
 }
 
@@ -3618,11 +3639,14 @@ pub(super) fn project_remove_body(
     }))
 }
 
+/// The neutral base flange and whether its thickness is its sheet-metal
+/// rule's; without a rule thickness the scope's stored copy is used.
 fn project_base_flange(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     placements: &[DesignSketchPlacement],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings],
+) -> Option<(cadmpeg_ir::features::FeatureDefinition, bool)> {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, PlanarProfileRef, SheetMetalThicknessSide,
     };
@@ -3657,12 +3681,21 @@ fn project_base_flange(
         native_stream(&placement.id) == native_stream(&scope.id)
             && placement.entity_id == profile.entity_id
     })?;
-    Some(FeatureDefinition::Operation(
-        FeatureOperation::SheetMetalBaseFlange {
+    let rule_thickness = settings
+        .iter()
+        .find(|settings| {
+            native_stream(settings.id()) == native_stream(&scope.id)
+                && settings.record_index == u64::from(operation.settings_record_index)
+        })
+        .and_then(|settings| settings.rule_thickness);
+    let thickness = rule_thickness.unwrap_or(operation.thickness);
+    Some((
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: PlanarProfileRef::Sketch(crate::ids::neutral_sketch_id(placement)),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(operation.thickness.get() * 10.0)?,
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(thickness.get() * 10.0)?,
             side: SheetMetalThicknessSide::Forward,
-        },
+        }),
+        rule_thickness.is_some(),
     ))
 }
 

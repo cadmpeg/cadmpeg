@@ -520,6 +520,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     design.design_configurations = crate::design::configurations::decode_configurations(ctx, scan)?;
     model.configurations =
         crate::design::configurations::project_configurations(&design.design_configurations)?;
+    design.design_sheet_metal_settings =
+        crate::design::decode::sheet_metal_settings::decode_settings(scan)?;
     let projected = crate::design::feature_project::project_parameter_design_with_edge_identities(
         ctx,
         &crate::design::feature_project::ProjectInputs {
@@ -542,10 +544,21 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             component_naming_spaces: &prereqs.design_component_naming_spaces,
             histories: &design.asm_histories,
             face_boundaries: &design.asm_face_boundaries,
+            sheet_metal_settings: &design.design_sheet_metal_settings,
         },
     )?;
     model.features = projected.features;
     model.parameters = projected.parameters;
+    if projected.unruled_flange_thicknesses != 0 {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::SheetThicknessUnruled,
+            format_args!(
+                "{} sheet-metal base flange(s) use the thickness copy their scope stores: their sheet-metal rule states no readable thickness, and the copy can differ from it.",
+                projected.unruled_flange_thicknesses,
+            ),
+        );
+    }
     if projected.unordered_parameter_scopes != 0 {
         push_loss_vec(
             &mut losses,
@@ -557,8 +570,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             ),
         );
     }
-    design.design_sheet_metal_settings =
-        crate::design::decode::sheet_metal_settings::decode_settings(scan)?;
     let indices = crate::design::decode::sheet_metal_settings::linked_record_indices(
         &design.design_sheet_metal_settings,
     );

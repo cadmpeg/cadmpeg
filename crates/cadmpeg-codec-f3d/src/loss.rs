@@ -80,6 +80,9 @@ pub(crate) enum F3dLossCode {
     EdgeReferenceLostUnrepaired,
     /// Feature scopes have no complete neutral feature definition.
     FeatureDefinitionIncomplete,
+    /// Sheet-metal base flanges projected with their stored thickness copy because
+    /// their rule states no thickness.
+    SheetThicknessUnruled,
     /// Decoded feature scopes have no neutral construction-history feature.
     FeatureScopeUnprojected,
     /// A decoded native feature envelope has no interpreted specialized payload.
@@ -267,6 +270,7 @@ impl F3dLossCode {
         Self::DecalNativeRetained,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
+        Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
         Self::FeatureScopePayloadUninterpreted,
         Self::FeatureScopeEnvelopeSuperseded,
@@ -379,6 +383,7 @@ impl F3dLossCode {
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
+            Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
@@ -506,6 +511,7 @@ impl F3dLossCode {
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
             | Self::FeatureDefinitionIncomplete
+            | Self::SheetThicknessUnruled
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
@@ -599,6 +605,7 @@ impl F3dLossCode {
             | Self::RecipeSideSearchBudgetExceeded
             | Self::ParameterOrderBudgetExceeded
             | Self::FeatureDefinitionIncomplete
+            | Self::SheetThicknessUnruled
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
@@ -752,6 +759,7 @@ mod tests {
                 "appearance.decal-native",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
+                "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
                 "feature.scope-payload-uninterpreted",
                 "feature.scope-envelope-superseded",

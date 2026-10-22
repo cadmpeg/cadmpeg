@@ -1576,6 +1576,16 @@
         "code": {
           "scope": "namespaced",
           "namespace": "f3d",
+          "code": "feature.sheet-thickness-unruled",
+          "kind": "feature_history_retained"
+        },
+        "severity": "warning",
+        "message": "1 sheet-metal base flange(s) use the thickness copy their scope stores: their sheet-metal rule states no readable thickness, and the copy can differ from it."
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
           "code": "feature.edge-reference-lost",
           "kind": "attributes_not_transferred"
         },

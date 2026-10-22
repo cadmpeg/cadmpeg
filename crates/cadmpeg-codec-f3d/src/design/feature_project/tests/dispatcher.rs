@@ -890,22 +890,50 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         paired_class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
             .unwrap(),
     };
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = &scopes;
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    scopes,
-                    construction_groups: &groups,
-                    placements: std::slice::from_ref(&placement),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let project =
+        |settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings]| {
+            crate::test_support::with_decode_context(|ctx| {
+                let scopes = &scopes;
+                let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+                crate::design::feature_project::project_parameter_design_with_edge_identities(
+                    ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        scopes,
+                        construction_groups: &groups,
+                        placements: std::slice::from_ref(&placement),
+                        timelines: &timelines,
+                        sheet_metal_settings: settings,
+                        ..Default::default()
+                    },
+                )
+                .expect("test projection has a synthetic exact timeline")
+            })
+        };
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        unruled_flange_thicknesses,
+        ..
+    } = project(&[]);
+    // Without its settings' rule the flange uses its stored copy, and says so.
+    assert_eq!(unruled_flange_thicknesses, 1);
+    // The rule's thickness governs over the stored copy.
+    let ruled: crate::records::sheet_metal_settings::DesignSheetMetalSettings =
+        serde_json::from_value(serde_json::json!({
+            "id": format!("{stream}:design-sheet-metal-settings#20"),
+            "record_index": 103, "byte_offset": 20, "paired_byte_offset": 100,
+            "mask": 240, "inputs": {"version": "v2", "slots": vec![None::<u64>; 7]},
+            "rule_record_index": 51, "presentation_record_index": 52,
+            "owner_record_index": 53, "context_record_index": 54,
+            "rule_thickness": 0.25, "rule_thickness_offset": 900,
+        }))
+        .unwrap();
+    let ruled_projection = project(std::slice::from_ref(&ruled));
+    assert_eq!(ruled_projection.unruled_flange_thicknesses, 0);
+    assert!(ruled_projection.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { thickness, .. })
+            if thickness.get() == 2.5
+    )));
     let definition = |kind: &str| {
         features
             .iter()

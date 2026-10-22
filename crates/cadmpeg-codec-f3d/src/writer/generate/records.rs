@@ -152,6 +152,7 @@ pub(super) fn encode_design_bulkstream(
                 component_naming_spaces: &native.design_component_naming_spaces,
                 histories: &native.asm_histories,
                 face_boundaries: &native.asm_face_boundaries,
+                sheet_metal_settings: &native.design_sheet_metal_settings,
             },
         )?
         .parameters;
