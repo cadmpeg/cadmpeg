@@ -79,7 +79,7 @@ fn complex_and_cut_short_callbacks_preserve_actual_independent_point_geometry() 
         let homes = unknowns.iter().filter(|record| fidelity.retained_record(record.id.as_str()).and_then(|retained| retained.data()) == Some(defective.as_bytes())).collect::<Vec<_>>();
         assert_eq!(homes.len(), 1);
         let stub = homes[0];
-        assert_eq!(fidelity.parts()[&stub.id].state(), &PartState::GivenUp);
+        assert_eq!(fidelity.parts()[&stub.id].state(), &PartState::GivenUp {});
         assert!(fidelity.record_layout()[stub.id.as_str()].reads().is_empty());
         assert!(!unknowns.iter().any(|record| record.id.as_str().starts_with("step:file:omitted#")));
         assert_eq!(decoded.report().losses.iter().filter(|loss| loss.code.local_code() == "record.unreadable").count(), 1);

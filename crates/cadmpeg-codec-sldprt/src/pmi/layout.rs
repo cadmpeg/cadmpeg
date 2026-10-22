@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{source_fidelity::RecordLayout, SourceFidelity};
+use cadmpeg_ir::SourceFidelity;
 use std::collections::BTreeMap;
 
 pub(crate) fn install(
@@ -11,15 +11,14 @@ pub(crate) fn install(
     mut pointers: BTreeMap<String, BTreeMap<String, u64>>,
     fidelity: &mut SourceFidelity,
 ) -> Result<(), CodecError> {
-    for capture in ctx.take_record_captures()? {
-        let (id, mut layout) = RecordLayout::from_capture(capture);
-        if let Some(fields) = pointers.remove(&id) {
+    fidelity.install_record_captures(ctx, |id, layout| {
+        if let Some(fields) = pointers.remove(id) {
             for (field, value) in fields {
                 layout.insert_pointer(field, value)?;
             }
         }
-        fidelity.insert_record_layout(id, layout)?;
-    }
+        Ok(())
+    })?;
     if !pointers.is_empty() {
         return Err(CodecError::malformed(
             "PMI source pointers lack their record capture",
