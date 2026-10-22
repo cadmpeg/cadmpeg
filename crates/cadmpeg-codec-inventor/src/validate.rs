@@ -1131,14 +1131,14 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         else {
             continue;
         };
-        let expected_class = family.class_id();
+        let expected_classes = family.class_ids();
         let output_slot = family.output_slot();
         if labels
             .get(&(
                 raw_feature.identity.segment_token.as_str(),
                 raw_feature.identity.record_ordinal,
             ))
-            .is_none_or(|label| label.class_id() != expected_class)
+            .is_none_or(|label| !expected_classes.contains(&label.class_id()))
         {
             findings.push(finding(
                 Check::NativeLinks,

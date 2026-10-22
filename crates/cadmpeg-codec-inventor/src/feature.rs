@@ -1294,6 +1294,10 @@ const EXTRUSION_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 const FILLET_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xdc, 0x15, 0xf7, 0xf1, 0xd1, 0x11, 0x42, 0x05, 0x00, 0x08, 0x30, 0xb0, 0x05, 0x24, 0xdc, 0x09,
 ]));
+/// Sheet-metal corner round: the constant-radius fillet record layout.
+const CORNER_ROUND_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0xb5, 0x4d, 0xd6, 0xf6, 0xd3, 0x11, 0xc4, 0x96, 0x60, 0x00, 0xf2, 0xb2, 0x1d, 0x6e, 0xef, 0xb0,
+]));
 const CHAMFER_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x3f, 0x71, 0x00, 0xf9, 0xd2, 0x11, 0x8b, 0x6f, 0x60, 0x00, 0xf0, 0xa8, 0x9d, 0xcc, 0xef, 0xb0,
 ]));
@@ -1510,12 +1514,13 @@ pub(crate) enum FeatureFamily {
 }
 
 impl FeatureFamily {
-    pub(crate) fn class_id(self) -> ClassId {
+    /// The feature-label classes whose records use this family's layout.
+    pub(crate) fn class_ids(self) -> &'static [ClassId] {
         match self {
-            Self::Extrusion => EXTRUSION_CLASS_ID,
-            Self::Fillet => FILLET_CLASS_ID,
-            Self::Chamfer => CHAMFER_CLASS_ID,
-            Self::Hole => HOLE_CLASS_ID,
+            Self::Extrusion => &[EXTRUSION_CLASS_ID],
+            Self::Fillet => &[FILLET_CLASS_ID, CORNER_ROUND_CLASS_ID],
+            Self::Chamfer => &[CHAMFER_CLASS_ID],
+            Self::Hole => &[HOLE_CLASS_ID],
         }
     }
 
@@ -1531,7 +1536,7 @@ impl FeatureFamily {
     fn from_class_id(class_id: ClassId) -> Option<Self> {
         [Self::Extrusion, Self::Fillet, Self::Chamfer, Self::Hole]
             .into_iter()
-            .find(|family| family.class_id() == class_id)
+            .find(|family| family.class_ids().contains(&class_id))
     }
 
     pub(crate) fn from_definition(definition: &FeatureDefinition) -> Option<Self> {
@@ -2929,6 +2934,17 @@ mod tests {
     use cadmpeg_ir::sketches::Sketch;
     use cadmpeg_ir::sketches::{SketchId, SketchPlacement};
     use std::collections::BTreeMap;
+
+    #[test]
+    fn a_sheet_metal_corner_round_uses_the_fillet_family() {
+        assert!(matches!(
+            super::FeatureFamily::from_class_id(super::CORNER_ROUND_CLASS_ID),
+            Some(super::FeatureFamily::Fillet)
+        ));
+        assert!(super::FeatureFamily::Fillet
+            .class_ids()
+            .contains(&super::CORNER_ROUND_CLASS_ID));
+    }
 
     #[test]
     fn feature_projection_reports_an_unlabelled_feature() {

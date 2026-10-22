@@ -226,6 +226,14 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 
 **Need.** Each other version requires its header and record forms before its PmDc records decode. A stamp requires an exact referent before it can affect transfer. A state-2 point requires its complete tail grammar before its sketch can close.
 
+### DE-08. Sheet-metal feature records
+
+**Question.** What do the property records of the sheet-metal plate, bend, corner, hem, and flat-pattern definition features encode?
+
+**Known.** Feature labels with class identifiers `c65f5855d311730c60003aa99dccefb0`, `f258f74cd3114f24600047a99dccefb0`, `7f588068b74378a0559515946f7a1c12`, `852f6bb0d411db6f60004daa9dccefb0`, and `aaf21093d344209a04cc799656cd7e09` label generic feature records of a plate, a bend, a corner, a hem, and a flat-pattern definition. A plate record holds 15 property slots: slot 0 is a `473f20fcd11101cf000835bd0663dc09` record, slot 1 a sketch-direction record, slot 2 a Boolean, slot 3 a parameter, slot 6 a surface-body record, slot 7 an edge collection, and slot 8 the feature dimensions. Some plates also hold `92596ba9d311efa86000b3a99dccefb0` in slot 4 and `83ce7786a946cde11ebd99b4fe02afb2`, `64880596d3119a76600081a99dccefb0`, `e9345026d5114c081000e596c28b7ab5`, `ce2d9b29ad43d8802f132c9a40c9ba90`, and `051772e5a74f641a01386e8f3cc02218` in slots 9 through 13. Bend, hem, and corner records hold records of the same types. A bend holds an edge collection, two parameters, and `3441b690d511d8026000a28d4aa6fbb0`; a hem holds `e5b810b3d411a37a600050aa9dccefb0`. A flange label owns a flange record (`inventor.md` §13), which names its plate, bend, and corner records. The sheet-metal style supplies parameters named `Thickness`, `BendRadius`, `BendReliefWidth`, `BendReliefDepth`, `CornerReliefSize`, `MinimumRemnant`, `TransitionRadius`, `JacobiRadiusSize`, `GapSize`, `SeamGap`, and `KFactor`.
+
+**Need.** Each feature requires its exact operands, side, thickness and bend rule, relief options, and result bodies before it can transfer to a neutral sheet-metal operation.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions
