@@ -467,7 +467,8 @@ pub(super) fn walk_reachable_topology(
                                                 // as the negation of its cache; the
                                                 // edge's stored range is on the
                                                 // reversed parameterization.
-                                                if record_reversed(crec) {
+                                                let reversed = record_reversed(crec);
+                                                if reversed {
                                                     curve.reverse_parameterization();
                                                 }
                                                 curve_geo.insert(cv, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)));
@@ -475,6 +476,7 @@ pub(super) fn walk_reachable_topology(
                                                         construction: Box::new(decoded.construction),
                                                         cache_fit_tolerance: decoded.cache_fit_tolerance,
                                                         parsed_domain,
+                                                        reversed,
                                                     });
                                                 out.stats.nurbs_curves += 1;
                                                 kept_curves.insert(cv);
@@ -757,7 +759,8 @@ fn keep_wire_edge(
         {
             let parsed_domain = nurbs::proc_curve::nurbs_curve_parameter_domain(&decoded.curve);
             let mut curve = decoded.curve;
-            if record_reversed(curve_record) {
+            let reversed = record_reversed(curve_record);
+            if reversed {
                 curve.reverse_parameterization();
             }
             curve_geo.insert(
@@ -770,6 +773,7 @@ fn keep_wire_edge(
                     construction: Box::new(decoded.construction),
                     cache_fit_tolerance: decoded.cache_fit_tolerance,
                     parsed_domain,
+                    reversed,
                 },
             );
             kept_curves.insert(curve_index);
