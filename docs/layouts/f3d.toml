@@ -8190,12 +8190,12 @@ source = "spec"
 anchor = "three zero bytes at offsets 29 through 31"
 
 [[record]]
-name = "form_legacy_one_cage_owner"
+name = "form_result_owner"
 kind = "byte"
-section = "1.1.1"
-anchor = "A legacy one-cage owner record is 81 bytes from its indexed header to its same-index paired header."
+section = "3.1"
+anchor = "is 81 bytes from its indexed header to its same-index paired header."
 size = 81
-note = "Offsets are relative to the primary indexed header. The owner/paired/nested class triples are 335/262/328, 395/264/329, 448/258/276, and 295/258/274."
+note = "Offsets are relative to the primary indexed header. Dynamic class tags come from the MetaStream type registry."
 
 [[record.field]]
 name = "indexed_header"
@@ -8233,21 +8233,21 @@ source = "spec"
 anchor = "twenty-four zero bytes"
 
 [[record.field]]
-name = "nested_marker"
+name = "body_presentation_marker"
 offset = 58
 type = "u8"
 source = "spec"
-anchor = "marked nested cage-object reference"
+anchor = "a marked BodyPresentation reference"
 
 [[record.field]]
-name = "nested_record_index"
+name = "body_presentation_record_index"
 offset = 59
 type = "u64"
 source = "spec"
-anchor = "nested cage-object reference"
+anchor = "a marked BodyPresentation reference"
 
 [[record.field]]
-name = "nested_zero_run"
+name = "body_presentation_zero_run"
 offset = 67
 type = "bytes[3]"
 source = "spec"

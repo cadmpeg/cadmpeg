@@ -1006,7 +1006,7 @@ fn loft_path_preserves_complete_historical_edge_selection() {
 }
 
 #[test]
-fn form_dispatcher_binds_the_legacy_single_cage_gate() {
+fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 
@@ -1097,12 +1097,13 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
             )
         })
     })
-    .expect("legacy Form cage binding");
+    .expect("retained Form result owner");
     assert_eq!(
         *features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Form {
-                cages: vec![cages[0].id.clone()],
+            cadmpeg_ir::features::FeatureOperation::Native {
+                kind: "Form".into(),
+                parameters: Default::default(),
             }
         )
     );
@@ -1146,92 +1147,107 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 
-    let stream = "FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
-    let mut cage_list = vec![0; 99];
-    cage_list[..4].copy_from_slice(&3u32.to_le_bytes());
-    cage_list[4..7].copy_from_slice(b"415");
-    cage_list[7..11].copy_from_slice(&205u32.to_le_bytes());
-    cage_list[21] = 1;
-    cage_list[22..30].copy_from_slice(&201u64.to_le_bytes());
-    cage_list[32..36].copy_from_slice(&1u32.to_le_bytes());
-    cage_list[36] = 1;
-    cage_list[37..45].copy_from_slice(&971u64.to_le_bytes());
-    let mut paired = vec![0; 15];
-    paired[..4].copy_from_slice(&3u32.to_le_bytes());
-    paired[4..7].copy_from_slice(b"258");
-    paired[7..11].copy_from_slice(&205u32.to_le_bytes());
-    let mut bulk = cage_list;
-    bulk.extend_from_slice(&paired);
+    for flag_width in [2, 3] {
+        let stream = "FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
+        let mut cage_list = vec![0; 97 + flag_width];
+        cage_list[..4].copy_from_slice(&3u32.to_le_bytes());
+        cage_list[4..7].copy_from_slice(b"415");
+        cage_list[7..11].copy_from_slice(&205u32.to_le_bytes());
+        cage_list[21] = 1;
+        cage_list[22..30].copy_from_slice(&201u64.to_le_bytes());
+        cage_list[32..36].copy_from_slice(&1u32.to_le_bytes());
+        cage_list[36] = 1;
+        cage_list[37..45].copy_from_slice(&971u64.to_le_bytes());
+        cage_list[47..51].copy_from_slice(&252u32.to_le_bytes());
+        cage_list[51..59].copy_from_slice(&0.25f64.to_le_bytes());
+        cage_list[59..63].copy_from_slice(&252u32.to_le_bytes());
+        cage_list[63] = 1;
+        cage_list[64..72].copy_from_slice(&909u64.to_le_bytes());
+        if flag_width == 3 {
+            cage_list[74] = 1;
+        }
+        cage_list[74 + flag_width] = 1;
+        cage_list[75 + flag_width..83 + flag_width].copy_from_slice(&206u64.to_le_bytes());
+        cage_list[86 + flag_width] = 1;
+        cage_list[87 + flag_width..95 + flag_width].copy_from_slice(&201u64.to_le_bytes());
+        let mut paired = vec![0; 15];
+        paired[..4].copy_from_slice(&3u32.to_le_bytes());
+        paired[4..7].copy_from_slice(b"258");
+        paired[7..11].copy_from_slice(&205u32.to_le_bytes());
+        let mut bulk = cage_list;
+        bulk.extend_from_slice(&paired);
 
-    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
-    archive.start_file(stream, stored).unwrap();
-    archive.write_all(&bulk).unwrap();
-    let archive = archive.finish().unwrap().into_inner();
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+        archive.start_file(stream, stored).unwrap();
+        archive.write_all(&bulk).unwrap();
+        let archive = archive.finish().unwrap().into_inner();
 
-    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
-        &format!("f3d:{stream}:scope#201"),
-        crate::records::feature::scope::DesignFeatureKind::Form,
-        201,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![205]);
-            draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
+        let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+            &format!("f3d:{stream}:scope#201"),
+            crate::records::feature::scope::DesignFeatureKind::Form,
+            201,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(vec![205]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let feature_id = crate::ids::neutral_feature_id(&scope);
+        let mut features = vec![cadmpeg_ir::features::Feature {
+            id: feature_id,
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: Some("Form".into()),
+            source_text: None,
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Native {
+                        kind: "Form".into(),
+                        parameters: Default::default(),
+                    },
+                ),
+            ),
+            native_ref: Some(scope.id.clone()),
+        }];
+        let cages = [cadmpeg_ir::SubdSurface {
+            id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
+            scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
+            source_object: None,
+            cage: cadmpeg_ir::subd::SubdCage::default(),
+        }];
+
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            crate::design::test_support::with_test_decode_context(|ctx| {
+                crate::design::feature_project::form_cages::bind_form_cages(
+                    ctx,
+                    scan,
+                    std::slice::from_ref(&scope),
+                    &mut features,
+                    &cages,
+                )
+            })
         })
-        .unwrap();
-    let feature_id = crate::ids::neutral_feature_id(&scope);
-    let mut features = vec![cadmpeg_ir::features::Feature {
-        id: feature_id,
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
-        source_tag: Some("Form".into()),
-        source_text: None,
-        source_content: Default::default(),
-
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        .expect("long Form cage binding");
+        assert_eq!(
+            *features[0].evaluation.definition(),
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Native {
                     kind: "Form".into(),
                     parameters: Default::default(),
-                },
-            ),
-        ),
-        native_ref: Some(scope.id.clone()),
-    }];
-    let cages = [cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
-        scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
-        source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::default(),
-    }];
-
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
-        crate::design::test_support::with_test_decode_context(|ctx| {
-            crate::design::feature_project::form_cages::bind_form_cages(
-                ctx,
-                scan,
-                std::slice::from_ref(&scope),
-                &mut features,
-                &cages,
+                }
             )
-        })
-    })
-    .expect("long Form cage binding");
-    assert_eq!(
-        *features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Native {
-                kind: "Form".into(),
-                parameters: Default::default(),
-            }
-        )
-    );
+        );
+    }
 }

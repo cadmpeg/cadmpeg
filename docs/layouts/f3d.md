@@ -2494,11 +2494,11 @@ Offsets are relative to the primary SplitFace indexed header. The first marked c
 | 27 | 2 | `marker_pair` | `bytes[2]` | little | spec | bytes `01 01` at offsets 27 and 28 |
 | 29 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes at offsets 29 through 31 |
 
-## `form_legacy_one_cage_owner`
+## `form_result_owner`
 
-Spec §1.1.1 · layout: byte offsets · size: 81 B
+Spec §3.1 · layout: byte offsets · size: 81 B
 
-Offsets are relative to the primary indexed header. The owner/paired/nested class triples are 335/262/328, 395/264/329, 448/258/276, and 295/258/274.
+Offsets are relative to the primary indexed header. Dynamic class tags come from the MetaStream type registry.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2507,9 +2507,9 @@ Offsets are relative to the primary indexed header. The owner/paired/nested clas
 | 25 | 1 | `owner_marker` | `u8` | little | spec | a marked owning-scope reference |
 | 26 | 8 | `owner_scope_record_index` | `u64` | little | spec | a marked owning-scope reference |
 | 34 | 24 | `zero_run_24` | `bytes[24]` | little | spec | twenty-four zero bytes |
-| 58 | 1 | `nested_marker` | `u8` | little | spec | marked nested cage-object reference |
-| 59 | 8 | `nested_record_index` | `u64` | little | spec | nested cage-object reference |
-| 67 | 3 | `nested_zero_run` | `bytes[3]` | little | spec | three zero bytes |
+| 58 | 1 | `body_presentation_marker` | `u8` | little | spec | a marked BodyPresentation reference |
+| 59 | 8 | `body_presentation_record_index` | `u64` | little | spec | a marked BodyPresentation reference |
+| 67 | 3 | `body_presentation_zero_run` | `bytes[3]` | little | spec | three zero bytes |
 | 70 | 1 | `owner_repeat_marker` | `u8` | little | spec | repeated marked owning-scope reference |
 | 71 | 8 | `owner_repeat_scope` | `u64` | little | spec | repeated marked owning-scope reference |
 | 79 | 2 | `tail_zero_run` | `bytes[2]` | little | spec | two zero bytes |
