@@ -143,6 +143,7 @@ pub(super) fn project(
     )?;
     for (level, items) in layers {
         ir.model.presentation_layers.push(PresentationLayer {
+            native_ref: None,
             id: crate::ids::layer(&crate::ids::Stem::number(level)),
             name: level.to_string(),
             parent: None,

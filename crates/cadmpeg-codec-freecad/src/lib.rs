@@ -1270,6 +1270,7 @@ impl CodecBackend for FcstdCodec {
 }
 
 impl EncoderBackend for FcstdCodec {
+    const REUSES_SOURCE: bool = true;
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Request both neutral classes for a complete native design export.
     const REQUEST: DecodeDepth = DecodeDepth::Full;

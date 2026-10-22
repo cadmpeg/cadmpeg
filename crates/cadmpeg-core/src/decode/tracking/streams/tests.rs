@@ -434,3 +434,189 @@ fn semantic_projection_obeys_active_depth_and_does_not_downgrade_a_fuse() {
         Err(CodecError::ResourceLimit(_))
     ));
 }
+
+#[test]
+fn inventory_reports_canonical_names_domains_and_exact_transform_segments() {
+    use crate::decode::SourceOrigin;
+
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"0123456789abcdef", &arena, &DecodePolicy::default())
+            .expect("root");
+    let stored = ctx
+        .register_named_slice(root, ByteRange { start: 4, end: 12 }, "stored")
+        .expect("stored");
+    let reopened = ctx
+        .register_named_slice(root, ByteRange { start: 4, end: 12 }, "stored")
+        .expect("same stored source");
+    assert_eq!(stored.space(), reopened.space());
+    let mut expanded = ctx.begin_expand(ExpandSpec::Exact(4)).expect("expansion");
+    expanded.write(b"ABCD").expect("write");
+    let expanded = expanded
+        .finalize_from(stored.child(2, 7).expect("compressed source"), "decoded")
+        .expect("expanded");
+    let combined = ctx
+        .concat_named_views(
+            &[
+                root.child(1, 3).expect("physical segment"),
+                expanded.child(1, 4).expect("decoded segment"),
+            ],
+            "combined",
+        )
+        .expect("composite");
+    assert_eq!(combined.window(), b"12BCD");
+    let inventory = ctx.source_streams().expect("snapshot");
+    assert_eq!(
+        inventory
+            .iter()
+            .map(|stream| (stream.name(), stream.byte_len()))
+            .collect::<Vec<_>>(),
+        [("combined", 5), ("decoded", 4), ("file", 16), ("stored", 8)]
+    );
+    let SourceOrigin::Composite { segments } = inventory[0].origin() else {
+        panic!("composite origin")
+    };
+    assert_eq!(segments.len(), 2);
+    assert_eq!(
+        (
+            segments[0].child(),
+            segments[0].parent(),
+            segments[0].extent()
+        ),
+        (
+            ByteRange { start: 0, end: 2 },
+            "file",
+            ByteRange { start: 1, end: 3 }
+        )
+    );
+    assert_eq!(
+        (
+            segments[1].child(),
+            segments[1].parent(),
+            segments[1].extent()
+        ),
+        (
+            ByteRange { start: 2, end: 5 },
+            "decoded",
+            ByteRange { start: 1, end: 4 }
+        )
+    );
+    assert!(
+        matches!(inventory[1].origin(), SourceOrigin::Expanded { parent, extent } if parent == "stored" && *extent == ByteRange { start: 2, end: 7 })
+    );
+    assert_eq!(inventory[2].origin(), &SourceOrigin::Root);
+    assert!(
+        matches!(inventory[3].origin(), SourceOrigin::Alias { parent, extent } if parent == "file" && *extent == ByteRange { start: 4, end: 12 })
+    );
+}
+
+#[test]
+fn inventory_and_raw_derived_spaces_add_no_reads_or_claimed_source_domains() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"source", &arena, &DecodePolicy::default()).expect("root");
+    ctx.record("record", root, || {
+        let raw_alias = ctx.register_slice(root, ByteRange { start: 1, end: 4 })?;
+        let raw_composite = ctx.concat_views(&[raw_alias, root])?;
+        let mut raw_expansion = ctx.begin_expand(ExpandSpec::Exact(3))?;
+        raw_expansion.write(b"abc")?;
+        let raw_expansion = raw_expansion.finalize()?;
+        assert_eq!(raw_composite.window(), b"oursource");
+        assert_eq!(raw_expansion.read_at(0, 3), Some(&b"abc"[..]));
+        let streams = ctx.source_streams()?;
+        assert_eq!(streams.len(), 1);
+        assert_eq!((streams[0].name(), streams[0].byte_len()), ("file", 6));
+        Ok(())
+    })
+    .expect("record");
+    assert!(ctx.take_record_captures().expect("captures")[0]
+        .reads()
+        .is_empty());
+    assert_eq!(
+        ctx.source_streams()
+            .expect("available after capture extraction")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn inventory_snapshot_is_immutable_across_later_registration_and_root_rename() {
+    use crate::decode::SourceOrigin;
+
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"abcdef", &arena, &DecodePolicy::default()).expect("root");
+    ctx.register_named_slice(root, ByteRange { start: 1, end: 4 }, "entry")
+        .expect("entry");
+    let before = ctx.source_streams().expect("snapshot before rename");
+    ctx.name_stream(root, "source")
+        .expect("root rename before captures");
+    ctx.register_named_slice(root, ByteRange { start: 4, end: 6 }, "next")
+        .expect("later source");
+    let after = ctx.source_streams().expect("later snapshot");
+    assert_eq!(
+        before
+            .iter()
+            .map(|stream| stream.name())
+            .collect::<Vec<_>>(),
+        ["entry", "file"]
+    );
+    assert!(matches!(before[0].origin(), SourceOrigin::Alias { parent, .. } if parent == "file"));
+    assert_eq!(
+        after.iter().map(|stream| stream.name()).collect::<Vec<_>>(),
+        ["entry", "next", "source"]
+    );
+    assert!(matches!(after[0].origin(), SourceOrigin::Alias { parent, .. } if parent == "source"));
+}
+
+#[test]
+fn inventory_is_session_local_even_when_two_contexts_share_an_arena() {
+    let arena = DecodeArena::new();
+    let (first, first_root) =
+        DecodeContext::from_root_bytes(b"abc", &arena, &DecodePolicy::default()).expect("first");
+    first
+        .register_named_slice(first_root, ByteRange { start: 0, end: 2 }, "entry")
+        .expect("first entry");
+    let (second, _) =
+        DecodeContext::from_root_bytes(b"12345", &arena, &DecodePolicy::default()).expect("second");
+    let first_inventory = first.source_streams().expect("first inventory");
+    let second_inventory = second.source_streams().expect("second inventory");
+    assert_eq!(
+        first_inventory
+            .iter()
+            .map(|stream| (stream.name(), stream.byte_len()))
+            .collect::<Vec<_>>(),
+        [("entry", 2), ("file", 3)]
+    );
+    assert_eq!(
+        second_inventory
+            .iter()
+            .map(|stream| (stream.name(), stream.byte_len()))
+            .collect::<Vec<_>>(),
+        [("file", 5)]
+    );
+}
+
+#[test]
+fn owned_inventory_storage_cannot_bypass_the_shared_retained_budget() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"abc", &arena, &DecodePolicy::default()).expect("root");
+    ctx.register_named_slice(root, ByteRange { start: 0, end: 2 }, "entry")
+        .expect("entry");
+    ctx.retain_bytes(
+        ctx.retained_bytes_available(),
+        "actual retained output fills caller allowance",
+    )
+    .expect("remaining allowance");
+    let error = ctx
+        .source_streams()
+        .expect_err("snapshot storage must be charged");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.scope == crate::decode::LimitScope::Session && limit.dimension == ResourceDimension::RetainedBytes)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit.scope == crate::decode::LimitScope::Session)
+    );
+}

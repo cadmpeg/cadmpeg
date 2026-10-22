@@ -51,10 +51,7 @@
 //! // Edit supported fields in `ir`.
 //! let mut output = File::create("part-edited.f3d")?;
 //! F3dCodec
-//!     .plan(cadmpeg_ir::codec::write::EncodeInput {
-//!         ir: &ir,
-//!         fidelity: Some(&fidelity),
-//!     }, TargetRequest::Inherit)?
+//!     .plan(cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)), TargetRequest::Inherit)?
 //!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
@@ -224,6 +221,7 @@ impl CodecBackend for F3dCodec {
 }
 
 impl EncoderBackend for F3dCodec {
+    const REUSES_SOURCE: bool = true;
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Patches the retained source, so the history and design records it rewrites
     /// must be present.

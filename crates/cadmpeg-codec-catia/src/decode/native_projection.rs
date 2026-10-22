@@ -89,6 +89,7 @@ pub(super) fn project(
                 ir.model
                     .attributes
                     .push(cadmpeg_ir::attributes::SourceAttribute {
+                        native_ref: Some(block.id.clone()),
                         id: cadmpeg_ir::ids::AttributeId::compose(
                             &cadmpeg_ir::identity_namespace!("catia", "document", "attribute"),
                             cadmpeg_ir::identity_key!("value-")

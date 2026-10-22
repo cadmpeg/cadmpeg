@@ -461,6 +461,7 @@ fn authored_other_pmi_does_not_record_a_historical_decode_failure() {
         native_ref: None,
     });
     ir.model.pmi.push(cadmpeg_ir::pmi::PmiAnnotation {
+        native_ref: None,
         id: cadmpeg_ir::ids::PmiId::mint("synthetic:test:pmi#other").unwrap(),
         name: None,
         visible: None,

@@ -271,7 +271,7 @@ impl<'a> Projector<'a> {
                     prototype: PrototypeReference::Local { definition },
                     parent: OccurrenceParent::Root {},
                     ordinal: 0,
-                    transform,
+                    transform: Some(transform),
                     linked_prototype: None,
                     name: None,
                     visible: None,
@@ -373,7 +373,7 @@ impl<'a> Projector<'a> {
                         prototype: PrototypeReference::Local { definition },
                         parent: OccurrenceParent::Root {},
                         ordinal: 0,
-                        transform: cadmpeg_ir::transform::Transform::identity(),
+                        transform: Some(cadmpeg_ir::transform::Transform::identity()),
                         linked_prototype: None,
                         name: None,
                         visible: None,
@@ -683,7 +683,7 @@ impl ComponentInserts {
                 prototype: PrototypeReference::Unresolved {},
                 parent: OccurrenceParent::Root {},
                 ordinal,
-                transform: insert.transform,
+                transform: Some(insert.transform),
                 linked_prototype: None,
                 name: Some(insert.name.clone()),
                 visible: None,
@@ -1001,7 +1001,7 @@ mod tests {
         );
         assert_eq!(
             root_occurrence.transform,
-            cadmpeg_ir::transform::Transform::identity()
+            Some(cadmpeg_ir::transform::Transform::identity())
         );
         let in_root = OccurrenceParent::Occurrence {
             occurrence: root_occurrence.id.clone(),
@@ -1020,9 +1020,12 @@ mod tests {
         }
         assert_eq!(
             first.transform,
-            cadmpeg_ir::transform::Transform::identity()
+            Some(cadmpeg_ir::transform::Transform::identity())
         );
-        let rows = second.transform.rows();
+        let rows = second
+            .transform
+            .expect("source occurrence placement")
+            .rows();
         let expected = [
             [0.0, -1.0, 0.0, 4.2],
             [1.0, 0.0, 0.0, 9.8],
@@ -1397,7 +1400,10 @@ mod tests {
             Some(placed.id.as_str())
         );
         assert_eq!(
-            occurrences[0].transform.rows()[0][3],
+            occurrences[0]
+                .transform
+                .expect("source occurrence placement")
+                .rows()[0][3],
             10.0,
             "translation projects to millimetres"
         );

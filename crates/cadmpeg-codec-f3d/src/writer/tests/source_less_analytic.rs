@@ -1003,6 +1003,7 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
         .map_or(0, |order| order.checked_add(1).unwrap());
     let presentation = |target: AttributeTarget| {
         [SourceAttribute {
+            native_ref: None,
             id: "generated:test:attribute#association-name"
                 .try_into()
                 .unwrap(),

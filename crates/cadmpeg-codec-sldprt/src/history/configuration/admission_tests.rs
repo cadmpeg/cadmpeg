@@ -55,6 +55,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         ir.model
             .attributes
             .push(cadmpeg_ir::attributes::SourceAttribute {
+                native_ref: None,
                 id: cadmpeg_ir::ids::AttributeId::mint(format!(
                     "synthetic:test:attribute#surface-{name}"
                 ))
@@ -69,6 +70,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
     ir.model
         .presentation_layers
         .push(cadmpeg_ir::presentation::PresentationLayer {
+            native_ref: None,
             id: cadmpeg_ir::ids::LayerId::mint("synthetic:test:layer#surface").unwrap(),
             name: "Layer".into(),
             parent: None,
@@ -929,6 +931,7 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
             native_ref: Some(format!("retained parameter reference {index}")),
         });
         ir.model.pmi.push(cadmpeg_ir::pmi::PmiAnnotation {
+            native_ref: None,
             id: cadmpeg_ir::ids::PmiId::mint(format!("synthetic:test:pmi#parameter-{index}"))
                 .unwrap(),
             name: Some("retained PMI text".into()),
@@ -970,6 +973,7 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
             ir.model
                 .attributes
                 .push(cadmpeg_ir::attributes::SourceAttribute {
+                    native_ref: None,
                     id: cadmpeg_ir::ids::AttributeId::mint(format!(
                         "synthetic:test:attribute#{}-{name}",
                         annotation.id.as_str().rsplit_once('#').unwrap().1

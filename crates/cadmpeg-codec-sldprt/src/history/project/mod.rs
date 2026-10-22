@@ -1018,6 +1018,7 @@ pub(crate) fn custom_property_attributes(
                 values.push(AttributeValue::String(text.clone()));
             }
             attributes.push(SourceAttribute {
+                native_ref: None,
                 id,
                 target: AttributeTarget::Document,
                 name,

@@ -32,6 +32,24 @@ fn target_selected(target: &AttributeTarget, reachable: &HashSet<String>) -> boo
         AttributeTarget::Surface(id) => id.as_str(),
         AttributeTarget::Curve(id) => id.as_str(),
         AttributeTarget::Point(id) => id.as_str(),
+        AttributeTarget::Record { arena, id }
+            if matches!(
+                arena.as_str(),
+                "bodies"
+                    | "faces"
+                    | "shells"
+                    | "loops"
+                    | "coedges"
+                    | "edges"
+                    | "vertices"
+                    | "regions"
+                    | "surfaces"
+                    | "curves"
+                    | "points"
+            ) =>
+        {
+            id.as_str()
+        }
         // This operation extracts a B-rep graph; owners outside that graph
         // are retained by their own document projection, not this subset.
         AttributeTarget::Feature(_)
@@ -44,6 +62,7 @@ fn target_selected(target: &AttributeTarget, reachable: &HashSet<String>) -> boo
         | AttributeTarget::SemanticAnnotation(_)
         | AttributeTarget::Drawing(_)
         | AttributeTarget::ViewPresentation(_)
+        | AttributeTarget::Record { .. }
         | AttributeTarget::Source { .. } => return false,
     };
     reachable.contains(id)

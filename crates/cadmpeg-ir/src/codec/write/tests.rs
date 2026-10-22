@@ -58,6 +58,7 @@ fn cadir_encoder_census_matches_validation_counts() {
 struct NeutralEncoder;
 
 impl EncoderBackend for NeutralEncoder {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: FormatId = FormatId::new("cadir");
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
@@ -117,6 +118,7 @@ fn a_dialect_free_encoder_refuses_an_explicit_target() {
 struct CatalogEncoder;
 
 impl EncoderBackend for CatalogEncoder {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: FormatId = FormatId::new("test");
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
     type Target = Catalog;
@@ -298,6 +300,7 @@ crate::document::arena_registry!(uniform_dispositions);
 struct CoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for CoverageEncoder {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: FormatId = FormatId::new("cadir");
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
@@ -378,6 +381,7 @@ fn arena_dispositions_carry_each_declared_field() {
 struct F3dCoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for F3dCoverageEncoder {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: FormatId = FormatId::new("f3d");
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
@@ -502,6 +506,7 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
 struct PathEncoder(WritePath);
 
 impl EncoderBackend for PathEncoder {
+    const REUSES_SOURCE: bool = true;
     const FORMAT: FormatId = FormatId::new("test");
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
@@ -549,12 +554,13 @@ fn the_sealed_wrapper_synthesizes_instead_of_exposing_untyped_source_bytes() {
                 if classes == &crate::ArenaClasses::from([crate::ArenaClass::Design])
         ));
     }
-    CadirEncoder
+    let cadir = CadirEncoder
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
             TargetRequest::Inherit,
         )
         .unwrap();
+    assert!(cadir.report().synthesis_cause().is_none());
 }
 
 #[test]
@@ -593,6 +599,7 @@ fn declared_native_omission_is_informational_and_written_records_are_not_charged
 fn patch_decline_is_reported_once_as_structured_synthesis_metadata() {
     struct Declined;
     impl EncoderBackend for Declined {
+        const REUSES_SOURCE: bool = false;
         const FORMAT: FormatId = FormatId::new("test");
         const REQUEST: DecodeDepth = DecodeDepth::Full;
         type Target = DialectFree;
@@ -648,16 +655,23 @@ fn foreign_native_content_uses_the_wrappers_typed_arena_boundary() {
         super::NativeDisposition::Written,
     );
     dispositions.complete(&ir);
-    assert_eq!(dispositions.dropped_counts(&ir)["foreign"]["unknowns"], 1);
+    assert!(dispositions.dropped_counts(&ir).is_empty());
+    assert!(!dispositions.namespaces["foreign"]
+        .arenas
+        .contains_key("unknowns"));
     ir.native
         .namespace_mut("foreign")
         .arenas_mut()
         .insert("records".into(), vec![record()]);
     assert!(EncodeInput::new(&ir, None).has_foreign_native_content(format));
     let losses = dispositions.omission_losses(&ir, "test");
-    assert_eq!(losses.len(), 2);
+    assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("foreign"));
     assert_eq!(losses[0].code.local_code(), "native.records-omitted");
+    assert_eq!(
+        losses[0].message,
+        "the test write omits 1 native record(s) from `foreign.records`: foreign:native:record#0"
+    );
 }
 
 #[test]
@@ -675,3 +689,7 @@ fn malformed_scope_is_rejected_at_the_writer_boundary() {
     assert!(message.contains("scope excludes model"), "{message}");
     assert!(message.contains("bodies"), "{message}");
 }
+
+mod framework;
+
+mod budgets;

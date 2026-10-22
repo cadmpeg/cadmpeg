@@ -83,6 +83,7 @@ pub(super) fn project(
                 );
                 ctx.charge_entities(1, "Rhino document attributes")?;
                 ir.model.attributes.push(SourceAttribute {
+                    native_ref: Some(native_id.clone()),
                     id: id.clone(),
                     target: AttributeTarget::Document,
                     name: format!("rhino.{arena}.{field}"),

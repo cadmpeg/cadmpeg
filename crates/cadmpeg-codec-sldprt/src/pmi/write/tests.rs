@@ -29,6 +29,7 @@ fn document() -> (CadIr, ParameterId) {
         native_ref: None,
     });
     ir.model.pmi.push(PmiAnnotation {
+        native_ref: None,
         id: pmi.clone(),
         name: None,
         visible: None,
@@ -43,6 +44,7 @@ fn document() -> (CadIr, ParameterId) {
         ),
     });
     ir.model.pmi.push(PmiAnnotation {
+        native_ref: None,
         id: PmiId::mint("test:model:pmi#text").unwrap(),
         name: None,
         visible: None,
@@ -54,6 +56,7 @@ fn document() -> (CadIr, ParameterId) {
         },
     });
     ir.model.attributes.push(SourceAttribute {
+        native_ref: None,
         id: AttributeId::mint("test:attribute:pmi#precision").unwrap(),
         target: AttributeTarget::Pmi(pmi),
         name: "precision".into(),

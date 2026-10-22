@@ -80,9 +80,9 @@ fn placed_point_product() -> CadIr {
             },
             parent: OccurrenceParent::Root {},
             ordinal,
-            transform: Transform::identity().with_translation(
+            transform: Some(Transform::identity().with_translation(
                 FiniteVector3::new(Vector3::new(x, 0.0, 0.0)).expect("finite offset"),
-            ),
+            )),
             linked_prototype: None,
             name: None,
             visible: None,

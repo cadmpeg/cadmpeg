@@ -216,7 +216,10 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
     assert_eq!(occurrences.len(), 1);
     assert_eq!(occurrences[0].id.as_str(), "f3d:model:occurrence#xref-0-0");
     assert_eq!(
-        occurrences[0].transform.rows(),
+        occurrences[0]
+            .transform
+            .expect("source occurrence placement")
+            .rows(),
         [
             [0.0, -1.0, 0.0, 10.0],
             [1.0, 0.0, 0.0, 20.0],
@@ -235,6 +238,12 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
             object: None,
         }
     );
+    let mut missing = table;
+    missing.references[0].transform = None;
+    let missing = super::project_occurrences(&missing).unwrap();
+    assert_eq!(missing.len(), 1);
+    assert_eq!(missing[0].transform, None);
+    assert_eq!(missing[0].effective_transform().unwrap(), None);
 }
 
 #[test]

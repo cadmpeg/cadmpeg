@@ -13,6 +13,7 @@ use super::{
 };
 use crate::CodecError;
 use streams::{Origin, Streams};
+pub use streams::{SourceOrigin, SourceSegment, SourceStream};
 
 /// The owned identity, extent and reads of a captured record.
 pub type RecordCaptureParts = (String, String, u64, u64, BTreeMap<String, Vec<Range<u64>>>);
@@ -256,6 +257,98 @@ impl SessionHandle<'_> {
         })
     }
 
+    pub(super) fn refuse_resource(self, resource: ResourceLimit) -> ResourceLimit {
+        self.with_budget(|budget| budget.refuse_resource(resource))
+    }
+
+    pub(super) fn recover_part(self, expected: ResourceLimit) -> Result<(), ResourceLimit> {
+        self.with_budget(|budget| budget.recover_part(expected))
+    }
+
+    pub(super) fn source_streams(self) -> Result<Vec<SourceStream>, CodecError> {
+        self.session(|session| {
+            session.activate()?;
+            session.streams.snapshot(&session.budget)
+        })
+    }
+
+    pub(super) fn part_capture(
+        self,
+        extent: View<'_>,
+    ) -> Result<super::part::PartCapture, CodecError> {
+        self.session(|session| {
+            if session.sealed {
+                return Err(CodecError::malformed(
+                    "record captures have already been extracted",
+                ));
+            }
+            session.activate()?;
+            let stream = session.streams.extent_name(
+                extent.space(),
+                super::ByteRange {
+                    start: u64_from_index(extent.start()),
+                    end: u64_from_index(extent.end()),
+                },
+            )?;
+            let stream = copy_string(&session.budget, stream)?;
+            let part_start = u64_from_index(extent.start());
+            let part_end = u64_from_index(extent.end());
+            let mut containing = None;
+            // Prefer an actual enclosing extent in the part's own stream.
+            for record in session
+                .frames
+                .iter()
+                .rev()
+                .filter_map(|frame| frame.record.as_ref())
+            {
+                let end = record
+                    .offset
+                    .checked_add(record.byte_len)
+                    .ok_or_else(|| CodecError::malformed("record source extent overflows"))?;
+                if record.stream == stream && record.offset <= part_start && end >= part_end {
+                    containing = Some(record);
+                    break;
+                }
+            }
+            // A transformed child belongs to an ancestor record only if every
+            // exact provenance path reaches that record's bounded source extent.
+            if containing.is_none() {
+                for record in session
+                    .frames
+                    .iter()
+                    .rev()
+                    .filter_map(|frame| frame.record.as_ref())
+                {
+                    let end = record
+                        .offset
+                        .checked_add(record.byte_len)
+                        .ok_or_else(|| CodecError::malformed("record source extent overflows"))?;
+                    if session.streams.contains(
+                        &session.budget,
+                        extent,
+                        &record.stream,
+                        super::ByteRange {
+                            start: record.offset,
+                            end,
+                        },
+                    )? {
+                        containing = Some(record);
+                        break;
+                    }
+                }
+            }
+            let record_id = containing
+                .map(|record| copy_string(&session.budget, record.id()))
+                .transpose()?;
+            Ok(super::part::PartCapture::new(
+                stream,
+                u64_from_index(extent.start()),
+                u64_from_index(extent.end().abs_diff(extent.start())),
+                record_id,
+            ))
+        })
+    }
+
     fn session<R>(
         self,
         run: impl FnOnce(&mut Session) -> Result<R, CodecError>,
@@ -490,7 +583,10 @@ impl SessionHandle<'_> {
             } else {
                 Ok(())
             };
-            if result.is_err() {
+            if result
+                .as_ref()
+                .is_err_and(|error| !matches!(error, CodecError::ResourceLimit(_)))
+            {
                 session.error = Some("source stream read projection failed");
             }
             result

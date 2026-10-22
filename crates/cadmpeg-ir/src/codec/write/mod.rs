@@ -21,17 +21,21 @@ use crate::report::{
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
-use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_core::decode::{DecodeDepth, ResourceLimits};
 use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
 mod carried;
 mod coverage;
+mod error;
 mod loss;
 pub mod target;
 
+pub use crate::validate::ValidatedFinding;
 use carried::{EntityLocation, FindingLocator};
 pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
+pub use error::{CapacityField, EncodeError};
+pub use loss::ExportLossCode;
 pub use native::{
     NativeArenaDisposition, NativeDisposition, NativeDispositions, NativeNamespaceDispositions,
 };
@@ -65,6 +69,9 @@ pub trait EncoderBackend {
 
     /// The decode depth a caller requests for complete output.
     const REQUEST: DecodeDepth;
+
+    /// Whether this backend can patch or replay retained source bytes.
+    const REUSES_SOURCE: bool;
 
     /// Whether this format writes the document's recompute state as its own flag.
     const WRITES_RECOMPUTE: bool = false;
@@ -142,10 +149,13 @@ impl<E: EncoderBackend> Encoder for E {
         let backend_input = if unrepresented.is_empty() {
             input
         } else {
-            EncodeInput::new(input.ir, None)
+            EncodeInput {
+                fidelity: None,
+                ..input
+            }
         };
         let mut body = self.plan_resolved(backend_input, target)?;
-        if !unrepresented.is_empty() {
+        if E::REUSES_SOURCE && !unrepresented.is_empty() {
             body.synthesis_cause = Some(SynthesisCause::SourceUnrepresented {
                 classes: unrepresented,
             });
@@ -221,13 +231,19 @@ pub struct EncodeInput<'a> {
     pub ir: &'a CadIr,
     /// Decode-time fidelity state, when available.
     pub fidelity: Option<&'a SourceFidelity>,
+    /// Caller ceilings for work performed while encoding.
+    pub limits: ResourceLimits,
 }
 
 impl<'a> EncodeInput<'a> {
-    /// Borrows a document and its decode-time fidelity for one export.
+    /// Borrows a document and its fidelity with desktop resource ceilings.
     #[must_use]
     pub const fn new(ir: &'a CadIr, fidelity: Option<&'a SourceFidelity>) -> Self {
-        Self { ir, fidelity }
+        Self {
+            ir,
+            fidelity,
+            limits: ResourceLimits::desktop(),
+        }
     }
 
     /// Whether another format owns typed native content in this document.
@@ -484,6 +500,7 @@ impl ExportPlan {
 pub struct CadirEncoder;
 
 impl EncoderBackend for CadirEncoder {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: FormatId = FormatId::new("cadir");
     /// A full decode requests all content CADIR can hold.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
@@ -496,9 +513,20 @@ impl EncoderBackend for CadirEncoder {
     const TARGET: DialectFree = DialectFree;
 
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        let mut bytes = crate::hash::finite_json::to_canonical_json_string(input.ir)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?
-            .into_bytes();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy {
+            mode: cadmpeg_core::decode::DecodeMode::Salvage,
+            limits: input.limits,
+        };
+        let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+        let mut bytes = Vec::new();
+        crate::hash::finite_json::write_cadir_json(&ctx, &mut bytes, input.ir).map_err(
+            |error| match error {
+                crate::hash::finite_json::CanonicalJsonError::Resource(error) => error,
+                error => CodecError::Malformed(error.to_string()),
+            },
+        )?;
+        ctx.finish_session()?;
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
         // replay or patch, so this encoder has one path and states it. The

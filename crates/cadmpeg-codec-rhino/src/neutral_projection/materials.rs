@@ -91,6 +91,7 @@ pub(super) fn project(
         }
         ctx.charge_entities(1, "rhino_materials")?;
         ir.model.appearances.push(Appearance {
+            native_ref: Some(native_id.clone()),
             id: id.clone(),
             name: fields
                 .get("name")
@@ -179,6 +180,7 @@ pub(super) fn project(
                 .map_err(CodecError::malformed)?;
             ctx.charge_entities(1, "rhino_material_bindings")?;
             ir.model.appearance_bindings.push(AppearanceBinding {
+                native_ref: None,
                 id: AppearanceBindingId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "model", "material-binding"),
                     key,

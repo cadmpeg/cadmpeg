@@ -205,7 +205,9 @@ pub(super) fn preserve(
         if let Some(occurrence) = occurrence {
             field(object, NAME, &occurrence.name)?;
             field(object, VISIBLE, &occurrence.visible)?;
-            matrix(object, LOCAL, occurrence.transform);
+            if let Some(transform) = occurrence.transform {
+                matrix(object, LOCAL, transform);
+            }
             flag(object, HAS_LINKED, occurrence.linked_prototype.is_some());
             if let Some(transform) = occurrence.linked_prototype {
                 matrix(object, LINKED, transform);
@@ -236,7 +238,7 @@ pub(crate) fn apply(
             continue;
         };
         if let Some(transform) = read_matrix(records, owner, LOCAL)? {
-            occurrence.transform = transform;
+            occurrence.transform = Some(transform);
         }
         if let Some(property) = property(records, owner, HAS_LINKED)? {
             occurrence.linked_prototype = match value(property, "App::PropertyBool", "Bool")? {

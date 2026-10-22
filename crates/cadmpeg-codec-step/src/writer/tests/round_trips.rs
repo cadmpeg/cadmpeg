@@ -713,7 +713,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         },
         parent: cadmpeg_ir::products::OccurrenceParent::Root {},
         ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
         linked_prototype: None,
 
         name: Some("Cube root".into()),
@@ -1169,6 +1169,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let appearance = AppearanceId::mint("test:model:appearance#hidden").expect("identity grammar");
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: appearance.clone(),
         name: Some("hidden face".into()),
         asset_guid: None,
@@ -1184,6 +1185,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: "test:model:appearance-binding#hidden-face"
             .try_into()
             .expect("valid identity"),
@@ -1231,6 +1233,7 @@ fn writer_round_trips_surface_appearance_transparency() {
     let second_appearance =
         AppearanceId::mint("test:model:appearance#more-transparent").expect("identity grammar");
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: appearance.clone(),
         name: Some("transparent face".into()),
         asset_guid: None,
@@ -1246,6 +1249,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         textures: Vec::new(),
     });
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: second_appearance.clone(),
         name: Some("more transparent face".into()),
         asset_guid: None,
@@ -1261,6 +1265,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: "test:model:appearance-binding#transparent-face"
             .try_into()
             .expect("valid identity"),
@@ -1272,6 +1277,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         channels: std::collections::BTreeMap::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: "test:model:appearance-binding#more-transparent-face"
             .try_into()
             .expect("valid identity"),
@@ -1319,6 +1325,7 @@ fn writer_round_trips_presentation_layer_visibility() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
+        native_ref: None,
         parent: None,
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
@@ -1362,6 +1369,7 @@ fn writer_round_trips_empty_presentation_layer_label() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
+        native_ref: None,
         parent: None,
         id: LayerId::mint("test:model:layer#unnamed").expect("identity grammar"),
         name: String::new(),

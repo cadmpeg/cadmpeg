@@ -685,6 +685,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     for assignment in &assignments {
         if appearance_for_assignment(&out, assignment)?.is_none() {
             out.push(Appearance {
+                native_ref: None,
                 id: crate::ids::appearance_id(assignment.visual_guid.identity_key()),
                 name: (assignment
                     .visual_preset
@@ -739,6 +740,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
             continue;
         };
         bindings.push(AppearanceBinding {
+            native_ref: None,
             id: crate::ids::body_appearance_binding_id(
                 over.entity_suffix,
                 over.visual_guid.identity_key(),
@@ -831,6 +833,7 @@ fn appearances_from_schema_records(
         });
         let base_color = appearance_base_color(record);
         let appearance = Appearance {
+            native_ref: None,
             id: crate::ids::appearance_id(appearance_key(&record.guid)?),
             name: Some(record.base.clone()),
             asset_guid: Some(record.guid.clone()),
@@ -1522,6 +1525,7 @@ fn bind_bodies(
             continue;
         };
         out.push(AppearanceBinding {
+            native_ref: None,
             id: crate::ids::assignment_appearance_binding_id(
                 assignment.entity_id.as_str(),
                 assignment.visual_guid.identity_key(),
@@ -2086,6 +2090,7 @@ fn decode_fixed_record(record: &[u8]) -> Result<Option<Appearance>, CodecError> 
         properties,
     )?;
     Ok(Some(Appearance {
+        native_ref: None,
         id: crate::ids::appearance_id(appearance_key(&guid)?),
         name: Some(base),
         asset_guid: Some(guid.clone()),

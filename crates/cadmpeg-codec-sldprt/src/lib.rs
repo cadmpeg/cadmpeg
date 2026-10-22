@@ -70,10 +70,7 @@
 //! let (ir, _report, fidelity) = decoded.into_parts();
 //! let mut output = File::create("part-edited.sldprt")?;
 //! SldprtCodec
-//!     .plan(cadmpeg_ir::codec::write::EncodeInput {
-//!         ir: &ir,
-//!         fidelity: Some(&fidelity),
-//!     }, TargetRequest::Inherit)?
+//!     .plan(cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)), TargetRequest::Inherit)?
 //!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
@@ -410,6 +407,7 @@ impl CodecBackend for SldprtCodec {
 }
 
 impl EncoderBackend for SldprtCodec {
+    const REUSES_SOURCE: bool = true;
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Patches the retained source, so the design records it rewrites must be
     /// present.

@@ -27,7 +27,7 @@ pub(super) enum GraphError<'ir> {
 enum Resolution {
     Pending,
     Active,
-    Resolved(Transform),
+    Resolved(Option<Transform>),
 }
 
 pub(super) struct Facts<'ir> {
@@ -43,7 +43,7 @@ impl<'ir> Facts<'ir> {
     pub(super) fn effective_transform(&self, id: &OccurrenceId) -> Option<Transform> {
         let position = self.position(id)?;
         match self.values[position].1 {
-            Resolution::Resolved(transform) => Some(transform),
+            Resolution::Resolved(transform) => transform,
             Resolution::Pending | Resolution::Active => None,
         }
     }
@@ -82,7 +82,7 @@ pub(super) fn resolve_occurrence<'ir, S: IndexStorage>(
     occurrence: &'ir Occurrence,
     facts: &mut Facts<'ir>,
     storage: &S,
-) -> Result<Result<Transform, GraphError<'ir>>, S::Error> {
+) -> Result<Result<Option<Transform>, GraphError<'ir>>, S::Error> {
     let _depth = storage.enter_nested("assembly placement depth")?;
     let Some(position) = facts.position(&occurrence.id) else {
         return Ok(Err(GraphError::Missing {
@@ -96,7 +96,7 @@ pub(super) fn resolve_occurrence<'ir, S: IndexStorage>(
         Resolution::Pending => facts.values[position].1 = Resolution::Active,
     }
     let parent = match &occurrence.parent {
-        OccurrenceParent::Root {} => Transform::identity(),
+        OccurrenceParent::Root {} => Some(Transform::identity()),
         OccurrenceParent::Occurrence { occurrence: parent } => {
             let Some(parent_occurrence) = facts.occurrence(parent) else {
                 return Ok(Err(GraphError::Missing {
@@ -112,8 +112,10 @@ pub(super) fn resolve_occurrence<'ir, S: IndexStorage>(
     };
     let transform = match occurrence
         .effective_transform()
-        .and_then(|local| parent.compose(local))
-    {
+        .and_then(|local| match (parent, local) {
+            (Some(parent), Some(local)) => parent.compose(local).map(Some),
+            _ => Ok(None),
+        }) {
         Ok(transform) => transform,
         Err(source) => {
             return Ok(Err(GraphError::Transform {

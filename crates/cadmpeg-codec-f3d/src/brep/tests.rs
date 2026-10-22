@@ -35,6 +35,7 @@ fn generic_tag_attribute(
     groups: Vec<AttributeValue>,
 ) -> SourceAttribute {
     SourceAttribute {
+        native_ref: None,
         id: "f3d:brep:attribute#1".try_into().expect("valid identity"),
         target,
         name: "ATTRIB_CUSTOM-attrib".into(),

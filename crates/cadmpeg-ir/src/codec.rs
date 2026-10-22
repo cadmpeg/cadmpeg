@@ -14,7 +14,7 @@
 
 use std::fmt;
 
-use self::loss::DecodeLossCode;
+pub use self::loss::DecodeLossCode;
 use crate::document::CadIr;
 use crate::report::{
     check::Finding,

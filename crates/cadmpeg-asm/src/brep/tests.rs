@@ -1041,6 +1041,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     assert_eq!(
         brep.attributes,
         vec![SourceAttribute {
+            native_ref: None,
             id: cadmpeg_ir::ids::AttributeId::mint("f3d:brep:attribute#3")
                 .expect("identity grammar"),
             target: AttributeTarget::Body(body_id),

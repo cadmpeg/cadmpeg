@@ -22,7 +22,7 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::texts_agree;
 use cadmpeg_test_support::golden::{
-    snapshot_text, Branch, Harness, NATIVE_ELISION_KEY, NATIVE_ELISION_MARKER,
+    artifact_names, snapshot_text, Branch, Harness, NATIVE_ELISION_KEY, NATIVE_ELISION_MARKER,
 };
 
 use super::FcstdCodec;
@@ -380,16 +380,16 @@ fn check_step_branch(update: bool) -> Vec<String> {
         };
         let Some(failure) = failure else { continue };
         if update {
+            std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
+                .expect("create golden branch directory");
             std::fs::write(&path, actual.as_bytes())
                 .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
         } else {
             failures.push(failure);
         }
     }
-    for orphan in std::fs::read_dir(&dir)
-        .unwrap_or_else(|error| panic!("read {}: {error}", dir.display()))
-        .map(|entry| entry.expect("directory entry").file_name())
-        .map(|name| name.to_string_lossy().into_owned())
+    for orphan in artifact_names(&dir)
+        .into_iter()
         .filter(|name| !produced.contains(name))
     {
         failures.push(format!(

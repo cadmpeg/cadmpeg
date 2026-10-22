@@ -37,6 +37,7 @@ fn sketch_annotation_ids_preserve_identity_text() {
 #[test]
 fn failed_mesh_resource_limit_propagates() {
     let refusal = cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+        scope: cadmpeg_core::decode::LimitScope::Session,
         dimension: cadmpeg_core::decode::ResourceDimension::DecompressedBytes,
         reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
         limit: 0,

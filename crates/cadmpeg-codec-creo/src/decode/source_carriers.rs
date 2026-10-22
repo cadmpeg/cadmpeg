@@ -57,6 +57,7 @@ pub(in crate::decode) fn admit_surface_visibility(
         ir.model
             .presentation_layers
             .push(cadmpeg_ir::presentation::PresentationLayer {
+                native_ref: None,
                 id: layer_id,
                 name: if visible {
                     "VisibGeom".into()
@@ -120,7 +121,9 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut occurrence: Occurrence,
     ) -> Result<(), CodecError> {
-        self.scale_product_translation(&mut occurrence.transform)?;
+        if let Some(transform) = occurrence.transform.as_mut() {
+            self.scale_product_translation(transform)?;
+        }
         if let Some(transform) = occurrence.linked_prototype.as_mut() {
             self.scale_product_translation(transform)?;
         }
@@ -1165,7 +1168,7 @@ mod tests {
             },
             parent: OccurrenceParent::Root {},
             ordinal: 0,
-            transform,
+            transform: Some(transform),
             linked_prototype,
             name: None,
             visible: None,
@@ -1211,7 +1214,13 @@ mod tests {
                 .affine_rows()[0][3],
             25.4
         );
-        assert_eq!(ir.model.occurrences[0].transform.affine_rows()[0][3], 50.8);
+        assert_eq!(
+            ir.model.occurrences[0]
+                .transform
+                .expect("source occurrence placement")
+                .affine_rows()[0][3],
+            50.8
+        );
         assert_eq!(
             ir.model.occurrences[0]
                 .linked_prototype

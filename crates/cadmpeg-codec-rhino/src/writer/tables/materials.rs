@@ -141,6 +141,10 @@ pub(in crate::writer) fn material_index(ir: &CadIr, identity: &str) -> Option<i3
             AppearanceTarget::Surface(id) => id.as_str(),
             AppearanceTarget::Occurrence(id) => id.as_str(),
             AppearanceTarget::Tessellation(id) => id.as_str(),
+            AppearanceTarget::Record { arena, id } if ir.model.contains_record(*arena, id) => {
+                id.as_str()
+            }
+            AppearanceTarget::Record { .. } => return false,
             AppearanceTarget::Source { source_id } => source_id.as_str(),
         };
         target == identity

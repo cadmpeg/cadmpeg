@@ -9,7 +9,7 @@ use crate::{CodecError, ReadSeek};
 use super::arena::DecodeArena;
 use super::budget::DepthGuard;
 use super::depth::DecodeDepth;
-use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
+use super::error::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
 };
@@ -18,7 +18,7 @@ use super::tracking::{ReadTransaction, RecordCapture, SessionHandle};
 use super::view::{u64_from_index, View};
 
 #[derive(Clone, Copy)]
-enum LimitScope {
+enum AllowanceScope {
     Global,
     PerExpand,
 }
@@ -150,7 +150,7 @@ impl<'a> DecodeContext<'a> {
         Ok(view)
     }
 
-    fn require_source(&self, view: View<'_>) -> Result<(), CodecError> {
+    pub(super) fn require_source(&self, view: View<'_>) -> Result<(), CodecError> {
         if let Some(limit) = self.budget.fused() {
             return Err(limit.into());
         }
@@ -164,6 +164,15 @@ impl<'a> DecodeContext<'a> {
                 "record view belongs to another or detached decode session",
             ))
         }
+    }
+
+    /// Snapshot canonical source names, domains and explicit provenance edges.
+    ///
+    /// Registration, snapshotting and raw derived views add no semantic read.
+    /// Stored aliases remain explicit aliases, not duplicate physical streams.
+    /// The owned snapshot charges this session's retained-byte allowance.
+    pub fn source_streams(&self) -> Result<Vec<super::SourceStream>, CodecError> {
+        self.budget.source_streams()
     }
 
     /// Build one record while attributing successful reads to its own scope.
@@ -270,26 +279,36 @@ impl<'a> DecodeContext<'a> {
         Ok(SpaceId::from_index(index))
     }
 
-    /// Records a permanent fuse and returns the resource error to propagate.
+    /// Records a scoped refusal and returns the resource error to propagate.
     fn fuse(
         &self,
         reason: ResourceFailure,
-        scope: LimitScope,
+        scope: AllowanceScope,
+        local_used: u64,
         amount: u64,
         operation: &'static str,
     ) -> CodecError {
         let limit = match scope {
-            LimitScope::Global => self.decompression_allowance(),
-            LimitScope::PerExpand => self.per_expand_allowance(),
+            AllowanceScope::Global => self.decompression_allowance(),
+            AllowanceScope::PerExpand => self.per_expand_allowance(),
         };
-        self.budget.refuse(
-            ResourceDimension::DecompressedBytes,
-            reason,
-            limit,
-            self.budget.decompressed_used(),
-            amount,
-            operation,
-        )
+        self.budget
+            .refuse_resource(ResourceLimit {
+                scope: match scope {
+                    AllowanceScope::Global => LimitScope::Session,
+                    AllowanceScope::PerExpand => LimitScope::Part,
+                },
+                dimension: ResourceDimension::DecompressedBytes,
+                reason,
+                limit,
+                used: match scope {
+                    AllowanceScope::Global => self.budget.decompressed_used(),
+                    AllowanceScope::PerExpand => local_used,
+                },
+                additional: amount,
+                operation,
+            })
+            .into()
     }
 
     /// Allocates `count` copies of `value` with fallible allocation.
@@ -350,7 +369,7 @@ impl<'a> DecodeContext<'a> {
         self.budget.enter_nested(operation)
     }
 
-    /// Returns the resource refusal that has fused this decode session.
+    /// Returns the pending part or session resource refusal.
     pub fn resource_refusal(&self) -> Option<ResourceLimit> {
         self.budget.fused()
     }
@@ -368,7 +387,8 @@ impl<'a> DecodeContext<'a> {
             if size > per_expand {
                 return Err(self.fuse(
                     ResourceFailure::BudgetExceeded,
-                    LimitScope::PerExpand,
+                    AllowanceScope::PerExpand,
+                    0,
                     size,
                     "begin_expand",
                 ));
@@ -380,7 +400,8 @@ impl<'a> DecodeContext<'a> {
             {
                 return Err(self.fuse(
                     ResourceFailure::BudgetExceeded,
-                    LimitScope::Global,
+                    AllowanceScope::Global,
+                    0,
                     size,
                     "begin_expand",
                 ));
@@ -400,7 +421,8 @@ impl<'a> DecodeContext<'a> {
             buffer.try_reserve(reserve).map_err(|_| {
                 self.fuse(
                     ResourceFailure::AllocationFailed,
-                    LimitScope::PerExpand,
+                    AllowanceScope::PerExpand,
+                    0,
                     u64_from_index(reserve),
                     "begin_expand",
                 )
@@ -590,6 +612,7 @@ impl Drop for DecodeContext<'_> {
 fn root_limit(reason: ResourceFailure, limit: u64, used: u64) -> ResourceLimit {
     if used <= limit {
         return ResourceLimit {
+            scope: LimitScope::Session,
             dimension: ResourceDimension::InputBytes,
             reason,
             limit,
@@ -600,6 +623,7 @@ fn root_limit(reason: ResourceFailure, limit: u64, used: u64) -> ResourceLimit {
     }
     let additional = used - limit;
     ResourceLimit {
+        scope: LimitScope::Session,
         dimension: ResourceDimension::InputBytes,
         reason,
         limit,
@@ -633,7 +657,8 @@ impl<'a> ExpandWriter<'_, 'a> {
         let new_written = self.written().checked_add(len).ok_or_else(|| {
             self.ctx.fuse(
                 ResourceFailure::BudgetExceeded,
-                LimitScope::PerExpand,
+                AllowanceScope::PerExpand,
+                self.written(),
                 len,
                 "expand_write",
             )
@@ -650,7 +675,8 @@ impl<'a> ExpandWriter<'_, 'a> {
         if new_written > per_expand {
             return Err(self.ctx.fuse(
                 ResourceFailure::BudgetExceeded,
-                LimitScope::PerExpand,
+                AllowanceScope::PerExpand,
+                self.written(),
                 len,
                 "expand_write",
             ));
@@ -659,7 +685,8 @@ impl<'a> ExpandWriter<'_, 'a> {
         self.buffer.try_reserve(data.len()).map_err(|_| {
             self.ctx.fuse(
                 ResourceFailure::AllocationFailed,
-                LimitScope::PerExpand,
+                AllowanceScope::PerExpand,
+                self.written(),
                 len,
                 "expand_write",
             )

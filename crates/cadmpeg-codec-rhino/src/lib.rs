@@ -171,6 +171,7 @@ impl CodecBackend for RhinoCodec {
 }
 
 impl EncoderBackend for RhinoCodec {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Requests geometry for the neutral model output.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;

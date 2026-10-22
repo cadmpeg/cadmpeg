@@ -87,7 +87,7 @@ fn nested_affine_occurrences_do_not_bake_world_placement_into_component_bodies()
         .iter_mut()
         .find(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
         .expect("the archive root's component occurrence")
-        .transform = expected_outer;
+        .transform = Some(expected_outer);
     let model = &authored.model;
     assert_eq!(model.bodies.len(), local.ir().model.bodies.len());
     for (merged_body, local_body) in model.bodies.iter().zip(&local.ir().model.bodies) {
@@ -115,8 +115,8 @@ fn nested_affine_occurrences_do_not_bake_world_placement_into_component_bodies()
         [0.0, 0.0, 1.0, 60.0],
     ])
     .unwrap();
-    assert_eq!(outer.transform, expected_outer);
-    assert_eq!(inner.transform, expected_inner);
+    assert_eq!(outer.transform, Some(expected_outer));
+    assert_eq!(inner.transform, Some(expected_inner));
     let graph = AssemblyGraph::new(&model.occurrences).expect("resolved occurrence parents");
     assert_eq!(
         graph.effective_transform(&inner.id),
@@ -163,5 +163,5 @@ fn rigid_source_occurrence_retains_its_actual_matrix_and_translation_scale() {
         [0.0, 0.0, 1.0, 30.0],
     ])
     .unwrap();
-    assert_eq!(merged.ir().model.occurrences[0].transform, expected);
+    assert_eq!(merged.ir().model.occurrences[0].transform, Some(expected));
 }

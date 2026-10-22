@@ -404,7 +404,10 @@ fn independent_linked_prototype_placement_is_baked_and_retains_its_decomposition
     assert_eq!(native.link_transform(), Some(false));
     assert_eq!(
         native.local_transform().unwrap().transform(),
-        expected.effective_transform().unwrap()
+        expected
+            .effective_transform()
+            .unwrap()
+            .expect("authored placement")
     );
     cadmpeg_test_support::contract::assert_written_arenas_agree(&report, &ir, output.ir());
 }

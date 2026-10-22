@@ -191,6 +191,7 @@ pub(crate) fn project(
             );
         }
         ir.model.presentation_layers.push(PresentationLayer {
+            native_ref: None,
             id: layer_id(ordinal),
             name: layer.name.clone(),
             parent,
@@ -295,6 +296,7 @@ pub(crate) fn project(
                             ir.model
                                 .appearances
                                 .push(cadmpeg_ir::appearance::Appearance {
+                                    native_ref: None,
                                     id: appearance.clone(),
                                     name: None,
                                     asset_guid: None,
@@ -327,6 +329,7 @@ pub(crate) fn project(
                             ctx.charge_entities(1, "rhino_display_color_bindings")?;
                             ir.model.appearance_bindings.push(
                                 cadmpeg_ir::appearance::AppearanceBinding {
+                                    native_ref: None,
                                     id: cadmpeg_ir::ids::AppearanceBindingId::mint(format!(
                                     "rhino:model:display-color-binding#{source_order}-{ordinal}"
                                 ))
@@ -350,6 +353,7 @@ pub(crate) fn project(
                 let key = IdentityKey::try_new(format!("{source_order}-{target_order}"))
                     .map_err(CodecError::malformed)?;
                 ir.model.attributes.push(SourceAttribute {
+                    native_ref: None,
                     id: AttributeId::compose(
                         &cadmpeg_ir::identity_namespace!("rhino", "model", "object-name"),
                         key,

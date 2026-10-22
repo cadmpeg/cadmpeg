@@ -63,6 +63,8 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
     let entry = snapshot.entry("Thumbnail.png").unwrap();
     let mut changed = original.clone();
     changed[usize::try_from(entry.header_start).unwrap()] ^= 1;
+    drop(snapshot);
+    drop(ctx);
     let baseline = FcstdCodec
         .decode(&mut Cursor::new(original), &DecodeOptions::default())
         .unwrap();
@@ -165,6 +167,8 @@ fn empty_unreadable_payload_still_requires_its_physical_source_entry() {
     let entry = snapshot.entry("Thumbnail.png").unwrap();
     let local = usize::try_from(entry.header_start).unwrap();
     let central = usize::try_from(entry.central_start).unwrap();
+    drop(snapshot);
+    drop(ctx);
     bytes[local + 8..local + 10].copy_from_slice(&12_u16.to_le_bytes());
     bytes[central + 10..central + 12].copy_from_slice(&12_u16.to_le_bytes());
     let result = FcstdCodec
@@ -262,6 +266,7 @@ fn large_property_population_preserves_the_complete_checked_model() {
         expected
             .attributes
             .push(cadmpeg_ir::attributes::SourceAttribute {
+                native_ref: None,
                 id: cadmpeg_ir::ids::AttributeId::mint(crate::native::model_id(
                     "attribute",
                     &property,

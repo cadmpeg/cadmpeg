@@ -155,7 +155,7 @@ fn missing_local_product_refuses_root_and_nested_occurrences_before_output() {
             },
             parent: OccurrenceParent::Root {},
             ordinal: 0,
-            transform: cadmpeg_ir::transform::Transform::identity(),
+            transform: Some(cadmpeg_ir::transform::Transform::identity()),
             linked_prototype: None,
 
             name: None,

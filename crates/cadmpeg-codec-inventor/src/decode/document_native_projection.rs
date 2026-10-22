@@ -247,6 +247,7 @@ fn project_properties(
         };
         if let Some(value) = typed {
             ir.model.attributes.push(SourceAttribute {
+                native_ref: None,
                 id: AttributeId::mint(format!("{}:attribute", property.id))
                     .map_err(CodecError::malformed)?,
                 target: AttributeTarget::Document,

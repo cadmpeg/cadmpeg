@@ -49,7 +49,7 @@ rewrite_enum!(GeometricToleranceKind, []; {
     Other(field0),
 });
 rewrite_record!(LimitsAndFits, []; {form_variance, zone_variance, grade, source});
-rewrite_record!(PmiAnnotation, []; {id, name, visible, targets, definition});
+rewrite_record!(PmiAnnotation, []; {id, native_ref, name, visible, targets, definition});
 rewrite_enum!(PmiDefinition, []; {
     Datum {identification},
     DatumSystem {references},

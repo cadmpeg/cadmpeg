@@ -272,6 +272,7 @@ fn geometry_projection_resolves_bound_pmi_without_losing_model_semantics() {
         native_ref: None,
     });
     full.model.pmi.push(PmiAnnotation {
+        native_ref: None,
         id: PmiId::mint("synthetic:test:pmi#bound-nominal").expect("valid authored test fixture"),
         name: Some("width".into()),
         visible: Some(true),
@@ -363,6 +364,7 @@ fn geometry_projection_removes_only_attributes_owned_by_design_entities() {
     ];
     for (index, target) in targets.into_iter().enumerate() {
         full.model.attributes.push(SourceAttribute {
+            native_ref: None,
             id: AttributeId::mint(format!("synthetic:test:attribute#scope-{index}"))
                 .expect("valid authored test fixture"),
             target,

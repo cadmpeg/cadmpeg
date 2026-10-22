@@ -121,6 +121,12 @@ fn material(
 
 fn selection(target: &AppearanceTarget) -> Option<(&str, &'static str)> {
     match target {
+        AppearanceTarget::Record { arena, id } => match arena.as_str() {
+            "faces" => Some((id.as_str(), "DiffuseColor")),
+            "edges" => Some((id.as_str(), "LineColorArray")),
+            "vertices" => Some((id.as_str(), "PointColorArray")),
+            _ => None,
+        },
         AppearanceTarget::Face(id) => Some((id.as_str(), "DiffuseColor")),
         AppearanceTarget::Edge(id) => Some((id.as_str(), "LineColorArray")),
         AppearanceTarget::Vertex(id) => Some((id.as_str(), "PointColorArray")),
@@ -129,12 +135,27 @@ fn selection(target: &AppearanceTarget) -> Option<(&str, &'static str)> {
 }
 
 fn target_name<'a>(
+    ir: &CadIr,
     target: &'a AppearanceTarget,
     names: &'a HashMap<String, String>,
     body_names: &'a HashMap<String, String>,
 ) -> Option<&'a String> {
+    if matches!(target, AppearanceTarget::Record { arena, id } if !ir.model.contains_record(*arena, id))
+    {
+        return None;
+    }
     match target {
         AppearanceTarget::Body(body) => body_names.get(body.as_str()),
+        AppearanceTarget::Record { arena, id }
+            if arena.as_str() == "bodies" && ir.model.contains_record(*arena, id) =>
+        {
+            body_names.get(id)
+        }
+        AppearanceTarget::Record { arena, id }
+            if arena.as_str() == "occurrences" && ir.model.contains_record(*arena, id) =>
+        {
+            names.get(id)
+        }
         AppearanceTarget::Source { source_id } => names.get(source_id),
         AppearanceTarget::Occurrence(id) => names.get(id.as_str()),
         _ => selection(target).and_then(|(id, _)| names.get(id)),
@@ -207,7 +228,7 @@ pub(super) fn write(
             .iter()
             .find(|appearance| appearance.id == binding.appearance)
             .ok_or_else(|| CodecError::malformed("appearance binding references absent asset"))?;
-        let Some(name) = target_name(&binding.target, names, body_names) else {
+        let Some(name) = target_name(ir, &binding.target, names, body_names) else {
             losses.push(
                 FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
                     "appearance binding {} has no writable presentation target",

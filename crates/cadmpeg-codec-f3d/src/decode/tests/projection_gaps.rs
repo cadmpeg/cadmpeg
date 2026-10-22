@@ -1006,6 +1006,7 @@ fn material_bindings_do_not_restate_display_colors() {
     let material = Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color");
     ir.model.bodies[0].color = Some(direct);
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
         name: None,
         asset_guid: None,
@@ -1019,6 +1020,7 @@ fn material_bindings_do_not_restate_display_colors() {
         properties: Default::default(),
     });
     let binding = |id: &str, target| AppearanceBinding {
+        native_ref: None,
         id: format!("test:model:appearance-binding#{id}")
             .try_into()
             .expect("valid identity"),

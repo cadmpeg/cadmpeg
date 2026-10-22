@@ -16,7 +16,7 @@ use std::path::Path;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
+use cadmpeg_test_support::golden::{artifact_names, snapshot_text, Branch, Harness};
 
 use super::{RhinoArchiveVersion, RhinoCodec};
 
@@ -124,6 +124,10 @@ fn encode_outcome(
 /// Compares every fixture's encode outcome against `tests/golden/encode/`.
 fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<String> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/encode");
+    check_encode_branch_at(&dir, fixtures, update)
+}
+
+fn check_encode_branch_at(dir: &Path, fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<String> {
     let mut failures = Vec::new();
     let mut produced = BTreeSet::new();
     for (name, bytes) in fixtures {
@@ -185,10 +189,8 @@ fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<Stri
             }
         }
     }
-    for orphan in std::fs::read_dir(&dir)
-        .unwrap_or_else(|error| panic!("read {}: {error}", dir.display()))
-        .map(|entry| entry.expect("directory entry").file_name())
-        .map(|name| name.to_string_lossy().into_owned())
+    for orphan in artifact_names(dir)
+        .into_iter()
         .filter(|name| !produced.contains(name))
     {
         failures.push(format!(
@@ -200,6 +202,8 @@ fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<Stri
 }
 
 fn write_golden(path: &Path, bytes: &[u8]) {
+    std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
+        .expect("create golden branch directory");
     std::fs::write(path, bytes).unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
 }
 
@@ -295,3 +299,5 @@ fn geometry_depth_agrees_with_full_depth() {
     );
     assert_eq!(summary.cut, 0, "{summary:?}");
 }
+
+mod damaged;

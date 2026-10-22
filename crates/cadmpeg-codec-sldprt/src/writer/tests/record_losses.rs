@@ -32,6 +32,7 @@ fn cube() -> CadIr {
 
 fn appearance(schema: Option<&str>) -> Appearance {
     Appearance {
+        native_ref: None,
         id: "test:model:appearance#asset".try_into().unwrap(),
         name: Some("test".into()),
         asset_guid: None,
@@ -65,6 +66,7 @@ fn document_string_attribute_is_preserved_outside_sldprt_namespace() {
     ir.model
         .attributes
         .push(cadmpeg_ir::attributes::SourceAttribute {
+            native_ref: None,
             id: "test:model:attribute#other".try_into().unwrap(),
             target: cadmpeg_ir::attributes::AttributeTarget::Document {},
             name: "other".into(),
@@ -104,6 +106,7 @@ fn unsupported_face_attribute_has_counted_export_loss() {
     ir.model
         .attributes
         .push(cadmpeg_ir::attributes::SourceAttribute {
+            native_ref: None,
             id: "test:model:attribute#other".try_into().unwrap(),
             target: cadmpeg_ir::attributes::AttributeTarget::Face(ir.model.faces[0].id.clone()),
             name: "other".into(),
@@ -127,6 +130,7 @@ fn edge_and_vertex_appearance_bindings_have_counted_export_loss() {
         let mut ir = cube();
         let appearance = appearance(Some("moVisualProperties_c"));
         ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: "test:model:appearance-binding#other".try_into().unwrap(),
             target,
             appearance: appearance.id.clone(),

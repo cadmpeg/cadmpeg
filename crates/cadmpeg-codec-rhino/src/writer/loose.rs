@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 use std::io::Write;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::report::loss::LossNote;
@@ -19,6 +20,7 @@ use super::{
 };
 
 pub(super) fn write(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     output: &mut impl Write,
     losses: &mut Vec<LossNote>,
@@ -84,6 +86,7 @@ pub(super) fn write(
         } else {
             format!("{}.free-vertices", body.id)
         };
+        ctx.charge_entities(1, "write Rhino object record")?;
         output.write_all(&attributed_object_record(
             ir,
             kind,
@@ -113,6 +116,7 @@ pub(super) fn write(
             .ok_or_else(|| CodecError::malformed("wire edge is missing"))?;
         match curve_payload(ir, edge) {
             Ok((class, payload)) => {
+                ctx.charge_entities(1, "write Rhino object record")?;
                 output.write_all(&attributed_object_record(
                     ir,
                     4,

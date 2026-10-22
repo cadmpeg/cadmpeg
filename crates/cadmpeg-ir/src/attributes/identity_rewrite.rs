@@ -233,6 +233,18 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     },
                 )
             }
+            Some("record") => {
+                let id = value
+                    .get("id")
+                    .and_then(|record| record.get("id"))
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("attribute record target has no id")
+                    })?;
+                let mapped = map.identity(id)?;
+                value["id"]["id"] = serde_json::Value::String(mapped);
+                Ok(())
+            }
             Some("source") => {
                 let id = value
                     .get("id")
@@ -285,6 +297,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Self::SemanticAnnotation(id) => id.visit_identity_references(ctx, visitor),
             Self::Drawing(id) => id.visit_identity_references(ctx, visitor),
             Self::ViewPresentation(id) => id.visit_identity_references(ctx, visitor),
+            Self::Record { id, .. } => visitor(id),
             Self::Source { source_id } => {
                 if crate::ids::Identity::admit_text(source_id.clone()).is_ok() {
                     visitor(source_id)
@@ -328,6 +341,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             }
             Self::Drawing(id) => Self::Drawing(id.rewrite_identities(ctx, map)?),
             Self::ViewPresentation(id) => Self::ViewPresentation(id.rewrite_identities(ctx, map)?),
+            Self::Record { arena, id } => Self::Record {
+                arena,
+                id: map.identity(&id)?,
+            },
             Self::Source { source_id } => Self::Source {
                 source_id: if crate::ids::Identity::admit_text(source_id.clone()).is_ok() {
                     map.identity(&source_id)?
@@ -347,4 +364,4 @@ rewrite_enum!(AttributeValue, []; {
     Reference(field0),
     Vector(field0),
 });
-rewrite_record!(SourceAttribute, []; {id, target, name, values});
+rewrite_record!(SourceAttribute, []; {id, native_ref, target, name, values});

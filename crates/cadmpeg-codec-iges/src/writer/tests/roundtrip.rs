@@ -63,7 +63,7 @@ fn try_lossless_round_trip(
 ) -> bool {
     let Ok(plan) = Encoder::plan(
         &IgesCodec,
-        EncodeInput { ir, fidelity },
+        EncodeInput::new(ir, fidelity),
         TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
     ) else {
         return false;

@@ -9,10 +9,25 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, HashMap};
 
 fn target<'a>(
+    ir: &CadIr,
     target: &'a AttributeTarget,
     names: &'a HashMap<String, String>,
 ) -> Option<&'a String> {
     match target {
+        AttributeTarget::Record { arena, id }
+            if ir.model.contains_record(*arena, id)
+                && matches!(
+                    arena.as_str(),
+                    "features"
+                        | "sketches"
+                        | "parameters"
+                        | "product_definitions"
+                        | "occurrences"
+                        | "bodies"
+                ) =>
+        {
+            names.get(id)
+        }
         AttributeTarget::Source { source_id } => names.get(source_id),
         AttributeTarget::Feature(id) => names.get(id.as_str()),
         AttributeTarget::Sketch(id) => names.get(id.as_str()),
@@ -186,7 +201,7 @@ pub(super) fn write(
             document.insert(attribute.name.clone(), property);
             continue;
         }
-        let Some(object) = target(&attribute.target, names)
+        let Some(object) = target(ir, &attribute.target, names)
             .and_then(|name| objects.iter_mut().find(|object| object.name == *name))
         else {
             losses.push(FreecadLossCode::ExportAttributeNotTransferred.note(format!(

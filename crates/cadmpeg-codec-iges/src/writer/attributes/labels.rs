@@ -32,7 +32,7 @@ pub(super) fn apply(
         .attributes
         .iter()
         .filter(|attribute| carrier(&attribute.target) && attribute.name == "iges.directory_label")
-        .filter_map(|attribute| target_id(&attribute.target))
+        .filter_map(|attribute| target_id(ir, &attribute.target))
         .collect();
     for attribute in &ir.model.attributes {
         if !carrier(&attribute.target)
@@ -40,7 +40,7 @@ pub(super) fn apply(
         {
             continue;
         }
-        let Some(id) = target_id(&attribute.target) else {
+        let Some(id) = target_id(ir, &attribute.target) else {
             continue;
         };
         if attribute.name == "name" && explicit_labels.contains(id) {

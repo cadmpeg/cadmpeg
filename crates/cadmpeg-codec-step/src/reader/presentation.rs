@@ -220,6 +220,7 @@ pub(super) fn decode(
             append_presentation_items(id, exchange, topology, &entity_ids, indices, &mut items);
         }
         ir.model.presentation_layers.push(PresentationLayer {
+            native_ref: None,
             parent: None,
             id: LayerId::from(ids::presentation(kind!("layer"), layer_id)),
             name,
@@ -366,6 +367,7 @@ pub(super) fn decode(
             };
             let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
             ir.model.appearances.push(Appearance {
+                native_ref: None,
                 id: id.clone(),
                 name,
                 asset_guid: None,
@@ -394,6 +396,7 @@ pub(super) fn decode(
             for (target_ordinal, target) in targets.into_iter().enumerate() {
                 push_scalar_candidate(&mut scalar_color_candidates, &target, style_id, color)?;
                 ir.model.appearance_bindings.push(AppearanceBinding {
+                    native_ref: None,
                     id: ids::presentation(
                         kind!("binding"),
                         IdentityKey::from(style_id)

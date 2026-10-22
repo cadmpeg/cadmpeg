@@ -26,6 +26,7 @@ mod carriers_parameterization;
 mod design_caches;
 mod design_dimensions;
 mod drawings;
+mod encode;
 pub(crate) mod evaluation_cycles;
 mod geometry_consistency;
 mod geometry_payloads;
@@ -39,6 +40,8 @@ mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
 mod topology;
+
+pub use encode::ValidatedFinding;
 
 use annotations_native::{check_annotations, check_native_links};
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};

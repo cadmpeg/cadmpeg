@@ -15,7 +15,7 @@ fn occurrence(id: &str, parent: Option<&str>) -> Occurrence {
             }
         }),
         ordinal: 0,
-        transform: Transform::identity(),
+        transform: Some(Transform::identity()),
         linked_prototype: None,
         name: None,
         visible: None,

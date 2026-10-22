@@ -262,6 +262,7 @@ fn insert_appearance(
         let retained_id = id.clone();
         let schema = "CATIA V5 display color".to_owned();
         ir.model.appearances.push(Appearance {
+            native_ref: None,
             id: retained_id,
             name: None,
             library_id: None,
@@ -332,6 +333,7 @@ fn insert_binding_record(
     let retained_appearance = appearance.clone();
     let object_type = "CATIA V5 display property".to_owned();
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id,
         target,
         appearance: retained_appearance,

@@ -178,7 +178,7 @@ pub(super) fn project(
             },
             parent,
             ordinal: source_sequence(&record.source_instance)?,
-            transform,
+            transform: Some(transform),
             linked_prototype: None,
             name: None,
             visible: None,

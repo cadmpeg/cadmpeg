@@ -254,6 +254,7 @@ type Fields = Vec<(String, Vec<AttributeValue>)>;
 fn project_fields(
     ir: &mut CadIr,
     source_id: &str,
+    native_ref: &str,
     owners: &[String],
     name: &str,
     fields: Fields,
@@ -292,6 +293,7 @@ fn project_fields(
             );
             ctx.charge_entities(1, "iges_neutral_attributes")?;
             ir.model.attributes.push(SourceAttribute {
+                native_ref: Some(native_ref.to_owned()),
                 id: id.clone(),
                 target: target.clone(),
                 name: if field.is_empty() {
@@ -341,6 +343,7 @@ pub(super) fn project(
                 property.neutral_values = Some(project_fields(
                     ir,
                     &property.source_entity,
+                    &property.id,
                     &property.owners,
                     &name,
                     fields,
@@ -385,6 +388,7 @@ pub(super) fn project(
             definition.neutral_values = Some(project_fields(
                 ir,
                 &definition.source_entity,
+                &definition.id,
                 &[],
                 "iges.attribute_table.default",
                 fields,
@@ -429,6 +433,7 @@ pub(super) fn project(
             instance.neutral_values = Some(project_fields(
                 ir,
                 &instance.source_entity,
+                &instance.id,
                 &[],
                 "iges.attribute_table.value",
                 fields,

@@ -518,6 +518,7 @@ fn unheld_neutral_design_keeps_typed_native_history() {
 fn unheld_neutral_model_keeps_supported_typed_native_document_metadata() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
     let attribute = SourceAttribute {
+        native_ref: None,
         id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:source_linear_unit_code#0:0")
             .expect("metadata id"),
         target: AttributeTarget::Document,

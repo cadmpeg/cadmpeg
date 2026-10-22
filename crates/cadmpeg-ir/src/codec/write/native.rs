@@ -143,11 +143,16 @@ impl NativeDispositions {
             .map_or(NativeDisposition::Dropped, |value| value.record(id))
     }
 
-    /// Materialize undeclared input arenas as dropped, including foreign ones.
+    /// Materialize undeclared typed input arenas as dropped, including foreign ones.
+    /// Reserved `unknowns` stubs carry no typed content to charge here.
     pub(super) fn complete(&mut self, ir: &CadIr) {
         for (namespace, records) in &ir.native.0 {
             let declared = self.namespaces.entry(namespace.clone()).or_default();
-            for arena in records.arenas().keys() {
+            for arena in records
+                .arenas()
+                .keys()
+                .filter(|arena| arena.as_str() != "unknowns")
+            {
                 declared
                     .arenas
                     .entry(arena.clone())
@@ -158,35 +163,60 @@ impl NativeDispositions {
 
     /// Counts of omitted records, grouped by their original namespace and arena.
     pub fn dropped_counts(&self, ir: &CadIr) -> BTreeMap<String, BTreeMap<String, usize>> {
-        let mut counts = BTreeMap::new();
+        self.dropped_records(ir)
+            .into_iter()
+            .map(|(namespace, arenas)| {
+                (
+                    namespace,
+                    arenas
+                        .into_iter()
+                        .map(|(arena, ids)| (arena, ids.len()))
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
+    fn dropped_records<'a>(
+        &self,
+        ir: &'a CadIr,
+    ) -> BTreeMap<String, BTreeMap<String, Vec<&'a str>>> {
+        let mut dropped = BTreeMap::new();
         for (namespace, data) in &ir.native.0 {
             for (arena, records) in data.arenas() {
-                let count = records
+                if arena == "unknowns" {
+                    continue;
+                }
+                let mut ids: Vec<_> = records
                     .iter()
                     .filter(|record| {
                         self.record_disposition(namespace, arena, record.id())
                             == NativeDisposition::Dropped
                     })
-                    .count();
-                if count != 0 {
-                    counts
+                    .map(|record| record.id())
+                    .collect();
+                if !ids.is_empty() {
+                    ids.sort_unstable();
+                    dropped
                         .entry(namespace.clone())
                         .or_insert_with(BTreeMap::new)
-                        .insert(arena.clone(), count);
+                        .insert(arena.clone(), ids);
                 }
             }
         }
-        counts
+        dropped
     }
 
     pub(super) fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
-        self.dropped_counts(ir)
+        self.dropped_records(ir)
             .into_iter()
             .flat_map(|(namespace, arenas)| {
-                arenas.into_iter().map(move |(arena, count)| {
+                arenas.into_iter().map(move |(arena, ids)| {
                     ExportLossCode::NativeRecordsOmitted.note(format!(
-                "the {format} write omits {count} native record(s) from `{namespace}.{arena}`",
-            ))
+                        "the {format} write omits {} native record(s) from `{namespace}.{arena}`: {}",
+                        ids.len(),
+                        ids.join(", "),
+                    ))
                 })
             })
             .collect()

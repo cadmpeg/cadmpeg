@@ -456,6 +456,7 @@ fn attach_records(
                     || CodecError::malformed("invalid JT tessellation appearance identity"),
                 )?;
             ir.model.appearances.push(Appearance {
+                native_ref: None,
                 id: appearance_id.clone(),
                 name: None,
                 asset_guid: None,
@@ -469,6 +470,7 @@ fn attach_records(
                 textures: Vec::new(),
             });
             let binding = AppearanceBinding {
+                native_ref: None,
                 id: extended_id(&source_id, &cadmpeg_ir::identity_key!("appearance-binding"))
                     .ok_or_else(|| {
                         CodecError::malformed("invalid JT tessellation binding identity")
@@ -637,6 +639,7 @@ fn attach_part_attributes<'a>(
             .map_err(cadmpeg_core::CodecError::from)?;
 
         ir.model.attributes.push(SourceAttribute {
+            native_ref: None,
             id,
             target: AttributeTarget::Document,
             name: attribute_title.to_string(),
@@ -833,6 +836,7 @@ fn attach_rm_appearances(
             .derived(binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::from)?;
         ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: binding_id,
             target: AppearanceTarget::Source {
                 source_id: binding.source_id.clone(),
@@ -898,6 +902,7 @@ fn attach_rm_appearances(
             .derived(binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::from)?;
         ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: binding_id,
             target: AppearanceTarget::Face(face_id),
             appearance: appearance_id,
@@ -952,6 +957,7 @@ fn ensure_rm_color_appearance(
         .derived(id.as_str(), "base_color")
         .map_err(cadmpeg_core::CodecError::from)?;
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: id.clone(),
         name: Some(definition.name.clone()),
         asset_guid: None,
@@ -5716,6 +5722,7 @@ fn push_topology_attribute(
     values: Vec<AttributeValue>,
 ) {
     ir.model.attributes.push(SourceAttribute {
+        native_ref: None,
         id,
         target: context.target.clone(),
         name,

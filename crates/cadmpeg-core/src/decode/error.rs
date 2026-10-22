@@ -38,9 +38,29 @@ pub struct SourceLocation {
     pub offset: u64,
 }
 
+/// The boundary at which a resource refusal applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LimitScope {
+    /// The shared decode session cannot continue.
+    Session,
+    /// The current independently framed part cannot continue.
+    Part,
+}
+
+impl LimitScope {
+    pub(super) const fn for_dimension(dimension: ResourceDimension) -> Self {
+        match dimension {
+            ResourceDimension::RecursionDepth => Self::Part,
+            _ => Self::Session,
+        }
+    }
+}
+
 /// A resource refusal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResourceLimit {
+    /// Whether the refusal stops the session or its current part.
+    pub scope: LimitScope,
     /// The dimension that refused the request.
     pub dimension: ResourceDimension,
     /// Whether policy or the allocator refused.
@@ -65,6 +85,7 @@ impl ResourceLimit {
         operation: &'static str,
     ) -> Self {
         Self {
+            scope: LimitScope::for_dimension(dimension),
             dimension,
             reason: ResourceFailure::AllocationFailed,
             limit,

@@ -26,6 +26,8 @@ pub(super) fn display<'a>(
 
 pub(super) fn object_name<'a>(ir: &'a CadIr, target: &AppearanceTarget) -> Option<&'a str> {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    let typed_target = target.typed_record_target(&ir.model);
+    let target = typed_target.as_ref().unwrap_or(target);
     let attribute_target = match target {
         AppearanceTarget::Body(id) => {
             return ir
@@ -57,6 +59,10 @@ pub(super) fn object_name<'a>(ir: &'a CadIr, target: &AppearanceTarget) -> Optio
         AppearanceTarget::Edge(id) => AttributeTarget::Edge(id.clone()),
         AppearanceTarget::Vertex(id) => AttributeTarget::Vertex(id.clone()),
         AppearanceTarget::Tessellation(id) => AttributeTarget::Tessellation(id.clone()),
+        AppearanceTarget::Record { arena, id } => AttributeTarget::Record {
+            arena: *arena,
+            id: id.clone(),
+        },
         AppearanceTarget::Source { source_id } => AttributeTarget::Source {
             source_id: source_id.clone(),
         },

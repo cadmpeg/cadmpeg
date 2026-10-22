@@ -13,6 +13,7 @@ fn current_material_values_override_native_copies_without_source_bytes() {
         .expect("identity");
     let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: id.clone(),
         name: Some("Edited material".to_owned()),
         asset_guid: None,
@@ -38,9 +39,10 @@ fn current_material_values_override_native_copies_without_source_bytes() {
     let archive = crate::test_support::test_dump::minimal_document(
         "80",
         &[
-            crate::writer::table(crate::writer::TCODE_SETTINGS_TABLE, &[]).expect("settings"),
-            super::super::super::table(TCODE_MATERIAL_TABLE, &authored).expect("table"),
-            crate::writer::table(crate::writer::TCODE_OBJECT_TABLE, &[]).expect("objects"),
+            crate::writer::tests::table(crate::writer::TCODE_SETTINGS_TABLE, &[])
+                .expect("settings"),
+            crate::writer::tests::table(TCODE_MATERIAL_TABLE, &authored).expect("table"),
+            crate::writer::tests::table(crate::writer::TCODE_OBJECT_TABLE, &[]).expect("objects"),
         ],
     );
     let arena = DecodeArena::new();

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Stable loss vocabulary charged by the sealed export wrapper.
+//! Shared export loss vocabulary for writers and the sealed wrapper.
 //!
-//! These codes belong to no codec: the wrapper charges them from a backend's
-//! declared arena coverage, so every encoder reports them under one namespace.
+//! Fixed factories keep the namespace, code and severity consistent. The
+//! wrapper charges arena omissions from each backend's declared coverage.
 
 use crate::report::{
     loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind},
@@ -12,13 +12,21 @@ use crate::schema::EntityKind;
 
 const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("export");
 
-/// A stable, machine-readable identifier for one wrapper-charged export loss.
+/// A stable, machine-readable identifier for one shared export loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ExportLossCode {
+pub enum ExportLossCode {
     /// The write path does not represent a non-empty model arena.
     ArenaOmitted(EntityKind),
     /// Typed native records were omitted by this writer.
     NativeRecordsOmitted,
+    /// Source content absent from the typed document was omitted.
+    SourceUndecodedOmitted,
+    /// A record residual is absent, so a target field uses its specified default.
+    RecordResidualUnavailable,
+    /// A target field stores a value at reduced precision.
+    ValueQuantized,
+    /// The output contains no exportable content.
+    OutputEmpty,
     /// Stored feature evaluation is stale and the output has no recompute flag.
     EvaluationStale,
 }
@@ -30,13 +38,20 @@ impl ExportLossCode {
             Self::ArenaOmitted(_) => "arena.omitted",
             Self::NativeRecordsOmitted => "native.records-omitted",
             Self::EvaluationStale => "evaluation.stale",
+            Self::SourceUndecodedOmitted => "source.undecoded-omitted",
+            Self::RecordResidualUnavailable => "record.residual-unavailable",
+            Self::ValueQuantized => "value.quantized",
+            Self::OutputEmpty => "output.empty",
         }
     }
 
     const fn severity(self) -> Severity {
         match self {
             Self::ArenaOmitted(_) => Severity::Warning,
-            Self::NativeRecordsOmitted => Severity::Info,
+            Self::NativeRecordsOmitted | Self::ValueQuantized => Severity::Info,
+            Self::SourceUndecodedOmitted | Self::RecordResidualUnavailable | Self::OutputEmpty => {
+                Severity::Warning
+            }
             Self::EvaluationStale => Severity::Warning,
         }
     }
@@ -47,6 +62,10 @@ impl ExportLossCode {
             Self::ArenaOmitted(kind) => kind,
             Self::NativeRecordsOmitted => return LossTaxonomy::RecordNotTyped,
             Self::EvaluationStale => return LossTaxonomy::FeatureHistoryRetained,
+            Self::SourceUndecodedOmitted => return LossTaxonomy::RecordNotTyped,
+            Self::RecordResidualUnavailable => return LossTaxonomy::PreservedSourceUnavailable,
+            Self::ValueQuantized => return LossTaxonomy::ValueQuantized,
+            Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
         };
         match kind {
             EntityKind::Body
@@ -100,7 +119,10 @@ impl ExportLossCode {
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
-    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
+    pub fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
+
+#[cfg(test)]
+mod tests;

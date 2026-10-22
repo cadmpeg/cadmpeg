@@ -628,6 +628,13 @@ pub enum PmiDefinition {
 pub struct PmiAnnotation {
     /// Stable annotation identity.
     pub id: PmiId,
+    /// Typed native record from which this neutral record was projected.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
     /// Display or source name.
     #[serde(
         default,
@@ -675,6 +682,7 @@ mod tests {
         let datum_id = PmiId::mint("test:model:pmi#datum-a").expect("valid identity");
         let mut ir = CadIr::empty();
         ir.model.pmi.push(PmiAnnotation {
+            native_ref: None,
             id: datum_id.clone(),
             name: Some("datum A".into()),
             visible: None,
@@ -687,6 +695,7 @@ mod tests {
             },
         });
         ir.model.pmi.push(PmiAnnotation {
+            native_ref: None,
             id: PmiId::mint("test:model:pmi#system").expect("valid identity"),
             name: None,
             visible: None,
@@ -943,6 +952,7 @@ mod tests {
         let mut ir = crate::examples::unit_cube().expect("valid unit cube fixture");
         let curve = ir.model.curves[0].id.clone();
         ir.model.pmi.push(PmiAnnotation {
+            native_ref: None,
             id: PmiId::mint("synthetic:model:pmi#curve-target").expect("valid identity"),
             name: Some("curve target".into()),
             visible: None,
@@ -969,6 +979,7 @@ mod tests {
     fn unresolved_semantic_reference_is_invalid() {
         let mut ir = CadIr::empty();
         ir.model.pmi.push(PmiAnnotation {
+            native_ref: None,
             id: PmiId::mint("test:model:pmi#graphic").expect("valid identity"),
             name: None,
             visible: None,
@@ -992,6 +1003,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let dimension_id = PmiId::mint("test:model:pmi#dimension").expect("valid identity");
         ir.model.pmi.push(PmiAnnotation {
+            native_ref: None,
             id: dimension_id.clone(),
             name: None,
             visible: None,
@@ -1008,6 +1020,7 @@ mod tests {
             ),
         });
         ir.model.pmi.push(PmiAnnotation {
+            native_ref: None,
             id: PmiId::mint("test:model:pmi#system").expect("valid identity"),
             name: None,
             visible: None,
@@ -1024,6 +1037,7 @@ mod tests {
             },
         });
         ir.model.pmi.push(PmiAnnotation {
+            native_ref: None,
             id: PmiId::mint("test:model:pmi#tolerance").expect("valid identity"),
             name: None,
             visible: None,
@@ -1234,3 +1248,5 @@ impl crate::features::DimensionValue for PmiValue {
         })
     }
 }
+
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");

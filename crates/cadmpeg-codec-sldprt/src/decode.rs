@@ -2352,6 +2352,7 @@ fn ensure_display_appearance(
         Exactness::ByteExact,
     )?;
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: id.clone(),
         name: Some(definition.name.clone()),
         asset_guid: None,
@@ -2928,6 +2929,7 @@ fn build_geometry_ir(
             .any(|appearance| appearance.id == id)
         {
             ir.model.appearances.push(Appearance {
+                native_ref: None,
                 id: id.clone(),
                 name: None,
                 asset_guid: None,
@@ -2961,6 +2963,7 @@ fn build_geometry_ir(
                 .any(|binding| binding.id == binding_id)
             {
                 ir.model.appearance_bindings.push(AppearanceBinding {
+                    native_ref: None,
                     id: binding_id,
                     target: AppearanceTarget::Face(target),
                     appearance: id,
@@ -2986,6 +2989,7 @@ fn build_geometry_ir(
             Exactness::ByteExact,
         )?;
         ir.model.appearances.push(Appearance {
+            native_ref: None,
             id,
             name: Some(definition.name),
             asset_guid: None,
@@ -3066,6 +3070,7 @@ fn build_geometry_ir(
                     &mut annotations,
                 )?;
                 ir.model.appearance_bindings.push(AppearanceBinding {
+                    native_ref: None,
                     id: cadmpeg_ir::ids::AppearanceBindingId::compose(
                         &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "binding"),
                         cadmpeg_ir::identity_key!("display:")

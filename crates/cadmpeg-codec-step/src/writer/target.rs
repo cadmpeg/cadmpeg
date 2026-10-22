@@ -241,6 +241,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
         StepLossCode::OccurrenceUnresolvedParent,
         StepLossCode::OccurrenceNoLocalProduct,
         StepLossCode::OccurrencePlacementNotRigid,
+        StepLossCode::OccurrencePlacementUnknown,
         StepLossCode::AssemblyOccurrenceOmittedNoParentProduct,
         StepLossCode::OccurrenceExternalProduct,
         StepLossCode::OccurrenceNoWritableProduct,

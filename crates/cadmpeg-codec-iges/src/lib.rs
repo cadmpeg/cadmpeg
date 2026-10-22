@@ -194,6 +194,7 @@ impl CodecBackend for IgesCodec {
 }
 
 impl EncoderBackend for IgesCodec {
+    const REUSES_SOURCE: bool = true;
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Requests geometry for the neutral model output.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;

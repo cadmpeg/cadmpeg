@@ -88,7 +88,13 @@ fn extreme_finite_instance_transforms_keep_native_occurrences_and_geometry() {
             assert_eq!(occurrences.len(), 1);
             assert_eq!(occurrences[0]["transform"], serde_json::json!(rows));
             assert_eq!(ir.model.occurrences.len(), 1);
-            assert_eq!(ir.model.occurrences[0].transform.rows(), rows);
+            assert_eq!(
+                ir.model.occurrences[0]
+                    .transform
+                    .expect("source occurrence placement")
+                    .rows(),
+                rows
+            );
         }
     }
 }
