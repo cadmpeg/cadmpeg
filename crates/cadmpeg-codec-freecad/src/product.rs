@@ -206,22 +206,38 @@ pub(crate) fn transfer_neutral(
     bodies: &[Body],
 ) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), CodecError> {
     let record_by_object = product_record_index(records)?;
+    // An assembly lists its joints and its joint group among its members;
+    // they constrain the components and are not components themselves.
+    let constraint_objects = joints
+        .iter()
+        .map(JointRecord::object)
+        .chain(
+            objects
+                .iter()
+                .filter(|object| object.type_name == "Assembly::JointGroup")
+                .map(|object| object.id().as_str()),
+        )
+        .collect::<HashSet<_>>();
     let mut component_objects = Vec::new();
+    // Components placed by a container of their own; the rest are reached
+    // only as a link's prototype and are placed by those links.
+    let mut placed_objects = HashSet::new();
     let mut occurrence_objects = HashSet::new();
     for record in records {
         if matches!(record.node, ProductNode::Occurrence(_)) {
             occurrence_objects.insert(record.object.as_str());
         } else {
             component_objects.push(record.object.as_str());
+            placed_objects.insert(record.object.as_str());
         }
     }
     for record in records {
-        for member in record
-            .members()
-            .iter()
-            .filter(|member| !occurrence_objects.contains(member.as_str()))
-        {
+        for member in record.members().iter().filter(|member| {
+            !occurrence_objects.contains(member.as_str())
+                && !constraint_objects.contains(member.as_str())
+        }) {
             component_objects.push(member.as_str());
+            placed_objects.insert(member.as_str());
         }
         if record.external_document().is_none() {
             if let Some(prototype) = record.prototype() {
@@ -253,6 +269,7 @@ pub(crate) fn transfer_neutral(
                     .filter(|name| !occurrence_objects.contains(*name))
                 {
                     component_objects.push(name);
+                    placed_objects.insert(name);
                 }
             }
         }
@@ -298,7 +315,11 @@ pub(crate) fn transfer_neutral(
         )
     }) {
         // Ordinary document groups organize objects without owning placements.
-        for member in record.members() {
+        for member in record
+            .members()
+            .iter()
+            .filter(|member| !constraint_objects.contains(member.as_str()))
+        {
             let member = member.as_str();
             match parent_by_object.get(member) {
                 None => {
@@ -508,7 +529,10 @@ pub(crate) fn transfer_neutral(
         });
     }
 
-    for object in &component_objects {
+    for object in component_objects
+        .iter()
+        .filter(|object| placed_objects.contains(**object))
+    {
         let record = record_by_object.get(*object).copied();
         let local_transform = record
             .and_then(ProductNodeRecord::local_transform)
