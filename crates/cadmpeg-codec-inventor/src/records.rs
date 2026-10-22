@@ -28,6 +28,15 @@ impl BlockDescriptor<'_> {
     }
 }
 
+/// Appendix C `inventor.type_descriptor`: section 4 holds at most 256
+/// entries, which the low byte of a record type selector indexes.
+pub(crate) const TYPE_DESCRIPTOR_LIMIT: usize = 256;
+
+/// Whether a section 4 count is within the Appendix C limit.
+pub(crate) const fn type_count_admitted(count: usize) -> bool {
+    count <= TYPE_DESCRIPTOR_LIMIT
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TypeDescriptor {
     pub(crate) index: u32,
@@ -242,10 +251,8 @@ pub(crate) fn parse_meta_tables(body: View<'_>) -> Result<MetaTables<'_>, CodecE
     };
     let (type_count, section_4_payload, section_4_footer) =
         counted_section(&mut view, type_desc::LEN, "type table")?;
-    // Section 4 is a counted frame like sections 1 through 3, and its count is
-    // not bounded by the selector width: a record selector's low byte reaches
-    // only the first 256 descriptors, and later descriptors are retained
-    // without a record that selects them.
+    // Section 4 is a counted frame like sections 1 through 3. The frame bounds
+    // a count above `TYPE_DESCRIPTOR_LIMIT`; the type-table part gives it up.
     let mut types = Vec::new();
     for index in 0..type_count {
         let entry = child(
@@ -913,14 +920,17 @@ mod tests {
     }
 
     #[test]
-    fn type_table_count_is_not_bounded_by_the_selector_byte() {
+    fn type_table_count_past_the_appendix_c_limit_still_frames() {
         let body = super::synthetic_meta_table_body_with_types(300);
         with_view(&body, |view| {
             let tables = parse_meta_tables(view).expect("300 type descriptors frame");
             assert_eq!(tables.types.len(), 300);
             assert_eq!(tables.types[299].index, 299);
             assert_eq!(tables.types[299].fields, [(1, 2), (3, 4)]);
+            assert!(!super::type_count_admitted(tables.types.len()));
         });
+        assert!(super::type_count_admitted(256));
+        assert!(!super::type_count_admitted(257));
     }
 
     #[test]

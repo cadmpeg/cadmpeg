@@ -68,7 +68,7 @@ pub(crate) fn stage<'a>(
                         frame.extent,
                         PartSpec::new(level("inventor.meta_forward_section")?, framing),
                         |table| {
-                            if frame.count > 256 {
+                            if !crate::records::type_count_admitted(frame.count) {
                                 return Err(CodecError::malformed(
                                     "Inventor type table contains more than 256 descriptors",
                                 ));
