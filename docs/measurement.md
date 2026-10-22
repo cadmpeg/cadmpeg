@@ -193,6 +193,13 @@ names the source of each coedge. An edge with no 3D curve takes its length
 and box from the pcurve uses of its first coedge, mapped through that
 coedge's face surface.
 
+An inverted 3D curve interval that passes within the allowance of a cone
+apex or a sphere pole inside the interval is not split there: the face's
+bounded quantities are `boundary.inversion-failed`. The resolver detects the
+pass at a sample, or between two samples whose parameter image turns by a
+quarter period or more, by a golden-section search of the distance to the
+singular points.
+
 ## Regions
 
 `region` states the rule that decides a face's area:

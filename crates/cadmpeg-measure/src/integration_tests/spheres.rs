@@ -8,7 +8,7 @@ use cadmpeg_ir::ids::{EdgeId, VertexId};
 use cadmpeg_ir::topology::{BodyKind, Sense};
 use cadmpeg_ir::CadIr;
 
-use crate::reason::CaveatCode;
+use crate::reason::{Category, CaveatCode, UnavailableReason};
 use crate::report::{FaceMeasures, MeasureReport, RegionRule};
 use crate::select::Selection;
 use crate::test_support::{
@@ -528,4 +528,64 @@ fn a_half_ball_cut_through_the_axis_sweeps_half_a_turn() {
         .expect("sweep");
     assert_eq!(sweep.reading(), None);
     assert_half_turn(sweep, PI);
+}
+
+/// Two meridian arcs of the sphere `R = 10` from the equator at `u = π` and
+/// `u = 2π` to the north pole that run three quarters of a turn through the
+/// south pole, joined by the equator arc between them. Each arc passes
+/// through the south pole inside its interval, where its parameter image
+/// turns by half a period, and no sample lands on the pole.
+#[test]
+fn an_arc_through_a_pole_inside_its_interval_does_not_invert() {
+    let mut builder = Builder::new();
+    let north = builder.vertex([0.0, 0.0, 10.0]);
+    let start = builder.vertex([-10.0, 0.0, 0.0]);
+    let end = builder.vertex([10.0, 0.0, 0.0]);
+    let through_south = |builder: &mut Builder, u: f64, from: &VertexId| {
+        let (sine, cosine) = u.sin_cos();
+        builder.arc(
+            Circle {
+                frame: Frame {
+                    origin: [0.0; 3],
+                    axis: [-sine, cosine, 0.0],
+                    reference: [cosine, sine, 0.0],
+                },
+                radius: 10.0,
+            },
+            [0.0, 1.5 * PI],
+            from,
+            &north,
+        )
+    };
+    let first = through_south(&mut builder, PI, &start);
+    let second = through_south(&mut builder, 2.0 * PI, &end);
+    let equator = builder.arc(
+        Circle {
+            frame: Frame::z_up([0.0; 3]),
+            radius: 10.0,
+        },
+        [PI, 2.0 * PI],
+        &start,
+        &end,
+    );
+    let sphere = builder.sphere(Frame::z_up([0.0; 3]), 10.0);
+    builder.face(
+        &sphere,
+        Sense::Forward,
+        &[vec![
+            (first, Sense::Reversed),
+            (equator, Sense::Forward),
+            (second, Sense::Forward),
+        ]],
+        false,
+    );
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &faces());
+    let area = only_face(&report)
+        .measures()
+        .area()
+        .unavailable()
+        .expect("unavailable area");
+    assert_eq!(area.reason(), UnavailableReason::BoundaryInversionFailed);
+    assert_eq!(area.category(), Category::Input);
 }

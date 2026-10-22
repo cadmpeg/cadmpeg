@@ -19,6 +19,10 @@ use crate::report::UvSource;
 /// Samples of one piece's unwrap reference or polyline.
 const MAX_NESTING_SAMPLES_PER_PIECE: usize = 1 << 10;
 
+/// Golden-section steps of the search for a singular point of the carrier
+/// between two samples whose parameter image jumps.
+const MAX_SINGULAR_APPROACH_STEPS: usize = 64;
+
 /// Where a piece's points come from.
 #[derive(Clone)]
 pub(crate) enum Source<'ir> {
@@ -189,6 +193,13 @@ impl<'ir> Piece<'ir> {
                 break (reference, off_surface);
             }
             if count >= MAX_NESTING_SAMPLES_PER_PIECE {
+                if passes_singular_point(eval, chart, &curve, &raw_samples, alpha)? {
+                    return Err(MeasureFailure::unavailable(
+                        UnavailableReason::BoundaryInversionFailed,
+                        None,
+                        "the curve passes through a singular point of the surface inside its interval",
+                    ));
+                }
                 return Err(MeasureFailure::unavailable(
                     UnavailableReason::EvaluationWorkExhausted,
                     None,
@@ -523,6 +534,82 @@ fn unwrap(
             .map(|&(t, raw, _)| (t, [tail[0], raw[1]])),
     );
     Ok((reference, smooth))
+}
+
+/// Whether the curve passes within `alpha` of a singular point of `chart`
+/// between two consecutive samples `(t, uv, singular)` whose nearest lifts
+/// differ by a quarter period or more. Near a singular point the parameter
+/// image turns by up to half a period over a vanishing curve length, so
+/// such a pair brackets the point; a golden-section search of the distance
+/// to the singular points decides.
+fn passes_singular_point(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    curve: &CurveChart<'_>,
+    samples: &[(f64, [f64; 2], bool)],
+    alpha: f64,
+) -> Measure<bool> {
+    let singular: Vec<Point3> = chart
+        .apex()
+        .map(|(_, apex)| apex)
+        .into_iter()
+        .chain(chart.poles().into_iter().flatten().map(|(_, pole)| pole))
+        .collect();
+    if singular.is_empty() {
+        return Ok(false);
+    }
+    let periods = chart.periods();
+    let distance = |t: f64| -> Measure<f64> {
+        let point = curve.point(eval, t)?;
+        Ok(singular
+            .iter()
+            .map(|candidate| candidate.distance(point))
+            .fold(f64::INFINITY, f64::min))
+    };
+    for pair in samples.windows(2) {
+        let ((ta, a, _), (tb, b, _)) = (pair[0], pair[1]);
+        let lifted = nearest(periods, b, a);
+        let jumps = (0..2).any(|axis| {
+            periods[axis].is_some_and(|period| (lifted[axis] - a[axis]).abs() >= period / 4.0)
+        });
+        if jumps && golden_minimum(eval, &distance, [ta, tb])? <= alpha {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// The smallest value of `value` that a golden-section search finds on
+/// `[low, high]`, including both ends.
+fn golden_minimum(
+    eval: &Eval<'_, '_>,
+    value: &dyn Fn(f64) -> Measure<f64>,
+    [low, high]: [f64; 2],
+) -> Measure<f64> {
+    let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
+    let (mut lower, mut upper) = (low, high);
+    let mut best = value(lower)?.min(value(upper)?);
+    let mut left = upper - ratio * (upper - lower);
+    let mut right = lower + ratio * (upper - lower);
+    let (mut at_left, mut at_right) = (value(left)?, value(right)?);
+    for _ in 0..MAX_SINGULAR_APPROACH_STEPS {
+        eval.charge(1)?;
+        best = best.min(at_left).min(at_right);
+        if at_left <= at_right {
+            upper = right;
+            right = left;
+            at_right = at_left;
+            left = upper - ratio * (upper - lower);
+            at_left = value(left)?;
+        } else {
+            lower = left;
+            left = right;
+            at_left = at_right;
+            right = lower + ratio * (upper - lower);
+            at_right = value(right)?;
+        }
+    }
+    Ok(best.min(at_left).min(at_right))
 }
 
 /// `raw` lifted by whole periods to the value nearest `reference`.

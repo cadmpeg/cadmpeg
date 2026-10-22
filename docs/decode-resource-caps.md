@@ -204,7 +204,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-measure`        | `src/quadrature/gauss_kronrod.rs`                 | `MAX_QUADRATURE_INTERVALS`               | `1 << 12`                                              | 4    | Panels of one adaptive integral. At the cap the subdivision stops; an estimate above the acceptance limit makes the quantity `quadrature.not-converged`; measurement continues. |
 | `cadmpeg-measure`        | `src/quadrature/extremum.rs`                      | `MAX_EXTREMUM_REFINEMENT_STEPS`          | `64`                                                   | 4    | Bisection steps of one extremum root. Exhaustion keeps the last bracket, whose width enters the numeric error; measurement continues. |
 | `cadmpeg-measure`        | `src/traversal.rs`                                | `MAX_RING_CHAIN_STEPS`                   | `1 << 16`                                              | 4    | Steps of one ring traversal search. Exhaustion makes the face's bounded quantities `evaluation.work-exhausted`; measurement continues. |
-| `cadmpeg-measure`        | `src/boundary/piece.rs`                           | `MAX_NESTING_SAMPLES_PER_PIECE`          | `1 << 10`                                              | 4    | Samples of one boundary piece's unwrap reference and polyline. An unwrap that needs more makes the face's bounded quantities `evaluation.work-exhausted`; a polyline stops refining at the cap; measurement continues. |
+| `cadmpeg-measure`        | `src/boundary/piece.rs`                           | `MAX_NESTING_SAMPLES_PER_PIECE`          | `1 << 10`                                              | 4    | Samples of one boundary piece's unwrap reference and polyline. An unwrap that needs more makes the face's bounded quantities `evaluation.work-exhausted`, or `boundary.inversion-failed` when the curve passes through a carrier singular point between two samples; a polyline stops refining at the cap; measurement continues. |
+| `cadmpeg-measure`        | `src/boundary/piece.rs`                           | `MAX_SINGULAR_APPROACH_STEPS`            | `64`                                                   | 4    | Golden-section steps of the search for a carrier singular point between two unwrap samples whose parameter image jumps by a quarter period or more, run when the unwrap reaches its sample cap. A point within the allowance makes the face's bounded quantities `boundary.inversion-failed`; otherwise they are `evaluation.work-exhausted`; measurement continues. |
 | `cadmpeg-measure`        | `src/boundary/pcurve.rs`                          | `MAX_PCURVE_RECOVERY_STEPS`              | `32`                                                   | 4    | Newton steps of one pcurve endpoint recovery from one seed. Exhaustion tries the next seed; when no seed converges, no recovered interval qualifies and the face's bounded quantities are `boundary.inversion-failed`; measurement continues. |
 | `cadmpeg-measure`        | `src/canonical/surface.rs`                        | `MAX_INVERSION_REFINEMENT_STEPS`         | `16`                                                   | 4    | Gauss–Newton steps refining one point inverted onto a NURBS carrier. The last step enters the numeric error; a refined point that does not map within the allowance makes the face's bounded quantities `boundary.inversion-failed`; measurement continues. |
 | `cadmpeg-measure`        | `src/region/closed.rs`                            | `MAX_MEMBERSHIP_PATHS`                   | `8`                                                    | 4    | Reference points one region membership query tries on a sphere or torus. When none gives a region indicator of 0 or 1, the face's bounded quantities are `evaluation.work-exhausted`; measurement continues. |
@@ -458,21 +459,21 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 243.
+Production `MAX_*` constants: 244.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 30    |
 | 2    | Per-input bound            | 69    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 118   |
+| 4    | Local work cap             | 119   |
 | N    | Not a decode bound         | 26    |
-|      | Total                      | 243   |
+|      | Total                      | 244   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 11, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 12, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
