@@ -28,42 +28,40 @@ neutral mapping required by the section-20.6 admission rule.
 **Question.** Which owner validates each CRC-bearing nested anonymous chunk
 before transferring its fields?
 
-**Known.** Section 4.1 gives nested CRC-bearing chunks independent boundaries.
-The generic userdata reader checks its header and wrapper ranges but excludes
-the anonymous payload child at `objects.rs:550-557`. The user-string owner at
+**Known.** Section 4.1 gives nested CRC-bearing chunks independent boundaries
+and makes a mismatch an integrity failure whose fields stay admitted. The
+container checks the leaf children of the settings-attributes record (page
+units, earth anchor, IO settings, SubD display), the plugin references of the
+plugin list, the SubD-display child of the mesh settings, and the deflate
+child of the compressed preview, and each named construction-plane child. The
+generic userdata reader checks its header and wrapper ranges but excludes the
+anonymous payload child at `objects.rs:550-557`. The user-string owner at
 `objects.rs:581-620` parses the list and each entry without validating either
 anonymous chunk. The layer-extension owner at `settings.rs:752-884` likewise
 parses the outer and per-viewport anonymous chunks without validation. The
-shared settings helper at `settings.rs:1193-1210` admits anonymous plugin,
-earth-anchor, IO-settings, SubD-display, and settings-attributes children
-without validating the returned chunk; the shared presentation helper at
-`presentation.rs:1013-1027` does the same for material, texture, linetype,
-dimension-style, and other class-data children. Source readers close these
+shared presentation helper at `presentation.rs:1013-1027` admits material,
+texture, linetype, dimension-style, and other class-data children without
+validating the returned chunk. Source readers close these
 `TCODE_ANONYMOUS_CHUNK` records with `EndRead3dmChunk`, including
-`ON_UserStringList` at `opennurbs_userdata.cpp:761-820`,
+`ON_UserStringList` at `opennurbs_userdata.cpp:761-820` and
 `ON__LayerExtensions` at `opennurbs_layer.cpp:1299-1363`, `1368-1446`, and
-`1593-1668`, plugin references at `opennurbs_pluginlist.cpp:50-80` and
-`117-168`, and settings children at
-`opennurbs_3dm_settings.cpp:4178-4261` and `5110-5135`.
-The same omission is present in the clipping-plane surface and detail-view
-anonymous readers at `surfaces.rs:156-192` and `detail.rs:25-70`, and in the
-SubD proxy reader at `subd.rs:250-296`; their source writers and readers also
-use the anonymous chunk API and close the chunk.
-The rendering-attributes reader records mapping-channel ranges for the parent
-CRC at `settings.rs:1761-1790` but never validates each channel chunk; the
-source `ON_MappingChannel` reader closes the same anonymous chunk at
+`1593-1668`. The same omission is present in the clipping-plane surface and
+detail-view anonymous readers at `surfaces.rs:156-192` and `detail.rs:25-70`,
+and in the SubD proxy reader at `subd.rs:250-296`; their source writers and
+readers also use the anonymous chunk API and close the chunk. The
+rendering-attributes reader records mapping-channel ranges for the parent CRC
+at `settings.rs:1761-1790` but never validates each channel chunk; the source
+`ON_MappingChannel` reader closes the same anonymous chunk at
 `opennurbs_material.cpp:7536-7567`.
 
-**Need.** Each registered nested-chunk reader must validate the CRC-bearing
-anonymous chunks it admits and route a mismatch through that owner's warning,
-drop, or opaque-retention rule.
+**Need.** Each remaining nested-chunk reader must validate the CRC-bearing
+anonymous chunks it admits and report a mismatch as an integrity failure.
 
 **Note.** A stale user-string entry CRC can still produce a typed user-string
-record, a stale layer-extension entry CRC can still produce a typed
-per-viewport setting, and a stale plugin-reference, material-texture,
-clipping-plane, detail-view, or SubD-proxy CRC can still produce its typed
-child. The generic userdata and parent record checks do not replace the nested
-checks because their CRC ranges exclude complete children.
+record without a diagnostic, and the same holds for a layer-extension entry,
+a material texture, a clipping plane, a detail view, and a SubD proxy. The
+generic userdata and parent record checks do not replace the nested checks
+because their CRC ranges exclude complete children.
 
 ### QA-04. Instance-definition layout selection below archive 50
 

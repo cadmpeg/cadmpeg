@@ -1600,7 +1600,12 @@ fn resolve_identity(
     let object_id = attributes.map_or(Uuid::nil(), |value| value.object_id);
     let layer_index = attributes.map_or(-1, |value| value.layer_index);
     let layer = match layers.resolve(layer_index) {
-        LayerMatch::Unique(layer) => Some(layer),
+        LayerMatch::Unique(layer) => Some(LayerFacts {
+            id: layers.unique_id(layer),
+            name: layer.name.as_str(),
+            color: layer.color,
+            visible: layer.visible,
+        }),
         LayerMatch::Ambiguous => {
             if attributes.is_some() {
                 warnings.push_coded(crate::loss::RhinoLossCode::DuplicateRecordResolved, format_args!(
@@ -1608,6 +1613,11 @@ fn resolve_identity(
                 ));
             }
             None
+        }
+        LayerMatch::Missing
+            if attributes.is_some() && layer_index == SYSTEM_DEFAULT_LAYER_INDEX =>
+        {
+            Some(SYSTEM_DEFAULT_LAYER)
         }
         LayerMatch::Missing => {
             if attributes.is_some() {
@@ -1664,14 +1674,10 @@ fn resolve_identity(
         seen_ids.insert(object_id);
         format!("rhino:object:record#{object_id}")
     };
-    let layer = layer
-        .map(|value| {
-            Ok::<LayerRef, cadmpeg_core::CodecError>(LayerRef {
-                id: layers.unique_id(value),
-                name: value.name.clone(),
-            })
-        })
-        .transpose()?;
+    let layer = layer.map(|value| LayerRef {
+        id: value.id,
+        name: value.name.to_owned(),
+    });
     Ok(SourceIdentity {
         source_id,
         object_id,
@@ -1954,6 +1960,29 @@ pub(crate) fn resolve_identities(
     }
     Ok(resolved)
 }
+
+/// The layer facts an object identity reads.
+#[derive(Clone, Copy)]
+struct LayerFacts<'a> {
+    id: Option<Uuid>,
+    name: &'a str,
+    color: [u8; 4],
+    visible: bool,
+}
+
+/// The archived index of the persistent system layer `ON_Layer::Default`.
+const SYSTEM_DEFAULT_LAYER_INDEX: i32 = -1;
+
+/// `ON_Layer::Default`: a black, visible system layer that no layer table stores.
+const SYSTEM_DEFAULT_LAYER: LayerFacts<'static> = LayerFacts {
+    id: Some(Uuid::from_canonical([
+        0x06, 0x1d, 0xf9, 0x9e, 0x2e, 0xf8, 0x4a, 0x3f, 0x8f, 0x2d, 0x4b, 0x12, 0x3a, 0x16, 0x60,
+        0x89,
+    ])),
+    name: "Default",
+    color: [0, 0, 0, 0],
+    visible: true,
+};
 
 struct LayerLookup<'a> {
     entries: HashMap<i32, LayerEntry<'a>>,

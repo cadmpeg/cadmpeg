@@ -583,10 +583,12 @@ bounded unit and the table order of the registered tables is unchanged. Its
 records have no typed owner and remain opaque source records. Archive version
 90 writes the unregistered tables `0x10000027`, `0x10000028`, and
 `0x10000029` between the hatch-pattern table and the instance-definition
-table. Any other top-level typecode before end of file is a framing error. A short `TCODE_ENDOFTABLE` with value zero normally terminates
-the records. If the marker is absent, the table chunk boundary terminates the
-records and scanning emits a warning. A present marker must be the final table
-child. Every record is contained within the table bound.
+table. Any other top-level typecode before end of file is a framing error.
+
+A short `TCODE_ENDOFTABLE` with value zero normally terminates the records. If
+the marker is absent, the table chunk boundary terminates the records and
+scanning emits a warning. A present marker must be the final table child. Every
+record is contained within the table bound.
 
 An object record is:
 
@@ -2409,11 +2411,16 @@ remains opaque source data and the decoder reports the layer per-viewport
 userdata transfer diagnostic. No class-owned userdata field is admitted when
 this fallback applies.
 
-The archive layer index is the object-reference key. If two layer records use
-one archive index, OpenNURBS component registration keeps the original index on
-the first record and assigns a distinct unused index to each later record. If
-two layer records use one UUID, registration keeps the UUID on the first record
-and generates a new UUID for each later record.
+The archive layer index is the object-reference key. A negative archived
+component index names a persistent system component and is not remapped. Object
+layer index -1 names the system layer `ON_Layer::Default`, which no layer table
+stores: UUID `061DF99E-2EF8-4A3F-8F2D-4B123A166089`, name `Default`, black, and
+visible. A nonnegative index that names no layer record binds no layer and is
+reported. If two layer records use one archive index, OpenNURBS component
+registration keeps the original index on the first record and assigns a
+distinct unused index to each later record. If two layer records use one UUID,
+registration keeps the UUID on the first record and generates a new UUID for
+each later record.
 
 CADIR decision: the decoder generates no index or UUID. Each layer record keeps
 its serialized index and UUID. An object reference to a duplicated index binds
@@ -2584,8 +2591,8 @@ material color, and 3 parent color for an instance-definition member or layer
 color for another object. A member with source 3 takes the effective color of
 each instance reference that places it, at placement; a reference whose own
 source is 3 inside another definition passes on the color of its placing
-reference. A member that no reference places has no color. Other values retain the raw selector, leave neutral
-color unset, and emit a typed degradation loss.
+reference. A member that no reference places has no color. Other values retain
+the raw selector, leave neutral color unset, and emit a typed degradation loss.
 
 The low nibble of object mode is 0 normal, 1 hidden, 2 locked, or 3 instance-
 definition member. Higher bits do not change the mode. Before the explicit
@@ -3731,9 +3738,9 @@ outer and a clockwise loop is inner.
 An explicit neutral outer or inner boundary role selects loop type 1 or 2. A
 single unclassified loop is outer, because the first loop of a face is outer.
 For a face with more unclassified loops, the signed parameter-space area of
-each loop, sampled along its trims, selects outer for a positive area and
-inner for a negative area. The writer places the outer loop first. A face with a degenerate
-loop area, or with other than one counterclockwise loop, is refused.
+each loop, sampled along its trims, selects outer for a positive area and inner
+for a negative area. The writer places the outer loop first. A face with a
+degenerate loop area, or with other than one counterclockwise loop, is refused.
 
 The face array uses packed version 1.1 below archive 70 and 1.2 at archive 70
 and later. Version 1.1 appends one UUID per face. Version 1.2 then appends a
@@ -5308,13 +5315,13 @@ Before writer version 1 December 2009, transparent RGB `(128,128,128)` is the
 obsolete default and the diffuse color replaces the complete transparent
 color.
 
-The archive version and the archive OpenNURBS version select the material
-form. Archive versions 60 and later with an archive OpenNURBS version of at
-least 2348833910 use the anonymous form above. Archive versions 4, 5, and 50,
-and archive versions 60 and later whose archive OpenNURBS version is absent or
+The archive version and the archive OpenNURBS version select the material form.
+Archive versions 60 and later with an archive OpenNURBS version of at least
+2348833910 use the anonymous form above. Archive versions 4, 5, and 50, and
+archive versions 60 and later whose archive OpenNURBS version is absent or
 below 2348833910, use the packed form: the class-data payload begins with
-packed version `2.0`, followed by one anonymous long chunk. This outer version is a
-material-format discriminator; it has no fields beyond the child boundary.
+packed version `2.0`, followed by one anonymous long chunk. This outer version
+is a material-format discriminator; it has no fields beyond the child boundary.
 The child has major 1 and a nonnegative minor. Minor 1 adds the obsolete
 library string; minor 2 adds material channels; minor 3 adds shareable and
 lighting flags; minor 4 adds Fresnel fields; minor 5 adds the RDK UUID; and
@@ -6378,11 +6385,11 @@ The named-construction-plane list has the same count framing, with one long
 `TCODE_VIEW_CPLANE` child per count. The reader checks the CRC of each counted
 `TCODE_VIEW_CPLANE` child before the plane transfers; a mismatch is an
 integrity failure tagged `VIEW/CPLANE`, and the plane transfers. The named-view
-and active-view lists use long `TCODE_VIEW_RECORD` children. The list records are CRC-bearing; their CRC
-covers the count and any direct suffix bytes and excludes each complete child
-chunk. Each child has its own CRC and bounded body. The readers require
-the defined child typecode for every counted child; an unexpected typecode or
-short framing fails that list read.
+and active-view lists use long `TCODE_VIEW_RECORD` children. The list records
+are CRC-bearing; their CRC covers the count and any direct suffix bytes and
+excludes each complete child chunk. Each child has its own CRC and bounded
+body. The readers require the defined child typecode for every counted child;
+an unexpected typecode or short framing fails that list read.
 
 The direct-body long children `TCODE_VIEW_VIEWPORT`, `TCODE_VIEW_CPLANE`,
 `TCODE_VIEW_TARGET`, `TCODE_VIEW_POSITION`, `TCODE_VIEW_NAME`,

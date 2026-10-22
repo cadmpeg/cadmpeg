@@ -567,6 +567,54 @@ fn tagged_attributes_reject_nonfinite_numeric_items() {
 }
 
 #[test]
+fn layer_index_minus_one_names_the_system_default_layer() {
+    let bytes = fixed_attributes(1, 0, None);
+    let mut attributes = parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V4,
+        None,
+        &mut Diagnostics::new(),
+    )
+    .expect("required invariant");
+    attributes.layer_index = -1;
+    let mut missing = attributes.clone();
+    missing.layer_index = 7;
+    let objects = vec![
+        ObjectRecord::Framed(Box::new(descriptor(attributes, 10))),
+        ObjectRecord::Framed(Box::new(descriptor(missing, 20))),
+    ];
+    let mut warnings = Diagnostics::new();
+    let objects = crate::objects::resolve_identities(
+        objects,
+        &settings::DocumentMetadata::default(),
+        &mut warnings,
+    )
+    .expect("resolve identities");
+    let system = objects[0].identity().expect("required invariant");
+    let layer = system.layer.as_ref().expect("the system default layer");
+    assert_eq!(layer.name, "Default");
+    assert_eq!(
+        layer.id.map(|id| id.to_string()),
+        Some("061df99e-2ef8-4a3f-8f2d-4b123a166089".to_string())
+    );
+    assert_eq!(system.effective_color, Some([0, 0, 0, 0]));
+    assert!(system.effective_visible);
+    assert!(objects[1]
+        .identity()
+        .expect("required invariant")
+        .layer
+        .is_none());
+    let messages = warnings
+        .messages()
+        .filter(|message| message.contains("layer"))
+        .collect::<Vec<_>>();
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    assert!(messages[0].contains("missing layer index 7"));
+}
+
+#[test]
 fn a_duplicated_layer_uuid_keeps_the_index_binding_and_withholds_the_uuid() {
     let layer = settings::LayerRecord {
         source: settings::SourceRange { range: 0..1 },

@@ -434,6 +434,47 @@ fn checksum_warning(
     }
 }
 
+/// Checks the CRC of each nested leaf chunk that a settings or properties
+/// record owns. The record CRC excludes these children, so each carries its
+/// own CRC over its complete body.
+fn nested_leaf_checksum_warnings(
+    data: &[u8],
+    typecode: u32,
+    offset: usize,
+    parent_end: usize,
+    archive: ArchiveVersion,
+) -> Result<Vec<String>, CodecError> {
+    let chunk = chunk_at(data, offset, parent_end, archive, false).map_err(framing_error)?;
+    let children = match typecode {
+        TCODE_SETTINGS_ATTRIBUTES => settings_attributes_checksum_children(data, &chunk, archive),
+        TCODE_PLUGIN_LIST => plugin_list_checksum_children(data, &chunk, archive),
+        TCODE_RENDER_MESH_SETTINGS | TCODE_ANALYSIS_MESH_SETTINGS => {
+            mesh_checksum_children(data, &chunk, archive)
+        }
+        TCODE_COMPRESSED_PREVIEW => compressed_preview_checksum_children(data, &chunk, archive),
+        _ => return Ok(Vec::new()),
+    };
+    let children = match children {
+        Ok(children) => children,
+        Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+        // The record checksum reports a child framing failure.
+        Err(_) => return Ok(Vec::new()),
+    };
+    let mut warnings = Vec::new();
+    for child in children {
+        let leaf = chunk_at(data, child.start, child.end, archive, false).map_err(framing_error)?;
+        if let ChecksumStatus::Mismatch { expected, actual } =
+            verify_checksum(data, &leaf).map_err(framing_error)?
+        {
+            warnings.push(format!(
+                "CRC mismatch at offset {} for nested typecode {:#x} in typecode {typecode:#x}: expected {expected:#x}, got {actual:#x}",
+                child.start, leaf.typecode
+            ));
+        }
+    }
+    Ok(warnings)
+}
+
 /// Returns the nested SubD-display chunk in a version 1.5-or-newer mesh
 /// settings payload.
 ///
@@ -1193,6 +1234,18 @@ fn scan_with_record_limit<'a>(
                                 ));
             }
             if let Some(note) = checksum_warning(
+                data,
+                record.typecode,
+                child_offset,
+                chunk.body().end,
+                archive,
+            )? {
+                warnings.push_coded(
+                    crate::loss::RhinoLossCode::IntegrityFailure,
+                    format_args!("{note}"),
+                );
+            }
+            for note in nested_leaf_checksum_warnings(
                 data,
                 record.typecode,
                 child_offset,

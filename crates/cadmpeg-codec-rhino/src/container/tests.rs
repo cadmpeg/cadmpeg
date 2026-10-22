@@ -1244,3 +1244,43 @@ fn a_top_level_chunk_outside_the_table_family_remains_fatal() {
         Err(CodecError::Malformed(message)) if message.contains("expected table or EOF")
     ));
 }
+
+#[test]
+fn a_stale_plugin_reference_crc_is_an_integrity_warning() {
+    let archive = ArchiveVersion::V5;
+    let record = |stale: bool| {
+        let mut child = anonymous_chunk(archive, 2, &[0xde, 0xad]);
+        if stale {
+            let crc = child.len() - 4;
+            child[crc] ^= 0xff;
+        }
+        let mut body = vec![0x10];
+        body.extend(1_i32.to_le_bytes());
+        let child_start = body.len();
+        body.extend(child);
+        let child_range = child_start..body.len();
+        crc_chunk_excluding(
+            archive,
+            0x2000_8135,
+            &body,
+            std::slice::from_ref(&child_range),
+        )
+    };
+    let current = record(false);
+    assert!(
+        super::nested_leaf_checksum_warnings(&current, 0x2000_8135, 0, current.len(), archive)
+            .expect("plugin-list child framing")
+            .is_empty()
+    );
+    let stale = record(true);
+    assert_eq!(
+        checksum_warning(&stale, 0x2000_8135, 0, stale.len(), archive)
+            .expect("plugin-list checksum framing"),
+        None
+    );
+    let warnings =
+        super::nested_leaf_checksum_warnings(&stale, 0x2000_8135, 0, stale.len(), archive)
+            .expect("plugin-list child framing");
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].contains("nested typecode 0x40008000"));
+}
