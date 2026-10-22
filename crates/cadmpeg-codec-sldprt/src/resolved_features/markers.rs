@@ -40,13 +40,11 @@ use std::collections::{BTreeMap, HashMap};
 use crate::layout::compact_current_spatial_marker_point as compact_spatial;
 use crate::layout::compact_legacy_142_profile_curve as legacy_142;
 use crate::layout::compact_legacy_code_two_profile_point as code_two;
-use crate::layout::current_coordinate_marker_identity as coordinate_identity;
 use crate::layout::current_geometry_locus_arc_handle_point as current_arc_handle;
 use crate::layout::current_geometry_locus_arc_handle_point_terminal as current_arc_handle_terminal;
 use crate::layout::current_indexed_spatial_xyz_point_prefix as spatial_xyz;
 use crate::layout::current_indexed_spatial_xyz_terminal_reference_prefix_long as spatial_xyz_terminal_long;
 use crate::layout::current_indexed_spatial_xyz_terminal_reference_prefix_short as spatial_xyz_terminal_short;
-use crate::layout::feature_input_class_declaration_prefix as class_declaration;
 use crate::layout::legacy_140_single_incidence_profile_point as pt_140;
 use crate::layout::legacy_144_single_incidence_profile_point as pt_144;
 use crate::layout::wide_spatial_marker_coordinate_prefix as spatial_pre;
@@ -1248,59 +1246,7 @@ pub(crate) fn reference_cells(
     Ok(cells)
 }
 
-fn coordinate_identity_boundary(payload: &[u8], offset: usize) -> bool {
-    let Some(end) = offset.checked_add(coordinate_identity::LEN) else {
-        return false;
-    };
-    let Some(marker) = payload.get(offset..end) else {
-        return false;
-    };
-    if marker.get(..SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
-        || marker.get(
-            coordinate_identity::GEOMETRY_LOCUS
-                ..coordinate_identity::GEOMETRY_LOCUS
-                    + coordinate_identity::GEOMETRY_LOCUS_VALUE.len(),
-        ) != Some(&coordinate_identity::GEOMETRY_LOCUS_VALUE)
-        || marker.get(coordinate_identity::COORDINATE_TAG..coordinate_identity::COORDINATE_FIRST)
-            != Some(&coordinate_identity::COORDINATE_TAG_VALUE)
-        || marker.get(coordinate_identity::ZERO_TAIL..coordinate_identity::LOCAL_ID)
-            != Some(&coordinate_identity::ZERO_TAIL_VALUE)
-        || marker_coordinates(marker, 0).is_none()
-    {
-        return false;
-    }
-    if end == payload.len() {
-        return true;
-    }
-    let Some(name_start) = end.checked_add(class_declaration::LEN) else {
-        return false;
-    };
-    let Some(header) = payload.get(end..name_start) else {
-        return false;
-    };
-    if header.get(..super::CLASS_MARKER.len()) != Some(super::CLASS_MARKER) {
-        return false;
-    }
-    let Some(length) = View::u16_le_at(header, class_declaration::NAME_LENGTH).map(usize::from)
-    else {
-        return false;
-    };
-    let Some(name) = name_start
-        .checked_add(length)
-        .and_then(|finish| payload.get(name_start..finish))
-    else {
-        return false;
-    };
-    !name.is_empty() && std::str::from_utf8(name).is_ok()
-}
-
 pub(crate) fn marker_local_id_offset(payload: &[u8], offset: usize) -> Option<usize> {
-    // The zero-tail coordinate record is also complete when the
-    // next statement is a class declaration, or the lane ends. Its identity
-    // must not depend on another sketch marker following it.
-    if coordinate_identity_boundary(payload, offset) {
-        return offset.checked_add(coordinate_identity::LOCAL_ID);
-    }
     let relative = if compact_legacy_code_two_profile_point_coordinates(payload, offset).is_some() {
         128
     } else if legacy_wide_profile_roster_curve(payload, offset)
