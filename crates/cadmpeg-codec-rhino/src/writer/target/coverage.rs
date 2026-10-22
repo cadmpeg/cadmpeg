@@ -19,8 +19,16 @@ use cadmpeg_ir::CadIr;
 use serde::Serialize;
 use serde_json::Value;
 
-pub(super) fn verified(ctx: &DecodeContext<'_>, ir: &CadIr, bytes: &[u8]) -> ArenaDispositions {
+pub(super) fn verified(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    bytes: &[u8],
+    subds_written: usize,
+) -> ArenaDispositions {
     let mut coverage = super::COVERAGE;
+    if subds_written != 0 {
+        coverage.subds = ArenaDisposition::Reported;
+    }
     let Ok(decoded) = crate::RhinoCodec.decode_with_context(ctx, View::over_retained(bytes)) else {
         return coverage;
     };
@@ -51,6 +59,7 @@ pub(super) fn verified(ctx: &DecodeContext<'_>, ir: &CadIr, bytes: &[u8]) -> Are
         curves,
         pcurves,
         tessellations,
+        subds,
         procedural_curves,
     );
     coverage

@@ -23,8 +23,9 @@ use crate::records::{
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputRelationFamily,
     FeatureInputScalarRole, FeatureInputSurfaceSelection,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::convert::f64_from_index;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -755,12 +756,19 @@ pub(crate) fn project_compact_body_selections(
 }
 
 pub(crate) fn project_compact_edge_selections(
+    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let feature_ids_by_native = compact_edge_feature_ids(features);
-    project_compact_edge_selections_with_ids(features, &feature_ids_by_native, histories, lanes)
+    project_compact_edge_selections_with_ids(
+        class_sources,
+        features,
+        &feature_ids_by_native,
+        histories,
+        lanes,
+    )
 }
 
 /// Feature ids by native ref, for compact edge selection; a repeated native
@@ -787,6 +795,7 @@ pub(crate) fn compact_edge_feature_ids(
 /// producer refs through `feature_ids_by_native`, which may cover features
 /// outside `features`.
 pub(crate) fn project_compact_edge_selections_with_ids(
+    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     feature_ids_by_native: &HashMap<String, cadmpeg_ir::features::FeatureId>,
     histories: &[crate::records::FeatureHistory],
@@ -832,7 +841,7 @@ pub(crate) fn project_compact_edge_selections_with_ids(
                 let fillet_objects = fillet_objects
                     .get_or_insert_with(|| VariableFilletObjects::new(histories, lanes));
                 if let Some(radius_groups) =
-                    variable_fillet_radius_groups(native_ref, fillet_objects, edge_selections)
+                    variable_fillet_radius_groups(class_sources, native_ref, fillet_objects, edge_selections)
                 {
                     let unresolved_edges = matches!(existing_edges, EdgeSelection::Unresolved);
                     if unresolved_edges || radius_groups.len() == 1 {
@@ -1015,6 +1024,7 @@ impl<'a> VariableFilletObjects<'a> {
 }
 
 fn variable_fillet_radius_groups<'a>(
+    class_sources: &ClassSources,
     feature_ref: &str,
     objects: &mut VariableFilletObjects<'_>,
     selections: &[&'a FeatureInputEdgeSelection],
@@ -1092,7 +1102,9 @@ fn variable_fillet_radius_groups<'a>(
     let mut non_vertex_control_names = HashSet::<String>::new();
     let mut non_vertex_control_references = Vec::new();
     for (lane, object_end) in objects.object_ends(history, feature_ref) {
-        let Some(controls) = variable_fillet_control_references(feature, lane, object_end) else {
+        let Some(controls) =
+            variable_fillet_control_references(class_sources, feature, lane, object_end)
+        else {
             continue;
         };
         for super::selections::VariableFilletControl(name, references) in controls {
@@ -1919,6 +1931,7 @@ fn surface_selections_by_lane<'a>(
 }
 
 pub(crate) fn project_draft_operands(
+    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -1937,7 +1950,7 @@ pub(crate) fn project_draft_operands(
     }
     let mut candidates = HashMap::<String, Vec<DraftOperands>>::new();
     for lane in lanes {
-        for (feature, operands) in draft_operand_candidates(histories, lane)? {
+        for (feature, operands) in draft_operand_candidates(class_sources, histories, lane)? {
             let by_feature = candidates.entry(feature).or_default();
             by_feature.push(operands);
         }
@@ -2217,7 +2230,7 @@ fn cut_with_surface_selection_pair<'a>(
 /// Resolve an attached thread face when its persistent cylinder reference
 /// cannot bind directly to a generated face.
 pub(crate) fn project_unbound_cosmetic_thread_faces(
-    ctx: &DecodeContext<'_>,
+    source: (&ClassSources, &cadmpeg_core::decode::DecodeContext<'_>),
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -2225,6 +2238,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
     surfaces: &[Surface],
     parameters: &[DesignParameter],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let (class_sources, ctx) = source;
+
     let native_features = crate::records::HistoryFeatures::new(histories);
     let mut history_features = Vec::new();
     for native_feature in histories.iter().flat_map(|history| &history.features) {
@@ -2303,8 +2318,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         if class.name != "moCylinderRef_w" {
                             continue;
                         }
-                        let token = class
-                            .offset
+                        let token = class_sources
+                            .position(class)
                             .and_then(|offset| usize::try_from(offset).ok())
                             .and_then(|offset| {
                                 class

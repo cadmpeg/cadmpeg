@@ -1,5 +1,6 @@
 //! Tests for the `projections` module.
 
+use crate::resolved_features::class_sources::ClassSources;
 use crate::test_support::dimensions::source_value;
 
 use super::{
@@ -427,7 +428,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     );
     with_projection_context(|ctx| {
         project_unbound_cosmetic_thread_faces(
-            ctx,
+            (&crate::test_support::native::class_sources(&lanes), ctx),
             &mut features,
             std::slice::from_ref(&history),
             &lanes,
@@ -497,7 +498,10 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     });
     with_projection_context(|ctx| {
         project_unbound_cosmetic_thread_faces(
-            ctx,
+            (
+                &crate::resolved_features::class_sources::ClassSources::default(),
+                ctx,
+            ),
             &mut features,
             std::slice::from_ref(&history),
             &[],
@@ -1373,6 +1377,8 @@ fn split_face_collects_distinct_generated_target_faces() {
 
 #[test]
 fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
+    let class_sources = ClassSources::default();
+
     let signature = |serial: u32| {
         let mut value = [0u8; 12];
         value[..4].copy_from_slice(&[0x38, 0x80, 0x3b, 0]);
@@ -1466,7 +1472,6 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
             id: "vertex-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(cadmpeg_core::decode::u64_from_index(class_offset)),
             name: class_name.into(),
         }],
         names: vec![
@@ -1510,6 +1515,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
     };
 
     let groups = variable_fillet_radius_groups(
+        &class_sources,
         "variable",
         &mut VariableFilletObjects::new(
             std::slice::from_ref(&history),
@@ -1555,6 +1561,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         native_ref: Some("variable".into()),
     }];
     super::project_compact_edge_selections(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
         &mut projected,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -1574,6 +1581,8 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
 
 #[test]
 fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges() {
+    let class_sources = ClassSources::default();
+
     let signature = |serial: u32| {
         let mut value = [0u8; 12];
         value[..4].copy_from_slice(&[0x38, 0x80, 0x3b, 0]);
@@ -1662,7 +1671,6 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
             id: "edge-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(cadmpeg_core::decode::u64_from_index(class_offset)),
             name: class_name.into(),
         }],
         names: vec![
@@ -1708,6 +1716,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
     };
 
     let groups = variable_fillet_radius_groups(
+        &class_sources,
         "variable",
         &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[lane]),
         &[&selection],
@@ -1728,6 +1737,8 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
 
 #[test]
 fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
+    let class_sources = ClassSources::default();
+
     let feature = Feature {
         id: "variable".into(),
         parent: "history".into(),
@@ -1780,6 +1791,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
     };
 
     let groups = variable_fillet_radius_groups(
+        &class_sources,
         "variable",
         &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[]),
         &[&selection],
@@ -1800,6 +1812,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
     let mut collision = selection;
     collision.references[0][0].instance = Some(0x8083);
     assert!(variable_fillet_radius_groups(
+        &class_sources,
         "variable",
         &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[]),
         &[&collision]

@@ -1205,9 +1205,6 @@ pub(crate) struct FeatureInputClass {
     pub(crate) ordinal: u32,
     /// Order among the lane\'s typed content records.
     pub(crate) sequence: u32,
-    /// Byte offset of the `ff ff 01 00` declaration marker.
-    #[serde(skip)]
-    pub(crate) offset: Option<u64>,
     /// Declared native class name.
     #[serde(flatten, with = "feature_class_wire")]
     pub(crate) name: String,

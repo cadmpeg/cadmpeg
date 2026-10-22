@@ -781,7 +781,15 @@ impl CodecBackend for FcstdCodec {
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let (mut scan, parts) = container::scan_for_decode(ctx, root)?;
-        let source_admission = fidelity::b1::prepare(ctx, root, &scan)?;
+        let gui_source = if ctx.container_only() {
+            None
+        } else {
+            scan.data
+                .get("GuiDocument.xml")
+                .map(|source| gui::source::parse(ctx, *source))
+                .transpose()?
+        };
+        let source_admission = fidelity::b1::prepare(ctx, root, &scan, gui_source.as_ref())?;
         let legacy_source_evidence = !source_admission.is_complete();
         let mut admitted_entities = 0_u64;
         let mut attributes = container::source_attributes(&scan)?;
@@ -789,16 +797,16 @@ impl CodecBackend for FcstdCodec {
         let thumbnail = scan
             .data
             .get("thumbnails/Thumbnail.png")
-            .map(|view| ("thumbnails/Thumbnail.png", view.window()))
+            .map(|view| ("thumbnails/Thumbnail.png", *view))
             .or_else(|| {
                 scan.data
                     .get("Thumbnail.png")
-                    .map(|view| ("Thumbnail.png", view.window()))
+                    .map(|view| ("Thumbnail.png", *view))
             });
         if let Some((_, thumbnail)) = thumbnail {
             attributes.insert(
                 cadmpeg_core::nonblank_literal!("thumbnail_bytes"),
-                thumbnail.len().to_string(),
+                thumbnail.window().len().to_string(),
             );
         }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
@@ -857,7 +865,24 @@ impl CodecBackend for FcstdCodec {
         let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
         ir.set_scope(ctx.depth().required_scope())
             .map_err(CodecError::malformed)?;
-        if let Some((name, bytes)) = thumbnail {
+        if let Some((name, source)) = thumbnail {
+            let capture = ctx.capture_part_extent(source)?;
+            let bytes = source.window();
+            let id = UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "native", "thumbnail"),
+                cadmpeg_ir::ids::IdentityKey::encode_segment(name),
+            );
+            let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::resume(
+                std::mem::take(&mut source_fidelity.annotations),
+            );
+            annotations.annotate(
+                &id,
+                capture.stream(),
+                capture.offset(),
+                "thumbnail",
+                cadmpeg_ir::Exactness::ByteExact,
+            )?;
+            source_fidelity.annotations = annotations.build();
             ctx.retain_bytes(
                 cadmpeg_core::decode::u64_from_index(bytes.len()),
                 "retain FCStd thumbnail",
@@ -866,11 +891,8 @@ impl CodecBackend for FcstdCodec {
                 &mut ir,
                 "fcstd",
                 [UnknownRecord::retained(
-                    UnknownId::compose(
-                        &cadmpeg_ir::identity_namespace!("fcstd", "native", "thumbnail"),
-                        cadmpeg_ir::ids::IdentityKey::encode_segment(name),
-                    ),
-                    0,
+                    id,
+                    capture.offset(),
                     bytes.to_vec(),
                     vec![native::native_id("document", "0")],
                 )]
@@ -886,7 +908,12 @@ impl CodecBackend for FcstdCodec {
         let decode_document = !ctx.container_only();
         if decode_document {
             let document_xml = &scan.document_xml;
-            let mut graph = persistence::parse_document(
+            let mut graph = persistence::parse_document_source(
+                ctx,
+                *scan
+                    .data
+                    .get("Document.xml")
+                    .ok_or_else(|| CodecError::malformed("properties have no document source"))?,
                 document_xml,
                 persistence::Vocabulary::from_declaration(&scan.schema_version)?,
             )?;
@@ -938,7 +965,7 @@ impl CodecBackend for FcstdCodec {
                     .values()
                     .filter(|source| !source.has_values()),
             ) {
-                fidelity::property_layout_payloads(
+                fidelity::captured_property_layout_payloads(
                     ctx,
                     *scan
                         .data
@@ -1150,11 +1177,9 @@ impl CodecBackend for FcstdCodec {
                     .set_arena(ctx, "design_census", &design_census)?;
             }
             element_map::bind_topology(&mut element_maps, &topology_occurrences);
-            let mut gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
-                gui::transfer(
-                    ctx,
+            let mut gui_graph = if let Some(gui_source) = gui_source {
+                gui_source.transfer(
                     &mut ir,
-                    gui_view.window(),
                     &gui::GuiSources {
                         entries: &scan.data,
                         objects: &graph.objects,
@@ -1169,7 +1194,7 @@ impl CodecBackend for FcstdCodec {
             } else {
                 gui::Graph::default()
             };
-            if gui_graph.untyped {
+            if gui_graph.untyped && legacy_source_evidence {
                 let source = *scan.data.get("GuiDocument.xml").ok_or_else(|| {
                     CodecError::malformed("untyped GUI document has no actual source")
                 })?;

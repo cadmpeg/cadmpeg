@@ -1,5 +1,6 @@
 //! Pattern, sweep and scalar operand lane binding.
 
+use crate::resolved_features::class_sources::ClassSources;
 mod source_order;
 
 use super::assembly::is_supplemental_config_lane;
@@ -80,6 +81,7 @@ pub(super) fn pattern_object_end<'a>(
 
 /// Bind pattern operands carried by adjacent feature-input objects.
 pub(crate) fn bind_pattern_inputs(
+    class_sources: &ClassSources,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -118,6 +120,7 @@ pub(crate) fn bind_pattern_inputs(
     for lane in lanes {
         let discovered_identities = if lane.generated_surface_identities.is_empty() {
             Some(generated_surface_identities(
+                class_sources,
                 &lane.id,
                 &lane.classes,
                 &lane.native_payload,
@@ -380,6 +383,7 @@ pub(crate) fn bind_pattern_inputs(
                     if let Some(dimensions) =
                         object_start.filter(|start| *start < end).and_then(|start| {
                             typed_linear_pattern_dimensions(
+                                class_sources,
                                 feature,
                                 lane,
                                 start,
@@ -460,11 +464,11 @@ pub(crate) fn bind_pattern_inputs(
                 let mut declarations = Vec::new();
                 for class in &lane.classes {
                     if class.name == "moLineRef_w"
-                        && class.offset.is_some_and(|position| {
+                        && class_sources.position(class).is_some_and(|position| {
                             position > u64_from_index(starts[start_index].0)
                         })
-                        && class
-                            .offset
+                        && class_sources
+                            .position(class)
                             .is_some_and(|position| position < u64_from_index(end))
                     {
                         declarations.push(class);
@@ -472,15 +476,19 @@ pub(crate) fn bind_pattern_inputs(
                 }
                 let mut directions = Vec::new();
                 for class in &declarations {
-                    let declared =
-                        declared_line_reference_directions(&lane.native_payload, class.offset, end);
+                    let declared = declared_line_reference_directions(
+                        &lane.native_payload,
+                        class_sources.position(class),
+                        end,
+                    );
                     directions.extend(declared);
                 }
                 if let Some(start) = object_start {
                     let mut excluded_handles = Vec::new();
                     for class in &declarations {
-                        if let Some(offset) =
-                            class.offset.and_then(|offset| usize::try_from(offset).ok())
+                        if let Some(offset) = class_sources
+                            .position(class)
+                            .and_then(|offset| usize::try_from(offset).ok())
                         {
                             excluded_handles.extend([offset + 136, offset + 144]);
                         }
@@ -1141,6 +1149,9 @@ pub(crate) fn bind_scalar_operands(
     lanes: &mut [FeatureInputLane],
     sources: &mut super::body_sources::BodySources<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    sources.capture_classes(ctx, lanes.iter())?;
+    let class_sources = sources.class_sources();
+
     let represented_sketches = represented_sketch_features(histories, lanes);
     let metadata_ids = history_metadata_ids(histories);
     let features_by_id = crate::records::HistoryFeatures::new(histories);
@@ -1211,7 +1222,8 @@ pub(crate) fn bind_scalar_operands(
             }
         }
         let source = sources.view(lane)?;
-        lane.body_selections = compact_body_selections(ctx, source, sources, histories, lane)?;
+        lane.body_selections =
+            compact_body_selections(&class_sources, ctx, source, sources, histories, lane)?;
         finalize_lane_bindings(ctx, histories, lane, sources)?;
     }
     Ok(())
@@ -1223,6 +1235,9 @@ pub(crate) fn finalize_lane_bindings(
     lane: &mut FeatureInputLane,
     sources: &mut super::body_sources::BodySources<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let class_sources =
+        super::class_sources::ClassSources::from_source(ctx, sources.view(lane)?, &lane.classes)?;
+
     normalize_indexed_curve_entities(lane);
     let mut marker_ids = HashMap::<String, HashMap<u32, Vec<(String, bool)>>>::new();
     for entity in &lane.sketch_entities {
@@ -1308,16 +1323,27 @@ pub(crate) fn finalize_lane_bindings(
             .map(str::to_owned);
     }
     let intervals = feature_intervals(histories, lane);
-    lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &intervals)?;
-    lane.relation_instances = relation_instances(histories, lane)?;
-    lane.edge_selections = compact_edge_selections(ctx, histories, lane)?.records;
-    lane.surface_selections = compact_surface_selections(ctx, histories, lane)?;
-    lane.generated_surface_identities =
-        generated_surface_identities(&lane.id, &lane.classes, &lane.native_payload)?.records;
+    lane.relation_bindings = relation_bindings(
+        &class_sources,
+        &lane.id,
+        &lane.classes,
+        &lane.scalars,
+        &intervals,
+    )?;
+    lane.relation_instances = relation_instances(&class_sources, histories, lane)?;
+    lane.edge_selections = compact_edge_selections(&class_sources, ctx, histories, lane)?.records;
+    lane.surface_selections = compact_surface_selections(&class_sources, ctx, histories, lane)?;
+    lane.generated_surface_identities = generated_surface_identities(
+        &class_sources,
+        &lane.id,
+        &lane.classes,
+        &lane.native_payload,
+    )?
+    .records;
     super::relation_layout::capture(ctx, lane, sources)?;
     super::generated_surface_layout::capture(ctx, lane, sources)?;
     super::edge_selection_layout::capture(ctx, histories, lane, sources)?;
-    source_order::finalize(histories, lane, sources.pointers())?;
+    source_order::finalize(&class_sources, histories, lane, sources.pointers())?;
     Ok(())
 }
 
@@ -1406,6 +1432,8 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     lane: &mut FeatureInputLane,
     sources: &super::body_sources::BodySources<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let class_sources = sources.class_sources();
+
     const OBJECT_GAP: u64 = 4096;
 
     if !is_supplemental_config_lane(lane) {
@@ -1415,10 +1443,15 @@ pub(super) fn bind_detached_legacy_sketch_objects(
         .classes
         .iter()
         .find(|class| class.name == "moFeatureDimHandle_c")
-        .and_then(|class| class.offset)
+        .and_then(|class| class_sources.position(class))
         .unwrap_or_else(|| u64_from_index(lane.native_payload.len()));
-    let relation_bindings =
-        bind_detached_spatial_relation_objects(histories, represented, lane, sources);
+    let relation_bindings = bind_detached_spatial_relation_objects(
+        &class_sources,
+        histories,
+        represented,
+        lane,
+        sources,
+    );
     let markers = lane
         .sketch_entities
         .iter()
@@ -1489,46 +1522,57 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     Ok(())
 }
 
-pub(super) fn spatial_relation_manager_ranges(lane: &FeatureInputLane) -> Vec<(u64, u64)> {
-    let mut ranges = spatial_relation_manager_candidates(lane).collect::<Vec<_>>();
+pub(super) fn spatial_relation_manager_ranges(
+    class_sources: &ClassSources,
+    lane: &FeatureInputLane,
+) -> Vec<(u64, u64)> {
+    let mut ranges = spatial_relation_manager_candidates(class_sources, lane).collect::<Vec<_>>();
     ranges.sort_unstable_by(Ord::cmp);
     ranges.dedup();
     ranges
 }
 
-fn spatial_relation_manager_candidates(
-    lane: &FeatureInputLane,
-) -> impl Iterator<Item = (u64, u64)> + '_ {
+fn spatial_relation_manager_candidates<'a>(
+    class_sources: &'a ClassSources,
+    lane: &'a FeatureInputLane,
+) -> impl Iterator<Item = (u64, u64)> + 'a {
     lane.classes
         .iter()
         .filter(|class| class.name == "sg3DPlaneHandle")
-        .filter_map(|plane| {
-            let start = lane
-                .classes
-                .iter()
-                .filter(|class| class.name == "moRelMgr_c" && class.offset < plane.offset)
-                .max_by_key(|class| class.offset)?
-                .offset?;
-            let end = lane
-                .classes
-                .iter()
-                .filter(|class| class.name == "suObList" && class.offset > plane.offset)
-                .min_by_key(|class| class.offset)?
-                .offset?;
-            (plane
-                .offset
+        .filter_map(move |plane| {
+            let start = class_sources.position(
+                lane.classes
+                    .iter()
+                    .filter(|class| {
+                        class.name == "moRelMgr_c"
+                            && class_sources.position(class) < class_sources.position(plane)
+                    })
+                    .max_by_key(|class| class_sources.position(class))?,
+            )?;
+            let end = class_sources.position(
+                lane.classes
+                    .iter()
+                    .filter(|class| {
+                        class.name == "suObList"
+                            && class_sources.position(class) > class_sources.position(plane)
+                    })
+                    .min_by_key(|class| class_sources.position(class))?,
+            )?;
+            (class_sources
+                .position(plane)
                 .is_some_and(|position| start < position && position < end))
             .then_some((start, end))
         })
 }
 
 fn bind_detached_spatial_relation_objects(
+    class_sources: &ClassSources,
     histories: &[crate::records::FeatureHistory],
     represented: &HashSet<String>,
     lane: &mut FeatureInputLane,
     sources: &super::body_sources::BodySources<'_>,
 ) -> Vec<(u64, u64, String)> {
-    let ranges = spatial_relation_manager_ranges(lane);
+    let ranges = spatial_relation_manager_ranges(class_sources, lane);
     if ranges.is_empty() {
         return Vec::new();
     }

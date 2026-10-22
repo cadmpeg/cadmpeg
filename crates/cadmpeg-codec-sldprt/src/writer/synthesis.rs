@@ -237,8 +237,8 @@ pub(super) fn plan(
         &projected,
         &Annotations::default(),
         &[],
+        super::ClassLayouts::Authored,
         declaration,
-        true,
         prepared_native,
         &mut bytes,
     )?;

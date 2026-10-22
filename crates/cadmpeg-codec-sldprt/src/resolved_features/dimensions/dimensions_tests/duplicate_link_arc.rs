@@ -4,10 +4,13 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputReference, SketchInputEntity, SketchInputKind, SketchInputLink,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use std::collections::HashMap;
 
 #[test]
 fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
+    let class_sources = ClassSources::default();
+
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8c44).unwrap());
     let operand = FeatureInputOperand {
         offset: Some(100),
@@ -98,7 +101,6 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(112),
             name: "sgEntHandle".into(),
         }],
         names: Vec::new(),
@@ -128,6 +130,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
@@ -158,6 +161,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&mismatched_lane),
         &mismatched_markers,
         "feature",
@@ -174,6 +178,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&non_arc_lane),
         &non_arc_markers,
         "feature",
@@ -229,6 +234,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",

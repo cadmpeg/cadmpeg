@@ -16,8 +16,13 @@ pub(super) fn capture(
     }
     let source = sources.view(lane)?;
     let classes = super::names::class_declarations(source.window(), &lane.id)?;
-    let parsed =
-        super::selections::generated_surface_identities(&lane.id, &classes, source.window())?;
+    let class_sources = super::class_sources::ClassSources::from_source(ctx, source, &classes)?;
+    let parsed = super::selections::generated_surface_identities(
+        &class_sources,
+        &lane.id,
+        &classes,
+        source.window(),
+    )?;
     // Independently changed native content cannot acquire source evidence by
     // reparsing unrelated original bytes. Final admission must agree exactly.
     if parsed.records != lane.generated_surface_identities {
@@ -115,11 +120,11 @@ fn read_prefix(
     classes: &[FeatureInputClass],
     expected: &[u8],
 ) -> Option<[u8; 4]> {
-    for class in classes
+    for (class, (offset, _)) in classes
         .iter()
-        .filter(|class| class.name.ends_with("SurfIdRep_c"))
+        .zip(super::names::payload_classes(source.window()))
+        .filter(|(class, _)| class.name.ends_with("SurfIdRep_c"))
     {
-        let offset = usize::try_from(class.offset?).ok()?;
         let body = offset.checked_add(6)?.checked_add(class.name.len())?;
         // Probe exact declaration framing before opening its tracked fields.
         if source.window().get(body..body.checked_add(2)?) != Some(&[0, 0])

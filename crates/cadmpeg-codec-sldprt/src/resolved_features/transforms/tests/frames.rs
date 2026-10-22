@@ -10,6 +10,7 @@ use crate::records::{
     FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use crate::resolved_features::dimensions::project_dimensioned_sketch_geometry;
 use crate::resolved_features::profiles::bind_sketch_profiles;
 use crate::resolved_features::profiles::nested_profile_contains_declared_circular_carriers;
@@ -999,6 +1000,7 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     } = dimensioned_circle_fixture();
 
     project_dimensioned_sketch_geometry(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
         &mut entities,
         &[],
         &[],
@@ -1148,6 +1150,8 @@ fn implicit_circle_uses_unique_terminal_radial_point() {
 
 #[test]
 fn declared_entity_handle_uses_one_linked_center_radial_pair() {
+    let class_sources = ClassSources::default();
+
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
         offset: Some(100),
@@ -1162,7 +1166,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(112),
+
         name: "sgEntHandle".into(),
     };
     let reference = FeatureInputReference {
@@ -1199,6 +1203,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     };
 
     let (resolved, radius) = declared_entity_handle_circular_marker(
+        &class_sources,
         std::slice::from_ref(&lane),
         "feature-native",
         &operand,
@@ -1213,6 +1218,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         let mut lane = lane.clone();
         lane.sketch_entities[0].reclassify(kind);
         assert!(declared_entity_handle_circular_marker(
+            &class_sources,
             std::slice::from_ref(&lane),
             "feature-native",
             &operand,
@@ -1223,6 +1229,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     let mut invalid_radial = lane.clone();
     invalid_radial.sketch_entities[1].reclassify(SketchInputKind::Arc);
     assert!(declared_entity_handle_circular_marker(
+        &class_sources,
         std::slice::from_ref(&invalid_radial),
         "feature-native",
         &operand,
@@ -1241,6 +1248,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         .sketch_entities
         .extend([second_center, second_radial]);
     assert!(declared_entity_handle_circular_marker(
+        &class_sources,
         std::slice::from_ref(&ambiguous),
         "feature-native",
         &operand,
@@ -1377,7 +1385,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(312),
+
         name: "sgEntHandle".into(),
     };
     let mut center = marker("center", Some([0.010, 0.020]));
@@ -1504,6 +1512,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     annotations = builder.build();
 
     bind_sketch_profiles(
+        &crate::test_support::native::class_sources(&[&lane]),
         &mut features,
         crate::resolved_features::profiles::SketchArenas {
             sketches: &mut sketches,
@@ -1587,8 +1596,16 @@ fn dimensioned_sketch_projection_projects_circle() {
         parameter,
         lane,
     } = dimensioned_circle_fixture();
-    project_dimensioned_sketch_geometry(&mut entities, &[], &[], &[feature], &[parameter], &[lane])
-        .unwrap();
+    project_dimensioned_sketch_geometry(
+        &crate::test_support::native::class_sources(&[&lane]),
+        &mut entities,
+        &[],
+        &[],
+        &[feature],
+        &[parameter],
+        &[lane],
+    )
+    .unwrap();
     assert!(matches!(entities[2].geometry.definition(),
         SketchGeometryDefinition::Circle { center, radius }
             if *center == Point2::new(15.0, 40.0) && Length::from(*radius) == Length::new(4.0).unwrap()));

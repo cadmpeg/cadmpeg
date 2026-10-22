@@ -23,16 +23,13 @@ pub(super) fn capture(
     // class ID. A repeated physical name is not a locator or a unique owner.
     let declarations = super::names::class_declarations(source.window(), &lane.id)?;
     for binding in &lane.relation_bindings {
-        let actual = declarations
+        let (actual, (position, _)) = declarations
             .iter()
-            .find(|class| class.id == binding.class_ref)
+            .zip(super::names::payload_classes(source.window()))
+            .find(|(class, _)| class.id == binding.class_ref)
             .ok_or_else(|| {
                 CodecError::malformed("relation binding declaration is absent from source")
             })?;
-        let position = actual
-            .offset
-            .and_then(|offset| usize::try_from(offset).ok())
-            .ok_or_else(|| CodecError::malformed("relation declaration has no source locator"))?;
         let start = source
             .start()
             .checked_add(position)

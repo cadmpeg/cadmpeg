@@ -10,6 +10,8 @@ use crate::native::{
     PropertyRecord, ValueRecord,
 };
 
+pub(crate) mod source;
+
 const MAX_OBJECTS: usize = 1_000_000;
 const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
 
@@ -127,6 +129,24 @@ pub(crate) fn resolve_side_entries(
 pub(crate) fn parse_document(
     xml: &roxmltree::Document<'_>,
     schema: Vocabulary,
+) -> Result<Graph, CodecError> {
+    parse_document_impl(xml, schema, None)
+}
+
+pub(crate) fn parse_document_source<'source>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'source>,
+    source: cadmpeg_core::decode::View<'source>,
+    xml: &roxmltree::Document<'_>,
+    schema: Vocabulary,
+) -> Result<Graph, CodecError> {
+    let source = source::Source::new(ctx, source, xml)?;
+    parse_document_impl(xml, schema, Some(&source))
+}
+
+fn parse_document_impl(
+    xml: &roxmltree::Document<'_>,
+    schema: Vocabulary,
+    source: Option<&source::Source<'_, '_>>,
 ) -> Result<Graph, CodecError> {
     let root = xml.root_element();
     let mut losses = Vec::new();
@@ -317,6 +337,7 @@ pub(crate) fn parse_document(
                 &mut properties,
                 &mut property_sources,
                 &mut losses,
+                source,
             )?;
         }
         _ => {
@@ -409,6 +430,7 @@ pub(crate) fn parse_document(
                 &mut properties,
                 &mut property_sources,
                 &mut losses,
+                source,
             )?;
         }
         if let Some(extensions_node) = extension_container {
@@ -434,6 +456,7 @@ pub(crate) fn parse_document(
                         &mut properties,
                         &mut property_sources,
                         &mut losses,
+                        source,
                     )?;
                 }
             }
@@ -503,6 +526,7 @@ fn parse_properties(
     output: &mut Vec<PropertyRecord>,
     property_sources: &mut std::collections::BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source: Option<&source::Source<'_, '_>>,
 ) -> Result<(), CodecError> {
     let property_nodes = container
         .children()
@@ -536,20 +560,37 @@ fn parse_properties(
         );
     }
     for (order, node) in transient_property_nodes.into_iter().enumerate() {
-        let name = retained_attr(node, "name")?;
-        let type_name = retained_attr(node, "type")?;
+        let name = required_attr(node, "name")?;
 
-        let property = PropertyRecord {
-            id: crate::native::native_child_id("property", owner, &name),
-            owner: owner.to_owned(),
-            name,
-            family: property_family(&type_name),
-            type_name,
-            status: node
-                .attribute("status")
-                .and_then(|value| value.parse().ok()),
-            body: crate::native::PropertyBody::Transient,
-            order,
+        let id = crate::native::native_child_id("property", owner, name);
+        let parse = || {
+            let (name, type_name, status) = match source {
+                Some(source) => (
+                    source.required_attribute(node, "name")?,
+                    source.required_attribute(node, "type")?,
+                    source.status(node)?,
+                ),
+                None => (
+                    retained_attr(node, "name")?,
+                    retained_attr(node, "type")?,
+                    node.attribute("status")
+                        .and_then(|value| value.parse().ok()),
+                ),
+            };
+            Ok(PropertyRecord {
+                id: crate::native::native_child_id("property", owner, &name),
+                owner: owner.to_owned(),
+                name,
+                family: property_family(&type_name),
+                type_name,
+                status,
+                body: crate::native::PropertyBody::Transient,
+                order,
+            })
+        };
+        let property = match source {
+            Some(source) => source.record(&id, node, parse)?,
+            None => parse()?,
         };
         property_sources.insert(
             property.id.clone(),
@@ -558,116 +599,12 @@ fn parse_properties(
         output.push(property);
     }
     for (order, node) in property_nodes.into_iter().enumerate() {
-        let name = retained_attr(node, "name")?;
-        let type_name = retained_attr(node, "type")?;
-        let mut payload_error = None;
-        let links = if link_grammar(&type_name).is_some() {
-            match parse_link_targets(node, &type_name) {
-                Ok(links) => links,
-                Err(CodecError::Malformed(detail)) => {
-                    losses.push(
-                        crate::loss::FreecadLossCode::PersistencePayloadUnresolved.note(format!(
-                            "property {owner}/{name} is unreadable: {detail}; exact XML retained"
-                        )),
-                    );
-                    payload_error = Some(detail);
-                    Vec::new()
-                }
-                Err(error) => return Err(error),
-            }
-        } else {
-            Vec::new()
-        };
-        if payload_error.is_none() {
-            if let Err(error) = validate_scalar_payload(node, &type_name) {
-                let detail = error.to_string();
-                losses.push(
-                    crate::loss::FreecadLossCode::PersistencePayloadUnresolved.note(format!(
-                        "property {owner}/{name} is unreadable: {detail}; exact XML retained"
-                    )),
-                );
-                payload_error = Some(detail);
-            }
-        }
-        // Nested value elements copy overlapping XML ranges, so their total
-        // is bounded per property. A larger payload stays as its exact XML.
-        let value_xml_bytes = node
-            .descendants()
-            .filter(|value| payload_error.is_none() && value.is_element() && *value != node)
-            .try_fold(0_usize, |total, value| {
-                total.checked_add(value.range().len())
-            });
-        if value_xml_bytes.is_none_or(|bytes| bytes > MAX_PROPERTY_VALUE_XML_BYTES) {
-            let detail = format!(
-                "value XML copies exceed the {MAX_PROPERTY_VALUE_XML_BYTES}-byte value copy bound"
-            );
-            losses.push(
-                crate::loss::FreecadLossCode::PersistencePayloadUnresolved.note(format!(
-                    "property {owner}/{name} is unreadable: {detail}; exact XML retained"
-                )),
-            );
-            payload_error = Some(detail);
-        }
-        let mut values = Vec::new();
-        let mut value_indices = HashMap::new();
-        for (value_order, value) in node
-            .descendants()
-            .filter(|value| payload_error.is_none() && value.is_element() && *value != node)
-            .enumerate()
-        {
-            value_indices.insert(value.id(), value_order);
-            values.push(ValueRecord {
-                parent: value
-                    .parent()
-                    .and_then(|parent| value_indices.get(&parent.id()).copied()),
-                tag: value.tag_name().name().to_owned(),
-                order: value_order,
-                attributes: value
-                    .attributes()
-                    .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-                    .collect(),
-                decoded_json: decode_python_json(value).map(Into::into),
-                text: value.text().map(str::to_owned),
-            });
-        }
-        let mut side_entries = Vec::new();
-        for value in &values {
-            for (name, entry_name) in &value.attributes {
-                let selected = (matches!(name.as_str(), "file" | "File")
-                    && !is_xlink_type(&type_name))
-                    || (property_family(&type_name) == PropertyFamily::File
-                        && matches!(name.as_str(), "name" | "Name"));
-                if selected && !entry_name.is_empty() {
-                    side_entries.push(entry_name.to_owned());
-                }
-            }
-        }
-        let property = PropertyRecord {
-            id: crate::native::native_child_id("property", owner, &name),
-            owner: owner.to_owned(),
-            name,
-            family: property_family(&type_name),
-            type_name,
-            status: node
-                .attribute("status")
-                .and_then(|value| value.parse().ok()),
-            body: if let Some(detail) = payload_error {
-                crate::native::PropertyBody::Unreadable(detail)
-            } else {
-                crate::native::PropertyBody::Persisted {
-                    values,
-                    links,
-                    side_entries,
-                    dynamic: node.attribute("group").map(|group| DynamicPropertyMeta {
-                        group: group.to_owned(),
-                        documentation: node.attribute("doc").map(str::to_owned),
-                        attributes: node.attribute("attr").and_then(|value| value.parse().ok()),
-                        read_only: bool_attr(node.attribute("ro")),
-                        hidden: bool_attr(node.attribute("hide")),
-                    }),
-                }
-            },
-            order,
+        let name = required_attr(node, "name")?;
+        let id = crate::native::native_child_id("property", owner, name);
+        let mut parse = || parse_persisted_property(node, owner, order, losses, source);
+        let property = match source {
+            Some(source) => source.record(&id, node, parse)?,
+            None => parse()?,
         };
         property_sources.insert(
             property.id.clone(),
@@ -676,6 +613,165 @@ fn parse_properties(
         output.push(property);
     }
     Ok(())
+}
+
+fn parse_persisted_property(
+    node: roxmltree::Node<'_, '_>,
+    owner: &str,
+    order: usize,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source: Option<&source::Source<'_, '_>>,
+) -> Result<PropertyRecord, CodecError> {
+    let (name, type_name, status) = match source {
+        Some(source) => (
+            source.required_attribute(node, "name")?,
+            source.required_attribute(node, "type")?,
+            source.status(node)?,
+        ),
+        None => (
+            retained_attr(node, "name")?,
+            retained_attr(node, "type")?,
+            node.attribute("status")
+                .and_then(|value| value.parse().ok()),
+        ),
+    };
+    let mut payload_error = None;
+    let links = if link_grammar(&type_name).is_some() {
+        match parse_link_targets(node, &type_name) {
+            Ok(links) => links,
+            Err(CodecError::Malformed(detail)) => {
+                losses.push(
+                    crate::loss::FreecadLossCode::PersistencePayloadUnresolved.note(format!(
+                        "property {owner}/{name} is unreadable: {detail}; exact XML retained"
+                    )),
+                );
+                payload_error = Some(detail);
+                Vec::new()
+            }
+            Err(error) => return Err(error),
+        }
+    } else {
+        Vec::new()
+    };
+    if payload_error.is_none() {
+        if let Err(error) = validate_scalar_payload(node, &type_name) {
+            let detail = error.to_string();
+            losses.push(
+                crate::loss::FreecadLossCode::PersistencePayloadUnresolved.note(format!(
+                    "property {owner}/{name} is unreadable: {detail}; exact XML retained"
+                )),
+            );
+            payload_error = Some(detail);
+        }
+    }
+    // Nested value elements copy overlapping XML ranges, so their total
+    // is bounded per property. A larger payload stays as its exact XML.
+    let value_xml_bytes = node
+        .descendants()
+        .filter(|value| payload_error.is_none() && value.is_element() && *value != node)
+        .try_fold(0_usize, |total, value| {
+            total.checked_add(value.range().len())
+        });
+    if value_xml_bytes.is_none_or(|bytes| bytes > MAX_PROPERTY_VALUE_XML_BYTES) {
+        let detail = format!(
+            "value XML copies exceed the {MAX_PROPERTY_VALUE_XML_BYTES}-byte value copy bound"
+        );
+        losses.push(
+            crate::loss::FreecadLossCode::PersistencePayloadUnresolved.note(format!(
+                "property {owner}/{name} is unreadable: {detail}; exact XML retained"
+            )),
+        );
+        payload_error = Some(detail);
+    }
+    let string_value = if payload_error.is_none() && type_name == "App::PropertyString" {
+        let mut elements = node.children().filter(roxmltree::Node::is_element);
+        match (elements.next(), elements.next()) {
+            (Some(value), None)
+                if value.has_tag_name("String")
+                    && !value.children().any(|child| child.is_element()) =>
+            {
+                Some(value)
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let mut values = Vec::new();
+    let mut value_indices = HashMap::new();
+    for (value_order, value) in node
+        .descendants()
+        .filter(|value| payload_error.is_none() && value.is_element() && *value != node)
+        .enumerate()
+    {
+        value_indices.insert(value.id(), value_order);
+        values.push(ValueRecord {
+            parent: value
+                .parent()
+                .and_then(|parent| value_indices.get(&parent.id()).copied()),
+            tag: value.tag_name().name().to_owned(),
+            order: value_order,
+            attributes: value
+                .attributes()
+                .map(|attribute| {
+                    let text = match source.filter(|_| {
+                        attribute.name() == "value"
+                            && attribute.namespace().is_none()
+                            && value.parent() == Some(node)
+                            && (string_value == Some(value)
+                                || type_name != "App::PropertyEnumeration"
+                                    && scalar_value_tag(&type_name)
+                                        == Some(value.tag_name().name()))
+                    }) {
+                        Some(source) => source.attribute(&attribute)?,
+                        None => attribute.value().to_owned(),
+                    };
+                    Ok((attribute.name().to_owned(), text))
+                })
+                .collect::<Result<_, CodecError>>()?,
+            decoded_json: decode_python_json(value).map(Into::into),
+            text: match source.filter(|_| string_value == Some(value)) {
+                Some(source) => source.plain_text(value)?,
+                None => value.text().map(str::to_owned),
+            },
+        });
+    }
+    let mut side_entries = Vec::new();
+    for value in &values {
+        for (name, entry_name) in &value.attributes {
+            let selected = (matches!(name.as_str(), "file" | "File") && !is_xlink_type(&type_name))
+                || (property_family(&type_name) == PropertyFamily::File
+                    && matches!(name.as_str(), "name" | "Name"));
+            if selected && !entry_name.is_empty() {
+                side_entries.push(entry_name.to_owned());
+            }
+        }
+    }
+    Ok(PropertyRecord {
+        id: crate::native::native_child_id("property", owner, &name),
+        owner: owner.to_owned(),
+        name,
+        family: property_family(&type_name),
+        type_name,
+        status,
+        body: if let Some(detail) = payload_error {
+            crate::native::PropertyBody::Unreadable(detail)
+        } else {
+            crate::native::PropertyBody::Persisted {
+                values,
+                links,
+                side_entries,
+                dynamic: node.attribute("group").map(|group| DynamicPropertyMeta {
+                    group: group.to_owned(),
+                    documentation: node.attribute("doc").map(str::to_owned),
+                    attributes: node.attribute("attr").and_then(|value| value.parse().ok()),
+                    read_only: bool_attr(node.attribute("ro")),
+                    hidden: bool_attr(node.attribute("hide")),
+                }),
+            }
+        },
+        order,
+    })
 }
 
 pub(crate) fn validate_link_property(

@@ -367,7 +367,8 @@ pub(crate) fn regenerate(
             &format!("sldprt:generated:native-input#{ordinal}"),
             lane.configuration.clone(),
             payload,
-        )?;
+        )?
+        .0;
         dispositions.set_record(
             "sldprt",
             "feature_input_lanes",

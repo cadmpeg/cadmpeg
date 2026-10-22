@@ -172,7 +172,7 @@ pub(crate) fn sync_neutral_features(
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<Vec<FeatureInputRename>, CodecError> {
-    synchronize_features(model, parameters, bodies, native, true)
+    synchronize_features(model, parameters, bodies, native, true).map(|(renames, _)| renames)
 }
 
 /// Author history records without retained input-lane layout identities.
@@ -181,7 +181,13 @@ pub(crate) fn synthesize_neutral_features(
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<Vec<FeatureInputRename>, CodecError> {
+) -> Result<
+    (
+        Vec<FeatureInputRename>,
+        crate::resolved_features::class_sources::ClassSources,
+    ),
+    CodecError,
+> {
     synchronize_features(model, parameters, bodies, native, false)
 }
 
@@ -191,7 +197,13 @@ fn synchronize_features(
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
     patch_input_names: bool,
-) -> Result<Vec<FeatureInputRename>, CodecError> {
+) -> Result<
+    (
+        Vec<FeatureInputRename>,
+        crate::resolved_features::class_sources::ClassSources,
+    ),
+    CodecError,
+> {
     let features = &model.features;
     if features.is_empty() {
         if let Some(native) = native {
@@ -199,7 +211,10 @@ fn synchronize_features(
                 history.features.retain(is_custom_property);
             }
         }
-        return Ok(Vec::new());
+        return Ok((
+            Vec::new(),
+            crate::resolved_features::class_sources::ClassSources::default(),
+        ));
     }
     let native = native.get_or_insert_with(|| crate::native::SldprtNative {
         feature_histories: vec![FeatureHistory {
@@ -654,12 +669,14 @@ fn synchronize_features(
             )));
         }
     }
-    if !patch_input_names {
-        crate::resolved_features::write_prepare::synthesize_feature_classes(native)?;
-    }
+    let class_sources = if !patch_input_names {
+        crate::resolved_features::write_prepare::synthesize_feature_classes(native)?
+    } else {
+        crate::resolved_features::class_sources::ClassSources::default()
+    };
     synchronize_feature_content_order(native);
     synchronize_history_content_order(native);
-    Ok(renames)
+    Ok((renames, class_sources))
 }
 
 fn synchronize_neutral_feature_content(

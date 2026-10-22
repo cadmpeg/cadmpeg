@@ -29,6 +29,7 @@ use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputEdgeSelection,
     FeatureInputLane, FeatureInputOperandKind, FeatureInputSurfaceSelection, SketchInputKind,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::{
@@ -76,6 +77,7 @@ fn selection_objects<'history, 'lane>(
 }
 
 pub(super) fn compact_body_selections(
+    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     pointers: &mut super::body_sources::BodySources<'_>,
@@ -115,7 +117,7 @@ pub(super) fn compact_body_selections(
         } else if kind == NativeClassKind::Operation(FeatureClass::MoveBody) {
             let mut data_classes = lane.classes.iter().filter(|class| {
                 class.name == "moMoveCopyBodyData_c"
-                    && class.offset.is_some_and(|position| {
+                    && class_sources.position(class).is_some_and(|position| {
                         (u64_from_index(start)..u64_from_index(end)).contains(&position)
                     })
             });
@@ -124,7 +126,7 @@ pub(super) fn compact_body_selections(
                     &lane.native_payload,
                     start,
                     end,
-                    class.offset,
+                    class_sources.position(class),
                 )
                 .map(|record| (record.selection_offset, record.local_body_ids)),
                 _ => None,
@@ -173,7 +175,7 @@ pub(super) fn compact_body_selections(
                 if confirmed != offset {
                     return Err(CodecError::malformed("body vector framing changed"));
                 }
-                let token = compact_body_source_token(source, lane);
+                let token = compact_body_source_token(class_sources, source, lane);
                 let (states, mode) = if let Some(token) = token {
                     (
                         compact_body_state_ids(source, start, offset, token),
@@ -189,7 +191,7 @@ pub(super) fn compact_body_selections(
                     .iter()
                     .find(|class| {
                         class.name == "moMoveCopyBodyData_c"
-                            && class.offset.is_some_and(|position| {
+                            && class_sources.position(class).is_some_and(|position| {
                                 (u64_from_index(start)..u64_from_index(end)).contains(&position)
                             })
                     })
@@ -198,7 +200,7 @@ pub(super) fn compact_body_selections(
                     source,
                     start,
                     end,
-                    class.offset,
+                    class_sources.position(class),
                 )
                 .ok_or_else(|| {
                     CodecError::malformed("move-body source no longer matches its framing")
@@ -243,7 +245,11 @@ pub(super) fn compact_body_selections(
     Ok(result)
 }
 
-fn compact_body_source_token(source: View<'_>, lane: &FeatureInputLane) -> Option<u16> {
+fn compact_body_source_token(
+    class_sources: &ClassSources,
+    source: View<'_>,
+    lane: &FeatureInputLane,
+) -> Option<u16> {
     let mut classes = lane
         .classes
         .iter()
@@ -252,7 +258,7 @@ fn compact_body_source_token(source: View<'_>, lane: &FeatureInputLane) -> Optio
     if classes.next().is_some() {
         return None;
     }
-    let offset = usize::try_from(class.offset?)
+    let offset = usize::try_from(class_sources.position(class)?)
         .ok()?
         .checked_add(8)?
         .checked_add(class.name.len())?;
@@ -350,6 +356,7 @@ pub(super) struct ParsedEdgeSelections {
 }
 
 pub(super) fn compact_edge_selections(
+    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
@@ -371,8 +378,8 @@ pub(super) fn compact_edge_selections(
         .next()
         .filter(|_| compact_edge_classes.next().is_none());
     let class_name_end = compact_edge_class.and_then(|class| {
-        class
-            .offset
+        class_sources
+            .position(class)
             .and_then(|offset| usize::try_from(offset).ok())?
             .checked_add(6 + class.name.len())
     });
@@ -391,12 +398,16 @@ pub(super) fn compact_edge_selections(
             .and_then(|(next, _, _)| next.offset.and_then(|offset| usize::try_from(offset).ok()))
             .unwrap_or(lane.native_payload.len());
         let end = if kind == NativeClassKind::Fillet {
-            fillet_edge_roster_end(lane, start, object_end).unwrap_or(object_end)
+            fillet_edge_roster_end(class_sources, lane, start, object_end).unwrap_or(object_end)
         } else {
             object_end
         };
         let direct_child = compact_edge_class
-            .and_then(|class| class.offset.and_then(|offset| usize::try_from(offset).ok()))
+            .and_then(|class| {
+                class_sources
+                    .position(class)
+                    .and_then(|offset| usize::try_from(offset).ok())
+            })
             .filter(|offset| (start..end).contains(offset));
         let mut selections = Vec::new();
         if let Some(child_start) = direct_child {
@@ -543,10 +554,17 @@ fn edge_selection_frame(
     Ok(end.map(|end| start..end))
 }
 
-fn fillet_edge_roster_end(lane: &FeatureInputLane, start: usize, end: usize) -> Option<usize> {
+fn fillet_edge_roster_end(
+    class_sources: &ClassSources,
+    lane: &FeatureInputLane,
+    start: usize,
+    end: usize,
+) -> Option<usize> {
     let mut first = None;
     for class_name in ["moEdgeDim_c", "moVertDim_c"] {
-        if let Some(offset) = first_class_object_in_interval(lane, start, end, class_name) {
+        if let Some(offset) =
+            first_class_object_in_interval(class_sources, lane, start, end, class_name)
+        {
             first = Some(first.map_or(offset, |first: usize| first.min(offset)));
         }
     }
@@ -554,6 +572,7 @@ fn fillet_edge_roster_end(lane: &FeatureInputLane, start: usize, end: usize) -> 
 }
 
 fn first_class_object_in_interval(
+    class_sources: &ClassSources,
     lane: &FeatureInputLane,
     start: usize,
     end: usize,
@@ -566,7 +585,10 @@ fn first_class_object_in_interval(
         if class.name != class_name {
             continue;
         }
-        let Some(offset) = class.offset.and_then(|offset| usize::try_from(offset).ok()) else {
+        let Some(offset) = class_sources
+            .position(class)
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
             continue;
         };
         if (start..end).contains(&offset) {
@@ -620,6 +642,7 @@ pub(super) fn input_owned_edge_selections(
 }
 
 pub(super) fn compact_surface_selections(
+    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
@@ -632,8 +655,8 @@ pub(super) fn compact_surface_selections(
         .filter(|class| class.name == "moCompSurfaceBody_c");
     let surface_class = classes.next().filter(|_| classes.next().is_none());
     let surface_token = surface_class.and_then(|class| {
-        class
-            .offset
+        class_sources
+            .position(class)
             .and_then(|offset| usize::try_from(offset).ok())
             .and_then(|offset| offset.checked_add(6 + class.name.len()))
             .and_then(|offset| lane.native_payload.get(offset..offset + 2))
@@ -643,8 +666,8 @@ pub(super) fn compact_surface_selections(
         if class.name != "moCylinderRef_w" {
             continue;
         }
-        let Some(body) = class
-            .offset
+        let Some(body) = class_sources
+            .position(class)
             .and_then(|offset| usize::try_from(offset).ok())
             .and_then(|offset| offset.checked_add(6 + class.name.len()))
         else {
@@ -657,7 +680,7 @@ pub(super) fn compact_surface_selections(
         };
         cylinder_reference_tokens.insert(token);
     }
-    let mirror_surface_prefix = mirror_surface_type_prefix(lane);
+    let mirror_surface_prefix = mirror_surface_type_prefix(class_sources, lane);
     let objects = selection_objects(histories, lane);
     let lane_key = lane
         .id
@@ -770,7 +793,9 @@ pub(super) fn compact_surface_selections(
                 )?;
                 let mut component_face_references = Vec::new();
                 for class in &lane.classes {
-                    let Some(offset) = class.offset.and_then(|offset| usize::try_from(offset).ok())
+                    let Some(offset) = class_sources
+                        .position(class)
+                        .and_then(|offset| usize::try_from(offset).ok())
                     else {
                         continue;
                     };
@@ -791,7 +816,7 @@ pub(super) fn compact_surface_selections(
                 // already authoritative.
                 let component_references =
                     if cylinder_references.is_empty() && component_face_references.is_empty() {
-                        cosmetic_thread_component_references(ctx, lane, start, end)?
+                        cosmetic_thread_component_references(class_sources, ctx, lane, start, end)?
                     } else {
                         Vec::new()
                     };
@@ -806,7 +831,7 @@ pub(super) fn compact_surface_selections(
                 candidates
             }
             NativeClassKind::Fillet if feature.input_class.as_deref() == Some("Fillet_c") => {
-                fillet_face_selection_candidates(ctx, lane, start, end)?
+                fillet_face_selection_candidates(class_sources, ctx, lane, start, end)?
             }
             NativeClassKind::Fillet => continue,
             NativeClassKind::MirrorPattern => {
@@ -838,13 +863,13 @@ pub(super) fn compact_surface_selections(
                 candidates
             }
             NativeClassKind::ReferencePlane => {
-                face_reference_plane_selection_candidates(ctx, lane, start, end)?
+                face_reference_plane_selection_candidates(class_sources, ctx, lane, start, end)?
             }
             NativeClassKind::PlanarSurface => {
                 planar_surface_selection_candidates(&lane.native_payload, start, end)
             }
             NativeClassKind::Operation(operation) => operation_surface_selection_candidates(
-                ctx,
+                (class_sources, ctx),
                 operation,
                 lane,
                 start,
@@ -949,6 +974,7 @@ fn compact_extrusion_endpoint_selector_for_marker(
 }
 
 fn fillet_face_selection_candidates(
+    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     start: usize,
@@ -962,7 +988,9 @@ fn fillet_face_selection_candidates(
         if class.name != "moCompFace_c" {
             continue;
         }
-        let Some(class_offset) = class.offset.and_then(|offset| usize::try_from(offset).ok())
+        let Some(class_offset) = class_sources
+            .position(class)
+            .and_then(|offset| usize::try_from(offset).ok())
         else {
             continue;
         };
@@ -1048,6 +1076,7 @@ fn planar_surface_selection_candidates(
 }
 
 fn face_reference_plane_selection_candidates(
+    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     start: usize,
@@ -1055,14 +1084,14 @@ fn face_reference_plane_selection_candidates(
 ) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
     let mut data_classes = lane.classes.iter().filter(|class| {
         class.name == "moFaceRefPlnData_c"
-            && class.offset.is_some_and(|position| {
+            && class_sources.position(class).is_some_and(|position| {
                 (u64_from_index(start)..u64_from_index(end)).contains(&position)
             })
     });
     let mut candidates = Vec::new();
     if let (Some(data_class), None) = (data_classes.next(), data_classes.next()) {
-        let Some(body) = data_class
-            .offset
+        let Some(body) = class_sources
+            .position(data_class)
             .and_then(|offset| usize::try_from(offset).ok())
             .and_then(|offset| offset.checked_add(6 + data_class.name.len()))
         else {
@@ -1089,8 +1118,8 @@ fn face_reference_plane_selection_candidates(
         if class.name != "moCompFace_c" {
             continue;
         }
-        let Some(offset) = class
-            .offset
+        let Some(offset) = class_sources
+            .position(class)
             .and_then(|offset| usize::try_from(offset).ok())
             .filter(|offset| (start..end).contains(offset))
         else {
@@ -1131,7 +1160,7 @@ fn order_surface_candidates(candidates: &mut Vec<(usize, Vec<FeatureInputCompone
 type GeneratedIdentityCache = Option<ParsedGeneratedSurfaces>;
 
 fn operation_surface_selection_candidates(
-    ctx: &DecodeContext<'_>,
+    source: (&ClassSources, &cadmpeg_core::decode::DecodeContext<'_>),
     operation: FeatureClass,
     lane: &FeatureInputLane,
     start: usize,
@@ -1139,6 +1168,8 @@ fn operation_surface_selection_candidates(
     object_source: Option<u32>,
     generated_identities: &mut GeneratedIdentityCache,
 ) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
+    let (class_sources, ctx) = source;
+
     if operation == FeatureClass::CutWithSurface {
         let mut candidates = Vec::new();
         if let Some(scan_end) = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()) {
@@ -1187,6 +1218,7 @@ fn operation_surface_selection_candidates(
         };
         if generated_identities.is_none() {
             *generated_identities = Some(generated_surface_identities(
+                class_sources,
                 &lane.id,
                 &lane.classes,
                 &lane.native_payload,
@@ -1235,15 +1267,19 @@ fn operation_surface_selection_candidates(
 
     let mut surface_classes = lane.classes.iter().filter(|class| {
         class.name == "moCompSurfaceBody_c"
-            && class
-                .offset
+            && class_sources
+                .position(class)
                 .and_then(|offset| usize::try_from(offset).ok())
                 .is_some_and(|offset| (start..end).contains(&offset))
     });
     let mut candidates = match (surface_classes.next(), surface_classes.next()) {
-        (Some(class), None) => {
-            compact_surface_selection_candidates_for_class(&lane.native_payload, class, start, end)
-        }
+        (Some(class), None) => compact_surface_selection_candidates_for_class(
+            class_sources,
+            &lane.native_payload,
+            class,
+            start,
+            end,
+        ),
         _ => Vec::new(),
     };
     let mut component_face_tokens = HashSet::new();
@@ -1251,7 +1287,10 @@ fn operation_surface_selection_candidates(
         if class.name != "moCompFace_c" {
             continue;
         }
-        let Some(offset) = class.offset.and_then(|offset| usize::try_from(offset).ok()) else {
+        let Some(offset) = class_sources
+            .position(class)
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
             continue;
         };
         let Some(body) = offset.checked_add(6 + class.name.len()) else {
@@ -1289,12 +1328,16 @@ fn component_source(component: &FeatureInputComponentPathEntry) -> Option<u32> {
 }
 
 fn compact_surface_selection_candidates_for_class(
+    class_sources: &ClassSources,
     payload: &[u8],
     class: &crate::records::FeatureInputClass,
     start: usize,
     end: usize,
 ) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
-    let Some(class_offset) = class.offset.and_then(|offset| usize::try_from(offset).ok()) else {
+    let Some(class_offset) = class_sources
+        .position(class)
+        .and_then(|offset| usize::try_from(offset).ok())
+    else {
         return Vec::new();
     };
     if !(start..end).contains(&class_offset) {
@@ -1420,6 +1463,7 @@ fn cosmetic_thread_cylinder_references(
 /// single-candidate check in `compact_surface_selections`; unrelated compact
 /// vectors in the thread's other children must not become face selections.
 fn cosmetic_thread_component_references(
+    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     object_start: usize,
@@ -1427,8 +1471,8 @@ fn cosmetic_thread_component_references(
 ) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
     let mut classes = Vec::new();
     for class in &lane.classes {
-        let Some(offset) = class
-            .offset
+        let Some(offset) = class_sources
+            .position(class)
             .and_then(|offset| usize::try_from(offset).ok())
             .filter(|offset| (object_start..object_end).contains(offset))
         else {
@@ -2293,14 +2337,17 @@ fn counted_surface_component_path_at(
     .map(|(components, _)| components)
 }
 
-fn mirror_surface_type_prefix(lane: &FeatureInputLane) -> Option<[u8; 4]> {
+fn mirror_surface_type_prefix(
+    class_sources: &ClassSources,
+    lane: &FeatureInputLane,
+) -> Option<[u8; 4]> {
     let mut classes = lane
         .classes
         .iter()
         .filter(|class| class.name == "moMirPatternSurfIdRep_c");
     let class = classes.next().filter(|_| classes.next().is_none())?;
-    let offset = class
-        .offset
+    let offset = class_sources
+        .position(class)
         .and_then(|offset| usize::try_from(offset).ok())?;
     let signature = offset.checked_add(8 + class.name.len())?;
     let prefix: [u8; 4] = lane
@@ -2494,6 +2541,7 @@ pub(super) struct GeneratedSurfaceFrame {
 }
 
 pub(crate) fn generated_surface_identities(
+    class_sources: &ClassSources,
     parent: &str,
     classes: &[crate::records::FeatureInputClass],
     payload: &[u8],
@@ -2526,8 +2574,8 @@ pub(crate) fn generated_surface_identities(
             continue;
         }
         let prefix = (|| {
-            let body = class
-                .offset
+            let body = class_sources
+                .position(class)
                 .and_then(|offset| usize::try_from(offset).ok())?
                 .checked_add(6 + class.name.len())?;
             if payload.get(body..body + 2)? != [0, 0] {
@@ -2925,6 +2973,7 @@ fn compact_component_reference_list_frame(
 pub(super) struct VariableFilletControl(pub String, pub Vec<Vec<FeatureInputComponentPathEntry>>);
 
 pub(super) fn variable_fillet_control_references(
+    class_sources: &ClassSources,
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
     object_end: usize,
@@ -2934,7 +2983,7 @@ pub(super) fn variable_fillet_control_references(
     }
     let object_start = feature_object_name(feature, lane)
         .and_then(|name| name.offset.and_then(|offset| usize::try_from(offset).ok()))?;
-    let control_start = fillet_edge_roster_end(lane, object_start, object_end)?;
+    let control_start = fillet_edge_roster_end(class_sources, lane, object_start, object_end)?;
     let (Some(marker_start), Some(marker_end)) = (
         control_start.checked_add(12),
         object_end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()),

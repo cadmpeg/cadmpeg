@@ -223,14 +223,11 @@ fn pairwise_feature_ordinals<'a>(
     let mut object_by_id = HashMap::new();
     let mut object_by_name = HashMap::new();
     let mut object_by_feature = HashMap::new();
-    let mut source_ordinals = Vec::new();
     for object in &design_objects {
         object_by_id.insert(object.id().as_str(), *object);
         object_by_name.insert(object.name().as_str(), *object);
         object_by_feature.insert(feature_id(object)?, object.id().as_str());
-        source_ordinals.push(cadmpeg_core::decode::u64_from_index(object.order));
     }
-    source_ordinals.sort_unstable_by(Ord::cmp);
     let mut emitted = BTreeSet::new();
     let mut ordinals = HashMap::new();
     let mut cycle_affected = BTreeSet::new();
@@ -305,7 +302,7 @@ fn pairwise_feature_ordinals<'a>(
                 .min_by_key(|object| object.order)
                 .ok_or_else(|| CodecError::malformed("lost an un-emitted object"))?
         };
-        let ordinal = source_ordinals[ordinals.len()];
+        let ordinal = cadmpeg_core::decode::u64_from_index(ordinals.len());
         emitted.insert(next.id().as_str());
         ordinals.insert(next.id().as_str(), ordinal);
     }

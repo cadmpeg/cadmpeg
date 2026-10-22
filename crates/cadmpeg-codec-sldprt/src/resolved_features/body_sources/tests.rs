@@ -127,7 +127,7 @@ fn body_vector_pointer_is_lane_relative_but_layout_and_reads_use_actual_source()
         serde_json::from_value(wire).expect("native readback");
     assert_eq!(&restored, record);
     let mut fidelity = SourceFidelity::default();
-    crate::pmi::layout::install(&ctx, sources.into_pointers(), &mut fidelity)
+    crate::pmi::layout::install(&ctx, sources.into_pointers(&ctx).unwrap(), &mut fidelity)
         .expect("captured layout");
     let layout = &fidelity.record_layout()[&record.id];
     assert_eq!(layout.stream(), "file");
@@ -212,11 +212,15 @@ fn duplicate_named_blocks_keep_distinct_actual_body_layout_streams() {
     let (ctx, root) =
         DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
     let scan = crate::container::scan(&ctx, root).unwrap();
-    let mut lanes =
-        super::super::assembly::lanes(&ctx, &scan, &mut cadmpeg_ir::Annotations::default())
-            .unwrap();
+    let mut sources = BodySources::default();
+    let mut lanes = super::super::assembly::lanes(
+        &ctx,
+        &scan,
+        &mut sources,
+        &mut cadmpeg_ir::Annotations::default(),
+    )
+    .unwrap();
     assert_eq!(lanes.len(), 2);
-    let mut sources = BodySources::from_scan(&scan, &lanes, &[]).unwrap();
     let streams = lanes
         .iter()
         .map(|lane| {
@@ -229,7 +233,7 @@ fn duplicate_named_blocks_keep_distinct_actual_body_layout_streams() {
     super::super::bindings::bind_scalar_operands(&ctx, &histories, &mut lanes, &mut sources)
         .unwrap();
     let mut fidelity = SourceFidelity::default();
-    crate::pmi::layout::install(&ctx, sources.into_pointers(), &mut fidelity).unwrap();
+    crate::pmi::layout::install(&ctx, sources.into_pointers(&ctx).unwrap(), &mut fidelity).unwrap();
     for (lane, stream) in lanes.iter().zip(streams) {
         let [record] = lane.body_selections.as_slice() else {
             panic!("one body selection")

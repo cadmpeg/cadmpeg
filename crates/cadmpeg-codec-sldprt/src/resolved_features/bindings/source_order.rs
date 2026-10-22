@@ -2,10 +2,12 @@
 //! Admit source ownership and typed content order before dropping layout positions.
 
 use crate::records::{FeatureHistory, FeatureInputLane};
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub(super) fn finalize(
+    class_sources: &ClassSources,
     histories: &[FeatureHistory],
     lane: &mut FeatureInputLane,
     source_pointers: &BTreeMap<String, BTreeMap<String, u64>>,
@@ -32,8 +34,8 @@ pub(super) fn finalize(
         .filter_map(|name| Some((name.offset?, name)))
         .collect::<HashMap<_, _>>();
     for class in &mut lane.classes {
-        let direct_name = class
-            .offset
+        let direct_name = class_sources
+            .position(class)
             .and_then(|position| position.checked_add(6))
             .and_then(|position| {
                 position.checked_add(cadmpeg_core::decode::u64_from_index(class.name.len()))
@@ -41,7 +43,7 @@ pub(super) fn finalize(
             .and_then(|position| names_by_position.get(&position).copied());
         class.feature_ref = direct_name
             .and_then(|name| name.feature_ref.clone())
-            .or_else(|| class.offset.and_then(owner_at));
+            .or_else(|| class_sources.position(class).and_then(owner_at));
     }
     let mut positions = BTreeSet::new();
     macro_rules! collect {
@@ -51,13 +53,12 @@ pub(super) fn finalize(
             }
         )+};
     }
-    collect!(
-        classes,
-        names,
-        scalars,
-        relation_instances,
-        surface_selections,
-    );
+    for class in &lane.classes {
+        if let Some(position) = class_sources.position(class) {
+            positions.insert(position);
+        }
+    }
+    collect!(names, scalars, relation_instances, surface_selections,);
     for record in &lane.edge_selections {
         let position = source_pointers
             .get(&record.id)
@@ -126,13 +127,15 @@ pub(super) fn finalize(
             }
         )+};
     }
-    assign!(
-        classes,
-        names,
-        scalars,
-        relation_instances,
-        surface_selections,
-    );
+    for class in &mut lane.classes {
+        if let Some(rank) = class_sources
+            .position(class)
+            .and_then(|position| ranks.get(&position))
+        {
+            class.sequence = *rank;
+        }
+    }
+    assign!(names, scalars, relation_instances, surface_selections,);
     for record in &mut lane.edge_selections {
         if let Some(rank) = source_pointers
             .get(&record.id)
@@ -218,7 +221,13 @@ mod tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
-        finalize(&[], &mut lane, &std::collections::BTreeMap::new()).unwrap();
+        finalize(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&mut lane)),
+            &[],
+            &mut lane,
+            &std::collections::BTreeMap::new(),
+        )
+        .unwrap();
         assert_eq!(
             lane.classes
                 .iter()
@@ -241,7 +250,14 @@ mod tests {
         }
         let restored: FeatureInputLane = serde_json::from_value(wire.clone()).unwrap();
         assert!(restored.native_payload.is_empty());
-        assert!(restored.classes.iter().all(|class| class.offset.is_none()));
+        assert!(restored
+            .classes
+            .iter()
+            .all(
+                |class| crate::test_support::native::class_sources(std::slice::from_ref(&restored))
+                    .position(class)
+                    .is_none()
+            ));
         assert!(restored.names.iter().all(|name| name.offset.is_none()));
         assert_eq!(serde_json::to_value(restored).unwrap(), wire);
     }

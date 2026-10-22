@@ -15,6 +15,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputScalarRole,
     SketchInputKind,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::convert::f64_from_i64;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -1181,6 +1182,7 @@ fn profiled_hole_construction_with_evidence(
 }
 
 pub(crate) fn project_profiled_hole_constructions(
+    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     entities: &[SketchEntity],
@@ -1189,6 +1191,7 @@ pub(crate) fn project_profiled_hole_constructions(
 ) -> Result<(), CodecError> {
     let mut enriched_histories = histories.to_vec();
     crate::history::configuration::enrich_history_parameters_semantic(
+        class_sources,
         &mut enriched_histories,
         lanes,
     );

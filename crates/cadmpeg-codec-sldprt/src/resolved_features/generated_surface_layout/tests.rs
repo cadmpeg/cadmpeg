@@ -4,6 +4,7 @@
 use super::capture;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::body_sources::BodySources;
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::SourceFidelity;
 
@@ -32,10 +33,15 @@ fn append_identity(payload: &mut Vec<u8>, owner: u32, terminal: Option<u32>) -> 
 fn lane(ctx: &DecodeContext<'_>, source: View<'_>) -> FeatureInputLane {
     let id = "lane";
     let classes = super::super::names::class_declarations(source.window(), id).unwrap();
+    let class_sources = ClassSources::from_source(ctx, source, &classes).unwrap();
     let names = super::super::names::object_names(ctx, source.window(), id).unwrap();
-    let parsed =
-        super::super::selections::generated_surface_identities(id, &classes, source.window())
-            .unwrap();
+    let parsed = super::super::selections::generated_surface_identities(
+        &class_sources,
+        id,
+        &classes,
+        source.window(),
+    )
+    .unwrap();
     FeatureInputLane {
         id: id.into(),
         configuration: None,
@@ -79,7 +85,7 @@ fn full_path_extent_keeps_the_earlier_producer_when_terminal_source_is_reserved(
     let mut sources = BodySources::from_views([(lane.id.clone(), source)]).unwrap();
     capture(&ctx, &lane, &mut sources).unwrap();
     let mut fidelity = SourceFidelity::default();
-    crate::pmi::layout::install(&ctx, sources.into_pointers(), &mut fidelity).unwrap();
+    crate::pmi::layout::install(&ctx, sources.into_pointers(&ctx).unwrap(), &mut fidelity).unwrap();
     let layout = &fidelity.record_layout()[&record.id];
     assert_eq!(layout.stream(), "file");
     assert_eq!(layout.offset(), u64::try_from(37 + offset).unwrap());

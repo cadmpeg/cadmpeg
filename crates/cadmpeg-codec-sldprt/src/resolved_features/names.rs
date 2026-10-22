@@ -90,7 +90,7 @@ fn payload_name_candidates(
         })
 }
 
-fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {
+pub(super) fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {
     payload
         .windows(CLASS_MARKER.len())
         .enumerate()
@@ -159,7 +159,6 @@ pub(crate) fn class_declarations(
             parent: parent.to_owned(),
             ordinal,
             sequence: ordinal,
-            offset: Some(u64_from_index(offset)),
             name: name.to_owned(),
         });
     }

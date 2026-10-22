@@ -58,7 +58,6 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
             id: "project".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(100),
             name: "moPLineProject_c".into(),
         }],
         names: vec![
@@ -95,7 +94,11 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
     };
 
     let mut projected = vec![history.clone()];
-    enrich_history_split_lines(&mut projected, std::slice::from_ref(&lane));
+    enrich_history_split_lines(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &mut projected,
+        std::slice::from_ref(&lane),
+    );
     assert_eq!(
         projected[0].features[0]
             .properties
@@ -118,11 +121,15 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         parent: "lane".into(),
         ordinal: 1,
         sequence: 1,
-        offset: Some(120),
+
         name: "moPLineProject_c".into(),
     });
     let mut ambiguous = vec![history.clone()];
-    enrich_history_split_lines(&mut ambiguous, &[ambiguous_lane]);
+    enrich_history_split_lines(
+        &crate::test_support::native::class_sources(&[&ambiguous_lane]),
+        &mut ambiguous,
+        &[ambiguous_lane],
+    );
     assert!(!ambiguous[0].features[0]
         .properties
         .contains_key(SPLIT_LINE_MODE_PROPERTY));
@@ -132,7 +139,11 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
     duplicate_sketch.source_id = FeatureSource::from_value(20);
     history.features.insert(2, duplicate_sketch);
     let mut ambiguous_tool = vec![history];
-    enrich_history_split_lines(&mut ambiguous_tool, &[lane]);
+    enrich_history_split_lines(
+        &crate::test_support::native::class_sources(&[&lane]),
+        &mut ambiguous_tool,
+        &[lane],
+    );
     assert_eq!(
         ambiguous_tool[0].features[0]
             .properties
@@ -188,15 +199,33 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     lane.native_payload[name_offset - 6..name_offset - 2].copy_from_slice(&1u32.to_le_bytes());
     lane.native_payload[name_offset - 2..name_offset].copy_from_slice(&0x8d9au16.to_le_bytes());
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), None),
+        feature_operation_code(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &lane,
+            &name,
+            Some("moICE_c"),
+            None
+        ),
         Some(1)
     );
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moExtrusion_c"), None),
+        feature_operation_code(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &lane,
+            &name,
+            Some("moExtrusion_c"),
+            None
+        ),
         None
     );
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), Some(8)),
+        feature_operation_code(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &lane,
+            &name,
+            Some("moICE_c"),
+            Some(8)
+        ),
         Some(1)
     );
     assert_eq!(
@@ -352,7 +381,6 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
                     id: "class".into(),
                     parent: "lane".into(),
                     ordinal: 0,
-                    offset: Some(cadmpeg_core::decode::u64_from_index(class_offset)),
                     name: class_name.into(),
                 }],
                 names: Vec::new(),
@@ -381,31 +409,61 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
 
     let (lane, name) = direct_lane(3, 11, 4);
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), None),
+        feature_operation_code(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &lane,
+            &name,
+            Some("moICE_c"),
+            None
+        ),
         Some(3)
     );
 
     let (lane, name) = direct_lane(0, 11, 4);
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), None),
+        feature_operation_code(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &lane,
+            &name,
+            Some("moICE_c"),
+            None
+        ),
         None
     );
 
     let (lane, name) = direct_lane(11, 0, 8);
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), None),
+        feature_operation_code(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &lane,
+            &name,
+            Some("moICE_c"),
+            None
+        ),
         None
     );
 
     let (lane, name) = direct_lane(0, 11, 4);
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), Some(4)),
+        feature_operation_code(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &lane,
+            &name,
+            Some("moICE_c"),
+            Some(4)
+        ),
         Some(0)
     );
 
     let (lane, name) = direct_lane(11, 0, 8);
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c"), Some(8)),
+        feature_operation_code(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &lane,
+            &name,
+            Some("moICE_c"),
+            Some(8)
+        ),
         Some(11)
     );
 
@@ -441,11 +499,23 @@ fn ambiguous_form_code_padding_does_not_shift_the_code() {
     };
 
     assert_eq!(
-        feature_operation_code(&compact_lane, &compact_name, Some("moICE_c"), None),
+        feature_operation_code(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&compact_lane)),
+            &compact_lane,
+            &compact_name,
+            Some("moICE_c"),
+            None
+        ),
         None
     );
     assert_eq!(
-        feature_operation_code(&compact_lane, &compact_name, Some("moICE_c"), Some(8),),
+        feature_operation_code(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&compact_lane)),
+            &compact_lane,
+            &compact_name,
+            Some("moICE_c"),
+            Some(8),
+        ),
         Some(11)
     );
 }
@@ -623,7 +693,14 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         ),
     ];
 
-    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
+    inherit_configuration_operations(
+        &crate::resolved_features::class_sources::ClassSources::default(),
+        &mut configured,
+        &base,
+        &histories,
+        &[],
+        None,
+    );
 
     assert!(matches!(
         configured[0].evaluation.definition(),
@@ -643,7 +720,14 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     configured[0]
         .evaluation
         .set_definition(extrude(BooleanOp::NewBody));
-    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
+    inherit_configuration_operations(
+        &crate::resolved_features::class_sources::ClassSources::default(),
+        &mut configured,
+        &base,
+        &histories,
+        &[],
+        None,
+    );
     assert!(matches!(
         configured[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -662,7 +746,6 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(33),
             name: "moExtrusion_c".into(),
         }],
         names: vec![FeatureInputName {
@@ -692,6 +775,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         extrude(BooleanOp::Unresolved),
     )];
     inherit_configuration_operations(
+        &crate::test_support::native::class_sources(&[&operation_lane.clone()]),
         &mut inherited,
         &base,
         &histories,
@@ -713,6 +797,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         extrude(BooleanOp::Unresolved),
     )];
     inherit_configuration_operations(
+        &crate::test_support::native::class_sources(&[&operation_lane]),
         &mut unresolved,
         &base,
         &histories,

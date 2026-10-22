@@ -260,6 +260,7 @@ struct PhysicalParse<'a> {
     parameters: Vec<parameter::ParameterRecord>,
     trailing_pointer_analysis: BTreeMap<u32, parameter::TrailingPointerAnalysis>,
     quarantined_parameters: Vec<parameter::QuarantinedParameterRecord>,
+    given_up_parameters: BTreeSet<u32>,
     framing_recoveries: card::FramingRecoveries,
     references: BTreeMap<u32, Vec<graph::ReferenceEdge>>,
     parts: ParserPartOutput,
@@ -299,6 +300,7 @@ impl<'a> PhysicalParse<'a> {
             trailing_pointer_analysis,
             quarantined: quarantined_parameters,
             recoveries: parameter_recoveries,
+            given_up: given_up_parameters,
         } = if scan.source_view().is_some() {
             parameter::parts::assemble(
                 &scan,
@@ -328,6 +330,7 @@ impl<'a> PhysicalParse<'a> {
             parameters,
             trailing_pointer_analysis,
             quarantined_parameters,
+            given_up_parameters,
             framing_recoveries,
             references,
             parts,
@@ -447,10 +450,11 @@ fn decode_with_occurrence_limits(
     let view = (representation == Representation::FixedAscii).then_some(source);
     let mut parse = PhysicalParse::run_with_source(parse_bytes, view, ctx)?;
     let length_context = parse.global.length_context();
-    let quarantined_parameter_sequences =
+    let mut unavailable_parameter_sequences =
         quarantined_parameter_sequences(&parse.quarantined_parameters);
+    unavailable_parameter_sequences.extend(&parse.given_up_parameters);
     let projected_directory =
-        projection_directory(&parse.directory, &quarantined_parameter_sequences);
+        projection_directory(&parse.directory, &unavailable_parameter_sequences);
     let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
     let card_layout = parse
         .scan
@@ -534,7 +538,7 @@ fn decode_with_occurrence_limits(
     mark_quarantined_placements(
         &mut projection,
         &parse.directory,
-        &quarantined_parameter_sequences,
+        &unavailable_parameter_sequences,
     );
     let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection);
     let native::NativeStoreResult {
@@ -727,7 +731,8 @@ fn decode_with_occurrence_limits(
     }
     let global_table = parse.global.global_table();
     if !ctx.container_only() {
-        let attributed_before_generic = attributed_sequences(&losses);
+        let mut attributed_before_generic = attributed_sequences(&losses);
+        attributed_before_generic.extend(&parse.given_up_parameters);
         append_generic_losses(
             &mut losses,
             &parse.directory,
@@ -740,7 +745,9 @@ fn decode_with_occurrence_limits(
     let attributed = if ctx.container_only() {
         BTreeSet::new()
     } else {
-        attributed_sequences(&losses)
+        let mut attributed = attributed_sequences(&losses);
+        attributed.extend(&parse.given_up_parameters);
+        attributed
     };
     let mut transfer_ledger = TransferLedger::default();
     for entry in parse

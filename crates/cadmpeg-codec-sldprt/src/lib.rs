@@ -185,6 +185,7 @@ impl SldprtCodec {
         ir: &CadIr,
         annotations: &Annotations,
         records: &[SourceRecord<'_>],
+        source_fidelity: &cadmpeg_ir::SourceFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
         let expected = records
@@ -195,6 +196,7 @@ impl SldprtCodec {
                 ir,
                 annotations,
                 records,
+                Some(source_fidelity),
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::BaselineMissing),
                 writer,
             );
@@ -204,6 +206,7 @@ impl SldprtCodec {
                 ir,
                 annotations,
                 records,
+                Some(source_fidelity),
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
                 writer,
             );
@@ -216,6 +219,7 @@ impl SldprtCodec {
                 ir,
                 annotations,
                 records,
+                Some(source_fidelity),
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
                 writer,
             );
@@ -225,6 +229,7 @@ impl SldprtCodec {
                 ir,
                 annotations,
                 records,
+                Some(source_fidelity),
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
                 writer,
             );
@@ -240,11 +245,12 @@ impl SldprtCodec {
         ir: &CadIr,
         annotations: &Annotations,
         records: &[SourceRecord<'_>],
+        source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
         let writer::SemanticOutput { dialect, coverage } =
-            writer::write_semantic_with_records(ir, annotations, records, writer)?;
+            writer::write_semantic_with_records(ir, annotations, records, source_fidelity, writer)?;
         Ok(Written::Semantic {
             path: if records.is_empty() {
                 SemanticPath::Synthesized

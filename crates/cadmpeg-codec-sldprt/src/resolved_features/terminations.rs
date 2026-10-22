@@ -15,6 +15,7 @@ use super::selections::{
 };
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -663,6 +664,7 @@ fn compact_combine_operation_at(payload: &[u8], name_offset: usize) -> Option<&'
 
 /// Add compact general-curve reference identities carried by solid sweeps.
 pub(crate) fn enrich_history_sweep_paths(
+    class_sources: &ClassSources,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
@@ -716,16 +718,18 @@ pub(crate) fn enrich_history_sweep_paths(
             };
             for class in &lane.classes {
                 if class.name != "moGeneralCurveRef_w"
-                    || class
-                        .offset
+                    || class_sources
+                        .position(class)
                         .is_some_and(|position| position < u64_from_index(start))
-                    || class
-                        .offset
+                    || class_sources
+                        .position(class)
                         .is_some_and(|position| position >= u64_from_index(end))
                 {
                     continue;
                 }
-                let Some(offset) = class.offset.and_then(|offset| usize::try_from(offset).ok())
+                let Some(offset) = class_sources
+                    .position(class)
+                    .and_then(|offset| usize::try_from(offset).ok())
                 else {
                     continue;
                 };
@@ -833,6 +837,7 @@ fn component_local_ids(components: &[FeatureInputComponentPathEntry]) -> String 
 
 /// Bind reference-curve cross sections consumed by surface sweeps.
 pub(crate) fn project_surface_sweep_profiles(
+    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -858,8 +863,8 @@ pub(crate) fn project_surface_sweep_profiles(
         else {
             continue;
         };
-        let Some(class_offset) = reference_class
-            .offset
+        let Some(class_offset) = class_sources
+            .position(reference_class)
             .and_then(|offset| usize::try_from(offset).ok())
         else {
             continue;

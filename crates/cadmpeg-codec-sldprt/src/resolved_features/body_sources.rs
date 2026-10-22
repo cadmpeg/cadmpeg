@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-local lane Views and pending fidelity pointers for admitted records.
 
-use crate::container::ContainerScan;
 use crate::records::FeatureInputLane;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -11,6 +10,7 @@ use std::collections::BTreeMap;
 pub(crate) struct BodySources<'a> {
     views: BTreeMap<String, View<'a>>,
     pointers: BTreeMap<String, BTreeMap<String, u64>>,
+    classes: super::class_sources::ClassSources,
 }
 
 impl<'a> BodySources<'a> {
@@ -59,24 +59,11 @@ impl<'a> BodySources<'a> {
         Self::from_views(views)
     }
 
-    pub(crate) fn from_scan(
-        scan: &ContainerScan<'a>,
-        primary: &[FeatureInputLane],
-        supplemental: &[FeatureInputLane],
-    ) -> Result<Self, CodecError> {
-        let mut views = Vec::new();
-        for section in scan.sections() {
-            for family in ["resolved-features", "config-objects"] {
-                let id = super::assembly::source_id(section, family);
-                if primary.iter().chain(supplemental).any(|lane| lane.id == id) {
-                    let view = scan.section_view(section).ok_or_else(|| {
-                        CodecError::malformed("body-selection lane lacks its source View")
-                    })?;
-                    views.push((id, view));
-                }
-            }
+    pub(crate) fn admit_view(&mut self, id: String, view: View<'a>) -> Result<(), CodecError> {
+        if self.views.insert(id, view).is_some() {
+            return Err(CodecError::malformed("duplicate feature-input lane source"));
         }
-        Self::from_views(views)
+        Ok(())
     }
 
     pub(crate) fn view(&self, lane: &FeatureInputLane) -> Result<View<'a>, CodecError> {
@@ -109,13 +96,38 @@ impl<'a> BodySources<'a> {
     }
 
     pub(crate) fn pointer(&self, id: &str) -> Option<u64> {
-        self.pointers
-            .get(id)
-            .and_then(|fields| fields.get("offset"))
-            .copied()
+        self.classes.pointer(id).or_else(|| {
+            self.pointers
+                .get(id)
+                .and_then(|fields| fields.get("offset"))
+                .copied()
+        })
+    }
+
+    pub(crate) fn class_sources(&self) -> super::class_sources::ClassSources {
+        self.classes.clone()
+    }
+
+    pub(super) fn insert_class(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: &str,
+        offset: u64,
+    ) -> Result<(), CodecError> {
+        if self.pointers.contains_key(id) {
+            return Err(CodecError::malformed(
+                "class pointer already has another source owner",
+            ));
+        }
+        self.classes.insert(ctx, id, offset)
     }
 
     pub(crate) fn insert(&mut self, id: String, offset: u64) -> Result<(), CodecError> {
+        if self.classes.pointer(&id).is_some() {
+            return Err(CodecError::malformed(
+                "source pointer already has a class owner",
+            ));
+        }
         if self
             .pointers
             .insert(id, BTreeMap::from([("offset".into(), offset)]))
@@ -128,8 +140,14 @@ impl<'a> BodySources<'a> {
         Ok(())
     }
 
-    pub(crate) fn into_pointers(self) -> BTreeMap<String, BTreeMap<String, u64>> {
-        self.pointers
+    pub(crate) fn into_pointers(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<BTreeMap<String, BTreeMap<String, u64>>, CodecError> {
+        let mut pointers = self.pointers;
+        // insert and insert_class enforce disjoint owner identities.
+        pointers.extend(self.classes.into_pointers(ctx)?);
+        Ok(pointers)
     }
 }
 

@@ -14,6 +14,7 @@ use crate::classification::{
     classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
 use crate::records::{FeatureInputLane, FeatureInputName};
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -90,6 +91,7 @@ fn plane_frame_source(feature: &crate::records::Feature) -> String {
 
 /// Add validated reference-plane frames to a projection copy of history.
 pub(crate) fn enrich_history_reference_planes(
+    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -238,8 +240,8 @@ pub(crate) fn enrich_history_reference_planes(
             let mut anchored_frames = Vec::new();
             for class in &lane.classes {
                 let frame = (|| {
-                    let offset = class
-                        .offset
+                    let offset = class_sources
+                        .position(class)
                         .and_then(|offset| usize::try_from(offset).ok())?;
                     (start..end).contains(&offset).then(|| {
                         constraint_reference_plane_frame(&lane.native_payload, offset, &class.name)
@@ -1684,6 +1686,7 @@ fn sketch_block_compact_local_id(
 
 /// Add the two serialized construction-plane operands to plane-intersection axes.
 pub(crate) fn enrich_history_reference_axes(
+    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -1734,7 +1737,7 @@ pub(crate) fn enrich_history_reference_axes(
                 if matches!(
                     class.name.as_str(),
                     "moPlaneInterAxisData_c" | "moSurfaceAxisData_c" | "moTwoPtsAxisData_c"
-                ) && class.offset.is_some_and(|position| {
+                ) && class_sources.position(class).is_some_and(|position| {
                     (u64_from_index(start)..u64_from_index(end)).contains(&position)
                 }) {
                     axis_data_classes.push(class);
@@ -1742,8 +1745,8 @@ pub(crate) fn enrich_history_reference_axes(
             }
             let mut anchored_frames = Vec::new();
             for class in &axis_data_classes {
-                let Some(body) = class
-                    .offset
+                let Some(body) = class_sources
+                    .position(class)
                     .and_then(|offset| usize::try_from(offset).ok())
                     .and_then(|offset| offset.checked_add(6 + class.name.len()))
                 else {

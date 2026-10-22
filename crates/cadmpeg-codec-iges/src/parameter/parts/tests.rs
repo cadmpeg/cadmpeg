@@ -42,6 +42,7 @@ fn actual_parameter_callbacks_preserve_original_values_and_independent_source_ex
     let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     let actual = assemble(&scan, &directory, &[], &global, &ctx, &mut output).unwrap();
     assert_eq!(actual.records, expected.records);
+    assert!(actual.given_up.is_empty());
     assert_eq!(
         actual.trailing_pointer_analysis,
         expected.trailing_pointer_analysis
@@ -319,4 +320,86 @@ fn detached_scan_and_session_budget_refusal_create_no_parameter_failure_home() {
     assert!(native.namespace("iges").is_none());
     assert!(fidelity.parts().is_empty());
     assert!(losses.is_empty());
+}
+
+#[test]
+fn distinct_conflicted_source_parts_keep_one_home_each_and_a_successful_peer() {
+    let mut bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "FIRST".into(),
+            status: "00000000",
+            parameters: "116,1,2,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "SECOND".into(),
+            status: "00000000",
+            parameters: "116,4,5,6,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "PEER".into(),
+            status: "00000000",
+            parameters: "116,7,8,9,0;".into(),
+        },
+    ]);
+    let first = bytes
+        .chunks_exact(81)
+        .position(|card| card[72] == b'P')
+        .unwrap()
+        * 81;
+    bytes[first + 64..first + 72].copy_from_slice(b"       3");
+    bytes[first + 81 + 64..first + 81 + 72].copy_from_slice(b"       1");
+    let mut wrapped = b"pre".to_vec();
+    wrapped.extend_from_slice(&bytes);
+    wrapped.extend_from_slice(b"post");
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&wrapped, &arena, &DecodePolicy::service()).unwrap();
+    let source = root.child(3, wrapped.len() - 4).unwrap();
+    let scan = card::scan_source(source, &ctx).unwrap();
+    let global = crate::global::parse(&scan).unwrap().0;
+    let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
+        .unwrap()
+        .0;
+    let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+    let actual = assemble(&scan, &directory, &[], &global, &ctx, &mut output).unwrap();
+    assert_eq!(actual.given_up, std::collections::BTreeSet::from([1, 3]));
+    assert_eq!(actual.records.len(), 1);
+    assert_eq!(actual.records[0].directory_sequence, 5);
+    assert_eq!(actual.records[0].integer(1), Some(7));
+    assert!(actual.quarantined.is_empty());
+    let (_, native, fidelity, losses) = output.into_parts().into_parts();
+    let unknowns = native
+        .namespace("iges")
+        .unwrap()
+        .arena_as::<NativeUnknownRecord>("unknowns")
+        .unwrap();
+    assert_eq!(unknowns.len(), 2);
+    for (ordinal, unknown) in unknowns.iter().enumerate() {
+        let start = first + ordinal * 81 + 3;
+        let part = &fidelity.parts()[&unknown.id];
+        assert_eq!(part.state(), &PartState::GivenUp {});
+        assert_eq!(part.offset(), u64::try_from(start).unwrap());
+        assert_eq!(part.byte_len(), 81);
+        assert_eq!(
+            fidelity
+                .retained_record(unknown.id.as_str())
+                .unwrap()
+                .data(),
+            Some(&wrapped[start..start + 81])
+        );
+    }
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code.local_code() == "record.unreadable"
+            && loss.severity == cadmpeg_ir::report::Severity::Error));
+    let captures = ctx.take_record_captures().unwrap();
+    assert_eq!(captures.len(), 1);
+    assert_eq!(captures[0].id(), "iges:entity:directory#5");
 }

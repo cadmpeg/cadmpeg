@@ -5,7 +5,7 @@ use std::fs;
 
 use assert_cmd::Command;
 use cadmpeg_codec_rhino::RhinoCodec;
-use cadmpeg_ir::codec::write::{ArenaDisposition, NativeDisposition, NativeDispositions};
+use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::report::loss::LossNote;
@@ -391,35 +391,70 @@ fn unsupported_rhino_subds_and_singular_seams_write_readable_reductions_with_los
             matches!(report.write_path(), WritePath::Synthesized { .. }),
             "{name}"
         );
-        assert!(
-            written.ir().model.bodies.is_empty(),
-            "{name}: omitted unsupported geometry must not reappear"
-        );
-        assert!(
-            report.losses.iter().any(|loss| loss.code.taxonomy()
-                == cadmpeg_ir::report::loss::LossTaxonomy::NoExportableSolids),
-            "{name}: empty target output must be reported"
-        );
         if name.starts_with("subd_") {
             assert!(
                 !source.ir().model.subds.is_empty(),
                 "{name} must exercise held subdivision content"
             );
-            assert!(written.ir().model.subds.is_empty());
             assert_eq!(
-                report
-                    .coverage
-                    .disposition(cadmpeg_ir::schema::EntityKind::SubdSurface),
-                ArenaDisposition::Dropped
+                written.ir().model.subds.len(),
+                source.ir().model.subds.len(),
+                "{name}: every held SubD must be emitted"
             );
+            for (before, after) in source
+                .ir()
+                .model
+                .subds
+                .iter()
+                .zip(&written.ir().model.subds)
+            {
+                assert_eq!(after.scheme, before.scheme, "{name}: subdivision scheme");
+                assert_eq!(
+                    after.cage.vertices().len(),
+                    before.cage.vertices().len(),
+                    "{name}: vertex count"
+                );
+                assert_eq!(
+                    after.cage.edges().len(),
+                    before.cage.edges().len(),
+                    "{name}: edge count"
+                );
+                assert_eq!(
+                    after.cage.faces().len(),
+                    before.cage.faces().len(),
+                    "{name}: face count"
+                );
+                assert_eq!(after.cage, before.cage, "{name}: exact control cage");
+            }
             assert!(
                 report
+                    .coverage
+                    .disposition(cadmpeg_ir::schema::EntityKind::SubdSurface)
+                    .carries(),
+                "{name}: coverage must state that the target carries SubD content"
+            );
+            assert!(
+                !report
                     .losses
                     .iter()
                     .any(|loss| loss.code.local_code() == "writer.subds-omitted"),
-                "{name}"
+                "{name}: an exactly emitted cage must not charge SubD omission"
+            );
+            assert!(
+                !report.losses.iter().any(|loss| loss.code.taxonomy()
+                    == cadmpeg_ir::report::loss::LossTaxonomy::NoExportableSolids),
+                "{name}: emitted SubD content is not empty output"
             );
         } else {
+            assert!(
+                written.ir().model.bodies.is_empty(),
+                "{name}: omitted unsupported geometry must not reappear"
+            );
+            assert!(
+                report.losses.iter().any(|loss| loss.code.taxonomy()
+                    == cadmpeg_ir::report::loss::LossTaxonomy::NoExportableSolids),
+                "{name}: empty target output must be reported"
+            );
             assert!(
                 !source.ir().model.faces.is_empty(),
                 "the seam fixture must contain a face"

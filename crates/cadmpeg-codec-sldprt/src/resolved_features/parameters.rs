@@ -6,6 +6,7 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputRelationFamily,
     FeatureInputScalar, FeatureInputScalarRole,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use std::collections::{BTreeMap, HashMap};
 
 /// Resolve a dimensional binding through the current canonical parameter slice.
@@ -117,6 +118,7 @@ impl<'a> DeclaredParameters<'a> {
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
 pub(crate) fn enrich_history_parameters<'a>(
+    class_sources: &ClassSources,
     histories: &mut [crate::records::FeatureHistory],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
     replace_existing: bool,
@@ -205,7 +207,13 @@ pub(crate) fn enrich_history_parameters<'a>(
                         )
                     });
                 if let Some(dimensions) = object_start.and_then(|start| {
-                    super::axes::typed_linear_pattern_dimensions(feature, lane, start, object_end)
+                    super::axes::typed_linear_pattern_dimensions(
+                        class_sources,
+                        feature,
+                        lane,
+                        start,
+                        object_end,
+                    )
                 }) {
                     for (name, default, length) in [
                         (

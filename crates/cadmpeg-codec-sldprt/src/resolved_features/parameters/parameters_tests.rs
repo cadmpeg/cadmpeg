@@ -11,6 +11,7 @@ use crate::records::{
     FeatureContent, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
     FeatureInputScalar, FeatureInputScalarRole,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use std::collections::BTreeMap;
 
 #[test]
@@ -276,7 +277,12 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    enrich_history_parameters(&mut histories, [&lane], true);
+    enrich_history_parameters(
+        &crate::test_support::native::class_sources(&[&lane]),
+        &mut histories,
+        [&lane],
+        true,
+    );
     assert_eq!(
         histories[0].features[0].parameters["D1"],
         "<MOD-DIAM>7.1374"
@@ -295,7 +301,12 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
             "<MOD-DIAM>25".into(),
         )]),
     );
-    enrich_history_parameters(&mut histories, [&semantic_lane], true);
+    enrich_history_parameters(
+        &crate::test_support::native::class_sources(&[&semantic_lane]),
+        &mut histories,
+        [&semantic_lane],
+        true,
+    );
     assert_eq!(
         histories[0].features[0].dimension_properties["D1"]["Value"],
         "<MOD-DIAM>7.1374"
@@ -317,6 +328,8 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
 
 #[test]
 fn parameter_indexes_match_the_class_name_and_scalar_scans() {
+    let class_sources = ClassSources::default();
+
     let mut state = 0x2545_f491_u64;
     let mut next = |bound: u64| {
         state = state
@@ -349,7 +362,7 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
                 parent: "lane".into(),
                 ordinal: u32::try_from(ordinal).unwrap(),
                 sequence: u32::try_from(ordinal).unwrap(),
-                offset: Some(next(40)),
+
                 name: "moLengthParameter_c".into(),
             })
             .collect();
@@ -383,7 +396,12 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
             .collect();
 
         for class in &mut lane.classes {
-            class.sequence = u32::try_from(class.offset.expect("fixture source position")).unwrap();
+            class.sequence = u32::try_from(
+                class_sources
+                    .position(class)
+                    .expect("fixture source position"),
+            )
+            .unwrap();
         }
         for name in &mut lane.names {
             name.sequence = u32::try_from(name.offset.expect("fixture source position")).unwrap();
@@ -398,11 +416,12 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
             let expected = lane
                 .classes
                 .iter()
-                .filter(|class| class.offset < name.offset)
-                .max_by_key(|class| class.offset)
+                .filter(|class| class_sources.position(class) < name.offset)
+                .max_by_key(|class| class_sources.position(class))
                 .filter(|class| {
                     !lane.names.iter().any(|intervening| {
-                        intervening.offset > class.offset && intervening.offset < name.offset
+                        intervening.offset > class_sources.position(class)
+                            && intervening.offset < name.offset
                     })
                 });
             assert_eq!(

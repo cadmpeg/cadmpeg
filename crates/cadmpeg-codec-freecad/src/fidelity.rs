@@ -365,6 +365,7 @@ pub(crate) fn object_layout_payloads(
     xml_value_layout_payloads(ctx, source, &ranges, payloads, pointers)
 }
 
+#[cfg(test)]
 pub(crate) fn property_layout_payloads(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
@@ -373,6 +374,17 @@ pub(crate) fn property_layout_payloads(
     pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<(), CodecError> {
     xml_value_layout_payloads(ctx, source, ranges, payloads, pointers)
+}
+
+pub(crate) fn captured_property_layout_payloads(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    ranges: &ValueSourceRanges,
+    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
+    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
+) -> Result<(), CodecError> {
+    let fields = copy_xml_value_layout(ctx, source, ranges)?;
+    install_xml_value_fields(ranges, fields, payloads, pointers)
 }
 
 pub(crate) fn gui_property_layout_payloads(
@@ -394,16 +406,34 @@ fn xml_value_layout_payloads(
 ) -> Result<(), CodecError> {
     let extent = relative_xml_extent(source, ranges.record.clone())?;
     let fields = ctx.record(&ranges.id, extent, || {
-        let mut fields = copy_value_fields(ctx, source, ranges)?;
-        ctx.retain_bytes(
-            cadmpeg_core::decode::u64_from_index(extent.window().len()),
-            "retain FCStd XML layout",
-        )?;
-        let mut bytes = ctx.alloc_filled(extent.window().len(), 0_u8, "retain FCStd XML layout")?;
-        bytes.copy_from_slice(extent.window());
-        fields.insert("raw_xml".into(), NativeBytes::from(bytes));
-        Ok(fields)
+        copy_xml_value_layout(ctx, source, ranges)
     })?;
+    install_xml_value_fields(ranges, fields, payloads, pointers)
+}
+
+fn copy_xml_value_layout(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    ranges: &ValueSourceRanges,
+) -> Result<BTreeMap<String, NativeBytes>, CodecError> {
+    let extent = relative_xml_extent(source, ranges.record.clone())?;
+    let mut fields = copy_value_fields(ctx, source, ranges)?;
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(extent.window().len()),
+        "retain FCStd XML layout",
+    )?;
+    let mut bytes = ctx.alloc_filled(extent.window().len(), 0_u8, "retain FCStd XML layout")?;
+    bytes.copy_from_slice(extent.window());
+    fields.insert("raw_xml".into(), NativeBytes::from(bytes));
+    Ok(fields)
+}
+
+fn install_xml_value_fields(
+    ranges: &ValueSourceRanges,
+    fields: BTreeMap<String, NativeBytes>,
+    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
+    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
+) -> Result<(), CodecError> {
     if payloads.contains_key(&ranges.id) || pointers.contains_key(&ranges.id) {
         return Err(CodecError::malformed(
             "duplicate XML source layout identity",

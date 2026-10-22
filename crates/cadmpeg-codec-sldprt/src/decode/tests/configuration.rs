@@ -5,6 +5,7 @@
 use crate::decode::append_design_losses;
 use crate::decode::assign_configuration_bodies;
 use crate::decode::mark_active_configuration;
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
@@ -113,6 +114,8 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
 
 #[test]
 fn inferred_partition_does_not_fabricate_active_configuration_identity() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
@@ -142,6 +145,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
 
     let mut report = super::empty_report(true);
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -155,6 +159,8 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
 
 #[test]
 fn active_configuration_name_binds_partition_without_fabricating_body_membership() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
@@ -196,6 +202,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
 
     let mut report = super::empty_report(false);
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -209,6 +216,8 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
 
 #[test]
 fn duplicate_configuration_partition_identities_are_reported() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     for id in ["first", "second"] {
         ir.model.configurations.push(DesignConfiguration {
@@ -229,6 +238,7 @@ fn duplicate_configuration_partition_identities_are_reported() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -242,6 +252,8 @@ fn duplicate_configuration_partition_identities_are_reported() {
 
 #[test]
 fn incomplete_configuration_names_are_reported() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     for (position, (ordinal, name)) in [(0, ""), (1, "Shared"), (2, "Shared"), (2, "Unique")]
         .into_iter()
@@ -266,6 +278,7 @@ fn incomplete_configuration_names_are_reported() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -280,6 +293,8 @@ fn incomplete_configuration_names_are_reported() {
 
 #[test]
 fn active_configuration_partition_disagreement_is_reported() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
@@ -307,6 +322,7 @@ fn active_configuration_partition_disagreement_is_reported() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -321,6 +337,8 @@ fn active_configuration_partition_disagreement_is_reported() {
 
 #[test]
 fn incoherent_configuration_bodies_are_reported() {
+    let class_sources = ClassSources::default();
+
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let configuration = |id: &str, ordinal, bodies| DesignConfiguration {
         id: ConfigurationId::mint(id).expect("identity grammar"),
@@ -364,6 +382,7 @@ fn incoherent_configuration_bodies_are_reported() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -377,6 +396,8 @@ fn incoherent_configuration_bodies_are_reported() {
 
 #[test]
 fn configuration_values_complete_parameters_without_baseline_values() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let parameter =
         ParameterId::mint("synthetic:test:id#configured-parameter").expect("identity grammar");
@@ -413,6 +434,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -428,6 +450,8 @@ fn configuration_values_complete_parameters_without_baseline_values() {
 
 #[test]
 fn configuration_suppression_and_override_references_are_coherent() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let feature = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let definition = FeatureDefinition::Operation(FeatureOperation::TreeNode {
@@ -468,6 +492,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,

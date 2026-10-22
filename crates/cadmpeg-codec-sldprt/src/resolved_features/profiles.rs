@@ -53,6 +53,7 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     FeatureInputLane, FeatureInputRelationFamily, SketchInputEntity, SketchInputKind,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
@@ -199,6 +200,7 @@ fn markers_by_owner(markers: &[SketchInputEntity]) -> HashMap<&str, Vec<&SketchI
 }
 /// Reconcile profile streams with uniquely enclosing sketch feature records.
 pub(crate) fn bind_sketch_profiles(
+    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     arenas: SketchArenas<'_>,
     parameters: &[cadmpeg_ir::features::DesignParameter],
@@ -212,7 +214,8 @@ pub(crate) fn bind_sketch_profiles(
         annotations,
     } = arenas;
 
-    let declared_carriers = declared_entity_handle_circular_carriers(features, parameters, lanes);
+    let declared_carriers =
+        declared_entity_handle_circular_carriers(class_sources, features, parameters, lanes);
     let mut superseded = HashSet::new();
     let metadata_ids = history_metadata_ids(histories);
     let native_features = crate::records::HistoryFeatures::new(histories);
@@ -346,6 +349,7 @@ pub(crate) fn bind_sketch_profiles(
 pub(super) struct CircleCarrier(pub [f64; 2], pub f64);
 
 fn declared_entity_handle_circular_carriers(
+    class_sources: &ClassSources,
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
@@ -381,6 +385,7 @@ fn declared_entity_handle_circular_carriers(
                 None => continue,
             };
             let Some((center, encoded_radius)) = declared_entity_handle_circular_marker(
+                class_sources,
                 lanes,
                 relation.feature_ref.as_str(),
                 operand,
@@ -439,7 +444,7 @@ pub(super) fn nested_profile_contains_declared_circular_carriers(
 }
 
 pub(crate) fn project_compact_sketch_profiles(
-    ctx: &DecodeContext<'_>,
+    source: (&ClassSources, &cadmpeg_core::decode::DecodeContext<'_>),
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
@@ -447,6 +452,8 @@ pub(crate) fn project_compact_sketch_profiles(
     lanes: &[FeatureInputLane],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
+    let (class_sources, ctx) = source;
+
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(histories);
@@ -464,7 +471,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 lane.classes
                     .iter()
                     .filter(|class| class.name == name)
-                    .map(|class| class.offset),
+                    .map(|class| class_sources.position(class)),
             )
         };
         let line_class_offsets = class_offsets("sgLineHandle");
@@ -996,10 +1003,10 @@ struct TerminalRelationCarriers<'a> {
 }
 
 impl<'a> TerminalRelationCarriers<'a> {
-    fn new(lane: &'a FeatureInputLane) -> Self {
+    fn new(class_sources: &ClassSources, lane: &'a FeatureInputLane) -> Self {
         let mut classes_by_offset = HashMap::new();
         for class in &lane.classes {
-            if let Some(position) = class.offset {
+            if let Some(position) = class_sources.position(class) {
                 classes_by_offset
                     .entry(position)
                     .or_insert(class.id.as_str());
@@ -1043,6 +1050,7 @@ impl<'a> TerminalRelationCarriers<'a> {
 }
 
 pub(crate) fn project_marker_backed_sketches(
+    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
@@ -1087,7 +1095,7 @@ pub(crate) fn project_marker_backed_sketches(
                 .iter()
                 .filter_map(SketchInputEntity::offset),
         );
-        let terminal_carriers = TerminalRelationCarriers::new(lane);
+        let terminal_carriers = TerminalRelationCarriers::new(class_sources, lane);
         let mut objects = Vec::new();
         for feature in native_features
             .iter()
@@ -3492,6 +3500,7 @@ mod detached_legacy_sketch_tests {
         let annotations = builder.build();
         let mut admitted = [feature.clone()];
         super::bind_sketch_profiles(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
             &mut admitted,
             super::SketchArenas {
                 sketches: &mut vec![sketch.clone()],
@@ -3581,6 +3590,7 @@ mod detached_legacy_sketch_tests {
         for _ in 0..32 {
             let mut admitted = neutral.clone();
             super::bind_sketch_profiles(
+                &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
                 &mut admitted,
                 super::SketchArenas {
                     sketches: &mut vec![sketch.clone()],
@@ -3718,7 +3728,10 @@ mod detached_legacy_sketch_tests {
         let mut losses = Vec::new();
         let mut admitted = [feature.clone()];
         super::project_compact_sketch_profiles(
-            &service,
+            (
+                &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+                &service,
+            ),
             &mut admitted,
             &mut sketches,
             &mut entities,
@@ -3759,7 +3772,10 @@ mod detached_legacy_sketch_tests {
             let mut losses = Vec::new();
             let mut admitted = [feature.clone()];
             super::project_compact_sketch_profiles(
-                &service,
+                (
+                    &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+                    &service,
+                ),
                 &mut admitted,
                 &mut sketches,
                 &mut entities,
@@ -3861,7 +3877,6 @@ mod detached_legacy_sketch_tests {
                 id: class_id.into(),
                 parent: lane_id.into(),
                 ordinal: 0,
-                offset: Some(cadmpeg_core::decode::u64_from_index(terminal::LEN)),
                 name: "sgCircleDim".into(),
             }],
             names: Vec::new(),
@@ -3892,25 +3907,41 @@ mod detached_legacy_sketch_tests {
             sketch_entities: Vec::new(),
         };
 
-        assert!(TerminalRelationCarriers::new(&lane).carries(&carrier));
+        assert!(TerminalRelationCarriers::new(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &lane
+        )
+        .carries(&carrier));
 
         let mut wrong_feature = lane.relation_instances[0].clone();
         wrong_feature.feature_ref = "other-feature".into();
         let mut wrong_feature_lane = lane.clone();
         wrong_feature_lane.relation_instances = vec![wrong_feature];
-        assert!(!TerminalRelationCarriers::new(&wrong_feature_lane).carries(&carrier));
+        assert!(!TerminalRelationCarriers::new(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&wrong_feature_lane)),
+            &wrong_feature_lane
+        )
+        .carries(&carrier));
 
         let mut wrong_class = lane.relation_instances[0].clone();
         wrong_class.class_ref = "other-class".into();
         let mut wrong_class_lane = lane.clone();
         wrong_class_lane.relation_instances = vec![wrong_class];
-        assert!(!TerminalRelationCarriers::new(&wrong_class_lane).carries(&carrier));
+        assert!(!TerminalRelationCarriers::new(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&wrong_class_lane)),
+            &wrong_class_lane
+        )
+        .carries(&carrier));
 
         let mut shadowed_class = lane.classes[0].clone();
         shadowed_class.id = "earlier-class".into();
         let mut shadowed_class_lane = lane;
         shadowed_class_lane.classes.insert(0, shadowed_class);
-        assert!(!TerminalRelationCarriers::new(&shadowed_class_lane).carries(&carrier));
+        assert!(!TerminalRelationCarriers::new(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&shadowed_class_lane)),
+            &shadowed_class_lane
+        )
+        .carries(&carrier));
     }
 
     fn xorshift(state: &mut u64, bound: u64) -> u64 {
@@ -4162,6 +4193,7 @@ mod detached_legacy_sketch_tests {
         )
         .expect("profile fixture fits service policy");
         project_marker_backed_sketches(
+            &crate::test_support::native::class_sources(&[&lane]),
             &ctx,
             &mut features,
             &mut sketches,
@@ -4264,6 +4296,7 @@ mod detached_legacy_sketch_tests {
         )
         .expect("profile fixture fits service policy");
         project_marker_backed_sketches(
+            &crate::test_support::native::class_sources(&[&lane]),
             &ctx,
             &mut features,
             &mut sketches,
@@ -4361,6 +4394,7 @@ mod detached_legacy_sketch_tests {
             let mut sketches = Vec::new();
             let mut sketch_entities = Vec::new();
             project_marker_backed_sketches(
+                &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
                 &ctx,
                 &mut features,
                 &mut sketches,
@@ -4536,6 +4570,7 @@ mod detached_legacy_sketch_tests {
         )
         .unwrap();
         project_marker_backed_sketches(
+            &crate::resolved_features::class_sources::ClassSources::default(),
             &service,
             &mut [],
             &mut Vec::new(),

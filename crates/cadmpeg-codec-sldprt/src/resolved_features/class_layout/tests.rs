@@ -57,7 +57,7 @@ fn repeated_class_names_keep_their_actual_distinct_source_extents() {
     lane.classes[0].feature_ref = Some("held-feature".into());
     sources.capture_classes(&ctx, [&lane]).unwrap();
     let mut fidelity = SourceFidelity::default();
-    crate::pmi::layout::install(&ctx, sources.into_pointers(), &mut fidelity).unwrap();
+    crate::pmi::layout::install(&ctx, sources.into_pointers(&ctx).unwrap(), &mut fidelity).unwrap();
     for (class, position) in lane.classes.iter().zip(positions) {
         let layout = &fidelity.record_layout()[&class.id];
         let start = u64::try_from(37 + position).unwrap();

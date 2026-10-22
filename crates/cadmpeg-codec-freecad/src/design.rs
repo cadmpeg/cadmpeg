@@ -456,6 +456,8 @@ pub(crate) fn transfer(
     )?);
     crate::parameter_names::apply(ir, properties)?;
     losses.extend(crate::control_links::apply(ir, properties)?);
+    let _cycle_owners = order_parameters_by_dependencies(&mut ir.model.parameters);
+    dense_parameter_ordinals(&mut ir.model.parameters)?;
     dependencies::structural(ctx, ir, properties)?;
     Ok((cycle_affected, losses))
 }
@@ -561,14 +563,11 @@ fn feature_ordinals<'a>(
     let mut object_by_name = HashMap::new();
     let mut object_by_feature = HashMap::new();
 
-    let mut source_ordinals = Vec::new();
     for object in &design_objects {
         object_by_id.insert(object.id().as_str(), *object);
         object_by_name.insert(object.name().as_str(), *object);
         object_by_feature.insert(feature_id(object)?, object.id().as_str());
-        source_ordinals.push(cadmpeg_core::decode::u64_from_index(object.order));
     }
-    source_ordinals.sort_unstable_by(Ord::cmp);
     let unresolved_cycle = || {
         CodecError::malformed(
             "design object ordering lost an un-emitted object while resolving a cycle",
@@ -616,7 +615,7 @@ fn feature_ordinals<'a>(
     let mut ordinals = HashMap::new();
     let mut cycle_affected = BTreeSet::new();
 
-    for ordinal in source_ordinals {
+    for rank in 0..design_objects.len() {
         // The ready object earliest in source order is emitted next. When none
         // is ready, every un-emitted object is cycle-affected and the earliest
         // one is emitted anyway.
@@ -636,7 +635,10 @@ fn feature_ordinals<'a>(
                 .ok_or_else(unresolved_cycle)?
         };
         emitted[next] = true;
-        ordinals.insert(design_objects[next].id().as_str(), ordinal);
+        ordinals.insert(
+            design_objects[next].id().as_str(),
+            cadmpeg_core::decode::u64_from_index(rank),
+        );
         for &dependent in &dependents[next] {
             let Some(remaining) = waiting[dependent].checked_sub(1) else {
                 continue;
@@ -2750,24 +2752,20 @@ fn bind_parameter_dependencies(
         parameter.expression = cadmpeg_ir::features::Expression::from_spans(&text, spans)
             .map_err(CodecError::malformed)?;
     }
-    let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
-    for parameter in parameters.iter() {
-        let owner = parameter.owner.clone();
-        let ordinals = owner_ordinals.entry(owner).or_default();
-        ordinals.push(parameter.ordinal);
-    }
-    for ordinals in owner_ordinals.values_mut() {
-        ordinals.sort_unstable_by(Ord::cmp);
-    }
-    let _cycle_owners = order_parameters_by_dependencies(parameters);
-    let mut next_ordinal = HashMap::<Option<FeatureId>, usize>::new();
-    for parameter in parameters {
-        let owner = parameter.owner.clone();
-        let index = next_ordinal.entry(owner).or_default();
-        parameter.ordinal = owner_ordinals[&parameter.owner][*index];
-        *index += 1;
-    }
     Ok(losses)
+}
+
+fn dense_parameter_ordinals(parameters: &mut [DesignParameter]) -> Result<(), CodecError> {
+    let mut next_rank = HashMap::<Option<FeatureId>, usize>::new();
+    for parameter in parameters {
+        let rank = next_rank.entry(parameter.owner.clone()).or_default();
+        parameter.ordinal = u32::try_from(*rank)
+            .map_err(|_| CodecError::malformed("FreeCAD parameter rank exceeds u32"))?;
+        *rank = rank.checked_add(1).ok_or_else(|| {
+            CodecError::malformed("FreeCAD parameter rank exceeds the address space")
+        })?;
+    }
+    Ok(())
 }
 
 /// Order parameters so each follows the parameters it depends on.

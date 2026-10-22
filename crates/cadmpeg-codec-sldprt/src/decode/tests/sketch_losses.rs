@@ -5,6 +5,7 @@
 use crate::decode::append_design_losses;
 use crate::decode::sketch_constraint_has_complete_neutral_semantics;
 use crate::decode::spatial_sketch_constraint_has_complete_neutral_semantics;
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_ir::features::{
     BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
 };
@@ -49,6 +50,8 @@ fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
 
 #[test]
 fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     ir.model
         .spatial_sketch_constraints
@@ -74,6 +77,7 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -88,6 +92,8 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
 
 #[test]
 fn typed_native_operands_are_reported_as_design_losses() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:id#combine").expect("identity grammar"),
@@ -116,6 +122,7 @@ fn typed_native_operands_are_reported_as_design_losses() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,

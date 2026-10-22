@@ -6,6 +6,7 @@ use crate::classification::{classify, FeatureClass};
 use crate::layout::extrusion_sparse_operation_trailer as sparse_tr;
 use crate::records::ObjectId;
 use crate::records::{Feature, FeatureInputLane, FeatureInputName};
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
@@ -36,6 +37,7 @@ fn consistent_operation_code(
 }
 
 fn feature_operation_code(
+    class_sources: &ClassSources,
     lane: &FeatureInputLane,
     name: &FeatureInputName,
     class: Option<&str>,
@@ -45,14 +47,14 @@ fn feature_operation_code(
         .offset
         .and_then(|offset| usize::try_from(offset).ok())?;
     let direct_class = lane.classes.iter().find(|class| {
-        class
-            .offset
+        class_sources
+            .position(class)
             .and_then(|offset| offset.checked_add(6 + u64_from_index(class.name.len())))
             == name.offset
     });
     if let Some(class) = direct_class {
-        let class_offset = class
-            .offset
+        let class_offset = class_sources
+            .position(class)
             .and_then(|offset| usize::try_from(offset).ok())?;
         if lane
             .native_payload
@@ -136,18 +138,20 @@ fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
 
 /// Bind operation discriminators shared by geometry and metadata decode.
 pub(crate) fn bind_feature_operations(
+    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) {
-    bind_extrusion_operations(features, histories, lanes, form_padding);
-    bind_revolution_operations(features, histories, lanes, form_padding);
-    bind_sweep_operations(features, histories, lanes, form_padding);
+    bind_extrusion_operations(class_sources, features, histories, lanes, form_padding);
+    bind_revolution_operations(class_sources, features, histories, lanes, form_padding);
+    bind_sweep_operations(class_sources, features, histories, lanes, form_padding);
 }
 
 /// Project revolution Boolean form words from declared and compact objects.
 pub(crate) fn bind_revolution_operations(
+    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -176,6 +180,7 @@ pub(crate) fn bind_revolution_operations(
                 revolution_operation(
                     history.input_class.as_deref(),
                     feature_operation_code(
+                        class_sources,
                         lane,
                         name,
                         history.input_class.as_deref(),
@@ -195,6 +200,7 @@ pub(crate) fn bind_revolution_operations(
 
 /// Project compact solid-sweep Boolean operation discriminators.
 pub(crate) fn bind_sweep_operations(
+    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -228,6 +234,7 @@ pub(crate) fn bind_sweep_operations(
                     match (
                         history.input_class.as_deref(),
                         feature_operation_code(
+                            class_sources,
                             lane,
                             name,
                             history.input_class.as_deref(),
@@ -346,6 +353,7 @@ fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) ->
 
 /// Project the feature-input operation discriminator onto typed extrusions.
 pub(crate) fn bind_extrusion_operations(
+    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -377,6 +385,7 @@ pub(crate) fn bind_extrusion_operations(
                 extrusion_operation(
                     history.input_class.as_deref(),
                     feature_operation_code(
+                        class_sources,
                         lane,
                         name,
                         history.input_class.as_deref(),
@@ -403,6 +412,7 @@ enum OperationKind {
 /// Preserve a Boolean operation that is invariant across a configuration lane
 /// when that lane carries no independent operation carrier.
 pub(crate) fn inherit_configuration_operations(
+    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
@@ -439,10 +449,15 @@ pub(crate) fn inherit_configuration_operations(
                 }
                 _ => break 'feature_edit,
             };
-            if lanes
-                .iter()
-                .any(|lane| operation_carrier_present(operation_kind, history, lane, form_padding))
-            {
+            if lanes.iter().any(|lane| {
+                operation_carrier_present(
+                    class_sources,
+                    operation_kind,
+                    history,
+                    lane,
+                    form_padding,
+                )
+            }) {
                 break 'feature_edit;
             }
             match (definition, operation_kind, *base_definition) {
@@ -465,6 +480,7 @@ pub(crate) fn inherit_configuration_operations(
 }
 
 fn operation_carrier_present(
+    class_sources: &ClassSources,
     kind: OperationKind,
     feature: &Feature,
     lane: &FeatureInputLane,
@@ -495,9 +511,13 @@ fn operation_carrier_present(
     {
         return true;
     }
-    let Some(code) =
-        feature_operation_code(lane, name, feature.input_class.as_deref(), form_padding)
-    else {
+    let Some(code) = feature_operation_code(
+        class_sources,
+        lane,
+        name,
+        feature.input_class.as_deref(),
+        form_padding,
+    ) else {
         return false;
     };
     matches!(kind, OperationKind::Revolution)
@@ -511,6 +531,7 @@ fn operation_carrier_present(
 /// Establish projected split-line mode and source sketch from each
 /// `moPLine_c` feature-input object while native dimension values remain raw.
 pub(crate) fn enrich_history_split_lines(
+    class_sources: &ClassSources,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
@@ -538,8 +559,12 @@ pub(crate) fn enrich_history_split_lines(
                 .iter()
                 .filter(|class| {
                     class.name == "moPLineProject_c"
-                        && class.offset.is_some_and(|position| position >= *start)
-                        && class.offset.is_some_and(|position| position < end)
+                        && class_sources
+                            .position(class)
+                            .is_some_and(|position| position >= *start)
+                        && class_sources
+                            .position(class)
+                            .is_some_and(|position| position < end)
                 })
                 .count();
             if let Some(observation) = observations.get_mut(&feature.id) {

@@ -390,6 +390,14 @@ impl<'a> DecodeContext<'a> {
         candidate.tolerances = self.session.document().tolerances;
 
         let value = apply(&mut candidate, &mut annotations).map_err(Into::into)?;
+        let first_ordinal = u64_from_index(self.session.document().model.features.len());
+        for (index, feature) in candidate.model.features.iter_mut().enumerate() {
+            feature.ordinal = first_ordinal
+                .checked_add(u64_from_index(index))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("Rhino feature ordinal overflows")
+                })?;
+        }
         let entity_count = candidate.model.entity_count();
         session.charge_entities(u64_from_index(entity_count), "rhino_object_entities")?;
         let appended = self.session.try_admit_append(
@@ -998,7 +1006,9 @@ impl<'a> DecodeContext<'a> {
         }
         let feature = Feature {
             id: feature_id.clone(),
-            ordinal: cadmpeg_core::decode::u64_from_index(source_order),
+            ordinal: cadmpeg_core::decode::u64_from_index(
+                self.session.document().model.features.len(),
+            ),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             needs_recompute: false,
@@ -1135,7 +1145,9 @@ impl<'a> DecodeContext<'a> {
         let name = (!identity.name.is_empty()).then(|| identity.name.clone());
         let feature = Feature {
             id: id.clone(),
-            ordinal: cadmpeg_core::decode::u64_from_index(source_order),
+            ordinal: cadmpeg_core::decode::u64_from_index(
+                self.session.document().model.features.len(),
+            ),
             name,
             suppressed: Some(false),
             needs_recompute: false,
@@ -1251,7 +1263,9 @@ impl<'a> DecodeContext<'a> {
         )?;
         let feature = Feature {
             id: feature_id.clone(),
-            ordinal: cadmpeg_core::decode::u64_from_index(source_order),
+            ordinal: cadmpeg_core::decode::u64_from_index(
+                self.session.document().model.features.len(),
+            ),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             needs_recompute: false,
@@ -1409,7 +1423,9 @@ impl<'a> DecodeContext<'a> {
         )?;
         let feature = Feature {
             id: feature_id.clone(),
-            ordinal: cadmpeg_core::decode::u64_from_index(source_order),
+            ordinal: cadmpeg_core::decode::u64_from_index(
+                self.session.document().model.features.len(),
+            ),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             needs_recompute: false,
@@ -1509,6 +1525,7 @@ impl<'a> DecodeContext<'a> {
                 .id()
                 .as_str()
                 .to_owned(),
+            u64_from_index(self.session.document().model.features.len()),
             |id| self.resolve_object_record(source_order, "morph captive", id),
         ) {
             Ok(feature) => feature,
@@ -1623,7 +1640,9 @@ impl<'a> DecodeContext<'a> {
         )?;
         let feature = Feature {
             id: feature_id.clone(),
-            ordinal: cadmpeg_core::decode::u64_from_index(source_order),
+            ordinal: cadmpeg_core::decode::u64_from_index(
+                self.session.document().model.features.len(),
+            ),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             needs_recompute: false,

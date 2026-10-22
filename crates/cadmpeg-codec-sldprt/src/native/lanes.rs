@@ -3,6 +3,7 @@ use super::SldprtNative;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::DecodeContext;
 
 pub(crate) fn expected_lanes<'a>(
@@ -10,6 +11,9 @@ pub(crate) fn expected_lanes<'a>(
     native: &'a SldprtNative,
     sources: &mut crate::resolved_features::body_sources::BodySources<'_>,
 ) -> Result<Vec<(&'a FeatureInputLane, FeatureInputLane)>, cadmpeg_ir::NativeConvertError> {
+    sources.capture_classes(ctx, &native.feature_input_lanes)?;
+    let class_sources = sources.class_sources();
+
     let mut expected_primary_lanes: Vec<FeatureInputLane> = native
         .feature_input_lanes
         .iter()
@@ -35,7 +39,7 @@ pub(crate) fn expected_lanes<'a>(
             &lane.names,
         )?
         .records;
-        rebuild_scalar_relations(lane, scalars)?;
+        rebuild_scalar_relations(&class_sources, lane, scalars)?;
     }
     Ok(expected_lane_pairs_impl(
         native,
@@ -114,17 +118,23 @@ fn expected_lane_pairs_impl<'a>(
 }
 
 fn rebuild_scalar_relations(
+    class_sources: &ClassSources,
     lane: &mut FeatureInputLane,
     scalars: Vec<crate::records::FeatureInputScalar>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     lane.scalars = scalars;
     lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
+        class_sources,
         &lane.id,
         &lane.classes,
         &lane.scalars,
         &[],
     )?;
-    lane.references =
-        crate::resolved_features::markers::reference_cells(&lane.scalars, &lane.classes)?.records;
+    lane.references = crate::resolved_features::markers::reference_cells(
+        class_sources,
+        &lane.scalars,
+        &lane.classes,
+    )?
+    .records;
     Ok(())
 }

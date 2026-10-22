@@ -72,6 +72,7 @@ pub(crate) mod bindings;
 pub(crate) mod classes;
 
 mod class_layout;
+pub(crate) mod class_sources;
 
 pub(crate) mod compact_reference_planes;
 
