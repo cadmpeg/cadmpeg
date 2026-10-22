@@ -200,3 +200,107 @@ fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
         1
     );
 }
+
+#[test]
+fn source_free_parameter_authoring_orders_identity_inputs_and_keeps_an_independent_sibling() {
+    use crate::records::FeatureContent;
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::features::{Expression, ExpressionToken, ParameterValue};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Result">Input + 1</Dimension><Dimension Name="Other">7</Dimension><Dimension Name="Input">2</Dimension></Feature></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let input = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Input")
+        .unwrap()
+        .id
+        .clone();
+    let result = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Result")
+        .unwrap()
+        .id
+        .clone();
+    decoded
+        .ir_mut()
+        .set_parameter_expression(
+            &result,
+            Expression {
+                tokens: vec![
+                    ExpressionToken::Parameter(input),
+                    ExpressionToken::Text(" + 2".into()),
+                ],
+            },
+            Some(ParameterValue::Integer(4)),
+        )
+        .unwrap();
+    let parameters = decoded.ir().model.parameters.clone();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    assert_eq!(decoded.ir().model.parameters, parameters);
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(regenerated.ir());
+    let feature = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .find(|feature| feature.name == "Equations")
+        .unwrap();
+    assert_eq!(
+        feature
+            .content
+            .iter()
+            .filter_map(|item| match item {
+                FeatureContent::Dimension(name) => Some(name.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        ["Other", "Input", "Result"]
+    );
+    assert_eq!(feature.parameters["Other"], "7");
+    assert_eq!(feature.parameters["Input"], "2");
+    assert_eq!(feature.parameters["Result"], "Input + 2");
+    let result = regenerated
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Result")
+        .unwrap();
+    assert_eq!(result.value, Some(ParameterValue::Integer(4)));
+    let dependency = result.expression.dependencies().next().unwrap();
+    assert_eq!(
+        regenerated
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == *dependency)
+            .unwrap()
+            .name,
+        "Input"
+    );
+}

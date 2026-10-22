@@ -1594,7 +1594,7 @@ pub(super) fn unknown_stream(
         cadmpeg_core::decode::u64_from_index(stream.inflated.len()),
         "retain NX unknown stream",
     )?;
-    unknown_stream_record(si, stream, Some(stream.inflated.clone()))
+    unknown_stream_record(si, stream, Some(stream.inflated.to_vec()))
 }
 
 pub(super) fn unknown_stream_metadata(
@@ -1614,7 +1614,7 @@ pub(super) fn retain_unknown_stream_data(
             cadmpeg_core::decode::u64_from_index(stream.inflated.len()),
             "retain NX unknown stream",
         )?;
-        unknown.retain_data(stream.inflated.clone());
+        unknown.retain_data(stream.inflated.to_vec());
     }
     Ok(())
 }
@@ -1911,11 +1911,12 @@ mod tests {
         )
     }
 
-    fn preview_stream(bytes: Vec<u8>) -> Stream {
+    fn preview_stream(bytes: Vec<u8>) -> Stream<'static> {
         Stream {
+            source: None,
             file_offset: 0,
             consumed: 0,
-            inflated: bytes,
+            inflated: bytes.into(),
             body: crate::parasolid::StreamBody::Preview,
         }
     }
@@ -1939,15 +1940,17 @@ mod tests {
     fn source_meta_reuses_the_prepared_delta_census() {
         let mut scan = empty_source_scan();
         scan.streams.push(Stream {
+            source: None,
             file_offset: 0,
             consumed: 0,
-            inflated: Vec::new(),
+            inflated: Vec::new().into(),
             body: crate::parasolid::StreamBody::Preview,
         });
         scan.streams.push(Stream {
+            source: None,
             file_offset: 0,
             consumed: 0,
-            inflated: vec![0xaa; 50_000],
+            inflated: vec![0xaa; 50_000].into(),
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype: crate::parasolid::ParasolidSubtype::Deltas,
                 schema: None,
@@ -1974,9 +1977,10 @@ mod tests {
             },
             |ctx| {
                 let stream = Stream {
+                    source: None,
                     file_offset: 0,
                     consumed: 0,
-                    inflated: vec![1, 2, 3],
+                    inflated: vec![1, 2, 3].into(),
                     body: crate::parasolid::StreamBody::Parasolid {
                         subtype: crate::parasolid::ParasolidSubtype::Partition,
                         schema: None,

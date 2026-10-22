@@ -28,9 +28,10 @@ fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
     let tombstone_offset = bytes.len();
     bytes.extend_from_slice(&[0, 29, 0, 11, 0, 1]);
     let streams = [Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: bytes,
+        inflated: bytes.into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,
             schema: None,
@@ -38,10 +39,13 @@ fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
     }];
 
     let census = crate::deltas::census::walk(&streams[0].inflated).unwrap();
-    let events = crate::native::parasolid::parasolid_deltas_events_with_censuses(
-        &streams,
-        vec![Some(census)],
-    )
+    let events = crate::test_support::with_decode_context(|ctx| {
+        crate::native::parasolid::parasolid_deltas_events_with_censuses(
+            ctx,
+            &streams,
+            vec![Some(census)],
+        )
+    })
     .unwrap();
 
     assert_eq!(events.body_revisions.len(), 1);
@@ -111,9 +115,10 @@ fn deltas_events_subtract_complete_limit_storage_from_residuals() {
     }
     bytes.extend_from_slice(&[0xcc, 0xdd, 0xee]);
     let streams = [Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: bytes,
+        inflated: bytes.into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,
             schema: None,
@@ -154,9 +159,10 @@ fn deltas_events_subtract_tagged_reference_lanes_from_residuals() {
     let suffix_offset = bytes.len();
     bytes.extend([0xdd, 0xee]);
     let streams = [Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: bytes.clone(),
+        inflated: bytes.clone().into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,
             schema: None,
@@ -207,9 +213,10 @@ fn deltas_events_subtract_transmit_headers_from_residuals() {
     let header_end = bytes.len();
     bytes.extend([0xaa, 0xbb]);
     let streams = [Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: bytes.clone(),
+        inflated: bytes.clone().into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,
             schema: Some(
@@ -250,9 +257,10 @@ fn deltas_events_retain_terminal_null_references() {
     let trailer_offset = bytes.len();
     bytes.extend_from_slice(&[0, 1, 0, 1, 0, 1, 0, 1]);
     let streams = [Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: bytes.clone(),
+        inflated: bytes.clone().into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,
             schema: None,
@@ -296,9 +304,10 @@ fn deltas_events_subtract_reference_type_maps_from_residuals() {
     let suffix_offset = bytes.len();
     bytes.extend([0xcc, 0xdd]);
     let streams = [Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: bytes.clone(),
+        inflated: bytes.clone().into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,
             schema: None,
@@ -355,9 +364,10 @@ fn deltas_events_subtract_pmark_packets_from_residuals() {
     let suffix_offset = bytes.len();
     bytes.extend([0xcc, 0xdd, 0xee]);
     let streams = [Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: bytes.clone(),
+        inflated: bytes.clone().into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,
             schema: None,
@@ -396,9 +406,10 @@ fn deltas_events_retain_partition_prefixes() {
     let prefix_offset = crate::test_support::test_pmarks::header().len();
     let prefix_end = bytes.len();
     let streams = [Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: bytes.clone(),
+        inflated: bytes.clone().into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,
             schema: None,
@@ -436,9 +447,10 @@ fn deltas_events_subtract_reference_marker_packets_from_residuals() {
     let suffix_offset = bytes.len();
     bytes.extend([0xcc, 0xdd]);
     let streams = [Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: bytes.clone(),
+        inflated: bytes.clone().into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,
             schema: None,
@@ -496,9 +508,10 @@ fn deltas_events_subtract_schema_nodes_from_residuals() {
     let suffix_offset = bytes.len();
     bytes.extend([0xcc, 0xdd]);
     let streams = [Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: bytes.clone(),
+        inflated: bytes.clone().into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,
             schema: None,
@@ -568,9 +581,10 @@ fn unowned_byte_150_shape_stays_in_fidelity_residuals() {
     let suffix_offset = bytes.len();
     bytes.extend([0xcc, 0xdd]);
     let streams = [Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: bytes.clone(),
+        inflated: bytes.clone().into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,
             schema: None,

@@ -45,7 +45,7 @@ fn group_primary_scopes_include_plain_and_partition_sources() {
         assert_eq!(groups[0].origin.partition_stream_ordinal(), None);
         assert_eq!(groups[1].origin.partition_stream_ordinal(), Some(1));
         for mut source in streams {
-            let mut bytes = std::mem::take(&mut source.inflated);
+            let mut bytes = std::mem::take(&mut source.inflated).into_owned();
             bytes.truncate(bytes.len() - 4);
             bytes.extend_from_slice(&91u16.to_be_bytes());
             bytes.extend_from_slice(&30u16.to_be_bytes());
@@ -62,7 +62,7 @@ fn group_primary_scopes_include_plain_and_partition_sources() {
                 bytes.extend_from_slice(&1u16.to_be_bytes());
             }
             bytes.extend_from_slice(&[0, 1, 0, 1]);
-            source.inflated = bytes;
+            source.inflated = bytes.into();
             let current_streams = [source];
             let events = crate::native::parasolid::parasolid_deltas_events(&current_streams);
             let (groups, members) = crate::native::parasolid::parasolid_groups(

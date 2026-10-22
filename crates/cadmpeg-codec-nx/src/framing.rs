@@ -193,14 +193,20 @@ pub(crate) fn skip_sequence_at(stream: &[u8], at: &mut usize, count: usize) -> O
 pub(crate) fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
     let mut view = View::over_retained(stream);
     view.seek(at)?;
+    let start = view.position();
+    let value = read_xmt_view(&mut view)?;
+    Some((value, view.position().checked_sub(start)?.checked_sub(2)?))
+}
+
+/// Read one compact or extended XMT reference from its source cursor.
+pub(crate) fn read_xmt_view(view: &mut View<'_>) -> Option<u32> {
     let first = view.i16_be()?;
     if first >= 0 {
-        return Some((u32::try_from(first).ok()?, 0));
+        return u32::try_from(first).ok();
     }
     let remainder = first.unsigned_abs();
     let quotient = view.u16_be()?;
-    let value = u32::from(quotient) * 32_767 + u32::from(remainder);
-    Some((value, 2))
+    Some(u32::from(quotient) * 32_767 + u32::from(remainder))
 }
 
 /// Decode XMT and return the full encoded width (2 or 4 bytes).

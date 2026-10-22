@@ -10,12 +10,12 @@
 
 #![deny(clippy::disallowed_methods)]
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use cadmpeg_container::compression::inflate_zlib_member;
 use cadmpeg_core::bytes::{contains, find};
-use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 pub(crate) mod attribute_action;
@@ -24,6 +24,7 @@ use attribute_action::AttributeAction;
 pub(crate) mod attribute_field;
 use attribute_field::AttributeField;
 
+mod source;
 pub(crate) mod value_records;
 
 pub(crate) mod unicode_value;
@@ -133,7 +134,7 @@ impl StreamBody {
 
 /// A located and inflated stream from the canonical part payload.
 #[derive(Debug, Clone)]
-pub(crate) struct Stream {
+pub(crate) struct Stream<'a> {
     /// Byte offset of the stream start in the source file.
     ///
     /// Modern streams start at a zlib header. Legacy streams start at a clear
@@ -145,13 +146,26 @@ pub(crate) struct Stream {
     /// streams it is the clear section length. The physical extent
     /// `[file_offset, file_offset + consumed)` is source-owned.
     pub(crate) consumed: u64,
+    /// Actual expanded or clear source supplied by the owning producer.
+    pub(crate) source: Option<View<'a>>,
     /// Inflated bytes.
-    pub(crate) inflated: Vec<u8>,
+    pub(crate) inflated: Cow<'a, [u8]>,
     /// Payload classification.
     pub(crate) body: StreamBody,
 }
 
-impl Stream {
+impl Stream<'_> {
+    #[cfg(test)]
+    pub(crate) fn into_owned(self) -> Stream<'static> {
+        Stream {
+            file_offset: self.file_offset,
+            consumed: self.consumed,
+            source: None,
+            inflated: Cow::Owned(self.inflated.into_owned()),
+            body: self.body,
+        }
+    }
+
     /// Stream classification.
     pub(crate) fn kind(&self) -> StreamKind {
         self.body.kind()
@@ -642,7 +656,7 @@ pub(crate) fn extract_streams<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
     container: &Container,
-) -> Result<Vec<Stream>, CodecError> {
+) -> Result<Vec<Stream<'a>>, CodecError> {
     let Some((part_offset, part_size)) = container
         .entries
         .iter()
@@ -657,13 +671,7 @@ pub(crate) fn extract_streams<'a>(
     let Some(end) = start.checked_add(size) else {
         return Ok(Vec::new());
     };
-    let part_view = ctx.register_slice(
-        root,
-        ByteRange {
-            start: cadmpeg_core::decode::u64_from_index(start),
-            end: cadmpeg_core::decode::u64_from_index(end),
-        },
-    )?;
+    let part_view = source::part(ctx, root, start, end)?;
     let part = part_view.window();
 
     let mut streams = Vec::new();
@@ -718,23 +726,31 @@ pub(crate) fn extract_streams<'a>(
             let source = part_view.child(offset, compressed_end).ok_or_else(|| {
                 CodecError::Malformed("indexed NX member exceeds its part payload".into())
             })?;
-            let Some((inflated, consumed)) = inflate_stream(ctx, source)? else {
+            let Some(source::Candidate::Accepted {
+                source: view,
+                consumed,
+            }) = source::inflate(ctx, source, |_, consumed| {
+                if consumed != cadmpeg_core::decode::u64_from_index(wrapper.compressed_byte_len) {
+                    return Err(CodecError::malformed(format_args!(
+                        "indexed zlib member length at file offset {} differs from its wrapper",
+                        start + offset
+                    )));
+                }
+                Ok(true)
+            })?
+            else {
                 return Err(CodecError::malformed(format_args!(
                     "invalid indexed zlib member at file offset {}",
                     start + offset
                 )));
             };
-            if consumed != cadmpeg_core::decode::u64_from_index(wrapper.compressed_byte_len) {
-                return Err(CodecError::malformed(format_args!(
-                    "indexed zlib member length at file offset {} differs from its wrapper",
-                    start + offset
-                )));
-            }
+            let inflated = Cow::Borrowed(view.window());
             let body = classify(&inflated);
             ctx.charge_entities(1, "admit NX streams")?;
             streams.push(Stream {
                 file_offset: start + offset,
                 consumed,
+                source: Some(view),
                 inflated,
                 body,
             });
@@ -761,7 +777,7 @@ fn append_all_zlib_streams<'a>(
     ctx: &DecodeContext<'a>,
     part_view: View<'a>,
     file_start: usize,
-    streams: &mut Vec<Stream>,
+    streams: &mut Vec<Stream<'a>>,
     structural_only: bool,
 ) -> Result<(), CodecError> {
     let part = part_view.window();
@@ -791,7 +807,18 @@ fn append_all_zlib_streams<'a>(
             let source = part_view.child(i, source_end).ok_or_else(|| {
                 CodecError::Malformed("NX member offset exceeds its part payload".into())
             })?;
-            if let Some((inflated, consumed)) = inflate_stream(ctx, source)? {
+            if let Some(candidate) = source::inflate(ctx, source, |bytes, _| {
+                Ok(!structural_only || structural_stream_candidate(classify(bytes).kind(), bytes)?)
+            })? {
+                let (view, consumed) = match candidate {
+                    source::Candidate::Accepted { source, consumed } => (source, consumed),
+                    source::Candidate::Rejected { consumed } => {
+                        seen.insert(file_offset, consumed);
+                        i += packed_member_advance(file_offset, consumed)?;
+                        continue;
+                    }
+                };
+                let inflated = Cow::Borrowed(view.window());
                 let body = classify(&inflated);
                 if match seen.entry(file_offset) {
                     std::collections::btree_map::Entry::Vacant(entry) => {
@@ -799,12 +826,12 @@ fn append_all_zlib_streams<'a>(
                         true
                     }
                     std::collections::btree_map::Entry::Occupied(_) => false,
-                } && (!structural_only || structural_stream_candidate(body.kind(), &inflated)?)
-                {
+                } {
                     ctx.charge_entities(1, "admit NX streams")?;
                     streams.push(Stream {
                         file_offset,
                         consumed,
+                        source: Some(view),
                         inflated,
                         body,
                     });
@@ -822,7 +849,7 @@ fn append_unindexed_structural_streams<'a>(
     ctx: &DecodeContext<'a>,
     part_view: View<'a>,
     file_start: usize,
-    streams: &mut Vec<Stream>,
+    streams: &mut Vec<Stream<'a>>,
 ) -> Result<(), CodecError> {
     append_all_zlib_streams(ctx, part_view, file_start, streams, true)
 }
@@ -853,7 +880,7 @@ fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> Result<bool
 pub(crate) fn extract_legacy_streams<'a>(
     ctx: &DecodeContext<'a>,
     part: View<'a>,
-) -> Result<Vec<Stream>, CodecError> {
+) -> Result<Vec<Stream<'a>>, CodecError> {
     let bytes = part.window();
     let mut streams = Vec::new();
     let mut search = 0;
@@ -865,7 +892,18 @@ pub(crate) fn extract_legacy_streams<'a>(
         let payload = bytes.get(start..end).ok_or_else(|| {
             CodecError::Malformed("legacy Parasolid stream range escapes payload".into())
         })?;
-        let inflated = payload.to_vec();
+        let source_start = part
+            .start()
+            .checked_add(start)
+            .ok_or_else(|| CodecError::malformed("legacy Parasolid source start overflows"))?;
+        let source_end = part
+            .start()
+            .checked_add(end)
+            .ok_or_else(|| CodecError::malformed("legacy Parasolid source end overflows"))?;
+        let view = part.child(source_start, source_end).ok_or_else(|| {
+            CodecError::malformed("legacy Parasolid source leaves its actual part")
+        })?;
+        let inflated = Cow::Borrowed(view.window());
         let body = classify(&inflated);
         let consumed = u64::try_from(payload.len()).map_err(|_| {
             CodecError::Malformed("legacy Parasolid stream length exceeds u64".into())
@@ -877,6 +915,7 @@ pub(crate) fn extract_legacy_streams<'a>(
         streams.push(Stream {
             file_offset,
             consumed,
+            source: Some(view),
             inflated,
             body,
         });
@@ -942,22 +981,6 @@ fn packed_member_advance(file_offset: usize, consumed: u64) -> Result<usize, Cod
         )));
     }
     Ok(advance)
-}
-
-fn inflate_stream<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'a>,
-) -> Result<Option<(Vec<u8>, u64)>, CodecError> {
-    let (view, consumed) = match inflate_zlib_member(ctx, source, ExpandSpec::Unknown) {
-        Ok(result) => result,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
-    };
-    let Ok(consumed) = u64::try_from(consumed) else {
-        return Ok(None);
-    };
-    let inflated = view.window().to_vec();
-    Ok(Some((inflated, consumed)))
 }
 
 /// A zlib header has compression method 8 and a 16-bit header divisible by

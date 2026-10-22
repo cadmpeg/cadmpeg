@@ -714,6 +714,13 @@ impl<'a> ExpandWriter<'_, 'a> {
         Ok(())
     }
 
+    /// Borrow the actual output after validating its declared exact size.
+    /// This neither registers source provenance nor credits semantic reads.
+    pub fn completed_bytes(&self) -> Result<&[u8], CodecError> {
+        self.check_exact()?;
+        Ok(&self.buffer)
+    }
+
     /// Finalize the expansion as an untracked arena-backed space.
     ///
     /// Use [`Self::finalize_from`] to retain explicit compressed provenance.

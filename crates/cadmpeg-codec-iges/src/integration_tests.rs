@@ -994,3 +994,7 @@ mod parameter_parts;
 mod binary_parts;
 
 mod compressed_parts;
+
+mod directory_locator_parts;
+
+mod compressed_parameter_parts;

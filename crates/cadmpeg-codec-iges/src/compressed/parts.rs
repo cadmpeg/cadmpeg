@@ -18,6 +18,7 @@ pub(crate) struct Admission {
     pub(crate) global: ResolvedGlobal,
     pub(crate) losses: Vec<LossNote>,
     pub(crate) directory: Vec<DirectoryEntry>,
+    pub(crate) parameters: crate::parameter::ParameterAssembly,
 }
 
 pub(crate) struct Normalized {
@@ -160,49 +161,63 @@ pub(crate) fn normalize(
                         extent,
                         spec("iges.compressed_data_record", framing)?,
                         || {
-                            let syntax_bytes = extent
-                                .window()
-                                .len()
-                                .checked_mul(3)
-                                .and_then(|size| {
-                                    size.checked_add(16 * size_of::<std::rc::Rc<Vec<u8>>>())
-                                })
-                                .and_then(|size| {
-                                    count
-                                        .checked_mul(size_of::<Vec<u8>>())
-                                        .and_then(|lines| size.checked_add(lines))
-                                })
-                                .ok_or_else(|| malformed("Data callback storage overflows"))?;
-                            ctx.retain_bytes(
-                                u64_from_index(syntax_bytes),
-                                "IGES Compressed callback syntax",
-                            )?;
-                            let (entity, next) = super::parse_data_entity_with_fields(
-                                &payloads[..terminate],
-                                parsed.sequence,
-                                parsed.next,
-                                fields.values(ctx)?,
-                                parameter_delimiter,
-                                record_delimiter,
-                            )?;
-                            if next != end {
-                                return Err(malformed(
-                                    "Data callback boundary differs from source framing",
-                                ));
-                            }
-                            let (first, second) = super::directory_fields(
-                                &entity,
-                                if count == 0 { 0 } else { parameter_start },
-                            )?;
-                            let entry = crate::directory::admit_fields(
-                                entity.sequence,
-                                u64_from_index(extent.start() - source.start()),
-                                first,
-                                second,
-                                global.global_table(),
+                            ctx.record(
+                                &format!("iges:entity:directory#{}", parsed.sequence),
+                                extent,
+                                || {
+                                    let syntax_bytes = extent
+                                        .window()
+                                        .len()
+                                        .checked_mul(3)
+                                        .and_then(|size| {
+                                            size.checked_add(16 * size_of::<std::rc::Rc<Vec<u8>>>())
+                                        })
+                                        .and_then(|size| {
+                                            count
+                                                .checked_mul(size_of::<Vec<u8>>())
+                                                .and_then(|lines| size.checked_add(lines))
+                                        })
+                                        .ok_or_else(|| {
+                                            malformed("Data callback storage overflows")
+                                        })?;
+                                    ctx.retain_bytes(
+                                        u64_from_index(syntax_bytes),
+                                        "IGES Compressed callback syntax",
+                                    )?;
+                                    let (entity, next) = super::parse_data_entity_with_fields(
+                                        &payloads[..terminate],
+                                        parsed.sequence,
+                                        parsed.next,
+                                        fields.values(ctx)?,
+                                        parameter_delimiter,
+                                        record_delimiter,
+                                    )?;
+                                    if next != end {
+                                        return Err(malformed(
+                                            "Data callback boundary differs from source framing",
+                                        ));
+                                    }
+                                    let (first, second) = super::directory_fields(
+                                        &entity,
+                                        if count == 0 { 0 } else { parameter_start },
+                                    )?;
+                                    let entry = crate::directory::admit_fields(
+                                        entity.sequence,
+                                        u64_from_index(extent.start() - source.start()),
+                                        first,
+                                        second,
+                                        global.global_table(),
+                                    )
+                                    .map_err(|error| malformed(error.to_string()))?;
+                                    let parameter = crate::parameter::compressed::parse(
+                                        &entry,
+                                        &entity.parameter_lines,
+                                        &global,
+                                        ctx,
+                                    )?;
+                                    Ok((entity, entry, parameter))
+                                },
                             )
-                            .map_err(|error| malformed(error.to_string()))?;
-                            Ok((entity, entry))
                         },
                     )? {
                         parameter_start = parameter_start
@@ -225,7 +240,7 @@ pub(crate) fn normalize(
         .checked_sub(start)
         .and_then(|count| count.checked_add(1))
         .ok_or_else(|| malformed("Output header count overflows"))?;
-    for (entity, _) in &decoded {
+    for (entity, _, _) in &decoded {
         card_count = card_count
             .checked_add(2)
             .and_then(|count| count.checked_add(entity.parameter_lines.len()))
@@ -250,7 +265,7 @@ pub(crate) fn normalize(
     }
     let mut directory = Vec::new();
     let mut grammar_sequence = 1u32;
-    for (entity, entry) in &decoded {
+    for (entity, entry, _) in &decoded {
         let (first, second) = super::directory_fields(
             entity,
             u32::try_from(entry.parameter_start)
@@ -262,7 +277,8 @@ pub(crate) fn normalize(
             .ok_or_else(|| malformed("Directory sequence overflows"))?;
     }
     let mut parameter_sequence = 1u32;
-    for (entity, entry) in decoded {
+    let mut parameters = Vec::new();
+    for (entity, entry, parameter) in decoded {
         super::append_parameter_cards(&mut bytes, &entity, parameter_sequence)?;
         parameter_sequence = parameter_sequence
             .checked_add(
@@ -271,7 +287,11 @@ pub(crate) fn normalize(
             )
             .ok_or_else(|| malformed("Parameter sequence overflows"))?;
         append(ctx, &mut directory, entry)?;
+        if let Some(parameter) = parameter {
+            append(ctx, &mut parameters, parameter)?;
+        }
     }
+    let parameters = crate::parameter::compressed::finish(&directory, parameters, &global);
     let directory_count = directory
         .len()
         .checked_mul(2)
@@ -294,6 +314,7 @@ pub(crate) fn normalize(
             global,
             losses,
             directory,
+            parameters,
         },
     })
 }
@@ -365,3 +386,6 @@ fn append<T>(ctx: &DecodeContext<'_>, values: &mut Vec<T>, value: T) -> Result<(
     values.push(value);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

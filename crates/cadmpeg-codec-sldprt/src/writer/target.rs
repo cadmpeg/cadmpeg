@@ -40,14 +40,17 @@ pub(crate) fn plan(
     let attempt = write(input, true);
     let (written, bytes) = match attempt {
         Ok(written) => written,
-        Err(CodecError::UnsupportedContent(reason)) => {
+        Err(error) => {
+            let reason = match error {
+                CodecError::UnsupportedContent(reason) => reason,
+                error => error.to_string(),
+            };
             return super::synthesis::plan(
                 input,
                 resolved,
                 super::synthesis::SynthesisCause::PatchDeclined { reason },
             );
         }
-        Err(error) => return Err(error),
     };
     if matches!(
         &written,

@@ -37,6 +37,7 @@ pub(crate) enum TypedNative {
 
 /// Attach a pre-extracted [`crate::native::model::NativeModel`] to `ir`: annotations, namespace arenas,
 /// and semantic islands. Build the model with [`crate::native::model::NativeModel::extract`].
+/// Returns whether native attachment was retained.
 pub(crate) fn attach_annotations(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -45,7 +46,7 @@ pub(crate) fn attach_annotations(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<bool, CodecError> {
     attach::attach(ctx, ir, model, scan, annotations, unknowns, losses)
 }
 

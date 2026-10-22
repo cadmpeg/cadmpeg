@@ -4,7 +4,7 @@
 use crate::records::FeatureContent;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{DesignParameter, FeatureId, ParameterValue};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use super::features::generated_feature_record_id;
 use crate::history::parameters::{
@@ -126,8 +126,7 @@ fn sync_neutral_parameters(
                     "SLDPRT parameters for feature {feature_id} require a retained feature record"
                 ))
             })?;
-        let mut parameters = desired.remove(feature_id).unwrap_or_default();
-        parameters.sort_by_key(|parameter| parameter.ordinal);
+        let parameters = order_owner_parameters(desired.remove(feature_id).unwrap_or_default());
         let canonical = cadmpeg_core::text::named_entries(
             format_args!("the sldprt feature {feature_id} record"),
             parameters.iter().map(|parameter| {
@@ -287,3 +286,54 @@ fn sync_neutral_parameters(
     }
     Ok(())
 }
+
+fn order_owner_parameters(mut parameters: Vec<&DesignParameter>) -> Vec<&DesignParameter> {
+    parameters.sort_by_key(|parameter| parameter.ordinal);
+    let indices = parameters
+        .iter()
+        .enumerate()
+        .map(|(index, parameter)| (&parameter.id, index))
+        .collect::<HashMap<_, _>>();
+    let dependencies = parameters
+        .iter()
+        .map(|parameter| {
+            parameter
+                .expression
+                .dependencies()
+                .filter_map(|id| indices.get(id).copied())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut remaining = dependencies.iter().map(Vec::len).collect::<Vec<_>>();
+    let mut consumers = (0..parameters.len())
+        .map(|_| Vec::new())
+        .collect::<Vec<_>>();
+    for (consumer, dependencies) in dependencies.iter().enumerate() {
+        for &dependency in dependencies {
+            consumers[dependency].push(consumer);
+        }
+    }
+    let mut ready = (0..parameters.len())
+        .filter(|&index| remaining[index] == 0)
+        .collect::<BTreeSet<_>>();
+    let mut ordered = Vec::new();
+    while let Some(index) = ready.pop_first() {
+        ordered.push(parameters[index]);
+        for &consumer in &consumers[index] {
+            remaining[consumer] -= 1;
+            if remaining[consumer] == 0 {
+                ready.insert(consumer);
+            }
+        }
+    }
+    ordered.extend(
+        parameters
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, parameter)| (remaining[index] != 0).then_some(parameter)),
+    );
+    ordered
+}
+
+#[cfg(test)]
+mod tests;

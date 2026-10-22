@@ -42,7 +42,7 @@ fn prepare_topology_streams<'a>(
     let mut semantic = Vec::new();
     for stream in &scan.streams {
         semantic.push(TopologyStream {
-            bytes: Cow::Borrowed(stream.inflated.as_slice()),
+            bytes: Cow::Borrowed(stream.inflated.as_ref()),
             delta_census: None,
         });
     }
@@ -216,7 +216,7 @@ impl StreamView {
         let intersections = if let Some(delta_indices) = paired_deltas {
             let replacement_streams = delta_indices
                 .iter()
-                .map(|delta| scan.streams[*delta].inflated.as_slice())
+                .map(|delta| scan.streams[*delta].inflated.as_ref())
                 .collect::<Vec<_>>();
             intersection::scan_with_auxiliary_replacements_and_graph(
                 semantic_bytes,
@@ -315,7 +315,7 @@ impl<'a> ParsedStreams<'a> {
             };
             let point_layout = subtype.chart_point_layout();
             let paired = delta_pairs.get(&si);
-            let topology_matches_raw = semantic_bytes.as_ref() == stream.inflated;
+            let topology_matches_raw = semantic_bytes.as_ref() == stream.inflated.as_ref();
             let mut residual = Vec::new();
             if stream.kind() == StreamKind::Deltas && !paired_deltas.contains(&si) {
                 if let Some(census) = topology_streams[si].delta_census.as_ref() {
@@ -337,7 +337,10 @@ impl<'a> ParsedStreams<'a> {
             }
             let identical = paired.is_none() && topology_matches_raw && residual.is_empty();
 
-            let raw = Rc::new(StreamView::parse_uniform(&stream.inflated, point_layout)?);
+            let raw_bytes = stream
+                .source
+                .map_or(stream.inflated.as_ref(), |source| source.window());
+            let raw = Rc::new(StreamView::parse_uniform(raw_bytes, point_layout)?);
             let (semantic, nurbs_graph) = if identical {
                 (Rc::clone(&raw), Rc::clone(&raw.graph))
             } else {
@@ -432,11 +435,12 @@ mod tests {
     use super::{topology_streams, ParsedStreams};
     use std::borrow::Cow;
 
-    fn one_delta_pair() -> Vec<crate::parasolid::Stream> {
+    fn one_delta_pair() -> Vec<crate::parasolid::Stream<'static>> {
         let stream = |subtype, file_offset| crate::parasolid::Stream {
+            source: None,
             file_offset,
             consumed: 0,
-            inflated: Vec::new(),
+            inflated: Vec::new().into(),
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype,
                 schema: Some(
@@ -488,9 +492,10 @@ mod tests {
     #[test]
     fn delta_pairing_matches_the_nearest_preceding_partition() {
         let mut streams = vec![crate::parasolid::Stream {
+            source: None,
             file_offset: 10,
             consumed: 0,
-            inflated: Vec::new(),
+            inflated: Vec::new().into(),
             body: crate::parasolid::StreamBody::Preview,
         }];
         streams.extend(one_delta_pair());
@@ -517,9 +522,10 @@ mod tests {
                 let mut scan =
                     crate::decode::scan(scan_ctx, root).expect("valid linked delta stream");
                 scan.streams.push(crate::parasolid::Stream {
+                    source: None,
                     file_offset: 0,
                     consumed: 0,
-                    inflated: Vec::new(),
+                    inflated: Vec::new().into(),
                     body: crate::parasolid::StreamBody::Preview,
                 });
 
@@ -542,9 +548,10 @@ mod tests {
                 om_section_cache: std::sync::OnceLock::new(),
             },
             vec![crate::parasolid::Stream {
+                source: None,
                 file_offset: 0,
                 consumed: 3,
-                inflated: vec![1, 2, 3],
+                inflated: vec![1, 2, 3].into(),
                 body: crate::parasolid::StreamBody::Parasolid {
                     subtype: crate::parasolid::ParasolidSubtype::Partition,
                     schema: Some(
@@ -575,9 +582,10 @@ mod tests {
         let stream = |file_offset| {
             let inflated = bspline_partition_stream();
             crate::parasolid::Stream {
+                source: None,
                 file_offset,
                 consumed: u64::try_from(inflated.len()).expect("test stream length fits u64"),
-                inflated,
+                inflated: inflated.into(),
                 body: crate::parasolid::StreamBody::Parasolid {
                     subtype: crate::parasolid::ParasolidSubtype::Partition,
                     schema: Some(
@@ -656,9 +664,10 @@ mod tests {
         use std::collections::BTreeSet;
 
         let stream = |subtype, schema: Option<&str>, file_offset| Stream {
+            source: None,
             file_offset,
             consumed: 0,
-            inflated: Vec::new(),
+            inflated: Vec::new().into(),
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype,
                 schema: schema.map(|schema| {
@@ -674,9 +683,10 @@ mod tests {
                 10,
             ),
             Stream {
+                source: None,
                 file_offset: 20,
                 consumed: 0,
-                inflated: Vec::new(),
+                inflated: Vec::new().into(),
                 body: crate::parasolid::StreamBody::Preview,
             },
             stream(

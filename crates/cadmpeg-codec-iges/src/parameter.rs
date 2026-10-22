@@ -16,7 +16,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::ops::Range;
 
+pub(crate) mod compressed;
 pub(crate) mod parts;
+pub(crate) mod source_locator;
 
 struct BackPointer(Option<u32>);
 
@@ -4028,7 +4030,6 @@ fn assemble_with(
     let mut recoveries = FramingRecoveries::default();
     let ownership = resolve_ownership(directory, &lines, &back_pointers, &mut recoveries)?;
     let mut records = Vec::new();
-    let mut trailing_pointer_analysis = BTreeMap::new();
     let mut quarantined = Vec::new();
     let mut given_up = BTreeSet::new();
     for owned in &ownership {
@@ -4040,30 +4041,7 @@ fn assemble_with(
             }
         }
     }
-    {
-        let mut record_by_directory = BTreeMap::new();
-        for record in &records {
-            record_by_directory.insert(record.directory_sequence, record);
-        }
-        for record in &records {
-            let analysis = analyze_trailing_pointer_groups_with_records_for_global_table(
-                record,
-                &entries,
-                &record_by_directory,
-                global.global_table(),
-            );
-            trailing_pointer_analysis.insert(record.directory_sequence, analysis);
-        }
-    }
-    for record in &mut records {
-        record.parameter_end = trailing_pointer_analysis
-            .get(&record.directory_sequence)
-            .and_then(|analysis| match analysis {
-                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
-                _ => None,
-            })
-            .map_or(record.tokens.len(), |groups| groups.token_start);
-    }
+    let trailing_pointer_analysis = finish_records(&entries, &mut records, global);
     let mut accounted = BTreeSet::new();
     for sequence in ownership
         .iter()
@@ -4097,6 +4075,39 @@ fn assemble_with(
         recoveries,
         given_up,
     })
+}
+
+fn finish_records(
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &mut [ParameterRecord],
+    global: &ResolvedGlobal,
+) -> BTreeMap<u32, TrailingPointerAnalysis> {
+    let mut trailing_pointer_analysis = BTreeMap::new();
+    {
+        let mut record_by_directory = BTreeMap::new();
+        for record in records.iter() {
+            record_by_directory.insert(record.directory_sequence, record);
+        }
+        for record in records.iter() {
+            let analysis = analyze_trailing_pointer_groups_with_records_for_global_table(
+                record,
+                entries,
+                &record_by_directory,
+                global.global_table(),
+            );
+            trailing_pointer_analysis.insert(record.directory_sequence, analysis);
+        }
+    }
+    for record in records.iter_mut() {
+        record.parameter_end = trailing_pointer_analysis
+            .get(&record.directory_sequence)
+            .and_then(|analysis| match analysis {
+                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
+                _ => None,
+            })
+            .map_or(record.tokens.len(), |groups| groups.token_start);
+    }
+    trailing_pointer_analysis
 }
 
 pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {

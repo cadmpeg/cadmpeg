@@ -303,12 +303,13 @@ impl<'a> PhysicalParse<'a> {
             Some(source) => card::scan_source(source, ctx)?,
             None => card::scan(bytes)?,
         };
-        let (prepared_global, prepared_directory) = match compressed {
+        let (prepared_global, prepared_directory, prepared_parameters) = match compressed {
             Some(admission) => (
                 Some((admission.global, admission.losses)),
                 Some(admission.directory),
+                Some(admission.parameters),
             ),
-            None => (None, None),
+            None => (None, None, None),
         };
         let (global, mut global_losses) = if let Some(global) = prepared_global {
             global
@@ -349,7 +350,9 @@ impl<'a> PhysicalParse<'a> {
                 .iter()
                 .copied()
                 .chain(quarantined_directory.iter().map(|record| record.sequence));
-            if scan.source_view().is_some() {
+            if let Some(parameters) = prepared_parameters {
+                parameters
+            } else if scan.source_view().is_some() {
                 parameter::parts::assemble(&scan, &directory, excluded, &global, ctx, &mut parts)?
             } else {
                 parameter::assemble(&scan, &directory, excluded, &global)?
@@ -724,9 +727,7 @@ fn decode_with_occurrence_limits(
     }
     source_fidelity.append(parser_fidelity)?;
     source_fidelity.append(part_fidelity)?;
-    if parse.scan.source_view().is_some() {
-        source_fidelity.install_record_captures(ctx, |_, _| Ok(()))?;
-    }
+    source_fidelity.install_record_captures(ctx, |_, _| Ok(()))?;
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
     ir.finalize();

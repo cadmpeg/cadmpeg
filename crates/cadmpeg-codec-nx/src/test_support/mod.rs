@@ -41,7 +41,7 @@ pub(crate) fn with_decode_context_over<T>(
     f(&ctx)
 }
 
-pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
+pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream<'static>> {
     with_decode_context_over(
         bytes,
         |_| {},
@@ -51,6 +51,9 @@ pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
                 crate::container::scan_bytes(bytes.to_vec()).expect("test SPLMSSTR container");
             crate::parasolid::extract_streams(ctx, root, &container)
                 .expect("test Parasolid streams")
+                .into_iter()
+                .map(crate::parasolid::Stream::into_owned)
+                .collect()
         },
     )
 }

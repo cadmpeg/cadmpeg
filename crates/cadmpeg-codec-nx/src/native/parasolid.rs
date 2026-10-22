@@ -962,7 +962,7 @@ pub(in crate::native) struct ParasolidDeltasEvents {
 /// Retain every completely bounded event in every Parasolid deltas stream.
 #[cfg(test)]
 fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
-    crate::test_support::with_decode_context(|_| {
+    crate::test_support::with_decode_context(|ctx| {
         let delta_censuses = streams
             .iter()
             .map(|stream| {
@@ -973,7 +973,7 @@ fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
                 }
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
-        parasolid_deltas_events_with_censuses(streams, delta_censuses)
+        parasolid_deltas_events_with_censuses(ctx, streams, delta_censuses)
     })
     .expect("bounded test deltas")
 }
@@ -997,6 +997,7 @@ fn deltas_event_id(
 /// finished, so the large record walk is performed once and its owned records
 /// are moved directly into native output.
 pub(super) fn parasolid_deltas_events_with_censuses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     streams: &[Stream],
     mut delta_censuses: Vec<Option<Census>>,
 ) -> Result<ParasolidDeltasEvents, CodecError> {
@@ -1176,17 +1177,44 @@ pub(super) fn parasolid_deltas_events_with_censuses(
         }
         if let Some(prefix) = census.partition_prefix {
             let bytes = &stream.inflated[prefix.offset..prefix.end];
+            let id = deltas_event_id(
+                stream_ordinal,
+                "deltas-partition-prefix",
+                prefix.offset,
+                None,
+            );
+            let state = match stream.source {
+                Some(source) => {
+                    let start = source.start().checked_add(prefix.offset).ok_or_else(|| {
+                        CodecError::malformed("NX partition prefix source offset overflows")
+                    })?;
+                    let end = source.start().checked_add(prefix.end).ok_or_else(|| {
+                        CodecError::malformed("NX partition prefix source end overflows")
+                    })?;
+                    let extent = source.child(start, end).ok_or_else(|| {
+                        CodecError::malformed("NX partition prefix lies outside its source")
+                    })?;
+                    ctx.record(&id, extent, || {
+                        let (state, actual_end) = PartitionPrefixState::read_view(extent)
+                            .ok_or_else(|| {
+                                CodecError::malformed("NX partition prefix is unreadable")
+                            })?;
+                        if actual_end != end {
+                            return Err(CodecError::malformed(
+                                "NX partition prefix source extent disagrees",
+                            ));
+                        }
+                        Ok(state)
+                    })?
+                }
+                None => prefix.state,
+            };
             events
                 .partition_prefixes
                 .push(ParasolidDeltasPartitionPrefix {
-                    id: deltas_event_id(
-                        stream_ordinal,
-                        "deltas-partition-prefix",
-                        prefix.offset,
-                        None,
-                    ),
+                    id,
                     stream_ordinal: stream_ordinal_u32,
-                    state: prefix.state,
+                    state,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(prefix.offset),

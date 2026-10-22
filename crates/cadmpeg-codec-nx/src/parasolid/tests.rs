@@ -461,7 +461,7 @@ fn extraction_accepts_short_complete_zlib_members_in_ug_part() {
     let streams = extract_streams(&file);
 
     assert_eq!(streams.len(), 1);
-    assert_eq!(streams[0].inflated, inflated);
+    assert_eq!(streams[0].inflated.as_ref(), inflated);
     assert_eq!(streams[0].kind(), StreamKind::Plain);
     assert_eq!(streams[0].schema_token(), Some(&token("SCH_X")));
 }
@@ -646,7 +646,7 @@ fn indexed_wrapper_families_bound_the_exact_compressed_member() {
         assert_eq!(streams.len(), 1, "{marker:x}");
         assert_eq!(streams[0].file_offset, wrappers[0].zlib_offset);
         assert_eq!(streams[0].consumed, u64::from(member_len));
-        assert_eq!(streams[0].inflated, inflated);
+        assert_eq!(streams[0].inflated.as_ref(), inflated);
     }
 }
 
@@ -778,7 +778,7 @@ fn supplemental_members_cannot_enclose_an_indexed_member() {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
     let streams = extract_streams(&file);
     assert_eq!(streams.len(), 1);
-    assert_eq!(streams[0].inflated, inner_bytes);
+    assert_eq!(streams[0].inflated.as_ref(), inner_bytes);
     assert_eq!(streams[0].consumed, u64::try_from(inner.len()).unwrap());
 }
 
@@ -808,7 +808,7 @@ fn unresolved_index_targets_do_not_address_nearby_structural_members() {
         let streams = extract_streams(&file);
         assert_eq!(streams.len(), 1);
         assert_eq!(streams[0].file_offset, wrapper.zlib_offset + 4);
-        assert_eq!(streams[0].inflated, expanded);
+        assert_eq!(streams[0].inflated.as_ref(), expanded);
     }
 }
 

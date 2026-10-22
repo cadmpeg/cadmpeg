@@ -48,13 +48,13 @@ pub(crate) struct Scan<'a> {
     /// Parsed SPLMSSTR container.
     pub(crate) container: Container<'a>,
     /// Located and inflated Parasolid or preview streams.
-    pub(crate) streams: Vec<Stream>,
+    pub(crate) streams: Vec<Stream<'a>>,
     source_untyped: std::cell::RefCell<cadmpeg_ir::ArenaClasses>,
 }
 
 impl<'a> Scan<'a> {
     /// Build a scan over a parsed container and its located streams.
-    pub(crate) fn new(container: Container<'a>, streams: Vec<Stream>) -> Self {
+    pub(crate) fn new(container: Container<'a>, streams: Vec<Stream<'a>>) -> Self {
         Self {
             container,
             streams,
@@ -227,6 +227,7 @@ fn decoded(
         .with_untyped(scan.source_untyped.borrow().clone()),
     )?;
     source_layout::move_layout(&mut ir, &mut source_fidelity)?;
+    source_fidelity.install_record_captures(ctx, |_, _| Ok(()))?;
     Ok(Decoded {
         ir,
         body,
@@ -380,6 +381,7 @@ fn build_metadata_ir(
         )?;
     } else {
         let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
+        let native_reads = ctx.read_transaction()?;
         let model = crate::native::model::NativeModel::extract(
             ctx,
             &scan.container,
@@ -387,7 +389,7 @@ fn build_metadata_ir(
             &mut parsed,
             None,
         )?;
-        crate::native::attach_annotations(
+        if crate::native::attach_annotations(
             ctx,
             &mut ir,
             &model,
@@ -395,7 +397,11 @@ fn build_metadata_ir(
             &mut annotations,
             &mut unknowns,
             &mut losses,
-        )?;
+        )? {
+            native_reads.commit()?;
+        } else {
+            drop(native_reads);
+        }
     }
     Ok((ir, annotations.build(), unknowns, losses))
 }

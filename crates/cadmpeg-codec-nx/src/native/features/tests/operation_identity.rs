@@ -165,9 +165,10 @@ fn body_partition_join_admits_fixture() {
         source_offset: 0,
     };
     let stream = |subtype| crate::parasolid::Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: Vec::new(),
+        inflated: Vec::new().into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
             schema: Some(
@@ -818,9 +819,10 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     let bindings = [binding("plain-0", 0, 11, 10), binding("plain-1", 1, 12, 16)];
     let image_uses = image_segment_uses_for_test(&writes, &bindings);
     let stream = |subtype| crate::parasolid::Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: Vec::new(),
+        inflated: Vec::new().into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
             schema: Some(
@@ -1326,9 +1328,10 @@ fn body_partition_uses_match_the_pairwise_join_over_many_streams() {
     use crate::parasolid::ParasolidSubtype;
 
     let stream = |subtype| crate::parasolid::Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated: Vec::new(),
+        inflated: Vec::new().into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
             schema: Some(

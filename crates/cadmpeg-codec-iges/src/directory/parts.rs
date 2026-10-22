@@ -20,6 +20,7 @@ pub(crate) fn parse(
         .source_view()
         .ok_or_else(|| CodecError::malformed("Directory source view is absent"))?;
     ctx.capture_part_extent(source)?;
+    let parameter_locator = crate::parameter::source_locator::SourceLocator::new(scan, ctx)?;
     let mut entries = Vec::new();
     let mut given_up = Vec::new();
     let mut at = 0;
@@ -90,8 +91,18 @@ pub(crate) fn parse(
                     let Some(second) = pair.get(1) else {
                         return Err(CodecError::malformed(DirectoryDefect::UnpairedCard));
                     };
-                    parse_pair(*sequence, first, second.physical(), global)
-                        .map_err(CodecError::malformed)
+                    let id = format!("iges:entity:directory#{sequence}");
+                    // Parameter parsing owns the primary capture; retain only
+                    // this Directory parser's attempted native identity.
+                    let primary_capture = ctx.read_transaction()?;
+                    let parsed = ctx.record(&id, extent, || {
+                        let entry = parse_pair(*sequence, first, second.physical(), global)
+                            .map_err(CodecError::malformed)?;
+                        parameter_locator.admit(&entry)?;
+                        Ok(entry)
+                    });
+                    drop(primary_capture);
+                    parsed
                 })? {
                     Some(entry) => append_parser_item(ctx, &mut entries, entry)?,
                     None => append_given_up(ctx, &mut given_up, pair)?,

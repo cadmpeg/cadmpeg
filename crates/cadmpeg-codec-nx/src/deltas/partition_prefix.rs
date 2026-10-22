@@ -2,7 +2,7 @@
 //! Leading ordinary PARTITION and current PMARK nodes.
 
 use super::pmark_state::PmarkState;
-use crate::framing::read_and_advance;
+use crate::framing::read_xmt_view;
 use crate::framing::xmt_reference::NonNullXmt;
 use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
@@ -49,14 +49,18 @@ impl PartitionPrefixState {
     pub(super) fn read(stream: &[u8], offset: usize) -> Option<(Self, usize)> {
         let mut view = View::over_retained(stream);
         view.seek(offset)?;
-        (view.u16_be()? == 3 && view.u8()? == 255).then_some(())?;
-        let mut at = view.position();
-        let xmt = NonNullXmt::try_from(read_and_advance(stream, &mut at)?).ok()?;
-        let current_pmark = NonNullXmt::try_from(read_and_advance(stream, &mut at)?).ok()?;
-        view.seek(at)?;
+        Self::read_view(view.child(offset, stream.len())?)
+    }
+
+    pub(crate) fn read_view(mut view: View<'_>) -> Option<(Self, usize)> {
+        view.window().starts_with(&[0, 3, 255]).then_some(())?;
+        view.skip(3)?;
+        let xmt = NonNullXmt::try_from(read_xmt_view(&mut view)?).ok()?;
+        let current_pmark = NonNullXmt::try_from(read_xmt_view(&mut view)?).ok()?;
         let highest_id = view.u32_be()?;
-        (view.u16_be()? == 4 && view.u8()? == 255).then_some(())?;
-        let (mark, end) = PmarkState::read(stream, view.position())?;
+        view.unread().starts_with(&[0, 4, 255]).then_some(())?;
+        view.skip(3)?;
+        let (mark, end) = PmarkState::read_view(view)?;
         let state = Self::try_from(PrefixWire {
             partition: PartitionState {
                 xmt,

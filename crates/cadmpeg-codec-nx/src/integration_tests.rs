@@ -63,6 +63,7 @@ mod attachment_containment;
 mod dialect;
 mod enlarge;
 mod extract_face;
+mod source_prefix;
 mod swp104;
 mod symbolic_thread;
 
@@ -93,9 +94,10 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
             om_section_cache: std::sync::OnceLock::new(),
         },
         vec![crate::parasolid::Stream {
+            source: None,
             file_offset: 0,
             consumed: 0,
-            inflated: Vec::new(),
+            inflated: Vec::new().into(),
             body: crate::parasolid::StreamBody::Preview,
         }],
     )
@@ -119,7 +121,7 @@ fn inspect_summary_preserves_preview_attributes() {
 fn invalid_legacy_storage_summary_scan() -> crate::decode::Scan<'static> {
     let mut scan = one_preview_summary_scan();
     scan.container.layout = crate::container::ContainerLayout::LegacyCfb { version: 6 };
-    scan.streams[0].inflated = vec![1, 2, 3];
+    scan.streams[0].inflated = vec![1, 2, 3].into();
     scan.streams[0].consumed = 2;
     scan
 }

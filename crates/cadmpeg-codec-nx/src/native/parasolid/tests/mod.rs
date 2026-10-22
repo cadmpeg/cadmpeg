@@ -8,11 +8,16 @@ use std::io::Cursor;
 
 use crate::parasolid::Stream;
 
-fn stream(subtype: crate::parasolid::ParasolidSubtype, schema: &str, inflated: Vec<u8>) -> Stream {
+fn stream(
+    subtype: crate::parasolid::ParasolidSubtype,
+    schema: &str,
+    inflated: Vec<u8>,
+) -> Stream<'static> {
     Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated,
+        inflated: inflated.into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
             schema: Some(
@@ -1002,6 +1007,7 @@ mod attribute_wire;
 mod carrier_and_attribute_resolution;
 
 mod delta_events;
+mod source_prefix;
 
 mod group_members;
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Primary PARTITION-mark fields, shared by current and historical nodes.
 
-use crate::framing::read_and_advance;
+use crate::framing::read_xmt_view;
 use crate::framing::xmt_reference::NonNullXmt;
 use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
@@ -27,14 +27,18 @@ impl PmarkState {
     /// Decode fields at an already established instance cursor.
     ///
     /// This reader assigns no ownership to a type-shaped payload occurrence.
-    pub(super) fn read(stream: &[u8], mut at: usize) -> Option<(Self, usize)> {
-        let xmt = NonNullXmt::try_from(read_and_advance(stream, &mut at)?).ok()?;
-        let preceding = NonZeroU32::new(read_and_advance(stream, &mut at)?)?;
-        let first_following = NonZeroU32::new(read_and_advance(stream, &mut at)?)?;
-        let next_sibling = NonZeroU32::new(read_and_advance(stream, &mut at)?)?;
-        let prev_sibling = NonZeroU32::new(read_and_advance(stream, &mut at)?)?;
+    pub(super) fn read(stream: &[u8], at: usize) -> Option<(Self, usize)> {
         let mut view = View::over_retained(stream);
         view.seek(at)?;
+        Self::read_view(view)
+    }
+
+    pub(super) fn read_view(mut view: View<'_>) -> Option<(Self, usize)> {
+        let xmt = NonNullXmt::try_from(read_xmt_view(&mut view)?).ok()?;
+        let preceding = NonZeroU32::new(read_xmt_view(&mut view)?)?;
+        let first_following = NonZeroU32::new(read_xmt_view(&mut view)?)?;
+        let next_sibling = NonZeroU32::new(read_xmt_view(&mut view)?)?;
+        let prev_sibling = NonZeroU32::new(read_xmt_view(&mut view)?)?;
         let n_new_nodes = view.u32_be()?;
         let n_del_nodes = view.u32_be()?;
         let n_copy_mod_nodes = view.u32_be()?;

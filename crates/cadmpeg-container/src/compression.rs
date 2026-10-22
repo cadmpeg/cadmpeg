@@ -41,7 +41,25 @@ pub fn inflate_zlib_member_tracked<'a>(
     source: View<'_>,
     spec: ExpandSpec,
 ) -> Result<(View<'a>, usize), CodecError> {
+    inflate_zlib_member_if(ctx, source, spec, |_, _| Ok(true))?
+        .ok_or_else(|| CodecError::malformed("unconditional zlib admission returned no member"))
+}
+
+/// Inflate and validate one zlib member, then admit its actual expanded bytes.
+/// A rejected member retains its resource charges but registers no stream.
+/// The callback runs only after the trailer, checksum, and exact-size checks.
+/// An accepted member has the same exact provenance as [`inflate_zlib_member_tracked`].
+pub fn inflate_zlib_member_if<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'_>,
+    spec: ExpandSpec,
+    admit: impl FnOnce(&[u8], usize) -> Result<bool, CodecError>,
+) -> Result<Option<(View<'a>, usize)>, CodecError> {
+    ctx.capture_part_extent(source)?;
     let (writer, consumed) = inflate_zlib_writer(ctx, source, spec)?;
+    if !admit(writer.completed_bytes()?, consumed)? {
+        return Ok(None);
+    }
     let end = source
         .start()
         .checked_add(consumed)
@@ -57,7 +75,7 @@ pub fn inflate_zlib_member_tracked<'a>(
         capture.offset(),
         capture.byte_len()
     );
-    Ok((writer.finalize_from(member, &name)?, consumed))
+    Ok(Some((writer.finalize_from(member, &name)?, consumed)))
 }
 
 fn inflate_zlib_writer<'ctx, 'a>(
@@ -320,6 +338,7 @@ mod tests {
         inflate_zlib_member, inflate_zlib_member_owned,
     };
 
+    mod admission;
     mod provenance;
     mod zstd;
 
