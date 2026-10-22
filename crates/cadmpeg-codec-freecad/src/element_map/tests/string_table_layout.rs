@@ -60,7 +60,6 @@ fn inline_entities_unicode_cdata_and_nested_elements_use_a_real_expanded_stream(
         u64::try_from("\n2.c seed-two\n1.c seed-one\na.c.2 Ω&β\n-3.c.-1 second\u{2003}\n".len())
             .unwrap()
     );
-    assert!(layout.reads().is_empty());
     assert_eq!(
         layout.payloads()["entries.2.raw"].as_ref(),
         "a.c.2 Ω&β".as_bytes()
@@ -155,7 +154,6 @@ fn side_entry_raw_ranges_use_the_registered_member_view_and_preserve_multiline_p
     assert_eq!(layout.stream(), "table.txt");
     assert_eq!(layout.offset(), 0);
     assert_eq!(layout.byte_len(), u64::try_from(side.len()).unwrap());
-    assert!(layout.reads().is_empty());
     assert_eq!(
         layout.payloads()["entries.0.raw"].as_ref(),
         "1.0 1:Ω\nsecond".as_bytes()

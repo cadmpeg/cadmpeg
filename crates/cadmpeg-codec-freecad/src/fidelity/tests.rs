@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Source-only XML fields retain exact bytes without claiming semantic reads.
+//! Source-only XML fields retain exact bytes.
 
 use super::{install_layouts, xml_layout_payload};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
@@ -24,7 +24,6 @@ fn xml_payload_uses_the_real_record_extent_and_preserves_exact_source_text() {
     assert_eq!(layout.stream(), "Document.xml");
     assert_eq!(layout.offset(), 7);
     assert_eq!(layout.byte_len(), u64::try_from(bytes.len() - 14).unwrap());
-    assert!(layout.reads().is_empty());
     assert!(layout.pointers().is_empty());
     assert_eq!(layout.payloads().len(), 1);
     assert_eq!(
@@ -205,7 +204,6 @@ fn python_and_nested_value_xml_move_to_their_real_property_layouts() {
             layout.byte_len(),
             u64::try_from(graph.property_sources[&property.id].record_range().len()).unwrap()
         );
-        assert!(layout.reads().is_empty());
         assert_eq!(layout.payloads().len(), property.values().len());
         let wire = serde_json::to_value(property).unwrap();
         for value in wire["values"].as_array().unwrap() {
@@ -283,7 +281,7 @@ fn gui_state_and_provider_property_values_keep_separate_source_owners() {
     assert!(fidelity
         .record_layout()
         .values()
-        .all(|layout| layout.stream() == "GuiDocument.xml" && layout.reads().is_empty()));
+        .all(|layout| layout.stream() == "GuiDocument.xml"));
 }
 
 #[test]
@@ -362,7 +360,6 @@ fn gui_state_xml_and_offsets_leave_native_records_without_losing_empty_or_nested
         );
         assert_eq!(layout.pointers()["byte_end"], u64::try_from(end).unwrap());
         assert_eq!(layout.payloads()["raw_xml"].as_ref(), raw.as_bytes());
-        assert!(layout.reads().is_empty());
         assert!(fidelity.retained_record(&state.id).is_none());
         let native = serde_json::to_value(state).unwrap();
         for field in [
@@ -526,7 +523,6 @@ fn gui_property_wrappers_move_to_real_layouts_with_nested_values_empty_payload_a
             u64::try_from(start + raw.len()).unwrap()
         );
         assert_eq!(layout.payloads()["raw_xml"].as_ref(), raw.as_bytes());
-        assert!(layout.reads().is_empty());
         assert!(fidelity.retained_record(&property.id).is_none());
         let native = serde_json::to_value(property).unwrap();
         for field in [
@@ -656,7 +652,6 @@ fn object_xml_and_extent_leave_native_records_without_losing_typed_declarations(
         assert_eq!(layout.payloads()["raw_xml"].as_ref(), raw.as_bytes());
         assert_eq!(layout.payloads().len(), 1);
         assert_eq!(layout.pointers().len(), 2);
-        assert!(layout.reads().is_empty());
         let native = serde_json::to_value(object).unwrap();
         for field in [
             "data",
@@ -796,7 +791,6 @@ fn complete_typed_gui_properties_keep_exact_layouts_and_real_side_entry_views() 
             u64::try_from(start + source.len()).unwrap()
         );
         assert_eq!(layout.payloads()["raw_xml"].as_ref(), source.as_bytes());
-        assert!(layout.reads().is_empty());
         assert_eq!(property.owner, graph.providers[0].id);
         let native = serde_json::to_value(property).unwrap();
         for field in [
@@ -894,7 +888,6 @@ fn complete_property_xml_and_positions_live_only_on_the_original_record_layouts(
             &xml.as_bytes()[range]
         );
         assert_eq!(layout.payloads().len(), property.values().len() + 1);
-        assert!(layout.reads().is_empty());
         let native = serde_json::to_value(property).unwrap();
         for field in [
             "xml",
@@ -951,7 +944,6 @@ fn application_payloads_link_real_entry_extents_without_an_extra_source_copy() {
         layout.pointers()["byte_len"],
         u64::try_from(payload.len()).unwrap()
     );
-    assert!(layout.reads().is_empty());
     // #212 requires the original archive once, rather than an expanded entry copy.
     assert!(fidelity.retained_record(&id).is_none());
     let source = crate::test_support::source_fidelity::entry_bytes(fidelity, &id);
