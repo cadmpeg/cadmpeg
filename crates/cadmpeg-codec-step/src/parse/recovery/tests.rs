@@ -67,7 +67,10 @@ fn bounded_defects_preserve_independent_instances_and_exact_bytes() {
                 .data(),
             Some(defective.as_bytes())
         );
-        assert_eq!(fidelity.metadata["bytes_unclassified"], "0");
+        assert_eq!(
+            ir.source.as_ref().expect("source").attributes["bytes_unclassified"],
+            "0"
+        );
     }
 }
 
@@ -306,7 +309,10 @@ fn bounded_draft_header_defects_retain_source_and_independent_geometry() {
                 .data(),
             Some(defective.as_bytes())
         );
-        assert_eq!(fidelity.metadata["bytes_unclassified"], "0");
+        assert_eq!(
+            ir.source.as_ref().expect("source").attributes["bytes_unclassified"],
+            "0"
+        );
     }
 }
 
@@ -322,7 +328,7 @@ fn bounded_draft_preamble_is_retained_with_an_explicit_loss() {
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::ParsePreambleOmitted.kind()));
-    let (_, _, fidelity) = decoded.into_parts();
+    let (ir, _, fidelity) = decoded.into_parts();
     assert_eq!(
         fidelity
             .retained_record("step:file:omitted#0")
@@ -330,5 +336,8 @@ fn bounded_draft_preamble_is_retained_with_an_explicit_loss() {
             .data(),
         Some(b"EXTRA".as_slice())
     );
-    assert_eq!(fidelity.metadata["bytes_unclassified"], "0");
+    assert_eq!(
+        ir.source.as_ref().expect("source").attributes["bytes_unclassified"],
+        "0"
+    );
 }
