@@ -23,7 +23,6 @@ pub(crate) fn parse(
         .source_view()
         .ok_or_else(|| CodecError::malformed("Directory source view is absent"))?;
     ctx.capture_part_extent(source)?;
-    let parameter_locator = crate::parameter::source_locator::SourceLocator::new(scan, ctx)?;
     let mut entries = Vec::new();
     let mut given_up = Vec::new();
     let mut unreadable_metadata = BTreeSet::new();
@@ -142,7 +141,6 @@ pub(crate) fn parse(
                                 Ok::<_, CodecError>(value)
                             },
                         )?;
-                        parameter_locator.admit(&entry)?;
                         Ok((entry, failed_fields))
                     });
                     drop(primary_capture);

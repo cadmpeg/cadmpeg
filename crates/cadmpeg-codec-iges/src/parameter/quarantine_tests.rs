@@ -213,52 +213,6 @@ fn every_token_defect_key_names_its_own_failure() {
 }
 
 #[test]
-fn an_entity_owning_no_card_under_either_rule_is_quarantined() {
-    let mut bytes = owned_test_file(&[
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "POINT".into(),
-            status: "00000000",
-            parameters: "116,1,2,3,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "ORPHAN".into(),
-            status: "00000000",
-            parameters: "116,4,5,6,0;".into(),
-        },
-    ]);
-    let directory = bytes
-        .chunks_exact(81)
-        .position(|line| line[72] == b'D')
-        .expect("Directory card");
-    let start_field = (directory + 2) * 81 + 8;
-    bytes[start_field..start_field + 8].copy_from_slice(b"       0");
-    let second_card = parameter_card_offset(&bytes) + 81 + 64;
-    bytes[second_card..second_card + 8].copy_from_slice(b"      99");
-
-    let result = decode(bytes);
-
-    let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas()["quarantined_parameter_records"];
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(quarantined.len(), 1);
-    assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#3");
-    assert_eq!(quarantined[0].fields().unwrap()["defect"], "no-owned-cards");
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::CardFramingRecovered),
-        1
-    );
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
-        1
-    );
-    assert_eq!(result.report().losses.len(), 2);
-}
-
-#[test]
 fn a_non_ascii_literal_retains_its_framed_record() {
     let mut bytes = point_file("116,1,2,3,0;");
     let card_offset = parameter_card_offset(&bytes);

@@ -19,7 +19,6 @@ use std::ops::Range;
 pub(crate) mod admitted;
 pub(crate) mod compressed;
 pub(crate) mod parts;
-pub(crate) mod source_locator;
 
 struct BackPointer(Option<u32>);
 

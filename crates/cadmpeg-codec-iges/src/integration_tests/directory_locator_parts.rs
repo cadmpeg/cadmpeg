@@ -32,11 +32,12 @@ fn section(bytes: &[u8], code: u8) -> usize {
 }
 
 #[test]
-fn unlocatable_parameter_data_fails_its_actual_directory_callback_and_keeps_the_peer() {
+fn unlocatable_parameter_data_keeps_its_readable_directory_entry_and_the_peer() {
     let original = points();
     let baseline = crate::test_support::decode(original.clone());
     let directory = section(&original, b'D') + 162;
     let parameter = section(&original, b'P');
+    let terminate = section(&original, b'T');
     let mut bytes = original;
     bytes[directory + 8..directory + 16].copy_from_slice(b"       0");
     bytes[parameter + 81 + 64..parameter + 81 + 72].copy_from_slice(b"      99");
@@ -66,38 +67,23 @@ fn unlocatable_parameter_data_fails_its_actual_directory_callback_and_keeps_the_
         .native
         .namespace("iges")
         .expect("baseline native");
-    for arena in ["entities", "display_attributes"] {
-        assert_eq!(native.arenas()[arena].len(), 1);
-        assert_eq!(native.arenas()[arena][0], old.arenas()[arena][0]);
-    }
-    for arena in [
-        "quarantined_directory_records",
-        "quarantined_parameter_records",
-    ] {
-        assert!(native.arenas().get(arena).is_none_or(Vec::is_empty));
-    }
-    let unknowns = native
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .expect("typed unknowns");
-    assert_eq!(unknowns.len(), 1);
-    let fidelity = decoded.source_fidelity();
-    let id = unknowns[0].id.as_str();
-    let part = &fidelity.parts()[id];
-    assert_eq!(part.level().as_str(), "iges.directory_entry");
-    assert_eq!(part.state(), &PartState::GivenUp {});
-    assert_eq!(part.offset(), u64::try_from(directory).expect("offset"));
-    assert_eq!(part.byte_len(), 162);
+    // #215 rule 1: the Directory Entry keeps the fields it read; only its
+    // Parameter Data is absent.
+    let mut expected = serde_json::to_value(&old.arenas()["entities"]).expect("baseline entities");
+    expected[1]["parameters"] = serde_json::json!([]);
+    expected[1]["comment"] = serde_json::to_value(cadmpeg_ir::native::bytes::NativeBytes::from(
+        Vec::<u8>::new(),
+    ))
+    .expect("empty comment");
     assert_eq!(
-        fidelity
-            .retained_record(id)
-            .expect("one failure image")
-            .data(),
-        Some(&bytes[directory..directory + 162])
+        serde_json::to_value(&native.arenas()["entities"]).expect("current entities"),
+        expected
     );
-    assert!(fidelity.record_layout()[id].reads().is_empty());
-    assert!(!fidelity
-        .record_layout()
-        .contains_key("iges:entity:directory#3"));
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none_or(Vec::is_empty));
+    let fidelity = decoded.source_fidelity();
     assert_eq!(
         fidelity.record_layout()["iges:entity:directory#1"],
         baseline.source_fidelity().record_layout()["iges:entity:directory#1"]
@@ -112,28 +98,23 @@ fn unlocatable_parameter_data_fails_its_actual_directory_callback_and_keeps_the_
         .expect("valid peer retains its actual Parameter part");
     assert_eq!(peer.byte_len(), 81);
     assert_eq!(peer.state(), &PartState::Decoded {});
-    assert_eq!(
-        fidelity
-            .parts()
-            .values()
-            .filter(|part| part.state() == &PartState::GivenUp {})
-            .count(),
-        1
-    );
-    let unreadable: Vec<_> = decoded
+    // The unlocated Parameter Data is a Parameter-section failure: every
+    // given-up part lies inside the Parameter section.
+    let parameter_section =
+        u64::try_from(parameter).expect("offset")..u64::try_from(terminate).expect("offset");
+    for part in fidelity.parts().values() {
+        if matches!(part.state(), PartState::GivenUp {}) {
+            assert_ne!(part.level().as_str(), "iges.directory_entry");
+            assert!(parameter_section.start <= part.offset());
+            assert!(part.offset() + part.byte_len() <= parameter_section.end);
+        }
+    }
+    assert!(!decoded
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code.local_code() == "record.unreadable")
-        .collect();
-    assert_eq!(unreadable.len(), 1);
-    assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
-    assert!(unreadable[0].message.contains("iges:entity:directory#3"));
-    assert!(unreadable[0].message.contains("iges.directory_entry"));
-    assert!(unreadable[0]
-        .message
-        .contains("cannot locate Parameter Data"));
-    let stream = part.stream();
+        .any(|loss| loss.message.contains("cannot locate Parameter Data")));
+    let stream = peer.stream();
     cadmpeg_test_support::contract::parts::check_one_home(
         cadmpeg_ir::CodecFormat::Iges,
         &decoded.ir().native,
@@ -149,7 +130,7 @@ fn unlocatable_parameter_data_fails_its_actual_directory_callback_and_keeps_the_
             bytes.get(start..end)
         },
     )
-    .expect("actual Directory failure has one source home");
+    .expect("every given-up part has one source home");
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .expect("neutral validation")
         .is_ok());
