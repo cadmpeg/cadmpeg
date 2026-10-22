@@ -36,7 +36,7 @@
               "operand": {
                 "container": {
                   "container": "occurrence",
-                  "occurrence": "fcstd:model:occurrence#BracketOccurrence:container"
+                  "occurrence": "fcstd:model:occurrence#BracketOccurrence:instance"
                 },
                 "object": "fcstd:native:object#BracketOccurrence"
               }
@@ -75,7 +75,7 @@
                 "operand": {
                   "container": {
                     "container": "occurrence",
-                    "occurrence": "fcstd:model:occurrence#BracketOccurrence:container"
+                    "occurrence": "fcstd:model:occurrence#BracketOccurrence:instance"
                   },
                   "object": "fcstd:native:object#BracketOccurrence",
                   "subelements": [
@@ -1494,45 +1494,6 @@
           ]
         },
         {
-          "id": "fcstd:model:occurrence#BracketOccurrence:container",
-          "name": "fcstd:native:object#BracketOccurrence",
-          "native_ref": "fcstd:native:object#BracketOccurrence",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#Assembly:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              10.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
           "id": "fcstd:model:occurrence#BracketOccurrence:instance",
           "link": {
             "members": [
@@ -1647,44 +1608,6 @@
           ]
         },
         {
-          "id": "fcstd:model:occurrence#ExternalOccurrence:container",
-          "name": "fcstd:native:object#ExternalOccurrence",
-          "native_ref": "fcstd:native:object#ExternalOccurrence",
-          "ordinal": 10,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#ExternalOccurrence:definition",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              40.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
           "id": "fcstd:model:occurrence#ExternalOccurrence:instance",
           "link": {
             "members": [
@@ -1754,83 +1677,6 @@
               1.0,
               0.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "fcstd:model:occurrence#GroundBracket:container",
-          "name": "fcstd:native:object#GroundBracket",
-          "native_ref": "fcstd:native:object#GroundBracket",
-          "ordinal": 3,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#Assembly:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#GroundBracket:definition",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              10.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "fcstd:model:occurrence#NestedBracketOccurrence:container",
-          "name": "fcstd:native:object#NestedBracketOccurrence",
-          "native_ref": "fcstd:native:object#NestedBracketOccurrence",
-          "ordinal": 11,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              20.0
             ],
             [
               0.0,
@@ -1919,7 +1765,7 @@
           "id": "fcstd:model:occurrence#OccurrenceGroup:container",
           "name": "fcstd:native:object#OccurrenceGroup",
           "native_ref": "fcstd:native:object#OccurrenceGroup",
-          "ordinal": 4,
+          "ordinal": 2,
           "parent": {
             "kind": "occurrence",
             "occurrence": "fcstd:model:occurrence#Assembly:container"
@@ -2192,82 +2038,6 @@
           ]
         },
         {
-          "id": "fcstd:model:occurrence#PinArray:container",
-          "name": "fcstd:native:object#PinArray",
-          "native_ref": "fcstd:native:object#PinArray",
-          "ordinal": 12,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PinArray:definition",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "fcstd:model:occurrence#PinArray_i0:container",
-          "name": "fcstd:native:object#PinArray_i0",
-          "native_ref": "fcstd:native:object#PinArray_i0",
-          "ordinal": 13,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PinArray_i0:definition",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
           "id": "fcstd:model:occurrence#PinArray_i0:instance",
           "link": {
             "members": [
@@ -2339,44 +2109,6 @@
           ]
         },
         {
-          "id": "fcstd:model:occurrence#PinArray_i1:container",
-          "name": "fcstd:native:object#PinArray_i1",
-          "native_ref": "fcstd:native:object#PinArray_i1",
-          "ordinal": 14,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PinArray_i1:definition",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              1.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
           "id": "fcstd:model:occurrence#PinArray_i1:instance",
           "link": {
             "members": [
@@ -2432,44 +2164,6 @@
               0.0,
               0.0,
               1.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "fcstd:model:occurrence#PinArray_i2:container",
-          "name": "fcstd:native:object#PinArray_i2",
-          "native_ref": "fcstd:native:object#PinArray_i2",
-          "ordinal": 15,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PinArray_i2:definition",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              2.0
             ],
             [
               0.0,
@@ -2636,7 +2330,7 @@
           "id": "fcstd:model:occurrence#PinPrototype:container",
           "name": "fcstd:native:object#PinPrototype",
           "native_ref": "fcstd:native:object#PinPrototype",
-          "ordinal": 16,
+          "ordinal": 10,
           "parent": {
             "kind": "root"
           },
@@ -2674,51 +2368,12 @@
           "id": "fcstd:model:occurrence#PrototypeGroup:container",
           "name": "fcstd:native:object#PrototypeGroup",
           "native_ref": "fcstd:native:object#PrototypeGroup",
-          "ordinal": 17,
+          "ordinal": 11,
           "parent": {
             "kind": "root"
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#PrototypeGroup:definition",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "fcstd:model:occurrence#RevoluteJoint:container",
-          "name": "fcstd:native:object#RevoluteJoint",
-          "native_ref": "fcstd:native:object#RevoluteJoint",
-          "ordinal": 5,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#Assembly:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#RevoluteJoint:definition",
             "scope": "local"
           },
           "scale": [
@@ -3627,16 +3282,6 @@
           "bom_properties": {
             "Label2": ""
           },
-          "id": "fcstd:model:product_definition#GroundBracket:definition",
-          "kind": "object",
-          "label": "GroundBracket",
-          "native_ref": "fcstd:native:object#GroundBracket",
-          "source_name": "GroundBracket"
-        },
-        {
-          "bom_properties": {
-            "Label2": ""
-          },
           "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
           "kind": "object",
           "label": "NestedBracketOccurrence",
@@ -3716,16 +3361,6 @@
           "label": "Reusable prototypes",
           "native_ref": "fcstd:native:object#PrototypeGroup",
           "source_name": "PrototypeGroup"
-        },
-        {
-          "bom_properties": {
-            "Label2": ""
-          },
-          "id": "fcstd:model:product_definition#RevoluteJoint:definition",
-          "kind": "object",
-          "label": "RevoluteJoint",
-          "native_ref": "fcstd:native:object#RevoluteJoint",
-          "source_name": "RevoluteJoint"
         }
       ],
       "regions": [
