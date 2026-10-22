@@ -4869,6 +4869,28 @@ Spec §3.1 · layout: byte offsets · size: 30 B
 | 20 | 5 | `null_reference` | `bytes[5]` | little | spec | The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25. |
 | 25 | 5 | `geometry_reference` | `bytes[5]` | little | spec | The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25. |
 
+## `placement_indexed_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 21 B
+
+Class members follow this prefix. The 20-byte form is a version-4 layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
+| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | the bytes from indexed-header offset 11 to the class members are zero |
+
+## `placement_v4_short_indexed_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 20 B
+
+Class members follow this prefix. The 20-byte form is a version-4 layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
+| 11 | 9 | `zero_prefix` | `bytes[9]` | little | spec | the bytes from indexed-header offset 11 to the class members are zero |
+
 ## `surface_patch_boundary_settings_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 38 B

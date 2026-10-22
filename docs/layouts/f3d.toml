@@ -16304,6 +16304,50 @@ source = "spec"
 anchor = "The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25."
 
 [[record]]
+name = "placement_indexed_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The placement type GUID is"
+size = 21
+note = "Class members follow this prefix. The 20-byte form is a version-4 layout."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "the bytes from indexed-header offset 11 to the class members are zero"
+
+[[record]]
+name = "placement_v4_short_indexed_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The placement type GUID is"
+size = 20
+note = "Class members follow this prefix. The 20-byte form is a version-4 layout."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "the bytes from indexed-header offset 11 to the class members are zero"
+
+[[record]]
 name = "surface_patch_boundary_settings_prefix"
 kind = "byte"
 section = "3.1"
