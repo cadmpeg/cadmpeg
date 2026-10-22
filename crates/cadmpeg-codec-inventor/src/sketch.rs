@@ -30,6 +30,12 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const EPS_SKETCH_LINE_CARRIER_MATCHES_E10: f64 = 1.0e-10;
 const EPS_SKETCH_PROJECT_PLACEMENT_E10: f64 = 1.0e-10;
+/// Largest distance, in internal centimetres, between an arc end point and the
+/// stored circle. It equals the kernel linear tolerance, so the projected arc
+/// ends meet their point records within the document tolerance.
+const EPS_SKETCH_ARC_END_ON_CIRCLE_CM: f64 = 1.0e-6;
+const CIRCLE_STATE_ARC: u8 = 0;
+const CIRCLE_STATE_FULL: u8 = 1;
 
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
 const TRANSFORM_TYPE: [u8; 16] = inventor_id(0x9087_4d18);
@@ -1092,7 +1098,6 @@ pub(crate) fn project(
         ctx.charge_entities(1, "project Inventor sketch entity")?;
         projected_entities.push(
             SketchEntity::new(entity_id, sketch_id, geometry)
-                .with_construction(entity.entity_flags & 0x0408_0040 != 0)
                 .with_native_ref(Some(entity.id()))
                 .with_endpoint_refs(entity_endpoint_refs(entity, &raw_entities)),
         );
@@ -1618,27 +1623,51 @@ fn project_geometry(
                 .ok()?,
             )
         }
-        PmDcSketchEntityKind::Circle { center, radius, .. } => {
-            let center = resolve_point(
-                entity.identity.segment_token.as_str(),
-                center.index(),
-                entities,
-            )?;
-            Some(
-                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+        PmDcSketchEntityKind::Circle {
+            points,
+            center,
+            radius,
+            state,
+            ..
+        } => {
+            let token = entity.identity.segment_token.as_str();
+            let center = resolve_point(token, center.index(), entities)?;
+            let definition = match (curve_ends(points)?, *state) {
+                (CurveEnds::Closed, CIRCLE_STATE_FULL) => SketchGeometryDefinition::Circle {
                     center: neutral_point(center),
                     radius: Length::new(radius.get() * 10.0)?,
-                })
-                .ok()?,
-            )
+                },
+                (CurveEnds::Bounded(start, end), CIRCLE_STATE_ARC) => {
+                    let start = resolve_point(token, start.index(), entities)?;
+                    let end = resolve_point(token, end.index(), entities)?;
+                    let start_angle = arc_end_angle(center, radius.get(), start)?;
+                    let end_angle = arc_end_angle(center, radius.get(), end)?;
+                    let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
+                    if sweep == 0.0 {
+                        return None;
+                    }
+                    SketchGeometryDefinition::Arc {
+                        center: neutral_point(center),
+                        radius: Length::new(radius.get() * 10.0)?,
+                        start_angle: Angle::new(start_angle)?,
+                        end_angle: Angle::new(start_angle + sweep)?,
+                    }
+                }
+                _ => return None,
+            };
+            SketchGeometry::try_from(definition).ok()
         }
         PmDcSketchEntityKind::Ellipse {
+            points,
             center,
             major_direction,
             major_radius,
             minor_radius,
             ..
         } => {
+            if curve_ends(points)? != CurveEnds::Closed {
+                return None;
+            }
             let center = resolve_point(
                 entity.identity.segment_token.as_str(),
                 center.index(),
@@ -1752,6 +1781,36 @@ fn resolve_point(
     Some(position)
 }
 
+/// The first two members of a curve's point list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CurveEnds {
+    /// Two null references: the curve is closed.
+    Closed,
+    /// The start and end point references of a bounded curve.
+    Bounded(PmDcReference, PmDcReference),
+}
+
+fn curve_ends(points: &PmDcReferenceList) -> Option<CurveEnds> {
+    let [start, end, ..] = points.references() else {
+        return None;
+    };
+    let null = |reference: &PmDcReference| reference.index() == 0 && !reference.qualified();
+    match (null(start), null(end)) {
+        (true, true) => Some(CurveEnds::Closed),
+        (false, false) if start.index() != 0 && end.index() != 0 => {
+            Some(CurveEnds::Bounded(*start, *end))
+        }
+        _ => None,
+    }
+}
+
+/// The polar angle of an arc end about the arc center, when the end lies on the circle.
+fn arc_end_angle(center: [FiniteReal; 2], radius: f64, end: [FiniteReal; 2]) -> Option<f64> {
+    let du = end[0].get() - center[0].get();
+    let dv = end[1].get() - center[1].get();
+    ((du.hypot(dv) - radius).abs() <= EPS_SKETCH_ARC_END_ON_CIRCLE_CM).then(|| dv.atan2(du))
+}
+
 fn neutral_point(value: [FiniteReal; 2]) -> Point2 {
     Point2::new(value[0].get() * 10.0, value[1].get() * 10.0)
 }
@@ -1760,11 +1819,16 @@ fn entity_endpoint_refs(
     entity: &PmDcSketchEntity,
     entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
 ) -> Vec<String> {
-    let PmDcSketchEntityKind::Line { points, .. } = &entity.kind else {
-        return Vec::new();
+    let ends = match &entity.kind {
+        PmDcSketchEntityKind::Line { points, .. } => points.references(),
+        PmDcSketchEntityKind::Circle { points, .. } => match curve_ends(points) {
+            Some(CurveEnds::Bounded(..)) => &points.references()[..2],
+            _ => return Vec::new(),
+        },
+        _ => return Vec::new(),
     };
     let mut endpoint_refs = Vec::new();
-    for reference in points.references() {
+    for reference in ends {
         if let Some(value) = reference.index().checked_sub(1).and_then(|ordinal| {
             entities
                 .get(&(entity.identity.segment_token.as_str(), ordinal))
@@ -1859,7 +1923,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
         .filter(|entity| {
             matches!(
                 *entity.geometry.definition(),
-                SketchGeometryDefinition::Line { .. }
+                SketchGeometryDefinition::Line { .. } | SketchGeometryDefinition::Arc { .. }
             )
         })
         .filter(|entity| entity.endpoint_refs.len() == 2)
@@ -1922,10 +1986,20 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
                 reversed,
             });
         }
+        // Two lines between the same two points bound no area; an arc with
+        // one other curve does.
+        let encloses = loop_uses.len() >= 3
+            || (loop_uses.len() == 2
+                && component.iter().any(|index| {
+                    matches!(
+                        *lines[*index].geometry.definition(),
+                        SketchGeometryDefinition::Arc { .. }
+                    )
+                }));
         for index in component {
             visited.insert(index);
         }
-        if loop_uses.len() >= 3 && point == start_point {
+        if encloses && point == start_point {
             profiles.push(loop_uses);
         }
     }
@@ -2019,7 +2093,7 @@ mod tests {
     use super::{
         inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
         project, PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcSketchPayload,
-        PmDcTransformPayload, SketchConstraintTag, SketchEntityTag, SketchInventory,
+        PmDcTransformPayload, SketchConstraintTag, SketchEntityTag, SketchInventory, CIRCLE_TYPE,
         COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, POINT_TYPE, SKETCH_TYPE,
         TRANSFORM_TYPE,
     };
@@ -2876,6 +2950,98 @@ mod tests {
         assert_eq!(incomplete.unresolved_constraints, 1);
         assert!(incomplete.sketches.is_empty());
         assert!(incomplete.entities.is_empty());
+    }
+
+    fn circle_bytes(index: u32, sketch: u32, points: [u32; 2], center: u32, state: u8) -> Vec<u8> {
+        let mut bytes = entity_prefix(index, sketch, 0);
+        bytes.extend(list(2, &points));
+        bytes.extend(list(2, &[]));
+        bytes.extend_from_slice(&center.to_le_bytes());
+        bytes.extend_from_slice(&1.0f64.to_le_bytes());
+        bytes.push(state);
+        bytes
+    }
+
+    /// A unit half disc: an arc from (1, 0) counterclockwise to (-1, 0) about
+    /// the origin, closed by a line back to (1, 0).
+    fn half_disc_inventory() -> SketchInventory {
+        let (mut inventory, mut sketch) = closed_square_inventory();
+        let (marker, metadata, _) = sketch.entities.clone().into_parts();
+        let references = [4, 5, 6, 7, 8]
+            .map(|index| PmDcReference::new(index, false).expect("test reference index fits"));
+        sketch.entities = PmDcReferenceList::new(marker, metadata, references.to_vec())
+            .expect("half-disc entity list");
+        inventory.sketches[0] = Located::new(
+            sketch,
+            crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            2,
+        );
+        let point = |index, position| {
+            parse(&point_bytes(index, 3, position), |_, source| {
+                parse_entity(SketchEntityTag::Point, source, 22).expect("point")
+            })
+        };
+        let mut line = parse(&line_bytes(6, 3, [6, 5]), |_, source| {
+            parse_entity(SketchEntityTag::Line, source, 22).expect("line")
+        });
+        let PmDcSketchEntityKind::Line {
+            origin, direction, ..
+        } = &mut line.kind
+        else {
+            unreachable!("generated line")
+        };
+        *origin = [real(-1.0), real(0.0)];
+        *direction = [real(2.0), real(0.0)];
+        let arc = parse(&circle_bytes(7, 3, [5, 6], 4, 0), |_, source| {
+            parse_entity(SketchEntityTag::Circle, source, 22).expect("arc")
+        });
+        inventory.entities = [
+            (point(3, [0.0, 0.0]), POINT_TYPE),
+            (point(4, [1.0, 0.0]), POINT_TYPE),
+            (point(5, [-1.0, 0.0]), POINT_TYPE),
+            (line, LINE_TYPE),
+            (arc, CIRCLE_TYPE),
+        ]
+        .into_iter()
+        .zip(3..)
+        .map(|((value, type_id), ordinal)| {
+            Located::new(
+                value,
+                crate::record_identity::RecordTypeId::from_bytes(type_id),
+                cadmpeg_ir::identity_key!("segment"),
+                ordinal,
+            )
+        })
+        .collect();
+        inventory
+    }
+
+    #[test]
+    fn projects_a_bounded_circle_record_as_a_counterclockwise_arc_in_a_profile() {
+        let inventory = half_disc_inventory();
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        let projected = project(&ctx, &inventory, &[]).expect("sketch projection");
+        assert_eq!(projected.unresolved_sketches, 0);
+        assert_eq!(projected.unresolved_entities, 0);
+        let arc = projected
+            .entities
+            .iter()
+            .find_map(|entity| match *entity.geometry.definition() {
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {
+                    radius,
+                    start_angle,
+                    end_angle,
+                    ..
+                } => Some((radius.get(), start_angle.get(), end_angle.get())),
+                _ => None,
+            })
+            .expect("projected arc");
+        assert_eq!(arc, (10.0, 0.0, std::f64::consts::PI));
+        assert_eq!(projected.sketches[0].profiles.len(), 1);
+        assert_eq!(projected.sketches[0].profiles[0].len(), 2);
     }
 
     /// The closed square with a horizontal constraint on its first line, the

@@ -1189,7 +1189,17 @@ fn project_design(
         sketch,
         &ir.model.parameters,
         &ir.model.sketches,
+        &ir.model.sketch_entities,
     )?;
+    let mut added_profiles = features.added_profiles;
+    for sketch in &mut ir.model.sketches {
+        if let Some(loops) = added_profiles.remove(sketch.id.as_str()) {
+            sketch
+                .profiles
+                .edit(|profiles| profiles.extend(loops))
+                .map_err(CodecError::malformed)?;
+        }
+    }
     ir.model.features = features.features;
     ir.model.feature_result_topologies = features.result_topologies;
     // Flat-pattern models follow every projected document feature.

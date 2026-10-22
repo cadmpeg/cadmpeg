@@ -35,6 +35,7 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
 mod history;
+mod profile;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
 
@@ -132,6 +133,8 @@ pub(crate) struct FeatureInventory {
     pub(crate) entity_style_links: Vec<PmDcEntityStyleLink>,
     pub(crate) kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pub(crate) work_planes: Vec<PmDcWorkPlane>,
+    /// Wire bodies of `PmDc` kernel-body records, which profile selections name.
+    profile_bodies: Vec<profile::ProfileBody>,
     pub(crate) issues: Vec<RecordIssue>,
 }
 
@@ -140,6 +143,9 @@ pub(crate) struct FeatureProjection {
     pub(crate) result_topologies: Vec<FeatureResultTopology>,
     pub(crate) unresolved_features: usize,
     pub(crate) unresolved_states: usize,
+    /// Closed loops that resolved extrusion profiles append to sketch
+    /// profile tables, by sketch id, in table order.
+    pub(crate) added_profiles: HashMap<String, Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -458,6 +464,7 @@ pub(crate) fn inventory(
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
+        profile_bodies: Vec::new(),
         issues: Vec::new(),
     };
     for segment in &document.segments {
@@ -565,6 +572,19 @@ pub(crate) fn inventory(
                         record.ordinal,
                         "admit Inventor PmDc work plane record",
                     )
+                }),
+                crate::kernel::KERNEL_RECORD_TYPE_ID => profile::decode_profile_body(
+                    ctx,
+                    record.payload,
+                    segment.pair.token.key(),
+                    record.ordinal,
+                    record.payload_offset,
+                    version,
+                )
+                .and_then(|body| {
+                    ctx.charge_entities(1, "admit Inventor PmDc profile body")?;
+                    inventory.profile_bodies.push(body);
+                    Ok(())
                 }),
                 SURFACE_TYPE => parse_surface(record.payload, version).and_then(|surface| {
                     surface.map_or(Ok(()), |surface| {
@@ -1455,10 +1475,12 @@ struct ProjectionIndex<'a> {
     parameter_values: HashMap<&'a str, &'a ParameterValue>,
     sketches: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketch>>,
     sketch_ids: HashMap<&'a str, cadmpeg_ir::sketches::SketchId>,
+    sketches_by_id: HashMap<&'a str, &'a Sketch>,
     directions: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcDirection>>,
     transforms: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcTransform>>,
     entity_style_links: HashSet<(&'a str, u32)>,
     work_planes: HashMap<(&'a str, u32), Option<&'a PmDcWorkPlane>>,
+    profiles: profile::ProfileIndex<'a>,
 }
 
 pub(crate) fn project(
@@ -1468,6 +1490,7 @@ pub(crate) fn project(
     sketch: &SketchInventory,
     parameters: &[DesignParameter],
     sketches: &[Sketch],
+    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Result<FeatureProjection, CodecError> {
     let total = inventory.features.len() + inventory.pattern_features.len();
     let mut feature_tokens = HashSet::new();
@@ -1490,6 +1513,7 @@ pub(crate) fn project(
             result_topologies: Vec::new(),
             unresolved_features: total,
             unresolved_states: 0,
+            added_profiles: HashMap::new(),
         });
     }
 
@@ -1569,6 +1593,10 @@ pub(crate) fn project(
             }
             ids
         },
+        sketches_by_id: sketches
+            .iter()
+            .map(|sketch| (sketch.id.as_str(), sketch))
+            .collect(),
         directions: unique_directions,
         transforms: unique_transforms,
         entity_style_links: {
@@ -1590,6 +1618,13 @@ pub(crate) fn project(
             links
         },
         work_planes: unique_work_planes,
+        profiles: profile::ProfileIndex::new(
+            &inventory.profile_bodies,
+            &inventory.kernel_entity_links,
+            &inventory.entity_style_links,
+            &sketch.entities,
+            sketch_entities,
+        ),
     };
     // The label owner is a one-based reference. Keying on the optional record
     // ordinal keeps the null reference out of the ordinal space, so a label
@@ -1727,6 +1762,7 @@ pub(crate) fn project(
         unresolved_states: unresolved_states.min(neutral),
         features,
         result_topologies,
+        added_profiles: index.profiles.into_added_profiles(),
     })
 }
 
@@ -1966,6 +2002,7 @@ fn project_extrusion(
         return None;
     }
     let mut selections = Vec::new();
+    let mut links = Vec::new();
     for reference in boundary.references() {
         let property = resolve_property(
             source.identity.segment_token.as_str(),
@@ -1983,6 +2020,7 @@ fn project_extrusion(
             return None;
         }
         selections.push(property.id());
+        links.push(ordinal);
     }
     if selections.is_empty() || label.participants.references().len() != 1 {
         return None;
@@ -1996,6 +2034,7 @@ fn project_extrusion(
         ))
         .and_then(Option::as_ref)?;
     let sketch_id = index.sketch_ids.get(sketch.id().as_str())?.clone();
+    let neutral_sketch = index.sketches_by_id.get(sketch_id.as_str()).copied();
 
     let direction_record = resolve_direction(source, 2, index)?;
     let mut direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
@@ -2052,7 +2091,18 @@ fn project_extrusion(
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
         return Some(Err(error));
     }
-    let profile = PlanarProfileRef::sketch_selection(sketch_id, selections).ok()?;
+    let regions = neutral_sketch.and_then(|neutral| {
+        index.profiles.regions(
+            source.identity.segment_token.as_str(),
+            sketch.identity.record_ordinal,
+            neutral,
+            &links,
+        )
+    });
+    let profile = match regions {
+        Some(profile) => profile,
+        None => PlanarProfileRef::sketch_selection(sketch_id, selections).ok()?,
+    };
     let feature = Feature {
         id: feature_id,
         ordinal: u64::from(label.index),
@@ -2800,6 +2850,7 @@ mod tests {
             entity_style_links: Vec::new(),
             kernel_entity_links: Vec::new(),
             work_planes: Vec::new(),
+            profile_bodies: Vec::new(),
             issues: Vec::new(),
         };
         let design = crate::design::DesignInventory {
@@ -2823,7 +2874,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("build the decode context");
         assert_eq!(
-            super::project(&ctx, &inventory, &design, &sketch, &[], &[])
+            super::project(&ctx, &inventory, &design, &sketch, &[], &[], &[])
                 .expect("feature projection")
                 .unresolved_features,
             1
@@ -3246,6 +3297,10 @@ mod tests {
                         .map(|native| (native, sketch.id.clone()))
                 })
                 .collect(),
+            sketches_by_id: neutral_sketches
+                .iter()
+                .map(|sketch| (sketch.id.as_str(), sketch))
+                .collect(),
             directions: directions
                 .iter()
                 .map(|record| {
@@ -3280,6 +3335,7 @@ mod tests {
                 })
                 .collect(),
             work_planes: std::collections::HashMap::new(),
+            profiles: super::profile::ProfileIndex::new(&[], &[], entity_style_links, &[], &[]),
         }
     }
 

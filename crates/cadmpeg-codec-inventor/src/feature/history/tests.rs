@@ -191,6 +191,7 @@ fn inventory() -> (FeatureInventory, Vec<crate::sketch::PmDcSketch>) {
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
+        profile_bodies: Vec::new(),
         issues: Vec::new(),
     };
     (inventory, vec![sketch(7), sketch(10)])
@@ -255,7 +256,7 @@ fn projection_orders_history_and_marks_suppression() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("projection context");
     let projection =
-        crate::feature::project(&ctx, &inventory, &design, &sketch_inventory, &[], &[])
+        crate::feature::project(&ctx, &inventory, &design, &sketch_inventory, &[], &[], &[])
             .expect("feature projection");
     let rows = projection
         .features

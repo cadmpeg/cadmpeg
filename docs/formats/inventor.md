@@ -289,7 +289,7 @@ Type `114d8790d011f8d10008cabc0663dc09` is a planar sketch. The content header i
 
 A type-8 reference array starts with u16 values `8, 0x3000` and a u32 count. A nonempty array then stores two u16 metadata values and the counted PmDc references. A type-2 reference list starts with u16 values `2, 0x3000` and a u32 count. A nonempty list then stores two u32 metadata values and the counted references.
 
-Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch. The construction mask is `0x04080040`; an entity is construction geometry when any masked bit is set.
+Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch.
 
 The planar entity types are:
 
@@ -298,7 +298,11 @@ The planar entity types are:
 - `3bdf52ced011d0d20008ccbc0663dc09`: circle. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a positive f64 radius, and a u8 state.
 - `60d40745d111bee680006fb1e13554c7`: ellipse. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a two-f64 major-axis direction, positive f64 major and minor radii, and a u8 state.
 
-Sketch coordinates and radii use internal centimetres. Neutral planar coordinates and lengths multiply these values by 10 to obtain millimetres. A line's ordered endpoint references define its bounded direction. A circle or ellipse forms a closed profile by itself. Non-construction line records form a profile loop when every endpoint in their connected component has degree two and the ordered traversal closes.
+Sketch coordinates and radii use internal centimetres. Neutral planar coordinates and lengths multiply these values by 10 to obtain millimetres. A line's ordered endpoint references define its bounded direction.
+
+The point list of a circle or ellipse starts with two members. Two null references mark a closed curve. Two point references mark a bounded curve: the first is its start point and the second its end point. A circle with state 1 is a full circle and has two null leading members. A circle with state 0 is an arc and has two leading point references. An arc runs counterclockwise about the sketch normal from its start point to its end point, on the circle of the stored center and radius. Its end points lie on that circle within the kernel linear tolerance, `1e-6` internal centimetres.
+
+A full circle or a closed ellipse forms a closed profile by itself. Line and arc records form a profile loop when every endpoint in their connected component has degree two and the ordered traversal closes.
 
 Type `184d8790d011f8d10008cabc0663dc09` stores a compressed 4-by-4 sketch transform after the content header. An optional u32 value `0x203` precedes two u16 masks. For matrix element bit `b`, a clear zero-mask bit and clear value-mask bit select one following f64. A clear zero-mask bit and set value-mask bit select positive one. A set zero-mask bit and clear value-mask bit select zero. Both bits set select negative one. Explicit values occur in row-major order. Translation values use internal centimetres.
 
@@ -347,7 +351,7 @@ next_reference u32
 
 The header is followed by `index:u32`, a type-2 participant-reference list, a counted UTF-16LE label, and a 16-byte class identifier. The owner reference identifies the labeled record. Each participant is a one-based record reference in the same PmDc segment. Other records with the same type identifier use different payload forms and do not satisfy the label grammar.
 
-Type `154d8790d011f8d10008cabc0663dc09` is an entity-style link and also starts with the linked-element header. It then stores `value:u32`, `associative_id:u32`, and `entity_type:u32`. A profile-selection record selects an entity-style link or a kernel-entity link through its entity-link reference.
+Type `154d8790d011f8d10008cabc0663dc09` is an entity-style link and also starts with the linked-element header. It then stores `value:u32`, `associative_id:u32`, and `entity_type:u32`. An entity-style link whose owner is a planar sketch entity gives that entity its associative identifier within the sketch. Entity type 1 marks a point and entity type 2 marks a curve. A profile-selection record selects an entity-style link or a kernel-entity link through its entity-link reference.
 
 Type `21750fccd1112780e38619962259017a` is a kernel-entity link. Its payload contains:
 
@@ -363,13 +367,17 @@ entity_type u32
 
 The body reference selects a PmDc kernel-body record of type `5c5945f6d5113313100060a6bba647b5`. The entity identifier selects one entity of that body. `selection_source` equals the content-header source index of the selection record that references the link.
 
+A PmDc kernel-body record uses the record envelope and footer of the active part kernel carrier (§5). Its footer selected key is the record's own qualified reference. Its kernel bytes hold one ASM wire body for each profile selection that links to the record. The kernel-entity link of a profile selection selects the wire body whose ASM body key equals the link's entity identifier. Model-space lengths in these bodies use internal centimetres.
+
+A profile wire body is one closed loop. Each of its edges carries one ASM attribute of class chain `NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib`. The attribute stores five fields that are not decoded here, followed by the integers `naming_type`, 0, `associative_id`, 0, and 2. The value 2 marks an edge name. `naming_type` equals the entity type of the kernel-entity link. `associative_id` equals the associative identifier of the curve-type entity-style link of the sketch curve that the edge comes from, in the sketch that the extrusion consumes. An edge whose end points lie at the end points of that curve, in the sketch plane, runs along the whole curve. A full circle can run through more than one edge. Each of these edges carries the name of the circle, and the circle is then the only curve of the wire.
+
 Type `1641d6aad211db2c00083eab1b14dc09` stores one constant-radius fillet edge set. The content header is followed by edge-collection, radius, selection-mode, and continuity references. Type `514d8790d011f8d10008cabc0663dc09` stores an edge collection as a type-2 reference list after the content header. The members identify type `82695c37d111516b0008a1ba32a3dc09` edge-item records. An edge item stores a type-2 `u32` index-reference list after the content header, an `i32` when the list is not empty, and a final `u32`.
 
 Type `4a374949d211001d00083bab1b14dc09` stores a fillet edge-selection enumeration. It adds `type_value:u32` and `value:u32` after the content header. Type value 4 and value 0 select explicitly listed edges.
 
 Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, and `1a7d751fd2119c54a00020803603c8c9` identify extrusion, fillet, chamfer, and hole records respectively.
 
-An extrusion uses property slots 0 through 7 for part operation, boundary patch, direction, reverse direction, forward length, taper angle, extent, and symmetric extent. Slot 23 repeats the boundary-patch reference. Slot 26 identifies the result object collection. Part-operation enumeration values 1, 2, 3, and 4 mean new body, cut, join, and intersection. Extent values 1, 2, 4, 5, 6, and 7 mean fixed dimension, symmetric fixed dimension, through next, through all, from-to, and to. A fixed dimension uses the slot-4 length. Extent 2 occurs only with a true symmetric-extent Boolean, and its length is the total travel split evenly around the profile plane. A true symmetric-extent Boolean with extent 5 extends through all material on both sides of the profile plane. Other extents with a true symmetric-extent Boolean are outside the supported branch. A boundary patch contains profile-selection references. The feature label's sole participant identifies the owning planar sketch.
+An extrusion uses property slots 0 through 7 for part operation, boundary patch, direction, reverse direction, forward length, taper angle, extent, and symmetric extent. Slot 23 repeats the boundary-patch reference. Slot 26 identifies the result object collection. Part-operation enumeration values 1, 2, 3, and 4 mean new body, cut, join, and intersection. Extent values 1, 2, 4, 5, 6, and 7 mean fixed dimension, symmetric fixed dimension, through next, through all, from-to, and to. A fixed dimension uses the slot-4 length. Extent 2 occurs only with a true symmetric-extent Boolean, and its length is the total travel split evenly around the profile plane. A true symmetric-extent Boolean with extent 5 extends through all material on both sides of the profile plane. Other extents with a true symmetric-extent Boolean are outside the supported branch. A boundary patch contains profile-selection references. The feature label's sole participant identifies the owning planar sketch. Each profile selection is one closed loop of that sketch. The loops of one boundary patch bound the extruded region: a selected loop that lies inside an odd number of other selected loops bounds a hole in the region of the innermost selected loop that contains it.
 
 The extent-7 target is the work plane in slot 11, or the model face recorded by a termination flag in slot 13 and a surface in slot 18. The extent-6 extrusion starts at the target in slot 8, or the face in slots 10 and 17, and ends at the extent-7 target. A two-sided extrusion has an extent enumeration in slot 29. Slots 27, 28, and 29 hold the length, taper angle, and extent of the side opposite the extrusion direction.
 
