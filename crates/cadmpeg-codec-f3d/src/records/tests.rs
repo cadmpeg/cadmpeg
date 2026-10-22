@@ -1829,7 +1829,7 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
 }
 
 #[test]
-fn body_bounds_admit_only_ordered_finite_content_and_real_scanner_layout() {
+fn body_bounds_admit_only_ordered_finite_cache_frames() {
     let wire = serde_json::json!({"id":"f3d:Design/BulkStream.dat:design-body-bounds#0","entity_suffix":10,
         "record_indices":[11,12,13],"maximum":{"x":1.0,"y":0.0,"z":0.0},"minimum":{"x":0.0,"y":0.0,"z":0.0}});
     let record: super::bodies::DesignBodyBounds = serde_json::from_value(wire.clone()).unwrap();
