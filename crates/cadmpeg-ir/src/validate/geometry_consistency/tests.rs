@@ -5,8 +5,8 @@ use cadmpeg_test_support::edit;
 
 use super::{
     check_pcurve_surface_consistency, check_procedural_support_consistency,
-    edge_pcurve_parameter_ranges, mapped_pcurve_parameter_near_point, pcurve_parameter_domain,
-    pcurve_parameter_ranges, pcurve_parameter_seeds_on_surface, SurfacePcurveContext,
+    edge_pcurve_parameter_ranges, mapped_pcurve_parameter_near_point, pcurve_parameter_ranges,
+    pcurve_parameter_seeds_on_surface, SurfacePcurveContext,
 };
 use crate::document::CadIr;
 use crate::examples::unit_cube;
@@ -720,12 +720,11 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
         metadata: PcurveMetadata::default(),
     };
     assert_eq!(
-        pcurve_parameter_domain(
-            &cadmpeg_test_support::service_decode_context(),
-            &pcurve.geometry
-        )
-        .unwrap()
-        .map(crate::topology::IncreasingParameterInterval::endpoints),
+        pcurve
+            .geometry
+            .parameter_domain(&cadmpeg_test_support::service_decode_context())
+            .unwrap()
+            .map(crate::topology::IncreasingParameterInterval::endpoints),
         Some([0.0, 1.0])
     );
     assert!(pcurve_parameter_ranges(
@@ -758,7 +757,8 @@ fn collapsed_trimmed_pcurve_falls_back_to_its_basis_domain() {
         .unwrap(),
     );
     assert_eq!(
-        pcurve_parameter_domain(&cadmpeg_test_support::service_decode_context(), &geometry)
+        geometry
+            .parameter_domain(&cadmpeg_test_support::service_decode_context())
             .unwrap()
             .map(crate::topology::IncreasingParameterInterval::endpoints),
         Some([0.0, 1.0])
@@ -1378,10 +1378,7 @@ fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
     // The trim itself is one carrier, so the chain over it holds one less.
     let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING - 1, trimmed.clone())
         .expect("admitted nesting");
-    assert_eq!(
-        super::pcurve_geometry_trim_range(&ctx, &accepted).unwrap(),
-        Some([0.25, 0.75])
-    );
+    assert_eq!(accepted.trim_range(&ctx).unwrap(), Some([0.25, 0.75]));
 
     // Constructor admission also rejects a carrier beyond the inline bound.
     assert_eq!(
@@ -1708,7 +1705,7 @@ fn pcurve_geometry_trim_range_preserves_session_depth_refusals() {
         policy.limits.max_recursion_depth = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
-        let limit = super::pcurve_geometry_trim_range(&ctx, &geometry).unwrap_err();
+        let limit = geometry.trim_range(&ctx).unwrap_err();
         assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(limit.limit, cap);
         assert_eq!(limit.used, cap);

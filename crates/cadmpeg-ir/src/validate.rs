@@ -57,61 +57,6 @@ use spreadsheets::check_spreadsheets;
 use topology::graphs::{check_coedge_pairing, check_shell_connectivity, check_wire_topology};
 use topology::{check_references, check_tolerances, check_topology_tolerances};
 
-/// The parameter interval a pcurve carrier is defined on, when the carrier
-/// states one.
-///
-/// A nesting carrier states its own interval where it has one and otherwise
-/// reports its basis's: a trim is the interval the trimmed carrier exists on,
-/// and a placement and an offset both keep their basis's parameterization. An
-/// analytic carrier has no bounded domain. The match is exhaustive, so a new
-/// pcurve variant states its answer here rather than inheriting one.
-///
-/// Both the carrier-parameterization pass and the geometric-consistency pass
-/// ask this question of the same carrier, so they ask it of one function.
-///
-/// Each nested carrier visit counts against the caller session's recursion depth.
-fn pcurve_parameter_domain(
-    ctx: &DecodeContext<'_>,
-    geometry: &crate::geometry::pcurve::PcurveGeometry,
-) -> Result<Option<crate::topology::IncreasingParameterInterval>, cadmpeg_core::decode::ResourceLimit>
-{
-    use crate::geometry::pcurve::PcurveGeometry;
-    let _depth = ctx.enter_nested_limit("pcurve parameter domain nesting")?;
-
-    Ok(match geometry {
-        PcurveGeometry::Nurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
-            nurbs.degree(),
-            nurbs.knots(),
-            nurbs.pole_rows().count(),
-        ),
-        PcurveGeometry::PolarNurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
-            nurbs.degree(),
-            nurbs.knots(),
-            nurbs.pole_rows().count(),
-        ),
-        PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let [start, end] = trimmed_pcurve.parameter_range().finite_endpoints();
-            match crate::topology::IncreasingParameterInterval::between(start, end) {
-                Some(domain) => Some(domain),
-                None => pcurve_parameter_domain(ctx, trimmed_pcurve.basis())?,
-            }
-        }
-        PcurveGeometry::Offset(offset_pcurve) => {
-            pcurve_parameter_domain(ctx, offset_pcurve.basis())?
-        }
-        PcurveGeometry::Transformed(placed) => pcurve_parameter_domain(ctx, placed.basis())?,
-        PcurveGeometry::Line(_)
-        | PcurveGeometry::Circle(_)
-        | PcurveGeometry::Ellipse(_)
-        | PcurveGeometry::Harmonic(_)
-        | PcurveGeometry::Parabola(_)
-        | PcurveGeometry::Hyperbola(_)
-        | PcurveGeometry::Hyperbolic(_)
-        | PcurveGeometry::PolarHarmonic(_)
-        | PcurveGeometry::SphericalGreatCircle(_) => None,
-    })
-}
-
 fn record_finding(
     findings: &mut Vec<Finding>,
     check: Check,
@@ -332,7 +277,7 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
 
 #[cfg(test)]
 mod tests {
-    use super::{pcurve_parameter_domain, validate_neutral};
+    use super::validate_neutral;
     use crate::features::{
         ConfigurationFeatureState, ConfigurationId, DesignConfiguration, FaceSelection, Feature,
         FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane, SplitFaceTool,
@@ -411,7 +356,7 @@ mod tests {
             policy.limits.max_recursion_depth = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
-            let limit = pcurve_parameter_domain(&ctx, &geometry).unwrap_err();
+            let limit = geometry.parameter_domain(&ctx).unwrap_err();
             assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
             assert_eq!(limit.limit, cap);
             assert_eq!(limit.used, cap);
@@ -434,7 +379,7 @@ mod tests {
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let accepted =
             placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING).expect("admitted nesting");
-        assert!(pcurve_parameter_domain(&ctx, &accepted).unwrap().is_some());
+        assert!(accepted.parameter_domain(&ctx).unwrap().is_some());
 
         // Constructor admission also rejects a carrier beyond the inline bound.
         assert_eq!(
