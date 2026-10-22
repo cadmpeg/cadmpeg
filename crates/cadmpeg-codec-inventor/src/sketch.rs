@@ -79,6 +79,18 @@ const EQUAL_RADIUS_TYPE: [u8; 16] = [
 const EQUAL_LENGTH_TYPE: [u8; 16] = [
     0xe0, 0xc2, 0x81, 0xc6, 0xd1, 0x11, 0x10, 0xe6, 0x80, 0x00, 0x6e, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
 ];
+const EQUAL_DISTANCE_TYPE: [u8; 16] = [
+    0xbc, 0x14, 0x4b, 0x4e, 0xd2, 0x11, 0xfe, 0xa4, 0x60, 0x00, 0x10, 0xb3, 0x89, 0x32, 0xed, 0xb0,
+];
+const BLOCK_INSTANCE_TYPE: [u8; 16] = [
+    0x4c, 0x12, 0xf1, 0x4c, 0x1d, 0x4f, 0x0f, 0xb4, 0xd3, 0xf8, 0x0f, 0x82, 0x44, 0x52, 0x8f, 0xcb,
+];
+const BLOCK_MEMBER_TYPE: [u8; 16] = [
+    0x7e, 0x71, 0xa9, 0x18, 0xee, 0x49, 0x61, 0x2a, 0x26, 0x8c, 0x54, 0x9c, 0x65, 0x84, 0xf7, 0xfe,
+];
+const BLOCK_GROUP_TYPE: [u8; 16] = [
+    0xcf, 0x8d, 0x56, 0xf2, 0x32, 0x4a, 0x27, 0xdd, 0xb6, 0x66, 0xf1, 0x89, 0x4a, 0x9d, 0x16, 0x17,
+];
 const POLYGON_TYPE: [u8; 16] = [
     0x38, 0x48, 0x53, 0x52, 0x9f, 0x44, 0x52, 0x55, 0xe1, 0xe1, 0xda, 0xb4, 0x10, 0xeb, 0x06, 0xc4,
 ];
@@ -140,13 +152,21 @@ pub(crate) struct PmDcConstraintHeader {
     pub(crate) group: PmDcReference,
     pub(crate) scalar_map: PmDcReferenceScalarMap,
     pub(crate) reference_map: PmDcReferencePairMap,
-    pub(crate) parameter: PmDcReference,
+    /// Absent in a sketch-block group, whose list follows the maps.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parameter"
+    )]
+    pub(crate) parameter: Option<PmDcReference>,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_parameter, PmDcReference, "parameter");
 
 type PmDcReferenceScalarMap = crate::pmdc::PmDcPairedMap<FiniteReal>;
 type PmDcReferencePairMap = crate::pmdc::PmDcPairedMap<PmDcReference>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcSketchConstraintKind {
     Coincident {
@@ -254,9 +274,16 @@ pub(crate) enum PmDcSketchConstraintKind {
     PolygonRelation {
         first: PmDcReference,
         second: PmDcReference,
-        center: PmDcReference,
+        reference: PmDcReference,
         polygon: [PmDcReference; 2],
         values: [u32; 2],
+    },
+    BlockGroup {
+        members: PmDcReferenceList,
+    },
+    EqualDistance {
+        first: [PmDcReference; 2],
+        second: [PmDcReference; 2],
     },
 }
 
@@ -334,8 +361,19 @@ pub(crate) enum PmDcSketchEntityKind {
         state: u8,
     },
     Polygon {
-        center: PmDcReference,
+        reference: PmDcReference,
         value: u32,
+    },
+    BlockInstance {
+        definition: PmDcReference,
+        group: PmDcReference,
+        masks: [u16; 2],
+        placement: [[FiniteReal; 3]; 3],
+        value: u32,
+    },
+    BlockMember {
+        instances: PmDcReferenceList,
+        member: PmDcReference,
     },
 }
 
@@ -639,6 +677,8 @@ enum SketchEntityTag {
     Circle,
     Ellipse,
     Polygon,
+    BlockInstance,
+    BlockMember,
 }
 
 impl SketchEntityTag {
@@ -649,6 +689,8 @@ impl SketchEntityTag {
             CIRCLE_TYPE => Some(Self::Circle),
             ELLIPSE_TYPE => Some(Self::Ellipse),
             POLYGON_TYPE => Some(Self::Polygon),
+            BLOCK_INSTANCE_TYPE => Some(Self::BlockInstance),
+            BLOCK_MEMBER_TYPE => Some(Self::BlockMember),
             _ => None,
         }
     }
@@ -678,6 +720,8 @@ enum SketchConstraintTag {
     Collinear,
     Symmetric,
     PolygonRelation,
+    BlockGroup,
+    EqualDistance,
 }
 
 impl SketchConstraintTag {
@@ -705,6 +749,8 @@ impl SketchConstraintTag {
             COLLINEAR_TYPE => Some(Self::Collinear),
             SYMMETRIC_TYPE => Some(Self::Symmetric),
             POLYGON_RELATION_TYPE => Some(Self::PolygonRelation),
+            BLOCK_GROUP_TYPE => Some(Self::BlockGroup),
+            EQUAL_DISTANCE_TYPE => Some(Self::EqualDistance),
             _ => None,
         }
     }
@@ -747,8 +793,41 @@ fn parse_entity(
         SketchEntityTag::Circle => parse_circle(&mut cursor)?,
         SketchEntityTag::Ellipse => parse_ellipse(&mut cursor)?,
         SketchEntityTag::Polygon => PmDcSketchEntityKind::Polygon {
-            center: cursor.reference("polygon center reference")?,
+            reference: cursor.reference("polygon reference entity")?,
             value: cursor.u32("polygon value")?,
+        },
+        SketchEntityTag::BlockInstance => {
+            let definition = cursor.reference("block instance definition reference")?;
+            let group = cursor.reference("block instance group reference")?;
+            let value_mask = cursor.u16("block instance value mask")?;
+            let zero_mask = cursor.u16("block instance zero mask")?;
+            let mut placement = [[FiniteReal::ZERO; 3]; 3];
+            for (index, cell) in placement.iter_mut().flatten().enumerate() {
+                let bit = 1u16 << index;
+                *cell = match (value_mask & bit != 0, zero_mask & bit != 0) {
+                    (false, false) => cursor.f64("block instance placement value")?,
+                    (true, false) => FiniteReal::ONE,
+                    (false, true) => FiniteReal::ZERO,
+                    (true, true) => FiniteReal::ONE.negated(),
+                };
+            }
+            if (value_mask | zero_mask) >> 9 != 0 {
+                return Err(CodecError::Malformed(
+                    "Inventor PmDc block instance mask names a cell outside its 3-by-3 placement"
+                        .into(),
+                ));
+            }
+            PmDcSketchEntityKind::BlockInstance {
+                definition,
+                group,
+                masks: [value_mask, zero_mask],
+                placement,
+                value: cursor.u32("block instance value")?,
+            }
+        }
+        SketchEntityTag::BlockMember => PmDcSketchEntityKind::BlockMember {
+            instances: reference_list(&mut cursor, 2, "block member instance list")?,
+            member: cursor.reference("block member entity reference")?,
         },
     };
     cursor.finish("sketch entity")?;
@@ -1025,6 +1104,7 @@ fn reference_pair_map(cursor: &mut Cursor<'_>) -> Result<PmDcReferencePairMap, C
 fn parse_constraint_header(
     cursor: &mut Cursor<'_>,
     version: u8,
+    with_parameter: bool,
 ) -> Result<PmDcConstraintHeader, CodecError> {
     let content = state_content_header(cursor, version)?;
     let state = cursor.u32("constraint state")?.cast_signed();
@@ -1043,7 +1123,9 @@ fn parse_constraint_header(
         group,
         scalar_map,
         reference_map,
-        parameter: cursor.reference("constraint parameter reference")?,
+        parameter: with_parameter
+            .then(|| cursor.reference("constraint parameter reference"))
+            .transpose()?,
     })
 }
 
@@ -1053,7 +1135,11 @@ fn parse_constraint(
     version: u8,
 ) -> Result<PmDcSketchConstraintPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = parse_constraint_header(&mut cursor, version)?;
+    let header = parse_constraint_header(
+        &mut cursor,
+        version,
+        !matches!(tag, SketchConstraintTag::BlockGroup),
+    )?;
     let kind = match tag {
         SketchConstraintTag::Coincident => PmDcSketchConstraintKind::Coincident {
             first: cursor.reference("coincident constraint first reference")?,
@@ -1165,10 +1251,23 @@ fn parse_constraint(
             second: cursor.reference("symmetric constraint second reference")?,
             axis: cursor.reference("symmetric constraint axis reference")?,
         },
+        SketchConstraintTag::EqualDistance => PmDcSketchConstraintKind::EqualDistance {
+            first: [
+                cursor.reference("equal-distance first pair first reference")?,
+                cursor.reference("equal-distance first pair second reference")?,
+            ],
+            second: [
+                cursor.reference("equal-distance second pair first reference")?,
+                cursor.reference("equal-distance second pair second reference")?,
+            ],
+        },
+        SketchConstraintTag::BlockGroup => PmDcSketchConstraintKind::BlockGroup {
+            members: reference_list(&mut cursor, 2, "block group member list")?,
+        },
         SketchConstraintTag::PolygonRelation => PmDcSketchConstraintKind::PolygonRelation {
             first: cursor.reference("polygon relation first reference")?,
             second: cursor.reference("polygon relation second reference")?,
-            center: cursor.reference("polygon relation center reference")?,
+            reference: cursor.reference("polygon relation reference entity")?,
             polygon: [
                 cursor.reference("polygon relation polygon reference")?,
                 cursor.reference("polygon relation second polygon reference")?,
@@ -1704,7 +1803,8 @@ fn project_constraint(
         }
         PmDcSketchConstraintKind::Radius { entity, .. } => {
             let member = resolve(entity)?;
-            let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
+            let parameter =
+                resolve_parameter(constraint, constraint.header.parameter?, parameters)?;
             (
                 SketchConstraintDefinitionInput::Radius {
                     entity: member.id().clone(),
@@ -1716,7 +1816,8 @@ fn project_constraint(
         }
         PmDcSketchConstraintKind::Diameter { entity, .. } => {
             let member = resolve(entity)?;
-            let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
+            let parameter =
+                resolve_parameter(constraint, constraint.header.parameter?, parameters)?;
             (
                 SketchConstraintDefinitionInput::Diameter {
                     entity: member.id().clone(),
@@ -1795,7 +1896,8 @@ fn project_constraint(
         }
         PmDcSketchConstraintKind::Distance { first, second, .. } => {
             let members = [resolve(first)?, resolve(second)?];
-            let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
+            let parameter =
+                resolve_parameter(constraint, constraint.header.parameter?, parameters)?;
             (
                 SketchConstraintDefinitionInput::DistanceLoci {
                     first: SketchLocus::Entity(members[0].id().clone()),
@@ -1813,7 +1915,8 @@ fn project_constraint(
             ..
         } => {
             let members = [resolve(first)?, resolve(second)?];
-            let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
+            let parameter =
+                resolve_parameter(constraint, constraint.header.parameter?, parameters)?;
             (
                 SketchConstraintDefinitionInput::Native {
                     native_kind: cadmpeg_core::text::NonBlankString::new("angle_dimension")?,
@@ -1896,10 +1999,70 @@ fn project_constraint(
                 members,
             )
         }
+        PmDcSketchConstraintKind::EqualDistance { first, second } => {
+            let pair = |[a, b]: [PmDcReference; 2]| Some([resolve(a)?, resolve(b)?]);
+            let (first, second) = (pair(first)?, pair(second)?);
+            if second
+                .iter()
+                .chain(&first[1..])
+                .any(|entity| entity.sketch != first[0].sketch)
+            {
+                return None;
+            }
+            let locus = |entity: &SketchEntity| SketchLocus::Entity(entity.id().clone());
+            (
+                SketchConstraintDefinitionInput::EqualDistance {
+                    first: cadmpeg_ir::sketches::SketchDistancePair {
+                        first: locus(first[0]),
+                        second: locus(first[1]),
+                    },
+                    second: cadmpeg_ir::sketches::SketchDistancePair {
+                        first: locus(second[0]),
+                        second: locus(second[1]),
+                    },
+                },
+                None,
+                first,
+            )
+        }
+        PmDcSketchConstraintKind::BlockGroup { ref members } => {
+            let entities = members
+                .references()
+                .iter()
+                .map(|member| resolve(*member))
+                .collect::<Option<Vec<_>>>()?;
+            let (first, rest) = entities.split_first()?;
+            if rest.iter().any(|entity| entity.sketch != first.sketch) {
+                return None;
+            }
+            (
+                SketchConstraintDefinitionInput::Native {
+                    native_kind: cadmpeg_core::text::NonBlankString::new("sketch_block")?,
+                    native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
+                    native_flags: Some(u64::from(constraint.header.content.flags)),
+                    native_properties: std::collections::BTreeMap::new(),
+                    entities: entities.iter().map(|entity| entity.id().clone()).collect(),
+                    parameter: None,
+                    operands: members
+                        .references()
+                        .iter()
+                        .map(|member| {
+                            native_operand(
+                                constraint,
+                                cadmpeg_core::nonblank_literal!("member"),
+                                *member,
+                            )
+                        })
+                        .collect(),
+                },
+                None,
+                [*first, *first],
+            )
+        }
         PmDcSketchConstraintKind::PolygonRelation {
             first,
             second,
-            center,
+            reference,
             polygon,
             ..
         } => {
@@ -1908,8 +2071,8 @@ fn project_constraint(
             if polygon != repeated {
                 return None;
             }
-            let (center, polygon) = (resolve(center)?, resolve(polygon)?);
-            if [center, polygon]
+            let (reference, polygon) = (resolve(reference)?, resolve(polygon)?);
+            if [reference, polygon]
                 .iter()
                 .any(|entity| entity.sketch != members[0].sketch)
             {
@@ -1918,7 +2081,7 @@ fn project_constraint(
             (
                 SketchConstraintDefinitionInput::Polygon {
                     polygon: cadmpeg_ir::sketches::SketchPolygon::try_new(
-                        [members[0], members[1], center, polygon]
+                        [members[0], members[1], reference, polygon]
                             .iter()
                             .map(|entity| entity.id().clone())
                             .collect(),
@@ -2173,16 +2336,15 @@ fn project_geometry(
                 .ok()?,
             )
         }
-        PmDcSketchEntityKind::Polygon { center, .. } => {
-            resolve_point(
-                entity.identity.segment_token.as_str(),
-                center.index(),
-                entities,
-            )?;
-            Some(SketchGeometry::native(cadmpeg_core::nonblank_literal!(
-                "polygon"
-            )))
-        }
+        PmDcSketchEntityKind::BlockInstance { .. } => Some(SketchGeometry::native(
+            cadmpeg_core::nonblank_literal!("sketch_block_instance"),
+        )),
+        PmDcSketchEntityKind::BlockMember { .. } => Some(SketchGeometry::native(
+            cadmpeg_core::nonblank_literal!("sketch_block_member"),
+        )),
+        PmDcSketchEntityKind::Polygon { .. } => Some(SketchGeometry::native(
+            cadmpeg_core::nonblank_literal!("polygon"),
+        )),
     }
 }
 
@@ -3420,6 +3582,12 @@ mod tests {
                 polygon_relation,
                 "polygon_relation",
             ),
+            (
+                SketchConstraintTag::EqualDistance,
+                0,
+                references(&[4, 5, 6, 7]),
+                "equal_distance",
+            ),
         ] {
             let mut bytes = constraint_header(9, parameter);
             bytes.extend(tail);
@@ -3437,7 +3605,47 @@ mod tests {
         });
         assert!(matches!(
             parsed.kind,
-            PmDcSketchEntityKind::Polygon { center, value: 0 } if center.index() == 4
+            PmDcSketchEntityKind::Polygon { reference, value: 0 } if reference.index() == 4
+        ));
+
+        // A block instance with a translation-only 3-by-3 placement, a member
+        // link, and the block group, which has no parameter reference.
+        let mut instance = entity_prefix(8, 3, 0);
+        instance.extend(references(&[30, 10]));
+        instance.extend_from_slice(&0x0111u16.to_le_bytes());
+        instance.extend_from_slice(&0x00cau16.to_le_bytes());
+        instance.extend(reals(&[2.5, -1.0]));
+        instance.extend_from_slice(&1u32.to_le_bytes());
+        let parsed = parse(&instance, |_, source| {
+            parse_entity(SketchEntityTag::BlockInstance, source, 22).expect("block instance")
+        });
+        let PmDcSketchEntityKind::BlockInstance { placement, .. } = parsed.kind else {
+            panic!("block instance");
+        };
+        assert_eq!(
+            placement.map(|row| row.map(FiniteReal::get)),
+            [[1.0, 0.0, 2.5], [0.0, 1.0, -1.0], [0.0, 0.0, 1.0]]
+        );
+        let mut member = entity_prefix(9, 3, 0);
+        member.extend(list(2, &[0x8000_0009]));
+        member.extend(references(&[4]));
+        let parsed = parse(&member, |_, source| {
+            parse_entity(SketchEntityTag::BlockMember, source, 22).expect("block member")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchEntityKind::BlockMember { .. }
+        ));
+        let mut group = constraint_header(10, 0);
+        group.truncate(group.len() - 4);
+        group.extend(list(2, &[0x8000_0009, 0x8000_000a]));
+        let parsed = parse(&group, |_, source| {
+            parse_constraint(SketchConstraintTag::BlockGroup, source, 22).expect("block group")
+        });
+        assert!(parsed.header.parameter.is_none());
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchConstraintKind::BlockGroup { .. }
         ));
     }
 

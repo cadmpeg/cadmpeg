@@ -350,7 +350,11 @@ Types `bf70e821d011d0d20008ccbc0663dc09`, `b07b170fd11196e680006fb1e13554c7`, `c
 - collinear stores two line references and `state:u16`; the lines lie on one infinite line;
 - symmetric stores two entity references and an axis line reference; the axis line's carrier reflects the first entity onto the second.
 
-Type `384853529f445255e1e1dab410eb06c4` is a regular-polygon record. It starts with the planar-entity prefix and then stores a center-point reference and `value:u32`. Type `1f89dbfbd84778b6b0967285c7ec8bb9` is a polygon relation. After the constraint header it stores two entity references, the center-point reference, the polygon-record reference twice, and two u32 values. The two entities are consecutive polygon edges or consecutive polygon vertices.
+Type `384853529f445255e1e1dab410eb06c4` is a regular-polygon record. It starts with the planar-entity prefix and then stores a reference-entity reference and `value:u32`. The reference entity is the polygon's center point, or a line. Type `1f89dbfbd84778b6b0967285c7ec8bb9` is a polygon relation. After the constraint header it stores two entity references, the polygon's reference entity, the polygon-record reference twice, and two u32 values. The two entities are consecutive polygon edges or consecutive polygon vertices.
+
+Type `bc144b4ed211fea4600010b38932edb0` encodes an equal-distance relation. After the constraint header, whose parameter is null, it stores two pairs of line references. The lines of each pair are parallel, and the two pairs have the same separation.
+
+Sketch blocks use three record types. Type `4c12f14c1d4f0fb4d3f80f8244528fcb` is a block instance. It starts with the planar-entity prefix and then stores a block-definition reference, a block-group reference, u16 value and zero masks, the explicit values of a 3-by-3 placement matrix, and `value:u32`. The masks select the matrix cells in row-major order with the rule of the sketch transform record; mask bits above bit 8 are clear. Type `7e71a918ee49612a268c549c6584f7fe` is a block member link. It starts with the planar-entity prefix and then stores a type-2 list of the block instance and the reference of one sketch point or line that the instance contains. Type `cf8d56f2324a27ddb666f1894a9d1617` is a block group. It stores the constraint header without its parameter reference, followed by a type-2 list of the block instance and its member links.
 
 ## 13. Feature records
 

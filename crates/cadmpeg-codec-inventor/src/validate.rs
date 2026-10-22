@@ -614,7 +614,14 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 }
                 references.push(center.index());
             }
-            PmDcSketchEntityKind::Polygon { center, .. } => references.push(center.index()),
+            PmDcSketchEntityKind::Polygon { reference, .. } => references.push(reference.index()),
+            PmDcSketchEntityKind::BlockInstance {
+                definition, group, ..
+            } => references.extend([definition.index(), group.index()]),
+            PmDcSketchEntityKind::BlockMember { instances, member } => {
+                add_list(instances);
+                references.push(member.index());
+            }
         }
         if !record_is_exact(
             entity.identity.segment_token.as_str(),
@@ -2342,7 +2349,9 @@ pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) ->
         header.content.next.index(),
         header.content.context.index(),
         header.group.index(),
-        header.parameter.index(),
+        header
+            .parameter
+            .map_or(0, crate::pmdc::PmDcReference::index),
     ];
     for (key, _) in header.scalar_map.entries() {
         references.push(key.index());
@@ -2405,16 +2414,22 @@ pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) ->
             second,
             axis,
         } => references.extend([first.index(), second.index(), axis.index()]),
+        PmDcSketchConstraintKind::EqualDistance { first, second } => {
+            references.extend(first.iter().chain(&second).map(|entity| entity.index()));
+        }
+        PmDcSketchConstraintKind::BlockGroup { ref members } => {
+            references.extend(members.references().iter().map(|member| member.index()));
+        }
         PmDcSketchConstraintKind::PolygonRelation {
             first,
             second,
-            center,
+            reference,
             polygon,
             ..
         } => references.extend([
             first.index(),
             second.index(),
-            center.index(),
+            reference.index(),
             polygon[0].index(),
             polygon[1].index(),
         ]),
