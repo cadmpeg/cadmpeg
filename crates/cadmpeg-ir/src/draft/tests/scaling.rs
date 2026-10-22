@@ -148,3 +148,56 @@ fn native_candidate_admission_does_not_build_an_unread_prefix_index() {
     drop(session);
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn appended_edits_keep_the_committed_prefix_index() {
+    use super::{DraftError, ModelCheckpoint};
+    const COUNT: usize = 256;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut annotations = Annotations::default();
+    let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
+    for index in 0..COUNT {
+        let checkpoint = ModelCheckpoint::capture(&session.document().model);
+        let mut draft = super::ModelDraft::new().with_accounting();
+        draft
+            .insert(super::point(&format!("test:model:point#staged-{index:08}")))
+            .unwrap();
+        session.commit(draft, &mut annotations).unwrap().unwrap();
+        let model = session.edit_appended_model(&checkpoint).unwrap();
+        let placed = checkpoint
+            .added_mut::<crate::topology::Point>(model)
+            .unwrap();
+        placed[0].id = format!("test:model:point#placed-{index:08}")
+            .try_into()
+            .unwrap();
+        assert!(session.state.identities.is_some());
+        let starts = session.state.unindexed_start.unwrap();
+        assert_eq!(
+            starts[<crate::topology::Point as crate::schema::EntitySchema>::KIND.index()],
+            index
+        );
+    }
+    assert!(!session
+        .contains("test:model:point#staged-00000000")
+        .unwrap());
+    assert!(session
+        .contains("test:model:point#placed-00000000")
+        .unwrap());
+    let mut duplicate = super::ModelDraft::new().with_accounting();
+    duplicate
+        .insert(super::point(&format!(
+            "test:model:point#placed-{:08}",
+            COUNT - 1
+        )))
+        .unwrap();
+    assert!(matches!(
+        session.commit(duplicate, &mut annotations).unwrap(),
+        Err(DraftError::IdentityCollision(_))
+    ));
+    let mut reused = super::ModelDraft::new().with_accounting();
+    reused
+        .insert(super::point("test:model:point#staged-00000001"))
+        .unwrap();
+    session.commit(reused, &mut annotations).unwrap().unwrap();
+    assert_eq!(session.document().model.points.len(), COUNT + 1);
+}

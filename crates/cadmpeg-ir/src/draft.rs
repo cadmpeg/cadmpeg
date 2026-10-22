@@ -584,8 +584,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         if let Some(admission) = &mut self.state.admission {
             admission.rewind(&self.state.base.borrow().model, checkpoint)?;
         }
-        self.state.identities = None;
-        self.state.unindexed_start = None;
+        self.state.forget_appended_identities(checkpoint)?;
         Ok(&mut self.state.base.borrow_mut().model)
     }
 
@@ -1130,6 +1129,43 @@ impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
             }
             crate::document::arena_registry!(index_appended);
         }
+        Ok(())
+    }
+
+    /// Removes the cached positions of entities appended after `checkpoint`
+    /// and marks that suffix for reindexing, so an edit costs its suffix size.
+    fn forget_appended_identities(
+        &mut self,
+        checkpoint: &ModelCheckpoint,
+    ) -> Result<(), CodecError> {
+        let Some(identities) = self.identities.as_mut() else {
+            self.unindexed_start = None;
+            return Ok(());
+        };
+        let model = &self.base.borrow().model;
+        let unindexed = self.unindexed_start;
+        let mut starts = [0; EntityKind::ALL.len()];
+        macro_rules! forget_suffix {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                let kind = <$ty as EntitySchema>::KIND;
+                let len = model.$field.len();
+                let indexed_end = unindexed.map_or(len, |starts| starts[kind.index()].min(len));
+                let start = checkpoint.arena_len::<$ty>().min(indexed_end);
+                for (offset, entity) in model.$field.get(start..indexed_end).ok_or_else(|| CodecError::malformed("appended identity range is absent"))?.iter().enumerate() {
+                    let index = start + offset;
+                    let hash = identity_hash(entity.identity());
+                    if let Some(owners) = identities.get_mut(&hash) {
+                        owners.retain(|owner| !matches!(owner, CommittedIdentity::Neutral(slot) if slot.kind == kind && slot.index == index));
+                        if owners.is_empty() {
+                            identities.remove(&hash);
+                        }
+                    }
+                }
+                starts[kind.index()] = start;
+            )*};
+        }
+        crate::document::arena_registry!(forget_suffix);
+        self.unindexed_start = Some(starts);
         Ok(())
     }
 
