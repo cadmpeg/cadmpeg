@@ -14,6 +14,7 @@ mod loader;
 mod query;
 mod registry_view;
 mod reject_json;
+mod selection;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
