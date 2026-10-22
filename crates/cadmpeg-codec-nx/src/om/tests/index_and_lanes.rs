@@ -1275,7 +1275,7 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
 }
 
 #[test]
-fn om_delete_reference_field_requires_counted_canonical_nullable_slots() {
+fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
     fn read(
         record: crate::om::operation_record::OperationPayload<'_>,
     ) -> Option<crate::om::delete_references::DeleteReferences<()>> {

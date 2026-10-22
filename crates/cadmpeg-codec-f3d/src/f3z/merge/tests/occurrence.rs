@@ -85,7 +85,7 @@ fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
 }
 
 #[test]
-fn affine_world_transform_composes_outside_existing_body_transform() {
+fn occurrence_transform_composes_outside_existing_body_transform() {
     let outer = Transform::affine([
         [0.0, -1.0, 0.0, 20.0],
         [1.0, 0.0, 0.0, 30.0],

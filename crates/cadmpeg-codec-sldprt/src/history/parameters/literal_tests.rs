@@ -368,7 +368,7 @@ fn mixed_numeric_comparisons_preserve_integer_identity() {
 }
 
 #[test]
-fn expression_render_quotes_hyphenated_identifiers() {
+fn expression_rewrite_quotes_hyphenated_identifiers() {
     let id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#width").unwrap();
     let expression =
         cadmpeg_ir::features::Expression::from_spans("Width * 2", [(0..5, id.clone())]).unwrap();
