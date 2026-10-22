@@ -198,19 +198,14 @@ fn assert_compound_class_checksum(
 /// bits.
 const EPS_COMPOUND_GEOMETRY_ROUND_TRIP: f64 = 1.0e-12;
 
-/// Each curve's solved geometry as JSON, keyed by curve identity.
-fn curve_geometry_by_id(
-    ir: &cadmpeg_ir::CadIr,
-) -> std::collections::BTreeMap<String, serde_json::Value> {
+/// Each curve's solved geometry as JSON. A written archive mints its own curve
+/// identities and order, so curves pair by geometry.
+fn curve_geometry(ir: &cadmpeg_ir::CadIr) -> Vec<serde_json::Value> {
     ir.model
         .curves
         .iter()
         .map(|curve| {
-            (
-                curve.id.to_string(),
-                serde_json::to_value(curve.geometry.solved())
-                    .expect("solved curve geometry serializes"),
-            )
+            serde_json::to_value(curve.geometry.solved()).expect("solved curve geometry serializes")
         })
         .collect()
 }
@@ -265,7 +260,7 @@ fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() 
         let source = RhinoCodec
             .decode(&mut Cursor::new(input), &DecodeOptions::default())
             .expect("frozen compound source is admitted");
-        let expected = curve_geometry_by_id(source.ir());
+        let expected = curve_geometry(source.ir());
         for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
             let mut bytes = Vec::new();
             RhinoCodec
@@ -293,18 +288,17 @@ fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() 
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("compound geometry decodes");
-            let actual = curve_geometry_by_id(decoded.ir());
-            assert_eq!(
-                actual.keys().collect::<Vec<_>>(),
-                expected.keys().collect::<Vec<_>>(),
-                "{name} {version:?}: curve identities"
-            );
-            for (id, geometry) in &expected {
-                assert!(
-                    json_numbers_close(&actual[id], geometry),
-                    "{name} {version:?}: curve {id} geometry: {} != {geometry}",
-                    actual[id]
-                );
+            let actual = curve_geometry(decoded.ir());
+            assert_eq!(actual.len(), expected.len(), "{name} {version:?}: curve count");
+            let mut unmatched = actual;
+            for geometry in &expected {
+                let index = unmatched
+                    .iter()
+                    .position(|candidate| json_numbers_close(candidate, geometry))
+                    .unwrap_or_else(|| {
+                        panic!("{name} {version:?}: no written curve matches {geometry}")
+                    });
+                unmatched.swap_remove(index);
             }
         }
     }

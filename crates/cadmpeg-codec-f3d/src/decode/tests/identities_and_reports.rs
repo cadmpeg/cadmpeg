@@ -163,10 +163,15 @@ fn archive_entries_do_not_hide_new_model_entities() {
         "root.f3d",
         &[("part.f3d", crate::test_support::assembly_test::XREF_ROLE)],
     );
-    crate::test_support::with_decode_context(|scan_ctx| {
-        let scan =
-            crate::container::scan(scan_ctx, cadmpeg_core::decode::View::over_retained(&bytes))
-                .unwrap();
+    {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &DecodePolicy::service(),
+        )
+        .unwrap();
+        let scan = crate::container::scan(&scan_ctx, root).unwrap();
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = cadmpeg_core::decode::u64_from_index(scan.entries.len());
         crate::test_support::with_decode_policy(&policy, |ctx| {
@@ -187,5 +192,5 @@ fn archive_entries_do_not_hide_new_model_entities() {
             assert_eq!(limit.operation, "admit F3D entities");
             assert_eq!(Some(limit), ctx.resource_refusal());
         });
-    });
+    }
 }

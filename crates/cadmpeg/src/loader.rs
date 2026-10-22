@@ -53,17 +53,14 @@ pub(crate) fn load_artifact(
     match resolved {
         ResolvedSource::Native { codec, selection } => {
             let format_id = codec.id();
-            ctx.complete_input(&mut file, &mut prefix)?;
-            let result = codec.decode_with_context(&ctx, View::over_retained(&prefix));
+            let root = ctx.complete_root_input(&mut file, prefix)?;
+            let input_bytes = cadmpeg_core::decode::u64_from_index(root.window().len());
+            let result = codec.decode_with_context(&ctx, root);
             ctx.finish_session()?;
             let result = result.map_err(|failure| {
                 ApplicationError::from_decode_failure(path, format_id, failure)
             })?;
-            return Ok(LoadedDocument::decoded(
-                result,
-                selection,
-                cadmpeg_core::decode::u64_from_index(prefix.len()),
-            ));
+            return Ok(LoadedDocument::decoded(result, selection, input_bytes));
         }
         ResolvedSource::Cadir => {}
         ResolvedSource::Unrecognized => {
