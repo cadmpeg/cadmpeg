@@ -199,6 +199,47 @@ pub(crate) struct SphereExtent {
     pub(crate) sweep: AngularSweep,
 }
 
+impl SphereExtent {
+    /// The extent of a sphere with a negative radius in the frame of its
+    /// stored axis and reference direction. Its chart point is
+    /// `c + R(cos v(cos u·e1 + sin u·e2) + sin v·a)` with `R < 0`, which is
+    /// the point at latitude `−v` and longitude `u + π` of the sphere of
+    /// radius `|R|` in the same frame.
+    pub(crate) fn mirrored(self) -> Self {
+        let period = std::f64::consts::TAU;
+        let half = std::f64::consts::PI;
+        let latitude = AxialRange {
+            min: -self.latitude.max,
+            max: -self.latitude.min,
+            numeric_error: self.latitude.numeric_error,
+        };
+        if self.sweep.full {
+            return Self {
+                latitude,
+                sweep: self.sweep,
+            };
+        }
+        let mut intervals: Vec<[f64; 2]> = self
+            .sweep
+            .intervals
+            .iter()
+            .map(|[start, end]| {
+                let turned = start + half;
+                let back = if turned >= period { period } else { 0.0 };
+                [turned - back, end + half - back]
+            })
+            .collect();
+        intervals.sort_by(|left, right| left[0].total_cmp(&right[0]));
+        Self {
+            latitude,
+            sweep: AngularSweep {
+                intervals,
+                ..self.sweep
+            },
+        }
+    }
+}
+
 /// The latitude range and angular sweep of a sphere face under its region,
 /// or under the complement region when `complement` is set. A latitude
 /// circle or meridian that misses the boundary lies wholly in the region or
@@ -407,6 +448,34 @@ mod tests {
         assert_eq!(sweep.value, TAU);
         let sweep = union_on_circle(&[[0.0, PI], [-PI, 0.0]], TAU, 1.0e-9, 0.0);
         assert!(sweep.full);
+    }
+
+    #[test]
+    fn a_negative_radius_extent_turns_into_the_stored_frame() {
+        use super::{AngularSweep, AxialRange, SphereExtent};
+        use std::f64::consts::FRAC_PI_2;
+        let extent = SphereExtent {
+            latitude: AxialRange {
+                min: -FRAC_PI_2,
+                max: -0.5,
+                numeric_error: 0.0,
+            },
+            sweep: AngularSweep {
+                value: 2.0,
+                full: false,
+                intervals: vec![[0.0, 1.0], [5.0, 6.0]],
+                numeric_error: 0.0,
+            },
+        }
+        .mirrored();
+        assert_eq!(extent.latitude.min, 0.5);
+        assert_eq!(extent.latitude.max, FRAC_PI_2);
+        let expected = [[5.0 + PI - TAU, 6.0 + PI - TAU], [PI, 1.0 + PI]];
+        for (found, wanted) in extent.sweep.intervals.iter().zip(expected) {
+            assert!((found[0] - wanted[0]).abs() <= 1.0e-15, "{found:?}");
+            assert!((found[1] - wanted[1]).abs() <= 1.0e-15, "{found:?}");
+        }
+        assert_eq!(extent.sweep.value, 2.0);
     }
 
     #[test]

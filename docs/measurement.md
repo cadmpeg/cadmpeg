@@ -252,9 +252,9 @@ so the loops do not choose a side:
 | Other ring loops | `declared_orientation`: the region lies on the left of every loop, after each loop is reversed when the declared normal is reversed. |
 
 A loop that meets a sphere pole has a synthesized segment along the pole.
-The segment keeps the region on its left: it runs in `−u` at the north pole
-and in `+u` at the south pole, after the loop reversal for a reversed
-declared normal, by an amount in `[0, 2π)`. When the amount is within the
+The segment keeps the region on its left: it runs in `−u` at the pole
+`v = π/2` and in `+u` at the pole `v = −π/2`, after the loop reversal for a
+reversed declared normal, by an amount in `[0, 2π)`. When the amount is within the
 angular allowance of 0 or `2π`, the segment takes the nearest lift.
 
 On a torus the net shifts of the loops sum to zero, else the face is
@@ -353,8 +353,12 @@ is 0 when the apex is a member of the region. On an elliptic cone,
 `angular_sweep` is `sweep.unsupported-carrier` and `radius_range` is
 `carrier.elliptic-cone`.
 
-On a sphere `latitude_range` is the range of `v` over the face, in radians
-from the equator, and `angular_sweep` is about the sphere's axis. Both start
+On a sphere `latitude_range` is the range of the latitude over the face, in
+radians from the equator toward the carrier's `axis_direction`, and
+`angular_sweep` is about that axis, with its intervals from the carrier's
+`ref_direction`. A sphere with a negative stored radius has the chart point
+`c + R(cos v(cos u·e1 + sin u·e2) + sin v·a)` with `R < 0`: its latitude is
+`−v` and its longitude `u + π` in the stored frame. Both start
 from the boundary pieces' ranges; pole pieces carry no direction and do not
 enter the sweep. A latitude circle or meridian that misses the boundary lies
 wholly in the region or wholly out of it, so one membership test decides

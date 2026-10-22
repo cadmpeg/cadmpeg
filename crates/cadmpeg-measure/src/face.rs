@@ -1257,6 +1257,7 @@ fn sphere_readings(
     };
     let tolerance = input.angular.max(input.alpha / radius);
     let model = input.tau_b / radius;
+    let mirrored = matches!(chart, Chart::Sphere(sphere) if sphere.radius < 0.0);
     let reading = |complement: bool| -> Result<(Quantity<Range>, Quantity<Sweep>), ResourceLimit> {
         let found = settle(
             sphere_extent(
@@ -1269,6 +1270,7 @@ fn sphere_readings(
             )
             .map_err(|failure| failure.at(id)),
         )?;
+        let found = found.map(|extent| if mirrored { extent.mirrored() } else { extent });
         Ok(match found {
             Ok(extent) => (
                 measured(

@@ -612,6 +612,16 @@ impl Parameters<'_> {
                     radius,
                     diameter,
                     center: self.point(&["center"], sphere.center().get(), chart.center),
+                    axis_direction: self.direction(
+                        &["axis"],
+                        Some(*sphere.frame().axis().as_raw()),
+                        chart.axis,
+                    ),
+                    ref_direction: self.direction(
+                        &["ref_direction"],
+                        Some(*sphere.frame().reference().as_raw()),
+                        chart.e1,
+                    ),
                     normal_direction: if outward {
                         NormalDirection::Outward
                     } else {

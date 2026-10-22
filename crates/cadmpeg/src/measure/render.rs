@@ -601,11 +601,15 @@ fn parameters_text(out: &mut impl Write, parameters: &CarrierParameters) -> io::
             radius,
             diameter,
             center,
+            axis_direction,
+            ref_direction,
             normal_direction,
         } => {
             line(out, "radius", &scalar_text(radius, "mm"))?;
             line(out, "diameter", &scalar_text(diameter, "mm"))?;
             line(out, "center", &point_text(center, "mm"))?;
+            line(out, "axis", &point_text(axis_direction, ""))?;
+            line(out, "ref direction", &point_text(ref_direction, ""))?;
             line(out, "normal", &name(normal_direction))
         }
         CarrierParameters::Torus {

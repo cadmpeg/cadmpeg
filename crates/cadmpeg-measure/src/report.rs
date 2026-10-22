@@ -323,6 +323,10 @@ pub enum CarrierParameters {
         diameter: Quantity<Scalar>,
         /// Centre.
         center: Quantity<Point>,
+        /// Unit axis direction: latitude grows toward it.
+        axis_direction: Quantity<Point>,
+        /// Unit reference direction: longitude 0 of the angular sweep.
+        ref_direction: Quantity<Point>,
         /// Whether the carrier normal points away from the centre.
         normal_direction: NormalDirection,
     },
@@ -1150,11 +1154,15 @@ impl CarrierParameters {
                 radius,
                 diameter,
                 center,
+                axis_direction,
+                ref_direction,
                 ..
             } => {
                 visitor.visit(radius);
                 visitor.visit(diameter);
                 visitor.visit(center);
+                visitor.visit(axis_direction);
+                visitor.visit(ref_direction);
             }
             Self::Torus {
                 major_radius,

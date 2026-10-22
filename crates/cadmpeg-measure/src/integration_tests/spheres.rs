@@ -408,17 +408,24 @@ fn pole_vertex_loops_bound_the_whole_sphere() {
     );
 }
 
-/// The lune of the sphere `R = 10` between the meridians at `u = 0` and
-/// `u = π`, the half `y ≤ 0`: up the meridian at `u = 0`, down the meridian
-/// at `u = π`, with the face on the left. With `pole_edges` the loop meets
-/// each pole through a degenerate edge; otherwise the meridians meet at the
-/// pole vertices.
-fn half_lune(builder: &mut Builder, pole_edges: bool) -> [EdgeId; 2] {
+/// The lune of the sphere of radius 10 about the `z` axis between the
+/// meridians at longitude 0 and π, the half `y ≤ 0`: up the meridian at
+/// longitude 0, down the meridian at longitude π, with the face on the left
+/// of the outward normal. The carrier stores `radius`; a negative radius
+/// turns its normal inward, and the face sense is reversed to keep the
+/// face. With `pole_edges` the loop meets each pole through a degenerate
+/// edge; otherwise the meridians meet at the pole vertices.
+fn half_lune(builder: &mut Builder, pole_edges: bool, radius: f64) -> [EdgeId; 2] {
     let south = builder.vertex([0.0, 0.0, -10.0]);
     let north = builder.vertex([0.0, 0.0, 10.0]);
     let first = meridian(builder, 10.0, 0.0, [&south, &north]);
     let second = meridian(builder, 10.0, PI, [&south, &north]);
-    let sphere = builder.sphere(Frame::z_up([0.0; 3]), 10.0);
+    let sphere = builder.sphere(Frame::z_up([0.0; 3]), radius);
+    let sense = if radius > 0.0 {
+        Sense::Forward
+    } else {
+        Sense::Reversed
+    };
     let ring = if pole_edges {
         let north_pole = builder.bare_edge(&north, &north);
         let south_pole = builder.bare_edge(&south, &south);
@@ -434,7 +441,7 @@ fn half_lune(builder: &mut Builder, pole_edges: bool) -> [EdgeId; 2] {
             (second.clone(), Sense::Reversed),
         ]
     };
-    builder.face(&sphere, Sense::Forward, &[ring], false);
+    builder.face(&sphere, sense, &[ring], false);
     [first, second]
 }
 
@@ -453,7 +460,7 @@ fn assert_half_turn(sweep: &crate::value::Measured<crate::value::Sweep>, start: 
 fn a_lune_half_a_turn_wide_sweeps_half_a_turn() {
     for pole_edges in [false, true] {
         let mut builder = Builder::new();
-        half_lune(&mut builder, pole_edges);
+        half_lune(&mut builder, pole_edges, 10.0);
         let ir = builder.finish(BodyKind::Sheet);
         let report = measure(&ir, &faces());
         let face = only_face(&report);
@@ -486,7 +493,7 @@ fn a_lune_half_a_turn_wide_sweeps_half_a_turn() {
 #[test]
 fn a_half_ball_cut_through_the_axis_sweeps_half_a_turn() {
     let mut builder = Builder::new();
-    let [first, second] = half_lune(&mut builder, false);
+    let [first, second] = half_lune(&mut builder, false, 10.0);
     let plane = builder.plane([0.0; 3], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]);
     builder.face(
         &plane,
@@ -588,4 +595,90 @@ fn an_arc_through_a_pole_inside_its_interval_does_not_invert() {
         .expect("unavailable area");
     assert_eq!(area.reason(), UnavailableReason::BoundaryInversionFailed);
     assert_eq!(area.category(), Category::Input);
+}
+
+/// The cap `z ≥ 6` of [`cap`] on a carrier that stores the radius −10 with
+/// the face sense reversed: the same face, whose chart latitude is the
+/// negated latitude about the stored axis.
+#[test]
+fn a_negative_radius_cap_reads_its_latitude_about_the_stored_axis() {
+    let mut builder = Builder::new();
+    let vertex = builder.vertex([8.0, 0.0, 6.0]);
+    let circle = builder.circle(
+        [0.0, 0.0, 6.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        8.0,
+        &vertex,
+    );
+    let sphere = builder.sphere(Frame::z_up([0.0; 3]), -10.0);
+    builder.face(
+        &sphere,
+        Sense::Reversed,
+        &[vec![(circle, Sense::Forward)]],
+        true,
+    );
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &faces());
+    let face = only_face(&report);
+    let measures = face.measures();
+    assert_measured(measures.area(), 2.0 * PI * 100.0 * 0.4, 400.0);
+    assert_range(
+        measures.latitude_range().as_ref(),
+        [0.6_f64.asin(), FRAC_PI_2],
+        1.0,
+    );
+    let crate::report::CarrierParameters::Sphere {
+        axis_direction,
+        ref_direction,
+        ..
+    } = face.carrier().parameters()
+    else {
+        panic!("sphere parameters");
+    };
+    let direction = |quantity: &Quantity<crate::value::Point>| {
+        quantity.measured().expect("direction").value().value.get()
+    };
+    assert_eq!(
+        direction(axis_direction),
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0)
+    );
+    assert_eq!(
+        direction(ref_direction),
+        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)
+    );
+}
+
+/// The half lune `y ≤ 0` on carriers that store the radius 10 and −10:
+/// longitudes from the stored reference direction about the stored axis,
+/// `[π, 2π]` for the face and `[0, π]` for its complement, for both.
+#[test]
+fn a_negative_radius_lune_sweeps_from_the_stored_reference_direction() {
+    for radius in [10.0, -10.0] {
+        let mut builder = Builder::new();
+        half_lune(&mut builder, false, radius);
+        let ir = builder.finish(BodyKind::Sheet);
+        let report = measure(&ir, &faces());
+        let measures = only_face(&report).measures();
+        assert_measured(measures.area(), 200.0 * PI, 400.0);
+        let sweep = measures
+            .angular_sweep()
+            .as_ref()
+            .and_then(Quantity::measured)
+            .expect("sweep");
+        assert_half_turn(sweep, PI);
+        let [candidate] = sweep.candidates() else {
+            panic!("one sweep candidate");
+        };
+        let [[low, high]] = candidate.value().intervals.as_slice() else {
+            panic!("one interval");
+        };
+        assert!(low.get().abs() <= TEST_ABSOLUTE_FLOOR, "{radius}");
+        assert!((high.get() - PI).abs() <= TEST_ABSOLUTE_FLOOR, "{radius}");
+        assert_range(
+            measures.latitude_range().as_ref(),
+            [-FRAC_PI_2, FRAC_PI_2],
+            1.0,
+        );
+    }
 }
