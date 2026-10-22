@@ -255,7 +255,7 @@ The sense token is relative to the native surface carrier. Decoding a reversed s
 
 **Loop (61 B):** `chunk[3]` @+34 = next_loop (`-1` terminates the chain), `chunk[4]` @+43 = first_coedge, `chunk[5]` @+52 = owner_face. Loop order is defined by the `next_loop` references, not stream position; the first loop is not an outer-loop marker.
 
-An untrimmed closed analytic face stores `-1` in `chunk[4]` (first_loop) and owns no loops, coedges, edges, or vertices. Full spheres and tori use this loopless form; the closed surface carries no seam, pole, or periphery loop and no degenerate edge. A `degenerate_curve` never bounds a loopless closed face; it occurs only as an edge curve at a cone apex or sphere pole of a trimmed face, or nested inside a procedural-surface construction.
+An untrimmed closed analytic face stores `-1` in `chunk[4]` (first_loop) and owns no loops, coedges, edges, or vertices. Full spheres and tori use this loopless form; the closed surface carries no seam, pole, or periphery loop and no degenerate edge. A single-sided loopless face bounds the volume on one side of its closed surface, so a body whose faces are all single-sided loopless faces is a solid. A double-sided loopless face is a sheet. A `degenerate_curve` never bounds a loopless closed face; it occurs only as an edge curve at a cone apex or sphere pole of a trimmed face, or nested inside a procedural-surface construction.
 
 **CoEdge (100 B):**
 
