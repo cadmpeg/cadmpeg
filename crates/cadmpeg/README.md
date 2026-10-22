@@ -210,6 +210,38 @@ cadmpeg diff before.f3d after.f3d --json
 It reports unit, tolerance, arena membership, and modified entity fields.
 Exit status `1` indicates a difference.
 
+## Measure models
+
+`measure` reads a native CAD file or a CADIR document and measures it in
+model space:
+
+```sh
+cadmpeg measure part.step
+cadmpeg measure part.step --faces --kind cylinder --tsv
+cadmpeg measure part.step --face face#46 --json
+```
+
+Without a face or edge selector, it prints one row per body and a document
+block. `--face ID` and `--edge ID` print rows for those entities; `--faces`
+and `--edges` print a row for every face or edge in scope. `--body ID`
+limits the scope. `--kind KIND[,KIND...]` and `--radius RANGE` (`MIN..MAX`,
+`MIN..`, `..MAX`, or `R`) filter face rows. An ID is an exact ID or a unique
+ID suffix, as for `query item`.
+
+A face row gives the carrier kind and parameters, the trimmed area, the
+boundary and seam lengths, the box, the loop roles and the orientation
+reading. Every value has a unit, a method, a numeric error and a model
+uncertainty, or is unavailable with a pinned reason code and a category.
+[`docs/measurement.md`][measurement] is the contract of the values, the
+reason codes and the caveats.
+
+`--tsv` prints one table with units in the column names: the body table,
+the face table, or the edge table. It refuses a face and an edge selection
+together. `--json` prints the versioned envelope; `--report FILE` (also `-o`
+and `--output`) writes it to a file. `--limits service` selects the smaller
+work allowance of a measurement pass. A CADIR document decoded at container
+depth holds no geometry; `measure` refuses it with `insufficient_depth`.
+
 ## Inputs and outputs
 
 The built-in codecs recognize `.f3d`, `.FCStd`, `.ipt`, `.iam`, `.sldprt`,
@@ -254,9 +286,11 @@ cadmpeg convert bracket.f3d -o bracket.step \
 
 The command report contains decode, check, and export sections when those
 stages ran. `inspect --json`, `inspect container --json`, `check --json`,
-and `diff --json` write versioned JSON directly to standard output.
+`diff --json`, and `measure --json` write versioned JSON directly to standard
+output.
 
-`inspect`, `check`, and `diff` produce no artifact beside the report, so they
+`inspect`, `check`, `diff`, and `measure` produce no artifact beside the
+report, so they
 also accept `-o` and `--output` for the report path. Every command refuses to
 replace an existing report or artifact unless `--force` is present. Check
 findings live under `.check_report.findings`; `cadmpeg check` prints the
@@ -327,19 +361,23 @@ and `-` reads standard input.
 
 ## Exit status
 
-Verdict commands exit 1 on a negative verdict. Other commands do not use 1.
-Exit 2 is operational on every command.
+Verdict commands exit 1 on a negative verdict. `dump` and `measure` exit 1
+on a semantic refusal of the input. Exit 2 is operational on every command.
 
 - `0`: the requested operation completed; a verdict command had a positive
   verdict when it ran.
 - `1`: negative verdict. Verdict commands are `convert` (refused write),
   `check` (failed check), `diff` (models differ), and `inspect cmp` (files
   differ). `inspect cmp` exits 1 if the files are not identical, including
-  length-only (Unix cmp contract).
+  length-only (Unix cmp contract). `dump` and `measure` exit 1 on a semantic
+  refusal of the input: `strict_decode_rejected` under `--no-salvage`,
+  `unsupported_dialect`, or `insufficient_depth`.
 - `2`: operational error, including invalid arguments, unrecognized input,
   decode or encode failure, and file-system errors.
 
-Non-verdict commands are `dump`, `query`, and `inspect` (except `inspect cmp`).
+Non-verdict commands are `dump`, `query`, `measure`, and `inspect` (except
+`inspect cmp`). For `measure`, an unavailable quantity is data, not a
+failure.
 
 Run `cadmpeg help <command>` for the complete options of a command.
 
@@ -356,5 +394,6 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [architecture]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/architecture.md
 [contributing]: https://github.com/cadmpeg/cadmpeg/blob/main/CONTRIBUTING.md
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
+[measurement]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/measurement.md
 [repo]: https://github.com/cadmpeg/cadmpeg
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md

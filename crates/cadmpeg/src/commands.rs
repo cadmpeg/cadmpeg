@@ -39,7 +39,7 @@ use crate::DecodeArgs;
 
 type CommandResult<T> = std::result::Result<T, ApplicationError>;
 
-fn print_load_notice(document: &LoadedDocument) {
+pub(crate) fn print_load_notice(document: &LoadedDocument) {
     let LoadOrigin::Decoded {
         selection: Selection::Detected { confidence },
         report,
@@ -104,7 +104,7 @@ fn write_refusal<P: reporting::ReportBody>(
 
 /// Report any refusal returned by a command, including early admission and
 /// resource failures. Report I/O cannot replace the original exit status.
-fn report_failure<T>(
+pub(crate) fn report_failure<T>(
     result: CommandResult<T>,
     input: &Path,
     output: Option<&FileDestination>,

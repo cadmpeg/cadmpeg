@@ -804,6 +804,15 @@ pub struct CaveatCount {
     pub(crate) faces: usize,
 }
 
+accessors!(CaveatCount {
+    /// The caveat code.
+    code: CaveatCode;
+    /// The category of the code.
+    category: Category;
+    /// The number of member faces that carry the caveat.
+    faces: usize;
+});
+
 /// One body row.
 #[derive(Debug, Clone, Serialize)]
 pub struct BodyMeasures {
@@ -935,6 +944,48 @@ accessors!(DocumentMeasures {
     /// The work the pass used.
     work: WorkReport;
 });
+
+/// Collects the reason codes of a row's unavailable values.
+#[derive(Default)]
+struct Codes(std::collections::BTreeSet<&'static str>);
+
+impl QuantityVisitor for Codes {
+    fn visit<T>(&mut self, quantity: &Quantity<T>) {
+        if let Some(unavailable) = quantity.unavailable() {
+            self.0.insert(unavailable.reason().code());
+        }
+    }
+}
+
+impl FaceMeasures {
+    /// The distinct reason codes of the row's unavailable values, sorted.
+    #[must_use]
+    pub fn unavailable_codes(&self) -> Vec<&'static str> {
+        let mut codes = Codes::default();
+        self.visit(&mut codes);
+        codes.0.into_iter().collect()
+    }
+}
+
+impl EdgeMeasures {
+    /// The distinct reason codes of the row's unavailable values, sorted.
+    #[must_use]
+    pub fn unavailable_codes(&self) -> Vec<&'static str> {
+        let mut codes = Codes::default();
+        self.visit(&mut codes);
+        codes.0.into_iter().collect()
+    }
+}
+
+impl BodyMeasures {
+    /// The distinct reason codes of the row's unavailable values, sorted.
+    #[must_use]
+    pub fn unavailable_codes(&self) -> Vec<&'static str> {
+        let mut codes = Codes::default();
+        self.visit(&mut codes);
+        codes.0.into_iter().collect()
+    }
+}
 
 impl CarrierParameters {
     pub(crate) fn visit(&self, visitor: &mut impl QuantityVisitor) {

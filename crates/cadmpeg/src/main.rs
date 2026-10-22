@@ -11,6 +11,7 @@ mod commands;
 mod input_format;
 mod inspect;
 mod loader;
+mod measure;
 mod query;
 mod registry_view;
 mod reject_json;
@@ -36,8 +37,9 @@ use crate::application::transcoder::{ConversionDestinations, DestinationPolicy, 
     after_help = "Examples:\n  \
                   cadmpeg convert part.sldprt -o part.step\n  \
                   cadmpeg inspect part.sldprt\n  \
-                  cadmpeg diff a.sldprt b.step\n\n\
-                  Exit codes: 0 success, 1 negative verdict (failed check, refused write, files differ), 2 operational error."
+                  cadmpeg diff a.sldprt b.step\n  \
+                  cadmpeg measure part.step\n\n\
+                  Exit codes: 0 success, 1 negative verdict (failed check, refused write, models differ) or a semantic refusal of the input, 2 operational error."
 )]
 struct Cli {
     /// Operation to perform.
@@ -62,6 +64,14 @@ struct DecodeArgs {
     /// CADIR only and refuses every other output format.
     #[arg(long)]
     container_only: bool,
+    #[command(flatten)]
+    policy: DecodePolicyArgs,
+}
+
+/// The decode policy half of [`DecodeArgs`], without the container-only
+/// depth switch.
+#[derive(Debug, Clone, Args)]
+struct DecodePolicyArgs {
     /// Fail if required content cannot be decoded. Salvage is off.
     #[arg(long)]
     no_salvage: bool,
@@ -91,16 +101,23 @@ impl DecodeArgs {
 
     /// Options for a decode at `depth`, or a container-only one on request.
     fn options_at(&self, depth: cadmpeg_core::decode::DecodeDepth) -> cadmpeg_ir::DecodeOptions {
+        let depth = if self.container_only {
+            cadmpeg_core::decode::DecodeDepth::Container
+        } else {
+            depth
+        };
+        self.policy.options_at(depth)
+    }
+}
+
+impl DecodePolicyArgs {
+    /// Options for a decode at `depth`.
+    fn options_at(&self, depth: cadmpeg_core::decode::DecodeDepth) -> cadmpeg_ir::DecodeOptions {
         let limits = self.limits.limits(self.max_input_bytes);
         let mode = if self.no_salvage {
             cadmpeg_core::decode::DecodeMode::Strict
         } else {
             cadmpeg_core::decode::DecodeMode::Salvage
-        };
-        let depth = if self.container_only {
-            cadmpeg_core::decode::DecodeDepth::Container
-        } else {
-            depth
         };
         cadmpeg_ir::DecodeOptions {
             depth,
@@ -110,6 +127,14 @@ impl DecodeArgs {
 }
 
 impl LimitProfile {
+    /// The measurement work profile of this resource profile.
+    const fn work_profile(self) -> cadmpeg_measure::WorkProfile {
+        match self {
+            LimitProfile::Desktop => cadmpeg_measure::WorkProfile::Desktop,
+            LimitProfile::Service => cadmpeg_measure::WorkProfile::Service,
+        }
+    }
+
     const fn limits(self, max_input_bytes: Option<u64>) -> cadmpeg_core::decode::ResourceLimits {
         let mut limits = match self {
             LimitProfile::Desktop => cadmpeg_core::decode::ResourceLimits::desktop(),
@@ -179,7 +204,7 @@ enum Command {
         decode: DecodeArgs,
     },
     /// List the formats this build reads and writes.
-    #[command(display_order = 7)]
+    #[command(display_order = 8)]
     Formats,
     /// List the dialects of each format, and what this build does with them.
     ///
@@ -187,7 +212,7 @@ enum Command {
     /// dialects exist, how well each is read, and which are write targets of
     /// this build's encoders.
     #[command(
-        display_order = 8,
+        display_order = 9,
         after_help = "Examples:\n  cadmpeg dialects\n  cadmpeg dialects rhino"
     )]
     Dialects {
@@ -215,7 +240,7 @@ enum Command {
     ///
     /// `convert` checks and writes another CAD format. Use dump when you want the JSON.
     #[command(
-        display_order = 5,
+        display_order = 6,
         after_help = "Examples:\n  cadmpeg dump part.sldprt -o part.cadir.json"
     )]
     Dump {
@@ -234,7 +259,7 @@ enum Command {
     ///
     /// Reads JSON from `--report`, from dump, or from a decode sidecar.
     #[command(
-        display_order = 6,
+        display_order = 7,
         subcommand_help_heading = "Views",
         after_help = "Examples:\n  cadmpeg query losses part.convert.json\n  cadmpeg query counts part.cadir.json\n  cadmpeg query graph part.cadir.json model.features ID\n  cadmpeg query join part.cadir.json model.features native.rhino.unknowns --left-key native_ref --right-key id"
     )]
@@ -263,6 +288,37 @@ enum Command {
         input_args: InputArgs,
         #[command(flatten)]
         decode: DecodeArgs,
+    },
+    /// Measure a CAD file: carrier parameters, areas, lengths and boxes.
+    ///
+    /// Accepts a native CAD file or CADIR JSON. Without a face or edge
+    /// selector, prints one row per body. Every quantity is measured with its
+    /// method and error terms, or unavailable with a reason.
+    #[command(
+        mut_arg("output", |arg| arg.long("report").visible_alias("output").help("Write a JSON report to this file")),
+        display_order = 5,
+        after_help = "Examples:\n  cadmpeg measure part.step\n  cadmpeg measure part.step --faces --kind cylinder --tsv\n  cadmpeg measure part.step --face face#46 --json\n\n\
+                      measure is not a verdict: exit status 0 means the measurement completed,\n\
+                      and an unavailable quantity is data. Exit status 1 is a semantic refusal\n\
+                      of the input. `cadmpeg diff A B --geometry` compares two models."
+    )]
+    Measure {
+        #[command(flatten)]
+        file: inspect::FileArg,
+        #[command(flatten)]
+        selection: measure::SelectionArgs,
+        /// Write JSON to standard output.
+        #[arg(long, conflicts_with = "tsv")]
+        json: bool,
+        /// Write one tab-separated table to standard output.
+        #[arg(long)]
+        tsv: bool,
+        #[command(flatten)]
+        report: OptionalFileDestination,
+        #[command(flatten)]
+        input_args: InputArgs,
+        #[command(flatten)]
+        decode: DecodePolicyArgs,
     },
     /// Compare two CAD files.
     ///
@@ -427,6 +483,32 @@ fn main() -> ExitCode {
             )
         }
         .map(|()| ExitCode::SUCCESS),
+        Command::Measure {
+            file,
+            selection,
+            json,
+            tsv,
+            report,
+            input_args,
+            decode,
+        } => measure::measure(
+            &inputs,
+            &measure::MeasureCommand {
+                path: file.path(),
+                selection: &selection,
+                output: if json {
+                    measure::Output::Json
+                } else if tsv {
+                    measure::Output::Tsv
+                } else {
+                    measure::Output::Text
+                },
+                report: report.0.as_ref(),
+                forced: input_args.input_format,
+                options: decode.options_at(cadmpeg_core::decode::DecodeDepth::Geometry),
+                profile: decode.limits.work_profile(),
+            },
+        ),
         Command::Formats => print_formats(&inputs)
             .map(|()| ExitCode::SUCCESS)
             .map_err(application::refusal::ApplicationError::from),

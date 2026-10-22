@@ -204,6 +204,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-registry",
  "cadmpeg-test-support",
  "clap",
