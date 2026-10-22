@@ -1027,7 +1027,6 @@ fn decode_container<'a>(
                 .ok_or_else(|| {
                     CodecError::malformed("Inventor appearance composition size overflows")
                 })?;
-            ctx.retain_bytes(additional, "Inventor staged appearance composition")?;
             ir.model
                 .appearances
                 .try_reserve(part_model.appearances.len())
@@ -1052,7 +1051,6 @@ fn decode_container<'a>(
                 .ok_or_else(|| {
                     CodecError::malformed("Inventor asset composition size overflows")
                 })?;
-            ctx.retain_bytes(additional, "Inventor staged asset composition")?;
             ir.model
                 .assets
                 .try_reserve(part_model.assets.len())
@@ -1088,7 +1086,6 @@ fn decode_container<'a>(
             .checked_mul(size_of::<cadmpeg_ir::NativeRecord>())
             .map(cadmpeg_core::decode::u64_from_index)
             .ok_or_else(|| CodecError::malformed("Inventor part arena size overflows"))?;
-        ctx.retain_bytes(additional, "Inventor shared part arena composition")?;
         destination.try_reserve(records.len()).map_err(|_| {
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
