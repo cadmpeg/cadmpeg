@@ -20,8 +20,7 @@ mod levels;
 mod rescope;
 
 pub use helper::{
-    DecodeParts, DeferredRecordPruning, FinalizedPartOutput, ParserPartOutput,
-    PartDependencyPruning, PartFinalization, PartOutput,
+    DecodeParts, FinalizedPartOutput, ParserPartOutput, PartDependencyPruning, PartOutput,
 };
 pub use rescope::PartIdentityMap;
 
