@@ -20416,8 +20416,14 @@
               "angle": -0.08726646259971647,
               "definition": "draft",
               "faces": {
-                "kind": "native",
-                "value": "fcstd:native:property#Draft:Base"
+                "kind": "resolved",
+                "value": {
+                  "faces": [
+                    "fcstd:model:face#DraftBase:Shape:DraftBase.Shape.brp:10",
+                    "fcstd:model:face#DraftBase:Shape:DraftBase.Shape.brp:20"
+                  ],
+                  "native": "fcstd:native:property#Draft:Base"
+                }
               },
               "outward": true
             },
@@ -21165,8 +21171,13 @@
             "mode": "skin",
             "outward": true,
             "removed_faces": {
-              "kind": "native",
-              "value": "fcstd:native:property#Thickness:Faces"
+              "kind": "resolved",
+              "value": {
+                "faces": [
+                  "fcstd:model:face#ThicknessBase:Shape:ThicknessBase.Shape.brp:32"
+                ],
+                "native": "fcstd:native:property#Thickness:Faces"
+              }
             },
             "resolve_intersections": true,
             "thickness": 1.25

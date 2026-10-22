@@ -5790,8 +5790,13 @@
               "groups": [
                 {
                   "edges": {
-                    "kind": "native",
-                    "value": "fcstd:native:property#Fillet:Base"
+                    "kind": "resolved",
+                    "value": {
+                      "edges": [
+                        "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:2"
+                      ],
+                      "native": "fcstd:native:property#Fillet:Base"
+                    }
                   },
                   "radius": {
                     "kind": "constant",
