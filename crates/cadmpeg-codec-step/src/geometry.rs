@@ -325,6 +325,9 @@ fn pcurve_carrier(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
         }
         PcurveGeometry::Transformed(placed) => {
             let transform = placed.transform();
+            if let Some(placed) = bake::placed_pcurve(*transform, placed.basis()) {
+                return pcurve(e, &placed);
+            }
             if !similarity_transform_2d(transform) {
                 return None;
             }
@@ -368,8 +371,11 @@ fn pcurve_carrier(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
 /// The half-turn maps each `(u, v)` to `(-u, -v)` without changing the curve's
 /// own parameter or sense.
 pub(crate) fn pcurve_on_reversed_cone(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
+    let reversal = bake::half_turn()?;
+    if let Some(placed) = bake::placed_pcurve(reversal, geometry) {
+        return pcurve(e, &placed);
+    }
     let basis = pcurve(e, geometry)?;
-    let reversal = Transform2::affine([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])?;
     let operator = transformation_operator_2d(e, reversal)?;
     Some(e.emit("CURVE_REPLICA", &format!("'',{basis},{operator}")))
 }
@@ -434,12 +440,23 @@ pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> &SolvedSurfaceGeometry
 }
 
 /// Emit an analytic or NURBS surface carrier.
+///
+/// A placed carrier is written in its own placed record when
+/// [`bake::placed_surface`] can place it, and otherwise as `SURFACE_REPLICA`
+/// records over its basis.
 pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     e.try_geometry(|e| surface_carrier(e, g))
 }
 
 fn surface_carrier(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     let (placements, basis) = placed_surface(g);
+    if !placements.is_empty() {
+        if let Some(placed) =
+            bake::chain(&placements).and_then(|transform| bake::placed_surface(transform, basis))
+        {
+            return basis_surface(e, &placed);
+        }
+    }
     let mut reference = basis_surface(e, basis)?;
     // The chain is emitted from the basis outwards, so each `SURFACE_REPLICA`
     // references the record written for the placement inside it.
@@ -567,12 +584,23 @@ fn zero_angle_cone(e: &mut Emitter, cone: &ConeSurface) -> Option<Ref> {
 }
 
 /// Emit an analytic or NURBS 3D curve carrier.
+///
+/// A placed carrier is written in its own placed record when
+/// [`bake::placed_curve`] can place it, and otherwise as `CURVE_REPLICA`
+/// records over its basis.
 pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
     e.try_geometry(|e| curve_carrier(e, g))
 }
 
 fn curve_carrier(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
     let (placements, basis) = placed_curve(g);
+    if !placements.is_empty() {
+        if let Some(placed) =
+            bake::chain(&placements).and_then(|transform| bake::placed_curve(transform, basis))
+        {
+            return basis_curve(e, &placed);
+        }
+    }
     let mut reference = basis_curve(e, basis)?;
     // The chain is emitted from the basis outwards, so each `CURVE_REPLICA`
     // references the record written for the placement inside it.
@@ -795,5 +823,6 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
     })
 }
 
+mod bake;
 #[cfg(test)]
 mod support_tests;

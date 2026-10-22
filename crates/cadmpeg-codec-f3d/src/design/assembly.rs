@@ -108,7 +108,7 @@ impl AssemblyScopeGeneration {
             748 => ((class_tag == "430" && paired_class_tag == "262").then_some(Standard), Some((8, 4, 8)), Some([366, 377])),
             772 => (Some(Axial), Some((10, 8, 10)), None),
             806 | 861 => (Some(CompactWide), Some((4, 0, 4)), Some([534, 545])),
-            850 => (Some(CompactWide), Some((4, 0, 4)), Some([530, 541])),
+            850 => (Some(CompactWide), Some((6, 0, 4)), Some([556, 567])),
             945 => (Some(Wide), Some((4, 0, 4)), Some([541, 552])),
             length if length == u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
                 (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
@@ -310,6 +310,7 @@ pub(crate) fn project_assembly_joints(
     let mut unprojected = 0_usize;
     let mut undecoded_motions = std::collections::BTreeSet::new();
     let mut undecoded_motion_count = 0_usize;
+    let mut paired_joints = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -317,6 +318,17 @@ pub(crate) fn project_assembly_joints(
         let motion = scope_joint_motion(scope, stream, motions);
         match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion) {
             Ok(Some((joint, undecoded))) => {
+                let paired = scope
+                    .assembly_alignment()
+                    .and_then(|alignment| alignment.operand_path_refs())
+                    .is_some_and(|paths| {
+                        paths
+                            .iter()
+                            .any(|path| !path.paired_occurrence_keys().is_empty())
+                    });
+                if paired {
+                    paired_joints += 1;
+                }
                 if let Some(reason) = undecoded {
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
@@ -332,6 +344,11 @@ pub(crate) fn project_assembly_joints(
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
         losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
             "{undecoded_motion_count} Design assembly joint(s) were projected as fixed: their motion does not map to a joint kind ({reasons})."
+        )));
+    }
+    if paired_joints != 0 {
+        losses.push(F3dLossCode::AssemblyOperandPathPairsNative.note(format!(
+            "{paired_joints} projected Design assembly joint(s) have operand paths with occurrence identity pairs whose effect on the joint is not known; the pairs are retained natively."
         )));
     }
     if unprojected != 0 {
@@ -999,7 +1016,7 @@ mod tests {
                     .collect(),
             )
         };
-        let scopes = |typed: bool| {
+        let scopes = |typed: bool, paired: bool| {
             let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
                 reference_record_index: index,
                 reference_offset: 0,
@@ -1009,8 +1026,26 @@ mod tests {
                     .unwrap(),
                 transform_offset: 0,
             });
-            let qualifiers = [11, 21].map(|index| DesignAssemblyOperandQualifier::OccurrencePath {
-                path: path(index, typed).unwrap(),
+            let qualifiers = [11, 21].map(|index| {
+                let mut path = path(index, typed).unwrap();
+                if paired {
+                    path = path
+                        .with_paired_occurrence_keys(vec![
+                            crate::records::identity::Located {
+                                value: "43".to_owned().try_into().unwrap(),
+                                offset: 400,
+                            },
+                            crate::records::identity::Located {
+                                value: "33333333-3333-3333-3333-33333333333c"
+                                    .to_owned()
+                                    .try_into()
+                                    .unwrap(),
+                                offset: 410,
+                            },
+                        ])
+                        .unwrap();
+                }
+                DesignAssemblyOperandQualifier::OccurrencePath { path }
             });
             let mut scope = DesignParameterScope::empty(
                 "f3d:Design/BulkStream.dat:design-parameter-scope#3",
@@ -1033,9 +1068,21 @@ mod tests {
             vec![scope]
         };
         let inserts = crate::design::components::ComponentInserts::default();
-        let projection = super::project_assembly_joints(&scopes(true), &[], &inserts, &[]);
+        let projection = super::project_assembly_joints(&scopes(true, false), &[], &inserts, &[]);
         assert_eq!(projection.joints.len(), 1);
         assert!(projection.losses.is_empty());
+
+        // Occurrence identity pairs keep the joint and say it with a loss.
+        let projection = super::project_assembly_joints(&scopes(true, true), &[], &inserts, &[]);
+        assert_eq!(projection.joints.len(), 1);
+        assert_eq!(
+            projection
+                .losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            [crate::loss::F3dLossCode::AssemblyOperandPathPairsNative.kind()]
+        );
 
         // The class tag alone admits no external path and no untyped arity.
         assert!(path(11, false).is_err());
@@ -1385,7 +1432,7 @@ mod tests {
             (748, 8, (4, 8)),
             (705, 6, (4, 6)),
             (806, 4, (0, 4)),
-            (850, 4, (0, 4)),
+            (850, 6, (0, 4)),
             (861, 4, (0, 4)),
             (945, 4, (0, 4)),
             (671, 6, (4, 6)),
@@ -1397,7 +1444,7 @@ mod tests {
                 Some(expected)
             );
         }
-        for (frame_length, locators) in [(806, [534, 545]), (850, [530, 541]), (861, [534, 545])] {
+        for (frame_length, locators) in [(806, [534, 545]), (850, [556, 567]), (861, [534, 545])] {
             assert_eq!(
                 super::AssemblyScopeGeneration::new(frame_length, "", "")
                     .operand_path_locator_offsets(),
