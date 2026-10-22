@@ -180,11 +180,11 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 
 ### DE-02. Compound parameter units and function expressions
 
-**Question.** Which PmDc unit graphs and function records define compound dimensions, derived units, offsets, and function-call expression text?
+**Question.** Which PmDc unit graphs define compound dimensions, derived units, and offsets, and which functions do function-call codes other than 1, 2, and 3 name?
 
-**Known.** A scalar parameter unit with one supported numerator, no denominator, and no derived-unit reference transfers with exact length, angle, or dimensionless semantics. Literal, parameter-reference, unary, and binary arithmetic expression records form a closed ordered graph.
+**Known.** A scalar parameter unit with one supported numerator, no denominator, and no derived-unit reference transfers with exact length, angle, or dimensionless semantics. Literal, parameter-reference, unary, and binary arithmetic expression records form a closed ordered graph. Function-call codes 1, 2, and 3 are cosine, sine, and tangent.
 
-**Need.** Compound or derived units and function calls require exact dimensional and textual semantics before neutral transfer.
+**Need.** Compound or derived units and other function codes require exact dimensional and textual semantics before neutral transfer.
 
 ### DE-03. Additional sketch geometry and relations
 
