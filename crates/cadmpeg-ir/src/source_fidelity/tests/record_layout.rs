@@ -43,10 +43,9 @@ fn captures_keep_literal_record_extents_and_innermost_read_intervals() {
         .unwrap();
     assert_eq!(values, (513, 1541, 13));
     let mut fidelity = SourceFidelity::default();
-    for capture in ctx.take_record_captures().unwrap() {
-        let (id, layout) = RecordLayout::from_capture(capture);
-        fidelity.insert_record_layout(id, layout).unwrap();
-    }
+    fidelity
+        .install_record_captures(&ctx, |_, _| Ok(()))
+        .unwrap();
     let outer = &fidelity.record_layout()["outer"];
     let inner = &fidelity.record_layout()["inner"];
     assert_eq!(
@@ -79,14 +78,18 @@ fn payload_copy_retains_exact_bytes_without_claiming_semantic_reads() {
             ))
         })
         .unwrap();
-    let capture = ctx.take_record_captures().unwrap().pop().unwrap();
-    let (id, mut layout) = RecordLayout::from_capture(capture);
-    layout.insert_pointer("next".into(), 9).unwrap();
-    layout.insert_payload("opaque".into(), payload).unwrap();
+    let mut fidelity = SourceFidelity::default();
+    let mut payload = Some(payload);
+    fidelity
+        .install_record_captures(&ctx, |id, layout| {
+            assert_eq!(id, "record");
+            layout.insert_pointer("next".into(), 9)?;
+            layout.insert_payload("opaque".into(), payload.take().unwrap())
+        })
+        .unwrap();
+    let layout = &fidelity.record_layout()["record"];
     assert_eq!(layout.reads()["file"], [0..2]);
     assert_eq!(layout.payloads()["opaque"].as_ref(), &[0xaa, 0xbb, 0, 0xff]);
-    let mut fidelity = SourceFidelity::default();
-    fidelity.insert_record_layout(id, layout).unwrap();
     let wire = serde_json::to_value(&fidelity).unwrap();
     assert_eq!(
         wire["record_layout"]["record"],
@@ -257,11 +260,15 @@ fn duplicate_insertion_and_append_preserve_every_existing_fidelity_table() {
 
 #[test]
 fn composition_renames_streams_without_changing_offsets_or_payloads() {
+    let prefixed = |layout: RecordLayout, prefix: &str| {
+        let mut fidelity = SourceFidelity::default();
+        fidelity
+            .prefix_record_layouts([("record".to_owned(), layout)], prefix)
+            .unwrap();
+        fidelity.record_layout()["record"].clone()
+    };
     let original = layout();
-    let mapped = original
-        .clone()
-        .with_stream_prefix("f3d:xref/child/")
-        .unwrap();
+    let mapped = prefixed(original.clone(), "f3d:xref/child/");
     assert_eq!(mapped.stream(), "f3d:xref/child/file");
     assert_eq!(mapped.reads()["f3d:xref/child/file"], [4..6, 12..13]);
     assert_eq!(mapped.offset(), 4);
@@ -271,10 +278,10 @@ fn composition_renames_streams_without_changing_offsets_or_payloads() {
     let mut value = wire();
     value["reads"]["second"] = json!([{"start":1,"end":3}]);
     let two_streams: RecordLayout = serde_json::from_value(value).unwrap();
-    let mapped = two_streams.with_stream_prefix("f3d:xref/child/").unwrap();
+    let mapped = prefixed(two_streams, "f3d:xref/child/");
     assert_eq!(mapped.reads()["f3d:xref/child/second"], [1..3]);
     assert_eq!(mapped.reads().len(), 2);
-    assert_eq!(layout().with_stream_prefix("").unwrap(), original);
+    assert_eq!(prefixed(layout(), ""), original);
 }
 
 #[cfg(feature = "schema")]

@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{ByteRange, SourceOrigin};
-use cadmpeg_ir::source_fidelity::RecordLayout;
+use cadmpeg_ir::SourceFidelity;
 
 use super::*;
 
@@ -46,9 +46,12 @@ fn direct_block_view_retains_real_compressed_extent_and_exact_payload_bytes() {
         },
     )
     .unwrap();
-    let captures = ctx.take_record_captures().unwrap();
-    assert_eq!(captures.len(), 1);
-    let (id, layout) = RecordLayout::from_capture(captures.into_iter().next().unwrap());
+    let mut fidelity = SourceFidelity::default();
+    fidelity
+        .install_record_captures(&ctx, |_, _| Ok(()))
+        .unwrap();
+    assert_eq!(fidelity.record_layout().len(), 1);
+    let (id, layout) = fidelity.record_layout().iter().next().unwrap();
     assert_eq!(id, "sldprt:test:block-value#0");
     assert_eq!((layout.offset(), layout.byte_len()), (1, 3));
     assert_eq!(layout.stream(), stream);
