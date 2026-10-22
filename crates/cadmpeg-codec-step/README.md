@@ -7,7 +7,7 @@ the requested [`StepSchema`] from the encoder catalog. [`StepCodec`] implements 
 
 <!-- generated: capability step -->
 
-Support: L9 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
+Support: L8 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21)).
 
 <!-- /generated: capability step -->
 

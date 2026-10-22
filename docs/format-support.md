@@ -57,7 +57,7 @@ edit without a re-render fails the gate.
 | Siemens NX `.prt`                                 | L1    |
 | CATIA V5 `.CATPart`                               | L1    |
 | Creo Parametric `.prt`                            | L1    |
-| STEP Part 21                                      | L9    |
+| STEP Part 21                                      | L8    |
 
 <!-- /generated: ladder-table -->
 
@@ -84,7 +84,7 @@ lists. Every profile below describes the envelope its rows cover.
 Structural detection requires directory evidence. The codec enumerates the complete CFB hierarchy, versioned databases, registry and revision tables, exact segment pairs, metadata tables, typed bulk records, OLE property sets, previews when present, Protein package entries and decoded catalog assets, and `UFRxDoc` external references. Optional or unknown segments remain named native records.
 
 - **Part geometry: extra above L1.** One typed active carrier in one `PmBRep` segment transfers through `cadmpeg-asm`. The kernel header controls width, units, tolerances, and SAB framing. Kernel unknown records and source annotations are retained. An empty or invalid decoded carrier produces blocking `geometry_not_transferred`.
-- **ACIS part carriers: extra above L1.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder at every save format. Connected B-rep validation and direct-carrier parity pass for majors 217 and 218, the verified bands. A carrier outside them decodes with the nearer verified band's grammar, reports the `acis:` kernel layer as `Admission::Unverified`, and charges `source.dialect-unverified`; a carrier that reads no geometry is retained verbatim and produces blocking `geometry_not_transferred`.
+- **ACIS part carriers: extra above L1.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder at every save format. Connected B-rep validation and direct-carrier parity pass for majors 217 and 218, the verified bands. A carrier outside them decodes with the nearer verified band's grammar, reports the `acis:` kernel layer as `Admission::Unverified`, and charges `source.kernel-dialect-unverified`; a carrier that reads no geometry is retained verbatim and produces blocking `geometry_not_transferred`.
 - **Assemblies: partial extra.** A `UFRxDoc` occurrence transfers when its external file reference, `AmDc` occurrence identity, and active finite affine `AmGraphics` placement form one exact join. Placement translations convert from centimetres to millimetres. Suppressed occurrences transfer with hidden visibility and may use an identity placement when graphics are absent. External prototypes remain unresolved, no persisted path is opened, and local prototypes and nested parent links remain untransferred.
 - **Materials: partial extra.** Shared Protein schema decoding produces typed native assets and neutral appearance definitions. One exact `PmApp` default-style-to-rendering-style-to-asset join binds the selected appearance to transferred part bodies. One exact `PmGraphics` face-to-style-collection-to-primary-color join creates a direct face appearance that overrides the body default. Other style and texture families remain native.
 - **Design intent: partial extra.** Closed scalar parameter graphs and closed planar point, line, circle, ellipse, and constraint graphs transfer with native cross-links. Extrude, hole, constant-radius edge fillet, and equal-distance edge chamfer operations transfer only when every required typed property, dimension, native selection, placement, and result-body reference resolves. Each transferred result has a native intermediate-body identity. Suppression and dependency state remain unresolved, so this extra does not advance the score to L4.
@@ -495,7 +495,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- generated: dialects step -->
 
-**Ladder: L9.**
+**Ladder: L8.**
 
 | Dialect                   | Read                   | Write    |
 | ------------------------- | ---------------------- | -------- |
@@ -513,7 +513,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- /generated: dialects step -->
 
-Part 28 XML, Part 26 binary/HDF5, and AP242 BO-Model sidecars are outside the declared bands. ZIP packaging is an extra read profile for the `ISO-10303.p21` root; subsidiary graph composition is outside the declared band. AP203/AP214 mark constructs their schemas cannot carry as inapplicable. Part 21 exchange documents have no originating feature replay histories, sketch-constraint systems, or assembly mates, so L4, L6, and the L7 mate requirement are inapplicable.
+Part 28 XML, Part 26 binary/HDF5, and AP242 BO-Model sidecars are outside the declared bands. ZIP packaging is an extra read profile for the `ISO-10303.p21` root; subsidiary graph composition is outside the declared band. AP203/AP214 mark constructs their schemas cannot carry as inapplicable. The declared bands carry no feature replay histories, sketch-constraint systems, or assembly mates, so L4, L6, and the L7 mate requirement are inapplicable. AP242 construction-history entities are outside the declared bands.
 
 ### Read profile
 
@@ -533,7 +533,7 @@ Part 28 XML, Part 26 binary/HDF5, and AP242 BO-Model sidecars are outside the de
 - **Drawing write boundary: Explicit.** The reader transfers the core drawing graph, but the writer does not generate drawing pages or views. Planning emits the representable model and records the omitted drawing graph; `--reject-lossy=export` refuses the plan before writing.
 - **Procedural geometry: Native where modeled.** Trimmed and replica curves, spatial-offset curves, linear sweeps, axis revolutions, replica and parallel-offset surfaces, and degenerate tori emit as their native STEP entities. Other definitions emit their solved carrier with a machine-readable loss. Curve-bounded surfaces lack the boundary-curve surface association required for valid native regeneration and therefore reduce with a loss; `--reject-lossy=export` refuses the plan.
 - **Fidelity policy: Explicit and atomic.** Planning returns the representable subset and every unsupported semantic fact. `--reject-lossy=export` rejects a lossy plan before writing any byte. Retained opaque records and opaque presentation targets produce losses. AP-specific tessellation and PMI compatibility is checked against the selected target.
-- **Round trip: Complete for generated outputs.** Source-less, edited, schema-targeted, topology, geometry, product, tessellation, presentation, and PMI outputs re-decode to typed IR. The optional [`verify-step-occt.py`](../scripts/verify-step-occt.py) and [`verify-step-gmsh.py`](../scripts/verify-step-gmsh.py) scripts are environment-driven validators for provided Part 21 files; they are not an in-tree generated all-target acceptance matrix.
+- **Round trip: Complete for generated outputs.** Source-less, edited, schema-targeted, topology, geometry, product, tessellation, presentation, and PMI outputs re-decode to typed IR. No independent application acceptance gate runs on generated outputs, so the format does not pass L9. The optional [`verify-step-occt.py`](../scripts/verify-step-occt.py) and [`verify-step-gmsh.py`](../scripts/verify-step-gmsh.py) scripts are environment-driven validators for provided Part 21 files; they are not an in-tree generated all-target acceptance matrix.
 
 ## Maintaining these profiles
 

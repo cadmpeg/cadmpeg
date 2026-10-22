@@ -74,7 +74,7 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 - **Siemens NX `.prt`** — L1 ([profile](docs/format-support.md#siemens-nx-prt))
 - **CATIA V5 `.CATPart`** — L1 ([profile](docs/format-support.md#catia-v5-catpart))
 - **Creo Parametric `.prt`** — L1 ([profile](docs/format-support.md#creo-parametric-prt))
-- **STEP Part 21** — L9 ([profile](docs/format-support.md#step-part-21))
+- **STEP Part 21** — L8 ([profile](docs/format-support.md#step-part-21))
 
 <!-- /generated: capability-lines -->
 
