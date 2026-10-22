@@ -35,7 +35,7 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
 mod history;
-mod profile;
+pub(crate) mod profile;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
 
@@ -134,7 +134,6 @@ pub(crate) struct FeatureInventory {
     pub(crate) kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pub(crate) work_planes: Vec<PmDcWorkPlane>,
     /// Wire bodies of `PmDc` kernel-body records, which profile selections name.
-    profile_bodies: Vec<profile::ProfileBody>,
     pub(crate) issues: Vec<RecordIssue>,
 }
 
@@ -464,7 +463,6 @@ pub(crate) fn inventory(
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
-        profile_bodies: Vec::new(),
         issues: Vec::new(),
     };
     for segment in &document.segments {
@@ -572,19 +570,6 @@ pub(crate) fn inventory(
                         record.ordinal,
                         "admit Inventor PmDc work plane record",
                     )
-                }),
-                crate::kernel::KERNEL_RECORD_TYPE_ID => profile::decode_profile_body(
-                    ctx,
-                    record.payload,
-                    segment.pair.token.key(),
-                    record.ordinal,
-                    record.payload_offset,
-                    version,
-                )
-                .and_then(|body| {
-                    ctx.charge_entities(1, "admit Inventor PmDc profile body")?;
-                    inventory.profile_bodies.push(body);
-                    Ok(())
                 }),
                 SURFACE_TYPE => parse_surface(record.payload, version).and_then(|surface| {
                     surface.map_or(Ok(()), |surface| {
@@ -1483,15 +1468,27 @@ struct ProjectionIndex<'a> {
     profiles: profile::ProfileIndex<'a>,
 }
 
+/// The projected sketch model that features consume.
+pub(crate) struct ProjectedSketches<'a> {
+    pub(crate) sketches: &'a [Sketch],
+    pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+    /// The decoded profile bodies that extrusion profiles resolve through.
+    pub(crate) profile_bodies: &'a [profile::ProfileBody],
+}
+
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     inventory: &FeatureInventory,
     design: &DesignInventory,
     sketch: &SketchInventory,
     parameters: &[DesignParameter],
-    sketches: &[Sketch],
-    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
+    projected: &ProjectedSketches<'_>,
 ) -> Result<FeatureProjection, CodecError> {
+    let ProjectedSketches {
+        sketches,
+        entities: sketch_entities,
+        profile_bodies,
+    } = *projected;
     let total = inventory.features.len() + inventory.pattern_features.len();
     let mut feature_tokens = HashSet::new();
     for token in inventory
@@ -1619,7 +1616,7 @@ pub(crate) fn project(
         },
         work_planes: unique_work_planes,
         profiles: profile::ProfileIndex::new(
-            &inventory.profile_bodies,
+            profile_bodies,
             &inventory.kernel_entity_links,
             &inventory.entity_style_links,
             &sketch.entities,
@@ -2850,7 +2847,6 @@ mod tests {
             entity_style_links: Vec::new(),
             kernel_entity_links: Vec::new(),
             work_planes: Vec::new(),
-            profile_bodies: Vec::new(),
             issues: Vec::new(),
         };
         let design = crate::design::DesignInventory {
@@ -2874,9 +2870,20 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("build the decode context");
         assert_eq!(
-            super::project(&ctx, &inventory, &design, &sketch, &[], &[], &[])
-                .expect("feature projection")
-                .unresolved_features,
+            super::project(
+                &ctx,
+                &inventory,
+                &design,
+                &sketch,
+                &[],
+                &super::ProjectedSketches {
+                    sketches: &[],
+                    entities: &[],
+                    profile_bodies: &[],
+                },
+            )
+            .expect("feature projection")
+            .unresolved_features,
             1
         );
     }
@@ -2950,6 +2957,17 @@ mod tests {
         payload: &[u8],
         policy: DecodePolicy,
     ) -> Result<super::FeatureInventory, CodecError> {
+        with_record(type_id, payload, policy, inventory)
+    }
+
+    /// Run `read` over a `PmDc` segment whose first record has `type_id` and
+    /// `payload`.
+    fn with_record<T>(
+        type_id: [u8; 16],
+        payload: &[u8],
+        policy: DecodePolicy,
+        read: impl FnOnce(&DecodeContext<'_>, &crate::rse::RseInventory<'_>) -> Result<T, CodecError>,
+    ) -> Result<T, CodecError> {
         let bytes = primary_envelope_fixture();
         let payload = payload.to_vec();
         let arena = DecodeArena::new();
@@ -2968,7 +2986,21 @@ mod tests {
         table.records[0].type_id = type_id;
         table.records[0].payload = View::over_retained(&payload);
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
-        inventory(&ctx, &container.rse)
+        read(&ctx, &container.rse)
+    }
+
+    #[test]
+    fn an_undecodable_profile_body_is_counted_and_is_no_record_issue() {
+        let payload = [0u8; 8];
+        let kernel = crate::kernel::KERNEL_RECORD_TYPE_ID;
+        let inventory = inventory_with_record(kernel, &payload, DecodePolicy::service())
+            .expect("feature inventory");
+        assert!(inventory.issues.is_empty());
+        let bodies = with_record(kernel, &payload, DecodePolicy::service(), |ctx, rse| {
+            super::profile::decode_profile_bodies(ctx, rse)
+        })
+        .expect("profile bodies");
+        assert_eq!((bodies.bodies.len(), bodies.undecoded), (0, 1));
     }
 
     #[test]

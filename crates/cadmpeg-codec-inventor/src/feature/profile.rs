@@ -15,6 +15,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityUse, SketchGeometryDefinition};
 
 use super::{PmDcEntityStyleLink, PmDcKernelEntityLink};
+use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::sketch::PmDcSketchEntity;
 
 /// ASM attribute chain that names a profile wire edge after its sketch curve.
@@ -52,14 +53,74 @@ pub(super) struct ProfileWire {
 
 /// The wire bodies of one `PmDc` kernel-body record.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct ProfileBody {
+pub(crate) struct ProfileBody {
     segment_token: IdentityKey,
     record_ordinal: u32,
     wires: Vec<ProfileWire>,
 }
 
 /// Decode a `PmDc` kernel-body record and keep its keyed wire bodies.
-pub(super) fn decode_profile_body(
+/// The profile bodies of a document's `PmDc` kernel-body records.
+pub(crate) struct ProfileBodies {
+    pub(crate) bodies: Vec<ProfileBody>,
+    /// Kernel-body records that do not decode. Profile selections that link
+    /// to them keep their native selection.
+    pub(crate) undecoded: usize,
+}
+
+/// Decode the profile bodies that extrusion profiles resolve through. Only
+/// design projection uses them, so a record that does not decode is counted
+/// and skipped; a session resource refusal still ends the decode.
+pub(crate) fn decode_profile_bodies(
+    ctx: &DecodeContext<'_>,
+    document: &RseInventory<'_>,
+) -> Result<ProfileBodies, CodecError> {
+    let mut decoded = ProfileBodies {
+        bodies: Vec::new(),
+        undecoded: 0,
+    };
+    for segment in &document.segments {
+        if segment.kind != SegmentKind::PmDc {
+            continue;
+        }
+        let Some(version) = segment.registry.map(|join| join.version_major) else {
+            continue;
+        };
+        if !(15..=22).contains(&version) {
+            continue;
+        }
+        let SegmentBulkState::Framed(bulk) = &segment.bulk else {
+            continue;
+        };
+        let RecordFrameState::Framed(table) = &bulk.records else {
+            continue;
+        };
+        for record in table
+            .records
+            .iter()
+            .filter(|record| record.type_id == crate::kernel::KERNEL_RECORD_TYPE_ID)
+        {
+            match decode_profile_body(
+                ctx,
+                record.payload,
+                segment.pair.token.key(),
+                record.ordinal,
+                record.payload_offset,
+                version,
+            ) {
+                Ok(body) => {
+                    ctx.charge_entities(1, "admit Inventor PmDc profile body")?;
+                    decoded.bodies.push(body);
+                }
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => decoded.undecoded += 1,
+            }
+        }
+    }
+    Ok(decoded)
+}
+
+fn decode_profile_body(
     ctx: &DecodeContext<'_>,
     payload: View<'_>,
     segment_token: &IdentityKey,
@@ -644,22 +705,34 @@ impl LoopCurve {
                     0.0
                 }
             }
+            // An arc turns as its chord does, plus one whole turn in the
+            // arc's sense for a point in the circular segment between them.
             Self::Arc {
                 center,
                 radius,
+                start_angle,
                 sweep,
-                ..
-            } if distance(point, center) < radius => sweep,
-            // Outside its circle, an arc turns as its chord does: the region
-            // between them lies inside the circle.
-            Self::Line { .. } | Self::Arc { .. } => {
+            } => {
                 let (start, end) = self.ends();
-                let (su, sv) = (start.u - point.u, start.v - point.v);
-                let (eu, ev) = (end.u - point.u, end.v - point.v);
-                (su * ev - sv * eu).atan2(su * eu + sv * ev)
+                let side = |at: Point2| {
+                    (end.u - start.u)
+                        .mul_add(at.v - start.v, -((end.v - start.v) * (at.u - start.u)))
+                };
+                let middle = polar(center, radius, sweep.mul_add(0.5, start_angle));
+                let in_segment =
+                    distance(point, center) < radius && side(point) * side(middle) > 0.0;
+                chord_turn(start, end, point) + if in_segment { TAU.copysign(sweep) } else { 0.0 }
             }
+            Self::Line { start, end } => chord_turn(start, end, point),
         }
     }
+}
+
+/// The angle the segment from `start` to `end` turns about `point`.
+fn chord_turn(start: Point2, end: Point2, point: Point2) -> f64 {
+    let (su, sv) = (start.u - point.u, start.v - point.v);
+    let (eu, ev) = (end.u - point.u, end.v - point.v);
+    su.mul_add(ev, -(sv * eu)).atan2(su.mul_add(eu, sv * ev))
 }
 
 fn polar(center: Point2, radius: f64, angle: f64) -> Point2 {

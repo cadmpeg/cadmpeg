@@ -36,6 +36,10 @@ const EPS_SKETCH_PROJECT_PLACEMENT_E10: f64 = 1.0e-10;
 const EPS_SKETCH_ARC_END_ON_CIRCLE_CM: f64 = 1.0e-6;
 /// First save version whose midpoint relation ends with a u32 value.
 const MIDPOINT_VALUE_VERSION: u8 = 20;
+/// Entity-flag bits that the curves of profile wire bodies carry. A curve
+/// with another bit set has a construction state this decoder does not
+/// resolve.
+const PROFILE_CURVE_FLAGS: u32 = 0x40 | 0x1000 | 0x4_0000 | 0x8_0000;
 const CIRCLE_STATE_ARC: u8 = 0;
 const CIRCLE_STATE_FULL: u8 = 1;
 
@@ -243,6 +247,9 @@ pub(crate) struct SketchProjection {
     pub(crate) unresolved_sketches: usize,
     pub(crate) unresolved_entities: usize,
     pub(crate) unresolved_constraints: usize,
+    /// Projected curves whose construction state is unresolved; they stay out
+    /// of the sketch profile tables.
+    pub(crate) unresolved_construction: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1240,6 +1247,19 @@ pub(crate) fn project(
         .iter()
         .filter_map(|entity| entity.native_ref.as_deref().map(|native| (native, entity)))
         .collect::<HashMap<_, _>>();
+    let construction_unresolved = inventory
+        .entities
+        .iter()
+        .filter(|entity| {
+            matches!(
+                entity.kind,
+                PmDcSketchEntityKind::Line { .. }
+                    | PmDcSketchEntityKind::Circle { .. }
+                    | PmDcSketchEntityKind::Ellipse { .. }
+            ) && entity.entity_flags & !PROFILE_CURVE_FLAGS != 0
+        })
+        .map(Located::id)
+        .collect::<HashSet<_>>();
     let mut sketches = Vec::new();
     let mut unresolved_sketches = 0usize;
     for sketch in &inventory.sketches {
@@ -1281,8 +1301,18 @@ pub(crate) fn project(
             unresolved_sketches += 1;
             continue;
         };
+        let profile_entities = referenced_entities
+            .iter()
+            .copied()
+            .filter(|entity| {
+                !entity
+                    .native_ref
+                    .as_deref()
+                    .is_some_and(|native| construction_unresolved.contains(native))
+            })
+            .collect::<Vec<_>>();
         let Ok(profiles) =
-            cadmpeg_ir::sketches::SketchProfiles::try_from(build_profiles(&referenced_entities))
+            cadmpeg_ir::sketches::SketchProfiles::try_from(build_profiles(&profile_entities))
         else {
             unresolved_sketches += 1;
             continue;
@@ -1435,6 +1465,15 @@ pub(crate) fn project(
         previous_constraint_count,
         constraints.len(),
     )?;
+    let unresolved_construction = projected_entities
+        .iter()
+        .filter(|entity| {
+            entity
+                .native_ref
+                .as_deref()
+                .is_some_and(|native| construction_unresolved.contains(native))
+        })
+        .count();
     Ok(SketchProjection {
         sketches,
         entities: projected_entities,
@@ -1442,6 +1481,7 @@ pub(crate) fn project(
         unresolved_sketches,
         unresolved_entities,
         unresolved_constraints,
+        unresolved_construction,
     })
 }
 
@@ -1663,14 +1703,20 @@ fn project_constraint(
                 members,
             )
         }
-        PmDcSketchConstraintKind::Angle { first, second, .. } => {
+        PmDcSketchConstraintKind::Angle {
+            first,
+            second,
+            flags,
+            ..
+        } => {
             let members = [resolve(first)?, resolve(second)?];
             let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
             (
                 SketchConstraintDefinitionInput::Native {
                     native_kind: cadmpeg_core::text::NonBlankString::new("angle_dimension")?,
                     native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
-                    native_flags: Some(u64::from(constraint.header.content.flags)),
+                    // The record's own flags hold the supplement selection.
+                    native_flags: Some(u64::from(flags)),
                     native_properties: std::collections::BTreeMap::new(),
                     entities: members.iter().map(|entity| entity.id().clone()).collect(),
                     parameter: Some(parameter),
@@ -1794,24 +1840,40 @@ fn project_constraint(
 }
 
 /// Whether the constraint maps hold only a coincident relation's solver
-/// hint: entries keyed by one of its two operands, with null reference values.
+/// hint: in each map, at most one entry for each of its two operands, with
+/// null reference values.
 fn coincident_solver_hint(constraint: &PmDcSketchConstraint) -> bool {
     let PmDcSketchConstraintKind::Coincident { first, second } = constraint.kind else {
         return false;
     };
-    let operand = |key: &PmDcReference| key.index() != 0 && (*key == first || *key == second);
-    constraint
-        .header
-        .scalar_map
+    let header = &constraint.header;
+    distinct_operand_keys(
+        header.scalar_map.entries().iter().map(|(key, _)| *key),
+        [first, second],
+    ) && header
+        .reference_map
         .entries()
         .iter()
-        .all(|(key, _)| operand(key))
-        && constraint
-            .header
-            .reference_map
-            .entries()
-            .iter()
-            .all(|(key, value)| operand(key) && value.index() == 0 && !value.qualified())
+        .all(|(_, value)| value.index() == 0 && !value.qualified())
+        && distinct_operand_keys(
+            header.reference_map.entries().iter().map(|(key, _)| *key),
+            [first, second],
+        )
+}
+
+/// Whether every key names one of the two operands, and no operand twice.
+fn distinct_operand_keys(
+    keys: impl IntoIterator<Item = PmDcReference>,
+    operands: [PmDcReference; 2],
+) -> bool {
+    let mut seen = [false; 2];
+    keys.into_iter().all(|key| {
+        key.index() != 0
+            && operands
+                .iter()
+                .position(|operand| *operand == key)
+                .is_some_and(|slot| !std::mem::replace(&mut seen[slot], true))
+    })
 }
 
 fn resolve_parameter(
@@ -2362,11 +2424,11 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 #[cfg(test)]
 mod tests {
     use super::{
-        inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
-        project, PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcSketchPayload,
-        PmDcTransformPayload, SketchConstraintTag, SketchEntityTag, SketchInventory, CIRCLE_TYPE,
-        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE,
-        SKETCH_TYPE, TRANSFORM_TYPE,
+        distinct_operand_keys, inventory, parse_constraint, parse_direction, parse_entity,
+        parse_sketch, parse_transform, project, PmDcSketchConstraintKind, PmDcSketchEntityKind,
+        PmDcSketchEntityPayload, PmDcSketchPayload, PmDcTransformPayload, SketchConstraintTag,
+        SketchEntityTag, SketchInventory, CIRCLE_TYPE, COINCIDENT_TYPE, DIRECTION_TYPE,
+        HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE, SKETCH_TYPE, TRANSFORM_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcReference, PmDcReferenceList};
@@ -3253,6 +3315,32 @@ mod tests {
     }
 
     #[test]
+    fn a_curve_with_an_unknown_flag_bit_stays_out_of_the_profile_table() {
+        let (mut inventory, _) = closed_square_inventory();
+        let line = inventory
+            .entities
+            .iter()
+            .position(|entity| matches!(entity.kind, PmDcSketchEntityKind::Line { .. }))
+            .expect("square side");
+        let mut payload = PmDcSketchEntityPayload::clone(&inventory.entities[line]);
+        payload.entity_flags = 0x8000;
+        let identity = inventory.entities[line].identity.clone();
+        inventory.entities[line] = Located::new(
+            payload,
+            identity.type_id.clone(),
+            identity.segment_token.clone(),
+            identity.record_ordinal,
+        );
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        let projected = project(&ctx, &inventory, &[]).expect("sketch projection");
+        assert_eq!(projected.unresolved_construction, 1);
+        assert_eq!(projected.entities.len(), 8);
+        assert!(projected.sketches[0].profiles.is_empty());
+    }
+
+    #[test]
     fn projects_generated_closed_square_and_resolved_plane() {
         let (mut inventory, sketch) = closed_square_inventory();
         let arena = DecodeArena::new();
@@ -3422,6 +3510,27 @@ mod tests {
         ));
         assert_eq!(projected.sketches[0].profiles.len(), 1);
         assert_eq!(projected.sketches[0].profiles[0].len(), 2);
+    }
+
+    #[test]
+    fn a_solver_hint_map_names_each_operand_at_most_once() {
+        let reference = |index| PmDcReference::new(index, true).expect("test reference");
+        let operands = [reference(7), reference(4)];
+        assert!(distinct_operand_keys([], operands));
+        assert!(distinct_operand_keys([reference(7)], operands));
+        assert!(distinct_operand_keys(
+            [reference(4), reference(7)],
+            operands
+        ));
+        assert!(!distinct_operand_keys(
+            [reference(7), reference(7)],
+            operands
+        ));
+        assert!(!distinct_operand_keys([reference(9)], operands));
+        assert!(!distinct_operand_keys(
+            [PmDcReference::new(0, false).expect("null reference")],
+            operands
+        ));
     }
 
     #[test]

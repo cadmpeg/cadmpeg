@@ -9,7 +9,10 @@ use cadmpeg_ir::sketches::{
     SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,
 };
 
-use super::{edge_name, EdgeName, ProfileBody, ProfileEdge, ProfileIndex, ProfileWire};
+use super::{
+    chord_turn, edge_name, encloses, EdgeName, LoopCurve, ProfileBody, ProfileEdge, ProfileIndex,
+    ProfileWire,
+};
 use crate::feature::{PmDcKernelEntityLink, PmDcKernelEntityLinkPayload, KERNEL_ENTITY_LINK_TYPE};
 use crate::pmdc::PmDcReference;
 use crate::record_identity::{Located, RecordTypeId};
@@ -221,4 +224,83 @@ fn a_wire_edge_shorter_than_its_sketch_curve_leaves_the_selection_unresolved() {
     assert!(index
         .regions("segment", SKETCH_ORDINAL, &sketch, &[20])
         .is_none());
+}
+
+/// The winding number of a closed loop about `point`, from a dense polyline
+/// through its curves.
+fn polyline_winding(curves: &[LoopCurve], point: Point2) -> f64 {
+    let mut turns = 0.0;
+    for curve in curves {
+        let samples = match *curve {
+            LoopCurve::Arc {
+                center,
+                radius,
+                start_angle,
+                sweep,
+            } => (0..=4000)
+                .map(|step| {
+                    let angle = sweep.mul_add(f64::from(step) / 4000.0, start_angle);
+                    Point2::new(
+                        radius.mul_add(angle.cos(), center.u),
+                        radius.mul_add(angle.sin(), center.v),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            _ => {
+                let (start, end) = curve.ends();
+                vec![start, end]
+            }
+        };
+        for pair in samples.windows(2) {
+            turns += chord_turn(pair[0], pair[1], point);
+        }
+    }
+    turns / std::f64::consts::TAU
+}
+
+#[test]
+fn an_arc_turns_by_its_chord_and_the_segment_it_bounds() {
+    use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
+    let arc = |center: (f64, f64), radius: f64, start_angle: f64, sweep: f64| LoopCurve::Arc {
+        center: Point2::new(center.0, center.1),
+        radius,
+        start_angle,
+        sweep,
+    };
+    let radius = 0.5_f64.sqrt();
+    // From (1, 0) over the top to (0, 0), on the circle about (0.5, -0.5).
+    let upper = arc((0.5, -0.5), radius, FRAC_PI_4, FRAC_PI_2);
+    let loops = [
+        // A lens: back along the circle about (0.5, 0.5).
+        vec![upper, arc((0.5, 0.5), radius, -3.0 * FRAC_PI_4, FRAC_PI_2)],
+        // A crescent: back the long way around that circle.
+        vec![upper, arc((0.5, 0.5), radius, -3.0 * FRAC_PI_4, -1.5 * PI)],
+    ];
+    for curves in &loops {
+        for i in 0..=40 {
+            for j in 0..=40 {
+                let point = Point2::new(
+                    f64::from(i).mul_add(0.05, -0.5),
+                    f64::from(j).mul_add(0.05, -1.0),
+                );
+                let near_curve = [(0.5, -0.5), (0.5, 0.5)].iter().any(|center| {
+                    ((point.u - center.0).hypot(point.v - center.1) - radius).abs() < 1.0e-2
+                });
+                if near_curve {
+                    continue;
+                }
+                assert_eq!(
+                    encloses(curves, point),
+                    Some(polyline_winding(curves, point).round() != 0.0),
+                    "{point:?}"
+                );
+            }
+        }
+    }
+    // A point inside the circle of an arc but on the far side of its chord.
+    let crescent = [
+        arc((0.5, 0.726), 0.882, -2.174, 1.206),
+        arc((0.5, -0.417), 0.651, 0.695, -4.531),
+    ];
+    assert_eq!(encloses(&crescent, Point2::new(0.898, 0.053)), Some(false));
 }
