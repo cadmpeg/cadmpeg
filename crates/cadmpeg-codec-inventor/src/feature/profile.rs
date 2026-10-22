@@ -388,14 +388,19 @@ impl<'a> ProfileIndex<'a> {
                 .get(&(token, link.body.index().checked_sub(1)?))
                 .copied()
                 .flatten()?;
-            let mut wires = body
+            // A selection can run through several wire loops of one body,
+            // such as the outer boundary and the holes of a plate face.
+            let known = rings.len();
+            for wire in body
                 .wires
                 .iter()
-                .filter(|wire| wire.key == u64::from(link.entity_id));
-            let (Some(wire), None) = (wires.next(), wires.next()) else {
+                .filter(|wire| wire.key == u64::from(link.entity_id))
+            {
+                rings.push(self.ring(token, sketch_ordinal, sketch, &frame, link, wire)?);
+            }
+            if rings.len() == known {
                 return None;
-            };
-            rings.push(self.ring(token, sketch_ordinal, sketch, &frame, link, wire)?);
+            }
         }
         if rings
             .iter()
