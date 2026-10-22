@@ -5214,6 +5214,29 @@ pub(crate) fn install(
     })
 }
 
+/// Decodes an annotation's override dimension style: an `ON_DimStyle` class
+/// payload whose field-override set selects the fields that replace the
+/// parent style's values.
+pub(crate) fn override_dimension_style(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    class_uuid: Uuid,
+    range: Range<usize>,
+    archive: ArchiveVersion,
+    scale: MillimeterScale,
+) -> Result<serde_json::Value, FramingError> {
+    if class_uuid != DIMSTYLE {
+        return Err(FramingError::structural(
+            range.start,
+            format!("override dimension style has class {class_uuid}"),
+        ));
+    }
+    let record = parse_dimension_style(ctx, data, range.clone(), archive, scale, range.start)?;
+    serde_json::to_value(&record).map_err(|error| {
+        FramingError::structural(range.start, format!("override style JSON: {error}"))
+    })
+}
+
 /// Presentation records and the table resources that object records name.
 pub(crate) struct PresentationInstall {
     /// Losses and complete records that were not admitted.

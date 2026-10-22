@@ -98,6 +98,8 @@ struct AnnotationRecord {
     plane_z_axis: cadmpeg_ir::units::FiniteVector<3>,
     plane_equation: crate::settings::CoordinateLane<4>,
     dimstyle_uuid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dimstyle_override: Option<serde_json::Value>,
     annotation_type: i32,
     text_rectangle_width: FiniteReal,
     text_rotation_radians: FiniteReal,
@@ -930,6 +932,32 @@ pub(crate) fn collect(
                 let (links, key, source_uuid) =
                     record_identity(identity, source_order, v2_key.take());
                 let style = StyleReference::Uuid(value.dimstyle_id);
+                let dimstyle_override = match value.override_style.clone() {
+                    None => None,
+                    Some((class, range)) => match crate::presentation::override_dimension_style(
+                        ctx,
+                        scan.data,
+                        class,
+                        range,
+                        scan.archive,
+                        scale,
+                    ) {
+                        Ok(style) => Some(style),
+                        Err(FramingError::Resource(limit)) => {
+                            return Err(CodecError::ResourceLimit(limit))
+                        }
+                        Err(error) => {
+                            losses.push(RhinoLossCode::DimensionOverrideDropped.note(
+                                format_args!(
+                                    "annotation object at offset {} style override could not be \
+                                 decoded: {error}",
+                                    object.range.start
+                                ),
+                            ));
+                            None
+                        }
+                    },
+                };
                 let record = AnnotationRecord {
                     id: format!("rhino:document:annotation#{key}"),
                     source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
@@ -947,6 +975,7 @@ pub(crate) fn collect(
                     plane_equation: value.plane.equation,
                     dimstyle_uuid: (!value.dimstyle_id.is_nil())
                         .then(|| format!("{}", value.dimstyle_id)),
+                    dimstyle_override,
                     annotation_type: value.kind,
                     text_rectangle_width: value.text_rectangle_width,
                     text_rotation_radians: value.text_rotation_radians,
@@ -1031,6 +1060,7 @@ pub(crate) fn collect(
                     plane_z_axis: value.plane.zaxis,
                     plane_equation: value.plane.equation,
                     dimstyle_uuid: None,
+                    dimstyle_override: None,
                     annotation_type: value.kind,
                     text_rectangle_width: FiniteReal::ZERO,
                     text_rotation_radians: FiniteReal::ZERO,
@@ -1126,6 +1156,7 @@ pub(crate) fn collect(
                     plane_z_axis: value.base.plane.zaxis,
                     plane_equation: value.base.plane.equation,
                     dimstyle_uuid: None,
+                    dimstyle_override: None,
                     annotation_type: value.base.kind,
                     text_rectangle_width: FiniteReal::ZERO,
                     text_rotation_radians: FiniteReal::ZERO,

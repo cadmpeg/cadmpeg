@@ -1046,7 +1046,7 @@ impl<'a> DecodeContext<'a> {
                         continue;
                     };
                     let object = self.session.unknowns()[source_order].id().as_str();
-                    let (annotation, unresolved) = match crate::dimensions::project(
+                    let (mut annotation, unresolved) = match crate::dimensions::project(
                         &dimension,
                         key.as_str(),
                         (!identity.name.is_empty()).then_some(identity.name.as_str()),
@@ -1063,13 +1063,36 @@ impl<'a> DecodeContext<'a> {
                             continue;
                         }
                     };
-                    if dimension.override_present {
-                        self.report.typed_losses.push(
-                            RhinoLossCode::DimensionOverrideDropped.note(format_args!(
-                                "dimension object at offset {} has an unapplied style override",
-                                dimension.source_range.start
-                            )),
-                        );
+                    if let Some((class, range)) = dimension.override_style.clone() {
+                        match crate::presentation::override_dimension_style(
+                            self.expand.ctx(),
+                            self.scan.data,
+                            class,
+                            range,
+                            self.archive(),
+                            scale,
+                        ) {
+                            Ok(style) => {
+                                let name =
+                                    cadmpeg_core::text::NonBlankString::new("dimstyle_override")
+                                        .ok_or_else(|| {
+                                            cadmpeg_core::CodecError::malformed(
+                                                "override parameter name is blank",
+                                            )
+                                        })?;
+                                annotation.parameters.insert(name, style.to_string());
+                            }
+                            Err(crate::chunks::FramingError::Resource(limit)) => {
+                                return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+                            }
+                            Err(error) => self.report.typed_losses.push(
+                                RhinoLossCode::DimensionOverrideDropped.note(format_args!(
+                                    "dimension object at offset {} style override could not be \
+                                     decoded: {error}",
+                                    dimension.source_range.start
+                                )),
+                            ),
+                        }
                     }
                     let links = [annotation.id.as_str().to_owned()];
                     let result = self.validate_candidate(|candidate, _annotations| {

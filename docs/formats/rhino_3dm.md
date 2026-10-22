@@ -4133,7 +4133,14 @@ anonymous annotation version 1.minor
 ```
 
 Annotation versions before 3 use horizontal direction `(1,0)`. Annotation
-versions before 4 allow text scaling. The text-content body is a UTF-16 rich
+versions before 4 allow text scaling. The override class wrapper holds one
+`ON_DimStyle` payload with the dimension-style record grammar of section 20.3.
+Its field-override set selects the fields that replace the values of the
+parent style that the annotation's dimension-style UUID names; the other
+fields come from the parent. The text, leader, and dimension classes share
+this annotation chunk. CADIR keeps the decoded override style as the
+annotation's `dimstyle_override` parameter; an override that fails its grammar
+emits `dimension.override-dropped`. The text-content body is a UTF-16 rich
 text string, obsolete plane, rectangle width `f64`, rotation `f64`, horizontal
 alignment `i32`, vertical alignment `i32`, obsolete text height `f64`, and
 wrap `bool`, in that order.

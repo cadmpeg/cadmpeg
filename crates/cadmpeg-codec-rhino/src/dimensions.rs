@@ -150,7 +150,8 @@ pub(crate) struct Dimension {
     distance_scale: PositiveReal,
     definition: Definition,
     measurement: f64,
-    pub(crate) override_present: bool,
+    /// Class-data range of the `ON_DimStyle` override, when present.
+    pub(crate) override_style: Option<(Uuid, Range<usize>)>,
 }
 
 pub(crate) struct Annotation {
@@ -165,7 +166,8 @@ pub(crate) struct Annotation {
     pub(crate) kind: i32,
     pub(crate) horizontal_direction: CoordinateLane<2>,
     pub(crate) allow_text_scaling: bool,
-    override_present: bool,
+    /// Class-data range of the `ON_DimStyle` override, when present.
+    pub(crate) override_style: Option<(Uuid, Range<usize>)>,
 }
 
 struct TextContent {
@@ -303,20 +305,20 @@ pub(crate) fn annotation(
     let dimstyle_id = uuid(&mut annotation)?;
     let plane = plane(&mut annotation)?;
     let annotation_type = if version >= 1 { annotation.i32()? } else { 0 };
-    let mut override_present = false;
+    let mut override_style = None;
     if version >= 2 {
         let (mut overrides, override_next, _override_version) =
             anonymous(data, annotation.position(), annotation.end(), archive)?;
         if overrides.bool()? {
-            override_present = true;
             let wrapper = chunk_at(data, overrides.position(), overrides.end(), archive, false)?;
             let mut warnings = Diagnostics::new();
-            parse_class_wrapper(
+            let class = parse_class_wrapper(
                 data,
                 overrides.position()..wrapper.next_offset(),
                 archive,
                 &mut warnings,
             )?;
+            override_style = Some((class.class_uuid, class.class_data_range));
             overrides.skip(wrapper.next_offset() - overrides.position())?;
         }
         overrides.skip_remaining()?;
@@ -342,7 +344,7 @@ pub(crate) fn annotation(
         kind: annotation_type,
         horizontal_direction,
         allow_text_scaling,
-        override_present,
+        override_style,
     })
 }
 
@@ -904,7 +906,7 @@ fn decode_legacy(
         distance_scale: PositiveReal::ONE,
         definition,
         measurement,
-        override_present: false,
+        override_style: None,
     })
 }
 
@@ -1063,7 +1065,7 @@ fn decode_v2(
         distance_scale: PositiveReal::ONE,
         definition,
         measurement,
-        override_present: false,
+        override_style: None,
     })
 }
 
@@ -1309,7 +1311,7 @@ pub(crate) fn decode(
         distance_scale,
         definition,
         measurement,
-        override_present: annotation.override_present,
+        override_style: annotation.override_style,
     })
 }
 

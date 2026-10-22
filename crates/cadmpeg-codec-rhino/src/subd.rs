@@ -438,7 +438,9 @@ fn read_subdimple(
     warnings: &mut Diagnostics,
 ) -> Result<(RawLevel, Vec<Range<usize>>), SubdError> {
     let level_count = capped_u32(reader, MAX_LEVELS, "SubD level count")?;
-    metadata.refinement_levels = level_count.checked_sub(1).unwrap_or_default();
+    if let Some(levels) = level_count.checked_sub(1) {
+        metadata.refinement_levels = levels;
+    }
     reader.u32()?;
     reader.u32()?;
     reader.u32()?;
