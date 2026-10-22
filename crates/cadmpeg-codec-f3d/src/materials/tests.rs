@@ -1410,6 +1410,57 @@ fn a_sketch_link_decodes_in_every_payload_form() {
 }
 
 #[test]
+fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
+    use crate::records::sketch_links::SketchCurveLink;
+    use crate::test_support::native_test::TestEncode;
+
+    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(
+        SketchLinkForm::Tagged("113 0 4294967295 0 2 3"),
+    ));
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        f3d_native(decoded.ir()).sketch_curve_links[0]
+            .sense
+            .map(i64::from),
+        None,
+        "4294967295 is the disabled sense, not a stored one"
+    );
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let coedge = source_less.model.coedges[0].id.clone();
+    f3d_native_mut(&mut source_less).sketch_curve_links = vec![SketchCurveLink {
+        id: "f3d:generated:sketch-curve-link#0".into(),
+        target: cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge),
+        sketch_curve_id: 113,
+        ref_b: 0,
+        sense: None,
+        role: 2,
+        closure: 3,
+    }];
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less sketch-link encode");
+    assert!(
+        encoded
+            .windows(b"113 0 4294967295 0 2 3".len())
+            .any(|window| window == b"113 0 4294967295 0 2 3"),
+        "the writer must re-emit the disabled sense in its source spelling"
+    );
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less sketch-link round trip");
+    let link = &f3d_native(round_trip.ir()).sketch_curve_links[0];
+    assert_eq!(
+        (link.sketch_curve_id, link.sense.map(i64::from)),
+        (113, None)
+    );
+    assert_eq!((link.role, link.closure), (2, 3));
+}
+
+#[test]
 fn an_unconstrained_sketch_link_serializer_retains_its_source_spelling() {
     use crate::records::sketch_links::SketchCurveLink;
 
