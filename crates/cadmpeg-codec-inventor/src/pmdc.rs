@@ -475,11 +475,8 @@ impl<'a> Cursor<'a> {
         })
     }
 
-    pub(crate) fn utf16(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        field: &str,
-    ) -> Result<String, CodecError> {
+    /// The admitted code-unit count of a counted string.
+    fn utf16_len(&mut self, field: &str) -> Result<usize, CodecError> {
         let units = usize::try_from(self.u32("string length")?).map_err(|_| {
             CodecError::Malformed("Inventor numeric value exceeds target range".into())
         })?;
@@ -488,7 +485,33 @@ impl<'a> Cursor<'a> {
                 "Inventor PmDc {field} UTF-16 length {units} exceeds 1048576"
             )));
         }
+        Ok(units)
+    }
+
+    pub(crate) fn utf16(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        field: &str,
+    ) -> Result<String, CodecError> {
+        let units = self.utf16_len(field)?;
         crate::reader::utf16_text(
+            ctx,
+            &mut self.source,
+            units,
+            "PmDc text",
+            "retain Inventor PmDc string",
+        )
+    }
+
+    /// A counted string that keeps its exact code units when they hold an
+    /// unpaired surrogate.
+    pub(crate) fn utf16_units(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        field: &str,
+    ) -> Result<(String, Option<Vec<u16>>), CodecError> {
+        let units = self.utf16_len(field)?;
+        crate::reader::utf16_text_units(
             ctx,
             &mut self.source,
             units,

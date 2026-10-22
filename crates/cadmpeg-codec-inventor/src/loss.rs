@@ -58,6 +58,9 @@ pub(crate) enum InventorLossCode {
     /// Profile-body records do not decode, so the profiles that select them
     /// stay native.
     FeatureProfileBodyUndecoded,
+    /// A feature label name stores unpaired UTF-16 surrogates, which the
+    /// neutral name replaces.
+    FeatureLabelNameReplaced,
     /// Typed feature records have an operation graph that is not closed.
     FeatureOperationGraphOpen,
     /// Inventor operations retain native result-body identity with unresolved state.
@@ -133,6 +136,7 @@ impl InventorLossCode {
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
         Self::FeatureProfileBodyUndecoded,
+        Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
         Self::FeatureStateUnresolved,
         Self::ParameterGraphOpen,
@@ -182,6 +186,7 @@ impl InventorLossCode {
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
             Self::FeatureProfileBodyUndecoded => "feature.profile-body-undecoded",
+            Self::FeatureLabelNameReplaced => "feature.label-name-replaced",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::ParameterGraphOpen => "parameter.graph-open",
@@ -254,9 +259,9 @@ impl InventorLossCode {
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
             | Self::ParameterScopeUnresolved => LossTaxonomy::ParametricRecordOmitted,
-            Self::MetadataPropertyUnmapped | Self::FeatureLabelUnusable => {
-                LossTaxonomy::MetadataNotTransferred
-            }
+            Self::MetadataPropertyUnmapped
+            | Self::FeatureLabelUnusable
+            | Self::FeatureLabelNameReplaced => LossTaxonomy::MetadataNotTransferred,
             Self::ProteinCatalogUndecodable
             | Self::ProteinAssetRejected
             | Self::ProteinAppearanceAbsent
@@ -324,6 +329,7 @@ mod tests {
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
                 "feature.profile-body-undecoded",
+                "feature.label-name-replaced",
                 "feature.operation-graph-open",
                 "feature.state-unresolved",
                 "parameter.graph-open",
