@@ -1397,6 +1397,22 @@ u8       resizeType                      v >= 12
 u32 count, count × ref  values
 ```
 
+The placement `refType` has the following direct-reference shapes and scalar roles. A scalar role names the source kind of the parameter reached through its scalar owner. The `values` list preserves the order shown.
+
+| `refType` | Direct geometry references | `values` scalar roles |
+| ---: | --- | --- |
+| 2 | Empty | Empty or `AlongDistance` |
+| 3, 4, 10 | Empty | `RotateAngle` |
+| 5, 8, 11, 12 | Empty | Empty |
+| 6 | Required `rOrigin`; optional `rXAxis` and `rZAxis`; empty edge and plane lists | Empty or `OffsetX`, `OffsetY`, `OffsetZ`, `AngleZ` |
+| 7 | Required `rOrigin` and `rZAxis`; two `rPlaneReferences`; null `rXAxis`; empty edge list | `OffsetX`, `OffsetY`, `OffsetZ`, `AngleZ` |
+| 13 | Empty | `PathDistance` |
+| 15 | Empty | `RotateAngle` |
+| 17 | Empty | `AlongDistance` |
+| 20 | Empty | Empty or `OffsetX`, `OffsetY`, `OffsetZ`, `AngleZ` |
+
+“Empty” direct geometry means that `rOrigin`, `rXAxis`, and `rZAxis` are null and both `rEdgeReferences` and `rPlaneReferences` are empty. It does not mean that the construction has no geometry operands: the owning scope retains its separate ordered references. Code `20` has a non-null `definerCreator` of type `0F38E3C4-2E39-470B-A4FD-D3187224FB9F`, version `0`; the other listed codes have a null creator. Codes `4` and `10` retain distinct numeric values even though their scalar roles and direct geometry shapes agree. The solved matrix does not identify the construction rule or replace owner-scope operands.
+
 In version 14, a non-null `extraOffset` names a version-0 scalar-parameter owner of type `D91D429C-1BB5-4640-B49F-69AF14F463E9`. The owner references a parameter of type `7A6A3D31-BE74-4E19-9115-20642944C2E4` whose source kind is `ExtraOffset`. The parameter retains its authored length unit and expression. This direct owner reference is independent of the trailing `values` list. It can occur with a nonempty or empty `values` list and does not replace a list member.
 
 The unmarked version-4 form stores its matrix at primary-record offset 48, immediately after the three axis-state bytes. It has no identity marker. The marked form stores the identity marker before the matrix. The base level follows the class members. `matrix3d` is the row-major 4×4 local-to-model transform with the translation in column 3 and the bottom row `(0, 0, 0, 1)`; the origin is in centimetres. The leading identity byte is the member's presence marker read the other way round: `1` states that the transform is the identity and stores no matrix, so the two forms of one class version differ by exactly the matrix's 128 bytes. `alignUpDirection` is a unit vector or zero. `resizeType` is one byte wide; reading it as a u32 desynchronizes the `values` list that follows it. WorkPlane records of the same class are not sketch placements.
