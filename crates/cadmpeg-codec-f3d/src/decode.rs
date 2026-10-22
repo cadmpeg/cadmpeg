@@ -2765,6 +2765,20 @@ impl<'a> F3dDecodeSession<'a> {
         );
         self.ir.model.assembly_joints = joints.joints;
         self.report.losses.extend(joints.losses);
+        let joint_placed = crate::design::assembly::joint_placed_identity_occurrences(
+            &self.ir.model.occurrences,
+            self.ir
+                .model
+                .assembly_joints
+                .iter()
+                .flat_map(cadmpeg_ir::products::AssemblyJoint::connectors)
+                .map(|connector| &connector.operand.container),
+        );
+        self.report
+            .losses
+            .extend(crate::design::assembly::joint_placed_occurrence_loss(
+                joint_placed,
+            ));
         Ok(finalize_path)
     }
 

@@ -5300,6 +5300,29 @@ Unstated regions:
 
 - `11..20` (9 B): Bytes 11 through 19 precede the wide marker and are not read for the frame sense.
 
+## `assembly_rigid_as_built_scope`
+
+Spec §Assembly operands · layout: byte offsets · size: not stated
+
+This size-less byte record describes the fixed prefix of the 269-byte rigid As-built scope through its empty reference table. Offsets are relative to the scope's primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After its indexed header it |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | stores eleven zero bytes |
+| 22 | 11 | `pathless_locator_reference` | `bytes[11]` | little | spec | a marked reference at offset 22 to a wide |
+| 33 | 4 | `zero_run_33` | `bytes[4]` | little | spec | four zero bytes, u32 value 2 at offset 37 |
+| 37 | 4 | `locator_count` | `u32` | little | spec | u32 value 2 at offset 37 |
+| 41 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | the marked references to its two wide operand-path locators at offsets 41 and 52 |
+| 52 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | the marked references to its two wide operand-path locators at offsets 41 and 52 |
+| 63 | 11 | `joint_reference` | `bytes[11]` | little | spec | a marked reference to its joint record at offset 63 |
+| 74 | 76 | `guid` | `bytes[76]` | little | spec | LP-UTF16 GUID at offset 74 |
+| 150 | 3 | `zero_run_150` | `bytes[3]` | little | spec | three zero bytes, and an empty reference table |
+| 153 | 4 | `reference_count` | `u32` | little | spec | u32 count 0 immediately before the history state |
+
 ## `assembly_compact_wide_scope`
 
 Spec §Assembly operands · layout: byte offsets · size: not stated
