@@ -163,8 +163,6 @@ pub(crate) enum RhinoLossCode {
     BrepMeshCacheDegraded,
     /// A duplicate source record was resolved by the format's ownership rule.
     DuplicateRecordResolved,
-    /// A stored quad was converted to neutral triangles.
-    MeshQuadTopologyTriangulated,
     /// Embedded history geometry could not be decoded.
     HistoryEmbeddedGeometryDropped,
     /// A dimension-style override object was not applied.
@@ -183,8 +181,6 @@ pub(crate) enum RhinoLossCode {
     ObjectFramingUndecodable,
     /// A decode phase surfaced a per-record diagnostic.
     ObjectDecodeDiagnostic,
-    /// A discontinuous polycurve join moved both source endpoints to their midpoint.
-    PolycurveJoinGap,
     /// One B-rep trim lost its parameter-space curve while its topology remained.
     TrimPcurveDropped,
     /// B-rep topology fell back to a carrier-only transfer.
@@ -241,6 +237,21 @@ pub(crate) enum RhinoLossCode {
     SourceDialectUnverified,
     /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
+    /// Annotation RTF text has no plain-text fragment in neutral text.
+    AnnotationRichTextUnflattened,
+    /// A hatch pattern index names no decoded hatch-pattern record.
+    HatchPatternUnresolved,
+    /// `SubD` texture mapping, face packing, or texture points have no neutral carrier.
+    SubdTextureOmitted,
+    /// `SubD` symmetry state has no neutral carrier.
+    SubdSymmetryOmitted,
+    /// `SubD` per-face material channel or color has no neutral carrier.
+    SubdFaceAttributeOmitted,
+    /// `SubD` component group IDs have no neutral carrier.
+    SubdComponentGroupOmitted,
+    /// The document declares no physical length unit; model units stand in
+    /// for millimetres.
+    DocumentLengthUnitUndeclared,
 }
 
 impl RhinoLossCode {
@@ -259,7 +270,6 @@ impl RhinoLossCode {
         Self::RedundantFieldRepaired,
         Self::BrepMeshCacheDegraded,
         Self::DuplicateRecordResolved,
-        Self::MeshQuadTopologyTriangulated,
         Self::HistoryEmbeddedGeometryDropped,
         Self::DimensionOverrideDropped,
         Self::HistoryDependencyDropped,
@@ -269,7 +279,6 @@ impl RhinoLossCode {
         Self::ObjectAttributesDegraded,
         Self::ObjectFramingUndecodable,
         Self::ObjectDecodeDiagnostic,
-        Self::PolycurveJoinGap,
         Self::TrimPcurveDropped,
         Self::TopologyBrepFallback,
         Self::HatchFillNotTransferred,
@@ -289,6 +298,13 @@ impl RhinoLossCode {
         Self::SourceWriterStampUnverified,
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
+        Self::AnnotationRichTextUnflattened,
+        Self::HatchPatternUnresolved,
+        Self::SubdTextureOmitted,
+        Self::SubdSymmetryOmitted,
+        Self::SubdFaceAttributeOmitted,
+        Self::SubdComponentGroupOmitted,
+        Self::DocumentLengthUnitUndeclared,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -307,7 +323,6 @@ impl RhinoLossCode {
             Self::RedundantFieldRepaired => "container.redundant-field-repaired",
             Self::BrepMeshCacheDegraded => "brep.mesh-cache-degraded",
             Self::DuplicateRecordResolved => "container.duplicate-record-resolved",
-            Self::MeshQuadTopologyTriangulated => "mesh.quad-topology-triangulated",
             Self::HistoryEmbeddedGeometryDropped => "history.embedded-geometry-dropped",
             Self::DimensionOverrideDropped => "dimension.override-dropped",
             Self::HistoryDependencyDropped => "history.dependency-dropped",
@@ -317,7 +332,6 @@ impl RhinoLossCode {
             Self::ObjectAttributesDegraded => "object.attributes-degraded",
             Self::ObjectFramingUndecodable => "object.framing-undecodable",
             Self::ObjectDecodeDiagnostic => "object.decode-diagnostic",
-            Self::PolycurveJoinGap => "curve.polycurve-join-gap",
             Self::TrimPcurveDropped => "brep.trim-pcurve-dropped",
             Self::TopologyBrepFallback => "topology.brep-fallback",
             Self::HatchFillNotTransferred => "hatch.fill-not-transferred",
@@ -337,6 +351,13 @@ impl RhinoLossCode {
             Self::SourceWriterStampUnverified => "source.writer-stamp-unverified",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
+            Self::AnnotationRichTextUnflattened => "annotation.rich-text-unflattened",
+            Self::HatchPatternUnresolved => "hatch.pattern-unresolved",
+            Self::SubdTextureOmitted => "subd.texture-omitted",
+            Self::SubdSymmetryOmitted => "subd.symmetry-omitted",
+            Self::SubdFaceAttributeOmitted => "subd.face-attribute-omitted",
+            Self::SubdComponentGroupOmitted => "subd.component-group-omitted",
+            Self::DocumentLengthUnitUndeclared => "geometry.document-length-unit-undeclared",
         }
     }
 
@@ -345,7 +366,9 @@ impl RhinoLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::ObjectRecordCensus => Severity::Info,
-            Self::ObjectFramingUndecodable | Self::IntegrityFailure => Severity::Error,
+            Self::ObjectFramingUndecodable
+            | Self::IntegrityFailure
+            | Self::DocumentLengthUnitUndeclared => Severity::Error,
             _ => Severity::Warning,
         }
     }
@@ -359,7 +382,6 @@ impl RhinoLossCode {
             | Self::ObjectDecodeDiagnostic
             | Self::AnnotationRecordDropped
             | Self::AnnotationUserdataDropped
-            | Self::PolycurveJoinGap
             | Self::ReferenceMemberUnresolved
             | Self::ReferenceMemberAmbiguous => LossTaxonomy::DecodeDiagnostic,
             Self::TrimPcurveDropped => LossTaxonomy::PcurveOmitted,
@@ -368,9 +390,7 @@ impl RhinoLossCode {
             Self::ViewportUserdataDropped | Self::ProductOccurrenceDropped => {
                 LossTaxonomy::RecordNotTyped
             }
-            Self::MeshNgonGroupingDropped | Self::MeshQuadTopologyTriangulated => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::MeshNgonGroupingDropped => LossTaxonomy::RecordNotTyped,
             Self::EnumerationValueDegraded | Self::RedundantFieldRepaired => {
                 LossTaxonomy::DecodeDiagnostic
             }
@@ -399,8 +419,16 @@ impl RhinoLossCode {
             Self::SourceWriterStampUnverified | Self::SourceDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
-            Self::WriterSupportGeometryWithheld => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterSupportGeometryWithheld | Self::DocumentLengthUnitUndeclared => {
+                LossTaxonomy::GeometryNotTransferred
+            }
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
+            Self::AnnotationRichTextUnflattened => LossTaxonomy::PmiOmitted,
+            Self::HatchPatternUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
+            Self::SubdTextureOmitted => LossTaxonomy::RecordNotTyped,
+            Self::SubdSymmetryOmitted => LossTaxonomy::RecordNotTyped,
+            Self::SubdFaceAttributeOmitted => LossTaxonomy::RecordNotTyped,
+            Self::SubdComponentGroupOmitted => LossTaxonomy::RecordNotTyped,
         }
     }
 
@@ -467,7 +495,6 @@ mod tests {
                 "container.redundant-field-repaired",
                 "brep.mesh-cache-degraded",
                 "container.duplicate-record-resolved",
-                "mesh.quad-topology-triangulated",
                 "history.embedded-geometry-dropped",
                 "dimension.override-dropped",
                 "history.dependency-dropped",
@@ -477,7 +504,6 @@ mod tests {
                 "object.attributes-degraded",
                 "object.framing-undecodable",
                 "object.decode-diagnostic",
-                "curve.polycurve-join-gap",
                 "brep.trim-pcurve-dropped",
                 "topology.brep-fallback",
                 "hatch.fill-not-transferred",
@@ -497,6 +523,13 @@ mod tests {
                 "source.writer-stamp-unverified",
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",
+                "annotation.rich-text-unflattened",
+                "hatch.pattern-unresolved",
+                "subd.texture-omitted",
+                "subd.symmetry-omitted",
+                "subd.face-attribute-omitted",
+                "subd.component-group-omitted",
+                "geometry.document-length-unit-undeclared",
             ]
         );
     }

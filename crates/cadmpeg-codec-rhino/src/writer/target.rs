@@ -106,6 +106,18 @@ pub(crate) fn plan(
              and would not charge this",
         ));
     }
+    let flattened_groups = input
+        .ir
+        .model
+        .tessellations
+        .iter()
+        .map(|mesh| super::mesh_faces(mesh).flattened_groups)
+        .sum::<usize>();
+    if flattened_groups != 0 {
+        losses.push(RhinoLossCode::MeshNgonGroupingDropped.note(format_args!(
+            "{flattened_groups} multi-triangle mesh group(s) other than split quads were written as separate triangle faces"
+        )));
+    }
     if normal_quantization {
         losses.push(RhinoLossCode::MeshNormalPrecisionReduced.note(
             "3DM mesh normals are stored as f32; every rhino write target charges this, \

@@ -56,6 +56,14 @@ const TCODE_UNIT_AND_TOLERANCES: u32 = 0x0200_0010;
 const TCODE_NAMED_CPLANE: u32 = 0x0200_0004;
 const TCODE_NAMED_VIEW: u32 = 0x0200_0005;
 const TCODE_VIEWPORT: u32 = 0x0200_0006;
+const TCODE_NOTES: u32 = 0x0200_000f;
+const TCODE_SUMMARY: u32 = 0x0200_0013;
+const TCODE_BITMAPPREVIEW: u32 = 0x0200_0014;
+const TCODE_ANNOTATION_SETTINGS: u32 = 0x0020_0001;
+const TCODE_LAYER: u32 = 0x0040_0010;
+const TCODE_RENDERMESHPARAMS: u32 = 0x0040_0020;
+const TCODE_CURRENTLAYER: u32 = 0x8040_0025;
+const TCODE_RH_SPOTLIGHT: u32 = 0x0080_0001;
 const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
 const TCODE_ENDOFFILE: u32 = 0x8000_7fff;
 const TCODE_TEXT_BLOCK: u32 = 0x0020_0004;
@@ -75,6 +83,25 @@ fn is_v1_presentation_setting(typecode: u32) -> bool {
         typecode,
         TCODE_NAMED_CPLANE | TCODE_NAMED_VIEW | TCODE_VIEWPORT
     )
+}
+
+/// Names a V1 flat record that holds document, table, or presentation state
+/// and no geometry.
+fn v1_nongeometry_record(typecode: u32) -> Option<&'static str> {
+    Some(match typecode {
+        TCODE_NAMED_CPLANE => "named construction plane",
+        TCODE_NAMED_VIEW => "named view",
+        TCODE_VIEWPORT => "viewport",
+        TCODE_ANNOTATION_SETTINGS => "annotation settings",
+        TCODE_LAYER => "layer",
+        TCODE_RENDERMESHPARAMS => "render-mesh parameters",
+        TCODE_CURRENTLAYER => "current layer",
+        TCODE_RH_SPOTLIGHT => "spotlight",
+        TCODE_NOTES => "notes",
+        TCODE_SUMMARY => "revision summary",
+        TCODE_BITMAPPREVIEW => "preview bitmap",
+        _ => return None,
+    })
 }
 
 fn legacy_identity_key(value: impl Into<String>) -> Result<IdentityKey, CodecError> {
@@ -2493,19 +2520,21 @@ fn legacy_mesh(
             )
             .map_err(|error| malformed(&error))?;
     }
-    let triangles =
-        crate::mesh::triangulate_faces(&faces, &vertices, |point| point).map_err(|error| {
-            match error {
-                crate::curves::GeometryError::Codec(error) => error,
-                other => CodecError::Malformed(other.to_string()),
-            }
-        })?;
+    let crate::mesh::FaceTriangles {
+        triangles, groups, ..
+    } = crate::mesh::triangulate_faces(&faces, &vertices, |point| point, &[]).map_err(|error| {
+        match error {
+            crate::curves::GeometryError::Codec(error) => error,
+            other => CodecError::Malformed(other.to_string()),
+        }
+    })?;
     Tessellation::new(
         cadmpeg_ir::tessellation::TessellationId::mint(id)
             .map_err(|error| CodecError::Malformed(error.to_string()))?,
         cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, triangles, normals)?,
         Vec::new(),
     )
+    .and_then(|mesh| mesh.with_triangle_groups(groups))
     .map_err(|err| CodecError::Malformed(err.to_string()))
 }
 
@@ -2617,7 +2646,9 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     let mut retained_bytes = 0_usize;
     let mut diagnostics = Vec::new();
     let mut tolerance_losses = Vec::new();
-    let mut scale = MillimeterScale::IDENTITY;
+    let mut binding = crate::settings::UnitBinding::Millimeters(MillimeterScale::IDENTITY);
+    let mut scale = binding.model_scale();
+    let mut presentation_chunks = Vec::new();
     while offset < data.len() {
         let chunk = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
             .map_err(|error| malformed(&error))?;
@@ -2638,15 +2669,15 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 )));
             }
             let unit = reader.i32().map_err(|error| malformed(&error))?;
-            scale = if unit == 0 {
-                MillimeterScale::IDENTITY
-            } else {
-                crate::settings::StandardUnit::from_value(unit)
-                    .map(MillimeterScale::from)
+            binding = match unit {
+                1..=10 => crate::settings::StandardUnit::from_value(unit)
+                    .map(|unit| crate::settings::UnitBinding::Millimeters(unit.into()))
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!("unsupported V1 unit system {unit}"))
-                    })?
+                    })?,
+                _ => crate::settings::UnitBinding::Native,
             };
+            scale = binding.model_scale();
             let linear = reader.f64().map_err(|error| malformed(&error))? * scale.value();
             ir.tolerances.linear = crate::decode::admitted_tolerance(
                 cadmpeg_ir::scalar::PositiveLength::new(linear),
@@ -2665,8 +2696,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 &mut tolerance_losses,
             );
         } else if is_v1_presentation_setting(chunk.typecode) && !chunk.short() {
-            count_v1_omission(&mut omitted, chunk.typecode);
-            push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
+            presentation_chunks.push(chunk.clone());
         } else if chunk.typecode == TCODE_RH_POINT && !chunk.short() {
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .map_err(|error| malformed(&error))?;
@@ -2997,6 +3027,42 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         }
         offset = chunk.next_offset();
     }
+    let mut presentation = Vec::new();
+    for chunk in presentation_chunks {
+        let Some(kind) = crate::views::legacy_v1::kind(chunk.typecode) else {
+            continue;
+        };
+        match crate::views::legacy_v1::parse(data, &chunk, kind, scale) {
+            Ok(record) => {
+                presentation.push(record);
+                push_v1_record(
+                    ctx,
+                    &mut typed_source_records,
+                    data,
+                    &chunk,
+                    &mut retained_bytes,
+                )?;
+            }
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+            Err(error) => {
+                push_v1_diagnostic(
+                    &mut diagnostics,
+                    format_args!(
+                        "V1 presentation record at offset {}: {error}",
+                        chunk.header_start
+                    ),
+                );
+                count_v1_omission(&mut omitted, chunk.typecode);
+                push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
+            }
+        }
+    }
+    if !presentation.is_empty() {
+        ir.native
+            .namespace_mut("rhino")
+            .set_arena(ctx, "legacy_v1_presentation", &presentation)
+            .map_err(CodecError::malformed)?;
+    }
     if !direct_records.is_empty() {
         let namespace = ir.native.namespace_mut("rhino");
         namespace
@@ -3022,9 +3088,9 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         );
     }
     for (typecode, count) in omitted {
-        losses.push(if is_v1_presentation_setting(typecode) {
+        losses.push(if let Some(name) = v1_nongeometry_record(typecode) {
             RhinoLossCode::PresentationRecordDropped.note(format_args!(
-                "V1 presentation typecode {typecode:#010x}: {count} record(s) retained as opaque"
+                "V1 {name} typecode {typecode:#010x}: {count} record(s) retained as opaque"
             ))
         } else {
             RhinoLossCode::ObjectFamilyNotTransferred.note(format_args!(
@@ -3033,6 +3099,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         });
     }
 
+    losses.extend(binding.undeclared_unit_loss());
     losses.append(&mut tolerance_losses);
     let mut notes = Vec::new();
     notes.push(format!("decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"));
@@ -3102,15 +3169,17 @@ fn v1_nurbs_object<T>(
 #[cfg(test)]
 mod tests {
     use super::{
-        TCODE_ANGULAR_DIMENSION, TCODE_ANNOTATION_LEADER, TCODE_COMMENT, TCODE_ENDOFFILE,
-        TCODE_ENDOFTABLE, TCODE_LEGACY_BND, TCODE_LEGACY_BNDSTUFF, TCODE_LEGACY_CRV,
+        TCODE_ANGULAR_DIMENSION, TCODE_ANNOTATION_LEADER, TCODE_ANNOTATION_SETTINGS,
+        TCODE_BITMAPPREVIEW, TCODE_COMMENT, TCODE_CURRENTLAYER, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+        TCODE_LAYER, TCODE_LEGACY_BND, TCODE_LEGACY_BNDSTUFF, TCODE_LEGACY_CRV,
         TCODE_LEGACY_CRVSTUFF, TCODE_LEGACY_FAC, TCODE_LEGACY_FACSTUFF, TCODE_LEGACY_SHL,
         TCODE_LEGACY_SHLSTUFF, TCODE_LEGACY_SPL, TCODE_LEGACY_SPLSTUFF, TCODE_LEGACY_SRF,
         TCODE_LEGACY_SRFSTUFF, TCODE_LEGACY_TRM, TCODE_LEGACY_TRMSTUFF, TCODE_LINEAR_DIMENSION,
-        TCODE_NAMED_CPLANE, TCODE_NAMED_VIEW, TCODE_RADIAL_DIMENSION, TCODE_RHINOIO_OBJECT_BREP,
-        TCODE_RHINOIO_OBJECT_DATA, TCODE_RHINOIO_OBJECT_NURBS_CURVE,
-        TCODE_RHINOIO_OBJECT_NURBS_SURFACE, TCODE_RH_POINT, TCODE_TEXT_BLOCK,
-        TCODE_UNIT_AND_TOLERANCES, TCODE_VIEWPORT,
+        TCODE_NAMED_CPLANE, TCODE_NAMED_VIEW, TCODE_NOTES, TCODE_RADIAL_DIMENSION,
+        TCODE_RENDERMESHPARAMS, TCODE_RHINOIO_OBJECT_BREP, TCODE_RHINOIO_OBJECT_DATA,
+        TCODE_RHINOIO_OBJECT_NURBS_CURVE, TCODE_RHINOIO_OBJECT_NURBS_SURFACE, TCODE_RH_POINT,
+        TCODE_RH_SPOTLIGHT, TCODE_SUMMARY, TCODE_TEXT_BLOCK, TCODE_UNIT_AND_TOLERANCES,
+        TCODE_VIEWPORT,
     };
     use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
     use crate::loss::RhinoLossCode;
@@ -3334,6 +3403,72 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn v1_unit_system_none_keeps_model_units_and_reports_the_undeclared_unit() {
+        for unit in [0_i32, 11, -1] {
+            v1_unit_without_physical_scale(unit);
+        }
+    }
+
+    fn v1_unit_without_physical_scale(unit: i32) {
+        let mut units = Vec::new();
+        units.extend(1_i32.to_le_bytes());
+        units.extend(unit.to_le_bytes());
+        units.extend(0.01_f64.to_le_bytes());
+        units.extend(0.02_f64.to_le_bytes());
+        units.extend(0.03_f64.to_le_bytes());
+        let mut data = archive(&[]);
+        data.extend(chunk(TCODE_UNIT_AND_TOLERANCES, &units));
+        let mut point = Vec::new();
+        for value in [1.0_f64, 2.0, 3.0] {
+            point.extend(value.to_le_bytes());
+        }
+        data.extend(chunk(TCODE_RH_POINT, &point));
+        let decoded = decode_v1(&data).expect("decode the version 1 archive");
+        assert_eq!(
+            decoded.ir.model.points[0].position().get(),
+            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+        );
+        assert_eq!(
+            decoded
+                .body
+                .losses
+                .iter()
+                .filter(|loss| loss.code == RhinoLossCode::DocumentLengthUnitUndeclared.kind())
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn v1_document_and_table_typecodes_are_not_geometry_losses() {
+        let mut data = archive(&[]);
+        for typecode in [
+            TCODE_ANNOTATION_SETTINGS,
+            TCODE_LAYER,
+            TCODE_RENDERMESHPARAMS,
+            TCODE_RH_SPOTLIGHT,
+            TCODE_NOTES,
+            TCODE_SUMMARY,
+            TCODE_BITMAPPREVIEW,
+        ] {
+            data.extend(chunk(typecode, b"state"));
+        }
+        data.extend(short(TCODE_CURRENTLAYER, 0));
+        let losses = decode_v1(&data)
+            .expect("decode the version 1 archive")
+            .body
+            .losses;
+        assert_eq!(losses.len(), 8);
+        assert!(losses.iter().all(|loss| {
+            loss.code == RhinoLossCode::PresentationRecordDropped.kind()
+                && !loss.message.contains("geometry")
+        }));
+        assert!(losses
+            .iter()
+            .any(|loss| loss.message.starts_with("V1 layer typecode 0x00400010")));
     }
 
     #[test]
@@ -4147,22 +4282,21 @@ mod tests {
     }
 
     #[test]
-    fn v1_settings_presentation_records_are_opaque_and_table_end_is_structural() {
+    fn v1_settings_presentation_records_are_typed_and_table_end_is_structural() {
         let result = EditableDecodeResult::from(crate::decode::seal_for_test(
             decode_v1(&v1_settings_archive()).expect("valid V1 settings stream"),
             false,
         ));
         assert_eq!(result.ir().tolerances.linear.get(), 10.0);
         assert_eq!(result.source_fidelity().retained_records().len(), 3);
-        assert_eq!(
-            result
-                .report()
-                .losses
-                .iter()
-                .filter(|loss| { loss.code == RhinoLossCode::PresentationRecordDropped.kind() })
-                .count(),
-            3
-        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != RhinoLossCode::PresentationRecordDropped.kind()));
+        let records =
+            &result.ir().native.namespace("rhino").unwrap().arenas()["legacy_v1_presentation"];
+        assert_eq!(records.len(), 3);
         assert!(!result
             .report()
             .losses

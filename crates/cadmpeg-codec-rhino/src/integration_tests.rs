@@ -1686,13 +1686,13 @@ fn typed_class_constants_preserve_canonical_uuid_display() {
 }
 
 const BASELINE: [(u64, usize, usize); 7] = [
-    (2, 1989, 2342),
-    (3, 2413, 2477),
-    (4, 47, 173),
-    (50, 92, 198),
-    (60, 28, 37),
-    (70, 31, 46),
-    (80, 24, 39),
+    (2, 2222, 2342),
+    (3, 2421, 2477),
+    (4, 149, 173),
+    (50, 191, 198),
+    (60, 35, 37),
+    (70, 39, 46),
+    (80, 30, 39),
 ];
 
 const STRUCTURED_SOURCE_OBJECTS: usize = 6;

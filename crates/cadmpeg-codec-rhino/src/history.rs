@@ -1503,13 +1503,13 @@ fn extended_geometry_json(
             .ok(),
             Some(crate::subd::DecodedSubd {
                 surface,
-                neutral_metadata,
+                metadata,
                 enum_diagnostics,
                 ..
             }) => crate::wire::canonical_json(&SubdJson {
                 enum_diagnostics: SubdDiagnostics(&enum_diagnostics),
                 kind: "subd",
-                neutral_metadata: &neutral_metadata,
+                neutral_metadata: &metadata,
                 surface: &surface,
             })
             .ok(),

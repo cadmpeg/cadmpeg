@@ -19,13 +19,13 @@ The committed transfer floors are:
 
 | Archive | Supported floor | Source objects |
 | ------: | --------------: | -------------: |
-|       2 |           1,989 |          2,342 |
-|       3 |           2,413 |          2,477 |
-|       4 |              47 |            173 |
-|      50 |              92 |            198 |
-|      60 |              28 |             37 |
-|      70 |              31 |             46 |
-|      80 |              24 |             39 |
+|       2 |           2,222 |          2,342 |
+|       3 |           2,421 |          2,477 |
+|       4 |             149 |            173 |
+|      50 |             191 |            198 |
+|      60 |              35 |             37 |
+|      70 |              39 |             46 |
+|      80 |              30 |             39 |
 
 The supported count is a per-version minimum. It is not a monotonicity claim
 and it is not complete object coverage. The test fails when `example_read`

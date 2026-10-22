@@ -29,18 +29,20 @@ fn unit_binding_document(unit: Option<i32>) -> (Vec<u8>, Vec<u8>) {
 }
 
 #[test]
-fn full_document_unit_binding_admits_only_physical_geometry() {
-    for (unit, label, transferred) in [
-        (Some(2), "millimeters", true),
-        (Some(0), "native", false),
-        (Some(255), "unavailable", false),
-        (None, "unavailable", false),
+fn full_document_unit_binding_transfers_model_units_and_reports_an_undeclared_unit() {
+    for (unit, label, undeclared) in [
+        (Some(2), "millimeters", false),
+        (Some(0), "native", true),
+        (Some(255), "unavailable", true),
+        (None, "unavailable", true),
     ] {
         let (bytes, object) = unit_binding_document(unit);
         let result = decode(bytes);
+        let points = &result.ir().model.points;
+        assert_eq!(points.len(), 1, "{label}");
         assert_eq!(
-            result.ir().model.points.len(),
-            usize::from(transferred),
+            points[0].position().get(),
+            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             "{label}"
         );
         let retained = result
@@ -48,20 +50,20 @@ fn full_document_unit_binding_admits_only_physical_geometry() {
             .retained_record("rhino:object:record#000000")
             .unwrap_or_else(|| panic!("{label} object source was not retained"));
         assert_eq!(retained.data(), Some(object.as_slice()), "{label}");
-        if transferred {
-            assert!(!result
-                .report()
-                .losses
-                .iter()
-                .any(|loss| { loss.message.contains("no physical millimetre binding") }));
-        } else {
-            assert!(result.report().losses.iter().any(|loss| {
-                loss.code == crate::loss::RhinoLossCode::ObjectDecodeDiagnostic.kind()
-                    && loss
-                        .message
-                        .contains(&format!("no physical millimetre binding ({label})"))
-            }));
-        }
+        let undeclared_losses = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code == crate::loss::RhinoLossCode::DocumentLengthUnitUndeclared.kind()
+            })
+            .count();
+        assert_eq!(undeclared_losses, usize::from(undeclared), "{label}");
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("no physical millimetre binding")));
         assert_valid(&result);
     }
 }

@@ -803,13 +803,10 @@ fn validates_higher_levels_and_render_mesh_chunks() {
         crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("required invariant");
-    let Some(DecodedSubd {
-        neutral_metadata, ..
-    }) = decoded
-    else {
+    let Some(DecodedSubd { metadata, .. }) = decoded else {
         panic!("expected surface");
     };
-    assert!(neutral_metadata);
+    assert_eq!(metadata.refinement_levels, 1);
 }
 
 #[test]
@@ -934,6 +931,50 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
             .is_ok()
+    );
+}
+
+#[test]
+fn known_subd_symmetry_is_recorded_and_reported_as_its_own_channel() {
+    let archive = ArchiveVersion::V5;
+    let uuid = [
+        0xd9, 0xa4, 0x9b, 0xf0, 0x5b, 0x45, 0xc3, 0x42, 0xba, 0x3b, 0xe6, 0xcc, 0xac, 0xef, 0x85,
+        0x3b,
+    ];
+    let payload = payload(Fixture {
+        minor: 2,
+        symmetry_type: 1,
+        ..Fixture::default()
+    });
+    let object = object_record_with_payload(archive, 0x0004_0000, uuid, &payload);
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[object]),
+        ],
+    );
+    let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
+    set_test_units(&mut scan, 1.0);
+    let result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
+    assert_eq!(result.ir().model.subds.len(), 1);
+    let codes = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.starts_with("SubD "))
+        .map(|loss| loss.code.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        codes,
+        [crate::loss::RhinoLossCode::SubdSymmetryOmitted.kind()]
+    );
+    let records = &result.ir().native.namespace("rhino").unwrap().arenas()["subd_metadata"];
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].field("symmetry"),
+        Some(serde_json::json!("reflect"))
     );
 }
 

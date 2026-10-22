@@ -384,21 +384,77 @@ fn standalone_mesh_round_trips_across_archive_versions() {
             ir.model.tessellations[0].vertex_normals()
         );
     }
+}
 
-    ir.model.tessellations[0] = ir.model.tessellations[0]
-        .clone()
-        .with_triangle_groups(vec![cadmpeg_ir::tessellation::TessellationTriangleGroup {
-            source_id: Some("synthetic:test:group#0".into()),
-            triangles: vec![0],
-        }])
-        .expect("valid triangle group partition");
-    assert!(matches!(
-        RhinoCodec.plan(
+#[test]
+fn split_quad_groups_round_trip_as_quads_and_other_groups_flatten() {
+    use cadmpeg_ir::tessellation::TessellationTriangleGroup;
+    let group = |source: &str, triangles: Vec<u32>| TessellationTriangleGroup {
+        source_id: Some(source.to_owned()),
+        triangles,
+    };
+    let mesh = |triangles: Vec<[u32; 3]>, groups: Vec<TessellationTriangleGroup>| {
+        Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#quad")
+                .expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                    Point3::new(2.0, 2.0, 0.0),
+                    Point3::new(0.0, 2.0, 0.0),
+                    Point3::new(1.0, 3.0, 0.0),
+                ],
+                triangles,
+                None,
+            )
+            .expect("list lanes"),
+            Vec::new(),
+        )
+        .and_then(|mesh| mesh.with_triangle_groups(groups))
+        .expect("valid tessellation")
+    };
+    let quad = mesh(
+        vec![[0, 1, 2], [0, 2, 3], [2, 4, 3]],
+        vec![group("face:0", vec![0, 1]), group("face:1", vec![2])],
+    );
+    let mut ir = CadIr::empty();
+    ir.model.tessellations.push(quad.clone());
+    let plan = RhinoCodec
+        .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
-        ),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("split quads are writable");
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::RhinoLossCode::MeshNgonGroupingDropped.kind()));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode");
+    let actual = &decoded.ir().model.tessellations[0];
+    assert_eq!(actual.triangles(), quad.triangles());
+    assert_eq!(actual.triangle_groups(), quad.triangle_groups());
+
+    ir.model.tessellations[0] = mesh(
+        vec![[0, 1, 2], [0, 2, 3], [2, 4, 3]],
+        vec![group("ngon:0", vec![0, 1, 2])],
+    );
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("other groups flatten");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::RhinoLossCode::MeshNgonGroupingDropped.kind()));
 }
 
 #[test]

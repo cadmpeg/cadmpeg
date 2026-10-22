@@ -530,11 +530,9 @@ impl MillimeterScale {
 
 /// The coordinate-unit fact carried by a scanned document.
 ///
-/// `None` is a legal Rhino unit system, but it means that coordinates remain
-/// in native units without a physical millimetre interpretation.  `Unset` and
-/// a missing units record provide no coordinate scale at all.  Keeping these
-/// states separate from a bare `f64` prevents a caller from treating the
-/// native scale-1 convention as a canonical millimetre conversion.
+/// `None` is a legal Rhino unit system: coordinates remain in model units
+/// without a physical millimetre interpretation. `Unset` and a missing units
+/// record provide no coordinate scale.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum UnitBinding {
     /// The source declares a finite positive scale to millimetres.
@@ -565,6 +563,27 @@ impl UnitBinding {
             Self::Millimeters(scale) => Some(scale),
             Self::Native | Self::Unavailable => None,
         }
+    }
+
+    /// Returns the scale for model coordinates. A document without a
+    /// physical unit keeps its model units at scale one.
+    pub(crate) fn model_scale(self) -> MillimeterScale {
+        self.neutral_scale().unwrap_or(MillimeterScale::IDENTITY)
+    }
+
+    /// Returns the loss that states model units stand in for millimetres,
+    /// or `None` when the source declares a physical unit.
+    pub(crate) fn undeclared_unit_loss(self) -> Option<cadmpeg_ir::report::loss::LossNote> {
+        let reason = match self {
+            Self::Millimeters(_) => return None,
+            Self::Native => "declares no unit system",
+            Self::Unavailable => "has no usable unit system",
+        };
+        Some(
+            crate::loss::RhinoLossCode::DocumentLengthUnitUndeclared.note(format_args!(
+                "the document {reason}; model coordinates and lengths are unscaled and reported as millimetres"
+            )),
+        )
     }
 
     /// Stable diagnostic label for the binding state.
@@ -1344,6 +1363,7 @@ fn parse_application(
     Ok(value)
 }
 
+#[cfg(test)]
 pub(crate) fn standard_scale(value: i32) -> Option<f64> {
     StandardUnit::from_value(value).map(StandardUnit::millimeters_per_unit)
 }

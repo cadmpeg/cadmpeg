@@ -276,15 +276,10 @@ fn history_record_writer_bands_follow_archive_version() {
 }
 
 #[test]
-fn full_history_document_retains_geometry_without_a_physical_binding() {
+fn full_history_document_projects_geometry_in_model_units() {
     let archive = ArchiveVersion::V8;
     let history_record = history_record_with_point_geometry(archive);
-    for (unit, retained) in [
-        (Some(2), false),
-        (Some(0), true),
-        (Some(255), true),
-        (None, true),
-    ] {
+    for unit in [Some(2), Some(0), Some(255), None] {
         let unit_records = unit
             .map(|value| vec![units_record(archive, value)])
             .unwrap_or_default();
@@ -303,41 +298,15 @@ fn full_history_document_retains_geometry_without_a_physical_binding() {
                 .expect("complete history document"),
         );
         let feature = &result.ir().model.features[0];
-        if retained {
-            assert_eq!(
-                feature.source_properties["value_7.0.geometry_status"],
-                "unavailable_unit_binding"
-            );
-            let source_id = feature.source_properties["value_7.source_fidelity_id"].clone();
-            let source = result
-                .source_fidelity()
-                .retained_record(&source_id)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "history source {source_id} was not retained; keys={:?}",
-                        result
-                            .source_fidelity()
-                            .retained_records()
-                            .keys()
-                            .collect::<Vec<_>>()
-                    )
-                });
-            assert_eq!(source.data(), Some(history_record.as_slice()));
-            assert!(result.report().losses.iter().any(|loss| {
-                loss.code == crate::loss::RhinoLossCode::HistoryGeometryNotTransferred.kind()
-                    && loss.message.contains("no coordinate-unit binding")
-            }));
-        } else {
-            assert!(feature.source_properties.contains_key("value_7.0.geometry"));
-            assert!(!feature
-                .source_properties
-                .contains_key("value_7.0.source_fidelity_id"));
-            assert!(!result
-                .source_fidelity()
-                .retained_records()
-                .keys()
-                .any(|id| id.as_str().starts_with("rhino:history:source#")));
-        }
+        assert!(feature.source_properties.contains_key("value_7.0.geometry"));
+        assert!(!feature
+            .source_properties
+            .contains_key("value_7.0.source_fidelity_id"));
+        assert!(!result
+            .source_fidelity()
+            .retained_records()
+            .keys()
+            .any(|id| id.as_str().starts_with("rhino:history:source#")));
     }
 }
 

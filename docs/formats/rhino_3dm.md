@@ -223,6 +223,10 @@ CRC32(empty)       = 0x00000000
 CRC32("123456789") = 0xcbf43926
 ```
 
+A CRC-bearing table record whose body is one complete nested class chunk, such
+as `TCODE_INSTANCE_DEFINITION_RECORD`, has an empty direct range. Its stored
+CRC is `CRC32(empty)`.
+
 A checksum mismatch does not change the declared framing boundary. A missing
 checksum or invalid boundary makes the chunk structurally invalid. The reader
 reads the body of a chunk whose CRC does not match and keeps the fields it
@@ -975,12 +979,10 @@ count mismatch or failed old-form index validation discards the list. The
 serialized record count is not the admitted list count when a nonpositive
 corner count is skipped.
 
-CADIR decision: neutral tessellation carries the mesh faces and their derived
-triangles but has no n-gon grouping field. A valid legacy list therefore
-contributes its admitted record count to the existing
-`mesh.ngon-grouping-dropped` loss; it does not alter the face triangles. An
-invalid or malformed list contributes no grouping count and leaves the mesh
-admissible.
+CADIR decision: each admitted legacy record supplies the face indices of one
+n-gon, without its `-1` suffix, to the triangle grouping of section 14. It
+does not alter the face triangles. An invalid or malformed list contributes no
+grouping and leaves the mesh admissible.
 
 When this item is attached to an `ON_Mesh` nested in a Brep render or analysis
 side, failure is local to the userdata item. A valid nested mesh class-data
@@ -1901,7 +1903,16 @@ present when their gates are met, and later bytes remain within the containing
 |   255 | unset              |
 
 Unit system `none` retains native coordinates at scale 1.0 and supplies no
-millimetre binding. Unit system `unset` supplies no coordinate scale.
+millimetre binding. Unit system `unset` supplies no coordinate scale. When the
+source reader finds no units record, it keeps the default settings, whose unit
+system is millimeters.
+
+CADIR object geometry and the annotation, grid, and render settings records
+of a document with unit system `none` or `unset` use the model coordinates at
+scale 1.0. The document then carries one
+`geometry.document-length-unit-undeclared` loss, which states that these
+lengths are not physical millimetres. A V1 archive without a units record uses
+millimeters.
 
 Unit values 23, 24, and 25 scale one stored unit to
 `149597870000000`, `9460730472580800000`, and `30856775800000000000`
@@ -1920,6 +1931,9 @@ f64 absolute tolerance
 f64 relative tolerance
 f64 angle tolerance
 ```
+
+V1 unit values 1 through 10 have the meanings of the table above. Every other
+V1 unit value, including 0, is unit system `none`.
 
 V1 geometry is a flat sequence. The object reader dispatches these direct
 record typecodes:
@@ -1942,7 +1956,29 @@ record typecodes:
 
 The five annotation and three pre-class NURBS records are complete bounded
 records. They are not split into legacy geometry children. A direct typecode
-outside this dispatch is skipped as one complete chunk. The containing direct
+outside this dispatch is skipped as one complete chunk.
+
+These V1 flat typecodes carry document, table, or presentation state. They
+carry no geometry:
+
+| Record | Typecode | Content |
+| --- | ---: | --- |
+| `TCODE_ANNOTATION_SETTINGS` | `0x00200001` | annotation settings |
+| `TCODE_LAYER` | `0x00400010` | one V1 layer with name, color, and state children |
+| `TCODE_RENDERMESHPARAMS` | `0x00400020` | render-mesh parameters |
+| `TCODE_CURRENTLAYER` | `0x80400025` | short chunk; current layer |
+| `TCODE_RH_SPOTLIGHT` | `0x00800001` | one spotlight with optional attribute data |
+| `TCODE_NAMED_CPLANE` | `0x02000004` | one named construction plane |
+| `TCODE_NAMED_VIEW` | `0x02000005` | one named view |
+| `TCODE_VIEWPORT` | `0x02000006` | one viewport |
+| `TCODE_NOTES` | `0x0200000f` | document notes |
+| `TCODE_SUMMARY` | `0x02000013` | revision history; CRC16 |
+| `TCODE_BITMAPPREVIEW` | `0x02000014` | preview image |
+
+The spotlight body starts with an origin point, X and Y axis vectors, and
+radius, height, and hotspot doubles. The light location is
+`origin + height × (X × Y)` and its direction is `−(X × Y)`, scaled by height
+when height is positive. The containing direct
 chunk is the recovery boundary when a dispatched payload is malformed; a
 partial child is not promoted to a typed record.
 
@@ -2981,9 +3017,16 @@ reader accepts major 1 and normalizes a dimension other than 2 or 3 to 3.
 Invalid dimensions are normalized to 3 by the payload rule. Radius and both
 intervals must be valid.
 
-A full circle uses the analytic representation when its angle and curve domain
-are `[0, 2π]` and the x-axis norm differs from one by less than `1e-10`.
-Otherwise the transfer uses the rational quadratic representation.
+`ON_ArcCurve` maps its curve domain linearly onto its angle interval: the
+parameter `t` in `[t0, t1]` evaluates the circle at angle
+`a0 + (t − t0)(a1 − a0)/(t1 − t0)`.
+
+A full circle uses the analytic representation when its angle interval and
+curve domain each span `2π`, each starts on a whole multiple of `2π`, and the
+x-axis norm differs from one by less than `1e-10`. The analytic parameter
+then equals the source parameter modulo `2π`. A Brep edge on such a carrier
+keeps its proxy interval shifted by whole turns so that the interval starts in
+`[0, 2π)`. Otherwise the transfer uses the rational quadratic representation.
 
 ### 12.5 Polyline curve
 
@@ -3052,16 +3095,22 @@ CADIR emits one compound procedural-curve record for the polycurve and one
 neutral carrier curve for each child. Child geometry is converted to
 millimetres; child and polycurve parameters, the reserved values, and the
 reserved bounds are not converted. The parent retains the source object
-record. A bounded child gap is represented by the midpoint join repair and
-emits its geometry warning; a malformed child or parameter array does not
-enter the typed compound record.
+record. Each child carrier keeps its own source endpoints, so a gap between
+adjacent children remains a gap between their carriers. A malformed child or
+parameter array does not enter the typed compound record.
 
 Conversion of a polycurve to one NURBS curve first maps each segment to its
 polycurve parameter interval. Each segment is endpoint-clamped. Segments of
-lower degree are elevated to the maximum segment degree. At each join, the last
-control point of the accumulated curve and the first control point of the next
-segment move to their midpoint. The first control point of the next segment is
-then omitted. The appended knots are translated by the difference between the
+lower degree are elevated to the maximum segment degree. At each join, the end
+of the accumulated curve and the start of the next segment must coincide under
+the `ON_PointsAreCoincident` rule: every coordinate pair differs by at most
+`ON_ZERO_TOLERANCE` (`2^-32`) or by at most `ON_RELATIVE_TOLERANCE` (`2^-42`)
+times the sum of their magnitudes. Otherwise the polycurve has no single NURBS
+conversion, and an owner that needs one (an extrusion profile, a surface
+profile, a nonuniformly placed instance curve, or a Brep C2 trim curve) does
+not admit that curve. The accumulated curve keeps its end control point. When
+the two endpoint weights are equal, the first control point of the next
+segment is omitted. The appended knots are translated by the difference between the
 accumulated end parameter and the next segment start parameter. The internal
 join has `degree` equal knots. The result has this identity:
 
@@ -3435,8 +3484,26 @@ Indices are little-endian unsigned values. A triangle is `[v0,v1,v2,v2]`; a
 quad is `[v0,v1,v2,v3]`. Neutral triangulation splits a quad along its shorter
 geometric diagonal; equal diagonals select `0-2`. A repeated quad vertex is
 removed before triangulation.
-Quad topology is not preserved in the neutral tessellation: every four-vertex
-face is transferred as two triangles, and the transfer is derived.
+Every four-vertex face is transferred as two consecutive triangles, and the
+transfer is derived. When the mesh has a four-vertex face or a grouped n-gon,
+the tessellation carries a triangle-group partition:
+
+| Group source ID | Triangles |
+| --- | --- |
+| `ngon:<record>` | the triangles of every face that n-gon record `<record>` lists |
+| `face:<index>` | the one or two triangles of face `<index>`, which no grouped n-gon lists |
+
+`<record>` is the zero-based n-gon record index and `<index>` is the
+zero-based face index. A face with fewer than three distinct vertices has no
+triangle and no group. The n-gon records group faces only when every listed
+face index is less than the face count and no face is listed twice; otherwise
+no n-gon is grouped and the mesh reports `mesh.ngon-grouping-dropped`. The
+n-gon boundary vertex list is the outer boundary of its faces and is not
+stored. A mesh whose faces are all triangles and that groups no n-gon carries
+no triangle groups.
+
+A `face:` group of two triangles `[a,b,c]` and `[a,c,d]`, or `[a,b,d]` and
+`[b,c,d]`, is the quad `[a,b,c,d]`.
 
 Major 1 follows the face array with raw counted arrays:
 
@@ -3479,10 +3546,10 @@ values whose casts equal the float vertex channel; rejected userdata leaves
 the float channel authoritative.
 
 Mesh objects in every archive band can carry the class-userdata item in
-section 7.2.4 when it remains attached. Its admitted record count reports
-source n-gon grouping; the mesh face table remains the neutral tessellation
-input. When both this item and the inline major-3 n-gon chunk are present, the
-inline count is authoritative for the neutral grouping loss.
+section 7.2.4 when it remains attached. Its admitted records supply the n-gon
+face lists of the triangle grouping; the mesh face table remains the neutral
+tessellation input. When both this item and a nonempty inline major-3 n-gon
+chunk are present, the inline records are authoritative.
 
 A top-level mesh object written from a runtime SubD in an archive below 60 can
 also carry the section 7.2.6 proxy item. Its parent-array counts and raw-array
@@ -3777,9 +3844,8 @@ byte per face; nonzero is followed by a polymorphic object which must be an
 count and exact f64-to-f32 cast checks apply to that nested mesh. These are
 cache channels and do not alter Brep topology.
 Any archive band can carry the `ON_V4V5_MeshNgonUserData` item from section
-7.2.4 on the nested mesh when it remains attached. Its admitted grouping count
-contributes the same neutral `mesh.ngon-grouping-dropped` loss; it does not
-alter Brep topology.
+7.2.4 on the nested mesh when it remains attached. Its admitted records group
+the nested mesh triangles in the same way; they do not alter Brep topology.
 Failure of that userdata item after a nested mesh class-data payload has been
 admitted is local to the item. The nested mesh remains a typed tessellation,
 the Brep side remains present, and no n-gon grouping is admitted. CADIR retains
@@ -4069,12 +4135,30 @@ packing rectangle, material channel, color, pack ID, custom texture points, and
 end marker 255. Face rings have at least three uses, valid edges, endpoint
 continuity, and closure.
 
+SubD state falls into four groups:
+
+- Levels above level zero are subdivision results computed from the level-zero
+  cage. They carry no source state that level zero does not determine.
+- Texture parameterization: the obsolete texture-domain type, the texture
+  mapping tag, the face-packing UUID and topology hash, and the per-face
+  packing rectangles, pack IDs, and texture points.
+- Symmetry: the symmetry record, the symmetric flag, and the per-component
+  symmetry-next pointers.
+- Per-face appearance and editing state: material channel, color, and the
+  per-component group IDs.
+
+A mapping tag or face-packing UUID that is nil is not set. The legacy
+geometry serial number and the packing-hash synchronization flag are runtime
+state with no persistent meaning.
+
 ## 18. Instance definitions and references
 
-Instance-definition records are in the instance-definition table. Archive
-versions through 50 use packed major version 1, minor 6. An archive-60 legacy
-record may use packed minor 7; archive versions 60 and later otherwise use an
-anonymous major-1 V6 payload. The packed field order is:
+Instance-definition records are in the instance-definition table. Every
+archive version through 50 uses the packed major-1 payload, with minor 0
+through 7. An archive-60 record uses the packed payload when its first
+class-data byte is not zero, and the anonymous major-1 V6 payload otherwise;
+archive versions 70 and later use the anonymous payload. The packed field
+order is:
 
 ```
 definition UUID
@@ -4095,7 +4179,11 @@ minor >= 6: linked component appearance
 minor >= 7: file-reference presence and record
 ```
 
-The unit-system detail replaces the earlier unit fields. A version-1.7 reader
+The unit-system detail replaces the earlier unit fields. Below minor 2 the
+definition has no unit system. At minor 2 and 3 the unit enum is the unit
+system; custom units (enum 11) take the minor-3 meters-per-unit value when it
+is positive and are meters otherwise. Below minor 5 the nested depth is 0, and
+below minor 6 the linked component appearance is unset. A version-1.7 reader
 skips all bytes after the optional file-reference record as an abandoned tail.
 
 For a linked definition, the legacy relative-path Boolean makes the
@@ -4137,6 +4225,15 @@ Definition membership comes from the ordered definition UUID array, not object
 attributes. The reference payload carries one transform and one bounding box.
 The known prefix ends at the enclosing instance-reference class-data boundary;
 later bytes remain bounded there.
+Each `ON_InstanceRef` record is one placed occurrence of the definition it
+names. The occurrence exists independently of member expansion: its
+definition UUID and transform remain the source relationship when the
+definition is missing, linked, or has members that do not expand. A reference
+object that is a member of a definition is one child occurrence inside each
+occurrence of that definition, in definition member order. A definition that
+contains an occurrence of itself, directly or through nested definitions,
+forms a cycle; the cycle has no further child occurrences.
+
 The transform applies to the definition as a whole. When transfer of one
 member emits more than one typed geometry carrier, the same transform is applied
 to every carrier emitted from that member, including a body carrier and any
@@ -4186,7 +4283,14 @@ anonymous annotation version 1.minor
 ```
 
 Annotation versions before 3 use horizontal direction `(1,0)`. Annotation
-versions before 4 allow text scaling. The text-content body is a UTF-16 rich
+versions before 4 allow text scaling. The override class wrapper holds one
+`ON_DimStyle` payload with the dimension-style record grammar of section 20.3.
+Its field-override set selects the fields that replace the values of the
+parent style that the annotation's dimension-style UUID names; the other
+fields come from the parent. The text, leader, and dimension classes share
+this annotation chunk. CADIR keeps the decoded override style as the
+annotation's `dimstyle_override` parameter; an override that fails its grammar
+emits `dimension.override-dropped`. The text-content body is a UTF-16 rich
 text string, obsolete plane, rectangle width `f64`, rotation `f64`, horizontal
 alignment `i32`, vertical alignment `i32`, obsolete text height `f64`, and
 wrap `bool`, in that order.
@@ -4295,7 +4399,11 @@ types are 3 and 4 respectively.
 When the common annotation has no scaling field, model-space text scaling is
 false. Minor 3 selects the dimension-style index from the dimension-style slot
 for dimensions. For text, it selects the text-style slot first, then the
-initial slot, then the dimension-style slot. A text annotation with zero
+initial slot, then the dimension-style slot. The initial slot of a text
+annotation (type 7) is a text-style index: it names a font-table record. The
+initial slot of every other annotation type is a dimension-style index. A
+negative index names no style. A dimension-style or text-style index names the
+table record with the same archive index. A text annotation with zero
 justification becomes top-left, and its plane origin moves by one text height
 along the plane y axis. V5 text, leader, and ordinate annotation types map to
 neutral types 9, 10, and 6.
@@ -4424,8 +4532,12 @@ For archive versions below 50, a nonzero base point has no serialized carrier;
 the CADIR basepoint is therefore `[0,0]`. For every accepted hatch object,
 CADIR creates one native hatch feature and one linked neutral curve for each
 ordered loop. The feature retains the pattern archive index, pattern scale,
-pattern rotation, and converted basepoint as native parameters. The hatch
-pattern is not converted into a neutral filled region; the source object record
+pattern rotation, and converted basepoint as native parameters. The pattern
+archive index names the hatch-pattern table record with the same archive
+index; the feature names that native hatch-pattern record as
+`pattern_record`. A nonnegative index that names no decoded record emits
+`hatch.pattern-unresolved`. The hatch pattern is not converted into a neutral
+filled region; the source object record
 remains retained for native fidelity and this boundary emits the
 `hatch.fill-not-transferred` warning.
 
@@ -4461,8 +4573,10 @@ nonnegative count only when every bounded stop fits the userdata payload and
 the allocation cap. The class reader requires major version 1, accepts only
 gradient types 0 through 4, consumes each stop at its child boundary, and
 closes the gradient-data chunk at its own boundary. Gradient start and end
-coordinates use document length conversion. Repeat and stop positions are
-unitless.
+coordinates use document length conversion. A gradient point whose three
+coordinates are each `ON_UNSET_VALUE` (`-1.23432101234321e308`) is
+`ON_3dPoint::UnsetPoint`, the reader default; it denotes an unset point and
+does not take length conversion. Repeat and stop positions are unitless.
 
 The CADIR decision is to expose a recognized gradient userdata item as the
 hatch feature's native `gradient` parameter. Its JSON value contains the
@@ -4515,9 +4629,11 @@ dimensionless; detail minor 0 defaults it to zero.
 
 CADIR creates one native `detail_view` feature and one linked neutral curve for
 each accepted detail object. The feature retains the page-per-model ratio and
-the boundary link. It retains the bounded `ON_3dmView` payload as `view_bytes`
-and `view_sha256` native properties; the view state is not decoded into the
-neutral `views` arena. This is a CADIR transfer boundary and emits
+the boundary link. The view-state child holds the `ON_3dmView` child chunks of
+section 20.4 directly, through their end-of-table marker, without a view
+record wrapper. The feature retains the decoded view as its `view` native
+property and the bounded payload as `view_bytes` and `view_sha256`; the view
+state has no neutral carrier. This is a CADIR transfer boundary and emits
 `detail.view-not-transferred`; the source detail object remains retained for
 native fidelity.
 
@@ -4741,9 +4857,12 @@ minor >= 7: u8 double-vertices-present, optional double-vertex chunk
 minor >= 8: ON_BoundingBox vertex bounds
 ```
 
-The three minor-5 values are tri-state bytes: zero means unset, one means
-false, and two means true. Other values are invalid. They are not ordinary
-booleans.
+The three minor-5 values are cached topology states, not ordinary booleans.
+For manifold and oriented, zero means unset, one means true, and two means
+false. For solid, zero means unset, one means solid with outward face normals,
+two means solid with inward face normals, and three means not solid. A value
+above that range is an unset cache: the reader recomputes the state from the
+faces.
 
 The mapping tag is an anonymous major-1 chunk. Minor 1 adds the mapping type:
 
@@ -5057,14 +5176,15 @@ least three directed uses, valid edge pointers, and endpoint continuity.
 
 ### 19.6 Instance-definition exact tables
 
-The instance-definition table record contains the class payload. Archive 50
-uses packed version 1.6. Archive 60 accepts the legacy packed version 1.7
-form and the anonymous V6 form; archives 70 and 80 use the anonymous V6 form.
+The instance-definition table record contains the class payload. Archives
+through 50 use the packed form with minor 0 through 7. Archive 60 accepts the
+packed form and the anonymous V6 form; archives 70 and 80 use the anonymous V6
+form.
 
 V5 packed field order:
 
 ```
-u8 packed version = 0x16 or 0x17
+u8 packed version = 0x10 through 0x17
 UUID definition ID
 i32 UUID-array count
 count × UUID member object ID
@@ -5086,8 +5206,8 @@ minor >= 7:
   if true: file-reference record
 ```
 
-The packed V5 reader requires major version 1. It reads each field through the
-minor-1.6 appearance field. At minor 1.7 it reads the file-reference presence
+The packed V5 reader requires major version 1. It reads each field that the
+stored minor gates, through the minor-1.6 appearance field. At minor 1.7 it reads the file-reference presence
 byte and, when set, the file-reference record; the writer then emits one
 obsolete linked-layer-settings Boolean. The reader does not assign that final
 Boolean a field meaning and returns after the file-reference record, so the
@@ -6296,6 +6416,7 @@ long TCODE_NAMED_VIEW
   short TCODE_ENDOFTABLE = 0
 
 long TCODE_VIEWPORT
+  long TCODE_NAME: as above
   long TCODE_CPLANE: as above
   long TCODE_VIEW: as above
   short TCODE_SHOWGRID
@@ -6326,11 +6447,25 @@ marker fails that presentation record. `TCODE_VIEWPORT_TRACEINFO` and
 not a nested `TCODE_NAME` chunk. A V1 file may omit the EOF marker after the
 flat settings stream.
 
+Each record kind reads only its own children: a named construction plane reads
+name and construction plane; a named view also reads view and the three
+display flags; a viewport reads every child above. Projection 2 is perspective
+and every other projection value is parallel. A view size or camera distance
+that is not greater than zero and less than `DBL_MAX / 2` takes the reader
+default: view size 0.125 and camera distance 100. Display mode 0 is wireframe
+and 1 is shaded; other values select no display mode. The construction-plane
+origin and grid spacing, the view target, view size, and camera distance, the
+trace-image origin, width, and height, the snap size, and the near-clip
+distance are model lengths. View angles are radians. Window bounds are
+fractions of the parent window.
+
 CADIR decision: the V1 decoder transfers the unit/tolerance record to neutral
-tolerances, retains complete V1 named-construction-plane, named-view, and
-viewport records as opaque source records, and reports
-`presentation.record-dropped` for each. It does not place these legacy records
-in the modern `views` or `construction_planes` arenas. The top-level short
+tolerances and decodes each V1 named-construction-plane, named-view, and
+viewport record into the native `legacy_v1_presentation` arena, with model
+lengths converted by the document unit. A record that fails its grammar is
+retained as an opaque source record with `presentation.record-dropped`. It
+does not place these legacy records in the modern `views` or
+`construction_planes` arenas. The top-level short
 `TCODE_ENDOFTABLE` is structural and is not retained.
 
 A view record is an ordered child-chunk list terminated by `TCODE_ENDOFTABLE`.
@@ -6410,7 +6545,9 @@ the CRC input. The current view writer emits no direct viewport-userdata bytes,
 so that CRC is the CRC of an empty byte sequence.
 
 The viewport-userdata stream uses the class-userdata framing in section 7.2.
-CADIR has no typed owner for class-owned viewport-userdata payloads. A framed
+OpenNURBS defines no userdata class for `ON_Viewport`; every viewport-userdata
+item is application-owned. CADIR has no typed owner for class-owned
+viewport-userdata payloads, and the loss names the class UUID of each item. A framed
 stream with a class-userdata item or other nonzero child retains the typed view,
 admits no class-owned fields, reports `viewport.userdata-dropped`, and retains
 the complete containing named-view or active-view list record as opaque source

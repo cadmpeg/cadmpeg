@@ -5,6 +5,8 @@ use cadmpeg_test_support::EditableDecodeResult;
 use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
+mod occurrences;
+mod packed_minors;
 mod recovery;
 mod support;
 mod transforms;
@@ -872,7 +874,11 @@ fn failed_expansion_rolls_back_placed_members_and_their_source_links() {
         .native_unknowns("rhino")
         .expect("source records are retained");
     assert_eq!(unknowns.len(), 2);
-    assert!(unknowns.iter().all(|record| record.links.is_empty()));
+    assert!(unknowns[0].links.is_empty());
+    assert!(unknowns.iter().all(|record| record
+        .links
+        .iter()
+        .all(|link| !link.as_str().contains(":point#") && !link.as_str().contains(":body#"))));
     assert!(result
         .report()
         .losses
@@ -958,7 +964,9 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
             .native_unknowns("rhino")
             .expect("required invariant")[1]
             .links
-            .len(),
+            .iter()
+            .filter(|link| !link.as_str().starts_with("rhino:instance:occurrence#"))
+            .count(),
         1
     );
     assert_eq!(
@@ -967,7 +975,9 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
             .native_unknowns("rhino")
             .expect("required invariant")[2]
             .links
-            .len(),
+            .iter()
+            .filter(|link| !link.as_str().starts_with("rhino:instance:occurrence#"))
+            .count(),
         1
     );
     let native = result
@@ -1627,7 +1637,10 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
         .native_unknowns("rhino")
         .expect("required invariant")[6..15]
     {
-        assert!(unknown.links.is_empty());
+        assert!(unknown
+            .links
+            .iter()
+            .all(|link| link.as_str().starts_with("rhino:instance:occurrence#")));
     }
     assert_eq!(
         result
@@ -1635,7 +1648,9 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
             .native_unknowns("rhino")
             .expect("required invariant")[15]
             .links
-            .len(),
+            .iter()
+            .filter(|link| !link.as_str().starts_with("rhino:instance:occurrence#"))
+            .count(),
         1
     );
     assert!(result.report().losses.iter().any(|loss| {
@@ -1672,10 +1687,9 @@ fn contradictory_standard_unit_detail_preserves_scale_and_name() {
     assert_eq!(units.unit, 2);
     assert_eq!(f64::from_bits(units.meters_per_unit_bits()), 0.5);
     assert_eq!(units.custom_name, "retained name");
-    assert_eq!(warnings.len(), 1);
-    assert_eq!(
-        warnings[0].code,
-        Some(crate::loss::RhinoLossCode::RedundantFieldRepaired)
+    assert!(
+        warnings.is_empty(),
+        "a standard unit ignores its stored scale and name"
     );
 }
 

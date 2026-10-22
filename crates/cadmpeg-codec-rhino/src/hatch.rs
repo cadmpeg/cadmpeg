@@ -32,6 +32,8 @@ pub(crate) const GRADIENT_COLOR_DATA: Uuid = Uuid::from_canonical([
 ]);
 const ANONYMOUS: u32 = 0x4000_8000;
 const MAX_GRADIENT_STOPS: usize = 1 << 20;
+/// `ON_UNSET_VALUE`, each coordinate of `ON_3dPoint::UnsetPoint`.
+const ON_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LoopKind {
@@ -96,8 +98,10 @@ impl GradientKind {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Gradient {
     kind: GradientKind,
-    start: [FiniteReal; 3],
-    end: [FiniteReal; 3],
+    /// Absent when the source stores `ON_3dPoint::UnsetPoint`.
+    start: Option<[FiniteReal; 3]>,
+    /// Absent when the source stores `ON_3dPoint::UnsetPoint`.
+    end: Option<[FiniteReal; 3]>,
     repeat: FiniteReal,
     colors: Vec<GradientColorStop>,
 }
@@ -443,9 +447,15 @@ fn gradient_point(
     reader: &mut crate::chunks::BoundedReader<'_>,
     scale: MillimeterScale,
     label: &str,
-) -> Result<[FiniteReal; 3], GeometryError> {
+) -> Result<Option<[FiniteReal; 3]>, GeometryError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
+    if values
+        .iter()
+        .all(|value| value.to_bits() == ON_UNSET_VALUE.to_bits())
+    {
+        return Ok(None);
+    }
     let [Some(x), Some(y), Some(z)] =
         values.map(|value| crate::wire::scaled_coordinate(value, scale))
     else {
@@ -454,15 +464,15 @@ fn gradient_point(
             format!("{label} is invalid"),
         ));
     };
-    Ok([x, y, z])
+    Ok(Some([x, y, z]))
 }
 
 #[derive(serde::Serialize)]
 struct GradientJson<'a> {
     colors: &'a [GradientColorStop],
-    end: [FiniteReal; 3],
+    end: Option<[FiniteReal; 3]>,
     repeat: FiniteReal,
-    start: [FiniteReal; 3],
+    start: Option<[FiniteReal; 3]>,
     r#type: &'static str,
     type_value: i32,
 }
@@ -785,8 +795,14 @@ pub(crate) mod tests {
             .expect("gradient userdata");
             let gradient = hatch.gradient.expect("gradient");
             assert_eq!(gradient.kind, GradientKind::Linear);
-            assert_eq!(gradient.start.map(FiniteReal::get), [2.0, 4.0, 6.0]);
-            assert_eq!(gradient.end.map(FiniteReal::get), [8.0, 10.0, 12.0]);
+            assert_eq!(
+                gradient.start.map(|point| point.map(FiniteReal::get)),
+                Some([2.0, 4.0, 6.0])
+            );
+            assert_eq!(
+                gradient.end.map(|point| point.map(FiniteReal::get)),
+                Some([8.0, 10.0, 12.0])
+            );
             assert_eq!(gradient.repeat, crate::test_support::finite(1.5));
             assert_eq!(gradient.colors.len(), 2);
             assert_eq!(gradient.colors[0].color, [255, 0, 0, 0]);
@@ -809,11 +825,44 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn unset_gradient_points_are_absent() {
+        let mut body = Vec::new();
+        body.extend(0_i32.to_le_bytes());
+        for _ in 0..6 {
+            body.extend(super::ON_UNSET_VALUE.to_le_bytes());
+        }
+        body.extend(0.0_f64.to_le_bytes());
+        body.extend(0_i32.to_le_bytes());
+        let payload = crate::test_support::test_dump::anonymous_chunk(ArchiveVersion::V8, 0, &body);
+        let hatch_payload = version_two_hatch_payload();
+        crate::decode::with_expand_bytes(&hatch_payload, |expand| {
+            let mut hatch = decode(
+                expand,
+                0..hatch_payload.len(),
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            )
+            .expect("hatch");
+            apply_userdata(
+                &payload,
+                &[gradient_descriptor(&payload)],
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+                &mut hatch,
+            )
+            .expect("unset gradient points are admitted");
+            let gradient = hatch.gradient.expect("gradient");
+            assert_eq!(gradient.kind, GradientKind::None);
+            assert!(gradient.start.is_none() && gradient.end.is_none());
+        });
+    }
+
+    #[test]
     fn gradient_json_names_the_gradient_type() {
         let gradient = super::Gradient {
             kind: super::GradientKind::Linear,
-            start: [crate::test_support::finite(0.0); 3],
-            end: [crate::test_support::finite(1.0); 3],
+            start: Some([crate::test_support::finite(0.0); 3]),
+            end: Some([crate::test_support::finite(1.0); 3]),
             repeat: crate::test_support::finite(1.0),
             colors: Vec::new(),
         };

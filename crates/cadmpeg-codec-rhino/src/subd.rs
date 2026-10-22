@@ -40,13 +40,56 @@ const MAX_COMPONENTS_PER_LEVEL: usize = 4_000_000;
 const MAX_INCIDENT_COMPONENTS: usize = 65_535;
 const MAX_SAVED_LIMIT_POINTS: usize = 65_535;
 
+/// Per-component channels of the level-zero cage, counted by component.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct SubdComponentChannels {
+    /// Components with a group ID.
+    pub(crate) group_ids: usize,
+    /// Components with a symmetry-next pointer.
+    pub(crate) symmetry_links: usize,
+    /// Faces with a texture packing rectangle.
+    pub(crate) packing_rectangles: usize,
+    /// Faces with a render-material channel index.
+    pub(crate) material_channels: usize,
+    /// Faces with a per-face color.
+    pub(crate) colors: usize,
+    /// Faces with a texture pack ID.
+    pub(crate) pack_ids: usize,
+    /// Faces with per-corner texture points.
+    pub(crate) texture_points: usize,
+}
+
+/// The `ON_SubDimple` channels outside the level-zero cage topology.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub(crate) struct SubdMetadata {
+    /// Subdivision levels above level zero. Each is derived from level zero.
+    pub(crate) refinement_levels: usize,
+    /// Minor-1 obsolete texture-domain byte.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) obsolete_texture_domain_type: Option<u8>,
+    /// Minor-1 texture mapping-tag UUID, absent when nil.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) texture_mapping_id: Option<String>,
+    /// Minor-2 symmetry type name, absent when the `SubD` has no symmetry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) symmetry: Option<&'static str>,
+    /// Minor-4 symmetric-state flag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) symmetric: Option<bool>,
+    /// Minor-4 face-packing UUID, absent when nil.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) face_packing_id: Option<String>,
+    /// Level-zero component channels.
+    pub(crate) components: SubdComponentChannels,
+}
+
 /// A validated level-zero Catmull-Clark control cage and its decode metadata.
 #[derive(Debug, Clone)]
 pub(crate) struct DecodedSubd {
     /// Materialized level-zero cage.
     pub(crate) surface: SubdSurface,
-    /// Whether valid non-cage metadata was retained without neutral-IR mapping.
-    pub(crate) neutral_metadata: bool,
+    /// Channels outside the level-zero cage topology.
+    pub(crate) metadata: SubdMetadata,
     /// Unknown symmetry enumeration values mapped to their neutral values.
     pub(crate) enum_diagnostics: Vec<SubdEnumDiagnostic>,
     /// Recoverable nested checksum warnings.
@@ -249,10 +292,12 @@ pub(crate) fn decode(
                 });
             }
             let mut enum_diagnostics = Vec::new();
-            let (level, level_count, children) = read_subdimple(
+            let mut metadata = SubdMetadata::default();
+            let (level, children) = read_subdimple(
                 &mut child,
                 archive,
                 minor,
+                &mut metadata,
                 &mut enum_diagnostics,
                 &mut warnings,
             )?;
@@ -261,7 +306,7 @@ pub(crate) fn decode(
             finish_payload(&mut reader)?;
             Ok(Some(DecodedSubd {
                 surface,
-                neutral_metadata: minor > 0 || level_count > 1,
+                metadata,
                 enum_diagnostics,
                 warnings,
             }))
@@ -388,10 +433,14 @@ fn read_subdimple(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     minor: i32,
+    metadata: &mut SubdMetadata,
     enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
     warnings: &mut Diagnostics,
-) -> Result<(RawLevel, usize, Vec<Range<usize>>), SubdError> {
+) -> Result<(RawLevel, Vec<Range<usize>>), SubdError> {
     let level_count = capped_u32(reader, MAX_LEVELS, "SubD level count")?;
+    if let Some(levels) = level_count.checked_sub(1) {
+        metadata.refinement_levels = levels;
+    }
     reader.u32()?;
     reader.u32()?;
     reader.u32()?;
@@ -401,7 +450,13 @@ fn read_subdimple(
     let mut children = Vec::new();
     for expected_level in 0..level_count {
         let start = reader.position();
-        let level = read_level(reader, archive, expected_level, warnings)?;
+        let mut derived = SubdComponentChannels::default();
+        let channels = if expected_level == 0 {
+            &mut metadata.components
+        } else {
+            &mut derived
+        };
+        let level = read_level(reader, archive, expected_level, channels, warnings)?;
 
         children.push(start..reader.position());
         validate_level(&level, expected_level)?;
@@ -411,15 +466,16 @@ fn read_subdimple(
     }
 
     if minor >= 1 {
-        reader.u8()?;
+        metadata.obsolete_texture_domain_type = Some(reader.u8()?);
         let start = reader.position();
-        read_mapping_tag(reader, archive, warnings)?;
+        let mapping = read_mapping_tag(reader, archive, warnings)?;
+        metadata.texture_mapping_id = (!mapping.is_nil()).then(|| format!("{mapping}"));
 
         children.push(start..reader.position());
     }
     if minor >= 2 {
         let start = reader.position();
-        read_symmetry(reader, archive, enum_diagnostics, warnings)?;
+        metadata.symmetry = read_symmetry(reader, archive, enum_diagnostics, warnings)?;
 
         children.push(start..reader.position());
     }
@@ -427,8 +483,9 @@ fn read_subdimple(
         reader.u64()?;
     }
     if minor >= 4 {
-        reader.bool()?;
-        reader.take(16)?;
+        metadata.symmetric = Some(reader.bool()?);
+        let packing = crate::wire::uuid(reader)?;
+        metadata.face_packing_id = (!packing.is_nil()).then(|| format!("{packing}"));
         reader.bool()?;
         let start = reader.position();
         read_subd_hash(reader, archive, warnings)?;
@@ -437,13 +494,14 @@ fn read_subdimple(
     }
 
     let level = level_zero.ok_or_else(|| malformed(reader.position(), "SubD has no level zero"))?;
-    Ok((level, level_count, children))
+    Ok((level, children))
 }
 
 fn read_level(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected_level: usize,
+    channels: &mut SubdComponentChannels,
     warnings: &mut Diagnostics,
 ) -> Result<RawLevel, SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD level")?;
@@ -498,15 +556,33 @@ fn read_level(
 
     let mut vertices = Vec::new();
     for archive_id in partitions[0]..partitions[1] {
-        vertices.push(read_vertex(&mut reader, archive, archive_id, level_index)?);
+        vertices.push(read_vertex(
+            &mut reader,
+            archive,
+            archive_id,
+            level_index,
+            channels,
+        )?);
     }
     let mut edges = Vec::new();
     for archive_id in partitions[1]..partitions[2] {
-        edges.push(read_edge(&mut reader, archive, archive_id, level_index)?);
+        edges.push(read_edge(
+            &mut reader,
+            archive,
+            archive_id,
+            level_index,
+            channels,
+        )?);
     }
     let mut faces = Vec::new();
     for archive_id in partitions[2]..partitions[3] {
-        faces.push(read_face(&mut reader, archive, archive_id, level_index)?);
+        faces.push(read_face(
+            &mut reader,
+            archive,
+            archive_id,
+            level_index,
+            channels,
+        )?);
     }
     match reader.u8()? {
         0 => {}
@@ -533,8 +609,9 @@ fn read_vertex(
     archive: ArchiveVersion,
     expected_id: u32,
     level: usize,
+    channels: &mut SubdComponentChannels,
 ) -> Result<RawVertex, SubdError> {
-    let base = read_base(reader, archive, expected_id, level)?;
+    let base = read_base(reader, archive, expected_id, level, channels)?;
     let tag = match reader.u8()? {
         0 => None,
         1 => Some(SubdVertexTag::Smooth),
@@ -601,8 +678,9 @@ fn read_edge(
     archive: ArchiveVersion,
     expected_id: u32,
     level: usize,
+    channels: &mut SubdComponentChannels,
 ) -> Result<RawEdge, SubdError> {
-    let base = read_base(reader, archive, expected_id, level)?;
+    let base = read_base(reader, archive, expected_id, level, channels)?;
     let tag = match reader.u8()? {
         0 => None,
         1 => Some(SubdEdgeTag::Smooth),
@@ -680,8 +758,9 @@ fn read_face(
     archive: ArchiveVersion,
     expected_id: u32,
     level: usize,
+    channels: &mut SubdComponentChannels,
 ) -> Result<RawFace, SubdError> {
-    let base = read_base(reader, archive, expected_id, level)?;
+    let base = read_base(reader, archive, expected_id, level, channels)?;
     reader.u32()?;
     reader.u32()?;
     let edge_count = usize::from(reader.u16()?);
@@ -700,6 +779,7 @@ fn read_face(
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
+                channels.packing_rectangles += 1;
                 reader.skip(2)?;
                 read_finite_values(reader, 4, "SubD face packing rectangle")?;
             }
@@ -708,6 +788,7 @@ fn read_face(
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
+                channels.material_channels += 1;
                 reader.u32()?;
             }
         }
@@ -715,6 +796,7 @@ fn read_face(
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
+                channels.colors += 1;
                 reader.u32()?;
             }
         }
@@ -722,6 +804,7 @@ fn read_face(
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
+                channels.pack_ids += 1;
                 reader.u32()?;
             }
         }
@@ -729,6 +812,7 @@ fn read_face(
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
+                channels.texture_points += 1;
                 let ten_count = capped_u32(reader, edge_count / 10, "SubD texture chunk count")?;
                 if ten_count != edge_count / 10 {
                     return Err(malformed(
@@ -769,6 +853,7 @@ fn read_base(
     archive: ArchiveVersion,
     expected_id: u32,
     expected_level: usize,
+    channels: &mut SubdComponentChannels,
 ) -> Result<ComponentBase, SubdError> {
     let source_offset = reader.position();
     let archive_id = reader.u32()?;
@@ -827,6 +912,7 @@ fn read_base(
             }
             Addition::Absent => {}
             Addition::Present => {
+                channels.group_ids += 1;
                 reader.u32()?;
             }
         }
@@ -838,7 +924,10 @@ fn read_base(
                 })
             }
             Addition::Absent => {}
-            Addition::Present => read_untyped_pointer(reader)?,
+            Addition::Present => {
+                channels.symmetry_links += 1;
+                read_untyped_pointer(reader)?;
+            }
         }
         finish_additions(reader, archive)?;
     }
@@ -1307,7 +1396,7 @@ fn read_mapping_tag(
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
-) -> Result<(), SubdError> {
+) -> Result<crate::wire::Uuid, SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD texture mapping tag")?;
     let mut reader =
         BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
@@ -1319,13 +1408,14 @@ fn read_mapping_tag(
             message: format!("unsupported SubD mapping-tag version {major}.{minor}"),
         });
     }
-    reader.take(16)?;
+    let id = crate::wire::uuid(&mut reader)?;
     reader.i32()?;
     read_finite_values(&mut reader, 16, "SubD mapping transform")?;
     if minor >= 1 {
         reader.u32()?;
     }
-    finish_direct_chunk(parent, &chunk, reader, warnings)
+    finish_direct_chunk(parent, &chunk, reader, warnings)?;
+    Ok(id)
 }
 
 /// One `SubD` symmetry construction, with the layout its transform chunk carries.
@@ -1368,7 +1458,7 @@ fn read_symmetry(
     archive: ArchiveVersion,
     enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
     warnings: &mut Diagnostics,
-) -> Result<(), SubdError> {
+) -> Result<Option<&'static str>, SubdError> {
     let chunk = anonymous_chunk(parent, archive, "SubD symmetry")?;
     let mut reader =
         BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
@@ -1381,12 +1471,22 @@ fn read_symmetry(
         });
     }
     let symmetry_type = match SubdSymmetry::parse(reader.u8()?) {
-        SubdSymmetry::Absent => return finish_direct_chunk(parent, &chunk, reader, warnings),
+        SubdSymmetry::Absent => {
+            finish_direct_chunk(parent, &chunk, reader, warnings)?;
+            return Ok(None);
+        }
         SubdSymmetry::Invalid(raw) => {
             enum_diagnostics.push(SubdEnumDiagnostic::SymmetryType(raw));
-            return finish_direct_chunk(parent, &chunk, reader, warnings);
+            finish_direct_chunk(parent, &chunk, reader, warnings)?;
+            return Ok(None);
         }
         SubdSymmetry::Known(symmetry_type) => symmetry_type,
+    };
+    let name = match symmetry_type {
+        SubdSymmetryType::Reflect => "reflect",
+        SubdSymmetryType::Rotate { .. } => "rotate",
+        SubdSymmetryType::ReflectAndRotate => "reflect_and_rotate",
+        SubdSymmetryType::Transform => "transform",
     };
     reader.u32()?;
     reader.u32()?;
@@ -1441,7 +1541,8 @@ fn read_symmetry(
         read_sha1(&mut reader, archive, warnings)?;
         read_sha1(&mut reader, archive, warnings)?;
     }
-    finish_chunk(parent, &chunk, reader, warnings)
+    finish_chunk(parent, &chunk, reader, warnings)?;
+    Ok(Some(name))
 }
 
 fn read_subd_hash(
