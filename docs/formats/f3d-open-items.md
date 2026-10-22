@@ -365,6 +365,15 @@ the native feature when a fixed lane carries a symmetric distance.
 **Need.** A writer must emit the entity to produce the linked form. The shared entity can group components by their parent component or source document.
 
 
+### DR-87. Parameter-owner flag byte
+
+**Question.** What does the flag byte after the `variant` byte of a parameter owner store?
+
+**Known.** `f3d.md` §3.1 "Every dimension or feature-input parameter stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero.
+
+**Need.** The flag can mark a driven or suppressed parameter. A design that toggles one dimension between driving and driven, saved in each state, fixes the meaning.
+
+
 ## 2. External references
 
 ### DR-82. Other joint freedom codes and the limit flags

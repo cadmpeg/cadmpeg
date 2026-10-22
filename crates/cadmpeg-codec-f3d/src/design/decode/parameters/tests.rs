@@ -617,6 +617,18 @@ fn parameter_owner_requires_its_complete_structural_suffix() {
 }
 
 #[test]
+fn parameter_owner_flag_byte_after_the_variant_is_zero_or_one() {
+    let mut frame = parameter_owner_frame();
+    frame[80] = 1;
+    let owner = parse_parameter_owner(&frame).expect("owner frame with a set flag byte");
+    assert_eq!(owner.variant, Some(1));
+    assert_eq!(owner.companion_record_index, 46);
+
+    frame[80] = 2;
+    assert!(parse_parameter_owner(&frame).is_none());
+}
+
+#[test]
 fn compact_parameter_owner_omits_the_variant_slot() {
     let parsed =
         parse_parameter_owner(&compact_parameter_owner_frame()).expect("compact parameter owner");
@@ -1080,6 +1092,18 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     })
     .expect("missing owner frame is retained as an unresolved binding");
     assert!(unresolved.is_empty());
+
+    let mut lone = paired_header().to_vec();
+    lone.extend_from_slice(&[0; 19]);
+    let lone_owners = with_scan(&archive(stream, &lone), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&header),
+        )
+    })
+    .expect("the lone paired record of an omitted owner frame is not an owner");
+    assert!(lone_owners.is_empty());
 
     let mut extended = parameter_owner_frame();
     extended.push(0);

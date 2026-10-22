@@ -780,7 +780,7 @@ impl DesignParameterOwner {
             return Err("record_index, parameter_record_index, and companion_record_index must follow a parameter frame order".into());
         };
         // A variant byte either ends its scope lane, keeping the variant-less
-        // length, or is followed by one zero byte.
+        // length, or is followed by one flag byte.
         let modern = matches!(
             (
                 wire.frame_length,
