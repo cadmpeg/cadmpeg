@@ -2234,57 +2234,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_parameter_cycles_and_their_dependents() {
-        let make = |name: &str, dependencies: Vec<ParameterId>| DesignParameter {
-            id: ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar"),
-            owner: None,
-            ordinal: 0,
-            name: name.into(),
-            expression: Expression {
-                tokens: dependencies
-                    .into_iter()
-                    .map(cadmpeg_ir::features::ExpressionToken::Parameter)
-                    .collect(),
-            },
-            display: None,
-            value: Some(ParameterValue::Real(
-                cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar fixture"),
-            )),
-            driving: true,
-            properties: std::collections::BTreeMap::new(),
-            pmi: None,
-            native_ref: None,
-        };
-        let parameters = vec![
-            make(
-                "a",
-                vec![ParameterId::mint("synthetic:test:id#b").expect("identity grammar")],
-            ),
-            make(
-                "b",
-                vec![ParameterId::mint("synthetic:test:id#a").expect("identity grammar")],
-            ),
-            make(
-                "c",
-                vec![ParameterId::mint("synthetic:test:id#a").expect("identity grammar")],
-            ),
-            make("d", Vec::new()),
-        ];
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("empty fixture view");
-        let (closed, rejected) = close_parameter_graph(&ctx, parameters).expect("closure");
-        assert_eq!(rejected, 3);
-        assert_eq!(
-            closed
-                .into_iter()
-                .map(|parameter| cadmpeg_ir::ids::Identity::from(parameter.id).into_string())
-                .collect::<Vec<_>>(),
-            ["synthetic:test:id#d"]
-        );
-    }
-
-    #[test]
     fn retains_parameter_cycles_and_their_dependents() {
         let make = |name: &str, dependencies: Vec<ParameterId>| DesignParameter {
             id: ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar"),
