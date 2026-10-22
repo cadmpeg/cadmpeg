@@ -1015,7 +1015,9 @@ fn extend_related_design_records(
             &design.design_record_headers,
         )?;
     design.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
+        ctx,
         scan,
+        &prereqs.design_types,
         &design.design_parameter_scopes,
     )?;
     design.design_canvas_images =

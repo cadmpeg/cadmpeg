@@ -106,13 +106,13 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Need.** A producer trace or independently controlled saves must isolate point creation, origin creation, constraint changes, linked and reference state, visibility, and circular-center construction. The producer property mapping must predict held-out nondefault states before a writer can derive these bytes from neutral roles.
 
-### DR-67. Face source-shape semantics
+### DR-67. Base Face material side and result choice
 
-**Question.** Which source-shape semantics and face-maker operation do the ordered identities in a `Face` source carrier express? Which source carrier grammar does each unadmitted class pair use?
+**Question.** Which producer fields select Side 1, Side 2, Center, New Body, and New Component for a legacy sheet-metal Base Face, and what do the opaque carrier suffix and repeated-u32/f64 lane mean?
 
-**Known.** `f3d.md` §3.1 "A `Face` scope has an ordered source-shape carrier" defines the admitted `398 / 462`, `394 / 311`, and `356 / 309` frames. Their source identities use the fixed persistent identity frame and can name different source-shape families. The `364 / 261` carrier is not an admitted source frame.
+**Known.** `f3d.md` §3.1 defines the stable Base Face scope, ordered source-profile pairs, persistent region identities, and separate sheet-metal settings. The one-identity carrier is valid; the enclosing scope is a different record. The repeated discriminator differs between Forward results and is not a constant Forward or feature-family code. The complete carrier suffix remains opaque and has not been shown to omit side or result choice. Family-2 profile clauses, nonconstant loop markers, and secondary loop programs also require preservation; a family-3-only primary-loop decoder does not cover every source recipe.
 
-**Need.** A neutral `FaceFromShapes` projection requires a proven mapping from each ordered source identity to its source shape and face-maker semantics. Until that mapping is established, the source carrier remains native data.
+**Need.** Controlled saves must vary side and result choice independently while holding the sketch, regions, thickness, and rule fixed. Complete carrier, settings, and profile programs must be compared, with exact result topology confirming each intended change. Until the selected region, thickness, material side, and result choice are independently resolved, retain the operation as native sheet-metal Base Face data.
 
 ### DR-68. Grouped `SurfacePatch` recipe-reference precedence
 

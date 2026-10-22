@@ -5505,6 +5505,39 @@ Relative to the first flag byte; excludes the preceding property and first paire
 | 53 | 8 | `unit_pair` | `f32[2]` | little | spec | f32 constants |
 | 61 | 5 | `marker` | `bytes[5]` | little | spec | marker |
 
+## `sheet_metal_region_carrier_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes |
+| 21 | 1 | `owner_marker` | `u8` | little | spec | marked owning-scope reference |
+| 22 | 4 | `owner_record_index` | `u32` | little | spec | marked owning-scope reference |
+| 26 | 6 | `owner_zero_trailer` | `bytes[6]` | little | spec | six zero trailer bytes |
+| 32 | 4 | `identity_count` | `u32` | little | spec | nonzero u32 identity count |
+
+## `sheet_metal_region_identity_reference`
+
+Spec §3.1 · layout: byte offsets · size: 11 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | marker byte `1` |
+| 1 | 4 | `record_index` | `u32` | little | spec | u32 record index |
+| 5 | 6 | `zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+
+## `sheet_metal_region_carrier_scalar_lane`
+
+Spec §3.1 · layout: byte offsets · size: 16 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `discriminator` | `u32` | little | spec | A u32 discriminator |
+| 4 | 8 | `scalar` | `f64` | little | spec | a finite f64 scalar |
+| 12 | 4 | `repeated_discriminator` | `u32` | little | spec | an equal repeated u32 discriminator |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

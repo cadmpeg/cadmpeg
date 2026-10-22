@@ -5332,3 +5332,45 @@ pub(crate) mod local_component_occurrence_attributed_prefix {
     /// Offset of `attribute_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const ATTRIBUTE_COUNT: usize = 40;
 }
+
+/// Byte offsets for the `sheet_metal_region_carrier_prefix` record.
+///
+/// Spec §3.1. Record length 36 B.
+pub(crate) mod sheet_metal_region_carrier_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 36;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `owner_marker` (`u8`). Spec §3.1.
+    pub(crate) const OWNER_MARKER: usize = 21;
+    /// Offset of `identity_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const IDENTITY_COUNT: usize = 32;
+}
+
+/// Byte offsets for the `sheet_metal_region_identity_reference` record.
+///
+/// Spec §3.1. Record length 11 B.
+pub(crate) mod sheet_metal_region_identity_reference {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 11;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RECORD_INDEX: usize = 1;
+    /// Offset of `zero_trailer` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_TRAILER: usize = 5;
+}
+
+/// Byte offsets for the `sheet_metal_region_carrier_scalar_lane` record.
+///
+/// Spec §3.1. Record length 16 B.
+pub(crate) mod sheet_metal_region_carrier_scalar_lane {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 16;
+    /// Offset of `discriminator` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const DISCRIMINATOR: usize = 0;
+    /// Offset of `scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const SCALAR: usize = 4;
+    /// Offset of `repeated_discriminator` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REPEATED_DISCRIMINATOR: usize = 12;
+}

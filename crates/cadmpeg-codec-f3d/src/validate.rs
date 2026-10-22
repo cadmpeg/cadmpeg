@@ -7353,6 +7353,10 @@ fn validate_face_group_member_resolution(
 
 /// Validate retained Face source carriers and their persistent identities.
 fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    use design::decode::operands::{
+        face_source_carrier_spec, face_source_profile_pair_count, face_source_record_is_registered,
+        FaceSourceType,
+    };
     let native = ctx.native;
     let mut carrier_records = HashSet::new();
     for group in &native.design_face_source_groups {
@@ -7367,12 +7371,22 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .records_by_index
             .get(&(native_stream, group.paired_record_index));
         let carrier_ordinal = usize::try_from(group.carrier_reference_ordinal).ok();
-        let source_spec = design::decode::operands::face_source_carrier_spec(
-            group.carrier_class_tag.as_str(),
-            group.paired_class_tag.as_str(),
-        );
+        let source_spec = face_source_carrier_spec(group.source_members.len());
+        let registered = |record, class: &str, role| {
+            face_source_record_is_registered(&native.design_types, &group.id, record, class, role)
+        };
         let scope_links_valid = scope.is_some_and(|scope| {
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::Face
+                && registered(
+                    scope.record_index,
+                    scope.class_tag.as_str(),
+                    FaceSourceType::Scope,
+                )
+                && face_source_profile_pair_count(&native.design_types, scope, |record| {
+                    ctx.records_by_index
+                        .get(&(native_stream, record))
+                        .map(|header| header.class_tag.as_str())
+                }) == Some(group.source_members.len())
                 && carrier_ordinal
                     .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                     == Some(&group.carrier_record_index)
@@ -7384,14 +7398,39 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let headers_valid = carrier_header.is_some_and(|header| {
             header.byte_offset == group.carrier_span.start()
                 && header.class_tag == group.carrier_class_tag
+                && registered(
+                    header.record_index,
+                    header.class_tag.as_str(),
+                    FaceSourceType::Carrier,
+                )
         }) && paired_header.is_some_and(|header| {
             header.byte_offset == group.carrier_span.end()
                 && header.class_tag == group.paired_class_tag
+                && registered(
+                    header.record_index,
+                    header.class_tag.as_str(),
+                    FaceSourceType::Settings,
+                )
         });
         let source_offsets_valid = source_spec.is_some_and(|layout| {
             let Ok(source_reference_offset) = u64::try_from(layout.source_reference_offset) else {
                 return false;
             };
+            if layout
+                .scalar_offset
+                .checked_add(crate::layout::sheet_metal_region_carrier_scalar_lane::LEN)
+                .is_none_or(|length| {
+                    u64::try_from(length).map_or(true, |length| {
+                        group
+                            .carrier_span
+                            .start()
+                            .checked_add(length)
+                            .is_none_or(|end| end > group.carrier_span.end())
+                    })
+                })
+            {
+                return false;
+            }
             group
                 .source_members
                 .iter()
@@ -7404,7 +7443,16 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .carrier_span
                         .start()
                         .checked_add(source_reference_offset)
-                        .and_then(|offset| offset.checked_add(ordinal.checked_mul(11)?))
+                        .and_then(|offset| {
+                            offset.checked_add(
+                                ordinal.checked_mul(
+                                    u64::try_from(
+                                        crate::layout::sheet_metal_region_identity_reference::LEN,
+                                    )
+                                    .ok()?,
+                                )?,
+                            )
+                        })
                         == Some(member.offset)
                 })
         });
@@ -7418,6 +7466,11 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     let local_id_offset = member.byte_offset.checked_add(21);
                     let asset_id_offset = member.byte_offset.checked_add(33);
                     let member_valid = unique_record
+                        && registered(
+                            member.record_index,
+                            member.class_tag.as_str(),
+                            FaceSourceType::Identity,
+                        )
                         && member.byte_offset > group.carrier_span.start()
                         && local_id_offset == Some(persistent.local_id_offset())
                         && asset_id_offset == Some(persistent.asset_id_offset())

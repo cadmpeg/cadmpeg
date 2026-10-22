@@ -36,12 +36,15 @@ use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::legacy_loft_body_carrier_class_322 as legacy_loft_322;
 use crate::layout::legacy_loft_body_carrier_class_322_tail as legacy_loft_322_tail;
 use crate::layout::legacy_loft_body_carrier_class_411 as legacy_loft_411;
+use crate::layout::sheet_metal_region_carrier_prefix as region_carrier;
+use crate::layout::sheet_metal_region_carrier_scalar_lane as region_scalar;
+use crate::layout::sheet_metal_region_identity_reference as region_reference;
 use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
 use crate::records::{
     decal::DesignRecordHeader,
-    entity_header::DesignEntityHeader,
+    entity_header::{DesignEntityHeader, SegmentType},
     feature::{
         extrude::{DesignExtrudeExtent, DesignExtrudePrologue, DesignExtrudeStart},
         scope::DesignParameterScope,
@@ -79,7 +82,7 @@ use crate::records::{
         sketch_profile::DesignSketchProfileRegionSelection,
     },
 };
-use cadmpeg_core::decode::{index_from_u32, DecodeContext, View, WorkBudget};
+use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -999,11 +1002,11 @@ pub(crate) fn decode_face_operands(
     Ok(out)
 }
 
-/// Decode the ordered persistent source identities carried by admitted `Face`
-/// source envelopes. The source envelope is distinct from a face-regeneration
-/// recipe: its members can name curves and vertices in one operation.
+/// Decode ordered sheet-metal source-region identities.
 pub(crate) fn decode_face_source_groups(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    types: &[SegmentType],
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignFaceSourceGroup>, CodecError> {
     let mut out = Vec::new();
@@ -1015,6 +1018,15 @@ pub(crate) fn decode_face_source_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
+        if !face_source_record_is_registered(
+            types,
+            &scope.id,
+            scope.record_index,
+            scope.class_tag.as_str(),
+            FaceSourceType::Scope,
+        ) {
+            continue;
+        }
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
         else {
             continue;
@@ -1039,9 +1051,15 @@ pub(crate) fn decode_face_source_groups(
             else {
                 continue;
             };
-            let Some(layout) = face_source_carrier_layout(carrier_class_tag) else {
+            if !face_source_record_is_registered(
+                types,
+                &scope.id,
+                *carrier_record_index,
+                carrier_class_tag,
+                FaceSourceType::Carrier,
+            ) {
                 continue;
-            };
+            }
             let Some(FaceSourceReferenceHeader {
                 record_index: paired_record_index,
                 byte_offset: paired_byte_offset,
@@ -1052,22 +1070,42 @@ pub(crate) fn decode_face_source_groups(
             else {
                 continue;
             };
-            if *paired_class_tag != layout.paired_class_tag {
+            if !face_source_record_is_registered(
+                types,
+                &scope.id,
+                *paired_record_index,
+                paired_class_tag,
+                FaceSourceType::Settings,
+            ) {
                 continue;
             }
             let Some(source_reference_offsets) = parse_face_source_carrier_prefix(
+                ctx,
                 bytes,
                 *carrier_byte_offset,
+                *paired_byte_offset,
                 scope.record_index,
-                layout,
-            ) else {
+            )?
+            else {
                 continue;
             };
+            let pair_count = face_source_profile_pair_count(types, scope, |record| {
+                reference_headers
+                    .iter()
+                    .flatten()
+                    .find(|header| header.record_index == record)
+                    .map(|header| header.class_tag)
+            });
+            if pair_count != Some(source_reference_offsets.len()) {
+                continue;
+            }
             let parsed_source_members = source_reference_offsets.into_iter()
                 .map(|(offset, source_record_index)| -> Result<Option<_>, CodecError> {
                     let Some(source_byte_offset) = carrier_byte_offset.checked_add(indexed_header::LEN).and_then(|at| records.first_at_or_after(at, source_record_index)) else { return Ok(None); };
                     let Some((source_class_tag, _)) =
                         lp_ascii_filtered_view(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit) else { return Ok(None); };
+                    let source_class = source_class_tag;
+                    if !face_source_record_is_registered(types, &scope.id, source_record_index, source_class, FaceSourceType::Identity) { return Ok(None); }
                     let Some(member) = parse_extrude_identity_member(bytes, source_byte_offset) else { return Ok(None); };
                     let Ok(source_byte_offset_u64) = u64::try_from(source_byte_offset) else { return Ok(None); };
                     let Ok(offset) = u64::try_from(offset) else { return Ok(None); };
@@ -1173,88 +1211,193 @@ fn face_source_reference_headers<'a, 'r>(
         .collect()
 }
 
-/// Fixed source-reference and scalar layout for one face carrier class.
+/// Counted source-reference run followed by an opaque scalar lane.
 #[derive(Clone, Copy)]
 pub(crate) struct FaceSourceCarrierLayout {
     pub(crate) source_count: usize,
     pub(crate) source_reference_offset: usize,
-    scalar_offset: usize,
-    scalar_discriminator: u32,
-    paired_class_tag: &'static str,
+    pub(crate) scalar_offset: usize,
 }
 
-fn face_source_carrier_layout(class_tag: &str) -> Option<FaceSourceCarrierLayout> {
-    match class_tag {
-        "398" => Some(FaceSourceCarrierLayout {
-            source_count: 4,
-            source_reference_offset: 36,
-            scalar_offset: 80,
-            scalar_discriminator: 100,
-            paired_class_tag: "462",
-        }),
-        "394" => Some(FaceSourceCarrierLayout {
-            source_count: 2,
-            source_reference_offset: 36,
-            scalar_offset: 58,
-            scalar_discriminator: 109,
-            paired_class_tag: "311",
-        }),
-        "356" => Some(FaceSourceCarrierLayout {
-            source_count: 2,
-            source_reference_offset: 36,
-            scalar_offset: 58,
-            scalar_discriminator: 109,
-            paired_class_tag: "309",
-        }),
-        _ => None,
+#[derive(Clone, Copy)]
+pub(crate) enum FaceSourceType {
+    Scope,
+    Carrier,
+    Settings,
+    Identity,
+    SourceGroup,
+    Profile,
+}
+
+impl FaceSourceType {
+    fn matches(self, registration: &crate::records::entity_header::SegmentTypeData) -> bool {
+        let (guid, module, versions): (&str, &str, &[u32]) = match self {
+            Self::Scope => ("7AFA0A65-B53C-472C-ACA4-5C7C0A65001C", "Fusion", &[3]),
+            Self::Carrier => ("CAA55628-037B-4D01-9C74-26118F70B63E", "Fusion", &[0]),
+            Self::Settings => ("E75C86D6-76D8-4F1F-BC16-AB8CB74958B0", "Fusion", &[2, 3]),
+            Self::Identity => (
+                "C46D3EEB-40E1-43FA-83DC-9CB204335417",
+                "EntityTracking",
+                &[1],
+            ),
+            Self::SourceGroup => ("2CA5A1CD-C99B-4C9B-91AF-57989148E841", "Fusion", &[1]),
+            Self::Profile => ("4BD53E5A-0B3E-45E5-AE8B-02044306485A", "Fusion", &[0]),
+        };
+        registration.type_guid.as_str().eq_ignore_ascii_case(guid)
+            && registration.module == module
+            && versions.contains(&registration.version)
     }
 }
 
-pub(crate) fn face_source_carrier_spec(
+pub(crate) fn face_source_record_is_registered(
+    types: &[SegmentType],
+    source_id: &str,
+    record_index: u32,
     class_tag: &str,
-    paired_class_tag: &str,
-) -> Option<FaceSourceCarrierLayout> {
-    let layout = face_source_carrier_layout(class_tag)?;
-    (layout.paired_class_tag == paired_class_tag).then_some(layout)
+    role: FaceSourceType,
+) -> bool {
+    let Some(segment) = crate::ids::design_segment(source_id) else {
+        return false;
+    };
+    let mut matches = types.iter().filter(|row| {
+        crate::ids::design_segment(row.id()) == Some(segment)
+            && role.matches(row)
+            && row
+                .entities
+                .values()
+                .any(|entity| *entity == u64::from(record_index))
+    });
+    let Some(row) = matches.next() else {
+        return false;
+    };
+    if matches.next().is_some() {
+        return false;
+    }
+    let ordinal = types
+        .iter()
+        .filter(|other| {
+            crate::ids::design_segment(other.id()) == Some(segment)
+                && other.byte_offset < row.byte_offset
+        })
+        .count();
+    ordinal
+        .checked_add(256)
+        .is_some_and(|value| value.to_string() == class_tag)
+}
+
+pub(crate) fn face_source_profile_pair_count<'a>(
+    types: &[SegmentType],
+    scope: &DesignParameterScope,
+    mut class_for: impl FnMut(u32) -> Option<&'a str>,
+) -> Option<usize> {
+    let mut count = 0usize;
+    let mut references = scope.reference_members().values().peekable();
+    while let Some(group) = references.next() {
+        let Some(class) = class_for(*group) else {
+            continue;
+        };
+        if !face_source_record_is_registered(
+            types,
+            &scope.id,
+            *group,
+            class,
+            FaceSourceType::SourceGroup,
+        ) {
+            continue;
+        }
+        let member = **references.peek()?;
+        if !face_source_record_is_registered(
+            types,
+            &scope.id,
+            member,
+            class_for(member)?,
+            FaceSourceType::Profile,
+        ) {
+            return None;
+        }
+        count = count.checked_add(1)?;
+    }
+    (count != 0).then_some(count)
+}
+
+pub(crate) fn face_source_carrier_spec(source_count: usize) -> Option<FaceSourceCarrierLayout> {
+    (source_count != 0).then_some(())?;
+    Some(FaceSourceCarrierLayout {
+        source_count,
+        source_reference_offset: region_carrier::LEN,
+        scalar_offset: region_carrier::LEN
+            .checked_add(source_count.checked_mul(region_reference::LEN)?)?,
+    })
 }
 
 fn parse_face_source_carrier_prefix(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
+    end: usize,
     scope_record_index: u32,
-    layout: FaceSourceCarrierLayout,
-) -> Option<Vec<(usize, u32)>> {
-    if bytes
-        .get(start + indexed_header::LEN..start + indexed_header::LEN + 10)
-        .is_none_or(|lane| lane != [0; 10])
-        || marked_face_source_reference(bytes, start + 21)? != scope_record_index
-        || View::u32_le_at(bytes, start + 32)? != u32::try_from(layout.source_count).ok()?
-        || View::u32_le_at(bytes, start + layout.scalar_offset)? != layout.scalar_discriminator
-        || !View::f64_le_at(bytes, start + layout.scalar_offset + 4)?.is_finite()
-        || View::u32_le_at(bytes, start + layout.scalar_offset + 12)? != layout.scalar_discriminator
-    {
-        return None;
+) -> Result<Option<Vec<(usize, u32)>>, CodecError> {
+    let layout = (|| {
+        if end > bytes.len() {
+            return None;
+        }
+        let remaining = end.checked_sub(
+            start
+                .checked_add(region_carrier::LEN)?
+                .checked_add(region_scalar::LEN)?,
+        )?;
+        let count = View::u32_le_at(bytes, start.checked_add(region_carrier::IDENTITY_COUNT)?)?;
+        let count = bounded_len(u64::from(count), region_reference::LEN, remaining)?;
+        let layout = face_source_carrier_spec(count)?;
+        let scalar = start.checked_add(layout.scalar_offset)?;
+        if bytes.get(
+            start.checked_add(region_carrier::ZERO_RUN_10)?
+                ..start.checked_add(region_carrier::OWNER_MARKER)?,
+        )? != [0; 10]
+            || marked_face_source_reference(
+                bytes,
+                start.checked_add(region_carrier::OWNER_MARKER)?,
+            )? != scope_record_index
+            || !View::f64_le_at(bytes, scalar.checked_add(region_scalar::SCALAR)?)?.is_finite()
+            || View::u32_le_at(bytes, scalar.checked_add(region_scalar::DISCRIMINATOR)?)?
+                != View::u32_le_at(
+                    bytes,
+                    scalar.checked_add(region_scalar::REPEATED_DISCRIMINATOR)?,
+                )?
+        {
+            return None;
+        }
+        Some(layout)
+    })();
+    let Some(layout) = layout else {
+        return Ok(None);
+    };
+    let mut references = ctx.alloc_filled(
+        layout.source_count,
+        (0, 0),
+        "F3D sheet-metal source-region references",
+    )?;
+    for (ordinal, slot) in references.iter_mut().enumerate() {
+        let offset = start + layout.source_reference_offset + ordinal * region_reference::LEN;
+        let Some(record) = marked_face_source_reference(bytes, offset) else {
+            return Ok(None);
+        };
+        *slot = (offset, record);
     }
-    let mut references = Vec::new();
-    for ordinal in 0..layout.source_count {
-        let offset = start
-            .checked_add(layout.source_reference_offset)?
-            .checked_add(ordinal.checked_mul(11)?)?;
-        references.push((offset, marked_face_source_reference(bytes, offset)?));
-    }
-    Some(references)
+    Ok(Some(references))
 }
 
 fn marked_face_source_reference(bytes: &[u8], offset: usize) -> Option<u32> {
-    (bytes.get(offset) == Some(&1))
-        .then(|| {
-            bytes
-                .get(offset + 5..offset + 11)
-                .is_some_and(|tail| tail == [0; 6])
-                .then(|| View::u32_le_at(bytes, offset + 1))
-                .flatten()
-        })
-        .flatten()
+    if bytes.get(offset.checked_add(region_reference::MARKER)?) != Some(&1)
+        || bytes.get(
+            offset.checked_add(region_reference::ZERO_TRAILER)?
+                ..offset.checked_add(region_reference::LEN)?,
+        )? != [0; 6]
+    {
+        return None;
+    }
+    View::u32_le_at(bytes, offset.checked_add(region_reference::RECORD_INDEX)?)
+        .filter(|record| *record != 0)
 }
 
 /// Index recipes by their final record for each native recipe identity.
