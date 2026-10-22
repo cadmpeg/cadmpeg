@@ -2573,10 +2573,38 @@ impl<'a> DecodeContext<'a> {
             let id = point.id.as_str().to_string();
             derived_ids.push(id);
         }
+        let procedural_curve_start = before.arena_len::<ProceduralCurve>();
+        // A compound construction places exactly with its transformed
+        // component carriers, so it stays with its owner.
+        let compound_constructions = model.procedural_curves[procedural_curve_start..]
+            .iter()
+            .filter(|procedure| {
+                matches!(
+                    procedure.definition(),
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_)
+                )
+            })
+            .map(|procedure| procedure.id.as_str().to_owned())
+            .collect::<HashSet<_>>();
         for curve in before
             .added_mut::<Curve>(model)
             .ok_or_else(|| "instance decode removed existing curves".to_string())?
         {
+            let compound_owner = curve
+                .geometry
+                .procedural_construction()
+                .is_some_and(|construction| compound_constructions.contains(construction.as_str()));
+            if compound_owner
+                && matches!(
+                    curve.geometry.solved_cache(),
+                    None | Some(SolvedCurveGeometry::Unknown { .. })
+                )
+            {
+                let id = curve.id.as_str().to_string();
+                links.push(id.clone());
+                derived_ids.push(id);
+                continue;
+            }
             if let Some(cache) = curve.geometry.solved_cache() {
                 curve.geometry = CurveGeometry::Solved(cache.clone());
             }
@@ -2690,22 +2718,31 @@ impl<'a> DecodeContext<'a> {
             derived_ids.push(id);
         }
         let mut omitted = HashSet::new();
-        let procedural_curve_start = before.arena_len::<ProceduralCurve>();
         let procedural_surface_start = before.arena_len::<ProceduralSurface>();
-        if model.procedural_curves.len() > procedural_curve_start
-            || model.procedural_surfaces.len() > procedural_surface_start
-        {
+        let omitted_curves = model.procedural_curves[procedural_curve_start..]
+            .iter()
+            .filter(|procedure| !compound_constructions.contains(procedure.id.as_str()))
+            .count();
+        if omitted_curves > 0 || model.procedural_surfaces.len() > procedural_surface_start {
             let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
             for procedure in &model.procedural_curves[procedural_curve_start..] {
-                annotations.remove_entity(procedure.id.as_str());
-                omitted.insert(procedure.id.as_str().to_owned());
+                if !compound_constructions.contains(procedure.id.as_str()) {
+                    annotations.remove_entity(procedure.id.as_str());
+                    omitted.insert(procedure.id.as_str().to_owned());
+                }
             }
             for procedure in &model.procedural_surfaces[procedural_surface_start..] {
                 annotations.remove_entity(procedure.id.as_str());
                 omitted.insert(procedure.id.as_str().to_owned());
             }
             self.annotations = annotations.build();
-            model.procedural_curves.truncate(procedural_curve_start);
+            let mut position = 0;
+            model.procedural_curves.retain(|procedure| {
+                let keep = position < procedural_curve_start
+                    || compound_constructions.contains(procedure.id.as_str());
+                position += 1;
+                keep
+            });
             model.procedural_surfaces.truncate(procedural_surface_start);
             self.report.phase_warnings.push(format_args!("instance: transformed procedural definition omitted; exact solved carrier retained"));
         }
