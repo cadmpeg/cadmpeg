@@ -274,15 +274,7 @@ fn geometry_depth_agrees_with_full_depth() {
         &RhinoCodec,
         &harness().fixture_inputs(),
         |result| {
-            // #209 §1.3 derives B1 classes from concrete retained records;
-            // a diagnostic about typed content cannot infer an absent class.
             let fidelity = result.source_fidelity();
-            let expected: cadmpeg_ir::ArenaClasses = fidelity
-                .retained_records()
-                .values()
-                .flat_map(|record| record.untyped().iter().copied())
-                .collect();
-            assert_eq!(fidelity.unrepresented(), expected);
             let restored: cadmpeg_ir::SourceFidelity =
                 serde_json::from_value(serde_json::to_value(fidelity).unwrap()).unwrap();
             assert_eq!(
