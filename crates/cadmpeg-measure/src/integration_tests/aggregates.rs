@@ -211,3 +211,49 @@ fn the_area_centroid_states_its_model_uncertainty() {
         "{model} against {expected}"
     );
 }
+
+/// The bilinear patch with the corners `(0, 0)`, `(2, 0)`, `(2, 1)` and
+/// `(0, 2)` at `z = 0`, a trapezoid of area 3, bounded by its four domain
+/// edges, with the face sense reversed: the declared region is empty, so
+/// the face is the whole patch. Its area centroid is `(8/9, 7/9, 0)`, off
+/// the centre `(1, 1, 0)` of its edge box.
+#[test]
+fn an_empty_declared_region_gives_the_area_centroid_of_the_complement() {
+    let mut builder = Builder::new();
+    let surface = builder.nurbs(
+        (1, vec![0.0, 0.0, 1.0, 1.0]),
+        (1, vec![0.0, 0.0, 1.0, 1.0]),
+        &[
+            vec![([0.0, 0.0, 0.0], 1.0), ([0.0, 2.0, 0.0], 1.0)],
+            vec![([2.0, 0.0, 0.0], 1.0), ([2.0, 1.0, 0.0], 1.0)],
+        ],
+    );
+    let vertices: Vec<_> = [[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 2.0]]
+        .iter()
+        .map(|[x, y]| builder.vertex([*x, *y, 0.0]))
+        .collect();
+    let ring: Vec<_> = (0..4)
+        .map(|index| {
+            (
+                builder.line(&vertices[index], &vertices[(index + 1) % 4]),
+                Sense::Forward,
+            )
+        })
+        .collect();
+    builder.face(&surface, Sense::Reversed, &[ring], false);
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &Selection::default());
+    let body = only_body(&report);
+    assert_measured(body.area().as_ref().expect("area"), 3.0, 4.0);
+    let centroid = body
+        .area_centroid()
+        .as_ref()
+        .and_then(Quantity::measured)
+        .expect("area centroid");
+    assert_eq!(centroid.reading(), None);
+    assert_point(
+        centroid.value().value.get(),
+        [8.0 / 9.0, 7.0 / 9.0, 0.0],
+        2.0,
+    );
+}
