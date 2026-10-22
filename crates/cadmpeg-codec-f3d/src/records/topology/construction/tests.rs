@@ -238,7 +238,7 @@ fn construction_group_owns_member_stride_and_derives_role_offset() {
 
 #[test]
 fn tracking_identities_preserve_wire_and_reject_partial_locations() {
-    let prefix = r#"{"wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"361","carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"362","primary_identity":268,"primary_identity_offset":70,"selector":-1,"selector_offset":90,"kind":3,"kind_offset":94"#;
+    let prefix = r#"{"wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"361","carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"362","primary_identity":268,"primary_identity_offset":70,"selector":1,"selector_offset":90,"kind":3,"kind_offset":94"#;
     let suffix =
         r#","following_record_index":302,"following_byte_offset":130,"following_class_tag":"363"}"#;
     for fields in ["", ",\"first_related_identity\":113,\"first_related_identity_offset\":110,\"second_related_identity\":119,\"second_related_identity_offset\":122"] {
@@ -263,7 +263,7 @@ fn tracking_identities_preserve_wire_and_reject_partial_locations() {
 
 #[test]
 fn construction_tracking_path_borrowed_wire_matches_owned_wire_bytes() {
-    let prefix = r#"{"wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"361","carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"362","primary_identity":268,"primary_identity_offset":70,"selector":-1,"selector_offset":90,"kind":3,"kind_offset":94"#;
+    let prefix = r#"{"wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"361","carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"362","primary_identity":268,"primary_identity_offset":70,"selector":1,"selector_offset":90,"kind":3,"kind_offset":94"#;
     for (fields, end) in [
         ("", 114),
         (",\"first_related_identity\":113,\"first_related_identity_offset\":110,\"second_related_identity\":119,\"second_related_identity_offset\":122", 130),
@@ -282,7 +282,7 @@ fn construction_tracking_path_native_retained_limit_refuses_before_clone() {
         id: &'static str,
         value: &'a DesignConstructionTrackingPath,
     }
-    let wire = r#"{"wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"361","carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"362","primary_identity":268,"primary_identity_offset":70,"selector":-1,"selector_offset":90,"kind":3,"kind_offset":94,"following_record_index":302,"following_byte_offset":114,"following_class_tag":"363"}"#;
+    let wire = r#"{"wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"361","carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"362","primary_identity":268,"primary_identity_offset":70,"selector":1,"selector_offset":90,"kind":3,"kind_offset":94,"following_record_index":302,"following_byte_offset":114,"following_class_tag":"363"}"#;
     let path: DesignConstructionTrackingPath = serde_json::from_str(wire).unwrap();
     let record = NestedRecord {
         id: "f3d:native:tracking-path#0",
@@ -644,7 +644,7 @@ fn tracking_optional_identities_select_the_frame_extent() {
                 "wrapper_record_index": 7, "wrapper_byte_offset": 100, "wrapper_class_tag": "300",
                 "carrier_record_index": 8, "carrier_byte_offset": 133, "carrier_class_tag": "301",
                 "primary_identity": 9, "primary_identity_offset": 170,
-                "selector": -1, "selector_offset": 190, "kind": 3, "kind_offset": 194,
+                "selector": 1, "selector_offset": 190, "kind": 3, "kind_offset": 194,
                 "following_record_index": 9, "following_byte_offset": 214 + u64::from(first) * 8 + u64::from(second) * 8,
                 "following_class_tag": "302"
             });
@@ -749,5 +749,32 @@ fn a_top_level_topology_key_names_itself_in_its_refusal() {
             key,
             &refusal::<super::DesignConstructionTrackingPathWire>(key),
         );
+    }
+}
+
+#[test]
+fn tracking_fragment_domain_rejects_nonpositive_and_out_of_range_ordinals() {
+    let base = json!({
+        "wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"361",
+        "carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"362",
+        "primary_identity":268,"primary_identity_offset":70,
+        "selector":1,"selector_offset":90,"kind":1,"kind_offset":94,
+        "following_record_index":302,"following_byte_offset":114,"following_class_tag":"363"
+    });
+    for (selector, kind) in [(1, 1), (1, 3), (3, 3), (i32::MAX, u32::MAX)] {
+        let mut wire = base.clone();
+        wire["selector"] = json!(selector);
+        wire["kind"] = json!(kind);
+        let value: DesignConstructionTrackingPath = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(value).unwrap(), wire);
+    }
+    for (selector, kind) in [(-1, 3), (0, 3), (4, 3), (1, 0), (i32::MIN, u32::MAX)] {
+        let mut wire = base.clone();
+        wire["selector"] = json!(selector);
+        wire["kind"] = json!(kind);
+        let error = serde_json::from_value::<DesignConstructionTrackingPath>(wire).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains(if kind == 0 { "kind" } else { "selector" }));
     }
 }

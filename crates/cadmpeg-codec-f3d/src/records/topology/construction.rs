@@ -1641,9 +1641,9 @@ pub(crate) struct DesignConstructionTrackingPath {
     pub(crate) carrier_class_tag: DesignClassTag,
     /// Primary persistent identity stored by the carrier.
     pub(crate) primary_identity: u64,
-    /// Signed carrier selector.
+    /// One-based fragment ordinal in the serialized primary curve direction.
     pub(crate) selector: i32,
-    /// Carrier-kind discriminator.
+    /// Positive fragment count defined by the serialized tracking graph.
     pub(crate) kind: u32,
     /// First optional related persistent identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1735,6 +1735,14 @@ impl Serialize for DesignConstructionTrackingPath {
 
 impl DesignConstructionTrackingPath {
     pub(crate) fn try_new(draft: DesignConstructionTrackingPathDraft) -> Result<Self, String> {
+        if draft.kind == 0 {
+            return Err("tracking kind must be a positive fragment count".into());
+        }
+        if !u32::try_from(draft.selector).is_ok_and(|ordinal| (1..=draft.kind).contains(&ordinal)) {
+            return Err(
+                "tracking selector must be a fragment ordinal from one through kind".into(),
+            );
+        }
         if draft.first_related_identity.is_some_and(|identity| {
             draft.wrapper_byte_offset.checked_add(110) != Some(identity.offset)
         }) || draft.second_related_identity.is_some_and(|identity| {
@@ -1884,11 +1892,11 @@ pub(crate) struct DesignConstructionTrackingPathDraft {
     pub(crate) primary_identity: u64,
     /// Byte offset of `primary_identity`.
     pub(crate) primary_identity_offset: u64,
-    /// Signed carrier selector.
+    /// One-based fragment ordinal in the serialized primary curve direction.
     pub(crate) selector: i32,
     /// Byte offset of `selector`.
     pub(crate) selector_offset: u64,
-    /// Carrier-kind discriminator.
+    /// Positive fragment count defined by the serialized tracking graph.
     pub(crate) kind: u32,
     /// Byte offset of `kind`.
     pub(crate) kind_offset: u64,

@@ -196,7 +196,7 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
         bytes.extend_from_slice(&268u64.to_le_bytes());
         bytes.extend_from_slice(&0u64.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
-        bytes.extend_from_slice(&(-1i32).to_le_bytes());
+        bytes.extend_from_slice(&1i32.to_le_bytes());
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&0u64.to_le_bytes());
         for identity in [first, second] {
@@ -208,6 +208,28 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
         indexed_header(&mut bytes, *b"301", wrapper_record_index + 2);
         bytes
     }
+
+    for (selector, kind) in [(-1i32, 3u32), (0, 3), (4, 3), (1, 0)] {
+        let mut bytes = tracking_path(None, None);
+        bytes[90..94].copy_from_slice(&selector.to_le_bytes());
+        bytes[94..98].copy_from_slice(&kind.to_le_bytes());
+        assert!(parse_construction_tracking_path(
+            &bytes,
+            0,
+            300,
+            &crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap(),
+        )
+        .is_none());
+    }
+    let mut wide_predecessor = tracking_path(None, None);
+    drop(wide_predecessor.splice(20..20, [1, 0, 0, 0]));
+    assert!(parse_construction_tracking_path(
+        &wide_predecessor,
+        0,
+        300,
+        &crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap(),
+    )
+    .is_none());
 
     let absent = tracking_path(None, None);
     let absent = parse_construction_tracking_path(
@@ -221,7 +243,7 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     assert_eq!(absent.carrier_byte_offset(), 33);
     assert_eq!(absent.primary_identity, 268);
     assert_eq!(absent.primary_identity_offset(), 70);
-    assert_eq!(absent.selector, -1);
+    assert_eq!(absent.selector, 1);
     assert_eq!(absent.kind, 3);
     assert_eq!(absent.first_related_identity(), None);
     assert_eq!(absent.second_related_identity(), None);
