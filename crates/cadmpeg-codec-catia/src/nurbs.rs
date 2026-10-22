@@ -1670,9 +1670,9 @@ mod tests {
                 0.0,
                 None,
             )
-            .unwrap(),
+            .expect("admitted helix"),
         );
-        let point = circular_helix_point(&helix, std::f64::consts::PI).unwrap();
+        let point = circular_helix_point(&helix, std::f64::consts::PI).expect("finite helix point");
         assert!((point.x + 1.0).abs() < DOMAIN_ROUNDING);
         assert!((point.z - 0.5).abs() < DOMAIN_ROUNDING);
     }

@@ -58,9 +58,10 @@ type Track<'a> = dyn Fn(f64) -> Result<TrackSample, HelixNurbsError> + 'a;
 /// multiplicity three: the poles of each segment are its Bézier poles.
 ///
 /// The deviation is measured between the spline and the helix at the same
-/// parameter. The segment count doubles until every sampled deviation is
-/// within `tolerance`, and the fit is refused after `MAX_REFINEMENTS`
-/// doublings.
+/// parameter. The segment count starts at one and doubles until no segment
+/// spans more than `MAX_SEGMENT_ANGLE` and every sampled deviation is within
+/// `tolerance`. The fit is refused when `2^MAX_REFINEMENTS` segments do not
+/// meet both conditions.
 pub fn helix_nurbs(
     helix: &HelixCurveConstruction,
     tolerance: PositiveLength,
