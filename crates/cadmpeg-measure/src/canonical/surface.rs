@@ -72,6 +72,15 @@ pub(crate) struct TorusChart {
     pub(crate) minor: f64,
 }
 
+/// The axis of a cylinder or cone chart: `v` runs along `direction` from
+/// `origin` with `h` millimetres per unit.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Axis {
+    pub(crate) origin: Point3,
+    pub(crate) direction: Vector3,
+    pub(crate) h: f64,
+}
+
 /// An analytic chart in model space.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Chart {
@@ -258,6 +267,58 @@ impl Chart {
             Self::Sphere(sphere) => -sphere.radius * sphere.radius * v.sin(),
             Self::Torus(torus) => -torus.minor.abs() * (torus.major * v + torus.minor * v.sin()),
         })
+    }
+}
+
+impl Chart {
+    /// The cone apex: its `v` and its model point. `None` on other charts
+    /// and on a cone of zero half-angle.
+    pub(crate) fn apex(&self) -> Option<(f64, Point3)> {
+        match self {
+            Self::Cone(cone) if cone.tau != 0.0 => {
+                let v = -cone.rho0 / cone.tau;
+                Some((v, offset(cone.origin, cone.axis.scale(cone.h * v))))
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether `point` lies within `tolerance` of a point where `u` is not
+    /// defined.
+    pub(crate) fn singular_at(&self, point: Point3, tolerance: f64) -> bool {
+        self.apex()
+            .is_some_and(|(_, apex)| apex.distance(point) <= tolerance)
+    }
+
+    /// The axis of a cylinder or cone.
+    pub(crate) fn axis(&self) -> Option<Axis> {
+        match self {
+            Self::Cylinder(cylinder) => Some(Axis {
+                origin: cylinder.origin,
+                direction: cylinder.axis,
+                h: cylinder.h,
+            }),
+            Self::Cone(cone) => Some(Axis {
+                origin: cone.origin,
+                direction: cone.axis,
+                h: cone.h,
+            }),
+            Self::Plane(_) | Self::Sphere(_) | Self::Torus(_) => None,
+        }
+    }
+
+    /// The cross-section radius at `v` of a cylinder or circular cone.
+    pub(crate) fn section_radius(&self, v: f64) -> Option<f64> {
+        match self {
+            Self::Cylinder(cylinder) => Some(cylinder.radius.abs()),
+            Self::Cone(cone) if cone_is_circular(cone) => Some((cone.rho0 + cone.tau * v).abs()),
+            _ => None,
+        }
+    }
+
+    /// Whether the chart is a cone with an elliptic cross-section.
+    pub(crate) fn elliptic(&self) -> bool {
+        matches!(self, Self::Cone(cone) if !cone_is_circular(cone))
     }
 }
 

@@ -2,7 +2,9 @@
 //! Document builders and the decode context the crate's tests measure with.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::geometry::analytic::{CircleCurve, LineCurve, PlaneSurface};
+use cadmpeg_ir::geometry::analytic::{
+    CircleCurve, ConeSurface, CylinderSurface, LineCurve, PlaneSurface,
+};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -75,6 +77,103 @@ pub(crate) fn assert_measured(
         (computed - expected).abs() <= allowed,
         "computed {computed}, expected {expected}, allowed {allowed}"
     );
+}
+
+/// An origin with an axis and a reference direction.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Frame {
+    pub(crate) origin: [f64; 3],
+    pub(crate) axis: [f64; 3],
+    pub(crate) reference: [f64; 3],
+}
+
+impl Frame {
+    /// The frame at `origin` with axis `+z` and reference `+x`.
+    pub(crate) const fn z_up(origin: [f64; 3]) -> Self {
+        Self {
+            origin,
+            axis: [0.0, 0.0, 1.0],
+            reference: [1.0, 0.0, 0.0],
+        }
+    }
+
+    fn vectors(self) -> (Point3, Vector3, Vector3) {
+        let [ox, oy, oz] = self.origin;
+        let [ax, ay, az] = self.axis;
+        let [rx, ry, rz] = self.reference;
+        (
+            Point3::new(ox, oy, oz),
+            Vector3::new(ax, ay, az),
+            Vector3::new(rx, ry, rz),
+        )
+    }
+}
+
+/// A circle: its frame and radius.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Circle {
+    pub(crate) frame: Frame,
+    pub(crate) radius: f64,
+}
+
+impl Circle {
+    fn curve(self) -> CircleCurve {
+        let (center, axis, reference) = self.frame.vectors();
+        CircleCurve::try_new(center, axis, reference, self.radius).expect("circle")
+    }
+}
+
+/// Assert a measured range equals `[min, max]` within its numeric error
+/// and the test floor relative to `scale`.
+pub(crate) fn assert_range(
+    quantity: Option<&crate::value::Quantity<crate::value::Range>>,
+    [min, max]: [f64; 2],
+    scale: f64,
+) {
+    let measured = quantity
+        .and_then(crate::value::Quantity::measured)
+        .unwrap_or_else(|| panic!("expected a measured range, got {quantity:?}"));
+    let numeric = measured.numeric_error().get();
+    for (computed, expected) in [
+        (measured.value().min.get(), min),
+        (measured.value().max.get(), max),
+    ] {
+        let allowed = numeric + TEST_ABSOLUTE_FLOOR * expected.abs().max(scale);
+        assert!(
+            (computed - expected).abs() <= allowed,
+            "computed {computed}, expected {expected}, allowed {allowed}"
+        );
+    }
+}
+
+/// Assert a measured tight box equals `min .. max` within its numeric error
+/// and the test floor relative to `scale`.
+pub(crate) fn assert_tight_box(
+    quantity: &crate::value::Quantity<crate::value::BoxValue>,
+    min: [f64; 3],
+    max: [f64; 3],
+    scale: f64,
+) {
+    let measured = quantity
+        .measured()
+        .unwrap_or_else(|| panic!("expected a measured box, got {quantity:?}"));
+    assert_eq!(measured.value().kind, crate::value::BoxKind::Tight);
+    let numeric = measured.numeric_error().get();
+    let (low, high) = (measured.value().min.get(), measured.value().max.get());
+    for (computed, expected) in [
+        (low.x, min[0]),
+        (low.y, min[1]),
+        (low.z, min[2]),
+        (high.x, max[0]),
+        (high.y, max[1]),
+        (high.z, max[2]),
+    ] {
+        let allowed = numeric + TEST_ABSOLUTE_FLOOR * expected.abs().max(scale);
+        assert!(
+            (computed - expected).abs() <= allowed,
+            "computed {computed}, expected {expected}, allowed {allowed}"
+        );
+    }
 }
 
 /// Builds a document from vertices, edges and faces.
@@ -206,6 +305,39 @@ impl Builder {
             vertex.clone(),
             vertex.clone(),
         )
+    }
+
+    /// A circular arc edge from `start` to `end` on the parameter interval
+    /// `range` of the circle `c + r(cos t·reference + sin t·(axis × reference))`.
+    pub(crate) fn arc(
+        &mut self,
+        circle: Circle,
+        range: [f64; 2],
+        start: &VertexId,
+        end: &VertexId,
+    ) -> EdgeId {
+        let curve = self.curve(SolvedCurveGeometry::Circle(circle.curve()));
+        self.edge(
+            EdgeCarrier::new(Some(curve), Some(range)).expect("carrier"),
+            start.clone(),
+            end.clone(),
+        )
+    }
+
+    /// A cylinder surface.
+    pub(crate) fn cylinder(&mut self, frame: Frame, radius: f64) -> SurfaceId {
+        let (origin, axis, reference) = frame.vectors();
+        self.surface(SolvedSurfaceGeometry::Cylinder(
+            CylinderSurface::try_new(origin, axis, reference, radius).expect("cylinder"),
+        ))
+    }
+
+    /// A circular cone surface of `radius` at the frame origin.
+    pub(crate) fn cone(&mut self, frame: Frame, radius: f64, half_angle: f64) -> SurfaceId {
+        let (origin, axis, reference) = frame.vectors();
+        self.surface(SolvedSurfaceGeometry::Cone(
+            ConeSurface::try_new(origin, axis, reference, radius, 1.0, half_angle).expect("cone"),
+        ))
     }
 
     /// A plane surface.

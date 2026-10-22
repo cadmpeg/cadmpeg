@@ -501,6 +501,31 @@ impl Scalar {
     }
 }
 
+impl Range {
+    /// A finite range, absent otherwise.
+    pub(crate) fn new(min: f64, max: f64) -> Option<Self> {
+        Some(Self {
+            min: FiniteReal::new(min)?,
+            max: FiniteReal::new(max)?,
+        })
+    }
+}
+
+impl Sweep {
+    /// A finite sweep, absent otherwise.
+    pub(crate) fn new(value: f64, full: bool, intervals: &[[f64; 2]]) -> Option<Self> {
+        let mut finite = Vec::with_capacity(intervals.len());
+        for [start, end] in intervals {
+            finite.push([FiniteReal::new(*start)?, FiniteReal::new(*end)?]);
+        }
+        Some(Self {
+            value: FiniteReal::new(value)?,
+            full,
+            intervals: finite,
+        })
+    }
+}
+
 impl Point {
     /// A finite point, absent otherwise.
     pub(crate) fn new(value: Point3) -> Option<Self> {

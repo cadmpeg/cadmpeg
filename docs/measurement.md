@@ -168,6 +168,44 @@ each other. Winding numbers use each loop's parameter-plane polyline,
 sampled until the deviation of each chord midpoint is at most `1e-3` of the
 loop's parameter-plane box diagonal.
 
+On a cylinder or a cone, a loop with zero net shift in `u` is contractible,
+and a loop that goes around the axis once is not. With `m` loops that go
+around the axis:
+
+| `m` | Region |
+| --- | --- |
+| 2 | The band between the two loops. Contractible loops are holes in the band. |
+| 1 | On a cone, the part between the loop and the apex. The apex is a member of the region. |
+| 0 | The planar rule, with the winding numbers taken over lifts of each loop by whole turns. |
+
+Other configurations are `boundary.nesting-invalid`. A loop that meets the
+cone apex has a synthesized segment along the apex. When the loop has one
+such segment and the segment can close the loop without a full turn, the
+segment takes that length and the loop is contractible.
+
+## Extents
+
+`axial_range` is the range of `(P − axis_point) · axis_direction` over a
+cylinder or cone face, in millimetres. `axial_extent` is its length.
+`angular_sweep` is the measure of the face's projection onto the circle of
+directions about the axis: the union of the `u`-ranges of the boundary
+pieces. A loop that goes around the axis makes the sweep full. `intervals`
+gives the covered `u` intervals from `ref_direction`, each start in
+`[0, 2π)`. Gaps smaller than the angular allowance
+`max(tolerances.angular, allowance / largest radius)` are closed.
+`radius_range` is the cross-section radius range of a cone face; its minimum
+is 0 when the apex is a member of the region. On an elliptic cone,
+`angular_sweep` is `sweep.unsupported-carrier` and `radius_range` is
+`carrier.elliptic-cone`.
+
+## Boxes
+
+A face box is the box of the boundary pieces joined with the carrier's
+interior critical points that lie in the region. A plane or a cylinder has no
+interior critical point, and its box has the method `boundary_extremum`. On a
+cone the apex is the only one, and the box has the method `critical_points`.
+`bbox.boundary` is the box of the boundary pieces alone.
+
 ## Orientation
 
 `orientation.declared_normal` is the oriented normal the face's sense

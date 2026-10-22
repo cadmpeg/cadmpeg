@@ -5,13 +5,27 @@
 //! ends or at roots of its derivative. Lines and conics have closed forms;
 //! other curves use the extremum search.
 
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::canonical::curve::{CurveChart, CurveShape};
 use crate::context::Eval;
 use crate::failure::{Measure, MeasureFailure};
-use crate::geom::{component, coordinate, Aabb};
+use crate::geom::Aabb;
 use crate::quadrature::extrema;
+
+/// The coordinate axes.
+fn axes() -> [Vector3; 3] {
+    [
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+    ]
+}
+
+/// `direction · (point − 0)`.
+fn coordinate_along(point: Point3, direction: Vector3) -> f64 {
+    point.vector_from(Point3::new(0.0, 0.0, 0.0)).dot(direction)
+}
 
 /// The box of a curve interval and the error of its sampled extremes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -27,22 +41,32 @@ fn angle_within(angle: f64, low: f64, high: f64) -> Option<f64> {
     (shifted <= high).then_some(shifted)
 }
 
-/// The box of `chart` between `start` and `end`.
-pub(crate) fn curve_box(
+/// The range of `direction · C(t)` over a curve interval.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CurveRange {
+    pub(crate) min: f64,
+    pub(crate) max: f64,
+    pub(crate) numeric_error: f64,
+}
+
+/// The range of the linear coordinate `direction · P` of `chart` between
+/// `start` and `end`.
+pub(crate) fn curve_range(
     eval: &Eval<'_, '_>,
     chart: &CurveChart<'_>,
     [start, end]: [f64; 2],
-) -> Measure<CurveBox> {
+    direction: Vector3,
+) -> Measure<CurveRange> {
     let (low, high) = (start.min(end), start.max(end));
+    let at = |t: f64| -> Measure<f64> { Ok(coordinate_along(chart.point(eval, t)?, direction)) };
+    let ends = [at(low)?, at(high)?];
+    let mut range = CurveRange {
+        min: ends[0].min(ends[1]),
+        max: ends[0].max(ends[1]),
+        numeric_error: 0.0,
+    };
     match &chart.shape {
-        CurveShape::Line { .. } | CurveShape::Degenerate { .. } => {
-            let mut aabb = Aabb::of_point(chart.point(eval, low)?);
-            aabb.include(chart.point(eval, high)?);
-            Ok(CurveBox {
-                aabb,
-                numeric_error: 0.0,
-            })
-        }
+        CurveShape::Line { .. } | CurveShape::Degenerate { .. } => Ok(range),
         CurveShape::Conic {
             e1,
             e2,
@@ -50,43 +74,30 @@ pub(crate) fn curve_box(
             minor,
             ..
         } => {
-            let mut aabb = Aabb::of_point(chart.point(eval, low)?);
-            aabb.include(chart.point(eval, high)?);
-            for axis in 0..3 {
-                let critical = (minor * component(*e2, axis)).atan2(major * component(*e1, axis));
-                for angle in [critical, critical + std::f64::consts::PI] {
-                    if let Some(t) = angle_within(angle, low, high) {
-                        aabb.include(chart.point(eval, t)?);
-                    }
+            let critical = (minor * e2.dot(direction)).atan2(major * e1.dot(direction));
+            for angle in [critical, critical + std::f64::consts::PI] {
+                if let Some(t) = angle_within(angle, low, high) {
+                    let value = at(t)?;
+                    range.min = range.min.min(value);
+                    range.max = range.max.max(value);
                 }
             }
-            Ok(CurveBox {
-                aabb,
-                numeric_error: 0.0,
-            })
+            Ok(range)
         }
         CurveShape::Evaluated => {
-            let mut aabb = Aabb::of_point(chart.point(eval, low)?);
-            aabb.include(chart.point(eval, high)?);
-            let mut numeric_error: f64 = 0.0;
             let breaks = chart.breaks();
-            for axis in 0..3 {
-                let mut charge = |units| eval.charge(units);
-                let mut f = |t: f64| -> Measure<(f64, f64)> {
-                    Ok((
-                        coordinate(chart.point(eval, t)?, axis),
-                        component(chart.tangent(eval, t)?, axis),
-                    ))
-                };
-                let found = extrema(&mut charge, &mut f, low, high, &breaks)?;
-                aabb.min[axis] = aabb.min[axis].min(found.min);
-                aabb.max[axis] = aabb.max[axis].max(found.max);
-                numeric_error = numeric_error.max(found.error);
-            }
-            Ok(CurveBox {
-                aabb,
-                numeric_error,
-            })
+            let mut charge = |units| eval.charge(units);
+            let mut f = |t: f64| -> Measure<(f64, f64)> {
+                Ok((
+                    coordinate_along(chart.point(eval, t)?, direction),
+                    chart.tangent(eval, t)?.dot(direction),
+                ))
+            };
+            let found = extrema(&mut charge, &mut f, low, high, &breaks)?;
+            range.min = range.min.min(found.min);
+            range.max = range.max.max(found.max);
+            range.numeric_error = found.error;
+            Ok(range)
         }
         CurveShape::Unsupported(reason) => Err(MeasureFailure::unavailable(
             *reason,
@@ -94,6 +105,26 @@ pub(crate) fn curve_box(
             "the curve has no parameterization",
         )),
     }
+}
+
+/// The box of `chart` between `start` and `end`.
+pub(crate) fn curve_box(
+    eval: &Eval<'_, '_>,
+    chart: &CurveChart<'_>,
+    interval: [f64; 2],
+) -> Measure<CurveBox> {
+    let mut aabb = Aabb::of_point(chart.point(eval, interval[0])?);
+    let mut numeric_error: f64 = 0.0;
+    for (axis, direction) in axes().into_iter().enumerate() {
+        let range = curve_range(eval, chart, interval, direction)?;
+        aabb.min[axis] = range.min;
+        aabb.max[axis] = range.max;
+        numeric_error = numeric_error.max(range.numeric_error);
+    }
+    Ok(CurveBox {
+        aabb,
+        numeric_error,
+    })
 }
 
 /// A box of one point.

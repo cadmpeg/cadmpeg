@@ -437,6 +437,60 @@ fn box_text(quantity: &Quantity<BoxValue>) -> String {
     )
 }
 
+fn range_text(quantity: &Quantity<Range>, unit: &str) -> String {
+    if let Some(text) = unavailable_text(quantity) {
+        return text;
+    }
+    let Some(measured) = quantity.measured() else {
+        return String::new();
+    };
+    let (min, max) = (measured.value().min.get(), measured.value().max.get());
+    let degrees = if unit == "rad" {
+        format!(
+            " ({}° .. {}°)",
+            significant(min.to_degrees(), 5),
+            significant(max.to_degrees(), 5)
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        "{} .. {} {unit}{degrees}  {}{}",
+        number(min),
+        number(max),
+        name(&measured.method()),
+        errors(measured)
+    )
+}
+
+fn sweep_text(quantity: &Quantity<Sweep>) -> String {
+    if let Some(text) = unavailable_text(quantity) {
+        return text;
+    }
+    let Some(measured) = quantity.measured() else {
+        return String::new();
+    };
+    let sweep = measured.value();
+    let value = sweep.value.get();
+    let coverage = if sweep.full {
+        "full".to_owned()
+    } else {
+        let intervals: Vec<String> = sweep
+            .intervals
+            .iter()
+            .map(|[start, end]| format!("[{}, {}]", number(start.get()), number(end.get())))
+            .collect();
+        intervals.join(" ")
+    };
+    format!(
+        "{} rad ({}°) {coverage}  {}{}",
+        number(value),
+        significant(value.to_degrees(), 5),
+        name(&measured.method()),
+        errors(measured)
+    )
+}
+
 fn line(out: &mut impl Write, label: &str, value: &str) -> io::Result<()> {
     writeln!(out, "  {label:<13} {value}")
 }
@@ -560,6 +614,21 @@ fn face_text(out: &mut impl Write, face: &FaceMeasures) -> io::Result<()> {
         line(out, "seam", &scalar_text(measures.seam_length(), "mm"))?;
     }
     line(out, "bbox", &box_text(measures.bbox()))?;
+    if let Some(axial) = measures.axial_range() {
+        line(out, "axial range", &range_text(axial, "mm"))?;
+    }
+    if let Some(extent) = measures.axial_extent() {
+        line(out, "axial extent", &scalar_text(extent, "mm"))?;
+    }
+    if let Some(sweep) = measures.angular_sweep() {
+        line(out, "sweep", &sweep_text(sweep))?;
+    }
+    if let Some(latitude) = measures.latitude_range() {
+        line(out, "latitude", &range_text(latitude, "rad"))?;
+    }
+    if let Some(radius) = measures.radius_range() {
+        line(out, "radius range", &range_text(radius, "mm"))?;
+    }
     if let Some(region) = measures.region() {
         line(out, "region", &name(region))?;
     }

@@ -15,6 +15,7 @@ use crate::canonical::surface::Chart;
 use crate::canonical::{Carrier, Sources};
 use crate::context::Eval;
 use crate::edges::EdgeGeometry;
+use crate::extent::{angular_sweep, axial_range};
 use crate::failure::{settle, Measure, Missing, Outcome};
 use crate::geom::Aabb;
 use crate::orientation::face_orientation;
@@ -28,7 +29,8 @@ use crate::report::{
 use crate::select::SurfaceKind;
 use crate::tolerance::{allowance, model_tolerance};
 use crate::value::{
-    measured, BoundaryBox, BoxKind, BoxValue, Errors, Method, Point, Quantity, Scalar, Unit,
+    measured, BoundaryBox, BoxKind, BoxValue, Errors, Method, Point, Quantity, Range, Scalar,
+    Sweep, Unit,
 };
 
 /// Everything measured about one face.
@@ -138,10 +140,19 @@ impl<'ir> FaceInput<'_, 'ir> {
             (Err(missing), _) | (_, Err(missing)) => Err(missing.clone()),
         };
         let region: Outcome<Region> = match (&chart, &boundary) {
-            (Ok(chart), Ok(boundary)) => settle(
-                classify(face, chart, &boundary.resolved, &boundary.shapes)
+            (Ok(chart), Ok(boundary)) => {
+                let v_tolerance = chart.axis().map_or(alpha, |axis| alpha / axis.h);
+                settle(
+                    classify(
+                        face,
+                        chart,
+                        &boundary.resolved,
+                        &boundary.shapes,
+                        v_tolerance,
+                    )
                     .map_err(|failure| failure.at(id)),
-            )?,
+                )?
+            }
             (Err(missing), _) | (_, Err(missing)) => Err(missing.clone()),
         };
 
@@ -194,7 +205,26 @@ impl<'ir> FaceInput<'_, 'ir> {
         };
 
         let (bbox, aabb) = match (&chart, &region) {
-            (Ok(Chart::Plane(_)), Ok(_)) => self.boundary_box(face, &coedges, &boundary, tau_b),
+            (Ok(Chart::Plane(_) | Chart::Cylinder(_)), Ok(_)) => self.boundary_box(
+                face,
+                &coedges,
+                &boundary,
+                BoxBasis {
+                    tau_b,
+                    member: None,
+                    method: Method::BoundaryExtremum,
+                },
+            ),
+            (Ok(Chart::Cone(_)), Ok(region)) => self.boundary_box(
+                face,
+                &coedges,
+                &boundary,
+                BoxBasis {
+                    tau_b,
+                    member: region.apex,
+                    method: Method::CriticalPoints,
+                },
+            ),
             (Ok(_), Ok(_)) => (
                 unavailable(
                     UnavailableReason::RegionDomainUnsupported,
@@ -238,16 +268,29 @@ impl<'ir> FaceInput<'_, 'ir> {
             Some(missing) => missing.quantity(),
         };
 
+        let extents = extent_quantities(
+            eval,
+            &ExtentInput {
+                id,
+                chart: &chart,
+                boundary: &boundary,
+                region: &region,
+                tau_b,
+                alpha,
+                angular: owners.ir.tolerances.angular.get(),
+                placement: self.placement.as_ref().ok(),
+            },
+        )?;
         let measures = FaceQuantities {
             area,
             boundary_length,
             seam_length,
             bbox,
-            axial_range: None,
-            axial_extent: None,
-            angular_sweep: None,
-            latitude_range: None,
-            radius_range: None,
+            axial_range: extents.axial_range,
+            axial_extent: extents.axial_extent,
+            angular_sweep: extents.angular_sweep,
+            latitude_range: extents.latitude_range,
+            radius_range: extents.radius_range,
             u_range: None,
             v_range: None,
             region: region.as_ref().ok().map(|region| region.rule),
@@ -349,13 +392,14 @@ impl<'ir> FaceInput<'_, 'ir> {
         lengths
     }
 
-    /// The box of the face's boundary pieces: its edges and vertex loops.
+    /// The box of the face's boundary pieces (its edges and vertex loops),
+    /// joined with a member interior point.
     fn boundary_box(
         &self,
         face: &Face,
         coedges: &[&'ir cadmpeg_ir::topology::Coedge],
         boundary: &Outcome<Boundary<'ir>>,
-        tau_b: f64,
+        basis: BoxBasis,
     ) -> (Quantity<BoxValue>, Option<Aabb>) {
         let id = face.id.as_str();
         let mut aabb: Option<Aabb> = None;
@@ -396,16 +440,20 @@ impl<'ir> FaceInput<'_, 'ir> {
                 None,
             );
         };
-        let value = box_value(aabb, BoxKind::Tight, Some(aabb));
+        let mut face_box = aabb;
+        if let Some(member) = basis.member {
+            face_box.include(member);
+        }
+        let value = box_value(face_box, BoxKind::Tight, Some(aabb));
         (
             measured(
                 value,
                 Unit::Millimeter,
-                Method::BoundaryExtremum,
-                Errors::new(numeric_error, tau_b),
+                basis.method,
+                Errors::new(numeric_error, basis.tau_b),
                 id,
             ),
-            Some(aabb),
+            Some(face_box),
         )
     }
 
@@ -504,6 +552,207 @@ impl<'ir> FaceInput<'_, 'ir> {
         }
         entries
     }
+}
+
+/// What a face box joins to its boundary box, and how.
+#[derive(Clone, Copy)]
+struct BoxBasis {
+    tau_b: f64,
+    /// An interior critical point of the carrier that lies in the region.
+    member: Option<cadmpeg_ir::math::Point3>,
+    method: Method,
+}
+
+/// What the extents of a face read.
+struct ExtentInput<'a, 'ir> {
+    id: &'a str,
+    chart: &'a Outcome<Chart>,
+    boundary: &'a Outcome<Boundary<'ir>>,
+    region: &'a Outcome<Region>,
+    tau_b: f64,
+    alpha: f64,
+    angular: f64,
+    placement: Option<&'a Placement>,
+}
+
+impl ExtentInput<'_, '_> {
+    /// The placement term of a value of `dimension`.
+    fn placement_term(&self, dimension: u8, value: f64) -> f64 {
+        self.placement
+            .map_or(0.0, |placement| placement.model_term(dimension, value))
+    }
+}
+
+/// The kind-specific extents of a face.
+#[derive(Default)]
+struct Extents {
+    axial_range: Option<Quantity<Range>>,
+    axial_extent: Option<Quantity<Scalar>>,
+    angular_sweep: Option<Quantity<Sweep>>,
+    latitude_range: Option<Quantity<Range>>,
+    radius_range: Option<Quantity<Range>>,
+}
+
+/// The extents that apply to the face's carrier kind: measured, or
+/// unavailable with the first failure upstream of them.
+fn extent_quantities(
+    eval: &Eval<'_, '_>,
+    input: &ExtentInput<'_, '_>,
+) -> Result<Extents, ResourceLimit> {
+    let id = input.id;
+    let Ok(chart) = input.chart else {
+        return Ok(Extents::default());
+    };
+    let upstream = match (input.boundary, input.region) {
+        (Ok(boundary), Ok(region)) => Ok((boundary, region)),
+        (Err(missing), _) | (_, Err(missing)) => Err(missing.clone()),
+    };
+    let mut extents = Extents::default();
+    match chart {
+        Chart::Plane(_) => {}
+        Chart::Sphere(_) => {
+            let missing = match &upstream {
+                Err(missing) => missing.clone(),
+                Ok(_) => Missing {
+                    reason: UnavailableReason::RegionDomainUnsupported,
+                    entity: Some(id.to_owned()),
+                    message: "regions on spheres are not classified in this build".to_owned(),
+                },
+            };
+            extents.angular_sweep = Some(missing.quantity());
+            extents.latitude_range = Some(missing.quantity());
+        }
+        Chart::Torus(_) => {
+            extents.angular_sweep = Some(unavailable(
+                UnavailableReason::SweepUnsupportedCarrier,
+                id,
+                "the angular sweep of a torus face is not computed",
+            ));
+        }
+        Chart::Cylinder(_) | Chart::Cone(_) => {
+            let Some(axis) = chart.axis() else {
+                return Ok(extents);
+            };
+            let (boundary, region) = match upstream {
+                Ok(pair) => pair,
+                Err(missing) => {
+                    extents.axial_range = Some(missing.quantity());
+                    extents.axial_extent = Some(missing.quantity());
+                    extents.angular_sweep = Some(missing.quantity());
+                    if matches!(chart, Chart::Cone(_)) {
+                        extents.radius_range = Some(missing.quantity());
+                    }
+                    return Ok(extents);
+                }
+            };
+            let range = settle(
+                axial_range(eval, &axis, &boundary.resolved, region)
+                    .map_err(|failure| failure.at(id)),
+            )?;
+            match &range {
+                Ok(range) => {
+                    extents.axial_range = Some(measured(
+                        Range::new(range.min, range.max),
+                        Unit::Millimeter,
+                        Method::BoundaryExtremum,
+                        Errors::new(range.numeric_error, input.tau_b),
+                        id,
+                    ));
+                    let extent = range.max - range.min;
+                    extents.axial_extent = Some(measured(
+                        Scalar::new(extent),
+                        Unit::Millimeter,
+                        Method::BoundaryExtremum,
+                        Errors::new(
+                            2.0 * range.numeric_error,
+                            2.0 * input.tau_b + input.placement_term(1, extent),
+                        ),
+                        id,
+                    ));
+                }
+                Err(missing) => {
+                    extents.axial_range = Some(missing.quantity());
+                    extents.axial_extent = Some(missing.quantity());
+                }
+            }
+            let radius = match (&range, chart) {
+                (Ok(range), Chart::Cone(_)) => {
+                    let ends =
+                        [range.min / axis.h, range.max / axis.h].map(|v| chart.section_radius(v));
+                    match ends {
+                        [Some(low), Some(high)] => {
+                            let minimum = if region.apex.is_some() {
+                                0.0
+                            } else {
+                                low.min(high)
+                            };
+                            Some((minimum, low.max(high), range.numeric_error))
+                        }
+                        _ => None,
+                    }
+                }
+                (Ok(_), _) => chart
+                    .section_radius(0.0)
+                    .map(|radius| (radius, radius, 0.0)),
+                (Err(_), _) => None,
+            };
+            if let Chart::Cone(cone) = chart {
+                extents.radius_range = Some(match (&range, radius) {
+                    (Err(missing), _) => missing.quantity(),
+                    (Ok(_), None) => unavailable(
+                        UnavailableReason::CarrierEllipticCone,
+                        id,
+                        "the cross-section of an elliptic cone has no radius",
+                    ),
+                    (Ok(_), Some((minimum, maximum, error))) => measured(
+                        Range::new(minimum, maximum),
+                        Unit::Millimeter,
+                        Method::BoundaryExtremum,
+                        Errors::new(
+                            (cone.tau / cone.h).abs() * error,
+                            input.tau_b + input.placement_term(1, maximum),
+                        ),
+                        id,
+                    ),
+                });
+            }
+            extents.angular_sweep = Some(if chart.elliptic() {
+                unavailable(
+                    UnavailableReason::SweepUnsupportedCarrier,
+                    id,
+                    "the angular sweep of an elliptic cone face is not computed",
+                )
+            } else {
+                let largest = radius.map_or(0.0, |(_, maximum, _)| maximum);
+                let tolerance = if largest > 0.0 {
+                    input.angular.max(input.alpha / largest)
+                } else {
+                    input.angular
+                };
+                match settle(
+                    angular_sweep(eval, chart, &boundary.resolved, tolerance)
+                        .map_err(|failure| failure.at(id)),
+                )? {
+                    Ok(sweep) => measured(
+                        Sweep::new(sweep.value, sweep.full, &sweep.intervals),
+                        Unit::Radian,
+                        Method::BoundaryExtremum,
+                        Errors::new(
+                            sweep.numeric_error,
+                            if largest > 0.0 {
+                                input.tau_b / largest
+                            } else {
+                                0.0
+                            },
+                        ),
+                        id,
+                    ),
+                    Err(missing) => missing.quantity(),
+                }
+            });
+        }
+    }
+    Ok(extents)
 }
 
 /// Boundary and seam length sums of one face.

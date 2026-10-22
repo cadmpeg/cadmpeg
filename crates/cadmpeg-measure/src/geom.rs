@@ -26,15 +26,6 @@ pub(crate) const fn coordinate(point: Point3, axis: usize) -> f64 {
     }
 }
 
-/// One component of a vector.
-pub(crate) const fn component(vector: Vector3, axis: usize) -> f64 {
-    match axis {
-        0 => vector.x,
-        1 => vector.y,
-        _ => vector.z,
-    }
-}
-
 /// An axis-aligned box accumulated from points.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Aabb {

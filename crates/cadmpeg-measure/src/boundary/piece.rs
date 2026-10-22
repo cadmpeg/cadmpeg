@@ -28,6 +28,8 @@ pub(crate) enum Source<'ir> {
         from: [f64; 2],
         to: [f64; 2],
         point: Point3,
+        /// Whether the segment runs along a line where `u` is not defined.
+        singular: bool,
     },
 }
 
@@ -63,14 +65,22 @@ pub(crate) struct Piece<'ir> {
     /// without the shift.
     reference: Vec<(f64, [f64; 2])>,
     periods: [Option<f64>; 2],
+    /// The distance within which a point is at a singular point of the
+    /// chart.
+    alpha: f64,
 }
 
 impl<'ir> Piece<'ir> {
     /// A synthesized segment from `from` to `to` at one model point.
-    pub(crate) fn segment(from: [f64; 2], to: [f64; 2], point: Point3) -> Self {
+    pub(crate) fn segment(from: [f64; 2], to: [f64; 2], point: Point3, singular: bool) -> Self {
         Self {
             coedge: None,
-            source: Source::Segment { from, to, point },
+            source: Source::Segment {
+                from,
+                to,
+                point,
+                singular,
+            },
             t0: 0.0,
             t1: 1.0,
             shift: [0.0, 0.0],
@@ -78,6 +88,22 @@ impl<'ir> Piece<'ir> {
             off_surface: 0.0,
             reference: vec![(0.0, from), (1.0, to)],
             periods: [None, None],
+            alpha: 0.0,
+        }
+    }
+
+    /// Whether the piece is a synthesized segment along a singular line.
+    pub(crate) const fn singular_segment(&self) -> bool {
+        matches!(self.source, Source::Segment { singular: true, .. })
+    }
+
+    /// Move the end of a synthesized segment by `delta` in `u`.
+    pub(crate) fn extend_segment(&mut self, delta: f64) {
+        if let Source::Segment { to, .. } = &mut self.source {
+            to[0] += delta;
+            if let Some((_, end)) = self.reference.last_mut() {
+                end[0] += delta;
+            }
         }
     }
 
@@ -94,9 +120,8 @@ impl<'ir> Piece<'ir> {
         let periods = chart.periods();
         let mut count = 4_usize;
         let (reference, off_surface) = loop {
-            let mut reference: Vec<(f64, [f64; 2])> = Vec::with_capacity(count + 1);
+            let mut raw_samples: Vec<(f64, [f64; 2], bool)> = Vec::with_capacity(count + 1);
             let mut off_surface: f64 = 0.0;
-            let mut smooth = true;
             for index in 0..=count {
                 let t = interpolate(t0, t1, index, count);
                 let point = curve.point(eval, t)?;
@@ -110,20 +135,9 @@ impl<'ir> Piece<'ir> {
                     ));
                 }
                 off_surface = off_surface.max(distance);
-                let lifted = match reference.last() {
-                    Some((_, previous)) => nearest(periods, raw, *previous),
-                    None => raw,
-                };
-                if let Some((_, previous)) = reference.last() {
-                    for direction in 0..2 {
-                        if let Some(period) = periods[direction] {
-                            smooth &=
-                                (lifted[direction] - previous[direction]).abs() < period / 4.0;
-                        }
-                    }
-                }
-                reference.push((t, lifted));
+                raw_samples.push((t, raw, chart.singular_at(point, alpha)));
             }
+            let (reference, smooth) = unwrap(periods, &raw_samples)?;
             if smooth {
                 break (reference, off_surface);
             }
@@ -146,6 +160,7 @@ impl<'ir> Piece<'ir> {
             off_surface,
             reference,
             periods,
+            alpha,
         })
     }
 
@@ -185,26 +200,35 @@ impl<'ir> Piece<'ir> {
         [a[0] + (b[0] - a[0]) * local, a[1] + (b[1] - a[1]) * local]
     }
 
+    /// The lifted parameters of a curve point at `t`, and whether the point
+    /// is singular. At a singular point `u` is the reference lift.
+    fn lifted(&self, chart: &Chart, t: f64, point: Point3) -> ([f64; 2], bool) {
+        let raw = chart.invert(point);
+        let reference = self.reference_at(t);
+        if chart.singular_at(point, self.alpha) {
+            ([reference[0], raw[1]], true)
+        } else {
+            (nearest(self.periods, raw, reference), false)
+        }
+    }
+
     /// The piece at parameter `t`.
     pub(crate) fn sample(&self, eval: &Eval<'_, '_>, chart: &Chart, t: f64) -> Measure<Sample> {
         match &self.source {
-            Source::Segment { from, to, .. } => {
-                let uv = [
-                    from[0] + (to[0] - from[0]) * t + self.shift[0],
-                    from[1] + (to[1] - from[1]) * t + self.shift[1],
-                ];
-                Ok(Sample {
-                    uv,
-                    duv: [to[0] - from[0], to[1] - from[1]],
-                })
-            }
+            Source::Segment { from, to, .. } => Ok(Sample {
+                uv: self.segment_uv(*from, *to, t),
+                duv: [to[0] - from[0], to[1] - from[1]],
+            }),
             Source::Curve(curve) => {
                 let point = curve.point(eval, t)?;
                 let tangent = curve.tangent(eval, t)?;
-                let raw = chart.invert(point);
-                let lifted = nearest(self.periods, raw, self.reference_at(t));
-                let partials = chart.partials(raw[0], raw[1]);
-                let duv = parameter_velocity(partials.du, partials.dv, tangent)?;
+                let (lifted, singular) = self.lifted(chart, t, point);
+                let partials = chart.partials(lifted[0], lifted[1]);
+                let duv = if singular {
+                    singular_velocity(partials.dv, tangent)?
+                } else {
+                    parameter_velocity(partials.du, partials.dv, tangent)?
+                };
                 Ok(Sample {
                     uv: [lifted[0] + self.shift[0], lifted[1] + self.shift[1]],
                     duv,
@@ -213,12 +237,31 @@ impl<'ir> Piece<'ir> {
         }
     }
 
+    fn segment_uv(&self, from: [f64; 2], to: [f64; 2], t: f64) -> [f64; 2] {
+        [
+            from[0] + (to[0] - from[0]) * t + self.shift[0],
+            from[1] + (to[1] - from[1]) * t + self.shift[1],
+        ]
+    }
+
+    /// The lifted parameters at `t`, without the parameter velocity.
+    pub(crate) fn uv(&self, eval: &Eval<'_, '_>, chart: &Chart, t: f64) -> Measure<[f64; 2]> {
+        match &self.source {
+            Source::Segment { from, to, .. } => Ok(self.segment_uv(*from, *to, t)),
+            Source::Curve(curve) => {
+                let point = curve.point(eval, t)?;
+                let (lifted, _) = self.lifted(chart, t, point);
+                Ok([lifted[0] + self.shift[0], lifted[1] + self.shift[1]])
+            }
+        }
+    }
+
     pub(crate) fn start_uv(&self, eval: &Eval<'_, '_>, chart: &Chart) -> Measure<[f64; 2]> {
-        Ok(self.sample(eval, chart, self.t0)?.uv)
+        self.uv(eval, chart, self.t0)
     }
 
     pub(crate) fn end_uv(&self, eval: &Eval<'_, '_>, chart: &Chart) -> Measure<[f64; 2]> {
-        Ok(self.sample(eval, chart, self.t1)?.uv)
+        self.uv(eval, chart, self.t1)
     }
 
     pub(crate) fn start_point(&self, eval: &Eval<'_, '_>) -> Measure<Point3> {
@@ -259,8 +302,8 @@ impl<'ir> Piece<'ir> {
         deviation: f64,
     ) -> Measure<Vec<[f64; 2]>> {
         if self.synthesized() {
-            let start = self.sample(eval, chart, self.t0)?.uv;
-            let end = self.sample(eval, chart, self.t1)?.uv;
+            let start = self.uv(eval, chart, self.t0)?;
+            let end = self.uv(eval, chart, self.t1)?;
             return Ok(vec![start, end]);
         }
         let mut points: Vec<(f64, [f64; 2])> = self
@@ -273,7 +316,7 @@ impl<'ir> Piece<'ir> {
             let (ta, a) = points[index];
             let (tb, b) = points[index + 1];
             let middle_t = ta.midpoint(tb);
-            let middle = self.sample(eval, chart, middle_t)?.uv;
+            let middle = self.uv(eval, chart, middle_t)?;
             let chord = [a[0].midpoint(b[0]), a[1].midpoint(b[1])];
             let off = (middle[0] - chord[0]).hypot(middle[1] - chord[1]);
             if off > deviation && points.len() < MAX_NESTING_SAMPLES_PER_PIECE {
@@ -303,6 +346,69 @@ fn interpolate(t0: f64, t1: f64, index: usize, count: usize) -> f64 {
     t0 + (t1 - t0) * (index / count)
 }
 
+/// Parameter-plane samples `(t, uv)` in parameter order.
+type Reference = Vec<(f64, [f64; 2])>;
+
+/// Unwrap raw samples `(t, uv, singular)` into a continuous lift. A
+/// singular sample takes `u` from its nearest regular neighbour, preferring
+/// the previous one. The second value is whether consecutive lifted samples
+/// differ by less than a quarter period in every periodic direction.
+fn unwrap(
+    periods: [Option<f64>; 2],
+    samples: &[(f64, [f64; 2], bool)],
+) -> Measure<(Reference, bool)> {
+    let regular: Vec<usize> = samples
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, _, singular))| !singular)
+        .map(|(index, _)| index)
+        .collect();
+    let (Some(&first), Some(&last)) = (regular.first(), regular.last()) else {
+        return Err(MeasureFailure::unavailable(
+            UnavailableReason::BoundaryInversionFailed,
+            None,
+            "the piece lies at a singular point of the surface",
+        ));
+    };
+    if regular.windows(2).any(|pair| pair[1] != pair[0] + 1) {
+        return Err(MeasureFailure::unavailable(
+            UnavailableReason::BoundaryInversionFailed,
+            None,
+            "the curve passes through a singular point of the surface inside its interval",
+        ));
+    }
+    let mut lifted: Vec<(f64, [f64; 2])> = Vec::with_capacity(samples.len());
+    let mut smooth = true;
+    for &(t, raw, _) in &samples[first..=last] {
+        let next = match lifted.last() {
+            Some((_, previous)) => {
+                let next = nearest(periods, raw, *previous);
+                for direction in 0..2 {
+                    if let Some(period) = periods[direction] {
+                        smooth &= (next[direction] - previous[direction]).abs() < period / 4.0;
+                    }
+                }
+                next
+            }
+            None => raw,
+        };
+        lifted.push((t, next));
+    }
+    let head = lifted.first().map_or([0.0; 2], |(_, uv)| *uv);
+    let tail = lifted.last().map_or([0.0; 2], |(_, uv)| *uv);
+    let mut reference: Vec<(f64, [f64; 2])> = samples[..first]
+        .iter()
+        .map(|&(t, raw, _)| (t, [head[0], raw[1]]))
+        .collect();
+    reference.extend(lifted);
+    reference.extend(
+        samples[last + 1..]
+            .iter()
+            .map(|&(t, raw, _)| (t, [tail[0], raw[1]])),
+    );
+    Ok((reference, smooth))
+}
+
 /// `raw` lifted by whole periods to the value nearest `reference`.
 fn nearest(periods: [Option<f64>; 2], raw: [f64; 2], reference: [f64; 2]) -> [f64; 2] {
     std::array::from_fn(|direction| match periods[direction] {
@@ -311,6 +417,21 @@ fn nearest(periods: [Option<f64>; 2], raw: [f64; 2], reference: [f64; 2]) -> [f6
         }
         None => raw[direction],
     })
+}
+
+/// The parameter velocity at a singular point, where `S_u` vanishes: the
+/// minimum-norm solution `u' = 0`, `v' = C'·S_v / |S_v|²`.
+fn singular_velocity(dv: Vector3, tangent: Vector3) -> Measure<[f64; 2]> {
+    let norm = dv.dot(dv);
+    if norm.is_finite() && norm > 0.0 {
+        Ok([0.0, tangent.dot(dv) / norm])
+    } else {
+        Err(MeasureFailure::unavailable(
+            UnavailableReason::EvaluationNoValue,
+            None,
+            "the surface partials vanish at a boundary point",
+        ))
+    }
 }
 
 /// The parameter velocity whose surface image is the curve tangent: the
@@ -329,4 +450,50 @@ fn parameter_velocity(du: Vector3, dv: Vector3, tangent: Vector3) -> Measure<[f6
     cadmpeg_ir::math::solve::least_squares_step(du, dv, tangent)
         .map(|(u, v)| [u.get(), v.get()])
         .ok_or_else(no_value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unwrap;
+
+    const TAU: f64 = std::f64::consts::TAU;
+    const PI: f64 = std::f64::consts::PI;
+
+    #[test]
+    fn unwrapping_lifts_samples_across_the_period() {
+        let samples = [
+            (0.0, [PI - 0.2, 0.0], false),
+            (0.5, [PI - 0.1, 0.0], false),
+            (1.0, [-PI + 0.1, 0.0], false),
+        ];
+        let (reference, smooth) = unwrap([Some(TAU), None], &samples).unwrap();
+        assert!(smooth);
+        assert!((reference[2].1[0] - (PI + 0.1)).abs() < 1.0e-15);
+    }
+
+    #[test]
+    fn singular_end_samples_take_u_from_their_neighbour() {
+        let samples = [
+            (0.0, [0.0, 7.0], true),
+            (0.5, [1.2, 3.0], false),
+            (1.0, [1.2, 1.0], false),
+        ];
+        let (reference, _) = unwrap([Some(TAU), None], &samples).unwrap();
+        assert_eq!(reference[0], (0.0, [1.2, 7.0]));
+        let samples = [(0.0, [1.2, 1.0], false), (1.0, [0.0, 7.0], true)];
+        let (reference, _) = unwrap([Some(TAU), None], &samples).unwrap();
+        assert_eq!(reference[1], (1.0, [1.2, 7.0]));
+    }
+
+    #[test]
+    fn a_singular_sample_inside_the_interval_is_refused() {
+        let samples = [
+            (0.0, [1.0, 1.0], false),
+            (0.5, [0.0, 0.0], true),
+            (1.0, [1.0 + PI, 1.0], false),
+        ];
+        assert!(unwrap([Some(TAU), None], &samples).is_err());
+        let all_singular = [(0.0, [0.0, 0.0], true), (1.0, [0.0, 0.0], true)];
+        assert!(unwrap([Some(TAU), None], &all_singular).is_err());
+    }
 }

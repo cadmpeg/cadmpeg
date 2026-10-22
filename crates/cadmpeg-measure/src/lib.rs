@@ -36,6 +36,7 @@ mod budget;
 mod canonical;
 mod context;
 mod edges;
+mod extent;
 mod face;
 mod failure;
 mod geom;

@@ -191,6 +191,73 @@ fn measures_plate_with_hole() {
 
 #[cfg(feature = "step")]
 #[test]
+fn measures_full_cylinder_side_face() {
+    let solid = fixture("measure_cylinder_solid.p21");
+    let report = measure_json(&[solid.to_str().unwrap(), "--face", "face#46"]);
+    assert_eq!(report["measure"]["input"]["decode_depth"], "full");
+    let row = face(&report, "step:data:face#46");
+    let parameters = &row["carrier"]["parameters"];
+    let scale = 30.0;
+    assert_measured(&parameters["radius"], 10.0, scale);
+    assert_eq!(parameters["radius"]["method"], "source");
+    assert_eq!(
+        parameters["radius"]["provenance"][0]["field"],
+        "geometry.radius"
+    );
+    assert_eq!(
+        parameters["radius"]["provenance"][0]["exactness"],
+        "byte_exact"
+    );
+    assert_measured(&parameters["diameter"], 20.0, scale);
+    let measures = &row["measures"];
+    let pi = std::f64::consts::PI;
+    assert_measured(&measures["area"], 600.0 * pi, 20.0 * scale);
+    assert_eq!(measures["area"]["method"], "boundary_quadrature");
+    assert_measured(&measures["boundary_length"], 40.0 * pi, scale);
+    assert_measured(&measures["seam_length"], 30.0, scale);
+    let axial = &measures["axial_range"];
+    assert_eq!(axial["status"], "measured");
+    assert!(axial["min"].as_f64().unwrap().abs() <= TEST_ABSOLUTE_FLOOR * scale);
+    assert!((axial["max"].as_f64().unwrap() - 30.0).abs() <= TEST_ABSOLUTE_FLOOR * scale);
+    assert_measured(&measures["axial_extent"], 30.0, scale);
+    let sweep = &measures["angular_sweep"];
+    assert_eq!(sweep["full"], true);
+    assert_measured(sweep, std::f64::consts::TAU, 1.0);
+    assert_box(
+        &measures["bbox"],
+        [-10.0, -10.0, 0.0],
+        [10.0, 10.0, 30.0],
+        scale,
+    );
+    assert_eq!(measures["loops"][0]["listed_order"], "traversal");
+    assert_eq!(row["status"], "measured");
+}
+
+#[cfg(feature = "step")]
+#[test]
+fn measures_trimmed_patch() {
+    let patch = fixture("measure_cylinder_patch.p21");
+    let report = measure_json(&[patch.to_str().unwrap(), "--faces"]);
+    let row = face(&report, "step:data:face#56");
+    let measures = &row["measures"];
+    let pi = std::f64::consts::PI;
+    let scale = 30.0;
+    assert_measured(&measures["area"], 150.0 * pi, 10.0 * scale);
+    assert_measured(&measures["boundary_length"], 10.0 * pi + 60.0, scale);
+    let sweep = &measures["angular_sweep"];
+    assert_eq!(sweep["full"], false);
+    assert_measured(sweep, pi / 2.0, 1.0);
+    let interval = &sweep["intervals"][0];
+    assert!(interval[0].as_f64().unwrap().abs() <= TEST_ABSOLUTE_FLOOR);
+    assert!((interval[1].as_f64().unwrap() - pi / 2.0).abs() <= TEST_ABSOLUTE_FLOOR);
+    assert_eq!(sweep["intervals"].as_array().unwrap().len(), 1);
+    assert_measured(&measures["axial_extent"], 30.0, scale);
+    assert_box(&measures["bbox"], [0.0; 3], [10.0, 10.0, 30.0], scale);
+    assert_eq!(row["status"], "measured");
+}
+
+#[cfg(feature = "step")]
+#[test]
 fn measures_carrier_parameters() {
     let solid = fixture("measure_cylinder_solid.p21");
     let report = measure_json(&[solid.to_str().unwrap(), "--faces"]);

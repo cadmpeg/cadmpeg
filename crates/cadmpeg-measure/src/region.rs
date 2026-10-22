@@ -6,11 +6,14 @@
 //! point of every other loop, and the rest are holes that do not contain
 //! each other. Each loop is then oriented by its role, outer
 //! counterclockwise and holes clockwise, so the region lies on the left of
-//! every loop.
+//! every loop. Cylinders and cones follow the periodic rules of
+//! [`periodic`].
+
+mod periodic;
 
 use std::cmp::Ordering;
 
-use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{Face, FaceLoops};
 
 use crate::boundary::{LoopKind, LoopResolution, ResolvedFace, ResolvedLoop};
@@ -154,6 +157,8 @@ pub(crate) struct Region {
     /// The base `v₀` of the inner area integral.
     pub(crate) base: f64,
     pub(crate) classification: Classification,
+    /// The cone apex, when it is a member of the region.
+    pub(crate) apex: Option<Point3>,
 }
 
 /// The ring loops of a face, or the first loop failure.
@@ -178,22 +183,25 @@ fn invalid(message: &str) -> MeasureFailure {
     )
 }
 
-/// Classify the region of `face` from its resolved loops.
+/// Classify the region of `face` from its resolved loops. `v_tolerance` is
+/// the allowance in units of `v`.
 pub(crate) fn classify(
     face: &Face,
     chart: &Chart,
     resolved: &ResolvedFace<'_>,
     shapes: &[Option<LoopShape>],
+    v_tolerance: f64,
 ) -> Measure<Region> {
     match chart {
         Chart::Plane(_) => planar(face, resolved, shapes),
-        Chart::Cylinder(_) | Chart::Cone(_) | Chart::Sphere(_) | Chart::Torus(_) => {
-            Err(MeasureFailure::unavailable(
-                UnavailableReason::RegionDomainUnsupported,
-                Some(face.id.as_str()),
-                "regions on this carrier are not classified in this build",
-            ))
+        Chart::Cylinder(_) | Chart::Cone(_) => {
+            periodic::classify(face, chart, resolved, shapes, v_tolerance)
         }
+        Chart::Sphere(_) | Chart::Torus(_) => Err(MeasureFailure::unavailable(
+            UnavailableReason::RegionDomainUnsupported,
+            Some(face.id.as_str()),
+            "regions on this carrier are not classified in this build",
+        )),
     }
 }
 
@@ -292,6 +300,7 @@ fn planar(
         loops,
         base,
         classification: classification(face, resolved, *outer),
+        apex: None,
     })
 }
 

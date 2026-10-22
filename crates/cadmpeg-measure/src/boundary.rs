@@ -319,6 +319,9 @@ impl<'ir> FaceFrame<'_, 'ir> {
             }
             Err(refusal) => return Err(refusal),
         }
+        if let Some(period) = periods[0] {
+            close_through_singular_line(&mut pieces, &mut net_shift, period);
+        }
         Ok(ResolvedLoop {
             kind: LoopKind::Ring,
             pieces,
@@ -358,7 +361,9 @@ impl<'ir> FaceFrame<'_, 'ir> {
                 "a parameter jump between pieces does not map to one surface point",
             ));
         }
-        Ok(Some(Piece::segment(from, to, from_point)))
+        let singular = self.chart.singular_at(from_point, self.alpha)
+            && self.chart.singular_at(to_point, self.alpha);
+        Ok(Some(Piece::segment(from, to, from_point, singular)))
     }
 
     /// The piece of one coedge on the 3D interval of its curve.
@@ -415,6 +420,45 @@ fn declared(role: cadmpeg_ir::topology::LoopBoundaryRole) -> DeclaredRole {
         cadmpeg_ir::topology::LoopBoundaryRole::Inner => DeclaredRole::Inner,
         cadmpeg_ir::topology::LoopBoundaryRole::Unspecified => DeclaredRole::Unspecified,
     }
+}
+
+/// On a nesting domain a segment along a singular line may run either way
+/// around it. When the loop has exactly one such segment and a nonzero net
+/// shift in `u`, the segment takes the length that makes the loop
+/// contractible, if that length is less than one period. Otherwise the loop
+/// keeps its shift and the region rules read it as non-contractible.
+fn close_through_singular_line(pieces: &mut [Piece<'_>], net_shift: &mut [i32; 2], period: f64) {
+    if net_shift[0] == 0 {
+        return;
+    }
+    let singular: Vec<usize> = pieces
+        .iter()
+        .enumerate()
+        .filter(|(_, piece)| piece.singular_segment())
+        .map(|(index, _)| index)
+        .collect();
+    let [index] = singular.as_slice() else {
+        return;
+    };
+    let delta = -f64::from(net_shift[0]) * period;
+    let Some(segment) = pieces.get(*index) else {
+        return;
+    };
+    let length = match &segment.source {
+        piece::Source::Segment { from, to, .. } => to[0] - from[0],
+        piece::Source::Curve(_) => return,
+    };
+    if (length + delta).abs() >= period {
+        return;
+    }
+    for (position, piece) in pieces.iter_mut().enumerate() {
+        if position == *index {
+            piece.extend_segment(delta);
+        } else if position > *index {
+            piece.shift[0] += delta;
+        }
+    }
+    net_shift[0] = 0;
 }
 
 /// The period multiples that bring `to` nearest `from`.
