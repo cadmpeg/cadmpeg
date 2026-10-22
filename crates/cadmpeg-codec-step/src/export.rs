@@ -3039,13 +3039,9 @@ impl<'a> Builder<'a> {
         let pcurve_id = use_.use_.pcurve.as_str();
         let surface_id = use_.surface;
         let pcurve = self.pcurves.get(pcurve_id).copied()?;
-        let carrier = self.curves.get(edge.curve()?.as_str()).copied()?;
-        let aligned = pcurves::align_periodic_spline(
-            &pcurve.geometry,
-            use_.use_.parameter_range,
-            edge,
-            &carrier.geometry,
-        );
+        self.curves.get(edge.curve()?.as_str())?;
+        let aligned =
+            pcurves::align_spline_to_edge(&pcurve.geometry, use_.use_.parameter_range, edge);
         let surface = self.emit_surface(surface_id)?;
         if self.surface_is_fitted_helix(surface_id) {
             return None;

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Periodic branch changes preserve spline geometry and remain local to a use.
+//! Edge-range reparameterization preserves the spline locus and remains local to a use.
 
 use std::borrow::Cow;
 use std::f64::consts::TAU;
 
-use cadmpeg_ir::geometry::analytic::{CircleCurve, LineCurve};
+use cadmpeg_ir::geometry::analytic::CircleCurve;
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles};
 use cadmpeg_ir::geometry::{CurveGeometry, DirectedParameterRange, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -57,8 +57,7 @@ fn whole_period_shifts_move_knots_without_moving_poles_or_the_shared_source() {
     let range = Some(DirectedParameterRange::new([-1.0, 0.0]).unwrap());
     for turns in [-2.0, -1.0, 1.0, 2.0] {
         let shift = turns * TAU;
-        let aligned =
-            super::align_periodic_spline(&geometry, range, &edge([shift - 1.0, shift]), &circle());
+        let aligned = super::align_spline_to_edge(&geometry, range, &edge([shift - 1.0, shift]));
         let PcurveGeometry::Nurbs { nurbs } = aligned.as_ref() else {
             panic!("spline")
         };
@@ -75,24 +74,63 @@ fn whole_period_shifts_move_knots_without_moving_poles_or_the_shared_source() {
 }
 
 #[test]
-fn unrelated_intervals_and_nonperiodic_carriers_are_not_reparameterized() {
+fn a_use_that_already_runs_on_the_edge_range_or_states_no_range_is_kept() {
     let geometry = spline();
     let range = Some(DirectedParameterRange::new([-1.0, 0.0]).unwrap());
-    let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
-    ));
-    for (range, edge, curve) in [
-        (range, edge([-1.0, 0.0]), circle()),
-        (None, edge([TAU - 1.0, TAU]), circle()),
-        (range, edge([TAU - 2.0, TAU]), circle()),
-        (range, edge([0.0, 1.0]), circle()),
-        (range, edge([TAU, TAU]), circle()),
-        (range, edge([TAU - 1.0, TAU]), line),
-    ] {
+    for (range, edge) in [(range, edge([-1.0, 0.0])), (None, edge([TAU - 1.0, TAU]))] {
         assert!(matches!(
-            super::align_periodic_spline(&geometry, range, &edge, &curve),
+            super::align_spline_to_edge(&geometry, range, &edge),
             Cow::Borrowed(_)
         ));
+    }
+}
+
+/// The parameter-space point a reparameterized spline reaches at `t`.
+fn point_at(geometry: &PcurveGeometry, t: f64) -> Point2 {
+    let PcurveGeometry::Nurbs { nurbs } = geometry else {
+        panic!("spline")
+    };
+    let knots = nurbs.knots();
+    let (start, end) = (knots[1], knots[2]);
+    let poles = nurbs.pole_rows().points();
+    let fraction = (t - start) / (end - start);
+    let (first, last) = (poles[0].get(), poles[1].get());
+    Point2::new(
+        first.u + (last.u - first.u) * fraction,
+        first.v + (last.v - first.v) * fraction,
+    )
+}
+
+#[test]
+fn a_decreasing_use_reverses_the_spline_onto_the_increasing_edge_range() {
+    let geometry = spline();
+    let range = Some(DirectedParameterRange::new([0.0, -1.0]).unwrap());
+    let aligned = super::align_spline_to_edge(&geometry, range, &edge([2.0, 3.0]));
+    let PcurveGeometry::Nurbs { nurbs } = aligned.as_ref() else {
+        panic!("spline")
+    };
+    for (actual, expected) in nurbs.knots().iter().zip([2.0, 2.0, 3.0, 3.0]) {
+        assert!((actual - expected).abs() < EPS_KNOT);
+    }
+    // The edge start maps to the use start `s = 0`, and the edge end to `s = -1`.
+    for (t, s) in [(2.0, 0.0), (2.5, -0.5), (3.0, -1.0)] {
+        let expected = point_at(&geometry, s);
+        let actual = point_at(aligned.as_ref(), t);
+        assert!((actual.u - expected.u).abs() < EPS_KNOT);
+        assert!((actual.v - expected.v).abs() < EPS_KNOT);
+    }
+}
+
+#[test]
+fn a_scaled_use_maps_the_spline_onto_the_edge_range_linearly() {
+    let geometry = spline();
+    let range = Some(DirectedParameterRange::new([-1.0, 0.0]).unwrap());
+    let aligned = super::align_spline_to_edge(&geometry, range, &edge([0.0, 10.0]));
+    for (t, s) in [(0.0, -1.0), (2.5, -0.75), (10.0, 0.0)] {
+        let expected = point_at(&geometry, s);
+        let actual = point_at(aligned.as_ref(), t);
+        assert!((actual.u - expected.u).abs() < EPS_KNOT);
+        assert!((actual.v - expected.v).abs() < EPS_KNOT);
     }
 }
 
