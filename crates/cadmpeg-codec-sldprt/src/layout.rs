@@ -223,8 +223,6 @@ pub(crate) mod entity_common_header {
 /// Body-relative prefix. `definition_node_id` selects the same-stream ATTRIB_DEF; ATTRIBUTE slots begin at body +14. Bare framing uses `5 + flo` u16 slots; prefixed framing uses terminated `[01][hi][lo]` triples. The +0..+6 region is the common-header `flags` and `attr` of the same record.
 /// ```
 pub(crate) mod attribute_instance_00_51 {
-    /// Record length in bytes. Spec §5.
-    pub(crate) const LEN: usize = 14;
     /// Offset of `zero_selector` (`u16`, big-endian). Spec §5.
     pub(crate) const ZERO_SELECTOR: usize = 6;
     /// Offset of `definition_node_id` (`u16`, big-endian). Spec §5.
@@ -2457,4 +2455,24 @@ pub(crate) mod attribute_definition_short_refs {
     pub(crate) const FIELD_NAMES: usize = 22;
     /// Offset of `legal_owners` (`bytes[14]`). Spec §5.
     pub(crate) const LEGAL_OWNERS: usize = 24;
+}
+
+/// Byte offsets for the `attribute_short_references` record.
+///
+/// Spec §5. Record length 22 B.
+///
+/// ```text
+/// Body-relative prefix after the tag and optional unchanged-schema marker. Schema-ordered value references follow this prefix.
+/// ```
+pub(crate) mod attribute_short_references {
+    /// Record length in bytes. Spec §5.
+    pub(crate) const LEN: usize = 22;
+    /// Offset of `value_count` (`u32`, big-endian). Spec §5.
+    pub(crate) const VALUE_COUNT: usize = 0;
+    /// Offset of `node_index` (`u16`, big-endian). Spec §5.
+    pub(crate) const NODE_INDEX: usize = 4;
+    /// Offset of `sequence` (`u32`, big-endian). Spec §5.
+    pub(crate) const SEQUENCE: usize = 6;
+    /// Offset of `owner` (`u16`, big-endian). Spec §5.
+    pub(crate) const OWNER: usize = 12;
 }

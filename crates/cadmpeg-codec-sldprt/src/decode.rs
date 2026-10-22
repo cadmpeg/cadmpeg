@@ -2595,7 +2595,7 @@ fn build_geometry_ir(
         .filter_map(|modifier| {
             modifier
                 .target
-                .map(|target| (target, modifier.history_ordinal))
+                .map(|target| (target, modifier.feature_source_id.value()))
         })
         .collect::<Vec<_>>();
     crate::history::bind::derive_feature_outputs(

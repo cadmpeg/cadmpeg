@@ -1373,11 +1373,9 @@ fn unique_body_modifiers(modifiers: Vec<attrib::BodyModifier>) -> Vec<attrib::Bo
                 entry.insert(Some(modifier));
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry
-                    .get()
-                    .as_ref()
-                    .is_some_and(|previous| previous.history_ordinal != modifier.history_ordinal)
-                {
+                if entry.get().as_ref().is_some_and(|previous| {
+                    previous.feature_source_id != modifier.feature_source_id
+                }) {
                     *entry.get_mut() = None;
                 }
             }

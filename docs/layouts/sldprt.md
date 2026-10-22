@@ -2702,6 +2702,27 @@ Parsed by:
 | 22 | 2 | `field_names` | `u16` | big | spec | field_names is the field-name reference. |
 | 24 | 14 | `legal_owners` | `bytes[14]` | big | spec | legal_owners contains fourteen Boolean owner-class fields. |
 
+## `attribute_short_references`
+
+Spec §5 · layout: byte offsets · size: 22 B
+
+Body-relative prefix after the tag and optional unchanged-schema marker. Schema-ordered value references follow this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/attrib.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `value_count` | `u32` | big | spec | value count is u32 BE at `+0` |
+| 4 | 2 | `node_index` | `u16` | big | spec | transmit index is u16 BE at `+4` |
+| 6 | 4 | `sequence` | `u32` | big | spec | sequence is u32 BE at `+6` |
+| 10 | 2 | `definition` | `u16` | big | spec | definition pointer is u16 BE at `+10` |
+| 12 | 2 | `owner` | `u16` | big | spec | owner at `+12` |
+| 14 | 2 | `previous` | `u16` | big | spec | previous at `+14` |
+| 16 | 2 | `next` | `u16` | big | spec | next at `+16` |
+| 18 | 2 | `next_of_type` | `u16` | big | spec | next_of_type at `+18` |
+| 20 | 2 | `previous_of_type` | `u16` | big | spec | previous_of_type at `+20` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

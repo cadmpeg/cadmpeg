@@ -10641,3 +10641,77 @@ offset = 24
 type = "bytes[14]"
 source = "spec"
 anchor = "legal_owners contains fourteen Boolean owner-class fields."
+
+
+[[record]]
+name = "attribute_short_references"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/attrib.rs"
+kind = "byte"
+section = "5"
+anchor = "An ATTRIBUTE with short references has a 22-byte prefix"
+size = 22
+endianness = "big"
+note = "Body-relative prefix after the tag and optional unchanged-schema marker. Schema-ordered value references follow this prefix."
+
+[[record.field]]
+name = "value_count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "value count is u32 BE at `+0`"
+
+[[record.field]]
+name = "node_index"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "transmit index is u16 BE at `+4`"
+
+[[record.field]]
+name = "sequence"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "sequence is u32 BE at `+6`"
+
+[[record.field]]
+name = "definition"
+offset = 10
+type = "u16"
+source = "spec"
+anchor = "definition pointer is u16 BE at `+10`"
+
+[[record.field]]
+name = "owner"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "owner at `+12`"
+
+[[record.field]]
+name = "previous"
+offset = 14
+type = "u16"
+source = "spec"
+anchor = "previous at `+14`"
+
+[[record.field]]
+name = "next"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "next at `+16`"
+
+[[record.field]]
+name = "next_of_type"
+offset = 18
+type = "u16"
+source = "spec"
+anchor = "next_of_type at `+18`"
+
+[[record.field]]
+name = "previous_of_type"
+offset = 20
+type = "u16"
+source = "spec"
+anchor = "previous_of_type at `+20`"

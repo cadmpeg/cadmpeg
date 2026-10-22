@@ -937,7 +937,7 @@ An `moMoveCopyBody_c` non-copy translation owns one `moMoveCopyBodyData_c` child
 
 An `moMirrorPattern_c` or `moMirrorSolid_c` seed vector uses the duplicated 16-byte component marker. Marker −12 stores a little-endian u32 slot count from 2 through 65, marker −8 through marker −1 are zero, and marker +16 through marker +17 are zero. The count either equals the component count or includes one or two root slots that have no component. A component is a tagged 20-byte path entry or an anonymous 16-byte entry consisting of the 12-byte type signature and u32 local id. Tagged-only paths use the edge component-path separator grammar. Mixed paths use zero or `ff` word fill of 4, 8, or 12 bytes; a root boundary within a mixed path is `01 00 00 00` followed by four or six zero bytes. The path is valid only when the count, entry widths, separators, and root slots yield one complete parse. The last uniquely identified history feature traversed by each path is its mirror seed. A terminal component whose signature has no history feature does not invalidate the preceding seed identity. Separate paths supply an ordered seed set. An immediately following `moDerivedCosmeticThread_c` object is the mirror's generated child and does not terminate the mirror interval; when the interval has no seed vector, the nearest preceding `moCosmeticThread_c` history feature is the seed. The seed set and mirror plane resolve independently. Multiple configuration lanes must yield the same ordered seed set.
 
-The mirror-plane surface vector uses the same duplicated marker with a component-vector selector whose byte 1 is `02`, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero at marker −8. Its little-endian u32 count at marker −12 either equals the mixed component count or includes one root slot that has no component. The terminal component's feature source identifier and feature-local identity select the surviving face through `ATOM_ID_2001`. Exactly one planar face supplies the mirror-plane origin and normal. A proper-rigid transformed plane supplies its transformed origin and normal.
+The mirror-plane surface vector uses the same duplicated marker with a component-vector selector whose byte 1 is `02`, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero at marker −8. Its little-endian u32 count at marker −12 either equals the mixed component count or includes one root slot that has no component. The terminal component's feature source identifier and feature-local identity select the surviving face through `FACE_ID_2001`. Exactly one planar face supplies the mirror-plane origin and normal. A proper-rigid transformed plane supplies its transformed origin and normal.
 
 Built-in reference-plane history records have native class `moRefPlane_c` and no dimensions or extra attributes. Within that class, source IDs `2`, `3`, and `4` identify the Front, Top, and Right principal planes.
 
@@ -1446,13 +1446,28 @@ The complete record includes every declared field-type byte. Field codes
 `1`, `2`, `3`, and `5` denote integer, real, character, and vector fields.
 The family name does not determine the field types.
 
+An ATTRIBUTE with short references has a 22-byte prefix. Offsets begin after
+the `00 51` tag and its optional unchanged-schema `ff` marker. The value count is u32 BE at `+0`; the transmit index is u16 BE at `+4`; the sequence is u32 BE at `+6`; and the definition pointer is u16 BE at `+10`. Five u16 BE
+references follow: owner at `+12`, previous at `+14`, next at `+16`,
+next_of_type at `+18`, and previous_of_type at `+20`. The schema-ordered value
+references start at `+22`. The supported short-reference form has one value
+reference per definition field and a value count equal to that field count.
+An extended reference does not use these short-reference offsets.
+
+The `FACE_ID_2001` definition has field codes `[9, 9, 1, 1]`.
+Its first integer field supplies the persistent face list. The
+`LAST_BODY_MODIFYING_FEATURE_ID` definition has field codes `[9, 1]`.
+Its integer field supplies the last modifying feature source identifier.
+An owner-chain reference or pointer field does not supply either integer
+payload. A different field schema does not select these consumers.
+
 A `00 51` ATTRIBUTE instance whose u16 at body +6 is zero carries its
 definition node id at body +10 and its owner attribute at body +12. Its
 remaining slots begin at body +14. A `00 52` INT_VALUES node carries a
 big-endian u32 count, a u16 node id, and that many big-endian u32 values.
 Names, definitions, lists, and instances must fit their node framing. A
 definition or list identity with conflicting payloads is not selected. The
-supported named attribute families include `ATOM_ID_2001`,
+supported named attribute families include `FACE_ID_2001`,
 `LAST_BODY_MODIFYING_FEATURE_ID`, and `SDL/TYSA_COLOUR`; their consumers use
 the definition name and the owner relation. An `SDL/TYSA_COLOUR` instance
 whose final value slot is null-like frames the inline `00 53` color record at
@@ -1492,7 +1507,7 @@ record is the one with the greatest sequence; a deltas record wins an
 equal-sequence tie. A deltas record with an identity absent from the
 partition adds that identity.
 
-`ATOM_ID_2001` instances hang on face bridge records and reference one
+`FACE_ID_2001` instances hang on face bridge records and reference one
 integer list of five through seven values whose value 3 is zero. Value 1 is
 the native object id of the history feature that produced the face and value
 4 is that producer's feature-local face identity. Values 5 through the end
@@ -1500,19 +1515,18 @@ are optional signed path fields; a field with bit pattern `0xffffffff` is
 written as decimal `-1`. The complete persistent identity is value 1,
 value 4, and this ordered optional tail. A `moSingleFaceRef_w` path or a
 generated-surface component path selects the surviving face whose
-`ATOM_ID_2001` carries the same complete identity. A feature whose produced
+`FACE_ID_2001` carries the same complete identity. A feature whose produced
 faces survive is a producer of every body owning one of them.
 
 `LAST_BODY_MODIFYING_FEATURE_ID` instances hang on BODY attributes and
-resolve one distinct `00 52` integer-list payload containing one positive
-u32. The value is a one-based ordinal in the ordered Keywords
-modeling-feature records after metadata records are excluded; it is not a
-native feature object id or a `source_id`. Ordinal 1 names the first
-modeling feature. The body attribute names
-`sldprt:brep:body#<attr>`. A zero, missing, non-scalar, conflicting, absent,
-or history-ambiguous ordinal leaves the body-history relation unresolved. A
-resolved relation adds that body to the named feature's output bodies without
-fabricating a body or replacing an explicit body scope.
+resolve one `00 52` integer-list payload containing one native feature source
+identifier. The source identifier selects the Keywords modeling-feature
+record with the same `id`. A history ordinal does not select this record.
+The body attribute names `sldprt:brep:body#<attr>`. Zero, `0xffffffff`, a
+missing or non-scalar value, and a conflicting or ambiguous source identity
+leave the body-history relation unresolved. A resolved relation adds that
+body to the named feature's output bodies without fabricating a body or
+replacing an explicit body scope.
 
 ## 6. Body records
 
@@ -1733,7 +1747,7 @@ The offset surface retains the support parameterization. Nested offset carriers 
 
   A visual-property instance in the framed property slot after a validated `uoTempFaceTessData_c` table assigns a face-local appearance. A visual-property instance in a following `uoBodyPropInfo_c` interval assigns a body default to the structurally preceding table group.
 
-  A DisplayFace metadata slot can contain duplicated framed UTF-16LE strings. Their frame is `ff fe ff`, a u8 code-unit count, then the UTF-16LE payload. A payload of the form `<SurfIdRep class>,<feature source ID>,<local surface ID>[,<signed path field>...],` is a persistent surface reference when the class begins with `mo` and ends with `SurfIdRep_c`. The terminal comma is part of the framed text convention. A signed path field is a decimal signed 32-bit value compared by its u32 bit pattern; decimal `-1` therefore denotes `0xffffffff`. When every trailing field is signed numeric, the complete identity is the source ID, local surface ID, and ordered trailing fields. All complete references in one slot must agree on that identity, which joins the slot to the surviving face whose `ATOM_ID_2001` carries the same values; the join is valid only when it selects one face and that face has one body. A reference with an opaque trailing field remains a source-level reference for appearance matching but cannot establish face ownership. A missing, conflicting, or multiply resolved complete identity leaves face ownership unresolved. The feature source ID alone remains sufficient for feature-appearance matching only when all references agree on that source ID.
+  A DisplayFace metadata slot can contain duplicated framed UTF-16LE strings. Their frame is `ff fe ff`, a u8 code-unit count, then the UTF-16LE payload. A payload of the form `<SurfIdRep class>,<feature source ID>,<local surface ID>[,<signed path field>...],` is a persistent surface reference when the class begins with `mo` and ends with `SurfIdRep_c`. The terminal comma is part of the framed text convention. A signed path field is a decimal signed 32-bit value compared by its u32 bit pattern; decimal `-1` therefore denotes `0xffffffff`. When every trailing field is signed numeric, the complete identity is the source ID, local surface ID, and ordered trailing fields. All complete references in one slot must agree on that identity, which joins the slot to the surviving face whose `FACE_ID_2001` carries the same values; the join is valid only when it selects one face and that face has one body. A reference with an opaque trailing field remains a source-level reference for appearance matching but cannot establish face ownership. A missing, conflicting, or multiply resolved complete identity leaves face ownership unresolved. The feature source ID alone remains sufficient for feature-appearance matching only when all references agree on that source ID.
 
   A `ThirdPtyStore/VisualStates` feature-appearance instance in an `moCompFeature_c` interval begins with u32 LE version `17000`, the feature source ID, the feature timestamp, u32 LE values `1`, `1`, and `2`, bytes `07 80 01 00 00 00`, and marker `09 80`. The packed `0x00BBGGRR` colour follows the marker. A matching DisplayFace persistent surface source ID binds this feature appearance to the table. Effective DisplayLists precedence is body default, feature appearance, then face-local appearance.
 - A DisplayLists scene-class declaration scopes its following scene objects. The byte sequence `00 00 00 00 00 00 30 40 00 00 00 00` followed by a nonzero u32 LE source identifier binds that object class to the Keywords record with the same source identifier. Anonymous object counts do not identify Keywords records.
