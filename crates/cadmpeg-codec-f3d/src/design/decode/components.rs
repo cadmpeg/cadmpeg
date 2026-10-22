@@ -13,6 +13,7 @@ use crate::design::decode::sketch::next_indexed_record_offset;
 
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 
+use crate::layout::local_component_occurrence_attributed_prefix as attributed_prefix;
 use crate::layout::local_component_occurrence_identity_tail as identity_tail;
 use crate::layout::local_component_occurrence_matrix_tail as matrix_tail;
 use crate::layout::local_component_occurrence_prefix as prefix;
@@ -59,21 +60,17 @@ pub(crate) fn decode_component_occurrences(
 
 /// Most attributes an attributed occurrence frame can carry.
 const MAX_OCCURRENCE_ATTRIBUTES: u32 = 16;
-/// The seven bytes between the key reference and the repeated component
-/// reference of an attributed frame.
-const ATTRIBUTED_KEY_TAIL: [u8; 7] = [0, 1, 1, 0, 0, 0, 0];
-
 /// Read an attributed local occurrence frame.
 ///
 /// After the indexed header: u32 `0`, an empty LP-ASCII instance name, `u8 1`,
 /// u32 path count `1`, the marked u64 component reference at offset 24, two
-/// zero bytes, the u32 zero-based occurrence index at offset 35, `u8 1`, and a
+/// zero bytes, the u32 path discriminator at offset 35, `u8 1`, and a
 /// u32 attribute count at offset 40. Each attribute
 /// is an LP-ASCII name, an LP-ASCII type (`IntrinsicMetaTypebool` with one
 /// byte, or `IntrinsicMetaTypeHString` with an LP-UTF16 string), and its
 /// value. Two bytes, the u32 occurrence ordinal, the LP-UTF16 carrier GUID,
-/// and the LP-UTF16 occurrence key follow; then a marked u64 reference, the
-/// seven bytes `00 01 01 00 00 00 00`, the repeated marked component
+/// and the LP-UTF16 occurrence key follow; then a cross-segment reference,
+/// one zero byte, the repeated marked component
 /// reference, two zero bytes, the identity flag, and the common tail.
 fn attributed_component_occurrence(
     bytes: &[u8],
@@ -89,21 +86,27 @@ fn attributed_component_occurrence(
     let record_index = View::u32_le_at(bytes, after_tag)?;
     let end = next_indexed_record_offset(bytes, start.checked_add(1)?)?;
     let frame = bytes.get(start..end)?;
-    if frame.get(11..19)? != [0; 8]
-        || frame.get(19) != Some(&1)
-        || View::u32_le_at(frame, 20)? != 1
-        || frame.get(24) != Some(&1)
-        || frame.get(33..35)? != [0; 2]
-        || frame.get(39) != Some(&1)
+    if frame.get(attributed_prefix::EMPTY_INSTANCE_NAME..attributed_prefix::PATH_MARKER)? != [0; 8]
+        || frame.get(attributed_prefix::PATH_MARKER) != Some(&attributed_prefix::PATH_MARKER_VALUE)
+        || View::u32_le_at(frame, attributed_prefix::PATH_COUNT)?
+            != attributed_prefix::PATH_COUNT_VALUE
+        || frame.get(attributed_prefix::COMPONENT_REFERENCE) != Some(&1)
+        || frame.get(
+            attributed_prefix::COMPONENT_REFERENCE + MARKED_U64
+                ..attributed_prefix::PATH_DISCRIMINATOR,
+        )? != [0; 2]
+        || frame.get(attributed_prefix::ATTRIBUTES_MARKER)
+            != Some(&attributed_prefix::ATTRIBUTES_MARKER_VALUE)
     {
         return None;
     }
-    let component_record_index = View::u64_le_at(frame, 25)?;
-    let count = View::u32_le_at(frame, 40)?;
+    let component_record_index =
+        View::u64_le_at(frame, attributed_prefix::COMPONENT_REFERENCE + 1)?;
+    let count = View::u32_le_at(frame, attributed_prefix::ATTRIBUTE_COUNT)?;
     if !(1..=MAX_OCCURRENCE_ATTRIBUTES).contains(&count) {
         return None;
     }
-    let mut at = 44_usize;
+    let mut at = attributed_prefix::LEN;
     let mut attributes = Vec::new();
     for _ in 0..count {
         let (name, after_name) =
@@ -130,20 +133,22 @@ fn attributed_component_occurrence(
     }
     let ordinal_prefix = View::u16_le_at(frame, at)?;
     let ordinal = std::num::NonZeroU32::new(View::u32_le_at(frame, at + 2)?)?;
-    // The zero-based occurrence index at offset 35 precedes the ordinal.
-    if View::u32_le_at(frame, 35)?.checked_add(1) != Some(ordinal.get()) {
-        return None;
-    }
+    let path_discriminator = View::u32_le_at(frame, attributed_prefix::PATH_DISCRIMINATOR)?;
     let component_guid_at = at + 6;
     let (component_guid, after_component) = lp_utf16_bounded(frame, component_guid_at, 36..=36)?;
     let occurrence_key_at = after_component;
     let (occurrence_key, after_key) = lp_utf16_bounded(frame, occurrence_key_at, 1..=36)?;
-    if frame.get(after_key) != Some(&1) {
+    let mut key_end = after_key;
+    let crate::bytes::Reference::CrossSegment {
+        target: key_record_index,
+        inline_type_guid: None,
+        segment: key_segment_index,
+    } = crate::bytes::take_owned_reference(frame, &mut key_end)?
+    else {
         return None;
-    }
-    let key_record_index = View::u64_le_at(frame, after_key + 1)?;
-    let repeat_at = after_key + 9 + ATTRIBUTED_KEY_TAIL.len();
-    if frame.get(after_key + 9..repeat_at)? != ATTRIBUTED_KEY_TAIL
+    };
+    let repeat_at = key_end + 1;
+    if frame.get(key_end) != Some(&0)
         || frame.get(repeat_at) != Some(&1)
         || View::u64_le_at(frame, repeat_at + 1)? != component_record_index
         || frame.get(repeat_at + 9..repeat_at + 11)? != [0; 2]
@@ -153,6 +158,11 @@ fn attributed_component_occurrence(
     let flag_at = repeat_at + 11;
     let (placement, transform_offset, tail_at) = match frame.get(flag_at)? {
         1 if ordinal.get() == 1 => (DesignComponentOccurrencePlacement::Base, None, flag_at + 1),
+        1 => (
+            DesignComponentOccurrencePlacement::Identity { ordinal },
+            None,
+            flag_at + 1,
+        ),
         0 => {
             let transform = super::scopes::shared_frames::rigid_transform_at(frame, flag_at + 1)?;
             (
@@ -188,7 +198,9 @@ fn attributed_component_occurrence(
         DesignAttributedOccurrenceFrame {
             attributes,
             ordinal_prefix,
+            path_discriminator,
             key_record_index,
+            key_segment_index,
             component_guid_offset: absolute(component_guid_at + 4)?,
             occurrence_guid_offset: absolute(occurrence_key_at + 4)?,
             transform_offset: match transform_offset {
@@ -460,6 +472,8 @@ fn root_instance_component(bytes: &[u8], start: usize, end: usize) -> Option<u64
 mod tests {
     #![allow(clippy::trivially_copy_pass_by_ref)]
 
+    mod original;
+
     use super::{
         attributed_component_occurrence, exact_component_occurrence, root_instance_component,
     };
@@ -711,15 +725,47 @@ mod tests {
         assert_eq!(transform.value.rows()[2][3], 4.0);
         let wire = serde_json::to_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["key_record_index"], 139);
+        assert_eq!(wire["attributed"]["key_segment_index"], 1);
         assert_eq!(wire["attributed"]["attributes"][0]["name"], "GatedByParent");
         let round_trip: crate::records::feature::assembly_features::DesignComponentOccurrence =
             serde_json::from_value(wire).unwrap();
         assert_eq!(round_trip, occurrence);
 
-        // A GUID key reads too; the zero-based index must match the ordinal.
+        // A path discriminator is independent of the occurrence ordinal.
         let bytes = attributed(OCCURRENCE, 1, 2);
         assert!(attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat").is_some());
         let bytes = attributed("34", 0, 2);
-        assert!(attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat").is_none());
+        let occurrence = attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat")
+            .expect("independent path discriminator");
+        let wire = serde_json::to_value(&occurrence).unwrap();
+        assert_eq!(wire["attributed"]["path_discriminator"], 0);
+        assert_eq!(wire["occurrence_ordinal"], 2);
+    }
+
+    #[test]
+    fn original_attributed_occurrence_retains_all_three_typed_properties() {
+        let bytes = include_bytes!("../../test_support/xref/attributed-occurrence.bin");
+        let occurrence = attributed_component_occurrence(bytes, 0, "f3d:Design/BulkStream.dat")
+            .expect("original attributed occurrence");
+        let wire = serde_json::to_value(&occurrence).unwrap();
+        assert_eq!(wire["attributed"]["key_segment_index"], 10);
+        assert_eq!(
+            wire["attributed"]["attributes"],
+            serde_json::json!([
+                {"name":"GatedByParent","value":{"type":"bool","value":false}},
+                {"name":"ResolutionTime","value":{"type":"text","value":""}},
+                {"name":"SelfGated","value":{"type":"bool","value":false}}
+            ])
+        );
+        let decoded: crate::records::feature::assembly_features::DesignComponentOccurrence =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(decoded, occurrence);
+    }
+
+    #[test]
+    fn original_named_root_instance_uses_the_root_component_reader() {
+        let bytes = include_bytes!("../../test_support/xref/root-instance.bin");
+        assert_eq!(root_instance_component(bytes, 0, bytes.len()), Some(3));
+        assert!(attributed_component_occurrence(bytes, 0, "f3d:Design/BulkStream.dat").is_none());
     }
 }

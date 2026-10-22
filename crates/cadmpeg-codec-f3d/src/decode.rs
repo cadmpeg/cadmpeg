@@ -3709,6 +3709,13 @@ fn report_xref_parse_loss(report: &mut DecodeBody, error: &CodecError) {
 /// Report typed occurrence placements whose role path was readable but whose
 /// generation-specific payload did not close and had no valid carrier.
 fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
+    if table.placement_metadata_missing && !table.references.is_empty() {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::XrefPlacementMetadataMissing,
+            format_args!("external-reference placements were not inferred from Design streams without a paired MetaStream type table and record index"),
+        );
+    }
     for ordinal in &table.placement_failures {
         let Some(reference) = table
             .references

@@ -161,6 +161,8 @@ pub(crate) enum F3dLossCode {
     XrefTableUndecoded,
     /// A typed occurrence placement named a role but failed its payload grammar.
     XrefPlacementUndecoded,
+    /// A Design stream has no type and record index for placement admission.
+    XrefPlacementMetadataMissing,
     /// Structured placement records were superseded by scope-bound carriers.
     XrefPlacementSuperseded,
     /// Mesh body geometry stores vertex coordinates at f32 precision.
@@ -304,6 +306,7 @@ impl F3dLossCode {
         Self::MeshAttributeNotTransferred,
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
+        Self::XrefPlacementMetadataMissing,
         Self::XrefPlacementSuperseded,
         Self::MeshVertexPrecisionReduced,
         Self::BodylessDesignCarrier,
@@ -418,6 +421,7 @@ impl F3dLossCode {
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
+            Self::XrefPlacementMetadataMissing => "xref.placement-metadata-missing",
             Self::XrefPlacementSuperseded => "xref.placement-superseded",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
@@ -542,6 +546,7 @@ impl F3dLossCode {
             | Self::MeshAttributeNotTransferred
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
             | Self::MeshVertexPrecisionReduced
             | Self::FaceSurfaceReferenceDangling
@@ -590,6 +595,7 @@ impl F3dLossCode {
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded => LossTaxonomy::AssemblyComponentsExternal,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
@@ -789,6 +795,7 @@ mod tests {
                 "mesh.attribute-not-transferred",
                 "xref.table-undecoded",
                 "xref.placement-undecoded",
+                "xref.placement-metadata-missing",
                 "xref.placement-superseded",
                 "mesh.vertex-precision-reduced",
                 "design.bodyless-carrier",

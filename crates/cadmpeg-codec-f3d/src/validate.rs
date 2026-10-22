@@ -4185,7 +4185,10 @@ fn validate_component_occurrences(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>
         // A class-256 carrier stores a placed frame only after its first
         // occurrence; every other carrier class can place ordinal one.
         let placement_admitted = match occurrence.placement() {
-            records::feature::assembly_features::DesignComponentOccurrencePlacement::Base => true,
+            records::feature::assembly_features::DesignComponentOccurrencePlacement::Base
+            | records::feature::assembly_features::DesignComponentOccurrencePlacement::Identity {
+                ..
+            } => true,
             records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
                 ordinal,
                 ..

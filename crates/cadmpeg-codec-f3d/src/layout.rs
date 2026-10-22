@@ -5339,3 +5339,35 @@ pub(crate) mod construction_operand_affine_transform_frame {
     /// Offset of `trailer` (`bytes[2]`). Spec §3.1.
     pub(crate) const TRAILER: usize = 150;
 }
+
+/// Byte offsets for the `local_component_occurrence_attributed_prefix` record.
+///
+/// Spec §3.1. Record length 44 B.
+///
+/// ```text
+/// Offsets are relative to the indexed header. The typed attribute run begins immediately after this prefix. The path discriminator is independent of the later occurrence ordinal.
+/// ```
+pub(crate) mod local_component_occurrence_attributed_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 44;
+    /// Offset of `empty_instance_name` (`bytes[8]`). Spec §3.1.
+    pub(crate) const EMPTY_INSTANCE_NAME: usize = 11;
+    /// Offset of `path_marker` (`u8`). Spec §3.1.
+    pub(crate) const PATH_MARKER: usize = 19;
+    /// Stated value of `path_marker` (`u8`). Spec §3.1.
+    pub(crate) const PATH_MARKER_VALUE: u8 = 1;
+    /// Offset of `path_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PATH_COUNT: usize = 20;
+    /// Stated value of `path_count` (`u32`). Spec §3.1.
+    pub(crate) const PATH_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `component_reference` (`bytes[9]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 24;
+    /// Offset of `path_discriminator` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PATH_DISCRIMINATOR: usize = 35;
+    /// Offset of `attributes_marker` (`u8`). Spec §3.1.
+    pub(crate) const ATTRIBUTES_MARKER: usize = 39;
+    /// Stated value of `attributes_marker` (`u8`). Spec §3.1.
+    pub(crate) const ATTRIBUTES_MARKER_VALUE: u8 = 1;
+    /// Offset of `attribute_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ATTRIBUTE_COUNT: usize = 40;
+}

@@ -17963,3 +17963,145 @@ type = "u8"
 value = 0
 source = "spec"
 anchor = "byte `01`, one boolean, and byte `00`"
+
+[[record]]
+name = "legacy_occurrence_target_reference"
+kind = "byte"
+section = "1.4"
+anchor = "Each legacy target reference is"
+size = 60
+note = "Offsets are relative to the reference presence marker. The repeated references carry the same entity, source occurrence identity and type GUID."
+
+[[record.field]]
+name = "presence"
+offset = 0
+type = "u8"
+value = 1
+source = "spec"
+anchor = "Each legacy target reference is"
+
+[[record.field]]
+name = "target_entity"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "Each legacy target reference is"
+
+[[record.field]]
+name = "identity_presence"
+offset = 9
+type = "u8"
+value = 1
+source = "spec"
+anchor = "Each legacy target reference is"
+
+[[record.field]]
+name = "source_occurrence_identity"
+offset = 10
+type = "u64"
+source = "spec"
+anchor = "Each legacy target reference is"
+
+[[record.field]]
+name = "type_marker"
+offset = 18
+type = "u8"
+value = 0
+source = "spec"
+anchor = "Each legacy target reference is"
+
+[[record.field]]
+name = "type_guid_length"
+offset = 19
+type = "u32"
+value = 36
+source = "spec"
+anchor = "Each legacy target reference is"
+
+[[record.field]]
+name = "type_guid"
+offset = 23
+type = "bytes[36]"
+source = "spec"
+anchor = "Each legacy target reference is"
+
+[[record.field]]
+name = "terminator"
+offset = 59
+type = "u8"
+value = 0
+source = "spec"
+anchor = "Each legacy target reference is"
+
+[[record]]
+name = "local_component_occurrence_attributed_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "An attributed local component occurrence carries"
+size = 44
+note = "Offsets are relative to the indexed header. The typed attribute run begins immediately after this prefix. The path discriminator is independent of the later occurrence ordinal."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An attributed local component occurrence carries"
+
+[[record.field]]
+name = "empty_instance_name"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "An attributed local component occurrence carries"
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+value = 1
+source = "spec"
+anchor = "An attributed local component occurrence carries"
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+value = 1
+source = "spec"
+anchor = "An attributed local component occurrence carries"
+
+[[record.field]]
+name = "component_reference"
+offset = 24
+type = "bytes[9]"
+source = "spec"
+anchor = "An attributed local component occurrence carries"
+
+[[record.gap]]
+offset = 33
+size = 2
+note = "Two zero trailing bytes of the local component reference."
+
+[[record.field]]
+name = "path_discriminator"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "An attributed local component occurrence carries"
+
+[[record.field]]
+name = "attributes_marker"
+offset = 39
+type = "u8"
+value = 1
+source = "spec"
+anchor = "An attributed local component occurrence carries"
+
+[[record.field]]
+name = "attribute_count"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "An attributed local component occurrence carries"

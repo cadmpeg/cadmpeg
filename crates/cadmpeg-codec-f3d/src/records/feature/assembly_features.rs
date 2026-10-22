@@ -283,8 +283,10 @@ pub(crate) struct DesignAttributedOccurrenceFrame {
     pub(crate) attributes: Vec<DesignOccurrenceAttribute>,
     /// The little-endian u16 before the occurrence ordinal.
     pub(crate) ordinal_prefix: u16,
+    pub(crate) path_discriminator: u32,
     /// Marked record reference after the occurrence key.
     pub(crate) key_record_index: u64,
+    pub(crate) key_segment_index: u32,
     /// Byte offset of the carrier GUID payload.
     pub(crate) component_guid_offset: u64,
     /// Byte offset of the occurrence key payload.
@@ -366,6 +368,8 @@ pub(crate) struct DesignComponentOccurrenceDraft {
 pub(crate) enum DesignComponentOccurrencePlacement {
     /// Identity placement of the first occurrence; the frame stores no matrix.
     Base,
+    /// A later attributed occurrence with a stored identity marker.
+    Identity { ordinal: NonZeroU32 },
     /// Explicit matrix and one-based occurrence ordinal.
     Explicit {
         ordinal: NonZeroU32,
@@ -376,8 +380,13 @@ pub(crate) enum DesignComponentOccurrencePlacement {
 impl DesignComponentOccurrence {
     /// Admit a local occurrence with representable GUID and placement offsets.
     pub(crate) fn try_new(draft: DesignComponentOccurrenceDraft) -> Result<Self, String> {
+        if matches!(draft.placement, DesignComponentOccurrencePlacement::Identity { ordinal } if ordinal.get() == 1)
+        {
+            return Err("a later identity occurrence must have an ordinal greater than one".into());
+        }
         let last_offset = match draft.placement {
-            DesignComponentOccurrencePlacement::Base => BASE_OWNER_OFFSET,
+            DesignComponentOccurrencePlacement::Base
+            | DesignComponentOccurrencePlacement::Identity { .. } => BASE_OWNER_OFFSET,
             DesignComponentOccurrencePlacement::Explicit { .. } => PLACED_OWNER_OFFSET,
         };
         draft
@@ -441,7 +450,9 @@ impl DesignComponentOccurrence {
                 Some(DesignAttributedOccurrenceWire {
                     attributes: frame.attributes.clone(),
                     ordinal_prefix: frame.ordinal_prefix,
+                    path_discriminator: frame.path_discriminator,
                     key_record_index: frame.key_record_index,
+                    key_segment_index: frame.key_segment_index,
                 })
             }
         }
@@ -474,7 +485,8 @@ impl DesignComponentOccurrence {
             DesignComponentOccurrenceFrame::Fixed => {
                 self.byte_offset
                     + match self.placement {
-                        DesignComponentOccurrencePlacement::Base => BASE_OWNER_OFFSET,
+                        DesignComponentOccurrencePlacement::Base
+                        | DesignComponentOccurrencePlacement::Identity { .. } => BASE_OWNER_OFFSET,
                         DesignComponentOccurrencePlacement::Explicit { .. } => PLACED_OWNER_OFFSET,
                     }
             }
@@ -491,6 +503,7 @@ impl DesignComponentOccurrence {
     pub(crate) fn occurrence_ordinal(&self) -> u32 {
         match self.placement {
             DesignComponentOccurrencePlacement::Base => 1,
+            DesignComponentOccurrencePlacement::Identity { ordinal } => ordinal.get(),
             DesignComponentOccurrencePlacement::Explicit { ordinal, .. } => ordinal.get(),
         }
     }
@@ -498,7 +511,8 @@ impl DesignComponentOccurrence {
     #[must_use]
     pub(crate) fn transform(&self) -> Option<Located<SketchPlacementMatrix>> {
         match self.placement {
-            DesignComponentOccurrencePlacement::Base => None,
+            DesignComponentOccurrencePlacement::Base
+            | DesignComponentOccurrencePlacement::Identity { .. } => None,
             DesignComponentOccurrencePlacement::Explicit { transform, .. } => Some(Located {
                 value: transform,
                 offset: match &self.frame {
@@ -568,8 +582,10 @@ struct DesignAttributedOccurrenceWire {
     attributes: Vec<DesignOccurrenceAttribute>,
     /// The little-endian u16 before the occurrence ordinal.
     ordinal_prefix: u16,
+    path_discriminator: u32,
     /// Marked record reference after the occurrence key.
     key_record_index: u64,
+    key_segment_index: u32,
 }
 
 cadmpeg_core::named_optional_field!(
@@ -658,6 +674,12 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
         let transform = Located::from_wire(value.transform, value.transform_offset, "transform")?;
         let placement = match (value.occurrence_ordinal, transform) {
             (1, None) => DesignComponentOccurrencePlacement::Base,
+            (ordinal, None) if value.attributed.is_some() => {
+                DesignComponentOccurrencePlacement::Identity {
+                    ordinal: NonZeroU32::new(ordinal)
+                        .ok_or("occurrence_ordinal must be nonzero")?,
+                }
+            }
             (ordinal, Some(transform)) => DesignComponentOccurrencePlacement::Explicit {
                 ordinal: NonZeroU32::new(ordinal).ok_or("occurrence_ordinal must be nonzero")?,
                 transform: transform.value,
@@ -681,7 +703,9 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
                 DesignAttributedOccurrenceFrame {
                     attributes: attributed.attributes,
                     ordinal_prefix: attributed.ordinal_prefix,
+                    path_discriminator: attributed.path_discriminator,
                     key_record_index: attributed.key_record_index,
+                    key_segment_index: attributed.key_segment_index,
                     component_guid_offset: value.component_guid_offset,
                     occurrence_guid_offset: value.occurrence_guid_offset,
                     transform_offset: value.transform_offset,

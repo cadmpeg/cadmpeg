@@ -5374,6 +5374,47 @@ Unstated regions:
 
 - `11..21` (10 B): Ten zero bytes follow the indexed header.
 
+## `legacy_occurrence_target_reference`
+
+Spec §1.4 · layout: byte offsets · size: 60 B
+
+Offsets are relative to the reference presence marker. The repeated references carry the same entity, source occurrence identity and type GUID.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `presence` | `u8` | little | spec | Each legacy target reference is · value `1` |
+| 1 | 8 | `target_entity` | `u64` | little | spec | Each legacy target reference is |
+| 9 | 1 | `identity_presence` | `u8` | little | spec | Each legacy target reference is · value `1` |
+| 10 | 8 | `source_occurrence_identity` | `u64` | little | spec | Each legacy target reference is |
+| 18 | 1 | `type_marker` | `u8` | little | spec | Each legacy target reference is · value `0` |
+| 19 | 4 | `type_guid_length` | `u32` | little | spec | Each legacy target reference is · value `36` |
+| 23 | 36 | `type_guid` | `bytes[36]` | little | spec | Each legacy target reference is |
+| 59 | 1 | `terminator` | `u8` | little | spec | Each legacy target reference is · value `0` |
+
+## `local_component_occurrence_attributed_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 44 B
+
+Offsets are relative to the indexed header. The typed attribute run begins immediately after this prefix. The path discriminator is independent of the later occurrence ordinal.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An attributed local component occurrence carries |
+| 11 | 8 | `empty_instance_name` | `bytes[8]` | little | spec | An attributed local component occurrence carries |
+| 19 | 1 | `path_marker` | `u8` | little | spec | An attributed local component occurrence carries · value `1` |
+| 20 | 4 | `path_count` | `u32` | little | spec | An attributed local component occurrence carries · value `1` |
+| 24 | 9 | `component_reference` | `bytes[9]` | little | spec | An attributed local component occurrence carries |
+| 35 | 4 | `path_discriminator` | `u32` | little | spec | An attributed local component occurrence carries |
+| 39 | 1 | `attributes_marker` | `u8` | little | spec | An attributed local component occurrence carries · value `1` |
+| 40 | 4 | `attribute_count` | `u32` | little | spec | An attributed local component occurrence carries |
+
+Unstated regions:
+
+- `33..35` (2 B): Two zero trailing bytes of the local component reference.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

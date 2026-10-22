@@ -225,26 +225,25 @@ A document that places other documents records each placement as an **XRef** key
 
 **Design-segment XRef records.** The Design BulkStream registers the record class name `DcXRefPCIFeatureMetaType`. Its dynamic three-digit ASCII class tag and record index form the indexed-record header. A standalone occurrence record carries, in order: a `u32`-count UTF-16LE record GUID; marker-tagged integer fields; a `0x01`-tagged eight-byte value, which is the presence flag and target entity ID of a cross-document reference; a `u32`-count ASCII GUID, which is that target record's type GUID and appears in the target segment's MetaStream type table; a `0x01`-tagged `u32` zero; and a `u32`-count UTF-16LE occurrence-role string equal to the reference's `neutronRole`. A grouped component-insert carrier can contain several occurrences and repeat the same occurrence-role string in metadata, placement, and construction-reference fields. Several placements may therefore carry the same role and place the same target document more than once. Each occurrence-role string is also present in the ACT-segment GUID pool.
 
-**Placement.** An occurrence placement is an indexed record whose type-table entry has GUID `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` and add-in name `Component`. Its payload is a target path, an optional matrix, and three reference runs:
+**Placement.** An occurrence placement is a primary indexed record whose registered type-table entry has GUID `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` and add-in name `Component`. Its indexed header repeats the registered entity and selects that type-table row. Primary and secondary MetaStream indices delimit its class members. An indexed-header byte pattern inside a payload does not delimit a record, and a nested base-class header does not create another placement.
+
+A `CommonData` record of type `3B6814F4-D87B-46BD-AD9D-0BE07880F7BB`, version 0, can carry a component path and transform in this form:
 
 ```
 u8   1
 u32  count                       path elements
 count × (reference, u32 instance discriminator)
 u8   0
-u8   identity_flag               absent in generation 2, which always stores the matrix
-16 × f64                         row-major 4×4, stored only when identity_flag is 0
+u8   identity_flag               omitted by forms that always store the matrix
+16 × f64                         row-major 4×4, stored only when identity_flag is 0 or omitted
 u32  count, count × reference
-u8   tag, u32 count, count × u32, reference     modern containers only
-reference
-reference
+reference                        Fusion root-component aggregate
+reference                        CommonData context node
 ```
 
-The path names the occurrence by its chain of component references. The integer after each element is an instance discriminator, not the element's ordinal along the path: it separates two placements that reach the same element, and `(reference, discriminator)` identifies one placement. The whole tuple of discriminators is a function of the target path. The element carrying the cross-document link name is not necessarily the first.
+The path integer is an instance discriminator, not the element's ordinal along the path. The counted references name local Component nodes or qualified cross-document targets. The closing local references have types `E03784ED-5E19-4E14-B9F2-3B07017018CD` and `F9CB8717-EB86-47F2-AAA7-39E142C57A09`, in that order. This component-path carrier is not an occurrence-placement record; its byte shape does not override its registered `CommonData` type.
 
-The matrix is a proper rigid motion. Its upper-left 3×3 block is orthonormal, column 3 is the translation in centimetres, the bottom row is `(0, 0, 0, 1)`, and the determinant is `1`. An `identity_flag` of `1` states that the placement is the identity transform and stores no matrix. The 128-byte matrix is the only length difference between the two forms.
-
-The counted reference run after the matrix reaches both local and cross-document targets. The parser selects the tagged u32 run and its reference exactly when the paired Design `MetaStream.dat` header's serializer magic is `1234`; every other serializer magic selects the two-reference form without that run. The two references that close the record name the same pair of entities for every placement of one document.
+The matrix is a proper rigid motion. Its upper-left 3×3 block is orthonormal, column 3 is the translation in centimetres, the bottom row is `(0, 0, 0, 1)`, and the determinant is `1`. An `identity_flag` of `1` states that the transform is identity and stores no matrix. The 128-byte matrix is the only length difference between the identity and matrix forms of one envelope.
 
 A legacy typed occurrence placement uses the same type-table identity but a separate envelope. Its indexed record header is followed by:
 
@@ -256,8 +255,8 @@ u32  instance discriminator
 u32  1
 u8   0
 u32  1
-LP-UTF16 36       opaque GUID field
-LP-UTF16 36       opaque GUID field
+LP-UTF16 36       source-local placement-metadata UUID
+LP-UTF16 36       EntityTracking link GUID
 u8   0
 legacy target reference
 u8   identity_flag
@@ -270,7 +269,11 @@ u8   4
 u8[9] zero
 ```
 
-Each legacy target reference is `u8 1`, `u64 target entity ID`, `u8 1`, `u64 opaque target-reference value`, `u8 0`, `LP-ASCII 36 target type GUID`, and `u8 0`. The identity form is 403 bytes from its indexed header through its fixed closing tail; the matrix form is 531 bytes. `identity_flag` `1` stores no matrix, and `0` stores the rigid matrix. The dynamic class tag does not select this envelope: the occurrence-placement type-table identity and exact record closure do.
+Each legacy target reference is `u8 1`, `u64 target entity ID`, `u8 1`, `u64 source occurrence identity`, `u8 0`, `LP-ASCII 36 target type GUID`, and `u8 0`. The two target references are semantic duplicates. They name the target Design segment's root-component aggregate, with type `E03784ED-5E19-4E14-B9F2-3B07017018CD`. The repeated u64 is a source occurrence identity, not a target record identity. The fixed reference layout is in [the layout tables](../layouts/f3d.md). The identity form is 403 bytes from its indexed header through its fixed closing tail; the matrix form is 531 bytes. `identity_flag` `1` stores no matrix, and `0` stores the rigid matrix. The dynamic class tag does not select this envelope: the occurrence-placement type-table identity and exact record closure do.
+
+The first legacy UUID is source-local placement metadata. The second joins to an `EntityTracking` record of type `96CBEA21-17E0-4BCB-BA77-04EA87B47934`, version 4. Its five GUID fields are the tracking link, target Design asset, target root Component, source Design asset, and source root Component, in that order. An asset GUID is the first GUID of its per-asset manifest. The Component GUID is the third GUID of the root aggregate's nested Component record. The source occurrence identity and placement UUID are retained; their values are not derived from the target identities.
+
+A Component path can replace its terminating zero byte with an inline metadata block: `u8 1`, a u32 property count, then ordered typed properties. Each property has an LP-ASCII name, an LP-ASCII intrinsic type, and the typed value. `IntrinsicMetaTypebool` stores one Boolean byte; `IntrinsicMetaTypeHString` stores an LP-UTF16 string. A block with `GatedByParent = false`, `ResolutionTime = ""`, and `SelfGated = false` serializes those three typed properties in that order. The byte after `GatedByParent`'s Boolean starts the next property; it is not a separate gate selector. The subsequent occurrence-key reference uses the standard cross-segment reference grammar. Its u32 segment index is part of the reference and is not a constant padding value. The path discriminator and the later occurrence ordinal are independent stored integers. A positive ordinal greater than one can accompany an identity marker; that form stores no matrix and retains its ordinal.
 
 The repeated-target placement generation starts with the standard target path and its terminating u8 zero. Its generation tail is:
 
@@ -661,7 +664,7 @@ The Component Insert generation map is:
 
 A local component occurrence is an occurrence-placement record (§1.4) with a 229-byte identity frame or a 357-byte matrix frame. The carrier class tag is a per-file dynamic value and does not select the frame; the frame length and its fixed members identify the carrier. After the indexed header, the frame stores u32 `0` and an empty LP-ASCII instance name, `u8 1` at offset 19, and u32 path count `1` at offset 20. Marked component-record references at offsets 24 and 197 carry the same u64 value within one carrier. Each frame stores the one-based occurrence ordinal at offset 40, an LP-UTF16 carrier GUID at offset 44, and an LP-UTF16 occurrence GUID at offset 120. Offset 208 is the identity flag. The identity frame has flag `1`, ordinal one, and no matrix; its placement is the identity transform. The matrix frame has flag `0` and a row-major rigid local-to-container transform at offset 209. A class-`256` carrier uses a matrix frame only for an ordinal greater than one; any other class tag can use a matrix frame for ordinal one. Matrix translations are in centimetres. Nine zero bytes and the marker `u8 1` follow the flag or the matrix. The u64 owner entity is at offset 219 of the identity frame or offset 347 of the matrix frame, and two zero bytes close the frame. Occurrence GUIDs are unique within a Design stream.
 
-An attributed local component occurrence carries a counted attribute run and an occurrence key. After the indexed header it stores u32 `0`, an empty LP-ASCII instance name, `u8 1`, u32 path count `1`, the marked u64 component-record reference at offset 24, two zero bytes, the u32 zero-based occurrence index at offset 35, `u8 1`, and a u32 attribute count at offset 40. Each attribute is an LP-ASCII name, an LP-ASCII type, and a value: type `IntrinsicMetaTypebool` stores one byte `0` or `1`, and type `IntrinsicMetaTypeHString` stores an LP-UTF16 string. Two bytes, the u32 one-based occurrence ordinal, the LP-UTF16 carrier GUID, and the LP-UTF16 occurrence key follow. The occurrence index is the ordinal minus one. The occurrence key is a 36-code-unit GUID or a positive decimal key such as `34`, and it is unique within a Design stream. A marked u64 record reference, the bytes `00 01 01 00 00 00 00`, the repeated marked component-record reference, and two zero bytes follow. The identity flag, the matrix when the flag is `0`, nine zero bytes, the marker `u8 1`, the u64 owner entity, and two zero bytes close the frame as in the fixed frames. An identity frame stores ordinal one. A path record can name a local occurrence by its decimal occurrence key in place of its occurrence GUID.
+An attributed local component occurrence carries a counted attribute run and an occurrence key. After the indexed header it stores u32 `0`, an empty LP-ASCII instance name, `u8 1`, u32 path count `1`, the marked u64 component-record reference at offset 24, two zero bytes, the u32 path discriminator at offset 35, `u8 1`, and a u32 attribute count at offset 40. Each attribute is an LP-ASCII name, an LP-ASCII type, and a value: type `IntrinsicMetaTypebool` stores one byte `0` or `1`, and type `IntrinsicMetaTypeHString` stores an LP-UTF16 string. Two bytes, the u32 one-based occurrence ordinal, the LP-UTF16 carrier GUID, and the LP-UTF16 occurrence key follow. The path discriminator is independent of the later occurrence ordinal. The occurrence key is a 36-code-unit GUID or a positive decimal key such as `34`, and it is unique within a Design stream. A standard cross-segment reference, one zero byte, the repeated marked component-record reference, and two zero bytes follow. The reference retains its u64 key-record index and u32 segment index. The identity flag, the matrix when the flag is `0`, nine zero bytes, the marker `u8 1`, the u64 owner entity, and two zero bytes close the frame as in the fixed frames. An attributed identity frame can retain a positive occurrence ordinal greater than one without storing a matrix. The fixed attributed prefix is in [the layout tables](../layouts/f3d.md). A path record can name a local occurrence by its decimal occurrence key in place of its occurrence GUID.
 
 The component-record reference names the component definition record. That record stores the context binding of one component naming space within its primary record extent. The component definition is that naming space, and it owns the solved bodies whose body-map entity suffixes lie in the naming space's entity cluster. Carriers that name one component definition record can store different carrier GUIDs. The owner entity is the root entity of the component naming space that contains the occurrence. The root component of a Design stream is the component definition named by the occurrence-placement record whose instance name is `rootInstance`. After its indexed header that record stores u32 `0`, LP-ASCII `rootInstance`, `u8 1`, u32 path count `1`, and a marked u64 component-definition reference. The root component has one root occurrence with the identity transform. An occurrence whose owner entity is the root entity of the root component's naming space is a child of the root occurrence, and its transform maps the component definition into the root component frame.
 
