@@ -16,8 +16,7 @@ fn emit(ir: &CadIr, retained: u64) -> Result<Vec<u8>, CodecError> {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = retained;
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-    let mut bytes = Vec::new();
-    super::super::write(&ctx, ir, RhinoArchiveVersion::V8, &mut bytes)?;
+    let (bytes, _) = super::super::write(&ctx, ir, RhinoArchiveVersion::V8)?;
     ctx.finish_session()?;
     Ok(bytes)
 }
@@ -76,13 +75,12 @@ fn brep_and_final_archive_staging_share_one_actual_live_allowance() {
     let staged_brep = cadmpeg_core::decode::u64_from_index(plan.brep_records.capacity());
     assert!(staged_brep > 0);
     let expected = emit(&ir, 1_000_000).expect("source-less Brep native archive");
-    let peak = cadmpeg_core::decode::u64_from_index(expected.len()) + staged_brep;
-    assert_eq!(
-        emit(&ir, peak).expect("both retained stages fit exactly"),
-        expected
-    );
-    let CodecError::ResourceLimit(error) = emit(&ir, peak - 1)
-        .expect_err("the Brep staging bytes remain live during archive construction")
+    // The archive is built in the Brep staging buffer, so the peak is the
+    // archive alone.
+    let peak = cadmpeg_core::decode::u64_from_index(expected.len());
+    assert_eq!(emit(&ir, peak).expect("the archive fits exactly"), expected);
+    let CodecError::ResourceLimit(error) =
+        emit(&ir, peak - 1).expect_err("the complete archive exceeds one fewer byte")
     else {
         panic!("shared retained-byte ceiling")
     };
