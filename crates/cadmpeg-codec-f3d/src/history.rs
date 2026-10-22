@@ -3139,6 +3139,7 @@ fn project_input_topology(
         faces,
         edges,
         vertices,
+        edge_geometry: Vec::new(),
         native_ref: Some(native_ref),
     })
 }

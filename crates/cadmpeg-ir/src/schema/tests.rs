@@ -83,6 +83,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         faces: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         edges: crate::features::DistinctMembers::try_from(vec![historical_edge.clone()]).unwrap(),
         vertices: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edge_geometry: Vec::new(),
         native_ref: None,
     };
     let feature = Feature {
