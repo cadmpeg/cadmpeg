@@ -479,7 +479,7 @@ impl<'a> ProfileIndex<'a> {
         link: &PmDcKernelEntityLink,
         wire: &ProfileWire,
     ) -> Option<Vec<Piece<'a>>> {
-        let mut pieces = Vec::new();
+        let mut named = Vec::new();
         for edge in &wire.edges {
             let name = edge.name?;
             if name.naming_type != i64::from(link.entity_type) {
@@ -493,22 +493,32 @@ impl<'a> ProfileIndex<'a> {
             if entity.sketch != sketch.id || entity.construction {
                 return None;
             }
-            pieces.push(Piece::new(frame, entity, edge)?);
+            named.push((entity, edge));
         }
-        let (first, rest) = pieces.split_first()?;
+        let &(first, _) = named.first()?;
         // A full circle bounds a ring by itself; it can run through more
-        // than one edge.
-        if matches!(first.curve, LoopCurve::Circle { .. })
-            && rest
-                .iter()
-                .all(|piece| piece.entity.id() == first.entity.id())
-        {
-            let mut whole = pieces.swap_remove(0);
-            whole.whole = true;
-            whole.range = [0.0, TAU];
-            whole.ends = [polar_point(whole.curve, 0.0); 2];
-            return Some(vec![whole]);
+        // than one edge, and only the edge ends need to lie on it.
+        if let Some(curve @ LoopCurve::Circle { center, radius }) = LoopCurve::new(first, false) {
+            if named.iter().all(|(entity, _)| entity.id() == first.id()) {
+                for (_, edge) in &named {
+                    on_circle(frame.uv(edge.start)?, center, radius)?;
+                    on_circle(frame.uv(edge.end)?, center, radius)?;
+                }
+                let start = polar_point(curve, 0.0);
+                return Some(vec![Piece {
+                    entity: first,
+                    curve,
+                    range: [0.0, TAU],
+                    whole: true,
+                    ends: [start; 2],
+                    reversed: false,
+                }]);
+            }
         }
+        let mut pieces = named
+            .into_iter()
+            .map(|(entity, edge)| Piece::new(frame, entity, edge))
+            .collect::<Option<Vec<_>>>()?;
         orient(&mut pieces)?;
         Some(pieces)
     }
@@ -734,19 +744,14 @@ impl<'a> Piece<'a> {
         })
     }
 
-    /// The parameter of a point of this piece's curve.
-    fn parameter(&self, point: Point2) -> f64 {
+    /// The point of this piece's curve at a parameter.
+    fn point_at(&self, parameter: f64) -> Point2 {
         match self.curve {
-            LoopCurve::Line { start, end } => {
-                let length = distance(start, end);
-                (point.u - start.u)
-                    .mul_add(end.u - start.u, (point.v - start.v) * (end.v - start.v))
-                    / (length * length)
-            }
-            LoopCurve::Arc { center, .. } | LoopCurve::Circle { center, .. } => {
-                let angle = (point.v - center.v).atan2(point.u - center.u);
-                self.range[0] + (angle - self.range[0]).rem_euclid(TAU)
-            }
+            LoopCurve::Line { start, end } => Point2::new(
+                parameter.mul_add(end.u - start.u, start.u),
+                parameter.mul_add(end.v - start.v, start.v),
+            ),
+            LoopCurve::Arc { .. } | LoopCurve::Circle { .. } => polar_point(self.curve, parameter),
         }
     }
 }
@@ -773,9 +778,12 @@ fn orient(pieces: &mut [Piece<'_>]) -> Option<()> {
     near(pieces[count - 1].ends[1], pieces[0].ends[0]).then_some(())?;
     for piece in pieces.iter_mut() {
         let [low, high] = piece.range;
-        let start = piece.parameter(piece.ends[0]);
-        // A traversal start at the upper parameter runs the piece backwards.
-        piece.reversed = (start - high).abs() < (start - low).abs();
+        // A traversal start at the upper end runs the piece backwards. The
+        // ends are compared as points: an angle a hair below the lower end
+        // would read as nearly a full turn above it.
+        let start = piece.ends[0];
+        piece.reversed =
+            distance(start, piece.point_at(high)) < distance(start, piece.point_at(low));
     }
     Some(())
 }
