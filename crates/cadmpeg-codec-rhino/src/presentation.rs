@@ -4525,7 +4525,7 @@ pub(crate) fn install(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-) -> Result<NativeInstall, CodecError> {
+) -> Result<PresentationInstall, CodecError> {
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let physical_scale = binding.neutral_scale();
     let mut groups = Vec::new();
@@ -5175,6 +5175,28 @@ pub(crate) fn install(
     namespace.set_arena(ctx, "materials", &materials)?;
     namespace.set_arena(ctx, "lights", &lights)?;
     namespace.set_arena(ctx, "linetypes", &linetypes)?;
+    let mut resources = ResourceIndex::default();
+    for style in &dimension_styles {
+        resources.dimension_styles.register(
+            &style.id,
+            style.source_uuid.as_deref(),
+            style.archive_index,
+        );
+    }
+    for style in &text_styles {
+        resources.text_styles.register(
+            &style.id,
+            style.source_uuid.as_deref(),
+            style.archive_index,
+        );
+    }
+    for pattern in &hatch_patterns {
+        resources.hatch_patterns.register(
+            &pattern.id,
+            pattern.source_uuid.as_deref(),
+            pattern.archive_index,
+        );
+    }
     namespace.set_arena(ctx, "hatch_patterns", &hatch_patterns)?;
     namespace.set_arena(ctx, "dimension_styles", &dimension_styles)?;
     namespace.set_arena(ctx, "embedded_images", &images)?;
@@ -5183,10 +5205,93 @@ pub(crate) fn install(
     namespace.set_arena(ctx, "text_styles", &text_styles)?;
     namespace.set_arena(ctx, "layers", &layers)?;
     namespace.set_arena(ctx, "object_presentation", &object_presentation)?;
-    Ok(NativeInstall {
-        losses,
-        opaque_records,
+    Ok(PresentationInstall {
+        native: NativeInstall {
+            losses,
+            opaque_records,
+        },
+        resources,
     })
+}
+
+/// Decodes an annotation's override dimension style: an `ON_DimStyle` class
+/// payload whose field-override set selects the fields that replace the
+/// parent style's values.
+pub(crate) fn override_dimension_style(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    class_uuid: Uuid,
+    range: Range<usize>,
+    archive: ArchiveVersion,
+    scale: MillimeterScale,
+) -> Result<serde_json::Value, FramingError> {
+    if class_uuid != DIMSTYLE {
+        return Err(FramingError::structural(
+            range.start,
+            format!("override dimension style has class {class_uuid}"),
+        ));
+    }
+    let record = parse_dimension_style(ctx, data, range.clone(), archive, scale, range.start)?;
+    serde_json::to_value(&record).map_err(|error| {
+        FramingError::structural(range.start, format!("override style JSON: {error}"))
+    })
+}
+
+/// Presentation records and the table resources that object records name.
+pub(crate) struct PresentationInstall {
+    /// Losses and complete records that were not admitted.
+    pub(crate) native: NativeInstall,
+    /// Decoded table records by serialized UUID and archive index.
+    pub(crate) resources: ResourceIndex,
+}
+
+/// Decoded dimension styles and hatch patterns that objects reference.
+#[derive(Debug, Default)]
+pub(crate) struct ResourceIndex {
+    /// Decoded dimension-style records.
+    pub(crate) dimension_styles: ResourceTable,
+    /// Decoded text-style (font table) records.
+    pub(crate) text_styles: ResourceTable,
+    /// Decoded hatch-pattern records.
+    pub(crate) hatch_patterns: ResourceTable,
+}
+
+/// One decoded table, keyed by serialized UUID and archive index.
+///
+/// A key that more than one decoded record carries names no record.
+#[derive(Debug, Default)]
+pub(crate) struct ResourceTable {
+    by_uuid: HashMap<String, Option<String>>,
+    by_index: HashMap<i32, Option<String>>,
+}
+
+impl ResourceTable {
+    pub(crate) fn register(&mut self, id: &str, uuid: Option<&str>, index: Option<i32>) {
+        if let Some(uuid) = uuid {
+            self.by_uuid
+                .entry(uuid.to_owned())
+                .and_modify(|slot| *slot = None)
+                .or_insert_with(|| Some(id.to_owned()));
+        }
+        if let Some(index) = index {
+            self.by_index
+                .entry(index)
+                .and_modify(|slot| *slot = None)
+                .or_insert_with(|| Some(id.to_owned()));
+        }
+    }
+
+    /// The native record that a serialized UUID names.
+    pub(crate) fn by_uuid(&self, uuid: Uuid) -> Option<&str> {
+        self.by_uuid
+            .get(&format!("{uuid}"))
+            .and_then(Option::as_deref)
+    }
+
+    /// The native record that an archive table index names.
+    pub(crate) fn by_index(&self, index: i32) -> Option<&str> {
+        self.by_index.get(&index).and_then(Option::as_deref)
+    }
 }
 
 #[cfg(test)]

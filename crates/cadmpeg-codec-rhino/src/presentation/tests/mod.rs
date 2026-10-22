@@ -13,6 +13,7 @@ use crate::presentation::component;
 use crate::presentation::disambiguate_group_ids;
 use crate::presentation::first_user_string_records;
 use crate::presentation::legacy_rdk_material_instance_id;
+use crate::presentation::override_dimension_style;
 use crate::presentation::parse_dimension_style;
 use crate::presentation::parse_embedded_image;
 use crate::presentation::parse_font;
@@ -1030,6 +1031,32 @@ fn dimension_style_future_minor_preserves_known_prefix_and_suffix() {
         serde_json::json!(24)
     );
     assert_eq!(value.source_offset, 321);
+}
+
+#[test]
+fn override_dimension_style_decodes_only_an_on_dimstyle_payload() {
+    let bytes = current_dimension_style_chunk();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let value = override_dimension_style(
+        &ctx,
+        &bytes,
+        crate::presentation::DIMSTYLE,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect("override style");
+    assert_eq!(value["name"], "dimension style");
+    assert_eq!(value["archive_index"], 7);
+    assert!(override_dimension_style(
+        &ctx,
+        &bytes,
+        Uuid::nil(),
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .is_err());
 }
 
 #[test]

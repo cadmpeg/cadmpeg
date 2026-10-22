@@ -5,7 +5,13 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::products::{
+    ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind,
+    PrototypeReference,
+};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
@@ -13,7 +19,7 @@ use serde::Serialize;
 use crate::container::Scan;
 use crate::instances::{hex, DefinitionKind, LinkSource, UnitDetail};
 use crate::loss::RhinoLossCode;
-use crate::settings::UnitBinding;
+use crate::settings::{MillimeterScale, UnitBinding};
 use crate::wire::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -320,6 +326,253 @@ pub(crate) fn install(
     namespace.set_arena(ctx, "product_occurrences", &occurrences)?;
     namespace.set_arena(ctx, "external_references", &external)?;
     Ok(losses)
+}
+
+/// Nesting depth at which the occurrence tree stops descending.
+const MAX_OCCURRENCE_DEPTH: usize = 64;
+
+/// Neutral reusable definitions and their placed-occurrence tree.
+#[derive(Debug, Default)]
+pub(crate) struct NeutralProduct {
+    /// One reusable definition per decoded instance definition.
+    pub(crate) definitions: Vec<ProductDefinition>,
+    /// Placed occurrences in depth-first source order.
+    pub(crate) occurrences: Vec<Occurrence>,
+    /// Source order of the reference object behind each occurrence.
+    pub(crate) owners: Vec<usize>,
+    /// Placements left out of the tree, with their object source order.
+    pub(crate) omitted: Vec<(usize, String)>,
+}
+
+/// One parsed reference object.
+struct PlacedReference {
+    definition: Uuid,
+    transform: Transform,
+}
+
+fn neutral_definition_id(id: Uuid) -> Result<ProductDefinitionId, CodecError> {
+    ProductDefinitionId::mint(format!("rhino:instance:definition#{id}"))
+        .map_err(|error| CodecError::malformed(error.to_string()))
+}
+
+fn external_document(link: &LinkSource) -> ExternalDocument {
+    match link {
+        LinkSource::None => ExternalDocument::Missing {},
+        LinkSource::LegacyFull(path) => ExternalDocument::path(path.as_str()),
+        LinkSource::LegacyRelative { relative_path, .. } => {
+            ExternalDocument::path(relative_path.as_str())
+        }
+        LinkSource::Structured(value) => {
+            if value.full_path.is_empty() {
+                ExternalDocument::path(value.relative_path.as_str())
+            } else {
+                ExternalDocument::path(value.full_path.as_str())
+            }
+        }
+    }
+}
+
+struct TreeBuilder<'s> {
+    ctx: &'s cadmpeg_core::decode::DecodeContext<'s>,
+    definitions: HashMap<Uuid, &'s crate::instances::InstanceDefinition>,
+    references: HashMap<usize, PlacedReference>,
+    objects: HashMap<Uuid, Vec<usize>>,
+    product: NeutralProduct,
+}
+
+impl TreeBuilder<'_> {
+    fn prototype(&self, definition: Uuid) -> Result<PrototypeReference, CodecError> {
+        Ok(match self.definitions.get(&definition) {
+            None => PrototypeReference::Unresolved {},
+            Some(found) if matches!(found.kind, DefinitionKind::Linked) => {
+                PrototypeReference::External {
+                    document: external_document(&found.link),
+                    object: None,
+                }
+            }
+            Some(_) => PrototypeReference::Local {
+                definition: neutral_definition_id(definition)?,
+            },
+        })
+    }
+
+    fn place(
+        &mut self,
+        source_order: usize,
+        key: &str,
+        parent: OccurrenceParent,
+        ordinal: u32,
+        stack: &mut Vec<Uuid>,
+        native_ref: &str,
+    ) -> Result<(), CodecError> {
+        let Some(reference) = self.references.get(&source_order) else {
+            return Ok(());
+        };
+        let definition = reference.definition;
+        let transform = reference.transform;
+        self.ctx.charge_entities(1, "rhino_instance_occurrences")?;
+        let id = OccurrenceId::mint(format!("rhino:instance:occurrence#{key}"))
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
+        let occurrence = Occurrence {
+            id: id.clone(),
+            prototype: self.prototype(definition)?,
+            parent,
+            ordinal,
+            transform,
+            linked_prototype: None,
+            scale: [FiniteReal::ONE; 3],
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: Some(native_ref.to_owned()),
+        };
+        self.product.occurrences.push(occurrence);
+        self.product.owners.push(source_order);
+        let Some(found) = self.definitions.get(&definition).copied() else {
+            return Ok(());
+        };
+        if stack.contains(&definition) {
+            self.product.omitted.push((
+                source_order,
+                format!("definition cycle reaches {definition}"),
+            ));
+            return Ok(());
+        }
+        if stack.len() >= MAX_OCCURRENCE_DEPTH {
+            self.product.omitted.push((
+                source_order,
+                format!("occurrence nesting exceeds {MAX_OCCURRENCE_DEPTH} levels"),
+            ));
+            return Ok(());
+        }
+        stack.push(definition);
+        let mut ordinal = 0_u32;
+        let mut seen = HashSet::new();
+        for member in &found.members {
+            if !seen.insert(*member) {
+                continue;
+            }
+            let Some(&[member_order]) = self.objects.get(member).map(Vec::as_slice) else {
+                continue;
+            };
+            if !self.references.contains_key(&member_order) {
+                continue;
+            }
+            let child_key = format!("{key}/{member}");
+            let child_native = format!("rhino:object:record#{member_order:06}");
+            self.place(
+                member_order,
+                &child_key,
+                OccurrenceParent::Occurrence {
+                    occurrence: id.clone(),
+                },
+                ordinal,
+                stack,
+                &child_native,
+            )?;
+            ordinal = ordinal
+                .checked_add(1)
+                .ok_or_else(|| CodecError::malformed("Rhino occurrence ordinal exceeds u32"))?;
+        }
+        stack.pop();
+        Ok(())
+    }
+}
+
+/// Builds the neutral product graph: one definition per decoded instance
+/// definition and one occurrence per placed instance reference, independent
+/// of geometry expansion.
+pub(crate) fn neutral(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &Scan<'_>,
+    scale: MillimeterScale,
+) -> Result<NeutralProduct, CodecError> {
+    let mut builder = TreeBuilder {
+        ctx,
+        definitions: HashMap::new(),
+        references: HashMap::new(),
+        objects: HashMap::new(),
+        product: NeutralProduct::default(),
+    };
+    for definition in scan.definitions.definitions() {
+        builder.definitions.insert(definition.id(), definition);
+        builder.product.definitions.push(ProductDefinition {
+            id: neutral_definition_id(definition.id())?,
+            kind: ProductDefinitionKind::Group,
+            source_name: (!definition.name.is_empty()).then(|| definition.name.clone()),
+            label: None,
+            description: (!definition.description.is_empty())
+                .then(|| definition.description.clone()),
+            part_number: None,
+            bom_properties: std::collections::BTreeMap::new(),
+            bodies: Vec::new(),
+            native_ref: None,
+        });
+    }
+    let mut roots = Vec::new();
+    for (source_order, object) in scan.objects.iter().enumerate() {
+        if let Some(identity) = object.identity() {
+            builder
+                .objects
+                .entry(identity.object_id)
+                .or_default()
+                .push(source_order);
+        }
+        let Some(object) = object.framed() else {
+            continue;
+        };
+        if !crate::instances::is_reference_class(object.class_uuid) {
+            continue;
+        }
+        let Ok(reference) =
+            crate::instances::parse_reference(scan.data, object.class_data_range.clone())
+        else {
+            continue;
+        };
+        let Some(transform) = crate::instances::scale_translation(reference.transform(), scale)
+        else {
+            builder.product.omitted.push((
+                source_order,
+                "scaled instance transform is invalid".to_owned(),
+            ));
+            continue;
+        };
+        builder.references.insert(
+            source_order,
+            PlacedReference {
+                definition: reference.definition_id(),
+                transform,
+            },
+        );
+        if !scan.definitions.contains_member(object.identity.object_id) {
+            roots.push((source_order, object.identity.object_id));
+        }
+    }
+    let mut ordinal = 0_u32;
+    for (source_order, object_id) in roots {
+        let unique = builder
+            .objects
+            .get(&object_id)
+            .is_some_and(|orders| orders.len() == 1);
+        let key = if object_id.is_nil() || !unique {
+            format!("record-{source_order:06}")
+        } else {
+            format!("{object_id}")
+        };
+        let native = format!("rhino:object:record#{source_order:06}");
+        builder.place(
+            source_order,
+            &key,
+            OccurrenceParent::Root {},
+            ordinal,
+            &mut Vec::new(),
+            &native,
+        )?;
+        ordinal = ordinal
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("Rhino occurrence ordinal exceeds u32"))?;
+    }
+    Ok(builder.product)
 }
 
 #[cfg(test)]

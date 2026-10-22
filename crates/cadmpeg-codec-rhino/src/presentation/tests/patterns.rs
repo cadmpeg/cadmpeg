@@ -389,16 +389,17 @@ fn linetype_install_retains_model_distances_without_physical_units() {
         let linetypes = &ir.native.namespace("rhino").unwrap().arenas()["linetypes"];
         assert_eq!(linetypes.len(), usize::from(typed), "unit={unit:?}");
         assert_eq!(
-            installed.opaque_records.len(),
+            installed.native.opaque_records.len(),
             usize::from(!typed),
             "unit={unit:?}"
         );
         if !typed {
             assert!(installed
+                .native
                 .opaque_records
                 .iter()
                 .any(|source| { bytes[source.record.range.clone()] == record }));
-            assert!(installed.losses.iter().any(|loss| {
+            assert!(installed.native.losses.iter().any(|loss| {
                 loss.code == RhinoLossCode::PresentationRecordDropped.kind()
                     && loss.message.contains("no physical millimetre binding")
             }));
@@ -440,16 +441,17 @@ fn hatch_install_retains_document_distances_without_physical_units() {
         let typed = unit == Some(2);
         assert_eq!(hatch_patterns.len(), usize::from(typed), "unit={unit:?}");
         assert_eq!(
-            installed.opaque_records.len(),
+            installed.native.opaque_records.len(),
             usize::from(!typed),
             "unit={unit:?}"
         );
         if !typed {
             assert!(installed
+                .native
                 .opaque_records
                 .iter()
                 .any(|source| { bytes[source.record.range.clone()] == record }));
-            assert!(installed.losses.iter().any(|loss| {
+            assert!(installed.native.losses.iter().any(|loss| {
                 loss.code == RhinoLossCode::PresentationRecordDropped.kind()
                     && loss.message.contains("no physical millimetre binding")
             }));
@@ -507,13 +509,13 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
             hatch_patterns.len(),
             usize::from(typed),
             "document={document_unit:?} pattern={pattern_unit} always={always_model_distances} losses={:?}",
-            installed.losses
+            installed.native.losses
         );
         assert_eq!(
-            installed.opaque_records.len(),
+            installed.native.opaque_records.len(),
             usize::from(!typed),
             "document={document_unit:?} pattern={pattern_unit} always={always_model_distances} losses={:?}",
-            installed.losses
+            installed.native.losses
         );
         match expected_base {
             Some(expected) => {

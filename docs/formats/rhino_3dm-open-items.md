@@ -325,33 +325,6 @@ clipping-plane, detail-view, or SubD-proxy CRC can still produce its typed
 child. The generic userdata and parent record checks do not replace the nested
 checks because their CRC ranges exclude complete children.
 
-### QA-04. Instance-definition layout selection below archive 50
-
-**Question.** Which packed or anonymous instance-definition layout does an
-archive-2, archive-3, or archive-4 record use, and which owner selects it?
-
-**Known.** `rhino_3dm.md` §18 "Instance-definition records are in the
-instance-definition table." states that archive versions through 50 use packed
-major version 1, minor 6. `rhino_3dm.md` §19.6 "The instance-definition table
-record contains the class payload." states the same packed form for archive 50,
-and the anonymous V6 form for archives 60 and later. `instances.rs:982-988`
-selects the packed layout only when the archive is 50, or when the archive is
-60 and the first class-data byte is not zero. An archive-2, archive-3, or
-archive-4 record therefore goes to the anonymous reader at `instances.rs:705`.
-OpenNURBS selects the packed reader for every archive version through 50 at
-`opennurbs_instance.cpp:2304-2331`, and its writer selects the packed writer
-under the same rule at `opennurbs_instance.cpp:2294-2302`.
-
-**Need.** The owner must state the archive band that selects each layout, and
-the specification must state the same band. If archives 2 through 4 stay
-outside typed decoding, the specification must state that boundary in place of
-the packed rule.
-
-**Note.** With the current rule, each archive-2, archive-3, and archive-4
-instance definition fails its framing check at the anonymous reader, becomes an
-opaque record with the retained-definition diagnostic, and supplies no
-definition for the instance references that name it.
-
 ### QA-05. Archive OpenNURBS version gates that owners do not apply
 
 **Question.** Which record owners must read the archive OpenNURBS version
@@ -510,14 +483,14 @@ side-effect rule.
 ### QA-12. Shipped-guess paths lack discriminating witnesses
 
 **Question.** Which tests fail when the shipped selection and version-gate
-rules named by QA-04 through QA-07 and QA-11 choose the wrong branch?
+rules named by QA-05 through QA-07 and QA-11 choose the wrong branch?
 
 **Known.** The current tests exercise archive-2 framing, current instance
 definitions, individual valid and malformed gradient carriers, current earth
-anchors, and current material forms. No test contains an archive-2 through
-archive-4 packed instance definition, an archive-60 dimension style below the
-arrow-block writer threshold, a zero-valued old-writer earth anchor, an
-archive-60-or-later old-writer packed material, or a malformed-first
+anchors, current material forms, and packed instance definitions at every
+minor in archives 2 through 50. No test contains an archive-60 dimension style
+below the arrow-block writer threshold, a zero-valued old-writer earth anchor,
+an archive-60-or-later old-writer packed material, or a malformed-first
 duplicate gradient sequence. The source tree contains no test literal for
 thresholds `2348833437`, `2348834428`, or `2348833910`. Writer round-trip tests accept the writer-version value emitted by
 the same implementation and therefore do not independently establish QA-07.
@@ -591,26 +564,6 @@ the later record a distinct source identity. The answer preserves each
 serialized identity and represents the collision explicitly, or withholds the
 ambiguous archive-reference binding without manufacturing a replacement index.
 
-### QA-13. Instance-definition record CRC coverage
-
-**Question.** Which direct byte ranges does a
-`TCODE_INSTANCE_DEFINITION_RECORD` CRC cover?
-
-**Known.** The record is a CRC-bearing table record whose body contains a
-complete nested OpenNURBS class chunk. OpenNURBS writes that child between
-`BeginWrite3dmChunk(TCODE_INSTANCE_DEFINITION_RECORD, 0)` and
-`EndWrite3dmChunk()` at `opennurbs_archive.cpp:11778-11791`. Section 4.1
-excludes complete nested chunks from a container CRC. The general table-record
-branch in `container.rs:200-211` supplies an empty direct range for the other
-class-owning table records, but it omits `TCODE_INSTANCE_DEFINITION_RECORD`.
-The fallback at `container.rs:271` therefore hashes the complete nested class
-chunk. A stored zero CRC is reported as an integrity failure even though the
-record has no direct body bytes.
-
-**Need.** Add the instance-definition record to the class-owning table-record
-CRC rule and add a witness whose nested class chunk is nonempty and whose
-record CRC is the CRC of its empty direct range.
-
 ### QA-14. Failed candidate admission leaves native-record links behind
 
 **Question.** What state can a failed Rhino candidate admission change?
@@ -672,10 +625,7 @@ geometry or annotation transfer?
 **Known.** `decode.rs:789-843` dispatches classes through the current family
 predicates, while `decode.rs:2404-2415` groups every object that remains in the
 retained state under `object.family-not-transferred`. Current built-in records
-that reach that state include
-`ON_Text`, `ON_TextDot`, obsolete V2 text dots and annotation arrows, obsolete
-V5 text and leaders, instance references, the legacy `TL_Brep` alias, and
-ordinary `ON_Point`, `ON_LineCurve`, and `ON_ArcCurve` records. The V1 path
+that reach that state include the legacy `TL_Brep` alias and ordinary `ON_Point`, `ON_LineCurve`, and `ON_ArcCurve` records. The V1 path
 also retains flat geometry typecodes `0x80400025`, `0x02000014`, `0x02000013`,
 `0x00400020`, `0x00200001`, `0x0200000f`, `0x00400010`, and `0x00800001`
 without neutral geometry. Some nonempty documents consequently produce no
@@ -687,21 +637,21 @@ add the missing typed reader or repair the failing reader. Ordinary point,
 line, arc, and Brep aliases must reach their owning geometry decoder and leave
 the retained state for every valid versioned payload.
 
-### AN-01. Annotation transfer loses text and style binding
+### AN-01. Annotation RTF text has no plain-text fragment
 
-**Question.** Which typed annotation state survives for text objects, text
-dots, leaders, arrows, and dimensions?
+**Question.** Which plain visible text does an `ON_Text` or `ON_Leader` RTF
+rich-text string carry?
 
-**Known.** The text, text-dot, leader, and arrow classes listed in OF-01 remain
-opaque. Separately, `dimensions.rs:1618-1628` admits a dimension while emitting
-`dimension.style-unresolved` when its style UUID does not resolve to a decoded
-dimension-style record. The neutral annotation then lacks the source style
-binding.
+**Known.** `ON_TextContent::Read` stores one rich-text string. A string that
+does not begin with `{\rtf` is plain text. An RTF string is parsed by
+`ON_RtfParser` (`opennurbs_textiterator.cpp`) into text runs; the plain text is
+the concatenation of those runs. The decoder keeps the complete string as the
+annotation format and emits `annotation.rich-text-unflattened` with no plain
+text fragment.
 
-**Need.** Add typed transfers for the built-in annotation families and close
-dimension-style references against every versioned dimension-style table
-grammar. If a style cannot resolve, retain the serialized reference explicitly
-and do not present the annotation as fully styled neutral PMI.
+**Need.** The `ON_RtfParser` group, destination, control-word, `\uN`, and
+`\'hh` rules that produce the run text, so that the plain text comes from the
+same parse.
 
 ### MS-01. Mesh face topology is reduced during decode
 
@@ -721,69 +671,38 @@ the selected quad diagonal, or add a neutral mesh-face carrier that keeps the
 original face topology. The loss report alone cannot reconstruct which
 triangles belonged to one source face.
 
-### PR-01. Presentation and viewport records have no typed owner
+### CT-01. Hatch fill and detail views have no neutral carrier
 
-**Question.** Which V1 presentation records and viewport userdata fields can
-enter typed CADIR presentation?
+**Question.** Which neutral carrier holds hatch fill appearance and a detail
+view's model-to-page view?
 
-**Known.** `legacy.rs:2413-2425` retains V1 presentation typecodes
-`0x02000005` and `0x02000006` as opaque records. `views.rs:1008-1055` frames
-viewport userdata and reports `viewport.userdata-dropped` when its content has
-no typed CADIR owner. Current documents therefore lose view- and
-presentation-specific behavior even when the records are bounded and readable.
+**Known.** The hatch feature holds typed pattern record, scale, rotation,
+basepoint, gradient, and loop roles, and the detail feature holds the typed
+`ON_3dmView` and page-per-model ratio, both as native feature state. The
+neutral model has no filled-region or page-viewport entity, so
+`hatch.fill-not-transferred` and `detail.view-not-transferred` remain.
 
-**Need.** Identify the fields owned by these records and map each field to a
-typed presentation or view carrier. Keep only genuinely application-owned
-suffixes opaque, with a field-specific loss rather than dropping the complete
-readable record semantically.
+**Need.** A neutral filled-region carrier with pattern and gradient fields, and
+a neutral page viewport with projection, clipping, display, and scale.
 
-### SD-01. SubD cache, texture, symmetry, and packing metadata is untyped
+### IN-01. Instance references without a neutral occurrence
 
-**Question.** Which serialized SubD metadata must remain associated with a
-typed neutral SubD surface?
+**Question.** What neutral occurrence survives for an `ON_InstanceRef` whose
+transform is not affine, or that is a member of a definition no occurrence
+places?
 
-**Known.** `decode.rs:2256-2276` commits the SubD surface but reduces cache,
-texture, symmetry, or packing state to an `object.decode-diagnostic` warning.
-The neutral SubD has no typed representation of those fields and the generic
-diagnostic does not identify which individual metadata channels were omitted.
+**Known.** `ON_InstanceRef` stores a 4×4 `ON_Xform`. The neutral occurrence
+placement is an affine 3×4 transform. A reference with a nonzero projective
+row has no neutral placement, so it produces no occurrence and no expanded
+geometry; the native product-occurrence record keeps the definition UUID. A
+reference inside a definition becomes a child occurrence of each placed
+occurrence of that definition. The neutral product model has no
+definition-to-definition usage without a placed parent, so a reference inside
+an unplaced definition has no occurrence and remains a retained object.
 
-**Need.** Map each source-defined SubD metadata channel to a typed neutral or
-native field and emit a field-specific loss for any channel that still has no
-owner. Cache data that is only derived acceleration state must be distinguished
-from symmetry and packing data that changes editing or parameterization.
-
-### CT-01. Hatch fill and detail-view construction state is passthrough only
-
-**Question.** Which hatch and detail-view semantics are represented by the
-neutral model?
-
-**Known.** `decode.rs:1260-1304` transfers hatch boundary curves but records
-the fill as native passthrough. `decode.rs:1424-1473` transfers a detail
-boundary and a native feature but records the detail view itself as not
-transferred. The resulting neutral geometry cannot reproduce hatch fill
-appearance or the detail's model-to-page view behavior.
-
-**Need.** Add typed hatch pattern, scale, rotation, base point, gradient, and
-loop-role state, and add a typed detail viewport with projection, clipping,
-display, and page/model ratio. The boundary curves alone are not equivalent to
-either source object.
-
-### IN-01. Instance references are retained when expansion is incomplete
-
-**Question.** What neutral occurrence survives when an instance transform,
-definition, or definition member cannot be expanded?
-
-**Known.** Instance diagnostics include non-affine transforms, missing
-definitions, undecoded definition members, and transformed procedural
-definitions that are omitted while a solved carrier is retained.
-`decode.rs:1966-2200` then leaves the instance-reference class in
-`object.family-not-transferred`. The document can lose occurrence structure
-even when the definition and exact untransformed carriers remain available.
-
-**Need.** Preserve a typed occurrence and its serialized transform and
-definition reference independently of geometry expansion. Expansion failures
-must affect only derived placed geometry, not erase the source assembly
-relationship.
+**Need.** A neutral placement that carries a projective row, and a neutral
+definition-level usage of one definition by another, or a typed record that
+keeps both relationships with the unrepresentable part marked.
 
 ### PF-01. Rhino decode repeatedly validates the full accumulated model
 

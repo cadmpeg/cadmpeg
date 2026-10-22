@@ -29,7 +29,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroUsize;
 
 fn instance_members_are_unique(members: &[crate::wire::Uuid]) -> bool {
@@ -402,6 +402,24 @@ pub(crate) struct DecodeContext<'a> {
     definition_candidates: HashMap<crate::wire::Uuid, usize>,
     expansion_budget: ExpansionBudget,
     expansion_undo: Option<ExpansionUndo>,
+    /// Table records that object records name by UUID or archive index.
+    resources: crate::presentation::ResourceIndex,
+    /// Presentation-table losses, opaque records, and native arenas, reported
+    /// and installed at commit.
+    presentation: Option<(crate::container::NativeInstall, CadIr)>,
+    /// Native annotation arenas, installed at commit.
+    annotation_arenas: Option<crate::annotations::NativeArenas>,
+    /// `SubD` channels outside the cage, one per committed `SubD` surface.
+    subd_metadata: Vec<SubdMetadataRecord>,
+}
+
+/// The native record of one committed `SubD` surface's non-cage channels.
+#[derive(Debug, serde::Serialize)]
+struct SubdMetadataRecord {
+    id: String,
+    subd: String,
+    #[serde(flatten)]
+    metadata: crate::subd::SubdMetadata,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -446,9 +464,30 @@ impl<'a> DecodeContext<'a> {
             definition_candidates,
             expansion_budget: ExpansionBudget::new(),
             expansion_undo: None,
+            resources: crate::presentation::ResourceIndex::default(),
+            presentation: None,
+            annotation_arenas: None,
+            subd_metadata: Vec::new(),
         };
         context.retain_object_records()?;
         context.retain_opaque_records()?;
+        let mut staged = CadIr::empty();
+        let presentation = crate::presentation::install(session, scan, &mut staged)?;
+        // Candidate admission resolves style references against these tables only.
+        if let Some(namespace) = staged.native.namespace("rhino") {
+            let document = context.session.document_mut()?;
+            for name in ["dimension_styles", "text_styles"] {
+                if let Some(records) = namespace.arenas().get(name) {
+                    document
+                        .native
+                        .namespace_mut("rhino")
+                        .arenas_mut()
+                        .insert(name.to_owned(), records.clone());
+                }
+            }
+        }
+        context.resources = presentation.resources;
+        context.presentation = Some((presentation.native, staged));
         Ok(context)
     }
 
@@ -1021,12 +1060,13 @@ impl<'a> DecodeContext<'a> {
                         continue;
                     };
                     let object = self.session.unknowns()[source_order].id().as_str();
-                    let (annotation, unresolved) = match crate::dimensions::project(
+                    let (mut annotation, unresolved) = match crate::dimensions::project(
                         &dimension,
                         key.as_str(),
                         (!identity.name.is_empty()).then_some(identity.name.as_str()),
                         object,
                         order,
+                        &self.resources,
                     ) {
                         Ok(value) => value,
                         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
@@ -1037,13 +1077,36 @@ impl<'a> DecodeContext<'a> {
                             continue;
                         }
                     };
-                    if dimension.override_present {
-                        self.report.typed_losses.push(
-                            RhinoLossCode::DimensionOverrideDropped.note(format_args!(
-                                "dimension object at offset {} has an unapplied style override",
-                                dimension.source_range.start
-                            )),
-                        );
+                    if let Some((class, range)) = dimension.override_style.clone() {
+                        match crate::presentation::override_dimension_style(
+                            self.expand.ctx(),
+                            self.scan.data,
+                            class,
+                            range,
+                            self.archive(),
+                            scale,
+                        ) {
+                            Ok(style) => {
+                                let name =
+                                    cadmpeg_core::text::NonBlankString::new("dimstyle_override")
+                                        .ok_or_else(|| {
+                                            cadmpeg_core::CodecError::malformed(
+                                                "override parameter name is blank",
+                                            )
+                                        })?;
+                                annotation.parameters.insert(name, style.to_string());
+                            }
+                            Err(crate::chunks::FramingError::Resource(limit)) => {
+                                return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+                            }
+                            Err(error) => self.report.typed_losses.push(
+                                RhinoLossCode::DimensionOverrideDropped.note(format_args!(
+                                    "dimension object at offset {} style override could not be \
+                                     decoded: {error}",
+                                    dimension.source_range.start
+                                )),
+                            ),
+                        }
                     }
                     let links = [annotation.id.as_str().to_owned()];
                     let result = self.validate_candidate(|candidate, _annotations| {
@@ -1074,6 +1137,188 @@ impl<'a> DecodeContext<'a> {
                     self.scan_warning(source_order, format_args!("dimension retained: {error}"));
                     self.mark_failed(source_order);
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// Admit the neutral definition and occurrence graph independently of
+    /// instance geometry expansion.
+    fn decode_occurrences(&mut self) -> Result<(), cadmpeg_core::CodecError> {
+        let Some(scale) = self.neutral_scale() else {
+            return Ok(());
+        };
+        let product = crate::product::neutral(self.expand.ctx(), self.scan, scale)?;
+        if product.definitions.is_empty() && product.occurrences.is_empty() {
+            return Ok(());
+        }
+        for (source_order, reason) in &product.omitted {
+            self.scan_warning(
+                *source_order,
+                format_args!("instance occurrence omitted: {reason}"),
+            );
+        }
+        let links = product
+            .owners
+            .iter()
+            .zip(&product.occurrences)
+            .map(|(source_order, occurrence)| (*source_order, occurrence.id.as_str().to_owned()))
+            .collect::<Vec<_>>();
+        let definitions = product.definitions;
+        let occurrences = product.occurrences;
+        match self.validate_candidate(|candidate, _annotations| {
+            candidate.model.product_definitions.extend(definitions);
+            candidate.model.occurrences.extend(occurrences);
+        }) {
+            Ok(()) => {
+                for (source_order, link) in links {
+                    self.append_link(source_order, &link)?;
+                    self.mark_decoded(source_order);
+                }
+            }
+            Err(CandidateError::Codec(error)) => return Err(error),
+            Err(error) => self.scan_warnings_for_class(
+                "instance",
+                format_args!(
+                    "instance occurrence graph rejected atomically by IR validation: {error}"
+                ),
+            ),
+        }
+        Ok(())
+    }
+
+    /// Decode text, leader, text-dot, and arrow annotations and admit their
+    /// semantic content independently of shape carriers.
+    fn decode_annotations(&mut self) -> Result<(), cadmpeg_core::CodecError> {
+        use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationId};
+
+        struct Pending {
+            source_order: usize,
+            annotation: SemanticAnnotation,
+            style_unresolved: bool,
+            rich_text_unflattened: bool,
+        }
+
+        let collected = crate::annotations::collect(self.expand.ctx(), self.scan)?;
+        self.report.typed_losses.extend(collected.losses);
+        let mut pending = Vec::new();
+        for projection in collected.projections {
+            let source_order = projection.source_order;
+            let Some(object) = self.scan.objects[source_order].framed() else {
+                continue;
+            };
+            if self.is_definition_member(object) {
+                self.scan_warning(source_order, format_args!("definition-member annotation retained because annotation instance expansion is unsupported"));
+                continue;
+            }
+            let style = crate::annotations::style_binding(&self.resources, projection.style)?;
+            let key = cadmpeg_ir::ids::IdentityKey::try_new(projection.key)
+                .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+            let id = SemanticAnnotationId::try_from(format!(
+                "rhino:annotation:annotation#{}",
+                key.as_str()
+            ))
+            .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+            let object = self.session.unknowns()[source_order]
+                .id()
+                .as_str()
+                .to_owned();
+            pending.push(Pending {
+                source_order,
+                annotation: SemanticAnnotation {
+                    id,
+                    object: object.clone(),
+                    kind: projection.kind,
+                    runtime_type: projection.runtime_type.to_owned(),
+                    order: 0,
+                    text: projection.text,
+                    references: style.reference.into_iter().collect(),
+                    value: None,
+                    format: projection.format,
+                    position: projection.position,
+                    parameters: projection.parameters,
+                    assets: Vec::new(),
+                    native_ref: object,
+                },
+                style_unresolved: style.unresolved,
+                rich_text_unflattened: projection.rich_text_unflattened,
+            });
+        }
+        self.annotation_arenas = Some(collected.arenas);
+        // `SemanticAnnotation::order` is the dense arena index, a `u32`.
+        let first = self.session.document().model.semantic_annotations.len();
+        let mut batch = Vec::new();
+        for (index, item) in pending.iter().enumerate() {
+            let Some(order) = first
+                .checked_add(index)
+                .and_then(|order| u32::try_from(order).ok())
+            else {
+                break;
+            };
+            let mut annotation = item.annotation.clone();
+            annotation.order = order;
+            batch.push(annotation);
+        }
+        let admitted = if batch.len() == pending.len() && !batch.is_empty() {
+            match self.validate_candidate(|candidate, _annotations| {
+                candidate.model.semantic_annotations.extend(batch);
+            }) {
+                Ok(()) => true,
+                Err(CandidateError::Codec(error)) => return Err(error),
+                Err(_) => false,
+            }
+        } else {
+            false
+        };
+        for mut item in pending {
+            let source_order = item.source_order;
+            if !admitted {
+                let Ok(order) =
+                    u32::try_from(self.session.document().model.semantic_annotations.len())
+                else {
+                    self.scan_warning(
+                        source_order,
+                        format_args!(
+                            "annotation retained because the annotation arena exceeds u32 ordinals"
+                        ),
+                    );
+                    continue;
+                };
+                item.annotation.order = order;
+                let annotation = item.annotation.clone();
+                match self.validate_candidate(|candidate, _annotations| {
+                    candidate.model.semantic_annotations.push(annotation);
+                }) {
+                    Ok(()) => {}
+                    Err(CandidateError::Codec(error)) => return Err(error),
+                    Err(error) => {
+                        self.scan_warning(
+                            source_order,
+                            format_args!("annotation candidate rejected: {error}"),
+                        );
+                        continue;
+                    }
+                }
+            }
+            self.append_links(source_order, &[item.annotation.id.as_str().to_owned()])?;
+            self.mark_decoded(source_order);
+            if item.style_unresolved {
+                self.report
+                    .typed_losses
+                    .push(RhinoLossCode::DimensionStyleUnresolved.note(format_args!(
+                        "annotation record {source_order} style reference is not resolved to a \
+                         decoded record"
+                    )));
+            }
+            if item.rich_text_unflattened {
+                self.report
+                    .typed_losses
+                    .push(
+                        RhinoLossCode::AnnotationRichTextUnflattened.note(format_args!(
+                        "annotation record {source_order} carries RTF text without a plain-text \
+                         fragment"
+                    )),
+                    );
             }
         }
         Ok(())
@@ -1204,6 +1449,17 @@ impl<'a> DecodeContext<'a> {
             format_args!("basepoint"),
             format_args!("{},{}", hatch.basepoint[0].get(), hatch.basepoint[1].get()),
         )?;
+        let pattern_unresolved = match self.resources.hatch_patterns.by_index(hatch.pattern_index) {
+            Some(record) => {
+                insert_feature_property(
+                    &mut parameters,
+                    format_args!("pattern_record"),
+                    format_args!("{record}"),
+                )?;
+                false
+            }
+            None => hatch.pattern_index >= 0,
+        };
         if let Some(gradient) = hatch.gradient.as_ref() {
             let gradient = crate::hatch::gradient_json(gradient)?;
             insert_feature_property_owned(&mut parameters, format_args!("gradient"), gradient)?;
@@ -1269,6 +1525,14 @@ impl<'a> DecodeContext<'a> {
             Ok(()) => {
                 for warning in hatch.warnings {
                     self.scan_diagnostic(source_order, &warning);
+                }
+                if pattern_unresolved {
+                    self.report
+                        .typed_losses
+                        .push(RhinoLossCode::HatchPatternUnresolved.note(format_args!(
+                            "hatch record {source_order} pattern index does not name a decoded \
+                             hatch-pattern record"
+                        )));
                 }
                 let links = hatch_source_links(loop_ids, &feature_id);
                 self.append_links(source_order, &links)?;
@@ -1430,7 +1694,38 @@ impl<'a> DecodeContext<'a> {
             ))
         }?;
         let view = &self.scan.data[detail.view_range.clone()];
+        let mut view_losses = Vec::new();
+        let typed_view = match self.neutral_scale() {
+            Some(scale) => match crate::views::parse_view_body(
+                self.expand.ctx(),
+                self.scan.data,
+                detail.view_range.clone(),
+                self.archive(),
+                scale,
+                &mut view_losses,
+            ) {
+                Ok((value, _children)) => Some(crate::wire::json(&value)?),
+                Err(crate::chunks::FramingError::Resource(limit)) => {
+                    return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+                }
+                Err(error) => {
+                    self.scan_warning(
+                        source_order,
+                        format_args!("detail view state retained: {error}"),
+                    );
+                    None
+                }
+            },
+            None => None,
+        };
         let mut source_properties = BTreeMap::new();
+        if let Some(typed_view) = typed_view {
+            insert_feature_property_owned(
+                &mut source_properties,
+                format_args!("view"),
+                typed_view,
+            )?;
+        }
         insert_feature_property(
             &mut source_properties,
             format_args!("view_bytes"),
@@ -1496,6 +1791,7 @@ impl<'a> DecodeContext<'a> {
         match result {
             Ok(()) => {
                 self.append_links(source_order, &[curve_id, feature_id.to_string()])?;
+                self.report.typed_losses.append(&mut view_losses);
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::DetailViewNotTransferred);
             }
@@ -2060,6 +2356,34 @@ impl<'a> DecodeContext<'a> {
         Ok(false)
     }
 
+    /// Removes links to entities an expansion appended and then omitted.
+    fn unlink_omitted(
+        &mut self,
+        omitted: &HashSet<String>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if omitted.is_empty() {
+            return Ok(());
+        }
+        let mut records = Vec::new();
+        if let Some(undo) = &mut self.expansion_undo {
+            undo.links.retain(|(record, link)| {
+                let keep = !omitted.contains(link);
+                if !keep {
+                    records.push(*record);
+                }
+                keep
+            });
+        }
+        records.sort_unstable();
+        records.dedup();
+        for record in records {
+            if let Some((_, links)) = self.session.unknown_links_mut(record)? {
+                links.retain(|link| !omitted.contains(link));
+            }
+        }
+        Ok(())
+    }
+
     /// Removes the links and outcomes a rejected expansion added. Links were
     /// only inserted, each once, into sorted lists, so removing them restores
     /// every touched record exactly.
@@ -2382,6 +2706,7 @@ impl<'a> DecodeContext<'a> {
             let id = subd.id.as_str().to_string();
             derived_ids.push(id);
         }
+        let mut omitted = HashSet::new();
         let procedural_curve_start = before.arena_len::<ProceduralCurve>();
         let procedural_surface_start = before.arena_len::<ProceduralSurface>();
         if model.procedural_curves.len() > procedural_curve_start
@@ -2390,9 +2715,11 @@ impl<'a> DecodeContext<'a> {
             let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
             for procedure in &model.procedural_curves[procedural_curve_start..] {
                 annotations.remove_entity(procedure.id.as_str());
+                omitted.insert(procedure.id.as_str().to_owned());
             }
             for procedure in &model.procedural_surfaces[procedural_surface_start..] {
                 annotations.remove_entity(procedure.id.as_str());
+                omitted.insert(procedure.id.as_str().to_owned());
             }
             self.annotations = annotations.build();
             model.procedural_curves.truncate(procedural_curve_start);
@@ -2402,6 +2729,8 @@ impl<'a> DecodeContext<'a> {
         for id in derived_ids {
             annotate_derived(&mut self.annotations, &id);
         }
+        links.retain(|link| !omitted.contains(link));
+        self.unlink_omitted(&omitted)?;
         Ok(links)
     }
 
@@ -2475,7 +2804,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<bool, cadmpeg_core::CodecError> {
         let crate::subd::DecodedSubd {
             mut surface,
-            neutral_metadata,
+            metadata,
             enum_diagnostics,
             warnings,
         } = decoded;
@@ -2486,9 +2815,6 @@ impl<'a> DecodeContext<'a> {
             self.report
                 .typed_losses
                 .push(RhinoLossCode::EnumerationValueDegraded.note(format_args!("{diagnostic}")));
-        }
-        if neutral_metadata {
-            self.scan_warning(source_order, format_args!("SubD cache, texture, symmetry, or packing metadata is retained without a neutral-IR mapping"));
         }
         let Some(object) = self.scan.objects.get(source_order) else {
             return Ok(false);
@@ -2523,8 +2849,74 @@ impl<'a> DecodeContext<'a> {
             }
         };
         self.append_link(source_order, &link)?;
+        self.report_subd_metadata(&link, &metadata);
+        self.subd_metadata.push(SubdMetadataRecord {
+            id: format!(
+                "rhino:object:subd_metadata#{}",
+                link.rsplit('#').next().unwrap_or(&link)
+            ),
+            subd: link,
+            metadata,
+        });
         self.geometry_transferred = true;
         Ok(true)
+    }
+
+    /// Reports each `SubD` channel that has no neutral carrier. Levels above
+    /// level zero are derived from it and carry no source state.
+    fn report_subd_metadata(&mut self, subd: &str, metadata: &crate::subd::SubdMetadata) {
+        let channels = &metadata.components;
+        let mut push = |code: RhinoLossCode, detail: std::fmt::Arguments<'_>| {
+            self.report
+                .typed_losses
+                .push(code.note(format_args!("SubD {subd}: {detail}")));
+        };
+        if metadata
+            .obsolete_texture_domain_type
+            .is_some_and(|value| value != 0)
+            || metadata.texture_mapping_id.is_some()
+            || metadata.face_packing_id.is_some()
+            || channels.texture_points > 0
+            || channels.packing_rectangles > 0
+            || channels.pack_ids > 0
+        {
+            push(
+                RhinoLossCode::SubdTextureOmitted,
+                format_args!(
+                    "texture mapping {:?}, face packing {:?}, {} face(s) with texture points, \
+                     {} with packing rectangles, {} with pack IDs",
+                    metadata.texture_mapping_id,
+                    metadata.face_packing_id,
+                    channels.texture_points,
+                    channels.packing_rectangles,
+                    channels.pack_ids
+                ),
+            );
+        }
+        if metadata.symmetry.is_some() || channels.symmetry_links > 0 {
+            push(
+                RhinoLossCode::SubdSymmetryOmitted,
+                format_args!(
+                    "symmetry {:?} with {} symmetry link(s)",
+                    metadata.symmetry, channels.symmetry_links
+                ),
+            );
+        }
+        if channels.material_channels > 0 || channels.colors > 0 {
+            push(
+                RhinoLossCode::SubdFaceAttributeOmitted,
+                format_args!(
+                    "{} face material channel(s), {} face color(s)",
+                    channels.material_channels, channels.colors
+                ),
+            );
+        }
+        if channels.group_ids > 0 {
+            push(
+                RhinoLossCode::SubdComponentGroupOmitted,
+                format_args!("{} component group ID(s)", channels.group_ids),
+            );
+        }
     }
 
     fn decode_extrusion(
@@ -2593,22 +2985,47 @@ impl<'a> DecodeContext<'a> {
         for loss in &self.scan.metadata.losses {
             self.report.phase_losses.push(loss.clone());
         }
-        self.report.typed_losses.extend(crate::annotations::install(
-            ctx,
-            self.scan,
-            self.session.document_mut()?,
-        )?);
+        self.annotation_arenas
+            .take()
+            .unwrap_or_default()
+            .install(ctx, self.session.document_mut()?)?;
+        let committed = self
+            .session
+            .document()
+            .model
+            .subds
+            .iter()
+            .map(|subd| subd.id.as_str().to_owned())
+            .collect::<HashSet<_>>();
+        let subd_metadata = std::mem::take(&mut self.subd_metadata)
+            .into_iter()
+            .filter(|record| committed.contains(&record.subd))
+            .collect::<Vec<_>>();
+        if !subd_metadata.is_empty() {
+            self.session
+                .document_mut()?
+                .native
+                .namespace_mut("rhino")
+                .set_arena(ctx, "subd_metadata", &subd_metadata)?;
+        }
         let document_data =
             crate::document_data::install(ctx, self.scan, self.session.document_mut()?)?;
         self.report.typed_losses.extend(document_data.losses);
         for source in document_data.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        let presentation =
-            crate::presentation::install(ctx, self.scan, self.session.document_mut()?)?;
-        self.report.typed_losses.extend(presentation.losses);
-        for source in presentation.opaque_records {
-            self.retain_opaque_record(&source)?;
+        if let Some((presentation, mut staged)) = self.presentation.take() {
+            let arenas = std::mem::take(staged.native.namespace_mut("rhino").arenas_mut());
+            self.session
+                .document_mut()?
+                .native
+                .namespace_mut("rhino")
+                .arenas_mut()
+                .extend(arenas);
+            self.report.typed_losses.extend(presentation.losses);
+            for source in presentation.opaque_records {
+                self.retain_opaque_record(&source)?;
+            }
         }
         self.report.typed_losses.extend(crate::product::install(
             ctx,
@@ -6363,7 +6780,9 @@ pub(crate) fn decode(
 ) -> Result<Decoded, cadmpeg_core::CodecError> {
     let mut context = DecodeContext::new(scan, expand)?;
     context.decode_geometry()?;
+    context.decode_occurrences()?;
     context.decode_dimensions()?;
+    context.decode_annotations()?;
     context.retain_unbound_history_geometry()?;
     let geometry_context = context.neutral_scale().map(|scale| {
         (

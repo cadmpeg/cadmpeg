@@ -3,12 +3,19 @@
 
 use cadmpeg_ir::native::bytes::NativeBytes;
 
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
+use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
+use std::collections::BTreeMap;
+
+use cadmpeg_ir::references::{ReferenceSelection, ReferenceTarget};
+
+use crate::presentation::ResourceIndex;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Scan;
@@ -91,6 +98,8 @@ struct AnnotationRecord {
     plane_z_axis: cadmpeg_ir::units::FiniteVector<3>,
     plane_equation: crate::settings::CoordinateLane<4>,
     dimstyle_uuid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dimstyle_override: Option<serde_json::Value>,
     annotation_type: i32,
     text_rectangle_width: FiniteReal,
     text_rotation_radians: FiniteReal,
@@ -629,17 +638,221 @@ fn annotation_record_dropped(
     );
 }
 
-/// Projects every supported general annotation into stable native records.
-pub(crate) fn install(
+/// The serialized class name of a supported annotation class.
+fn runtime_type(class: Uuid) -> &'static str {
+    match class {
+        TEXT => "ON_Text",
+        LEADER => "ON_Leader",
+        LEGACY_TEXT => "ON_OBSOLETE_V5_TextObject",
+        LEGACY_LEADER => "ON_OBSOLETE_V5_Leader",
+        crate::dimensions::V2_TEXT_OBJECT => "ON_OBSOLETE_V2_TextObject",
+        crate::dimensions::V2_LEADER => "ON_OBSOLETE_V2_Leader",
+        TEXT_DOT => "ON_TextDot",
+        V2_TEXT_DOT => "ON_OBSOLETE_V2_TextDot",
+        V2_ANNOTATION_ARROW => "ON_OBSOLETE_V2_AnnotationArrow",
+        _ => "ON_OBSOLETE_V2_Annotation",
+    }
+}
+
+/// The style table record an annotation names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StyleReference {
+    /// The grammar carries no style reference.
+    Absent,
+    /// A V6 and later dimension-style UUID; nil names no style.
+    Uuid(Uuid),
+    /// A legacy dimension-style archive index; a negative index names no style.
+    Index(i32),
+    /// A legacy text object's text-style (font table) archive index; a
+    /// negative index names no style.
+    TextStyleIndex(i32),
+}
+
+/// The neutral semantic content of one decoded annotation object.
+#[derive(Debug)]
+pub(crate) struct Projection {
+    /// Object-record source order.
+    pub(crate) source_order: usize,
+    /// Stable record key shared with the native record.
+    pub(crate) key: String,
+    /// Format-neutral semantic role.
+    pub(crate) kind: SemanticAnnotationKind,
+    /// Serialized openNURBS class name.
+    pub(crate) runtime_type: &'static str,
+    /// Plain visible text fragments.
+    pub(crate) text: Vec<String>,
+    /// Serialized rich-text string, when the grammar stores one.
+    pub(crate) format: Option<String>,
+    /// Whether `format` is RTF content without a plain-text fragment.
+    pub(crate) rich_text_unflattened: bool,
+    /// Model-space annotation point in millimetres.
+    pub(crate) position: Option<cadmpeg_ir::units::FiniteVector<3>>,
+    /// Every typed native field by name.
+    pub(crate) parameters: BTreeMap<NonBlankString, String>,
+    /// Serialized dimension-style reference.
+    pub(crate) style: StyleReference,
+}
+
+/// Native annotation arenas, installed after neutral admission.
+#[derive(Debug, Default)]
+pub(crate) struct NativeArenas {
+    annotations: Vec<AnnotationRecord>,
+    dots: Vec<TextDotRecord>,
+    arrows: Vec<AnnotationArrowRecord>,
+}
+
+impl NativeArenas {
+    /// Writes the native annotation arenas.
+    pub(crate) fn install(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ir: &mut CadIr,
+    ) -> Result<(), CodecError> {
+        let namespace = ir.native.namespace_mut("rhino");
+        namespace.set_arena(ctx, "annotations", &self.annotations)?;
+        namespace.set_arena(ctx, "text_dots", &self.dots)?;
+        if !self.arrows.is_empty() {
+            namespace.set_arena(ctx, "annotation_arrows", &self.arrows)?;
+        }
+        Ok(())
+    }
+}
+
+/// Every supported general annotation, decoded once.
+#[derive(Debug, Default)]
+pub(crate) struct Collected {
+    /// Native records for the annotation arenas.
+    pub(crate) arenas: NativeArenas,
+    /// Neutral semantic content, one entry per native record.
+    pub(crate) projections: Vec<Projection>,
+    /// Losses for records and userdata that were not transferred.
+    pub(crate) losses: Vec<LossNote>,
+}
+
+/// The neutral reference that a serialized style reference resolves to.
+#[derive(Debug, Default)]
+pub(crate) struct StyleBinding {
+    /// Reference role and its target, absent when the grammar has no style.
+    pub(crate) reference: Option<(NonBlankString, Vec<ReferenceSelection>)>,
+    /// Whether a non-null style reference names no decoded style record.
+    pub(crate) unresolved: bool,
+}
+
+/// Binds a serialized style reference to its decoded table record.
+pub(crate) fn style_binding(
+    resources: &ResourceIndex,
+    style: StyleReference,
+) -> Result<StyleBinding, CodecError> {
+    let local = |record: Option<&str>| record.map(|id| ReferenceTarget::Local(id.to_owned()));
+    let (role, target) = match style {
+        StyleReference::Absent => return Ok(StyleBinding::default()),
+        StyleReference::Uuid(id) if id.is_nil() => ("dimstyle_id", Some(ReferenceTarget::Null)),
+        StyleReference::Uuid(id) => ("dimstyle_id", local(resources.dimension_styles.by_uuid(id))),
+        StyleReference::Index(index) if index < 0 => {
+            ("dimstyle_index", Some(ReferenceTarget::Null))
+        }
+        StyleReference::Index(index) => (
+            "dimstyle_index",
+            local(resources.dimension_styles.by_index(index)),
+        ),
+        StyleReference::TextStyleIndex(index) if index < 0 => {
+            ("text_style_index", Some(ReferenceTarget::Null))
+        }
+        StyleReference::TextStyleIndex(index) => (
+            "text_style_index",
+            local(resources.text_styles.by_index(index)),
+        ),
+    };
+    let Some(target) = target else {
+        return Ok(StyleBinding {
+            reference: None,
+            unresolved: true,
+        });
+    };
+    let role = NonBlankString::new(role)
+        .ok_or_else(|| CodecError::malformed("style reference role is blank"))?;
+    Ok(StyleBinding {
+        reference: Some((role, vec![ReferenceSelection::new(target, Vec::new())])),
+        unresolved: false,
+    })
+}
+
+/// Plain text when `rich` is not RTF content.
+fn plain_text(rich: &str) -> Option<&str> {
+    (!rich.starts_with("{\\rtf")).then_some(rich)
+}
+
+fn finite_point(value: [f64; 3]) -> Option<cadmpeg_ir::units::FiniteVector<3>> {
+    cadmpeg_ir::units::FiniteVector::new(value)
+}
+
+/// Every typed field of a native record except identity and source location.
+fn record_parameters(
+    record: &impl Serialize,
+) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
+    let serde_json::Value::Object(fields) = serde_json::to_value(record)
+        .map_err(|error| CodecError::malformed(format!("annotation record JSON: {error}")))?
+    else {
+        return Err(CodecError::malformed(
+            "annotation record is not a JSON object",
+        ));
+    };
+    let mut parameters = BTreeMap::new();
+    for (name, value) in fields {
+        if matches!(name.as_str(), "id" | "links" | "source_offset") || value.is_null() {
+            continue;
+        }
+        let value = match value {
+            serde_json::Value::String(text) => text,
+            other => other.to_string(),
+        };
+        let name = NonBlankString::new(name)
+            .ok_or_else(|| CodecError::malformed("annotation parameter name is blank"))?;
+        parameters.insert(name, value);
+    }
+    Ok(parameters)
+}
+
+fn annotation_projection(
+    source_order: usize,
+    key: String,
+    class: Uuid,
+    record: &AnnotationRecord,
+    plain: Option<&str>,
+    style: StyleReference,
+) -> Result<Projection, CodecError> {
+    let kind = match record.kind {
+        AnnotationKind::Leader => SemanticAnnotationKind::Leader,
+        AnnotationKind::Text => SemanticAnnotationKind::Text,
+        AnnotationKind::Annotation => SemanticAnnotationKind::Other,
+    };
+    let text = plain.filter(|text| !text.is_empty()).map(str::to_owned);
+    Ok(Projection {
+        source_order,
+        key,
+        kind,
+        runtime_type: runtime_type(class),
+        rich_text_unflattened: text.is_none() && plain_text(&record.rich_text).is_none(),
+        text: text.into_iter().collect(),
+        format: (!record.rich_text.is_empty()).then(|| record.rich_text.clone()),
+        position: finite_point(record.plane_origin.get()),
+        parameters: record_parameters(record)?,
+        style,
+    })
+}
+
+/// Decodes every supported general annotation into native records and their
+/// neutral semantic content.
+pub(crate) fn collect(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
-    ir: &mut CadIr,
-) -> Result<Vec<LossNote>, CodecError> {
+) -> Result<Collected, CodecError> {
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let mut losses = Vec::new();
     let mut annotations = Vec::new();
     let mut dots = Vec::new();
     let mut arrows = Vec::new();
+    let mut projections = Vec::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
         let Some(object) = object.framed() else {
             continue;
@@ -718,7 +931,34 @@ pub(crate) fn install(
 
                 let (links, key, source_uuid) =
                     record_identity(identity, source_order, v2_key.take());
-                annotations.push(AnnotationRecord {
+                let style = StyleReference::Uuid(value.dimstyle_id);
+                let dimstyle_override = match value.override_style.clone() {
+                    None => None,
+                    Some((class, range)) => match crate::presentation::override_dimension_style(
+                        ctx,
+                        scan.data,
+                        class,
+                        range,
+                        scan.archive,
+                        scale,
+                    ) {
+                        Ok(style) => Some(style),
+                        Err(FramingError::Resource(limit)) => {
+                            return Err(CodecError::ResourceLimit(limit))
+                        }
+                        Err(error) => {
+                            losses.push(RhinoLossCode::DimensionOverrideDropped.note(
+                                format_args!(
+                                    "annotation object at offset {} style override could not be \
+                                 decoded: {error}",
+                                    object.range.start
+                                ),
+                            ));
+                            None
+                        }
+                    },
+                };
+                let record = AnnotationRecord {
                     id: format!("rhino:document:annotation#{key}"),
                     source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
@@ -735,6 +975,7 @@ pub(crate) fn install(
                     plane_equation: value.plane.equation,
                     dimstyle_uuid: (!value.dimstyle_id.is_nil())
                         .then(|| format!("{}", value.dimstyle_id)),
+                    dimstyle_override,
                     annotation_type: value.kind,
                     text_rectangle_width: value.text_rectangle_width,
                     text_rotation_radians: value.text_rotation_radians,
@@ -754,7 +995,16 @@ pub(crate) fn install(
                     v5_text_extra,
                     leader_points: points,
                     links,
-                });
+                };
+                projections.push(annotation_projection(
+                    source_order,
+                    key,
+                    object.class_uuid,
+                    &record,
+                    plain_text(&record.rich_text),
+                    style,
+                )?);
+                annotations.push(record);
             }
             AnnotationClass::Legacy { leader } => {
                 let value = match decode_legacy_annotation(
@@ -789,7 +1039,12 @@ pub(crate) fn install(
 
                 let (links, key, source_uuid) =
                     record_identity(identity, source_order, v2_key.take());
-                annotations.push(AnnotationRecord {
+                let style = if value.kind == crate::dimensions::LEGACY_TEXT_KIND {
+                    StyleReference::TextStyleIndex(value.dimstyle_index)
+                } else {
+                    StyleReference::Index(value.dimstyle_index)
+                };
+                let record = AnnotationRecord {
                     id: format!("rhino:document:annotation#{key}"),
                     source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
@@ -805,6 +1060,7 @@ pub(crate) fn install(
                     plane_z_axis: value.plane.zaxis,
                     plane_equation: value.plane.equation,
                     dimstyle_uuid: None,
+                    dimstyle_override: None,
                     annotation_type: value.kind,
                     text_rectangle_width: FiniteReal::ZERO,
                     text_rotation_radians: FiniteReal::ZERO,
@@ -824,7 +1080,16 @@ pub(crate) fn install(
                     v5_text_extra,
                     leader_points,
                     links,
-                });
+                };
+                projections.push(annotation_projection(
+                    source_order,
+                    key,
+                    object.class_uuid,
+                    &record,
+                    plain_text(&record.rich_text),
+                    style,
+                )?);
+                annotations.push(record);
             }
             AnnotationClass::V2 => {
                 let value = match decode_v2_annotation(
@@ -879,7 +1144,7 @@ pub(crate) fn install(
 
                 let (links, key, source_uuid) =
                     record_identity(identity, source_order, v2_key.take());
-                annotations.push(AnnotationRecord {
+                let record = AnnotationRecord {
                     id: format!("rhino:document:annotation#{key}"),
                     source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
@@ -891,6 +1156,7 @@ pub(crate) fn install(
                     plane_z_axis: value.base.plane.zaxis,
                     plane_equation: value.base.plane.equation,
                     dimstyle_uuid: None,
+                    dimstyle_override: None,
                     annotation_type: value.base.kind,
                     text_rectangle_width: FiniteReal::ZERO,
                     text_rotation_radians: FiniteReal::ZERO,
@@ -910,7 +1176,16 @@ pub(crate) fn install(
                     v5_text_extra: None,
                     leader_points,
                     links,
-                });
+                };
+                projections.push(annotation_projection(
+                    source_order,
+                    key,
+                    object.class_uuid,
+                    &record,
+                    Some(record.rich_text.as_str()),
+                    StyleReference::Absent,
+                )?);
+                annotations.push(record);
             }
             AnnotationClass::Dot { v2 } => {
                 let decoded = if v2 {
@@ -937,13 +1212,29 @@ pub(crate) fn install(
 
                 let (links, key, source_uuid) =
                     record_identity(identity, source_order, v2_key.take());
-                dots.push(TextDotRecord {
+                let record = TextDotRecord {
                     id: format!("rhino:document:text_dot#{key}"),
                     source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
                     data,
                     links,
+                };
+                projections.push(Projection {
+                    source_order,
+                    key,
+                    kind: SemanticAnnotationKind::Text,
+                    runtime_type: runtime_type(object.class_uuid),
+                    text: (!record.data.primary_text.is_empty())
+                        .then(|| record.data.primary_text.clone())
+                        .into_iter()
+                        .collect(),
+                    format: None,
+                    rich_text_unflattened: false,
+                    position: finite_point(record.data.center.map(FiniteReal::get)),
+                    parameters: record_parameters(&record)?,
+                    style: StyleReference::Absent,
                 });
+                dots.push(record);
             }
             AnnotationClass::V2Arrow => {
                 let (tail, head) = match decode_v2_annotation_arrow(
@@ -966,31 +1257,46 @@ pub(crate) fn install(
 
                 let (links, key, source_uuid) =
                     record_identity(identity, source_order, v2_key.take());
-                arrows.push(AnnotationArrowRecord {
+                let record = AnnotationArrowRecord {
                     id: format!("rhino:document:annotation_arrow#{key}"),
                     source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
                     tail,
                     head,
                     links,
+                };
+                projections.push(Projection {
+                    source_order,
+                    key,
+                    kind: SemanticAnnotationKind::Other,
+                    runtime_type: runtime_type(object.class_uuid),
+                    text: Vec::new(),
+                    format: None,
+                    rich_text_unflattened: false,
+                    position: finite_point(record.tail.map(FiniteReal::get)),
+                    parameters: record_parameters(&record)?,
+                    style: StyleReference::Absent,
                 });
+                arrows.push(record);
             }
         }
     }
-    let namespace = ir.native.namespace_mut("rhino");
-    namespace.set_arena(ctx, "annotations", &annotations)?;
-    namespace.set_arena(ctx, "text_dots", &dots)?;
-    if !arrows.is_empty() {
-        namespace.set_arena(ctx, "annotation_arrows", &arrows)?;
-    }
-    Ok(losses)
+    Ok(Collected {
+        arenas: NativeArenas {
+            annotations,
+            dots,
+            arrows,
+        },
+        projections,
+        losses,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_annotation, decode_dot, decode_legacy_annotation, decode_v2_annotation,
-        decode_v2_annotation_arrow, decode_v2_text_dot, install, parse_v5_text_extra, ANONYMOUS,
+        collect, decode_annotation, decode_dot, decode_legacy_annotation, decode_v2_annotation,
+        decode_v2_annotation_arrow, decode_v2_text_dot, parse_v5_text_extra, ANONYMOUS,
         LEGACY_TEXT, V2_ANNOTATION_ARROW, V2_TEXT_DOT, V5_TEXT_EXTRA,
     };
     use crate::chunks::ArchiveVersion;
@@ -1003,6 +1309,99 @@ mod tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::scalar::FiniteReal;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
+
+    /// Collects every annotation and installs its native arenas.
+    fn install(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scan: &crate::container::Scan<'_>,
+        ir: &mut CadIr,
+    ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+        let collected = collect(ctx, scan)?;
+        collected.arenas.install(ctx, ir)?;
+        Ok(collected.losses)
+    }
+
+    #[test]
+    fn style_references_bind_to_their_own_table() {
+        use super::{style_binding, StyleReference};
+        use cadmpeg_ir::references::ReferenceTarget;
+
+        let style = Uuid::from_wire([0x41; 16]);
+        let duplicate = Uuid::from_wire([0x42; 16]);
+        let mut resources = crate::presentation::ResourceIndex::default();
+        resources.dimension_styles.register(
+            "rhino:presentation:dimension_style#a",
+            Some(&format!("{style}")),
+            Some(0),
+        );
+        for id in [
+            "rhino:presentation:dimension_style#b",
+            "rhino:presentation:dimension_style#c",
+        ] {
+            resources
+                .dimension_styles
+                .register(id, Some(&format!("{duplicate}")), Some(1));
+        }
+        resources
+            .text_styles
+            .register("rhino:presentation:text_style#t", None, Some(2));
+
+        let target = |reference: StyleReference| {
+            let binding = style_binding(&resources, reference).expect("style binding");
+            (
+                binding
+                    .reference
+                    .map(|(role, targets)| (role.to_string(), targets[0].target.clone())),
+                binding.unresolved,
+            )
+        };
+        let local = |id: &str| ReferenceTarget::Local(id.to_owned());
+        assert_eq!(target(StyleReference::Absent), (None, false));
+        assert_eq!(
+            target(StyleReference::Uuid(Uuid::nil())),
+            (
+                Some(("dimstyle_id".to_owned(), ReferenceTarget::Null)),
+                false
+            )
+        );
+        assert_eq!(
+            target(StyleReference::Uuid(style)),
+            (
+                Some((
+                    "dimstyle_id".to_owned(),
+                    local("rhino:presentation:dimension_style#a")
+                )),
+                false
+            )
+        );
+        assert_eq!(target(StyleReference::Uuid(duplicate)), (None, true));
+        assert_eq!(target(StyleReference::Index(1)), (None, true));
+        assert_eq!(
+            target(StyleReference::Index(-1)),
+            (
+                Some(("dimstyle_index".to_owned(), ReferenceTarget::Null)),
+                false
+            )
+        );
+        assert_eq!(target(StyleReference::Index(2)), (None, true));
+        assert_eq!(
+            target(StyleReference::TextStyleIndex(2)),
+            (
+                Some((
+                    "text_style_index".to_owned(),
+                    local("rhino:presentation:text_style#t")
+                )),
+                false
+            )
+        );
+        assert_eq!(target(StyleReference::TextStyleIndex(0)), (None, true));
+    }
+
+    #[test]
+    fn rtf_rich_text_has_no_plain_text_fragment() {
+        assert_eq!(super::plain_text("Hello"), Some("Hello"));
+        assert_eq!(super::plain_text("{\\rtf1\\ansi Hello}"), None);
+    }
 
     fn with_decode_context<R>(
         data: &[u8],
@@ -1704,6 +2103,51 @@ mod tests {
             serde_json::to_value(&namespace.arenas()["annotation_arrows"][0]).expect("arrow JSON");
         assert_eq!(arrow["tail"][2], 3.0);
         assert_eq!(arrow["head"][0], -4.0);
+    }
+
+    #[test]
+    fn decoded_dots_and_arrows_become_semantic_annotations() {
+        use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
+
+        let mut dot = vec![0x10];
+        for value in [1.25_f64, -2.5, 4.75] {
+            dot.extend(value.to_le_bytes());
+        }
+        dot.extend(utf16_bytes("V2 dot"));
+        let mut arrow = vec![0x10];
+        for value in [1.0_f64, 2.0, 3.0, -4.0, 5.0, -6.0] {
+            arrow.extend(value.to_le_bytes());
+        }
+        let scan = scan_with_objects(&[
+            object_record_with_payload(ArchiveVersion::V5, 0x20, V2_TEXT_DOT.to_wire(), &dot),
+            object_record_with_payload(
+                ArchiveVersion::V5,
+                0x20,
+                V2_ANNOTATION_ARROW.to_wire(),
+                &arrow,
+            ),
+        ]);
+        let result = crate::decode::decode_for_test(&scan);
+        let annotations = &result.ir().model.semantic_annotations;
+        assert_eq!(annotations.len(), 2);
+        assert_eq!(annotations[0].kind, SemanticAnnotationKind::Text);
+        assert_eq!(annotations[0].runtime_type, "ON_OBSOLETE_V2_TextDot");
+        assert_eq!(annotations[0].text, ["V2 dot"]);
+        assert_eq!(
+            annotations[0]
+                .position
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([1.25, -2.5, 4.75])
+        );
+        assert_eq!(annotations[1].kind, SemanticAnnotationKind::Other);
+        assert_eq!(
+            annotations[1].runtime_type,
+            "ON_OBSOLETE_V2_AnnotationArrow"
+        );
+        assert_eq!(annotations[1].parameters["head"], "[-4.0,5.0,-6.0]");
+        assert!(result.report().losses.iter().all(|loss| {
+            loss.code != crate::loss::RhinoLossCode::ObjectFamilyNotTransferred.kind()
+        }));
     }
 
     #[test]

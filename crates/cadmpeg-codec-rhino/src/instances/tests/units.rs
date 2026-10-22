@@ -96,7 +96,6 @@ fn unit_scale_admission_preserves_redundant_bits_and_rejects_invalid_custom_scal
                 (f64::MAX, false),
             ] {
                 let admitted = unit != 11 || custom_valid;
-                let repaired = (unit == 0 && scale != 1.0) || (unit == 2 && scale != 0.001);
                 let record = definition_record(archive, [0x51; 16], unit, scale, 2, 0.001);
                 let later = definition_record(archive, [0x52; 16], 2, 0.001, 2, 0.001);
                 let document = bytes::document_with_definitions(
@@ -146,7 +145,7 @@ fn unit_scale_admission_preserves_redundant_bits_and_rejects_invalid_custom_scal
                             RhinoLossCode::ContainerInstanceDefinitionDegraded,
                             usize::from(!admitted),
                         ),
-                        (RhinoLossCode::RedundantFieldRepaired, usize::from(repaired)),
+                        (RhinoLossCode::RedundantFieldRepaired, 0),
                     ] {
                         let losses: Vec<_> = result
                             .report()
