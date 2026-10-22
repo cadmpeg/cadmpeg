@@ -318,17 +318,30 @@ pub(in crate::design) fn parse_design_parameter(
             };
         let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
         let expression_trailer = payload.get(expression_end..expression_end + trailer_len)?;
-        let valid_expression_trailer = if discriminated && owner_record_index.is_none() {
+        let document = discriminated && owner_record_index.is_none();
+        // A document parameter's trailer is eight or nine zero bytes and
+        // `u8 1`; an owned parameter's is nine or ten zero bytes.
+        let long_document_trailer = document
+            && payload.get(expression_end..expression_end + 10)
+                == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+        // The earlier discriminated family writes the document trailer as
+        // six zero bytes and `01 00 01`.
+        let earlier_family = family_discriminator
+            .is_some_and(|discriminator| matches!(discriminator.code(), 0 | 3 | 4));
+        let valid_expression_trailer = if document {
             expression_trailer == [0, 0, 0, 0, 0, 0, 0, 0, 1]
+                || long_document_trailer
+                || (earlier_family && expression_trailer == [0, 0, 0, 0, 0, 0, 1, 0, 1])
         } else {
             expression_trailer.iter().all(|byte| *byte == 0)
         };
         if !valid_expression_trailer {
             return None;
         }
-        let prefixed_kind = if discriminated
-            && owner_record_index.is_some()
-            && payload.get(expression_end..expression_end + 10) == Some(&[0; 10])
+        let prefixed_kind = if long_document_trailer
+            || (discriminated
+                && owner_record_index.is_some()
+                && payload.get(expression_end..expression_end + 10) == Some(&[0; 10]))
         {
             lp_utf16_bounded(payload, expression_end + 10, 1..=256)
         } else {

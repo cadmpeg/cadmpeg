@@ -1650,3 +1650,70 @@ fn typed_companion_prefix_moves_the_timestamp_after_the_wide_owner_reference() {
     frame[95] = 1;
     assert!(parse_parameter_companion(&frame).is_none());
 }
+
+/// A wide discriminated document parameter whose expression is followed by
+/// nine zero bytes and `u8 1`.
+#[test]
+fn document_parameter_admits_the_ten_byte_expression_trailer() {
+    let frame = |trailer: &[u8]| {
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&3u32.to_le_bytes());
+        frame.extend_from_slice(b"317");
+        frame.extend_from_slice(&202u32.to_le_bytes());
+        frame.extend_from_slice(&[0; 15]);
+        frame.extend_from_slice(&6u64.to_le_bytes());
+        frame.push(0);
+        frame.extend_from_slice(&1u32.to_le_bytes());
+        frame.push(0);
+        lp_utf16(&mut frame, "20 mm");
+        frame.extend_from_slice(trailer);
+        lp_utf16(&mut frame, "User Parameter");
+        frame.extend_from_slice(&0u32.to_le_bytes());
+        lp_utf16(&mut frame, "mm");
+        lp_utf16(&mut frame, "W1");
+        frame.extend_from_slice(&2.0f64.to_le_bytes());
+        frame.extend_from_slice(&[0, 1, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        frame
+    };
+    let parameter = parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]))
+        .expect("document parameter with the ten-byte trailer");
+    assert_eq!(parameter.kind(), DesignParameterKind::User);
+    assert_eq!(parameter.owner_record_index(), None);
+    assert_eq!(parameter.name(), "W1");
+    assert_eq!(parameter.expression(), "20 mm");
+    assert_eq!(parameter.evaluated_value().get(), 2.0);
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 1])).is_some());
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])).is_none());
+    // The `01 00 01` document trailer belongs to the earlier family only.
+    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 1, 0, 1])).is_none());
+}
+
+/// The earlier discriminated family stores a document parameter with
+/// discriminator 4, the expression trailer six zero bytes and `01 00 01`, and
+/// the `00 01 13` tail.
+#[test]
+fn earlier_family_document_parameter_admits_its_trailer() {
+    let mut frame = Vec::new();
+    frame.extend_from_slice(&3u32.to_le_bytes());
+    frame.extend_from_slice(b"282");
+    frame.extend_from_slice(&182u32.to_le_bytes());
+    frame.extend_from_slice(&[0; 11]);
+    frame.extend_from_slice(&4u64.to_le_bytes());
+    frame.push(0);
+    frame.extend_from_slice(&5u32.to_le_bytes());
+    frame.push(0);
+    lp_utf16(&mut frame, "45 deg");
+    frame.extend_from_slice(&[0, 0, 0, 0, 0, 0, 1, 0, 1]);
+    lp_utf16(&mut frame, "User Parameter");
+    frame.extend_from_slice(&0u32.to_le_bytes());
+    lp_utf16(&mut frame, "deg");
+    lp_utf16(&mut frame, "ClipAngle");
+    frame.extend_from_slice(&std::f64::consts::FRAC_PI_4.to_le_bytes());
+    frame.extend_from_slice(&[0, 1, 0x13, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let parameter =
+        parse_design_parameter_record(&frame).expect("earlier-family document parameter");
+    assert_eq!(parameter.kind(), DesignParameterKind::User);
+    assert_eq!(parameter.owner_record_index(), None);
+    assert_eq!(parameter.name(), "ClipAngle");
+    assert_eq!(parameter.expression(), "45 deg");
+}
