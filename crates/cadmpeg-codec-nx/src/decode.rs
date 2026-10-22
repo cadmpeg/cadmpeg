@@ -49,8 +49,18 @@ pub(crate) struct Scan<'a> {
     pub(crate) container: Container<'a>,
     /// Located and inflated Parasolid or preview streams.
     pub(crate) streams: Vec<Stream>,
-    /// Source classes retained without a typed representation during this scan.
-    pub(crate) source_untyped: std::cell::RefCell<cadmpeg_ir::ArenaClasses>,
+    source_untyped: std::cell::RefCell<cadmpeg_ir::ArenaClasses>,
+}
+
+impl<'a> Scan<'a> {
+    /// Build a scan over a parsed container and its located streams.
+    pub(crate) fn new(container: Container<'a>, streams: Vec<Stream>) -> Self {
+        Self {
+            container,
+            streams,
+            source_untyped: std::cell::RefCell::default(),
+        }
+    }
 }
 
 impl Scan<'_> {
@@ -86,11 +96,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         let streams = parasolid::extract_legacy_streams(ctx, part)?;
         (container, streams)
     };
-    Ok(Scan {
-        container,
-        streams,
-        source_untyped: std::cell::RefCell::default(),
-    })
+    Ok(Scan::new(container, streams))
 }
 
 /// Decode an NX `.prt` into IR and a loss report.
