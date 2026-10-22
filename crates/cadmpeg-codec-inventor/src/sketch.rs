@@ -40,6 +40,8 @@ const MIDPOINT_VALUE_VERSION: u8 = 20;
 /// with another bit set has a construction state this decoder does not
 /// resolve.
 const PROFILE_CURVE_FLAGS: u32 = 0x40 | 0x1000 | 0x4_0000 | 0x8_0000;
+/// Largest departure of a block-instance placement from a rigid motion.
+const EPS_SKETCH_BLOCK_PLACEMENT_RIGID: f64 = 1.0e-9;
 const CIRCLE_STATE_ARC: u8 = 0;
 const CIRCLE_STATE_FULL: u8 = 1;
 
@@ -1417,6 +1419,27 @@ pub(crate) fn project(
         );
     }
 
+    // Placed block curves stay out of the native-keyed indexes: two instances
+    // of one definition place copies of the same curve records.
+    let mut block_curves = Vec::new();
+    for entity in &projected_entities {
+        let Some(instance) = entity.native_ref.as_deref().and_then(|native| {
+            inventory.entities.iter().find(|raw| {
+                matches!(raw.kind, PmDcSketchEntityKind::BlockInstance { .. }) && raw.id() == native
+            })
+        }) else {
+            continue;
+        };
+        let count = block_definition_curves(instance, &inventory.entities).len();
+        ctx.charge_entities(
+            u64::try_from(count).map_err(CodecError::malformed)?,
+            "project Inventor sketch block curves",
+        )?;
+        if let Some(placed) = place_block_curves(instance, &entity.sketch, inventory, &raw_entities)
+        {
+            block_curves.push(placed);
+        }
+    }
     let projected_by_native = projected_entities
         .iter()
         .filter_map(|entity| entity.native_ref.as_deref().map(|native| (native, entity)))
@@ -1475,19 +1498,30 @@ pub(crate) fn project(
             unresolved_sketches += 1;
             continue;
         };
+        let construction_unknown = |entity: &&SketchEntity| {
+            entity
+                .native_ref
+                .as_deref()
+                .is_some_and(|native| construction_unresolved.contains(native))
+        };
         let profile_entities = referenced_entities
             .iter()
             .copied()
-            .filter(|entity| {
-                !entity
-                    .native_ref
-                    .as_deref()
-                    .is_some_and(|native| construction_unresolved.contains(native))
-            })
+            .filter(|entity| !construction_unknown(entity))
             .collect::<Vec<_>>();
-        let Ok(profiles) =
-            cadmpeg_ir::sketches::SketchProfiles::try_from(build_profiles(&profile_entities))
-        else {
+        let mut loops = build_profiles(&profile_entities);
+        for placed in block_curves
+            .iter()
+            .filter(|placed| placed.first().is_some_and(|curve| curve.sketch == id))
+        {
+            loops.extend(build_profiles(
+                &placed
+                    .iter()
+                    .filter(|entity| !construction_unknown(entity))
+                    .collect::<Vec<_>>(),
+            ));
+        }
+        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(loops) else {
             unresolved_sketches += 1;
             continue;
         };
@@ -1600,6 +1634,12 @@ pub(crate) fn project(
         previous_entity_count,
         projected_entities.len(),
     )?;
+    projected_entities.extend(
+        block_curves
+            .into_iter()
+            .flatten()
+            .filter(|curve| closed_sketch_ids.contains(&curve.sketch)),
+    );
     let mut raw_constraint_by_native = HashMap::new();
     for constraint in &inventory.constraints {
         raw_constraint_by_native.insert(constraint.id(), constraint);
@@ -2225,10 +2265,21 @@ fn project_geometry(
     entity: &PmDcSketchEntity,
     entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
 ) -> Option<SketchGeometry> {
+    project_placed_geometry(entity, entities, &BlockPlacement::IDENTITY)
+}
+
+/// The solved geometry of an entity, moved by a block placement.
+fn project_placed_geometry(
+    entity: &PmDcSketchEntity,
+    entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
+    placement: &BlockPlacement,
+) -> Option<SketchGeometry> {
+    let resolve_point =
+        |token: &str, reference: u32| placement.point(resolve_point(token, reference, entities)?);
     match &entity.kind {
         PmDcSketchEntityKind::Point { position, .. } => Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                position: neutral_point(*position),
+                position: neutral_point(placement.point(*position)?),
             })
             .ok()?,
         ),
@@ -2241,19 +2292,11 @@ fn project_geometry(
             let [start, end, ..] = points.references() else {
                 return None;
             };
-            let start = resolve_point(
-                entity.identity.segment_token.as_str(),
-                start.index(),
-                entities,
-            )?;
-            let end = resolve_point(
-                entity.identity.segment_token.as_str(),
-                end.index(),
-                entities,
-            )?;
+            let start = resolve_point(entity.identity.segment_token.as_str(), start.index())?;
+            let end = resolve_point(entity.identity.segment_token.as_str(), end.index())?;
             if !line_carrier_matches(
-                origin.map(FiniteReal::get),
-                direction.map(FiniteReal::get),
+                placement.point(*origin)?.map(FiniteReal::get),
+                placement.direction(*direction)?.map(FiniteReal::get),
                 start.map(FiniteReal::get),
                 end.map(FiniteReal::get),
             ) {
@@ -2275,15 +2318,21 @@ fn project_geometry(
             ..
         } => {
             let token = entity.identity.segment_token.as_str();
-            let center = resolve_point(token, center.index(), entities)?;
+            let center = resolve_point(token, center.index())?;
             let definition = match (curve_ends(points)?, *state) {
                 (CurveEnds::Closed, CIRCLE_STATE_FULL) => SketchGeometryDefinition::Circle {
                     center: neutral_point(center),
                     radius: Length::new(radius.get() * 10.0)?,
                 },
                 (CurveEnds::Bounded(start, end), CIRCLE_STATE_ARC) => {
-                    let start = resolve_point(token, start.index(), entities)?;
-                    let end = resolve_point(token, end.index(), entities)?;
+                    let start = resolve_point(token, start.index())?;
+                    let end = resolve_point(token, end.index())?;
+                    // A mirror reverses the arc's counterclockwise sense.
+                    let (start, end) = if placement.mirrored() {
+                        (end, start)
+                    } else {
+                        (start, end)
+                    };
                     let start_angle = arc_end_angle(center, radius.get(), start)?;
                     let end_angle = arc_end_angle(center, radius.get(), end)?;
                     let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
@@ -2312,11 +2361,8 @@ fn project_geometry(
             if curve_ends(points)? != CurveEnds::Closed {
                 return None;
             }
-            let center = resolve_point(
-                entity.identity.segment_token.as_str(),
-                center.index(),
-                entities,
-            )?;
+            let center = resolve_point(entity.identity.segment_token.as_str(), center.index())?;
+            let major_direction = placement.direction(*major_direction)?;
             let norm = major_direction[0].get().hypot(major_direction[1].get());
             if !norm.is_finite() || norm <= f64::EPSILON {
                 return None;
@@ -2472,6 +2518,15 @@ fn entity_endpoint_refs(
     entity: &PmDcSketchEntity,
     entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
 ) -> Vec<String> {
+    placed_endpoint_refs(entity, entities, &BlockPlacement::IDENTITY)
+}
+
+/// The endpoint records of an entity in the direction of its placed geometry.
+fn placed_endpoint_refs(
+    entity: &PmDcSketchEntity,
+    entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
+    placement: &BlockPlacement,
+) -> Vec<String> {
     let ends = match &entity.kind {
         PmDcSketchEntityKind::Line { points, .. } => points.references().get(..2).unwrap_or(&[]),
         PmDcSketchEntityKind::Circle { points, .. } => match curve_ends(points) {
@@ -2489,6 +2544,9 @@ fn entity_endpoint_refs(
         }) {
             endpoint_refs.push(value.id());
         }
+    }
+    if placement.mirrored() && matches!(entity.kind, PmDcSketchEntityKind::Circle { .. }) {
+        endpoint_refs.reverse();
     }
     endpoint_refs
 }
@@ -2695,6 +2753,175 @@ fn line_component(
     component
 }
 
+/// A rigid placement of block-definition geometry in its consuming sketch,
+/// in internal centimetres.
+#[derive(Debug, Clone, Copy)]
+struct BlockPlacement {
+    linear: [[f64; 2]; 2],
+    offset: [f64; 2],
+}
+
+impl BlockPlacement {
+    const IDENTITY: Self = Self {
+        linear: [[1.0, 0.0], [0.0, 1.0]],
+        offset: [0.0, 0.0],
+    };
+
+    /// The placement of a block-instance matrix, when the matrix is a rigid
+    /// motion of the plane.
+    fn new(matrix: &[[FiniteReal; 3]; 3]) -> Option<Self> {
+        let m = matrix.map(|row| row.map(FiniteReal::get));
+        let near = |value: f64, expected: f64| {
+            (value - expected).abs() <= EPS_SKETCH_BLOCK_PLACEMENT_RIGID
+        };
+        let rigid = near(m[2][0], 0.0)
+            && near(m[2][1], 0.0)
+            && near(m[2][2], 1.0)
+            && near(m[0][0].hypot(m[1][0]), 1.0)
+            && near(m[0][1].hypot(m[1][1]), 1.0)
+            && near(m[0][0].mul_add(m[0][1], m[1][0] * m[1][1]), 0.0);
+        rigid.then_some(Self {
+            linear: [[m[0][0], m[0][1]], [m[1][0], m[1][1]]],
+            offset: [m[0][2], m[1][2]],
+        })
+    }
+
+    /// Whether the placement reverses orientation.
+    fn mirrored(&self) -> bool {
+        self.linear[0][0].mul_add(self.linear[1][1], -(self.linear[0][1] * self.linear[1][0])) < 0.0
+    }
+
+    fn direction(&self, value: [FiniteReal; 2]) -> Option<[FiniteReal; 2]> {
+        let [x, y] = value.map(FiniteReal::get);
+        Some([
+            FiniteReal::new(self.linear[0][0].mul_add(x, self.linear[0][1] * y))?,
+            FiniteReal::new(self.linear[1][0].mul_add(x, self.linear[1][1] * y))?,
+        ])
+    }
+
+    fn point(&self, value: [FiniteReal; 2]) -> Option<[FiniteReal; 2]> {
+        let [x, y] = self.direction(value)?.map(FiniteReal::get);
+        Some([
+            FiniteReal::new(x + self.offset[0])?,
+            FiniteReal::new(y + self.offset[1])?,
+        ])
+    }
+}
+
+/// The curves of a block instance's definition, in record order.
+pub(crate) fn block_definition_curves<'a>(
+    instance: &PmDcSketchEntity,
+    entities: impl IntoIterator<Item = &'a PmDcSketchEntity>,
+) -> Vec<&'a PmDcSketchEntity> {
+    let PmDcSketchEntityKind::BlockInstance { definition, .. } = instance.kind else {
+        return Vec::new();
+    };
+    let mut curves = entities
+        .into_iter()
+        .filter(|entity| {
+            entity.identity.segment_token == instance.identity.segment_token
+                && entity.sketch.index() == definition.index()
+                && matches!(
+                    entity.kind,
+                    PmDcSketchEntityKind::Line { .. }
+                        | PmDcSketchEntityKind::Circle { .. }
+                        | PmDcSketchEntityKind::Ellipse { .. }
+                )
+        })
+        .collect::<Vec<_>>();
+    curves.sort_by_key(|entity| entity.identity.record_ordinal);
+    curves
+}
+
+/// The offset of each definition curve, in `curves` order, from the first
+/// associative id that a block instance gives its placed geometry.
+///
+/// Full circles come first, one id each. Each other curve then takes one id,
+/// followed by one id for each of its two end points that has none yet.
+pub(crate) fn block_curve_offsets(curves: &[&PmDcSketchEntity]) -> Option<Vec<u32>> {
+    let full_circle = |entity: &PmDcSketchEntity| {
+        matches!(
+            &entity.kind,
+            PmDcSketchEntityKind::Circle { points, .. }
+                if curve_ends(points) == Some(CurveEnds::Closed)
+        )
+    };
+    let mut offsets = vec![0; curves.len()];
+    let mut next = 0u32;
+    for (offset, _) in offsets
+        .iter_mut()
+        .zip(curves)
+        .filter(|(_, curve)| full_circle(curve))
+    {
+        *offset = next;
+        next = next.checked_add(1)?;
+    }
+    let mut numbered = HashSet::new();
+    for (offset, curve) in offsets.iter_mut().zip(curves) {
+        if full_circle(curve) {
+            continue;
+        }
+        let (PmDcSketchEntityKind::Line { points, .. }
+        | PmDcSketchEntityKind::Circle { points, .. }) = &curve.kind
+        else {
+            return None;
+        };
+        let [start, end, ..] = points.references() else {
+            return None;
+        };
+        *offset = next;
+        next = next.checked_add(1)?;
+        for point in [start, end] {
+            if numbered.insert(point.index()) {
+                next = next.checked_add(1)?;
+            }
+        }
+    }
+    Some(offsets)
+}
+
+/// The neutral id of one definition curve placed by one block instance.
+pub(crate) fn block_curve_id(
+    instance: &PmDcSketchEntity,
+    curve: &PmDcSketchEntity,
+) -> Option<SketchEntityId> {
+    SketchEntityId::mint(format!(
+        "inventor:design:sketch-entity#{}-{}-{}",
+        instance.identity.segment_token,
+        instance.identity.record_ordinal,
+        curve.identity.record_ordinal
+    ))
+    .ok()
+}
+
+/// The definition curves that one projected block instance places in its
+/// sketch, or nothing when one of them does not project.
+fn place_block_curves(
+    instance: &PmDcSketchEntity,
+    sketch: &SketchId,
+    inventory: &SketchInventory,
+    entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
+) -> Option<Vec<SketchEntity>> {
+    let PmDcSketchEntityKind::BlockInstance { placement, .. } = &instance.kind else {
+        return None;
+    };
+    let placement = BlockPlacement::new(placement)?;
+    block_definition_curves(instance, &inventory.entities)
+        .into_iter()
+        .map(|curve| {
+            Some(
+                SketchEntity::new(
+                    block_curve_id(instance, curve)?,
+                    sketch.clone(),
+                    project_placed_geometry(curve, entities, &placement)?,
+                )
+                .with_native_ref(Some(curve.id()))
+                .with_endpoint_refs(placed_endpoint_refs(curve, entities, &placement)),
+            )
+        })
+        .collect()
+}
+
 fn sketch_id(sketch: &PmDcSketch) -> Option<SketchId> {
     SketchId::mint(format!(
         "inventor:design:sketch#{}-{}",
@@ -2703,7 +2930,7 @@ fn sketch_id(sketch: &PmDcSketch) -> Option<SketchId> {
     .ok()
 }
 
-fn entity_id(entity: &PmDcSketchEntity) -> Option<SketchEntityId> {
+pub(crate) fn entity_id(entity: &PmDcSketchEntity) -> Option<SketchEntityId> {
     SketchEntityId::mint(format!(
         "inventor:design:sketch-entity#{}-{}",
         entity.identity.segment_token, entity.identity.record_ordinal
@@ -2744,12 +2971,14 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 #[cfg(test)]
 mod tests {
     use super::{
-        distinct_operand_keys, inventory, parse_constraint, parse_direction, parse_entity,
-        parse_sketch, parse_transform, project, solver_hint, PmDcSketchConstraint,
-        PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcSketchEntityPayload, PmDcSketchPayload,
-        PmDcTransformPayload, SketchConstraintTag, SketchEntityTag, SketchInventory, CIRCLE_TYPE,
-        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE,
-        SKETCH_TYPE, TRANSFORM_TYPE,
+        block_curve_offsets, block_definition_curves, distinct_operand_keys, entity_endpoint_refs,
+        inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
+        placed_endpoint_refs, project, project_placed_geometry, solver_hint, BlockPlacement,
+        PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity, PmDcSketchEntityKind,
+        PmDcSketchEntityPayload, PmDcSketchPayload, PmDcTransformPayload, SketchConstraintTag,
+        SketchEntityTag, SketchInventory, BLOCK_INSTANCE_TYPE, CIRCLE_TYPE, COINCIDENT_TYPE,
+        DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE, SKETCH_TYPE,
+        TRANSFORM_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcReference, PmDcReferenceList};
@@ -2758,8 +2987,10 @@ mod tests {
     use crate::test_support::test_fixtures::{
         content, content_at, parse, primary_envelope_fixture,
     };
+    use cadmpeg_core::decode::unique_index;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
     use cadmpeg_core::CodecError;
+    use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::scalar::FiniteReal;
     use cadmpeg_ir::sketches::SketchPlacement;
 
@@ -4004,6 +4235,190 @@ mod tests {
         ));
         assert_eq!(projected.sketches[0].profiles.len(), 1);
         assert_eq!(projected.sketches[0].profiles[0].len(), 2);
+    }
+
+    fn located(
+        value: PmDcSketchEntityPayload,
+        type_id: [u8; 16],
+        ordinal: u32,
+    ) -> PmDcSketchEntity {
+        Located::new(
+            value,
+            crate::record_identity::RecordTypeId::from_bytes(type_id),
+            cadmpeg_ir::identity_key!("segment"),
+            ordinal,
+        )
+    }
+
+    /// A block instance in sketch record 2 at `ordinal`, placing definition
+    /// record 40 with the explicit cells of `placement`.
+    fn block_instance(ordinal: u32, masks: [u16; 2], placement: &[f64]) -> PmDcSketchEntity {
+        let mut bytes = entity_prefix(ordinal, 3, 0);
+        for reference in [41u32, 50] {
+            bytes.extend_from_slice(&(0x8000_0000 | reference).to_le_bytes());
+        }
+        bytes.extend_from_slice(&masks[0].to_le_bytes());
+        bytes.extend_from_slice(&masks[1].to_le_bytes());
+        for value in placement {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        let parsed = parse(&bytes, |_, source| {
+            parse_entity(SketchEntityTag::BlockInstance, source, 22).expect("block instance")
+        });
+        located(parsed, BLOCK_INSTANCE_TYPE, ordinal)
+    }
+
+    /// Block-definition records 20 through 25: a full circle of radius 1
+    /// about the definition origin and a line from (1, 0) to (3, 0).
+    fn block_definition() -> Vec<PmDcSketchEntity> {
+        let point = |ordinal, position| {
+            let parsed = parse(&point_bytes(ordinal, 41, position), |_, source| {
+                parse_entity(SketchEntityTag::Point, source, 22).expect("point")
+            });
+            located(parsed, POINT_TYPE, ordinal)
+        };
+        let circle = parse(&circle_bytes(21, 41, [0, 0], 21, 1), |_, source| {
+            parse_entity(SketchEntityTag::Circle, source, 22).expect("circle")
+        });
+        let mut line = parse(&line_bytes(24, 41, &[23, 24]), |_, source| {
+            parse_entity(SketchEntityTag::Line, source, 22).expect("line")
+        });
+        let PmDcSketchEntityKind::Line {
+            origin, direction, ..
+        } = &mut line.kind
+        else {
+            unreachable!("generated line")
+        };
+        *origin = [real(1.0), real(0.0)];
+        *direction = [real(2.0), real(0.0)];
+        vec![
+            point(20, [0.0, 0.0]),
+            located(circle, CIRCLE_TYPE, 21),
+            point(22, [1.0, 0.0]),
+            point(23, [3.0, 0.0]),
+            located(line, LINE_TYPE, 24),
+        ]
+    }
+
+    #[test]
+    fn a_block_instance_places_its_definition_curves_in_its_sketch() {
+        let mut inventory = half_disc_inventory();
+        let mut sketch = PmDcSketchPayload::clone(&inventory.sketches[0]);
+        let (marker, metadata, mut references) = sketch.entities.clone().into_parts();
+        references.push(PmDcReference::new(10, false).expect("instance reference"));
+        sketch.entities =
+            PmDcReferenceList::new(marker, metadata, references).expect("sketch entity list");
+        inventory.sketches[0] = Located::new(
+            sketch,
+            crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            2,
+        );
+        // A quarter turn counterclockwise, then 5 cm along the sketch u axis.
+        inventory
+            .entities
+            .push(block_instance(9, [0x010a, 0x00d3], &[5.0, 0.0]));
+        inventory.entities.extend(block_definition());
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        let projected = project(&ctx, &inventory, &[]).expect("sketch projection");
+        assert_eq!(projected.unresolved_sketches, 0);
+        let placed = |ordinal: u32| {
+            projected
+                .entities
+                .iter()
+                .find(|entity| {
+                    entity.id().as_str()
+                        == format!("inventor:design:sketch-entity#segment-9-{ordinal}")
+                })
+                .expect("placed block curve")
+        };
+        let circle = placed(21);
+        assert_eq!(circle.sketch, projected.sketches[0].id);
+        assert_eq!(
+            circle.native_ref.as_deref(),
+            Some("inventor:pmdc:sketch-entity#segment-21")
+        );
+        assert!(matches!(
+            *circle.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { center, radius }
+                if center == Point2::new(50.0, 0.0) && radius.get() == 10.0
+        ));
+        assert!(matches!(
+            *placed(24).geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end }
+                if start == Point2::new(50.0, 10.0) && end == Point2::new(50.0, 30.0)
+        ));
+        // The placed circle is a profile loop of the consuming sketch.
+        assert!(projected.sketches[0]
+            .profiles
+            .iter()
+            .any(|profile| profile.len() == 1 && profile[0].entity == *circle.id()));
+    }
+
+    #[test]
+    fn a_mirrored_block_placement_reverses_a_placed_arc() {
+        let inventory = half_disc_inventory();
+        let entities = unique_index(inventory.entities.iter().map(|record| {
+            (
+                (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                ),
+                record,
+            )
+        }));
+        let arc = &inventory.entities[4];
+        let mirror = [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]].map(|row| row.map(real));
+        let placement = BlockPlacement::new(&mirror).expect("rigid placement");
+        let geometry =
+            project_placed_geometry(arc, &entities, &placement).expect("placed arc geometry");
+        // The upper half arc from (1, 0) to (-1, 0) becomes the lower half arc
+        // from (-1, 0) to (1, 0).
+        assert!(matches!(
+            *geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Arc { start_angle, end_angle, .. }
+                if start_angle.get() == std::f64::consts::PI
+                    && end_angle.get() == std::f64::consts::TAU
+        ));
+        assert_eq!(
+            placed_endpoint_refs(arc, &entities, &placement),
+            entity_endpoint_refs(arc, &entities)
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+        );
+        let shear = [[1.0, 0.5, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]].map(|row| row.map(real));
+        assert!(BlockPlacement::new(&shear).is_none());
+    }
+
+    #[test]
+    fn block_curve_offsets_number_full_circles_first() {
+        let definition = block_definition();
+        let mut arc = parse(&circle_bytes(25, 41, [24, 23], 21, 0), |_, source| {
+            parse_entity(SketchEntityTag::Circle, source, 22).expect("arc")
+        });
+        arc.sketch = PmDcReference::new(41, true).expect("definition reference");
+        let second_circle = parse(&circle_bytes(26, 41, [0, 0], 21, 1), |_, source| {
+            parse_entity(SketchEntityTag::Circle, source, 22).expect("circle")
+        });
+        let mut entities = definition;
+        entities.push(located(arc, CIRCLE_TYPE, 25));
+        entities.push(located(second_circle, CIRCLE_TYPE, 26));
+        let instance = block_instance(9, [0x0111, 0x00ca], &[0.0, 0.0]);
+        let curves = block_definition_curves(&instance, &entities);
+        assert_eq!(
+            curves
+                .iter()
+                .map(|curve| curve.identity.record_ordinal)
+                .collect::<Vec<_>>(),
+            [21, 24, 25, 26]
+        );
+        // Circles 21 and 26 take 0 and 1; line 24 takes 2 and its end points
+        // 3 and 4; the arc takes 5 and its new end point 6.
+        assert_eq!(block_curve_offsets(&curves), Some(vec![0, 2, 5, 1]));
     }
 
     #[test]

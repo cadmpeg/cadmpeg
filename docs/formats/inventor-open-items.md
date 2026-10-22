@@ -214,7 +214,7 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 
 **Question.** What do these profile selections select: a selection whose entity link is an entity-style link; a wire edge whose naming attribute has another integer layout; a wire edge whose associative identifier names no curve of the consumed sketch; a wire whose edges do not form one closed ring; and one ring selected twice in one boundary patch?
 
-**Known.** A selection whose wire body edges each run along a whole curve or a part of a curve of the consumed sketch is one closed ring of that sketch. Some wire bodies name associative identifiers that the consumed sketch gives to points, or to no entity, and their edges do not lie on the current sketch curves. Some naming attributes store three integers after the five leading fields.
+**Known.** A selection whose wire body edges each run along a whole curve or a part of a curve of the consumed sketch is one closed ring of that sketch. Some wire bodies name associative identifiers that the consumed sketch gives to points. In some wire bodies an edge names one curve of the consumed sketch and lies on another curve of that sketch. Some naming attributes store three integers after the five leading fields.
 
 **Need.** Each form requires its exact sketch curves or region rule before the extrusion profile can transfer.
 
