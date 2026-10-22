@@ -108,7 +108,12 @@ fn registering_a_type_absent_from_the_original_root_never_advertises_it() {
     let schema = generator.root_schema_for::<u32>();
     let original = generator.definitions().keys().cloned().collect();
     let mut metadata = SchemaTypeMetadata::default();
-    dimension::<Length>(&mut generator, &original, &mut metadata);
+    register::<Dimension<Length>>(
+        &mut generator,
+        &original,
+        &mut metadata,
+        SchemaTypeRole::Dimension,
+    );
     assert!(metadata.references.is_empty());
     assert_eq!(schema, schemars::schema_for!(u32));
 }
@@ -119,7 +124,12 @@ fn actual_dimension_generic_identity_is_exported_without_classifying_an_imitatio
     generator.root_schema_for::<(Dimension<Length>, Imitation)>();
     let original = generator.definitions().keys().cloned().collect();
     let mut metadata = SchemaTypeMetadata::default();
-    dimension::<Length>(&mut generator, &original, &mut metadata);
+    register::<Dimension<Length>>(
+        &mut generator,
+        &original,
+        &mut metadata,
+        SchemaTypeRole::Dimension,
+    );
     assert_eq!(metadata.references.len(), 1);
     let identity = &metadata
         .references

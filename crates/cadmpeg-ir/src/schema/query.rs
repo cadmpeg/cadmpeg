@@ -25,7 +25,7 @@ use crate::sketches::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SchemaTypeRole {
-    /// The actual `Dimension<Q>` generic, for its compiled quantity type.
+    /// The actual generic `Dimension` type, for its compiled quantity type.
     Dimension,
     /// A typed constraint or pattern definition that can own D10 fields.
     D10Owner,
@@ -79,14 +79,6 @@ fn register<T: JsonSchema>(
     }
 }
 
-fn dimension<Q: JsonSchema>(
-    generator: &mut SchemaGenerator,
-    original: &BTreeSet<String>,
-    metadata: &mut SchemaTypeMetadata,
-) {
-    register::<Dimension<Q>>(generator, original, metadata, SchemaTypeRole::Dimension);
-}
-
 /// Generate the unchanged CADIR schema and compiler-bound dimension/D10 identities.
 ///
 /// Bindings cover the registered types only. An absent binding proves nothing
@@ -99,7 +91,9 @@ pub fn cadir() -> (Schema, SchemaTypeMetadata) {
     let mut metadata = SchemaTypeMetadata::default();
     macro_rules! dimensions {
         ($($quantity:ty),+ $(,)?) => {$(
-            dimension::<$quantity>(&mut generator, &original, &mut metadata);
+            register::<Dimension<$quantity>>(
+                &mut generator, &original, &mut metadata, SchemaTypeRole::Dimension,
+            );
         )+};
     }
     dimensions!(
