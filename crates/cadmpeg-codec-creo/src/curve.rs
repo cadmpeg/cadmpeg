@@ -664,7 +664,7 @@ pub(crate) struct FcCurveCoordinateToken {
     /// Decoded model length in millimeters.
     pub(crate) value_mm: f64,
     /// Exact source bytes occupied by the token.
-    pub(crate) raw: crate::source_bytes::SourceBytes<Vec<u8>>,
+    pub(crate) raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
     /// Token offset relative to the complete curve parameter body.
     pub(crate) offset: usize,
 }
@@ -685,7 +685,7 @@ impl serde::Serialize for FcCurveCoordinateToken {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FcCurveOpaqueSpan {
     /// Exact source bytes in the span.
-    raw: crate::source_bytes::SourceBytes<Vec<u8>>,
+    raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
     /// Span offset relative to the complete curve parameter body.
     offset: usize,
 }
@@ -694,10 +694,7 @@ impl serde::Serialize for FcCurveOpaqueSpan {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut wire = serializer.serialize_struct("FcCurveOpaqueSpan", 3)?;
-        wire.serialize_field(
-            "raw",
-            &self.raw.clone().with_untyped(cadmpeg_ir::ArenaClass::Model),
-        )?;
+        wire.serialize_field("raw", &self.raw)?;
         wire.serialize_field("offset", &self.offset)?;
         wire.serialize_field("length", &self.raw.len())?;
         wire.end()
