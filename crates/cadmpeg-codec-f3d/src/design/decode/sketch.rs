@@ -1396,10 +1396,52 @@ pub(crate) fn decode_sketch_relations(
         let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let scope = ids::native_scope(&entry.name);
         let bytes = scan.entry_bytes(&entry.name)?;
+        let mut framed_offsets = std::collections::HashSet::new();
+        if let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? {
+            for frame in design_primary_frames(bytes, &meta)? {
+                let design_type = frame.design_type;
+                if !matches!(
+                    SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version),
+                    Some(
+                        SketchRelationClass::Tangent
+                            | SketchRelationClass::CircularPattern
+                            | SketchRelationClass::RectangularPattern
+                            | SketchRelationClass::TextFrame
+                    )
+                ) {
+                    continue;
+                }
+                let record_index = u32::try_from(frame.entity_id).map_err(|_| {
+                    CodecError::malformed("F3D sketch-relation entity ID exceeds u32")
+                })?;
+                let record = DesignRecordHeader {
+                    id: design_record_id(
+                        &entry.name,
+                        ":design-record-header#",
+                        u64_from_index(frame.start),
+                    ),
+                    record_index,
+                    class_tag: frame.class_tag,
+                    byte_offset: u64_from_index(frame.start),
+                };
+                framed_offsets.insert(record.byte_offset);
+                decode_sketch_relation_record(
+                    &mut out,
+                    &entry.name,
+                    &record,
+                    &bytes[frame.start..frame.end],
+                    design_type.type_guid.as_str(),
+                    design_type.version,
+                )?;
+            }
+        }
         for record in records
             .iter()
             .filter(|record| native_stream(&record.id) == Some(scope.as_str()))
         {
+            if framed_offsets.contains(&record.byte_offset) {
+                continue;
+            }
             let Ok(at) = usize::try_from(record.byte_offset) else {
                 continue;
             };
@@ -1407,35 +1449,96 @@ pub(crate) fn decode_sketch_relations(
             let Some(payload) = bytes.get(at..record_end) else {
                 continue;
             };
-            let class = stream_types
-                .get(&record.class_tag.code())
-                .and_then(|design_type| {
-                    SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version)
-                });
-            let parsed = match class {
-                Some(class) => parse_classed_sketch_relation(payload, class)?,
-                None => None,
-            };
-            let Some(mut parsed) = parsed else {
+            let Some(design_type) = stream_types.get(&record.class_tag.code()) else {
                 continue;
             };
-            if payload
-                .get(parsed.parsed_end..)
-                .is_none_or(|padding| padding.iter().any(|byte| *byte != 0))
-            {
-                continue;
-            }
-            let pattern = decode_pattern_definition(payload, &mut parsed);
-            let Ok(definition) = crate::records::sketch_relations::SketchRelationDefinition::new(
-                parsed.state,
-                pattern,
-            ) else {
-                continue;
-            };
-            admit_sketch_relation(&mut out, &entry.name, record, payload, parsed, definition)?;
+            decode_sketch_relation_record(
+                &mut out,
+                &entry.name,
+                record,
+                payload,
+                design_type.type_guid.as_str(),
+                design_type.version,
+            )?;
         }
     }
     Ok(out)
+}
+
+pub(crate) fn decode_sketch_relation_record(
+    out: &mut Vec<SketchRelation>,
+    stream: &str,
+    record: &DesignRecordHeader,
+    payload: &[u8],
+    type_guid: &str,
+    version: u32,
+) -> Result<(), CodecError> {
+    let Some(class) = SketchRelationClass::of(type_guid, version) else {
+        return Ok(());
+    };
+    let Some(mut parsed) = parse_classed_sketch_relation(payload, class)? else {
+        return Ok(());
+    };
+    if payload
+        .get(parsed.parsed_end..)
+        .is_none_or(|padding| padding.iter().any(|byte| *byte != 0))
+    {
+        return Ok(());
+    }
+    let pattern = decode_pattern_definition(payload, &mut parsed);
+    let Ok(definition) =
+        crate::records::sketch_relations::SketchRelationDefinition::new(parsed.state, pattern)
+    else {
+        return Ok(());
+    };
+    admit_sketch_relation(out, stream, record, payload, parsed, definition)
+}
+
+pub(crate) fn rectangular_pattern_flags(payload: &[u8]) -> Option<[u8; 3]> {
+    let parsed =
+        parse_classed_sketch_relation(payload, SketchRelationClass::RectangularPattern).ok()??;
+    if parsed.state != 0x2000_0000
+        || payload
+            .get(parsed.parsed_end..)?
+            .iter()
+            .any(|byte| *byte != 0)
+    {
+        return None;
+    }
+    let RelationClassMembers::Rectangular { flags, .. } = parsed.class_members else {
+        return None;
+    };
+    Some(flags)
+}
+
+pub(crate) fn sketch_pattern_neutral_state(relation: &SketchRelation) -> Option<bool> {
+    use crate::records::sketch_relations::SketchPatternDefinition;
+    let class = match relation.definition.pattern()? {
+        SketchPatternDefinition::Circular { .. } => SketchRelationClass::CircularPattern,
+        SketchPatternDefinition::Rectangular { .. } => SketchRelationClass::RectangularPattern,
+        _ => return None,
+    };
+    let parsed = parse_classed_sketch_relation(relation.raw_bytes(), class).ok()??;
+    if parsed.state != relation.definition.state()
+        || relation
+            .raw_bytes()
+            .get(parsed.parsed_end..)?
+            .iter()
+            .any(|byte| *byte != 0)
+    {
+        return None;
+    }
+    match parsed.class_members {
+        RelationClassMembers::CircularPattern {
+            has_suppression, ..
+        } => Some(!has_suppression),
+        RelationClassMembers::Rectangular {
+            flags,
+            has_suppression,
+            ..
+        } => Some(!has_suppression && matches!(flags, [0 | 1, 0, 0])),
+        _ => None,
+    }
 }
 
 fn admit_sketch_relation(
@@ -1504,35 +1607,34 @@ fn admit_sketch_relation(
 
 /// Decode the pattern definition a relation's class members carry, reading them
 /// beside the auxiliary references the parse recorded. Circular patterns store
-/// the angle- and count-parameter references, the evaluated f64 total angle six
-/// zero bytes after the count-parameter reference, and the evaluated u32
-/// instance count directly after it. Rectangular patterns store, per direction,
-/// the evaluated u32 count, the count-parameter reference, a three-component
-/// f64 unit direction six zero bytes after that reference, the evaluated f64
-/// source distance, and the distance-parameter reference. A non-empty counted
-/// reference run stores adjacent spacing; an empty run stores the total
-/// seed-to-final span. Text-frame relations repeat the sketch-text member as an
-/// auxiliary reference.
+/// optional angle- and count-parameter references, the evaluated f64 total
+/// angle, and the evaluated u32 instance count. Rectangular direction clauses
+/// store an evaluated count, optional count reference, unit direction, evaluated
+/// signed distance, and optional distance reference. Text-frame relations retain
+/// the second class reference as the text entity.
 fn decode_pattern_definition(
     payload: &[u8],
     parsed: &mut ParsedSketchRelation,
 ) -> Option<crate::records::sketch_relations::SketchPatternDefinition> {
     use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDirection};
-    let reference_end = |ordinal: usize| Some(parsed.auxiliary_references.get(ordinal)?.offset + 4);
     match &mut parsed.class_members {
-        RelationClassMembers::CircularPattern => {
-            if parsed.state != 0x1000_0000 || parsed.auxiliary_references.len() != 2 {
+        RelationClassMembers::CircularPattern {
+            angle_parameter,
+            count_parameter,
+            evaluated_offset,
+            ..
+        } => {
+            if parsed.state != 0x1000_0000 {
                 return None;
             }
-            let angle_at = reference_end(1)? + 6;
-            let evaluated_angle = FiniteReal::new(View::f64_le_at(payload, angle_at)?)?;
+            let evaluated_angle = FiniteReal::new(View::f64_le_at(payload, *evaluated_offset)?)?;
             let evaluated_count = crate::records::sketch_relations::SketchPatternCount::try_from(
-                View::u32_le_at(payload, angle_at + 8)?,
+                View::u32_le_at(payload, *evaluated_offset + 8)?,
             )
             .ok()?;
             return Some(SketchPatternDefinition::Circular {
-                angle_parameter: parsed.auxiliary_references[0].value,
-                count_parameter: parsed.auxiliary_references[1].value,
+                angle_parameter: *angle_parameter,
+                count_parameter: *count_parameter,
                 evaluated_angle,
                 evaluated_count,
             });
@@ -1541,33 +1643,26 @@ fn decode_pattern_definition(
             if parsed.state != 0x2000_0000 {
                 return None;
             }
-            let [first_count, first_distance, second_count, second_distance] = (*clauses)?;
-            let directions = [
-                (first_count, first_distance),
-                (second_count, second_distance),
-            ]
-            .map(|(count, distance)| {
-                let count_at = count.offset.checked_sub(5)?;
+            let directions = clauses.map(|clause| {
                 let evaluated_count =
                     crate::records::sketch_relations::SketchPatternCount::try_from(
-                        View::u32_le_at(payload, count_at)?,
+                        View::u32_le_at(payload, clause.count_offset)?,
                     )
                     .ok()?;
-                let direction_at = count.offset + 4 + 6;
                 let direction = [
-                    View::f64_le_at(payload, direction_at)?,
-                    View::f64_le_at(payload, direction_at + 8)?,
-                    View::f64_le_at(payload, direction_at + 16)?,
+                    View::f64_le_at(payload, clause.direction_offset)?,
+                    View::f64_le_at(payload, clause.direction_offset + 8)?,
+                    View::f64_le_at(payload, clause.direction_offset + 16)?,
                 ];
                 Some(SketchPatternDirection {
                     evaluated_count,
-                    count_parameter: count.value,
+                    count_parameter: clause.count_parameter,
                     direction: direction.try_into().ok()?,
                     evaluated_distance: FiniteReal::new(View::f64_le_at(
                         payload,
-                        direction_at + 24,
+                        clause.direction_offset + 24,
                     )?)?,
-                    distance_parameter: distance.value,
+                    distance_parameter: clause.distance_parameter,
                 })
             });
             let [first, second] = directions;
@@ -1575,17 +1670,15 @@ fn decode_pattern_definition(
                 directions: [first?, second?],
             });
         }
-        RelationClassMembers::TextFrame => {
+        RelationClassMembers::TextFrame { text_reference } => {
+            let text_reference = (*text_reference)?;
             if parsed.state == 0x100_0000_0000
-                && parsed.auxiliary_references.len() == 1
                 && parsed
                     .members
                     .iter()
-                    .any(|member| member.reference.value == parsed.auxiliary_references[0].value)
+                    .any(|member| member.reference.value == text_reference)
             {
-                return Some(SketchPatternDefinition::TextFrame {
-                    text_reference: parsed.auxiliary_references[0].value,
-                });
+                return Some(SketchPatternDefinition::TextFrame { text_reference });
             }
         }
         RelationClassMembers::TextPath { glyph_transforms } => {
@@ -4166,6 +4259,15 @@ enum AuxiliaryRelationReference {
     Present(crate::records::identity::Located<u32, usize>),
 }
 
+impl AuxiliaryRelationReference {
+    fn value(self) -> Option<u32> {
+        match self {
+            Self::Absent => None,
+            Self::Present(reference) => Some(reference.value),
+        }
+    }
+}
+
 /// Take one reference member that the class may leave absent, recording it in
 /// the auxiliary run when it is present. An absent reference is one zero byte
 /// and names nothing, so it contributes no entry.
@@ -4192,7 +4294,7 @@ fn take_auxiliary_relation_reference(
 /// Skip the two tables both pattern classes write after their own leading
 /// members: a u32-counted map whose entry is a u64 key, a u32 count, and that
 /// many u64 values; then a u32-counted run of u32.
-fn skip_pattern_tables(payload: &[u8], cursor: &mut usize) -> Option<()> {
+fn skip_pattern_tables(payload: &[u8], cursor: &mut usize) -> Option<usize> {
     let entries = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
     if entries > MAX_RELATION_RUN {
         return None;
@@ -4210,19 +4312,36 @@ fn skip_pattern_tables(payload: &[u8], cursor: &mut usize) -> Option<()> {
         return None;
     }
     *cursor += 4 + ordinals * 4;
-    (*cursor <= payload.len()).then_some(())
+    (*cursor <= payload.len()).then_some(ordinals)
+}
+
+#[derive(Clone, Copy)]
+struct ParsedSketchPatternDirection {
+    count_offset: usize,
+    count_parameter: Option<u32>,
+    direction_offset: usize,
+    distance_parameter: Option<u32>,
 }
 
 /// What a sketch-relation subclass leaves behind after its own members.
 enum RelationClassMembers {
     Plain,
     Tangent,
-    CircularPattern,
-    Rectangular {
-        reference_count: u32,
-        clauses: Option<[crate::records::identity::Located<u32, usize>; 4]>,
+    CircularPattern {
+        angle_parameter: Option<u32>,
+        count_parameter: Option<u32>,
+        evaluated_offset: usize,
+        has_suppression: bool,
     },
-    TextFrame,
+    Rectangular {
+        flags: [u8; 3],
+        reference_count: u32,
+        clauses: [ParsedSketchPatternDirection; 2],
+        has_suppression: bool,
+    },
+    TextFrame {
+        text_reference: Option<u32>,
+    },
     TextPath {
         glyph_transforms: Vec<SketchGlyphTransform>,
     },
@@ -4258,27 +4377,31 @@ fn parse_relation_class_members(
             }
             SketchRelationClass::TextFrame => {
                 take!()?;
-                take!()?;
-                RelationClassMembers::TextFrame
+                let text_reference = take!()?.value();
+                RelationClassMembers::TextFrame { text_reference }
             }
             SketchRelationClass::CircularPattern => {
-                take!()?;
-                take!()?;
-                // The evaluated total angle and the evaluated instance count.
+                let angle_parameter = take!()?.value();
+                let count_parameter = take!()?.value();
+                let evaluated_offset = *cursor;
                 *cursor += 12;
-                skip_pattern_tables(payload, cursor)?;
+                let has_suppression = skip_pattern_tables(payload, cursor)? != 0;
                 if payload.get(*cursor)? != &0 {
                     return None;
                 }
                 *cursor += 1;
-                RelationClassMembers::CircularPattern
+                RelationClassMembers::CircularPattern {
+                    angle_parameter,
+                    count_parameter,
+                    evaluated_offset,
+                    has_suppression,
+                }
             }
             SketchRelationClass::RectangularPattern => {
-                use AuxiliaryRelationReference::Present;
-
-                // The three flags are not checked the way the tangency class's are:
-                // the counted runs and the unit directions that follow them already
-                // reject a misframed record, and the flags do not.
+                let flags = payload
+                    .get(*cursor..cursor.checked_add(3)?)?
+                    .try_into()
+                    .ok()?;
                 *cursor += 3;
                 let reference_count = View::u32_le_at(payload, *cursor)?;
                 let references = usize::try_from(reference_count).ok()?;
@@ -4289,21 +4412,26 @@ fn parse_relation_class_members(
                 for _ in 0..references {
                     take!()?;
                 }
-                skip_pattern_tables(payload, cursor)?;
-                let mut clauses = [AuxiliaryRelationReference::Absent; 4];
-                for pair in clauses.chunks_exact_mut(2) {
+                let has_suppression = skip_pattern_tables(payload, cursor)? != 0;
+                let mut clauses = [ParsedSketchPatternDirection {
+                    count_offset: 0,
+                    count_parameter: None,
+                    direction_offset: 0,
+                    distance_parameter: None,
+                }; 2];
+                for clause in &mut clauses {
+                    clause.count_offset = *cursor;
                     *cursor += 4;
-                    pair[0] = take!()?;
+                    clause.count_parameter = take!()?.value();
+                    clause.direction_offset = *cursor;
                     *cursor += 32;
-                    pair[1] = take!()?;
+                    clause.distance_parameter = take!()?.value();
                 }
-                let clauses = match clauses {
-                    [Present(a), Present(b), Present(c), Present(d)] => Some([a, b, c, d]),
-                    _ => None,
-                };
                 RelationClassMembers::Rectangular {
+                    flags,
                     reference_count,
                     clauses,
+                    has_suppression,
                 }
             }
 

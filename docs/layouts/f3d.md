@@ -4078,6 +4078,31 @@ Offsets start at the thirty-byte inherited presentation suffix before the owning
 | 25 | 4 | `zero_word` | `u32` | little | spec | The legacy text presentation suffix is thirty bytes · value `0` |
 | 29 | 1 | `zero_byte` | `u8` | little | spec | The legacy text presentation suffix is thirty bytes · value `0` |
 
+## `sketch_tangency_class_flags`
+
+Spec §3.1 · layout: byte offsets · size: 3 B
+
+Offsets start after the tangency property block. Endpoint roles require a bounded endpoint contact in semantic return order.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `first_curve_start` | `bool8` | little | spec | The tangency subclass flags refer |
+| 1 | 1 | `second_curve_start` | `bool8` | little | spec | The tangency subclass flags refer |
+| 2 | 1 | `positive_tangent_dot` | `bool8` | little | spec | The tangency subclass flags refer |
+
+## `sketch_rectangular_pattern_class_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 7 B
+
+Offsets start after the rectangular-pattern property block, before the variable direction slots and pattern tables.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `uses_extent` | `bool8` | little | spec | The rectangular-pattern reference run |
+| 1 | 1 | `direction_one_symmetric` | `bool8` | little | spec | The rectangular-pattern reference run |
+| 2 | 1 | `unassigned_flag` | `bool8` | little | spec | The rectangular-pattern reference run |
+| 3 | 4 | `direction_slot_count` | `u32` | little | spec | The rectangular-pattern reference run |
+
 ## `edge_flange_fixed_operation_section`
 
 Spec §3.1 · layout: byte offsets · size: 79 B

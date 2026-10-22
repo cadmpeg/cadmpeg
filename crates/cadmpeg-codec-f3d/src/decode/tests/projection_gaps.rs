@@ -464,6 +464,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             unprojected_sketch_texts: 0,
             unprojected_sketch_text_styles: 0,
             unprojected_sketch_relations: 0,
+            unprojected_sketch_pattern_states: 0,
             unprojected_dimensions: 0,
             profile_selections: 2,
             path_selections: 1,
@@ -1028,4 +1029,30 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     assert_eq!(ir.model.bodies[0].color, Some(direct));
     assert_eq!(ir.model.faces[0].color, Some(material));
     assert_eq!(ir.model.faces[1].color, None);
+}
+
+#[test]
+fn original_pattern_states_have_a_distinct_native_retention_loss_count() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    for case in crate::test_support::sketch_relations::original_relation_records() {
+        let Some(neutral_state) = case.pattern_neutral_state else {
+            continue;
+        };
+        let mut native = F3dNative::default();
+        native.sketch_relations.push(case.decode());
+        let gaps = design_projection_gaps(&ir, &native);
+        let unsupported = !neutral_state;
+        assert_eq!(
+            gaps.unprojected_sketch_pattern_states,
+            usize::from(unsupported),
+            "{}",
+            case.label
+        );
+        assert_eq!(
+            gaps.unprojected_sketch_relations,
+            usize::from(!unsupported),
+            "{}",
+            case.label
+        );
+    }
 }

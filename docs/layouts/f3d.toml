@@ -13336,6 +13336,71 @@ source = "spec"
 anchor = "The legacy text presentation suffix is thirty bytes"
 value = 0
 
+[[record]]
+name = "sketch_tangency_class_flags"
+kind = "byte"
+section = "3.1"
+anchor = "The tangency subclass flags refer"
+size = 3
+note = "Offsets start after the tangency property block. Endpoint roles require a bounded endpoint contact in semantic return order."
+
+[[record.field]]
+name = "first_curve_start"
+offset = 0
+type = "bool8"
+source = "spec"
+anchor = "The tangency subclass flags refer"
+
+[[record.field]]
+name = "second_curve_start"
+offset = 1
+type = "bool8"
+source = "spec"
+anchor = "The tangency subclass flags refer"
+
+[[record.field]]
+name = "positive_tangent_dot"
+offset = 2
+type = "bool8"
+source = "spec"
+anchor = "The tangency subclass flags refer"
+
+[[record]]
+name = "sketch_rectangular_pattern_class_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The rectangular-pattern reference run"
+size = 7
+note = "Offsets start after the rectangular-pattern property block, before the variable direction slots and pattern tables."
+
+[[record.field]]
+name = "uses_extent"
+offset = 0
+type = "bool8"
+source = "spec"
+anchor = "The rectangular-pattern reference run"
+
+[[record.field]]
+name = "direction_one_symmetric"
+offset = 1
+type = "bool8"
+source = "spec"
+anchor = "The rectangular-pattern reference run"
+
+[[record.field]]
+name = "unassigned_flag"
+offset = 2
+type = "bool8"
+source = "spec"
+anchor = "The rectangular-pattern reference run"
+
+[[record.field]]
+name = "direction_slot_count"
+offset = 3
+type = "u32"
+source = "spec"
+anchor = "The rectangular-pattern reference run"
+
 # --- Not tabulated ---------------------------------------------------------
 
 [[not_applicable]]

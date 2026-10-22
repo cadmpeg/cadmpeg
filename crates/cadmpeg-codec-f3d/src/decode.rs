@@ -345,6 +345,7 @@ struct DesignProjectionGaps {
     unprojected_sketch_texts: usize,
     unprojected_sketch_text_styles: usize,
     unprojected_sketch_relations: usize,
+    unprojected_sketch_pattern_states: usize,
     unprojected_dimensions: usize,
     profile_selections: usize,
     path_selections: usize,
@@ -1406,8 +1407,15 @@ fn design_projection_gaps(
         unprojected_sketch_relations: native
             .sketch_relations
             .iter()
-            .filter(|relation| !projected_constraint_refs.contains(relation.id.as_str()))
+            .filter(|relation| {
+                !projected_constraint_refs.contains(relation.id.as_str())
+                    && crate::design::decode::sketch::sketch_pattern_neutral_state(relation) != Some(false)
+            })
             .count(),
+        unprojected_sketch_pattern_states: native.sketch_relations.iter().filter(|relation| {
+            !projected_constraint_refs.contains(relation.id.as_str())
+                && crate::design::decode::sketch::sketch_pattern_neutral_state(relation) == Some(false)
+        }).count(),
         unprojected_dimensions: {
             let container_only = container_only_dimension_parameters(native);
             let relation_bearing_companions = native.design_parameter_companions
@@ -2074,6 +2082,14 @@ fn report_design_projection_gaps(
         format_args!(
             "{} decoded sketch text record(s) retain unsupported style or orientation state.",
             gaps.unprojected_sketch_text_styles
+        ),
+    )?;
+    push(
+        F3dLossCode::SketchPatternStateUnprojected,
+        gaps.unprojected_sketch_pattern_states,
+        format_args!(
+            "{} sketch pattern(s) retain unsupported symmetry, suppression or flag state.",
+            gaps.unprojected_sketch_pattern_states
         ),
     )?;
     push(

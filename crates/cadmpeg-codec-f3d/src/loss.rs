@@ -117,6 +117,8 @@ pub(crate) enum F3dLossCode {
     SketchTextStyleUnprojected,
     /// Decoded sketch relations have no neutral constraint.
     SketchRelationUnprojected,
+    /// Sketch patterns retain unrepresented symmetry, suppression or flag state.
+    SketchPatternStateUnprojected,
     /// A spatial sketch's closed-profile search stopped at a local cap.
     SketchProfileSearchCapped,
     /// Design dimension parameters have no parameter-backed sketch constraint.
@@ -280,6 +282,7 @@ impl F3dLossCode {
         Self::SketchTextUnprojected,
         Self::SketchTextStyleUnprojected,
         Self::SketchRelationUnprojected,
+        Self::SketchPatternStateUnprojected,
         Self::SketchProfileSearchCapped,
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
@@ -391,6 +394,7 @@ impl F3dLossCode {
             Self::SketchTextUnprojected => "sketch.text-unprojected",
             Self::SketchTextStyleUnprojected => "sketch.text-style-unprojected",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
+            Self::SketchPatternStateUnprojected => "sketch.pattern-state-unprojected",
             Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
@@ -517,6 +521,7 @@ impl F3dLossCode {
             | Self::SketchTextUnprojected
             | Self::SketchTextStyleUnprojected
             | Self::SketchRelationUnprojected
+            | Self::SketchPatternStateUnprojected
             | Self::SketchProfileSearchCapped
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
@@ -609,6 +614,7 @@ impl F3dLossCode {
             | Self::SketchTextUnprojected
             | Self::SketchTextStyleUnprojected
             | Self::SketchRelationUnprojected
+            | Self::SketchPatternStateUnprojected
             | Self::SketchProfileSearchCapped
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
@@ -761,6 +767,7 @@ mod tests {
                 "sketch.text-unprojected",
                 "sketch.text-style-unprojected",
                 "sketch.relation-unprojected",
+                "sketch.pattern-state-unprojected",
                 "sketch.profile-search-capped",
                 "dimension.unprojected",
                 "feature.profile-selection-native",

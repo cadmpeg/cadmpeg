@@ -21,6 +21,7 @@ use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
 use crate::F3dCodec;
 
+pub(crate) mod sketch_relations;
 pub(crate) mod sketch_text;
 
 pub(crate) fn with_decode_context<T>(
