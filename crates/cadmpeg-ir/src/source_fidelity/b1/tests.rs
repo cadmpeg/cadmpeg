@@ -49,6 +49,25 @@ fn given_up_content_does_not_turn_framing_into_b1() {
 }
 
 #[test]
+fn insignificant_bytes_inside_a_given_up_part_are_b1_and_its_framing_is_not() {
+    // #214 §3.1: every given-up part is B1; #215: framing bytes are never B1.
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let result = partition_stream(
+        &ctx,
+        "file",
+        12,
+        &BTreeMap::new(),
+        &[0..2, 5..6],
+        &[2..4, 8..10],
+        &[3..9],
+    )
+    .unwrap();
+    assert_eq!(result.exempt(), &[0..3, 5..6, 9..10]);
+    assert_eq!(result.b1(), &[3..5, 6..9, 10..12]);
+}
+
+#[test]
 fn unconsumed_stream_length_does_not_allocate_per_byte() {
     let arena = DecodeArena::new();
     let ctx = context(&arena);
