@@ -619,6 +619,28 @@ pub(crate) mod paramesh_mesh_collection_prefix {
     pub(crate) const TEXTURE_TABLE_REFERENCE: usize = 27;
 }
 
+/// Byte offsets for the `paramesh_flagged_mesh_collection_prefix` record.
+///
+/// Spec §3.1. Record length 42 B.
+///
+/// ```text
+/// Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix.
+/// ```
+pub(crate) mod paramesh_flagged_mesh_collection_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 42;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 20;
+    /// Stated value of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG_VALUE: u8 = 1;
+    /// Offset of `constant_01_01` (`bytes[2]`). Spec §3.1.
+    pub(crate) const CONSTANT_01_01: usize = 29;
+    /// Offset of `texture_table_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TEXTURE_TABLE_REFERENCE: usize = 31;
+}
+
 /// Byte offsets for the `paramesh_mesh_collection_base_prefix` record.
 ///
 /// Spec §3.1. Record length 24 B.

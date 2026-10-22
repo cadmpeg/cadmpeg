@@ -348,6 +348,14 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** An ownerless feature input has no owner binding in the current parameter model, and the meaning of the set trailer bytes is unknown.
 
+### DR-85. Flagged empty mesh-collection word
+
+**Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged empty mesh collection store, and can a flagged collection have bodies?
+
+**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. Every flagged collection is empty, and its u32 is `1`.
+
+**Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value and shows whether a flagged collection keeps bodies.
+
 ## 2. External references
 
 ### DR-82. Other joint freedom codes and the limit flags
