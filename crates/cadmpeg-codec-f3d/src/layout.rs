@@ -3286,6 +3286,32 @@ pub(crate) mod marker_one_revolve_prologue {
     pub(crate) const STRUCTURAL_CONSTANT: usize = 34;
 }
 
+/// Byte offsets for the `referenced_angle_revolve_prologue` record.
+///
+/// Spec §3.1. Record length 50 B.
+///
+/// ```text
+/// Offsets are relative to the Revolve primary indexed header. The marked angle-owner reference occupies offsets 39 through 49.
+/// ```
+pub(crate) mod referenced_angle_revolve_prologue {
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 20;
+    /// Offset of `zero_value` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_VALUE: usize = 21;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 25;
+    /// Offset of `extent_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXTENT_KIND: usize = 29;
+    /// Offset of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND: usize = 33;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 34;
+    /// Offset of `structural_constant` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const STRUCTURAL_CONSTANT: usize = 35;
+    /// Offset of `angle_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const ANGLE_REFERENCE_MARKER: usize = 39;
+}
+
 /// Byte offsets for the `current_extrude_operation_fields` record.
 ///
 /// Spec §3.1. Record length 42 B.
