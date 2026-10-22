@@ -162,6 +162,9 @@ pub(crate) enum F3dLossCode {
     XrefPlacementUndecoded,
     /// Structured placement records were superseded by scope-bound carriers.
     XrefPlacementSuperseded,
+    /// Inserted-design occurrences that store the identity and are placed by
+    /// their joints; the joint-solved pose is not computed.
+    JointPlacedOccurrenceUnsolved,
     /// Mesh body geometry stores vertex coordinates at f32 precision.
     MeshVertexPrecisionReduced,
     /// A bodyless design's sketches or reference images are its complete carrier.
@@ -302,6 +305,7 @@ impl F3dLossCode {
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
         Self::XrefPlacementSuperseded,
+        Self::JointPlacedOccurrenceUnsolved,
         Self::MeshVertexPrecisionReduced,
         Self::BodylessDesignCarrier,
         Self::AssemblyComponentsExternal,
@@ -414,6 +418,7 @@ impl F3dLossCode {
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefPlacementSuperseded => "xref.placement-superseded",
+            Self::JointPlacedOccurrenceUnsolved => "assembly.joint-placed-occurrence-unsolved",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
             Self::AssemblyComponentsExternal => "assembly.components-external",
@@ -536,6 +541,7 @@ impl F3dLossCode {
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
             | Self::XrefPlacementSuperseded
+            | Self::JointPlacedOccurrenceUnsolved
             | Self::MeshVertexPrecisionReduced
             | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
@@ -580,7 +586,8 @@ impl F3dLossCode {
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
             | Self::XrefPlacementUndecoded
-            | Self::XrefPlacementSuperseded => LossTaxonomy::AssemblyComponentsExternal,
+            | Self::XrefPlacementSuperseded
+            | Self::JointPlacedOccurrenceUnsolved => LossTaxonomy::AssemblyComponentsExternal,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
@@ -779,6 +786,7 @@ mod tests {
                 "xref.table-undecoded",
                 "xref.placement-undecoded",
                 "xref.placement-superseded",
+                "assembly.joint-placed-occurrence-unsolved",
                 "mesh.vertex-precision-reduced",
                 "design.bodyless-carrier",
                 "assembly.components-external",

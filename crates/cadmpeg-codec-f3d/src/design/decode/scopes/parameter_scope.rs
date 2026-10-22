@@ -1060,6 +1060,24 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 return None;
             }
         }
+        // The rigid `As-built` scope stores count 0 at its fixed offset,
+        // immediately before its history state, with no reference marker in
+        // the slot before it. Every other scope keeps a counted table.
+        if reference_table.is_none()
+            && crate::design::assembly::rigid_as_built_scope(
+                u64::try_from(paired_at.checked_sub(start)?).ok()?,
+                kind == scope::DesignFeatureKind::AsBuilt,
+            )
+        {
+            let count_at =
+                start.checked_add(crate::layout::assembly_rigid_as_built_scope::REFERENCE_COUNT)?;
+            if count_at.checked_add(4) == Some(reference_table_end)
+                && View::u32_le_at(bytes, count_at)? == 0
+                && bytes.get(count_at.checked_sub(11)?) != Some(&1)
+            {
+                reference_table = Some((count_at, Vec::new(), Vec::new()));
+            }
+        }
         let reference_table = reference_table?;
         let (reference_count_at, reference_members, reference_member_offsets) = &reference_table;
         let surface_stitch_operation = if kind == scope::DesignFeatureKind::SurfaceStitch {
