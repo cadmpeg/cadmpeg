@@ -285,7 +285,7 @@ pub(super) fn project(
         };
         if crate::instances::is_reference_class(object.class_uuid) {
             if let Ok(reference) =
-                crate::instances::parse_reference(scan.data, object.class_data_range.clone())
+                crate::instances::parse_reference(scan.data, object.class_data_range())
             {
                 projection.references.insert(order, reference);
             }

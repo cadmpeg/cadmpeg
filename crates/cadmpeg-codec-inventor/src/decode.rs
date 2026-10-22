@@ -38,15 +38,13 @@ use crate::native::ufrx::{
     UfrxRecord, UfrxRepresentationRecord, UfrxRepresentationRecordWire,
 };
 use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
-    AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
-    RevisionPayloadForm, RevisionRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, VersionTupleRecord,
+    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
+    DatabaseRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
+    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord,
+    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{DatabaseState, DocumentKind, ParsedState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -414,19 +412,14 @@ fn decode_container<'a>(
         .and_then(|namespace| namespace.arenas().get("rse_records"))
         .map_or(0, Vec::len);
     let assembly_placements = assembly_inventory
-        .placements
-        .iter()
-        .map(|placement| {
-            admit_assembly_placement(
-                ctx,
-                AssemblyPlacementRecordWire::from_placement(placement),
-                &mut assembly_inventory.issues,
-            )
+        .parts
+        .native()
+        .namespace("inventor")
+        .map(|namespace| {
+            namespace.arena_as_for_decode::<AssemblyPlacementRecord>(ctx, "assembly_placements")
         })
-        .collect::<Result<Vec<_>, CodecError>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+        .transpose()?
+        .unwrap_or_default();
     let presentation_native =
         presentation_native_projection::project(ctx, &mut presentation_inventory)?;
     let pm_app_default_styles = presentation_native.default_styles;
@@ -466,8 +459,11 @@ fn decode_container<'a>(
         "assembly_occurrences",
         &[] as &[AssemblyOccurrenceRecord],
     )?;
-    namespace.set_arena(ctx, "assembly_placements", &assembly_placements)?;
-    namespace.set_arena(ctx, "assembly_record_issues", &assembly_inventory.issues)?;
+    namespace.set_arena(
+        ctx,
+        "assembly_placements",
+        &[] as &[AssemblyPlacementRecord],
+    )?;
     namespace.set_arena(ctx, "pm_app_default_styles", &pm_app_default_styles)?;
     namespace.set_arena(ctx, "pm_app_rendering_styles", &pm_app_rendering_styles)?;
     namespace.set_arena(ctx, "pm_graphics_faces", &pm_graphics_faces)?;
@@ -748,12 +744,6 @@ fn decode_container<'a>(
                     )
                 }
             }));
-        }
-        if !assembly_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::AssemblyRecordMalformed.note({ untyped.insert(cadmpeg_ir::ArenaClass::Model); format!(
-                "{} typed Inventor assembly record(s) are malformed or outside the implemented branch.",
-                assembly_inventory.issues.len()
-            ) }));
         }
         if !presentation_inventory.issues.is_empty() {
             losses.push(InventorLossCode::PresentationRecordMalformed.note({ untyped.insert(cadmpeg_ir::ArenaClass::Model); format!(
@@ -1232,15 +1222,11 @@ fn decode_container<'a>(
         ),
         (
             crate::coverage::ASSEMBLY_PLACEMENTS,
-            assembly_placements.len(),
+            assembly_inventory.placements.len(),
         ),
         (
             crate::coverage::ASSEMBLY_OCCURRENCES_TRANSFERRED,
             transferred_occurrence_count,
-        ),
-        (
-            crate::coverage::ASSEMBLY_RECORD_ISSUES,
-            assembly_inventory.issues.len(),
         ),
         (
             crate::coverage::ACTIVE_KERNEL_CARRIERS,
@@ -1998,32 +1984,6 @@ fn admit_protein_rejection(
 ) -> Result<Option<ProteinRejectionRecord>, CodecError> {
     let scope = wire.id.clone();
     admit_ufrx_record(ctx, ProteinRejectionRecord::try_from(wire), &scope, issues)
-}
-
-fn admit_assembly_placement(
-    ctx: &DecodeContext<'_>,
-    wire: AssemblyPlacementRecordWire,
-    issues: &mut Vec<RecordIssue>,
-) -> Result<Option<AssemblyPlacementRecord>, CodecError> {
-    let segment_token = wire.segment_token.clone();
-    let record_ordinal = wire.record_ordinal;
-    match AssemblyPlacementRecord::try_from(wire) {
-        Ok(record) => {
-            ctx.charge_entities(1, "admit Inventor native assembly placement")?;
-            Ok(Some(record))
-        }
-        Err(detail) => {
-            ctx.charge_entities(1, "admit Inventor placement conversion issue")?;
-            issues.push(RecordIssue {
-                family: RecordIssueFamily::Assembly,
-                segment_token: cadmpeg_ir::ids::IdentityKey::try_new(segment_token)
-                    .map_err(CodecError::malformed)?,
-                record_ordinal,
-                detail,
-            });
-            Ok(None)
-        }
-    }
 }
 
 fn structural_issue(

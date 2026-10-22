@@ -56,8 +56,6 @@ pub(crate) enum FreecadLossCode {
     ExportNativePropertyNotTransferred,
     /// A design-kind object has no neutral feature projection.
     FeatureObjectUnprojected,
-    /// A bounded archive payload cannot be opened; its stored bytes remain retained.
-    ArchiveEntryUnreadable,
     /// A property payload cannot enter the admitted persistence graph.
     PersistencePayloadUnresolved,
     /// An optional file reference has no readable archive payload.
@@ -125,7 +123,6 @@ impl FreecadLossCode {
         Self::ExportProceduralReduced,
         Self::ExportNativePropertyNotTransferred,
         Self::FeatureObjectUnprojected,
-        Self::ArchiveEntryUnreadable,
         Self::PersistencePayloadUnresolved,
         Self::PersistenceSideEntryUnresolved,
         Self::PersistenceCountNoncanonical,
@@ -170,7 +167,6 @@ impl FreecadLossCode {
             Self::ExportProceduralReduced => "geometry.procedural-reduced",
             Self::ExportNativePropertyNotTransferred => "metadata.native-property-not-transferred",
             Self::FeatureObjectUnprojected => "feature.object-unprojected",
-            Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
             Self::PersistencePayloadUnresolved => "metadata.persistence-payload-unresolved",
             Self::PersistenceSideEntryUnresolved => "metadata.persistence-side-entry-unresolved",
             Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
@@ -228,7 +224,6 @@ impl FreecadLossCode {
             | Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
-            | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
@@ -266,9 +261,9 @@ impl FreecadLossCode {
             Self::ExportProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::ExportGeometryNotTransferred => LossTaxonomy::GeometryNotTransferred,
             Self::ExportNativePropertyNotTransferred => LossTaxonomy::MetadataNotTransferred,
-            Self::ArchiveEntryUnreadable
-            | Self::PersistencePayloadUnresolved
-            | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
+            Self::PersistencePayloadUnresolved | Self::PersistenceSideEntryUnresolved => {
+                LossTaxonomy::RecordNotTyped
+            }
             Self::FeatureObjectUnprojected
             | Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained => LossTaxonomy::FeatureHistoryRetained,
@@ -334,8 +329,6 @@ enum SourceRecordCoverage {
     Writer,
     /// Per-property admission decides the served class.
     Property,
-    /// The unreadable archive member's typed referents decide its class.
-    ArchiveEntry,
 }
 
 /// Complete audit of decoder losses. An object-unprojected loss is C when its
@@ -402,10 +395,6 @@ const SOURCE_RECORD_COVERAGE: &[(FreecadLossCode, SourceRecordCoverage)] = &[
     (
         FreecadLossCode::FeatureObjectUnprojected,
         SourceRecordCoverage::Typed,
-    ),
-    (
-        FreecadLossCode::ArchiveEntryUnreadable,
-        SourceRecordCoverage::ArchiveEntry,
     ),
     (
         FreecadLossCode::PersistencePayloadUnresolved,
@@ -509,9 +498,7 @@ pub(crate) fn unrepresented(
     losses: &[LossNote],
     native: &cadmpeg_ir::native::NativeNamespace,
 ) -> Result<cadmpeg_ir::document::ArenaClasses, cadmpeg_core::CodecError> {
-    use crate::native::{
-        DocumentFacts, EntryRecord, GuiPropertyRecord, ObjectRecord, PropertyBody, PropertyRecord,
-    };
+    use crate::native::{DocumentFacts, EntryRecord, ObjectRecord, PropertyBody, PropertyRecord};
     use cadmpeg_ir::document::{ArenaClass, ArenaClasses};
     let mut classes = ArenaClasses::new();
     for (code, coverage) in SOURCE_RECORD_COVERAGE {
@@ -529,7 +516,6 @@ pub(crate) fn unrepresented(
                 SourceRecordCoverage::Typed
                 | SourceRecordCoverage::Metadata
                 | SourceRecordCoverage::Property
-                | SourceRecordCoverage::ArchiveEntry
                 | SourceRecordCoverage::Writer => {}
             }
         }
@@ -537,7 +523,6 @@ pub(crate) fn unrepresented(
     let objects = native.arena_as::<ObjectRecord>("objects")?;
     let properties = native.arena_as::<PropertyRecord>("properties")?;
     let entries = native.arena_as::<EntryRecord>("entries")?;
-    let gui_properties = native.arena_as::<GuiPropertyRecord>("gui_properties")?;
     let property_class = |property: &PropertyRecord| {
         if property.type_name == "Part::PropertyPartShape" {
             ArenaClass::Model
@@ -567,37 +552,7 @@ pub(crate) fn unrepresented(
             classes.insert(property_class(property));
         }
     }
-    for entry in native.arena_as::<crate::container::UnreadableEntry>("unreadable_entries")? {
-        let mut served = ArenaClasses::new();
-        for property in &properties {
-            if property.side_entries().contains(&entry.name)
-                || property.values().iter().any(|value| {
-                    value
-                        .attributes
-                        .iter()
-                        .any(|(key, name)| entry_attribute(property, key) && name == &entry.name)
-                })
-            {
-                served.insert(property_class(property));
-            }
-        }
-        if entry.name == "GuiDocument.xml"
-            || std::path::Path::new(&entry.name)
-                .extension()
-                .is_some_and(|extension| extension.as_encoded_bytes().eq_ignore_ascii_case(b"brp"))
-            || entry.name == "Thumbnail.png"
-            || entry.name.starts_with("thumbnails/")
-            || gui_properties
-                .iter()
-                .any(|property| property.side_entries.contains(&entry.name))
-        {
-            served.insert(ArenaClass::Model);
-        }
-        if served.is_empty() {
-            served.extend([ArenaClass::Model, ArenaClass::Design]);
-        }
-        classes.extend(served);
-    }
+
     if objects.is_empty()
         && native
             .arena_as::<DocumentFacts>("document")?
@@ -644,7 +599,6 @@ mod tests {
                 "geometry.procedural-reduced",
                 "metadata.native-property-not-transferred",
                 "feature.object-unprojected",
-                "source.archive-entry-unreadable",
                 "metadata.persistence-payload-unresolved",
                 "metadata.persistence-side-entry-unresolved",
                 "metadata.persistence-count-noncanonical",
@@ -807,46 +761,46 @@ mod tests {
 
     #[test]
     fn unreadable_archive_payload_is_not_represented_by_its_typed_diagnostic() {
-        use cadmpeg_ir::document::{ArenaClass, ArenaClasses};
+        use cadmpeg_ir::{Codec, DecodeOptions};
+        use cadmpeg_test_support::zip_fixture::{self, RawEntry};
         let xml = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="Sketch" type="Sketcher::SketchObject"/></Objects><ObjectData Count="1"><Object name="Sketch"><Properties Count="1"><Property name="ExternalGeo" type="App::PropertyFile"><File file="cache.bin"/></Property></Properties></Object></ObjectData></Document>"#;
-        let mut ir = namespace_from_xml(xml);
-        let namespace = ir.native.namespace_mut("fcstd");
-        let ctx = cadmpeg_test_support::service_decode_context();
         for (name, expected) in [
-            ("cache.bin", ArenaClass::Design),
-            ("Shape.brp", ArenaClass::Model),
-            ("Thumbnail.png", ArenaClass::Model),
+            ("cache.bin", cadmpeg_ir::ArenaClass::Design),
+            ("Shape.brp", cadmpeg_ir::ArenaClass::Model),
+            ("Thumbnail.png", cadmpeg_ir::ArenaClass::Model),
         ] {
-            let unreadable = crate::container::UnreadableEntry {
-                id: "fcstd:native:unreadable_entry#entry".into(),
-                name: name.into(),
-                data_start: 0,
-                data_end: 1,
-                stored_data: vec![1].into(),
-                byte_len: 1,
-                sha256: cadmpeg_ir::hash::sha256_hex(&[1]),
-                error: "bad CRC".into(),
-            };
-            namespace
-                .set_arena(&ctx, "unreadable_entries", &[unreadable])
+            let bytes = zip_fixture::archive(&[
+                RawEntry::stored("Document.xml", xml.as_bytes()),
+                RawEntry::compressed(name, 12, &[1], &[1]),
+            ]);
+            let decoded = crate::FcstdCodec
+                .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
                 .unwrap();
-            // Remove the independent missing-cache condition for non-cache runs.
-            if name != "cache.bin" {
-                namespace
-                    .set_arena(
-                        &ctx,
-                        "properties",
-                        &Vec::<crate::native::PropertyRecord>::new(),
-                    )
-                    .unwrap();
-            }
+            let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+            assert_eq!(unknowns.len(), 1);
+            assert!(decoded
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "record.unreadable"));
+            assert!(!decoded
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arenas()
+                .contains_key("unreadable_entries"));
             assert_eq!(
-                super::unrepresented(
-                    &[FreecadLossCode::ArchiveEntryUnreadable.note("bad CRC")],
-                    namespace
-                )
-                .unwrap(),
-                ArenaClasses::from([expected])
+                decoded
+                    .source_fidelity()
+                    .retained_record(unknowns[0].id.as_str())
+                    .unwrap()
+                    .data(),
+                Some([1].as_slice())
+            );
+            assert_eq!(
+                decoded.source_fidelity().unrepresented(),
+                cadmpeg_ir::ArenaClasses::from([expected])
             );
         }
     }

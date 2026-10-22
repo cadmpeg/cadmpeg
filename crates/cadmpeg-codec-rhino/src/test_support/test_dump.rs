@@ -4,7 +4,6 @@
 //! Dump-test byte builders shared by owner suites.
 
 use crate::chunks::{parse_header, ArchiveVersion, TCODE_CRC, TCODE_ENDOFFILE, TCODE_SHORT};
-use crate::loss::Diagnostics;
 use crate::settings;
 use crate::wire::Uuid;
 use crate::MAGIC;
@@ -152,21 +151,8 @@ pub(crate) fn tagged_attributes(items: &[(u8, Vec<u8>)], minor: u8) -> Vec<u8> {
 pub(crate) fn descriptor(
     attributes: crate::objects::ObjectAttributes,
     offset: usize,
-) -> crate::objects::ObjectDescriptor<()> {
-    crate::objects::ObjectDescriptor {
-        range: offset..offset + 10,
-        object_type: 0,
-        class_uuid: Uuid::nil(),
-        class_data_range: offset..offset,
-        attributes: crate::objects::AttributeState::Parsed(Box::new(attributes)),
-        attributes_userdata: Vec::new(),
-        identity: (),
-        userdata: Vec::new(),
-        history: None,
-        unknown_trailer: Vec::new(),
-        checksum_warnings: crate::loss::Diagnostics::new(),
-        warnings: Diagnostics::new(),
-    }
+) -> crate::objects::ObjectDescriptor<(), std::ops::Range<usize>> {
+    crate::objects::attribute_descriptor(attributes, offset)
 }
 
 pub(crate) fn short_chunk(archive: ArchiveVersion, typecode: u32, value: i64) -> Vec<u8> {

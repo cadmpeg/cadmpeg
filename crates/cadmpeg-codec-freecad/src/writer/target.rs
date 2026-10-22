@@ -115,13 +115,7 @@ pub(crate) fn plan(
 /// Native `fcstd` arenas this writer handles itself: property values patch
 /// `Document.xml`, entry payloads are repacked, and the writer refuses its own
 /// unsupported object, extension and unreadable-entry edits.
-const CARRIED_NATIVE_ARENAS: &[&str] = &[
-    "entries",
-    "extensions",
-    "objects",
-    "properties",
-    "unreadable_entries",
-];
+const CARRIED_NATIVE_ARENAS: &[&str] = &["entries", "extensions", "objects", "properties"];
 
 /// Fingerprint of typed native arenas whose edits this layout optimization
 /// does not carry. It may decline layout reuse; neutral agreement is checked

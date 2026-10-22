@@ -14,6 +14,7 @@ mod fidelity;
 mod graph;
 mod item;
 mod join;
+mod native_links;
 mod output;
 mod schema;
 mod schema_infer;
@@ -75,6 +76,8 @@ pub(crate) enum QueryView {
     /// list every addressable arena and its entry count. Which arenas a
     /// given document actually has also comes from `query counts FILE`.
     Schema(SchemaArgs),
+    /// Read declared native projection links from a strictly admitted CADIR document.
+    NativeLinks(QueryArgs),
     /// Walk identity references from start records.
     ///
     /// Accepts a CADIR document. Arena names and ID selection match
@@ -492,6 +495,7 @@ pub(crate) fn run(view: &QueryView) -> Result<()> {
         QueryView::Item(args) => item::run(args),
         QueryView::Schema(args) => schema::run(args),
         QueryView::Graph(args) => graph::run(args),
+        QueryView::NativeLinks(args) => native_links::run(args),
         QueryView::Join(args) => join::run(args),
         QueryView::Fidelity(args) => fidelity::run(&args.file, args.mode()?),
     }

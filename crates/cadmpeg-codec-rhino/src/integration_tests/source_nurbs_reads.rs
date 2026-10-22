@@ -62,8 +62,7 @@ fn public_nurbs_decode_installs_exact_fields_without_crediting_reserved_bounds_o
         let range = scan.objects[0]
             .framed()
             .expect("NURBS record")
-            .class_data_range
-            .clone();
+            .class_data_range();
         let result = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("source NURBS");

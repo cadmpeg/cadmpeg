@@ -23,8 +23,7 @@ fn public_point_decode_installs_actual_scalar_reads_under_the_kept_point() {
     let range = scan.objects[0]
         .framed()
         .expect("point record")
-        .class_data_range
-        .clone();
+        .class_data_range();
     let result = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("source point");

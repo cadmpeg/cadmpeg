@@ -698,3 +698,56 @@ pub(crate) fn rational_nurbs_curve_source(version: u8, weights: [f64; 2]) -> Nur
         knot_count_offset,
     }
 }
+
+pub(crate) struct NurbsSurfaceSource {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) reserved_bounds: std::ops::Range<usize>,
+    pub(crate) u_knot_count_offset: usize,
+    pub(crate) v_knot_count_offset: usize,
+    pub(crate) cv_count_offset: usize,
+}
+
+pub(crate) fn nurbs_surface_source(weights: Option<[f64; 4]>) -> NurbsSurfaceSource {
+    let mut bytes = vec![0x10];
+    for value in [3_i32, i32::from(weights.is_some()), 2, 2, 2, 2, 0, 0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    let bounds_start = bytes.len();
+    bytes.extend([0.0_f64; 6].into_iter().flat_map(f64::to_le_bytes));
+    let reserved_bounds = bounds_start..bytes.len();
+    let u_knot_count_offset = bytes.len();
+    bytes.extend(2_i32.to_le_bytes());
+    bytes.extend([-1.0_f64, 2.0].into_iter().flat_map(f64::to_le_bytes));
+    let v_knot_count_offset = bytes.len();
+    bytes.extend(2_i32.to_le_bytes());
+    bytes.extend([5.0_f64, 9.0].into_iter().flat_map(f64::to_le_bytes));
+    let cv_count_offset = bytes.len();
+    bytes.extend(4_i32.to_le_bytes());
+    for (index, point) in [
+        [0.0_f64, 0.0, 0.0],
+        [0.0, 2.0, 0.0],
+        [3.0, 0.0, 1.0],
+        [3.0, 2.0, 1.0],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let weight = weights.map_or(1.0, |values| values[index]);
+        bytes.extend(
+            point
+                .into_iter()
+                .map(|value| value * weight)
+                .flat_map(f64::to_le_bytes),
+        );
+        if weights.is_some() {
+            bytes.extend(weight.to_le_bytes());
+        }
+    }
+    NurbsSurfaceSource {
+        bytes,
+        reserved_bounds,
+        u_knot_count_offset,
+        v_knot_count_offset,
+        cv_count_offset,
+    }
+}

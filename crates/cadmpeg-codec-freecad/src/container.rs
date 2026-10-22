@@ -11,7 +11,6 @@ use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::brep::ShapePayloadRecord;
@@ -90,36 +89,48 @@ pub(crate) struct Scan<'a> {
     pub(crate) document_xml: roxmltree::Document<'a>,
     /// Exact physical archive partition.
     pub(crate) ledger: Vec<ArchiveSpan>,
-    /// Bounded physical payloads that could not be opened.
-    pub(crate) unreadable_entries: Vec<UnreadableEntry>,
     /// Independently framed members given up by the shared part helper.
     pub(crate) failed_members: BTreeSet<String>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
     pub(crate) data: BTreeMap<String, View<'a>>,
 }
 
-/// A source-only ZIP payload. Its bytes are stored bytes, never expanded data.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct UnreadableEntry {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    #[serde(skip)]
-    pub(crate) data_start: u64,
-    #[serde(skip)]
-    pub(crate) data_end: u64,
-    #[serde(skip)]
-    pub(crate) stored_data: NativeBytes,
-    pub(crate) byte_len: u64,
-    pub(crate) sha256: String,
-    pub(crate) error: String,
+pub(crate) enum ScanOutcome<'a> {
+    Readable {
+        scan: Scan<'a>,
+        parts: cadmpeg_ir::source_fidelity::parts::ParserPartOutput,
+    },
+    GivenUp {
+        summary: ContainerSummary,
+        parts: cadmpeg_ir::source_fidelity::parts::ParserPartOutput,
+    },
 }
 
-/// Scan an archive through the session resource budget.
+pub(crate) fn inspect(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+) -> Result<ContainerSummary, CodecError> {
+    match attempt(ctx, root)? {
+        ScanOutcome::Readable { scan, parts } => {
+            let mut summary = summarize(&scan);
+            summary.losses.extend(parts.into_parts(ctx)?.into_parts().3);
+            Ok(summary)
+        }
+        ScanOutcome::GivenUp { mut summary, parts } => {
+            summary.losses.extend(parts.into_parts(ctx)?.into_parts().3);
+            Ok(summary)
+        }
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
-    scan_impl(ctx, root, None)
+    let (mut scan, parts) = scan_for_decode(ctx, root)?;
+    scan.losses.extend(parts.into_parts(ctx)?.into_parts().3);
+    Ok(scan)
 }
 
+#[cfg(test)]
 pub(crate) fn scan_for_decode<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
@@ -130,46 +141,88 @@ pub(crate) fn scan_for_decode<'a>(
     ),
     CodecError,
 > {
-    let mut parts =
-        cadmpeg_ir::source_fidelity::parts::ParserPartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
-    let scan = scan_impl(ctx, root, Some(&mut parts))?;
-    Ok((scan, parts))
+    match attempt(ctx, root)? {
+        ScanOutcome::Readable { scan, parts } => Ok((scan, parts)),
+        ScanOutcome::GivenUp { .. } => Err(CodecError::malformed("FCStd archive was given up")),
+    }
 }
 
-fn scan_impl<'a>(
+pub(crate) fn attempt<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
-    shared: Option<&mut cadmpeg_ir::source_fidelity::parts::ParserPartOutput>,
-) -> Result<Scan<'a>, CodecError> {
+) -> Result<ScanOutcome<'a>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput};
     let archive = ArchiveSnapshot::new(ctx, root)?;
-    if !archive
-        .entries()
-        .iter()
-        .any(|file| file.name == "Document.xml")
-    {
+    if archive.entry("Document.xml").is_none() {
         return Err(CodecError::WrongFormat(
             "ZIP has no root Document.xml".into(),
         ));
     }
     let document_view = archive.open(ctx, "Document.xml")?;
-    let document_bytes = document_view.window();
-    if let Some((_, object_count)) = xml_envelope_counts(document_bytes) {
+    let document_xml = admit_document(ctx, document_view.window())?;
+    let header = document_xml.root_element();
+    if header.tag_name().name() != "Document" {
+        return Err(CodecError::WrongFormat(format!(
+            "Document.xml root is {}, expected Document",
+            header.tag_name().name()
+        )));
+    }
+    let schema = canonical_attribute(header, "SchemaVersion", "schemaVersion")?
+        .ok_or_else(|| CodecError::WrongFormat("Document.xml has no SchemaVersion".into()))?;
+    let vocabulary = crate::persistence::Vocabulary::from_declaration(&schema)?;
+    let (declarations, data, _) = vocabulary.tags();
+    // discarded-value: source admission checks section uniqueness before constructing records.
+    let _ = unique_section(header, declarations)?;
+    // discarded-value: source admission checks section uniqueness before constructing records.
+    let _ = unique_section(header, data)?;
+    let matched = crate::dialect::FcstdDialect::classify_declared(
+        &schema,
+        header
+            .attribute("FileVersion")
+            .or_else(|| header.attribute("fileVersion"))
+            .unwrap_or("0"),
+        header
+            .attribute("ProgramVersion")
+            .or_else(|| header.attribute("programVersion")),
+    );
+    let summary = ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(matched.clone()),
+        cadmpeg_ir::ContainerKind::Zip,
+        archive.container_entries(classify),
+        crate::dialect::FcstdDialect::dialect_loss(&matched)
+            .into_iter()
+            .collect(),
+        Vec::new(),
+    );
+    let mut parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
+    let scan = ctx.decode_parser_scope(&mut parts, root, parts::archive_spec()?, |stage| {
+        scan_impl(ctx, archive, document_view, document_xml, stage)
+    })?;
+    Ok(match scan {
+        Some(scan) => ScanOutcome::Readable { scan, parts },
+        None => ScanOutcome::GivenUp { summary, parts },
+    })
+}
+
+fn scan_impl<'a>(
+    ctx: &DecodeContext<'a>,
+    archive: ArchiveSnapshot<'a>,
+    document_view: View<'a>,
+    document_xml: roxmltree::Document<'a>,
+    shared: &mut cadmpeg_ir::source_fidelity::parts::ParserPartOutput,
+) -> Result<Scan<'a>, CodecError> {
+    if let Some((_, object_count)) = xml_envelope_counts(document_view.window()) {
         ctx.charge_entities(object_count, "admit FCStd document objects")?;
     }
     let mut losses = Vec::new();
-    let document_xml = admit_document(ctx, document_bytes)?;
     let source = crate::persistence::source::Source::new(ctx, document_view, &document_xml)?;
     let (document, schema_version) = source.record(
         &crate::native::native_id("document", "0"),
         document_xml.root_element(),
         || parse_document_impl(&document_xml, &mut losses, Some(&source)),
     )?;
-    let mut opened = match shared {
-        Some(output) => parts::open_optional(ctx, root, &archive, output)?,
-        None => parts::OptionalMembers::default(),
-    };
+    let mut opened = parts::open_optional(ctx, &archive, shared)?;
     let mut data = BTreeMap::new();
-    let mut unreadable_entries = Vec::new();
     for file in archive.entries() {
         let name = file.name.clone();
         if !crate::native::is_safe_entry_name(&name) {
@@ -184,43 +237,9 @@ fn scan_impl<'a>(
         } else if opened.failed.contains(&file.name) {
             continue;
         } else {
-            match archive.open(ctx, &file.name) {
-                Ok(view) => view,
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(error) => {
-                    let range = file.stored_range()?;
-                    let end = range.end;
-                    let start_index = usize::try_from(range.start)
-                        .map_err(|_| CodecError::malformed("ZIP data offset exceeds memory"))?;
-                    let end_index = usize::try_from(end)
-                        .map_err(|_| CodecError::malformed("ZIP data offset exceeds memory"))?;
-                    let bytes = root
-                        .window()
-                        .get(start_index..end_index)
-                        .ok_or_else(|| CodecError::malformed("ZIP payload escapes archive"))?;
-                    losses.push(crate::loss::FreecadLossCode::ArchiveEntryUnreadable.note(
-                        format!(
-                            "{} cannot be opened: {error}; stored payload retained",
-                            file.name
-                        ),
-                    ));
-                    ctx.retain_bytes(
-                        cadmpeg_core::decode::u64_from_index(bytes.len()),
-                        "FCStd unreadable stored payload",
-                    )?;
-                    unreadable_entries.push(UnreadableEntry {
-                        id: format!("fcstd:native:unreadable_entry#{name}"),
-                        name,
-                        data_start: range.start,
-                        data_end: end,
-                        stored_data: bytes.to_vec().into(),
-                        byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                        sha256: cadmpeg_ir::hash::sha256_hex(bytes),
-                        error: format!("{error}"),
-                    });
-                    continue;
-                }
-            }
+            return Err(CodecError::malformed(
+                "ZIP member has no admitted bounded payload",
+            ));
         };
         data.insert(name, view);
     }
@@ -241,7 +260,6 @@ fn scan_impl<'a>(
         document,
         schema_version,
         document_xml,
-        unreadable_entries,
         failed_members: opened.failed,
         ledger,
         data,
@@ -254,9 +272,6 @@ pub(crate) fn entry_records(
 ) -> Result<Vec<EntryRecord>, CodecError> {
     let mut records = Vec::new();
     let mut unreadable_names = HashSet::new();
-    for entry in &scan.unreadable_entries {
-        unreadable_names.insert(entry.name.as_str());
-    }
     unreadable_names.extend(scan.failed_members.iter().map(String::as_str));
     let references = {
         let mut references = HashMap::<&str, Vec<usize>>::new();

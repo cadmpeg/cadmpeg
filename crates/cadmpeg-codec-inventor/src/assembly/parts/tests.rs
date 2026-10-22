@@ -54,7 +54,13 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
         .map(|r| r.trailer.window().to_vec())
         .collect::<Vec<_>>();
     let inventory = inventory(&ctx, &container.rse).unwrap();
-    assert!(inventory.issues.is_empty());
+    assert!(!inventory
+        .parts
+        .native()
+        .namespace("inventor")
+        .unwrap()
+        .arenas()
+        .contains_key("assembly_record_issues"));
     assert_eq!(inventory.occurrences.len(), 1);
     assert_eq!(inventory.occurrences[0].occurrence_id, 42);
     assert_eq!(inventory.occurrences[0].related_references, [0x8000_0008]);
@@ -160,4 +166,155 @@ fn detached_or_foreign_payload_cannot_be_admitted_as_a_source_body() {
     table.records[0].payload = foreign;
     assert!(super::body(&ctx, bulk.expanded, &table.records[0]).is_err());
     assert!(ctx.take_record_captures().unwrap().is_empty());
+}
+
+#[test]
+fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_peer() {
+    use crate::assembly::{tests::placement_fixture, PLACEMENT_TYPE_B9, PLACEMENT_TYPE_CA};
+    use crate::native::{AssemblyPlacementRecord, AssemblyPlacementRecordWire};
+    use crate::test_support::test_fixtures::assembly_graphics_envelope_fixture;
+
+    let mut empty_suffix = placement_fixture(7, false, 0x8421, 0x7bde, &[]);
+    empty_suffix.truncate(empty_suffix.len() - 48);
+    let mut nonfinite = vec![0; 15];
+    nonfinite.extend_from_slice(&0_u16.to_le_bytes());
+    nonfinite.extend_from_slice(&0_u16.to_le_bytes());
+    nonfinite.extend_from_slice(&f64::INFINITY.to_le_bytes());
+    let peer = placement_fixture(8, true, 0x8124, 0x7657, &[1.0, 2.0, 3.0]);
+    let bytes = assembly_graphics_envelope_fixture(&[
+        (PLACEMENT_TYPE_CA, empty_suffix.clone()),
+        (PLACEMENT_TYPE_B9, nonfinite.clone()),
+        (PLACEMENT_TYPE_CA, peer.clone()),
+    ]);
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let container = InventorContainer::open(&ctx, root).unwrap();
+    let segment = container
+        .rse
+        .segments
+        .iter()
+        .find(|s| s.kind == SegmentKind::AmGraphics)
+        .unwrap();
+    let token = segment.pair.token.as_str();
+    let SegmentBulkState::Framed(bulk) = &segment.bulk else {
+        panic!("actual framed bulk")
+    };
+    let RecordFrameState::Framed(table) = &bulk.records else {
+        panic!("actual framed records")
+    };
+    assert_eq!(table.records[0].payload.window(), empty_suffix);
+    assert_eq!(table.records[1].payload.window(), nonfinite);
+    assert_eq!(table.records[2].payload.window(), peer);
+    let source_bodies = table
+        .records
+        .iter()
+        .map(|record| {
+            super::body(&ctx, bulk.expanded, record)
+                .unwrap()
+                .window()
+                .to_vec()
+        })
+        .collect::<Vec<_>>();
+    let inventory = inventory(&ctx, &container.rse).unwrap();
+    assert!(inventory.occurrences.is_empty());
+    assert_eq!(inventory.placements.len(), 1);
+    let expected = AssemblyPlacementRecord::try_from(AssemblyPlacementRecordWire::from_placement(
+        &inventory.placements[0],
+    ))
+    .unwrap();
+    assert_eq!(expected.occurrence_id, 8);
+    let (_, native, mut fidelity, losses) = inventory.parts.into_parts(&ctx).unwrap().into_parts();
+    let namespace = native.namespace("inventor").unwrap();
+    assert!(!namespace.arenas().contains_key("assembly_record_issues"));
+    let placements = namespace
+        .arena_as_for_decode::<AssemblyPlacementRecord>(&ctx, "assembly_placements")
+        .unwrap();
+    assert_eq!(placements, [expected]);
+    assert_eq!(
+        placements[0].id,
+        format!("inventor:assembly:placement#{token}-2")
+    );
+    // Row-major mask bits encode -1 at (0,2), +1 at (1,1)
+    // and (2,0), with explicit translations at (0,3), (1,3), (2,3).
+    assert_eq!(placements[0].transform.masks(), (0x8124, 0x7657));
+    assert_eq!(
+        placements[0].transform.rows(),
+        [
+            [0.0, 0.0, -1.0, 1.0],
+            [0.0, 1.0, 0.0, 2.0],
+            [1.0, 0.0, 0.0, 3.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
+    let wrappers = namespace
+        .arena_as_for_decode::<RseRecordRecord>(&ctx, "rse_records")
+        .unwrap();
+    assert_eq!(
+        wrappers,
+        table
+            .records
+            .iter()
+            .map(|record| RseRecordRecord::from_frame(token, record).unwrap())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(fidelity.parts().len(), 3);
+    assert_eq!(
+        fidelity
+            .parts()
+            .values()
+            .filter(|part| matches!(part.state(), PartState::GivenUp {}))
+            .count(),
+        2
+    );
+    assert_eq!(losses.len(), 2);
+    for loss in &losses {
+        assert_eq!(loss.code.to_string(), "decode/record.unreadable");
+        assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
+    }
+    for ordinal in 0..2 {
+        let id = format!("inventor:assembly:placement#{token}-{ordinal}");
+        assert!(losses
+            .iter()
+            .any(|loss| loss.message.ends_with(&format!("dropped=[\"{id}\"]"))));
+    }
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("suffix_len")));
+    assert!(losses.iter().any(|loss| loss.message.contains("finite")));
+    let unknowns = namespace
+        .arena_as_for_decode::<NativeUnknownRecord>(&ctx, "unknowns")
+        .unwrap();
+    assert_eq!(unknowns.len(), 2);
+    let retained = unknowns
+        .iter()
+        .map(|unknown| {
+            assert!(unknown.links.is_empty());
+            fidelity
+                .retained_record(unknown.id.as_str())
+                .unwrap()
+                .data()
+                .unwrap()
+                .to_vec()
+        })
+        .collect::<Vec<_>>();
+    assert!(retained.contains(&source_bodies[0]));
+    assert!(retained.contains(&source_bodies[1]));
+    fidelity.install_mapped_record_captures(&ctx, Ok).unwrap();
+    for ordinal in 0..2 {
+        assert!(!fidelity
+            .record_layout()
+            .contains_key(&format!("inventor:assembly:placement#{token}-{ordinal}")));
+    }
+    assert!(fidelity
+        .record_layout()
+        .contains_key(&format!("inventor:assembly:placement#{token}-2")));
+    for wrapper in &wrappers {
+        let layout = &fidelity.record_layout()[&wrapper.id];
+        assert!(fidelity
+            .parts()
+            .values()
+            .filter(|part| matches!(part.state(), PartState::GivenUp {}))
+            .all(|part| part.stream() != layout.stream()));
+    }
 }

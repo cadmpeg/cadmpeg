@@ -44,8 +44,6 @@ pub(crate) enum InventorLossCode {
     RseMetadataStreamMalformed,
     /// `RSe` bulk streams have invalid envelope or zlib framing.
     RseBulkStreamMalformed,
-    /// Typed assembly records are malformed or outside the implemented branch.
-    AssemblyRecordMalformed,
     /// Typed presentation records are malformed or outside the implemented branch.
     PresentationRecordMalformed,
     /// Typed design records are malformed or outside the implemented branch.
@@ -125,7 +123,6 @@ impl InventorLossCode {
         Self::RseSegmentPairUntyped,
         Self::RseMetadataStreamMalformed,
         Self::RseBulkStreamMalformed,
-        Self::AssemblyRecordMalformed,
         Self::PresentationRecordMalformed,
         Self::DesignRecordMalformed,
         Self::SketchRecordMalformed,
@@ -174,7 +171,6 @@ impl InventorLossCode {
             Self::RseSegmentPairUntyped => "rse.segment-pair-untyped",
             Self::RseMetadataStreamMalformed => "rse.metadata-stream-malformed",
             Self::RseBulkStreamMalformed => "rse.bulk-stream-malformed",
-            Self::AssemblyRecordMalformed => "assembly.record-malformed",
             Self::PresentationRecordMalformed => "presentation.record-malformed",
             Self::DesignRecordMalformed => "design.record-malformed",
             Self::SketchRecordMalformed => "sketch.record-malformed",
@@ -230,7 +226,6 @@ impl InventorLossCode {
             | Self::PropertyRecordUntyped => LossTaxonomy::RecordNotTyped,
             Self::RseMetadataStreamMalformed
             | Self::RseBulkStreamMalformed
-            | Self::AssemblyRecordMalformed
             | Self::PresentationRecordMalformed
             | Self::DesignRecordMalformed
             | Self::SketchRecordMalformed
@@ -315,10 +310,6 @@ const UNREPRESENTED: &[(InventorLossCode, cadmpeg_ir::ArenaClass)] = &[
     ),
     (
         InventorLossCode::AssemblyPlacementNotTransferred,
-        cadmpeg_ir::ArenaClass::Model,
-    ),
-    (
-        InventorLossCode::AssemblyRecordMalformed,
         cadmpeg_ir::ArenaClass::Model,
     ),
     (
@@ -495,7 +486,6 @@ mod tests {
                 "rse.segment-pair-untyped",
                 "rse.metadata-stream-malformed",
                 "rse.bulk-stream-malformed",
-                "assembly.record-malformed",
                 "presentation.record-malformed",
                 "design.record-malformed",
                 "sketch.record-malformed",

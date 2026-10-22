@@ -17,11 +17,36 @@ pub(super) fn project(
     source_untyped: &mut cadmpeg_ir::ArenaClasses,
 ) -> Result<(), CodecError> {
     let before = ir.model.entity_count();
-    for reference in &native.external_references {
-        losses.push(CatiaLossCode::NeutralRecordUnprojected.note(format!(
-            "External-reference record {} identifies {}, but no occurrence placement is decoded; its typed reference remains held without inventing an identity transform.",
-            reference.id, reference.target
-        )));
+    for (ordinal, reference) in native.external_references.iter().enumerate() {
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| CodecError::malformed("CATIA external occurrence ordinal exceeds u32"))?;
+        let bytes = reference
+            .id
+            .len()
+            .checked_add(reference.target.len())
+            .ok_or_else(|| CodecError::malformed("CATIA external occurrence strings overflow"))?;
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(bytes),
+            "CATIA external occurrence strings",
+        )?;
+        ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
+            id: cadmpeg_ir::ids::OccurrenceId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "document", "occurrence"),
+                cadmpeg_ir::identity_key!("external-").then(ordinal),
+            ),
+            prototype: cadmpeg_ir::products::PrototypeReference::External {
+                document: cadmpeg_ir::products::ExternalDocument::path(reference.target.clone()),
+                object: None,
+            },
+            parent: cadmpeg_ir::products::OccurrenceParent::Root {},
+            ordinal,
+            transform: None,
+            linked_prototype: None,
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: Some(reference.id.clone()),
+        });
     }
     for (ordinal, preview) in native.preview_images.iter().enumerate() {
         ctx.retain_bytes(

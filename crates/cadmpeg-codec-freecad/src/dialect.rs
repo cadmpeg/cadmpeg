@@ -136,6 +136,18 @@ impl FcstdDialect {
     /// undeclared schema with the `Objects` vocabulary rather than refusing on
     /// the discriminant.
     pub(crate) fn classify(document: &DocumentFacts, schema_version: &str) -> DialectMatch {
+        Self::classify_declared(
+            schema_version,
+            document.file_version.as_str(),
+            document.program_version.as_deref(),
+        )
+    }
+
+    pub(crate) fn classify_declared(
+        schema_version: &str,
+        file_version: &str,
+        program_version: Option<&str>,
+    ) -> DialectMatch {
         let dialect = Self::from_schema_version(schema_version);
         let mut declared = BTreeMap::new();
         declared.insert(
@@ -144,12 +156,12 @@ impl FcstdDialect {
         );
         declared.insert(
             cadmpeg_core::nonblank_const!(DECLARED_FILE_VERSION),
-            document.file_version.as_str().to_owned(),
+            file_version.to_owned(),
         );
-        if let Some(version) = &document.program_version {
+        if let Some(version) = program_version {
             declared.insert(
                 cadmpeg_core::nonblank_const!(DECLARED_PROGRAM_VERSION),
-                version.clone(),
+                version.to_owned(),
             );
         }
         if dialect == Self::Unknown {

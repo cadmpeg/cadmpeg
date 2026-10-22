@@ -1276,6 +1276,7 @@ fn scan_with_record_limit<'a>(
                     ctx,
                     data,
                     &record,
+                    &chunk,
                     archive,
                     writer_version,
                     &mut warnings,

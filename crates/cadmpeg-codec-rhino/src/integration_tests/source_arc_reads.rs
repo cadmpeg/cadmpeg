@@ -60,8 +60,7 @@ fn public_arc_decode_installs_native_field_reads_under_the_kept_curve() {
     let range = scan.objects[0]
         .framed()
         .expect("arc record")
-        .class_data_range
-        .clone();
+        .class_data_range();
     let result = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("source arc");

@@ -692,7 +692,7 @@ pub(crate) fn install(
                 let (value, points) = match decode_annotation(
                     ctx,
                     scan.data,
-                    object.class_data_range.clone(),
+                    object.class_data_range(),
                     scan.archive,
                     scale,
                     leader,
@@ -757,7 +757,7 @@ pub(crate) fn install(
                 let value = match decode_legacy_annotation(
                     ctx,
                     scan.data,
-                    object.class_data_range.clone(),
+                    object.class_data_range(),
                     scan.archive,
                     scale,
                 ) {
@@ -827,7 +827,7 @@ pub(crate) fn install(
                 let value = match decode_v2_annotation(
                     ctx,
                     scan.data,
-                    object.class_data_range.clone(),
+                    object.class_data_range(),
                     scale,
                     object.class_uuid,
                 ) {
@@ -911,9 +911,9 @@ pub(crate) fn install(
             }
             AnnotationClass::Dot { v2 } => {
                 let decoded = if v2 {
-                    decode_v2_text_dot(ctx, scan.data, object.class_data_range.clone(), scale)
+                    decode_v2_text_dot(ctx, scan.data, object.class_data_range(), scale)
                 } else {
-                    decode_dot(ctx, scan.data, object.class_data_range.clone(), scale)
+                    decode_dot(ctx, scan.data, object.class_data_range(), scale)
                 };
                 let data = match decoded {
                     Ok(value) => value,
@@ -943,23 +943,20 @@ pub(crate) fn install(
                 });
             }
             AnnotationClass::V2Arrow => {
-                let (tail, head) = match decode_v2_annotation_arrow(
-                    scan.data,
-                    object.class_data_range.clone(),
-                    scale,
-                ) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        annotation_record_dropped(
-                            &mut losses,
-                            &identity.source_id,
-                            object.range.start,
-                            object.class_uuid,
-                            error,
-                        );
-                        continue;
-                    }
-                };
+                let (tail, head) =
+                    match decode_v2_annotation_arrow(scan.data, object.class_data_range(), scale) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            annotation_record_dropped(
+                                &mut losses,
+                                &identity.source_id,
+                                object.range.start,
+                                object.class_uuid,
+                                error,
+                            );
+                            continue;
+                        }
+                    };
 
                 let (links, key, source_uuid) =
                     record_identity(identity, source_order, v2_key.take());

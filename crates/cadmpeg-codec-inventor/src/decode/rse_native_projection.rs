@@ -131,7 +131,7 @@ pub(super) fn project(
                 let records = match &bulk.records {
                     RecordFrameState::Framed(table) => {
                         for record in &table.records {
-                            if crate::assembly::owns_occurrence(&segment.kind, record.type_id) {
+                            if crate::assembly::owns_record(&segment.kind, record.type_id) {
                                 // The source-owned stage either formed this exact wrapper or
                                 // gave up its whole located body. No late reconstruction can
                                 // resurrect a wrapper from a given-up body's frame metadata.

@@ -5066,7 +5066,7 @@ pub(crate) fn install(
                 match parse_light(
                     ctx,
                     scan.data,
-                    object.class_data_range.clone(),
+                    object.class_data_range(),
                     scale,
                     object.range.start,
                     Some(source_order),

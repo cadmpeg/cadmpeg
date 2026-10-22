@@ -17,7 +17,6 @@ pub(crate) mod parts;
 use crate::compact_matrix::CompactMatrix;
 use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
 use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const SUPPRESSED_REFERENCE_STATE: u16 = 0x2000;
@@ -37,7 +36,6 @@ const PLACEMENT_TYPE_B9: [u8; 16] = [
 pub(crate) struct AssemblyInventory<'a> {
     pub(crate) occurrences: Vec<AssemblyOccurrence>,
     pub(crate) placements: Vec<AssemblyPlacement<'a>>,
-    pub(crate) issues: Vec<RecordIssue>,
     pub(crate) parts: PartOutput,
 }
 
@@ -251,8 +249,10 @@ pub(crate) fn project_occurrences_into(
     Ok(unresolved_placements)
 }
 
-pub(crate) fn owns_occurrence(kind: &SegmentKind, type_id: [u8; 16]) -> bool {
-    *kind == SegmentKind::AmDc && type_id == OCCURRENCE_TYPE
+pub(crate) fn owns_record(kind: &SegmentKind, type_id: [u8; 16]) -> bool {
+    (*kind == SegmentKind::AmDc && type_id == OCCURRENCE_TYPE)
+        || (*kind == SegmentKind::AmGraphics
+            && matches!(type_id, PLACEMENT_TYPE_CA | PLACEMENT_TYPE_B9))
 }
 
 pub(crate) fn inventory<'a>(
@@ -261,7 +261,6 @@ pub(crate) fn inventory<'a>(
 ) -> Result<AssemblyInventory<'a>, CodecError> {
     let mut occurrences = Vec::new();
     let mut placements = Vec::new();
-    let mut issues = Vec::new();
     let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor);
     for segment in &document.segments {
         let relevant = matches!(segment.kind, SegmentKind::AmDc | SegmentKind::AmGraphics);
@@ -275,7 +274,7 @@ pub(crate) fn inventory<'a>(
             continue;
         };
         for record in &table.records {
-            let result = if segment.kind == SegmentKind::AmDc && record.type_id == OCCURRENCE_TYPE {
+            if segment.kind == SegmentKind::AmDc && record.type_id == OCCURRENCE_TYPE {
                 if let Some(occurrence) = parts::occurrence(
                     ctx,
                     &mut parts,
@@ -289,32 +288,21 @@ pub(crate) fn inventory<'a>(
             } else if segment.kind == SegmentKind::AmGraphics
                 && matches!(record.type_id, PLACEMENT_TYPE_CA | PLACEMENT_TYPE_B9)
             {
-                parse_placement(ctx, record.payload).map(|mut placement| {
-                    placement.segment_token = segment.pair.token.as_str().into();
-                    placement.record_ordinal = record.ordinal;
+                if let Some(placement) = parts::placement(
+                    ctx,
+                    &mut parts,
+                    bulk.expanded,
+                    segment.pair.token.as_str(),
+                    record,
+                )? {
                     placements.push(placement);
-                })
-            } else {
-                continue;
-            };
-            if let Err(error) = result {
-                if matches!(error, CodecError::ResourceLimit(_)) {
-                    return Err(error);
                 }
-                ctx.charge_entities(1, "admit Inventor assembly issue")?;
-                issues.push(RecordIssue {
-                    family: RecordIssueFamily::Assembly,
-                    segment_token: segment.pair.token.key().clone(),
-                    record_ordinal: record.ordinal,
-                    detail: crate::issue_detail(error)?,
-                });
             }
         }
     }
     Ok(AssemblyInventory {
         occurrences,
         placements,
-        issues,
         parts,
     })
 }
@@ -1223,7 +1211,7 @@ mod tests {
         bytes
     }
 
-    fn placement_fixture(
+    pub(super) fn placement_fixture(
         occurrence_id: u32,
         prefixed: bool,
         set: u16,

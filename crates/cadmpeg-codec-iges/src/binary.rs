@@ -45,10 +45,10 @@ struct SectionDisplacements {
 
 #[derive(Debug)]
 struct BinarySections<'a> {
-    start: &'a [u8],
-    global: &'a [u8],
-    directory: &'a [u8],
-    parameter: &'a [u8],
+    start: View<'a>,
+    global: View<'a>,
+    directory: View<'a>,
+    parameter: View<'a>,
     lengths: PrimitiveLengths,
 }
 
@@ -398,18 +398,19 @@ fn padding_is_zero(bytes: &[u8], range: std::ops::Range<usize>) -> Result<(), Co
 }
 
 fn section_payload(
-    source: &[u8],
+    source: View<'_>,
     start: usize,
     expected: u8,
     next_start: usize,
-) -> Result<&[u8], CodecError> {
-    if source.get(start) != Some(&expected) {
+) -> Result<View<'_>, CodecError> {
+    let bytes = source.window();
+    if bytes.get(start) != Some(&expected) {
         return Err(malformed(format!(
             "Binary section at byte {start} is not {:?}",
             char::from(expected)
         )));
     }
-    let count = usize::try_from(u32_at(source, start + 1)?)
+    let count = usize::try_from(u32_at(bytes, start + 1)?)
         .map_err(|_| malformed("a Binary section count is out of range"))?;
     let payload_start = start
         .checked_add(SECTION_HEADER_WIDTH)
@@ -420,8 +421,16 @@ fn section_payload(
     if payload_end > next_start {
         return Err(malformed("a Binary section overlaps its successor"));
     }
+    let absolute_start = source
+        .start()
+        .checked_add(payload_start)
+        .ok_or_else(|| malformed("a Binary section start overflows"))?;
+    let absolute_end = source
+        .start()
+        .checked_add(payload_end)
+        .ok_or_else(|| malformed("a Binary section end overflows"))?;
     source
-        .get(payload_start..payload_end)
+        .child(absolute_start, absolute_end)
         .ok_or_else(|| malformed("a Binary section payload is truncated"))
 }
 
@@ -498,9 +507,10 @@ fn parse_header(source: &[u8]) -> Result<(PrimitiveLengths, SectionDisplacements
     Ok((lengths, section_displacements))
 }
 
-fn parse_sections(source: &[u8]) -> Result<BinarySections<'_>, CodecError> {
-    let (lengths, offsets) = parse_header(source)?;
-    if offsets.end > source.len() {
+fn parse_sections(source: View<'_>) -> Result<BinarySections<'_>, CodecError> {
+    let bytes = source.window();
+    let (lengths, offsets) = parse_header(bytes)?;
+    if offsets.end > bytes.len() {
         return Err(malformed(
             "Binary Terminate displacement exceeds the source",
         ));
@@ -513,22 +523,22 @@ fn parse_sections(source: &[u8]) -> Result<BinarySections<'_>, CodecError> {
     let start_end = offsets
         .start
         .checked_add(SECTION_HEADER_WIDTH)
-        .and_then(|offset| offset.checked_add(start.len()))
+        .and_then(|offset| offset.checked_add(start.window().len()))
         .ok_or_else(|| malformed("Binary Start section count overflows"))?;
     let global_end = offsets
         .global
         .checked_add(SECTION_HEADER_WIDTH)
-        .and_then(|offset| offset.checked_add(global.len()))
+        .and_then(|offset| offset.checked_add(global.window().len()))
         .ok_or_else(|| malformed("Binary Global section count overflows"))?;
     let directory_end = offsets
         .directory
         .checked_add(SECTION_HEADER_WIDTH)
-        .and_then(|offset| offset.checked_add(directory.len()))
+        .and_then(|offset| offset.checked_add(directory.window().len()))
         .ok_or_else(|| malformed("Binary Directory section count overflows"))?;
     let parameter_end = offsets
         .parameter
         .checked_add(SECTION_HEADER_WIDTH)
-        .and_then(|offset| offset.checked_add(parameter.len()))
+        .and_then(|offset| offset.checked_add(parameter.window().len()))
         .ok_or_else(|| malformed("Binary Parameter section count overflows"))?;
     for (payload_end, next_start) in [
         (start_end, offsets.global),
@@ -536,25 +546,25 @@ fn parse_sections(source: &[u8]) -> Result<BinarySections<'_>, CodecError> {
         (directory_end, offsets.parameter),
         (parameter_end, offsets.terminate),
     ] {
-        padding_is_zero(source, payload_end..next_start)?;
+        padding_is_zero(bytes, payload_end..next_start)?;
     }
     let terminate_end = offsets
         .terminate
         .checked_add(SECTION_HEADER_WIDTH)
-        .and_then(|offset| offset.checked_add(terminate.len()))
+        .and_then(|offset| offset.checked_add(terminate.window().len()))
         .ok_or_else(|| malformed("Binary Terminate section count overflows"))?;
-    padding_is_zero(source, terminate_end..offsets.end)?;
+    padding_is_zero(bytes, terminate_end..offsets.end)?;
     validate_terminate(
-        terminate,
+        terminate.window(),
         [
             BINARY_FLAG_WIDTH,
-            SECTION_HEADER_WIDTH + start.len(),
-            SECTION_HEADER_WIDTH + global.len(),
-            SECTION_HEADER_WIDTH + directory.len(),
-            SECTION_HEADER_WIDTH + parameter.len(),
+            SECTION_HEADER_WIDTH + start.window().len(),
+            SECTION_HEADER_WIDTH + global.window().len(),
+            SECTION_HEADER_WIDTH + directory.window().len(),
+            SECTION_HEADER_WIDTH + parameter.window().len(),
         ],
     )?;
-    if source.get(offsets.end) != Some(&b'E') {
+    if bytes.get(offsets.end) != Some(&b'E') {
         return Err(malformed(
             "Binary Terminate displacement does not lead to the end marker",
         ));
@@ -628,27 +638,58 @@ fn read_global(payload: &[u8], lengths: PrimitiveLengths) -> Result<Vec<BinaryVa
     Ok(values)
 }
 
+fn counted_record<'a>(
+    payload: View<'a>,
+    cursor: usize,
+    section: &str,
+) -> Result<(u32, View<'a>, View<'a>), CodecError> {
+    let offset = cursor
+        .checked_add(1)
+        .and_then(|offset| u32::try_from(offset).ok())
+        .ok_or_else(|| malformed(format!("Binary {section} pointer exceeds u32")))?;
+    let byte_count = usize::try_from(u32_at(payload.window(), cursor)?)
+        .map_err(|_| malformed(format!("Binary {section} entity count is out of range")))?;
+    let body_start = cursor
+        .checked_add(4)
+        .ok_or_else(|| malformed(format!("Binary {section} entity start overflows")))?;
+    let body_end = body_start
+        .checked_add(byte_count)
+        .ok_or_else(|| malformed(format!("Binary {section} entity count overflows")))?;
+    if body_end > payload.window().len() {
+        return Err(malformed(format!(
+            "Binary {section} entity exceeds its section"
+        )));
+    }
+    let start = payload
+        .start()
+        .checked_add(cursor)
+        .ok_or_else(|| malformed(format!("Binary {section} record start overflows")))?;
+    let body_start = payload
+        .start()
+        .checked_add(body_start)
+        .ok_or_else(|| malformed(format!("Binary {section} body start overflows")))?;
+    let end = payload
+        .start()
+        .checked_add(body_end)
+        .ok_or_else(|| malformed(format!("Binary {section} record end overflows")))?;
+    let extent = payload
+        .child(start, end)
+        .ok_or_else(|| malformed(format!("Binary {section} entity exceeds its section")))?;
+    let body = extent
+        .child(body_start, end)
+        .ok_or_else(|| malformed(format!("Binary {section} entity exceeds its section")))?;
+    Ok((offset, extent, body))
+}
+
 fn read_directory(
-    payload: &[u8],
+    payload: View<'_>,
     lengths: PrimitiveLengths,
 ) -> Result<Vec<BinaryDirectory>, CodecError> {
     let mut records = Vec::new();
     let mut cursor = 0_usize;
-    while cursor < payload.len() {
-        let offset = u32::try_from(cursor + 1)
-            .map_err(|_| malformed("Binary Directory pointer exceeds u32"))?;
-        let byte_count = usize::try_from(u32_at(payload, cursor)?)
-            .map_err(|_| malformed("Binary Directory entity count is out of range"))?;
-        let body_start = cursor
-            .checked_add(4)
-            .ok_or_else(|| malformed("Binary Directory entity start overflows"))?;
-        let body_end = body_start
-            .checked_add(byte_count)
-            .ok_or_else(|| malformed("Binary Directory entity count overflows"))?;
-        if body_end > payload.len() {
-            return Err(malformed("Binary Directory entity exceeds its section"));
-        }
-        let mut stream = ValueStream::new(&payload[body_start..body_end], lengths);
+    while cursor < payload.window().len() {
+        let (offset, extent, body) = counted_record(payload, cursor, "Directory")?;
+        let mut stream = ValueStream::new(body.window(), lengths);
         let mut values = std::array::from_fn(|_| BinaryValue::Default);
         for value in &mut values {
             *value = one_value(&mut stream, "Directory")?;
@@ -657,7 +698,7 @@ fn read_directory(
         let record = BinaryDirectory::new(offset, values)?;
 
         records.push(record);
-        cursor = body_end;
+        cursor = extent.end() - payload.start();
     }
     Ok(records)
 }
@@ -943,27 +984,15 @@ fn normalize_global(values: &[BinaryValue]) -> Result<Vec<u8>, CodecError> {
 }
 
 fn read_parameters(
-    payload: &[u8],
+    payload: View<'_>,
     lengths: PrimitiveLengths,
     directory_by_offset: &BTreeMap<u32, usize>,
 ) -> Result<Vec<BinaryParameter>, CodecError> {
     let mut records = Vec::new();
     let mut cursor = 0_usize;
-    while cursor < payload.len() {
-        let offset = u32::try_from(cursor + 1)
-            .map_err(|_| malformed("Binary Parameter pointer exceeds u32"))?;
-        let byte_count = usize::try_from(u32_at(payload, cursor)?)
-            .map_err(|_| malformed("Binary Parameter entity count is out of range"))?;
-        let body_start = cursor
-            .checked_add(4)
-            .ok_or_else(|| malformed("Binary Parameter entity start overflows"))?;
-        let body_end = body_start
-            .checked_add(byte_count)
-            .ok_or_else(|| malformed("Binary Parameter entity count overflows"))?;
-        if body_end > payload.len() {
-            return Err(malformed("Binary Parameter entity exceeds its section"));
-        }
-        let mut stream = ValueStream::new(&payload[body_start..body_end], lengths);
+    while cursor < payload.window().len() {
+        let (offset, extent, body) = counted_record(payload, cursor, "Parameter")?;
+        let mut stream = ValueStream::new(body.window(), lengths);
         let entity_type = integer_value(
             &one_value(&mut stream, "Parameter")?,
             "Parameter entity type",
@@ -990,7 +1019,7 @@ fn read_parameters(
             directory_pointer: i64::from(directory_pointer),
             values,
         });
-        cursor = body_end;
+        cursor = extent.end() - payload.start();
     }
     Ok(records)
 }
@@ -1260,10 +1289,10 @@ fn append_output_card(output: &mut Vec<u8>, card: &[u8; CARD_WIDTH]) {
 
 /// Normalize one Binary IGES source into the Fixed ASCII image consumed by the
 /// typed reader.
-pub(crate) fn normalize(source: &[u8]) -> Result<Vec<u8>, CodecError> {
+pub(crate) fn normalize(source: View<'_>) -> Result<Vec<u8>, CodecError> {
     let sections = parse_sections(source)?;
-    let start_text = normalize_start(sections.start, sections.lengths)?;
-    let global_values = read_global(sections.global, sections.lengths)?;
+    let start_text = normalize_start(sections.start.window(), sections.lengths)?;
+    let global_values = read_global(sections.global.window(), sections.lengths)?;
     let global_text = normalize_global(&global_values)?;
     let directory = read_directory(sections.directory, sections.lengths)?;
     let mut directory_by_offset = BTreeMap::new();
@@ -1425,7 +1454,13 @@ mod tests {
     const EPS_POINT: f64 = 1.0e-12;
 
     fn normalize_for_test(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
-        normalize(source)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            source,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )?;
+        normalize(root)
     }
 
     #[derive(Debug, Default)]
@@ -1914,5 +1949,100 @@ mod tests {
     #[test]
     fn binary_start_rejects_a_lone_line_feed() {
         assert!(normalize_for_test(&binary_file_with_start(b"first\nsecond")).is_err());
+    }
+
+    #[test]
+    fn counted_binary_records_keep_the_actual_prefixed_source_and_no_framing_read_credit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let original = binary_point_file();
+        let mut bytes = b"pre".to_vec();
+        bytes.extend_from_slice(&original);
+        bytes.extend_from_slice(b"post");
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let source = root.child(3, bytes.len() - 4).unwrap();
+        let sections = super::parse_sections(source).unwrap();
+        assert_eq!(
+            super::normalize(source).unwrap(),
+            normalize_for_test(&original).unwrap()
+        );
+        let foreign_arena = DecodeArena::new();
+        let (foreign, _) =
+            DecodeContext::from_root_bytes(&bytes, &foreign_arena, &DecodePolicy::service())
+                .unwrap();
+        for (name, payload) in [
+            ("Directory", sections.directory),
+            ("Parameter", sections.parameter),
+        ] {
+            let (offset, extent, body) = ctx
+                .record(name, payload, || super::counted_record(payload, 0, name))
+                .unwrap();
+            assert_eq!(offset, 1);
+            assert_eq!(extent.start(), payload.start());
+            assert_eq!(extent.end(), payload.end());
+            assert_eq!(body.start(), extent.start() + 4);
+            assert_eq!(body.end(), extent.end());
+            let count = u32::from_be_bytes(extent.window()[..4].try_into().unwrap());
+            assert_eq!(usize::try_from(count).unwrap(), body.window().len());
+            assert_eq!(extent.window(), &bytes[extent.start()..extent.end()]);
+            assert_eq!(body.window(), &bytes[body.start()..body.end()]);
+            let capture = ctx.capture_part_extent(extent).unwrap();
+            assert_eq!(capture.stream(), "file");
+            assert_eq!(capture.offset(), u64::try_from(extent.start()).unwrap());
+            assert_eq!(
+                capture.byte_len(),
+                u64::try_from(extent.window().len()).unwrap()
+            );
+            assert!(foreign.capture_part_extent(extent).is_err());
+            let cut = payload.child(payload.start(), payload.end() - 1).unwrap();
+            let error = super::counted_record(cut, 0, name).unwrap_err();
+            assert!(error.to_string().contains("entity exceeds its section"));
+        }
+        let captures = ctx.take_record_captures().unwrap();
+        assert_eq!(captures.len(), 2);
+        assert!(captures.iter().all(|capture| capture.reads().is_empty()));
+    }
+
+    #[test]
+    fn counted_binary_record_bounds_never_borrow_bytes_from_an_adjacent_source_record() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let original = binary_point_file();
+        let arena = DecodeArena::new();
+        let (_ctx, root) =
+            DecodeContext::from_root_bytes(&original, &arena, &DecodePolicy::service()).unwrap();
+        let sections = super::parse_sections(root).unwrap();
+        for (name, payload) in [
+            ("Directory", sections.directory),
+            ("Parameter", sections.parameter),
+        ] {
+            let mut bytes = payload.window().to_vec();
+            bytes.extend_from_slice(payload.window());
+            let paired_arena = DecodeArena::new();
+            let (_ctx, paired) =
+                DecodeContext::from_root_bytes(&bytes, &paired_arena, &DecodePolicy::service())
+                    .unwrap();
+            let (first_offset, first, first_body) = super::counted_record(paired, 0, name).unwrap();
+            let cursor = first.end() - paired.start();
+            let (second_offset, second, second_body) =
+                super::counted_record(paired, cursor, name).unwrap();
+            assert_eq!(first_offset, 1);
+            assert_eq!(second_offset, u32::try_from(cursor + 1).unwrap());
+            assert_eq!(first.end(), second.start());
+            assert_eq!(second.end(), paired.end());
+            assert_eq!(first.window(), payload.window());
+            assert_eq!(second.window(), payload.window());
+            assert_eq!(first_body.window(), second_body.window());
+            let cut = paired.child(paired.start(), second.end() - 1).unwrap();
+            assert!(super::counted_record(cut, 0, name).is_ok());
+            assert!(super::counted_record(cut, cursor, name).is_err());
+            let short_count = paired.child(paired.start(), paired.start() + 3).unwrap();
+            assert!(super::counted_record(short_count, 0, name)
+                .unwrap_err()
+                .to_string()
+                .contains("u32 field is truncated"));
+        }
     }
 }

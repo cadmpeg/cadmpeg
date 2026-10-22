@@ -43,3 +43,5 @@ macro_rules! assembly_owner {
 }
 assembly_owner!(super::AssemblyOccurrenceRecord);
 assembly_owner!(super::RseRecordRecord);
+
+assembly_owner!(super::AssemblyPlacementRecord);

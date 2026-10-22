@@ -262,7 +262,7 @@ pub(crate) fn install(
         let identity = &object.identity;
         let reference = match crate::instances::parse_reference(
             scan.data,
-            object.class_data_range.clone(),
+            object.class_data_range(),
         ) {
             Ok(reference) => reference,
             Err(error) => {

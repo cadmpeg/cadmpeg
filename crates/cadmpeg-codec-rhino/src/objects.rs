@@ -359,17 +359,33 @@ impl AttributeState {
     }
 }
 
+/// Source chunks that enclose an object class payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ObjectFraming {
+    pub(crate) table: Chunk,
+    pub(crate) chunks: ObjectChunks,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ObjectChunks {
+    pub(crate) record: Record,
+    pub(crate) object_type: Chunk,
+    pub(crate) class_wrapper: Chunk,
+    pub(crate) class_uuid: Chunk,
+    pub(crate) class_data: Chunk,
+    pub(crate) class_end: Chunk,
+}
+
 /// A fully framed Rhino object record.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ObjectDescriptor<I = SourceIdentity> {
+pub(crate) struct ObjectDescriptor<I = SourceIdentity, S = ObjectFraming> {
     /// Complete object-record range.
     pub(crate) range: Range<usize>,
     /// Object type filter bits.
     pub(crate) object_type: u32,
     /// Class UUID.
     pub(crate) class_uuid: Uuid,
-    /// Class-data payload range.
-    pub(crate) class_data_range: Range<usize>,
+    source: S,
     /// Attribute payload admission state.
     pub(crate) attributes: AttributeState,
     /// Attribute-userdata descriptors.
@@ -388,9 +404,49 @@ pub(crate) struct ObjectDescriptor<I = SourceIdentity> {
     pub(crate) warnings: Diagnostics,
 }
 
+impl<I, S> ObjectDescriptor<I, S> {
+    pub(crate) fn source(&self) -> &S {
+        &self.source
+    }
+}
+
+impl<I> ObjectDescriptor<I> {
+    pub(crate) fn class_data_range(&self) -> Range<usize> {
+        self.source().chunks.class_data.body()
+    }
+}
+
+#[cfg(test)]
+impl<I> ObjectDescriptor<I, Range<usize>> {
+    pub(crate) fn class_data_range(&self) -> Range<usize> {
+        self.source().clone()
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn attribute_descriptor(
+    attributes: ObjectAttributes,
+    offset: usize,
+) -> ObjectDescriptor<(), Range<usize>> {
+    ObjectDescriptor {
+        range: offset..offset + 10,
+        object_type: 0,
+        class_uuid: Uuid::nil(),
+        source: offset..offset,
+        attributes: AttributeState::Parsed(Box::new(attributes)),
+        attributes_userdata: Vec::new(),
+        identity: (),
+        userdata: Vec::new(),
+        history: None,
+        unknown_trailer: Vec::new(),
+        checksum_warnings: Diagnostics::new(),
+        warnings: Diagnostics::new(),
+    }
+}
+
 /// A scanned object record: framed contents, or a degraded outer range.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum ObjectRecord<I = SourceIdentity> {
+pub(crate) enum ObjectRecord<I = SourceIdentity, S = ObjectFraming> {
     /// Bounded inner framing was malformed; only the outer range survived.
     Degraded {
         /// Complete object-record range.
@@ -399,10 +455,10 @@ pub(crate) enum ObjectRecord<I = SourceIdentity> {
         warning: String,
     },
     /// Fully framed object record.
-    Framed(Box<ObjectDescriptor<I>>),
+    Framed(Box<ObjectDescriptor<I, S>>),
 }
 
-impl<I> ObjectRecord<I> {
+impl<I, S> ObjectRecord<I, S> {
     pub(crate) fn range(&self) -> Range<usize> {
         match self {
             Self::Degraded { range, .. } => range.clone(),
@@ -410,7 +466,7 @@ impl<I> ObjectRecord<I> {
         }
     }
 
-    pub(crate) fn framed(&self) -> Option<&ObjectDescriptor<I>> {
+    pub(crate) fn framed(&self) -> Option<&ObjectDescriptor<I, S>> {
         match self {
             Self::Framed(object) => Some(object),
             Self::Degraded { .. } => None,
@@ -426,7 +482,7 @@ impl<I> ObjectRecord<I> {
     }
 }
 
-impl ObjectRecord {
+impl<S> ObjectRecord<SourceIdentity, S> {
     pub(crate) fn identity(&self) -> Option<&SourceIdentity> {
         self.framed().map(|object| &object.identity)
     }
@@ -1589,8 +1645,8 @@ fn parse_per_object_mesh_userdata(
     }
 }
 
-fn resolve_identity(
-    descriptor: &ObjectDescriptor<()>,
+fn resolve_identity<S>(
+    descriptor: &ObjectDescriptor<(), S>,
     layers: &LayerLookup<'_>,
     warnings: &mut Diagnostics,
     index: usize,
@@ -1695,10 +1751,53 @@ pub(crate) fn parse_object_record(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     record: &Record,
+    table: &Chunk,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     global_warnings: &mut Diagnostics,
 ) -> Result<ObjectRecord<()>, FramingError> {
+    frame_object_record(
+        ctx,
+        bytes,
+        record,
+        archive,
+        writer_version,
+        global_warnings,
+        |chunks| ObjectFraming {
+            table: table.clone(),
+            chunks,
+        },
+    )
+}
+
+pub(crate) fn parse_detached_object_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
+    global_warnings: &mut Diagnostics,
+) -> Result<ObjectRecord<(), Range<usize>>, FramingError> {
+    frame_object_record(
+        ctx,
+        bytes,
+        record,
+        archive,
+        writer_version,
+        global_warnings,
+        |chunks| chunks.class_data.body(),
+    )
+}
+
+fn frame_object_record<S>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
+    global_warnings: &mut Diagnostics,
+    source: impl FnOnce(ObjectChunks) -> S,
+) -> Result<ObjectRecord<(), S>, FramingError> {
     let mut warnings = Diagnostics::new();
     if record.typecode != 0x2000_8070 || record.is_short() {
         return Err(FramingError::structural(
@@ -1735,10 +1834,9 @@ pub(crate) fn parse_object_record(
     require_long(&data_chunk, CLASS_DATA)?;
     // CLASS_DATA is mixed by definition. Its concrete family reader owns
     // checksum validation because only that grammar identifies direct bytes.
-    let class_data_range = data_chunk.body().clone();
     offset = data_chunk.next_offset();
     let mut userdata = Vec::new();
-    let mut class_end_seen = false;
+    let mut class_end = None;
     while offset < class.body().end {
         let item = chunk_at(bytes, offset, class.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
@@ -1749,16 +1847,15 @@ pub(crate) fn parse_object_record(
         } else {
             require_short_zero(&item, CLASS_END)?;
             offset = item.next_offset();
-            class_end_seen = true;
+            class_end = Some(item);
             break;
         }
     }
-    if !class_end_seen || offset != class.body().end {
-        return Err(FramingError::structural(
-            class.body().end,
-            "class wrapper has trailing bytes",
-        ));
-    }
+    let class_end = class_end
+        .filter(|_| offset == class.body().end)
+        .ok_or_else(|| {
+            FramingError::structural(class.body().end, "class wrapper has trailing bytes")
+        })?;
     let mut attributes_chunk = None;
     let mut attributes_userdata_body_range = None;
     let mut history = None;
@@ -1887,7 +1984,14 @@ pub(crate) fn parse_object_record(
         range: record.range.clone(),
         object_type,
         class_uuid,
-        class_data_range,
+        source: source(ObjectChunks {
+            record: record.clone(),
+            object_type: type_chunk,
+            class_wrapper: class,
+            class_uuid: uuid_chunk,
+            class_data: data_chunk,
+            class_end,
+        }),
         attributes,
         attributes_userdata,
         identity: (),
@@ -1914,11 +2018,11 @@ pub(crate) fn degraded_object_record(record: &Record, error: &FramingError) -> O
 }
 
 /// Resolves per-object source identity after document layer metadata is known.
-pub(crate) fn resolve_identities(
-    objects: Vec<ObjectRecord<()>>,
+pub(crate) fn resolve_identities<S>(
+    objects: Vec<ObjectRecord<(), S>>,
     metadata: &DocumentMetadata,
     warnings: &mut Diagnostics,
-) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
+) -> Result<Vec<ObjectRecord<SourceIdentity, S>>, cadmpeg_core::CodecError> {
     let mut seen_ids = HashSet::new();
     let mut layers = LayerLookup::new();
     for layer in &metadata.layers {
@@ -1941,7 +2045,7 @@ pub(crate) fn resolve_identities(
                     range: object.range,
                     object_type: object.object_type,
                     class_uuid: object.class_uuid,
-                    class_data_range: object.class_data_range,
+                    source: object.source,
                     attributes: object.attributes,
                     attributes_userdata: object.attributes_userdata,
                     userdata: object.userdata,

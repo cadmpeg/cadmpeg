@@ -22,9 +22,7 @@ impl NativeOwnerResolver for Owners {
                     continue;
                 }
                 let field = match arena.as_str() {
-                    "document" | "objects" | "entries" | "gui_documents" | "unreadable_entries" => {
-                        None
-                    }
+                    "document" | "objects" | "entries" | "gui_documents" => None,
                     "extensions" | "properties" | "gui_properties" => Some(("owner", false)),
                     "shape_payloads" | "element_maps" => Some(("property", false)),
                     "carrier_census" => Some(("payload", false)),

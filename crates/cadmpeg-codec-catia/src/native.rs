@@ -1465,7 +1465,6 @@ pub(crate) struct CatiaFinjplSegment {
 #[serde(deny_unknown_fields)]
 pub(crate) struct CatiaDisplayColorRecord {
     pub(crate) id: String,
-    pub(crate) appearance: cadmpeg_ir::ids::AppearanceId,
     pub(crate) source_kind: String,
     pub(crate) source_record: Option<String>,
 }

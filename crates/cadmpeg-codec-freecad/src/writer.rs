@@ -61,16 +61,12 @@ fn write_seekable(
     let document = resolution.document();
     let schema_version = resolution.schema_version();
     let fidelity = resolution.fidelity();
-    let unreadable =
-        namespace.arena_as::<crate::container::UnreadableEntry>("unreadable_entries")?;
-    if !unreadable.is_empty()
-        || fidelity.parts().values().any(|part| {
-            matches!(
-                part.state(),
-                cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
-            )
-        })
-    {
+    if fidelity.parts().values().any(|part| {
+        matches!(
+            part.state(),
+            cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+        )
+    }) {
         return Err(CodecError::UnsupportedContent("FCStd repacking cannot preserve unreadable ZIP payloads; retained stored bytes are source-only".into()));
     }
     let mut entries = namespace.arena_as::<EntryRecord>("entries")?;

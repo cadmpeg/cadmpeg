@@ -39,7 +39,6 @@ pub(crate) const ARENAS: &[&str] = &[
     "gui_view_providers",
     "gui_properties",
     "element_maps",
-    "unreadable_entries",
     "unknowns",
 ];
 

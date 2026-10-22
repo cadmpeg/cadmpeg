@@ -120,10 +120,6 @@ fn cadir_native_records_hold_evidence_and_typed_values_without_source_images() {
     let native = decoded.ir().native.namespace("fcstd").unwrap();
     for (arena, forbidden) in [
         ("entries", &["data"][..]),
-        (
-            "unreadable_entries",
-            &["stored_data", "data_start", "data_end"][..],
-        ),
         ("properties", &["raw_xml", "byte_start", "byte_end"][..]),
         ("objects", &["data_xml", "data_start", "data_end"][..]),
         ("extensions", &["raw_xml"][..]),

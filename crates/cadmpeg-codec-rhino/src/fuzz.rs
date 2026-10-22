@@ -98,7 +98,7 @@ pub fn object_record(data: &[u8]) {
     else {
         return;
     };
-    let _probe = crate::objects::parse_object_record(
+    let _probe = crate::objects::parse_detached_object_record(
         &ctx,
         data,
         &record,

@@ -19,7 +19,7 @@ fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
     assert!(scan.data.contains_key("Document.xml"));
     assert!(!scan.data.contains_key("broken.bin"));
     assert_eq!(scan.failed_members, BTreeSet::from(["broken.bin".into()]));
-    assert!(scan.unreadable_entries.is_empty());
+    assert!(!crate::native::ARENAS.contains(&"unreadable_entries"));
     assert!(scan.losses.is_empty());
     let range = scan
         .archive
@@ -155,7 +155,7 @@ fn a_locatable_damaged_local_header_is_given_up_without_relabeling_its_payload()
     assert_eq!(scan.data["peer.bin"].window(), b"peer source");
     assert!(!scan.data.contains_key("broken.bin"));
     assert_eq!(scan.failed_members, BTreeSet::from(["broken.bin".into()]));
-    assert!(scan.unreadable_entries.is_empty());
+    assert!(!crate::native::ARENAS.contains(&"unreadable_entries"));
     assert!(scan.losses.is_empty());
     let (_, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
     let unknowns = native
@@ -225,4 +225,76 @@ fn a_locatable_damaged_local_header_is_given_up_without_relabeling_its_payload()
         Some(failed.byte_len())
     );
     crate::test_support::test_archive::assert_only_document_file_version_capture(&ctx, &scan);
+}
+
+#[test]
+fn a_given_up_payload_has_default_b1_classes_at_its_actual_physical_extent() {
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    let bytes = archive();
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let physical = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
+    let range = physical
+        .entry("broken.bin")
+        .unwrap()
+        .stored_range()
+        .unwrap();
+    let source = root
+        .child(
+            usize::try_from(range.start).unwrap(),
+            usize::try_from(range.end).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(source.window(), b"\x07");
+    let decoded = crate::FcstdCodec
+        .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let fidelity = decoded.source_fidelity();
+    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+    let [unknown] = unknowns.as_slice() else {
+        panic!("one actual failed member")
+    };
+    assert!(unknown.links.is_empty());
+    let part = &fidelity.parts()[&unknown.id];
+    assert_eq!(part.level().as_str(), "zip.entry");
+    assert_eq!(part.state(), &PartState::GivenUp {});
+    assert_eq!(part.offset(), range.start);
+    assert_eq!(part.byte_len(), range.end - range.start);
+    let retained = fidelity.retained_record(unknown.id.as_str()).unwrap();
+    assert_eq!(retained.stream(), part.stream());
+    assert_eq!(retained.offset(), range.start);
+    assert_eq!(retained.byte_len(), range.end - range.start);
+    assert_eq!(retained.data(), Some(source.window()));
+    assert_eq!(
+        retained.sha256(),
+        cadmpeg_ir::hash::sha256_hex(source.window())
+    );
+    let layout = &fidelity.record_layout()[unknown.id.as_str()];
+    assert_eq!(layout.stream(), part.stream());
+    assert_eq!(layout.offset(), range.start);
+    assert_eq!(layout.byte_len(), range.end - range.start);
+    assert!(layout.reads().is_empty());
+    let classes = cadmpeg_ir::ArenaClasses::from([
+        cadmpeg_ir::ArenaClass::Model,
+        cadmpeg_ir::ArenaClass::Design,
+    ]);
+    let span = fidelity.b1_spans()[part.stream()]
+        .spans()
+        .iter()
+        .find(|span| span.range().start <= range.start && span.range().end >= range.end)
+        .expect("the genuine given-up extent is B1");
+    assert_eq!(span.classes(), classes);
+    assert_eq!(retained.untyped(), &classes);
+    assert_eq!(fidelity.unrepresented(), classes);
+    let losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    let provenance = losses[0].provenance.as_ref().unwrap();
+    assert_eq!(provenance.stream_name(), Some(part.stream()));
+    assert_eq!(provenance.offset, range.start);
 }

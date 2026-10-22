@@ -43,7 +43,6 @@ pub(crate) const ARENAS: &[&str] = &[
     "active_carrier",
     "assembly_occurrences",
     "assembly_placements",
-    "assembly_record_issues",
     "body_native_keys",
     "database_issues",
     "databases",
@@ -1555,7 +1554,6 @@ struct NativeData {
     ufrx: UfrxRecord,
     assembly_occurrences: Vec<AssemblyOccurrenceRecord>,
     assembly_placements: Vec<AssemblyPlacementRecord>,
-    assembly_record_issues: Vec<RecordIssue>,
     pm_app_default_styles: Vec<PmAppDefaultStyleRecord>,
     pm_app_rendering_styles: Vec<PmAppRenderingStyleRecord>,
     pm_graphics_faces: Vec<PmGraphicsFaceRecord>,
@@ -1619,7 +1617,6 @@ impl NativeData {
             ufrx: UfrxRecord::read(ctx, namespace)?,
             assembly_occurrences: namespace.arena_as_for_decode(ctx, "assembly_occurrences")?,
             assembly_placements: namespace.arena_as_for_decode(ctx, "assembly_placements")?,
-            assembly_record_issues: namespace.arena_as_for_decode(ctx, "assembly_record_issues")?,
             pm_app_default_styles: namespace.arena_as_for_decode(ctx, "pm_app_default_styles")?,
             pm_app_rendering_styles: namespace
                 .arena_as_for_decode(ctx, "pm_app_rendering_styles")?,
@@ -2258,16 +2255,6 @@ fn validate_assembly(
                 None,
             ));
         }
-    }
-    for issue in &data.assembly_record_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor assembly record {}:{} is unavailable: {}",
-                issue.segment_token, issue.record_ordinal, issue.detail
-            ),
-            Some(issue.id()),
-        ));
     }
     let mut projected = crate::assembly::project_occurrences(
         ctx,

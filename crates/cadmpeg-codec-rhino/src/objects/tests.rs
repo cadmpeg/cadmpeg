@@ -710,7 +710,7 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
 
 #[test]
 fn degraded_object_record_resolves_to_one_identity() {
-    let objects = vec![ObjectRecord::Degraded {
+    let objects: Vec<ObjectRecord<()>> = vec![ObjectRecord::Degraded {
         range: 0..1,
         warning: "fixture".to_owned(),
     }];
@@ -1276,4 +1276,104 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
         .iter()
         .filter(|loss| loss.code != crate::loss::RhinoLossCode::IntegrityFailure.kind())
         .any(|loss| { loss.message.contains("OBJECT_RECORD") || loss.message.contains("offset") }));
+}
+
+#[test]
+fn object_framing_keeps_the_actual_table_record_wrapper_and_data_chunks() {
+    for (version, archive) in [
+        ("4", ArchiveVersion::V4),
+        ("50", ArchiveVersion::V5),
+        ("80", ArchiveVersion::V8),
+    ] {
+        let payload = point_payload([1.0, 2.0, 3.0]);
+        let record = object_record_with_payload(archive, 1, POINT_CLASS, &payload);
+        let bytes = minimal_document(
+            version,
+            &[
+                table(archive, 0x1000_0014, &[]),
+                table(archive, 0x1000_0015, &[]),
+                table(archive, 0x1000_0013, &[record]),
+            ],
+        );
+        let scan = crate::container::scan_owned(bytes).expect("bounded object source");
+        let object = scan.objects[0].framed().expect("framed point");
+        let framing: &super::ObjectFraming = object.source();
+        assert_eq!(framing.table.typecode, 0x1000_0013);
+        assert_eq!(framing.chunks.record.typecode, 0x2000_8070);
+        assert_eq!(framing.chunks.class_wrapper.typecode, 0x0002_7ffa);
+        assert_eq!(framing.chunks.class_uuid.typecode, 0x0002_fffb);
+        assert_eq!(framing.chunks.class_data.typecode, 0x0002_fffc);
+        assert_eq!(framing.chunks.class_end.typecode, 0x8002_7fff);
+        assert_eq!(object.range, framing.chunks.record.range);
+        assert_eq!(
+            framing.chunks.record.body().start,
+            framing.chunks.object_type.header_start
+        );
+        assert_eq!(
+            framing.chunks.object_type.next_offset(),
+            framing.chunks.class_wrapper.header_start
+        );
+        assert_eq!(
+            framing.chunks.class_wrapper.body().start,
+            framing.chunks.class_uuid.header_start
+        );
+        assert_eq!(
+            framing.chunks.class_uuid.next_offset(),
+            framing.chunks.class_data.header_start
+        );
+        assert_eq!(
+            framing.chunks.class_data.next_offset(),
+            framing.chunks.class_end.header_start
+        );
+        assert_eq!(
+            framing.chunks.class_end.next_offset(),
+            framing.chunks.class_wrapper.body().end
+        );
+        assert!(framing.table.body().start <= framing.chunks.record.range.start);
+        assert!(framing.chunks.record.range.end <= framing.table.body().end);
+        assert!(framing.chunks.class_wrapper.next_offset() <= framing.chunks.record.body().end);
+        assert_eq!(object.class_data_range(), framing.chunks.class_data.body());
+        assert_eq!(&scan.data[object.class_data_range()], payload);
+        assert!(framing.chunks.class_data.header_start < object.class_data_range().start);
+        assert_eq!(
+            framing.chunks.class_data.next_offset() - object.class_data_range().end,
+            4
+        );
+    }
+}
+
+#[test]
+fn detached_object_body_parsing_keeps_the_fuzz_grammar_without_source_parents() {
+    let archive = ArchiveVersion::V5;
+    let payload = point_payload([1.0, 2.0, 3.0]);
+    let record_bytes = object_record_with_payload(archive, 1, POINT_CLASS, &payload);
+    let record_chunk =
+        crate::chunks::chunk_at(&record_bytes, 0, record_bytes.len(), archive, false)
+            .expect("fixture object chunk");
+    let mut bytes = vec![0];
+    bytes.extend_from_slice(&record_bytes[record_chunk.body()]);
+    let record = crate::container::Record::long(0x2000_8070, 1..bytes.len(), 1..bytes.len());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("detached body context");
+    let parsed = super::parse_detached_object_record(
+        &ctx,
+        &bytes,
+        &record,
+        archive,
+        None,
+        &mut Diagnostics::new(),
+    )
+    .expect("the original raw-body grammar");
+    let object = parsed.framed().expect("parsed object body");
+    assert_eq!(object.class_uuid, Uuid::from_wire(POINT_CLASS));
+    assert_eq!(object.range, 1..bytes.len());
+    assert_eq!(&bytes[object.class_data_range()], payload);
+    let detached: &std::ops::Range<usize> = object.source();
+    assert_eq!(detached, &object.class_data_range());
+    assert!(ctx
+        .take_record_captures()
+        .expect("one capture drain")
+        .is_empty());
 }

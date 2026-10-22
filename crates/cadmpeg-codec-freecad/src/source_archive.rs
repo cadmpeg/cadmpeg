@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+mod part_integrity;
+
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -12,14 +14,11 @@ use cadmpeg_ir::SourceFidelity;
 
 /// Original physical input; expanded member copies are not retained.
 pub(crate) fn image(fidelity: &SourceFidelity) -> Result<&[u8], CodecError> {
-    let record = fidelity
-        .retained_record(crate::fidelity::SOURCE_IMAGE)
-        .ok_or_else(|| CodecError::malformed("original FCStd archive is unavailable"))?;
+    let record = original_record(fidelity)?;
     let bytes = record
         .data()
         .ok_or_else(|| CodecError::malformed("original FCStd archive has no bytes"))?;
-    if record.offset() != 0
-        || record.byte_len() != cadmpeg_core::decode::u64_from_index(bytes.len())
+    if record.byte_len() != cadmpeg_core::decode::u64_from_index(bytes.len())
         || record.sha256() != cadmpeg_ir::hash::sha256_hex(bytes)
     {
         return Err(CodecError::malformed(
@@ -27,6 +26,49 @@ pub(crate) fn image(fidelity: &SourceFidelity) -> Result<&[u8], CodecError> {
         ));
     }
     Ok(bytes)
+}
+
+fn original_record(
+    fidelity: &SourceFidelity,
+) -> Result<&cadmpeg_ir::source_fidelity::RetainedSourceRecord, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::PartState;
+    let mut failed = fidelity.parts().iter().filter(|(_, part)| {
+        part.parent().is_none()
+            && part.level().as_str() == "zip.archive"
+            && part.state() == &PartState::GivenUp {}
+    });
+    let root = failed.next();
+    if failed.next().is_some() {
+        return Err(CodecError::malformed(
+            "original FCStd archive has multiple failed root owners",
+        ));
+    }
+    match (
+        fidelity.retained_record(crate::fidelity::SOURCE_IMAGE),
+        root,
+    ) {
+        (Some(record), None) => Ok(record),
+        (None, Some((id, part))) => {
+            let record = fidelity
+                .retained_record(id.as_str())
+                .ok_or_else(|| CodecError::malformed("failed archive has no retained source"))?;
+            if record.stream() != part.stream()
+                || record.offset() != part.offset()
+                || record.byte_len() != part.byte_len()
+            {
+                return Err(CodecError::malformed(
+                    "failed archive source disagrees with its actual part",
+                ));
+            }
+            Ok(record)
+        }
+        (Some(_), Some(_)) => Err(CodecError::malformed(
+            "original FCStd archive has competing source images",
+        )),
+        (None, None) => Err(CodecError::malformed(
+            "original FCStd archive is unavailable",
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -64,14 +106,31 @@ impl<'source, 'fidelity> OriginalArchive<'source, 'fidelity> {
                 "source processing input differs from original archive",
             ));
         }
-        let record = fidelity
-            .retained_record(crate::fidelity::SOURCE_IMAGE)
-            .ok_or_else(|| CodecError::malformed("original FCStd archive is unavailable"))?;
-        let root = ctx.name_stream(root, record.stream())?;
-        Ok(Self {
-            archive: ArchiveSnapshot::new(ctx, root)?,
-            fidelity,
-        })
+        let record = original_record(fidelity)?;
+        let actual = ctx.capture_part_extent(root)?;
+        if actual.offset() != record.offset() || actual.byte_len() != record.byte_len() {
+            return Err(CodecError::UnsupportedContent(
+                "original FCStd archive needs its actual source origin for layout reuse".into(),
+            ));
+        }
+        let root = if actual.stream() == record.stream() {
+            root
+        } else {
+            ctx.name_stream(root, record.stream())?
+        };
+        let archive = ArchiveSnapshot::new(ctx, root)?;
+        part_integrity::validate(ctx, root, &archive, fidelity)?;
+        Ok(Self { archive, fidelity })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn part(
+        &self,
+        ctx: &DecodeContext<'source>,
+        id: &str,
+        name: &str,
+    ) -> Result<&'fidelity [u8], CodecError> {
+        part_integrity::named(ctx, &self.archive, self.fidelity, id, name)
     }
 
     pub(crate) fn open(

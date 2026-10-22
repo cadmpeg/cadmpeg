@@ -4,7 +4,7 @@
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{
@@ -53,6 +53,27 @@ pub(crate) const REV_SURFACE_LEGACY: Uuid = Uuid::from_canonical([
 pub(crate) const SUM_SURFACE: Uuid = Uuid::from_canonical([
     0xc4, 0xcd, 0x53, 0x59, 0x44, 0x6d, 0x46, 0x90, 0x9f, 0xf5, 0x29, 0x05, 0x97, 0x32, 0x47, 0x2b,
 ]);
+
+pub(crate) fn is_nurbs_surface(class: Uuid) -> bool {
+    matches!(
+        class,
+        NURBS_SURFACE | NURBS_SURFACE_TL | NURBS_SURFACE_LEGACY
+    )
+}
+
+pub(crate) fn decode_nurbs_view(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    range: Range<usize>,
+    scale: MillimeterScale,
+) -> Result<DecodedSurface, GeometryError> {
+    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
+    let mut reader = BoundedReader::from_view(source, range.start, range.end)?;
+    Ok(DecodedSurface::Typed {
+        geometry: TypedSurface::Nurbs(read_nurbs_surface_in(ctx, &mut reader, scale)?),
+        derived: true,
+    })
+}
 
 /// Returns whether a class is one of the native procedural surfaces.
 pub(crate) fn is_procedural_class(uuid: Uuid) -> bool {
@@ -230,7 +251,7 @@ pub(crate) fn decode(
         NURBS_SURFACE | NURBS_SURFACE_TL | NURBS_SURFACE_LEGACY
     ) {
         DecodedSurface::Typed {
-            geometry: TypedSurface::Nurbs(read_nurbs_surface(&mut reader, scale)?),
+            geometry: TypedSurface::Nurbs(read_nurbs_surface_in(ctx, &mut reader, scale)?),
             derived: true,
         }
     } else if class == PLANE_SURFACE {
@@ -1020,6 +1041,155 @@ pub(crate) fn read_nurbs_surface_prefix(
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<NurbsSurface, GeometryError> {
+    read_nurbs_surface_prefix_inner(
+        reader,
+        scale,
+        read_knots,
+        read_poles,
+        reconstruct_checked_knots,
+        checked_surface_poles,
+    )
+}
+
+fn read_nurbs_surface_in(
+    ctx: &DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+) -> Result<NurbsSurface, GeometryError> {
+    let surface = read_nurbs_surface_prefix_inner(
+        reader,
+        scale,
+        |reader, count| {
+            read_knots_into(
+                reader,
+                count,
+                curve_lane(ctx, count, FiniteReal::ZERO, "Rhino NURBS surface knots")?,
+            )
+        },
+        |reader, count, rational, dimension, scale| {
+            let points = curve_lane(ctx, count, FinitePoint3::ZERO, "Rhino NURBS surface points")?;
+            let weights = if rational {
+                Some(curve_lane(
+                    ctx,
+                    count,
+                    NonZeroReal::ONE,
+                    "Rhino NURBS surface weights",
+                )?)
+            } else {
+                None
+            };
+            read_poles_into(reader, count, dimension, scale, points, weights)
+        },
+        |knots, order, count| {
+            let full_count = knots
+                .len()
+                .checked_add(2)
+                .ok_or_else(|| GeometryError::unpositioned("NURBS knot arithmetic overflow"))?;
+            reconstruct_checked_knots_into(
+                knots,
+                order,
+                count,
+                curve_lane(
+                    ctx,
+                    full_count,
+                    FiniteReal::ZERO,
+                    "Rhino NURBS surface full knots",
+                )?,
+            )
+        },
+        |points, weights, row_len, _| allocated_surface_poles(ctx, points, weights, row_len),
+    )?;
+    reader.skip_remaining()?;
+    Ok(surface)
+}
+
+fn checked_surface_poles(
+    points: Vec<FinitePoint3>,
+    weights: Option<Vec<NonZeroReal>>,
+    row_len: usize,
+    offset: usize,
+) -> Result<NurbsPoleGrid<FinitePoint3>, GeometryError> {
+    let point_rows = copy_rows(&points, row_len)?;
+    let weight_rows = weights
+        .as_deref()
+        .map(|values| copy_rows(values, row_len))
+        .transpose()?;
+    NurbsPoleGrid::from_checked_lanes(point_rows, weight_rows)
+        .map_err(|error| GeometryError::malformed(offset, error.to_string()))
+}
+
+fn allocated_surface_poles(
+    ctx: &DecodeContext<'_>,
+    points: Vec<FinitePoint3>,
+    weights: Option<Vec<NonZeroReal>>,
+    row_len: usize,
+) -> Result<NurbsPoleGrid<FinitePoint3>, GeometryError> {
+    debug_assert!(row_len > 0 && points.len().is_multiple_of(row_len));
+    let row_count = points.len() / row_len;
+    if let Some(weights) = weights {
+        debug_assert_eq!(points.len(), weights.len());
+        let mut rows =
+            ctx.alloc_filled(row_count, Vec::new(), "Rhino NURBS surface rational rows")?;
+        for ((target, points), weights) in rows
+            .iter_mut()
+            .zip(points.chunks(row_len))
+            .zip(weights.chunks(row_len))
+        {
+            let mut row = ctx.alloc_filled(
+                row_len,
+                cadmpeg_ir::geometry::nurbs::WeightedPole3 {
+                    point: FinitePoint3::ZERO,
+                    weight: NonZeroReal::ONE,
+                },
+                "Rhino NURBS surface rational poles",
+            )?;
+            for ((target, point), weight) in row.iter_mut().zip(points).zip(weights) {
+                *target = cadmpeg_ir::geometry::nurbs::WeightedPole3 {
+                    point: *point,
+                    weight: *weight,
+                };
+            }
+            *target = row;
+        }
+        Ok(NurbsPoleGrid::Rational { rows })
+    } else {
+        let mut rows = ctx.alloc_filled(row_count, Vec::new(), "Rhino NURBS surface rows")?;
+        for (target, points) in rows.iter_mut().zip(points.chunks(row_len)) {
+            let mut row = ctx.alloc_filled(
+                row_len,
+                FinitePoint3::ZERO,
+                "Rhino NURBS surface row points",
+            )?;
+            row.copy_from_slice(points);
+            *target = row;
+        }
+        Ok(NurbsPoleGrid::Polynomial { rows })
+    }
+}
+
+fn read_nurbs_surface_prefix_inner(
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+    mut knots_reader: impl FnMut(
+        &mut BoundedReader<'_>,
+        usize,
+    ) -> Result<Vec<FiniteReal>, GeometryError>,
+    poles_reader: impl FnOnce(
+        &mut BoundedReader<'_>,
+        usize,
+        bool,
+        i32,
+        MillimeterScale,
+    )
+        -> Result<(Vec<FinitePoint3>, Option<Vec<NonZeroReal>>), GeometryError>,
+    mut reconstruct: impl FnMut(&[FiniteReal], usize, usize) -> Result<KnotVector, GeometryError>,
+    make_grid: impl FnOnce(
+        Vec<FinitePoint3>,
+        Option<Vec<NonZeroReal>>,
+        usize,
+        usize,
+    ) -> Result<NurbsPoleGrid<FinitePoint3>, GeometryError>,
+) -> Result<NurbsSurface, GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
     if version >> 4 != 1 {
@@ -1052,7 +1222,7 @@ pub(crate) fn read_nurbs_surface_prefix(
     if u_knot_count != expected_u {
         return Err(error(reader.position(), "surface U knot count mismatch"));
     }
-    let u_knots = read_knots(reader, u_knot_count)?;
+    let u_knots = knots_reader(reader, u_knot_count)?;
     validate_stored_domain(&u_knots, u_order, u_count, reader.position())?;
     let v_knot_count = crate::wire::element_count(reader, 8)?;
     let expected_v = v_order
@@ -1062,7 +1232,7 @@ pub(crate) fn read_nurbs_surface_prefix(
     if v_knot_count != expected_v {
         return Err(error(reader.position(), "surface V knot count mismatch"));
     }
-    let v_knots = read_knots(reader, v_knot_count)?;
+    let v_knots = knots_reader(reader, v_knot_count)?;
     validate_stored_domain(&v_knots, v_order, v_count, reader.position())?;
     let u_periodic = periodic_knots_checked(&u_knots, u_order, u_count);
     let v_periodic = periodic_knots_checked(&v_knots, v_order, v_count);
@@ -1079,17 +1249,10 @@ pub(crate) fn read_nurbs_surface_prefix(
         return Err(error(reader.position(), "NURBS surface CV count mismatch"));
     }
     let (control_points, weights) =
-        read_poles(reader, stored_cv_count, rational != 0, dimension, scale)?;
-    let u_knots = reconstruct_checked_knots(&u_knots, u_order, u_count)?;
-    let v_knots = reconstruct_checked_knots(&v_knots, v_order, v_count)?;
-    let row_len = v_count;
-    let point_rows = copy_rows(&control_points, row_len)?;
-    let weight_rows = weights
-        .as_deref()
-        .map(|values| copy_rows(values, row_len))
-        .transpose()?;
-    let poles = NurbsPoleGrid::from_checked_lanes(point_rows, weight_rows)
-        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+        poles_reader(reader, stored_cv_count, rational != 0, dimension, scale)?;
+    let u_knots = reconstruct(&u_knots, u_order, u_count)?;
+    let v_knots = reconstruct(&v_knots, v_order, v_count)?;
+    let poles = make_grid(control_points, weights, v_count, reader.position())?;
     NurbsSurface::new(
         NurbsSurfaceAxis::new(
             u32::try_from(u_order - 1)

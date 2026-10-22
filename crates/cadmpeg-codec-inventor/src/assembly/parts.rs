@@ -5,8 +5,10 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec, PartState};
 
-use super::AssemblyOccurrence;
-use crate::native::{AssemblyOccurrenceRecord, RseRecordRecord};
+use super::{AssemblyOccurrence, AssemblyPlacement};
+use crate::native::{
+    AssemblyOccurrenceRecord, AssemblyPlacementRecord, AssemblyPlacementRecordWire, RseRecordRecord,
+};
 use crate::records::RseRecordFrame;
 
 /// Appendix C's located body includes selector and trailing length. The extended
@@ -47,6 +49,53 @@ pub(super) fn occurrence<'a>(
     token: &str,
     frame: &RseRecordFrame<'a>,
 ) -> Result<Option<AssemblyOccurrence>, CodecError> {
+    decode_body(ctx, output, expanded, token, frame, |stage| {
+        let id = format!("inventor:assembly:occurrence#{token}-{}", frame.ordinal);
+        ctx.record(&id, frame.payload, || {
+            let mut occurrence = super::parse_occurrence(ctx, frame.payload)?;
+            occurrence.segment_token = token.to_owned();
+            occurrence.record_ordinal = frame.ordinal;
+            stage.insert_native(
+                ctx,
+                "assembly_occurrences",
+                AssemblyOccurrenceRecord::from_parsed_occurrence(&occurrence),
+            )?;
+            Ok(occurrence)
+        })
+    })
+}
+
+pub(super) fn placement<'a>(
+    ctx: &DecodeContext<'a>,
+    output: &mut PartOutput,
+    expanded: View<'a>,
+    token: &str,
+    frame: &RseRecordFrame<'a>,
+) -> Result<Option<AssemblyPlacement<'a>>, CodecError> {
+    decode_body(ctx, output, expanded, token, frame, |stage| {
+        let id = format!("inventor:assembly:placement#{token}-{}", frame.ordinal);
+        ctx.record(&id, frame.payload, || {
+            let mut placement = super::parse_placement(ctx, frame.payload)?;
+            placement.segment_token = token.to_owned();
+            placement.record_ordinal = frame.ordinal;
+            let native = AssemblyPlacementRecord::try_from(
+                AssemblyPlacementRecordWire::from_placement(&placement),
+            )
+            .map_err(CodecError::malformed)?;
+            stage.insert_native(ctx, "assembly_placements", native)?;
+            Ok(placement)
+        })
+    })
+}
+
+fn decode_body<'a, T>(
+    ctx: &DecodeContext<'a>,
+    output: &mut PartOutput,
+    expanded: View<'a>,
+    token: &str,
+    frame: &RseRecordFrame<'a>,
+    decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
+) -> Result<Option<T>, CodecError> {
     let extent = body(ctx, expanded, frame)?;
     let level = PartLevel::parse("inventor.rse_record_body")
         .ok_or_else(|| CodecError::malformed("RSe record body is absent from Appendix C"))?;
@@ -90,20 +139,7 @@ pub(super) fn occurrence<'a>(
             "rse_records",
             RseRecordRecord::from_frame(token, frame)?,
         )?;
-        ctx.decode_part(output, extent, PartSpec::new(level, Vec::new()), |stage| {
-            let id = format!("inventor:assembly:occurrence#{token}-{}", frame.ordinal);
-            ctx.record(&id, frame.payload, || {
-                let mut occurrence = super::parse_occurrence(ctx, frame.payload)?;
-                occurrence.segment_token = token.to_owned();
-                occurrence.record_ordinal = frame.ordinal;
-                stage.insert_native(
-                    ctx,
-                    "assembly_occurrences",
-                    AssemblyOccurrenceRecord::from_parsed_occurrence(&occurrence),
-                )?;
-                Ok(occurrence)
-            })
-        })
+        ctx.decode_part(output, extent, PartSpec::new(level, Vec::new()), decode)
     })
 }
 

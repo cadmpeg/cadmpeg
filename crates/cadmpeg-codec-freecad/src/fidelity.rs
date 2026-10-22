@@ -176,32 +176,7 @@ pub(crate) fn mark_unreadable(
                 .map_err(CodecError::malformed)?;
         }
     }
-    for entry in native.arena_as::<crate::container::UnreadableEntry>("unreadable_entries")? {
-        let mut classes = ArenaClasses::new();
-        for property in properties.iter().filter(|property| {
-            property.side_entries().contains(&entry.name)
-                || property.values().iter().any(|value| {
-                    value.attributes.iter().any(|(key, name)| {
-                        matches!(key.as_str(), "file" | "File") && *name == entry.name
-                    })
-                })
-        }) {
-            classes.insert(class(property));
-        }
-        if entry.name == "GuiDocument.xml"
-            || std::path::Path::new(&entry.name)
-                .extension()
-                .is_some_and(|extension| extension.as_encoded_bytes().eq_ignore_ascii_case(b"brp"))
-        {
-            classes.insert(ArenaClass::Model);
-        }
-        if classes.is_empty() {
-            classes.extend([ArenaClass::Model, ArenaClass::Design]);
-        }
-        fidelity
-            .mark_untyped(&entry.id, classes)
-            .map_err(CodecError::malformed)?;
-    }
+
     if objects.is_empty()
         && native
             .arena_as::<crate::native::DocumentFacts>("document")?

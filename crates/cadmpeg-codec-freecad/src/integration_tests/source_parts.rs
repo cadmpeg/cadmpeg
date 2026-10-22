@@ -43,14 +43,13 @@ fn the_real_codec_composes_shared_unknowns_and_retains_successful_member_records
         crate::source_archive::image(decoded.source_fidelity()).unwrap(),
         bytes
     );
-    assert!(decoded
+    assert!(!decoded
         .ir()
         .native
         .namespace("fcstd")
         .unwrap()
-        .arena_as::<serde_json::Value>("unreadable_entries")
-        .unwrap()
-        .is_empty());
+        .arenas()
+        .contains_key("unreadable_entries"));
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     assert_eq!(
         decoded

@@ -56,8 +56,7 @@ fn public_polyline_decode_installs_exact_native_reads_under_the_kept_curve() {
     let range = scan.objects[0]
         .framed()
         .expect("polyline record")
-        .class_data_range
-        .clone();
+        .class_data_range();
     let result = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("source polyline");

@@ -76,39 +76,80 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     crate::test_support::test_archive::assert_valid_document(decoded.ir());
     let namespace = decoded.ir().native.namespace("fcstd").unwrap();
-    let unreadable = namespace
-        .arena_as::<crate::container::UnreadableEntry>("unreadable_entries")
-        .unwrap();
-    assert_eq!(unreadable.len(), 1);
-    let physical = decoded
+    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    assert!(!namespace.arenas().contains_key("unreadable_entries"));
+    let part = &decoded.source_fidelity().parts()[&unknowns[0].id];
+    assert_eq!(part.level().as_str(), "zip.local_header");
+    let start = usize::try_from(part.offset()).unwrap();
+    let end = start + usize::try_from(part.byte_len()).unwrap();
+    assert_eq!(
+        decoded
+            .source_fidelity()
+            .retained_record(unknowns[0].id.as_str())
+            .unwrap()
+            .data(),
+        Some(&changed[start..end])
+    );
+    let physical = &decoded
         .source_fidelity()
         .freecad_ledgers()
         .values()
         .next()
         .expect("FCStd source ledgers")
-        .physical_ledger
-        .clone();
-    assert!(physical.last().unwrap().span.end() < unreadable[0].data_end);
-    let start = usize::try_from(unreadable[0].data_start).unwrap();
-    let end = usize::try_from(unreadable[0].data_end).unwrap();
-    assert_eq!(unreadable[0].stored_data, &changed[start..end]);
-
-    let mut shifted = unreadable;
-    shifted[0].data_start += 1;
-    shifted[0].data_end += 1;
-    let mut invalid = decoded.ir().clone();
-    invalid
-        .native
-        .namespace_mut("fcstd")
-        .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
-            "unreadable_entries",
-            &shifted,
-        )
+        .physical_ledger;
+    assert!(physical.last().unwrap().span.end() < part.offset() + part.byte_len());
+    let archive_arena = DecodeArena::new();
+    let (archive_ctx, archive_root) =
+        DecodeContext::from_root_bytes(&changed, &archive_arena, &policy).unwrap();
+    let archive = cadmpeg_container::ArchiveSnapshot::new(&archive_ctx, archive_root).unwrap();
+    let original_span = archive
+        .entry("Thumbnail.png")
+        .unwrap()
+        .stored_range()
         .unwrap();
-    assert!(crate::test_support::validate_native(&invalid)
-        .iter()
-        .any(|finding| finding.message == "invalid source-only FCStd entry"));
+    let original_start = usize::try_from(original_span.start).unwrap();
+    let original_end = usize::try_from(original_span.end).unwrap();
+    assert_eq!(
+        &crate::source_archive::image(decoded.source_fidelity()).unwrap()
+            [original_start..original_end],
+        &changed[original_start..original_end]
+    );
+    let original_source = crate::source_archive::OriginalArchive::new(
+        &archive_ctx,
+        archive_root,
+        decoded.source_fidelity(),
+    )
+    .unwrap();
+    assert_eq!(
+        original_source
+            .part(&archive_ctx, unknowns[0].id.as_str(), "Thumbnail.png")
+            .unwrap(),
+        &changed[start..end]
+    );
+    let mut shifted = serde_json::to_value(decoded.source_fidelity()).unwrap();
+    for section in ["parts", "retained_records", "record_layout"] {
+        let offset = shifted[section][unknowns[0].id.as_str()]["offset"]
+            .as_u64()
+            .unwrap();
+        shifted[section][unknowns[0].id.as_str()]["offset"] = serde_json::json!(offset + 1);
+    }
+    for range in shifted["parts"][unknowns[0].id.as_str()]["framing_bytes"]
+        .as_array_mut()
+        .unwrap()
+    {
+        for edge in ["start", "end"] {
+            let value = range[edge].as_u64().unwrap();
+            range[edge] = serde_json::json!(value + 1);
+        }
+    }
+    let shifted: cadmpeg_ir::SourceFidelity = serde_json::from_value(shifted).unwrap();
+    let error = crate::source_archive::OriginalArchive::new(&archive_ctx, archive_root, &shifted)
+        .err()
+        .expect("+1 source extent must fail physical proof");
+    assert!(error
+        .to_string()
+        .contains("given-up part extent disagrees with its physical ZIP entry"));
 }
 
 #[test]
@@ -143,15 +184,24 @@ fn unreadable_optional_payload_retains_stored_bytes_and_checked_geometry() {
         .native
         .namespace("fcstd")
         .expect("native graph");
-    let raw = namespace
-        .arena_as::<crate::container::UnreadableEntry>("unreadable_entries")
-        .expect("source-only payload");
+    let raw = decoded.ir().native_unknowns("fcstd").unwrap();
     assert_eq!(raw.len(), 1);
-    assert_eq!(raw[0].name, "Thumbnail.png");
-    assert!(
-        !crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), &raw[0].id)
-            .is_empty()
+    let part = &decoded.source_fidelity().parts()[&raw[0].id];
+    assert_eq!(part.level().as_str(), "zip.entry");
+    assert_eq!(usize::try_from(part.offset()).unwrap(), payload);
+    let retained = decoded
+        .source_fidelity()
+        .retained_record(raw[0].id.as_str())
+        .unwrap();
+    assert_eq!(
+        retained.data(),
+        Some(&changed[payload..payload + b"preview".len()])
     );
+    assert!(!crate::test_support::source_fidelity::bytes(
+        decoded.source_fidelity(),
+        raw[0].id.as_str()
+    )
+    .is_empty());
     let admitted = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("admitted entries");
@@ -180,29 +230,65 @@ fn empty_unreadable_payload_still_requires_its_physical_source_entry() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
-    let mut source = result
-        .ir()
-        .native
-        .namespace("fcstd")
+    let unknowns = result.ir().native_unknowns("fcstd").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let part = &result.source_fidelity().parts()[&unknowns[0].id];
+    assert_eq!(part.level().as_str(), "zip.entry");
+    assert_eq!(part.byte_len(), 0);
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record(unknowns[0].id.as_str())
+            .unwrap()
+            .data(),
+        Some([].as_slice())
+    );
+    let source_bytes = crate::source_archive::image(result.source_fidelity()).unwrap();
+    let source_arena = DecodeArena::new();
+    let (source_ctx, source_root) =
+        DecodeContext::from_root_bytes(source_bytes, &source_arena, &policy).unwrap();
+    let source = crate::source_archive::OriginalArchive::new(
+        &source_ctx,
+        source_root,
+        result.source_fidelity(),
+    )
+    .unwrap();
+    assert!(source
+        .part(&source_ctx, unknowns[0].id.as_str(), "Thumbnail.png")
         .unwrap()
-        .arena_as::<crate::container::UnreadableEntry>("unreadable_entries")
+        .is_empty());
+    let error = source
+        .part(&source_ctx, unknowns[0].id.as_str(), "Absent.png")
+        .expect_err("empty source still requires its actual member");
+    assert!(error
+        .to_string()
+        .contains("original ZIP member Absent.png is absent"));
+    let missing_bytes = archive_entries(&[("Document.xml", document.as_bytes())]);
+    let image = result
+        .source_fidelity()
+        .retained_record(crate::fidelity::SOURCE_IMAGE)
         .unwrap();
-    assert!(source[0].stored_data.is_empty());
-    source[0].name = "Absent.png".into();
-    source[0].id = "fcstd:native:unreadable_entry#Absent.png".into();
-    let mut changed = result.ir().clone();
-    changed
-        .native
-        .namespace_mut("fcstd")
-        .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
-            "unreadable_entries",
-            &source,
-        )
-        .unwrap();
-    assert!(crate::test_support::validate_native(&changed)
-        .iter()
-        .any(|finding| finding.message == "invalid source-only FCStd entry"));
+    let replacement = cadmpeg_ir::source_fidelity::RetainedSourceRecord::from_bytes(
+        image.stream().to_owned(),
+        image.offset(),
+        cadmpeg_ir::source_fidelity::RetainedBytes::Inline {
+            data: missing_bytes.clone(),
+        },
+    )
+    .unwrap();
+    let mut missing = serde_json::to_value(result.source_fidelity()).unwrap();
+    missing["retained_records"][crate::fidelity::SOURCE_IMAGE] =
+        serde_json::to_value(replacement).unwrap();
+    let missing: cadmpeg_ir::SourceFidelity = serde_json::from_value(missing).unwrap();
+    let missing_arena = DecodeArena::new();
+    let (missing_ctx, missing_root) =
+        DecodeContext::from_root_bytes(&missing_bytes, &missing_arena, &policy).unwrap();
+    let error = crate::source_archive::OriginalArchive::new(&missing_ctx, missing_root, &missing)
+        .err()
+        .expect("removed physical entry must fail source proof");
+    assert!(error
+        .to_string()
+        .contains("given-up part extent disagrees with its physical ZIP entry"));
 }
 
 #[test]

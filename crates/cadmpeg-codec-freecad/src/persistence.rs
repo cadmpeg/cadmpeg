@@ -730,6 +730,9 @@ fn parse_persisted_property(
     } else {
         None
     };
+    let string_list = source
+        .filter(|_| payload_error.is_none())
+        .and_then(|_| direct_string_list(node, &type_name));
     let vector_value = payload_error
         .is_none()
         .then(|| direct_vector_value(node, &type_name))
@@ -757,11 +760,13 @@ fn parse_persisted_property(
                                 || vector_value == Some(value)
                                     && matches!(attribute.name(), "valueX" | "valueY" | "valueZ")
                                 || attribute.name() == "value"
-                                    && value.parent() == Some(node)
-                                    && (string_value == Some(value)
-                                        || type_name != "App::PropertyEnumeration"
-                                            && scalar_value_tag(&type_name)
-                                                == Some(value.tag_name().name())))
+                                    && (string_list
+                                        .is_some_and(|list| value.parent() == Some(list))
+                                        || value.parent() == Some(node)
+                                            && (string_value == Some(value)
+                                                || type_name != "App::PropertyEnumeration"
+                                                    && scalar_value_tag(&type_name)
+                                                        == Some(value.tag_name().name()))))
                     }) {
                         Some(source) => source.attribute(&attribute)?,
                         None => attribute.value().to_owned(),
@@ -878,6 +883,45 @@ fn dynamic_bool(
     } else {
         Ok(legacy)
     }
+}
+
+fn direct_string_list<'a, 'input>(
+    property: roxmltree::Node<'a, 'input>,
+    type_name: &str,
+) -> Option<roxmltree::Node<'a, 'input>> {
+    if type_name != "App::PropertyStringList" {
+        return None;
+    }
+    let mut roots = property.children().filter(roxmltree::Node::is_element);
+    let list = roots.next()?;
+    let whitespace = |node: roxmltree::Node<'_, '_>| {
+        node.children()
+            .filter(roxmltree::Node::is_text)
+            .all(|text| text.text().is_none_or(|text| text.trim().is_empty()))
+    };
+    if roots.next().is_some()
+        || list.tag_name().namespace().is_some()
+        || list.tag_name().name() != "StringList"
+        || list.attributes().len() != 1
+        || !whitespace(list)
+    {
+        return None;
+    }
+    let count = list.attribute("count")?.parse::<usize>().ok()?;
+    let children = || list.children().filter(roxmltree::Node::is_element);
+    if children().count() != count
+        || !children().all(|child| {
+            child.tag_name().namespace().is_none()
+                && child.tag_name().name() == "String"
+                && child.attributes().len() == 1
+                && child.attribute("value").is_some()
+                && !child.children().any(|node| node.is_element())
+                && whitespace(child)
+        })
+    {
+        return None;
+    }
+    Some(list)
 }
 
 fn constraint_attribute(

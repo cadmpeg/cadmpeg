@@ -67,6 +67,14 @@ pub(crate) fn prepare(
     }
     let mut actual = ctx.source_streams()?;
     actual.sort_unstable_by(|left, right| left.name().cmp(right.name()));
+    let root_extent = ctx.capture_part_extent(root)?;
+    let stream = actual
+        .binary_search_by(|stream| stream.name().cmp(root_extent.stream()))
+        .map(|index| &actual[index])
+        .map_err(|_| CodecError::malformed("source framing has no actual registered stream"))?;
+    if root_extent.offset() != 0 || root_extent.byte_len() != stream.byte_len() {
+        return Ok(Admission::Pending);
+    }
     let mut inventory = Inventory(BTreeMap::new());
     inventory.stream(ctx, root, &actual)?;
     for source in scan.data.values() {

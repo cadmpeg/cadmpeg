@@ -74,7 +74,6 @@ pub(crate) const ASSEMBLY_OCCURRENCES: CoverageKey = CoverageKey::new("assembly_
 pub(crate) const ASSEMBLY_PLACEMENTS: CoverageKey = CoverageKey::new("assembly_placements");
 pub(crate) const ASSEMBLY_OCCURRENCES_TRANSFERRED: CoverageKey =
     CoverageKey::new("assembly_occurrences_transferred");
-pub(crate) const ASSEMBLY_RECORD_ISSUES: CoverageKey = CoverageKey::new("assembly_record_issues");
 pub(crate) const ACTIVE_KERNEL_CARRIERS: CoverageKey = CoverageKey::new("active_kernel_carriers");
 pub(crate) const KERNEL_UNKNOWN_RECORDS: CoverageKey = CoverageKey::new("kernel_unknown_records");
 pub(crate) const KERNEL_UNKNOWN_SURFACE_FACES: CoverageKey =

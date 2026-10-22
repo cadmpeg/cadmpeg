@@ -17,12 +17,14 @@ import subprocess
 from typing import Any
 
 from decode_nonregression_d10 import PAIRS, verify_length_pairs
+from decode_nonregression_native_links import verify_bound_native_links
 from decode_nonregression_inputs import dump_fixture
 from decode_nonregression_schema_bindings import attach_external, generated_arena
 from decode_nonregression_wire import verify_wire_rows
 from decode_nonregression_source_names import verify_source_names
 from decode_nonregression_retained import load_bound_sidecar, sidecar_path, compare_retained
 from decode_nonregression_unknown_reads import unknown_read_witnesses, discharge_unknown_findings
+from decode_nonregression_variant_guard import uncertain_records, compare_uncertain_totals
 
 
 class CollectionError(ValueError):
@@ -209,6 +211,25 @@ def compare_collected(comparator: Any, base: dict, head: dict, baseline: Produce
             except ValueError as error:
                 findings.append(comparator.Finding('generated-schema-rejection', (arena, identity),
                                                   str(error).splitlines()[0]))
+    uncertain_before, uncertain_after = set(), set()
+    for arena in sorted(set(before.get('model', {})) | set(after.get('model', {}))):
+        old_rows, new_rows = before.get('model', {}).get(arena, []), after.get('model', {}).get(arena, [])
+        if not old_rows and not new_rows:
+            continue
+        try:
+            for rows, producer, inventory in [(old_rows, baseline, uncertain_before),
+                                               (new_rows, current, uncertain_after)]:
+                if rows:
+                    query = producer.schema(arena, helper)
+                    if query['payload']['arena'] != 'model.' + arena:
+                        raise ValueError('variant guard schema belongs to another arena')
+                    inventory.update((arena, identity) for identity in uncertain_records(rows, query,
+                        admitted if producer is baseline else None))
+        except ValueError as error:
+            findings.append(comparator.Finding('variant-guard-schema-rejection', ('model', arena),
+                                              str(error).splitlines()[0]))
+    findings.extend(comparator.Finding(row.code, row.path, row.message)
+                    for row in compare_uncertain_totals(uncertain_before, uncertain_after))
     constraints = before.get('model', {}).get('sketch_constraints', [])
     # Selection does not itself prove a pair: the source-verified typed helper
     # admits and reads each requested actual baseline definition below.
@@ -277,6 +298,17 @@ def collect_fixture(comparator: Any, fixture: str, baseline: Producer, current: 
     if git(current.repo, 'hash-object', '--', str(source)) != blob:
         raise CollectionError('fixture changed during collection')
     findings = compare_collected(comparator, *dumps, baseline, current, helper)
+    native_link_witnesses = []
+    link_source_sha256 = None
+    if 'decode_error' not in dumps[1]:
+        link_source = output / 'head.json'
+        link_source_sha256 = digest(link_source)
+        link_report = current.run_json(['query', 'native-links', str(link_source), '--json'])
+        if digest(link_source) != link_source_sha256:
+            raise CollectionError('projection source bytes changed during the actual query')
+        link_findings, native_link_witnesses = verify_bound_native_links(
+            link_report, link_source, dumps[1], link_source_sha256)
+        findings.extend(comparator.Finding(row.code, row.path, row.message) for row in link_findings)
     retained_checked = 0
     unknown_witnesses = []
     if len(sidecars) == 2:
@@ -284,11 +316,15 @@ def collect_fixture(comparator: Any, fixture: str, baseline: Producer, current: 
         findings.extend(comparator.Finding(row.code, row.path, row.message) for row in retained_findings)
         unknown_witnesses = unknown_read_witnesses(*dumps, *sidecars)
         findings = discharge_unknown_findings(findings, *dumps, unknown_witnesses)
+    dump_hashes = {role: digest(output / (role + '.json')) for role in ('baseline', 'head')
+                   if (output / (role + '.json')).is_file()}
+    if link_source_sha256 is not None and dump_hashes.get('head') != link_source_sha256:
+        raise CollectionError('projection source bytes changed before the collector report')
     return {'fixture': fixture, 'blob': blob,
             'sidecar_sha256': sidecar_hashes, 'retained_source_images_checked': retained_checked,
+            'native_link_witnesses': native_link_witnesses,
             'unknown_read_witnesses': [vars(witness) for witness in unknown_witnesses],
             'commands': [command for owner, start in zip((baseline, current, helper), starts) for command in owner.commands[start:]],
             'schema_sha256': {producer.proof['role']: {arena: hashlib.sha256(json.dumps(query, sort_keys=True).encode()).hexdigest() for arena, query in producer.schemas.items()} for producer in (baseline, current)},
             'findings': [vars(finding) for finding in findings],
-            'dump_sha256': {role: digest(output / (role + '.json')) for role in ('baseline', 'head')
-                            if (output / (role + '.json')).is_file()}}
+            'dump_sha256': dump_hashes}

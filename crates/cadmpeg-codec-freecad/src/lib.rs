@@ -15,6 +15,7 @@
 mod annotation;
 mod application;
 mod application_geometry;
+mod archive_recovery;
 mod attachment;
 mod attributes;
 mod brep;
@@ -120,9 +121,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let extensions =
         arena!(namespace.arena_as_for_decode::<native::ExtensionRecord>(ctx, "extensions"));
     let entries = arena!(namespace.arena_as_for_decode::<native::EntryRecord>(ctx, "entries"));
-    let unreadable = arena!(
-        namespace.arena_as_for_decode::<container::UnreadableEntry>(ctx, "unreadable_entries")
-    );
     let mut string_table_records =
         arena!(namespace.arena_as_for_decode::<native::StringTableRecord>(ctx, "string_tables"));
     string_table_records.sort_by_key(|left| left.index);
@@ -155,24 +153,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         arena!(namespace.arena_as_for_decode::<native::DesignCensusRecord>(ctx, "design_census"));
 
     let mut findings = Vec::new();
-    let decoded_names: HashSet<_> = entries.iter().map(native::EntryRecord::name).collect();
-    let mut unreadable_names = HashSet::new();
-    for entry in &unreadable {
-        let unique = unreadable_names.insert(entry.name.as_str());
-        if !native::is_safe_entry_name(&entry.name)
-            || entry.id.strip_prefix("fcstd:native:unreadable_entry#") != Some(entry.name.as_str())
-            || entry.error.trim().is_empty()
-            || entry.sha256.len() != 64
-            || !entry
-                .sha256
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-            || decoded_names.contains(entry.name.as_str())
-            || !unique
-        {
+    for arena in namespace.arenas().keys() {
+        if arena != "unknowns" && !native::ARENAS.contains(&arena.as_str()) {
             findings.push(finding(
-                Check::PayloadIntegrity,
-                "invalid source-only FCStd entry",
+                Check::NativeLinks,
+                format!("unregistered FCStd native arena {arena}"),
                 None,
             ));
         }
@@ -775,12 +760,16 @@ impl CodecBackend for FcstdCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan(ctx, root)?;
-        Ok(container::summarize(&scan))
+        container::inspect(ctx, root)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        let (mut scan, parts) = container::scan_for_decode(ctx, root)?;
+        let (mut scan, parts) = match container::attempt(ctx, root)? {
+            container::ScanOutcome::Readable { scan, parts } => (scan, parts),
+            container::ScanOutcome::GivenUp { summary, parts } => {
+                return archive_recovery::decoded(ctx, summary, parts);
+            }
+        };
         let gui_source = if ctx.container_only() {
             None
         } else {
@@ -838,21 +827,6 @@ impl CodecBackend for FcstdCodec {
             root.window(),
             cadmpeg_ir::ArenaClasses::new(),
         )?;
-        for entry in &scan.unreadable_entries {
-            if entry.data_end.checked_sub(entry.data_start) != Some(entry.byte_len) {
-                return Err(CodecError::malformed(
-                    "unreadable ZIP payload span disagrees with its retained length",
-                ));
-            }
-            fidelity::evidence(
-                &mut source_fidelity,
-                &entry.id,
-                archive_capture.stream(),
-                entry.data_start,
-                &entry.stored_data,
-                cadmpeg_ir::ArenaClasses::new(),
-            )?;
-        }
 
         let entry_sources = entry_sources::EntrySources::new(ctx, &scan.data)?;
         let mut geometry_transferred = false;
@@ -902,9 +876,7 @@ impl CodecBackend for FcstdCodec {
         }
         let namespace = ir.native.namespace_mut("fcstd");
         namespace.set_arena(ctx, "document", std::slice::from_ref(&scan.document))?;
-        if !scan.unreadable_entries.is_empty() {
-            namespace.set_arena(ctx, "unreadable_entries", &scan.unreadable_entries)?;
-        }
+
         let decode_document = !ctx.container_only();
         if decode_document {
             let document_xml = &scan.document_xml;

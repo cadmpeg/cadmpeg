@@ -13,46 +13,58 @@ use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
 #[test]
-fn unreadable_entry_wire_contains_only_length_and_hash_evidence() {
+fn a_given_up_entry_has_one_exact_shared_source_home() {
+    use cadmpeg_test_support::zip_fixture::{self, RawEntry};
     let data: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
-    let record = super::UnreadableEntry {
-        id: "fcstd:native:unreadable_entry#Payload.bin".into(),
-        name: "Payload.bin".into(),
-        data_start: 0,
-        data_end: u64::try_from(data.len()).unwrap(),
-        stored_data: data.clone().into(),
-        byte_len: u64::try_from(data.len()).unwrap(),
-        sha256: cadmpeg_ir::hash::sha256_hex(&data),
-        error: "unsupported compression".into(),
+    let bytes = zip_fixture::archive(&[
+        RawEntry::stored("Document.xml", b"<Document SchemaVersion='4' FileVersion='1'><Objects Count='0'/><ObjectData Count='0'/></Document>"),
+        RawEntry::compressed("Payload.bin", 12, &data, &data),
+    ]);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+    let [unknown] = unknowns.as_slice() else {
+        panic!("one shared source home: {unknowns:?}")
     };
-    crate::test_support::with_service_context(&[], |ctx| {
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-        namespace
-            .set_arena(ctx, "unreadable_entries", &[record])
-            .unwrap();
-        let wire = namespace
-            .arena_as::<serde_json::Value>("unreadable_entries")
-            .unwrap();
-        assert!(wire[0].get("stored_data").is_none());
-        assert!(wire[0].get("data_start").is_none());
-        assert!(wire[0].get("data_end").is_none());
-        assert_eq!(wire[0]["byte_len"], u64::try_from(data.len()).unwrap());
-        assert_eq!(wire[0]["sha256"], cadmpeg_ir::hash::sha256_hex(&data));
-        let typed = namespace
-            .arena_as::<super::UnreadableEntry>("unreadable_entries")
-            .unwrap();
-        assert!(typed[0].stored_data.is_empty());
-        assert_eq!(typed[0].byte_len, u64::try_from(data.len()).unwrap());
-        for payload in [
-            serde_json::json!("a"),
-            serde_json::json!("gg"),
-            serde_json::json!([0]),
-        ] {
-            let mut invalid = wire[0].clone();
-            invalid["stored_data"] = payload;
-            assert!(serde_json::from_value::<super::UnreadableEntry>(invalid).is_err());
-        }
-    });
+    let record = decoded
+        .source_fidelity()
+        .retained_record(unknown.id.as_str())
+        .unwrap();
+    assert_eq!(record.data(), Some(data.as_slice()));
+    assert_eq!(record.byte_len(), u64::try_from(data.len()).unwrap());
+    assert_eq!(record.sha256(), cadmpeg_ir::hash::sha256_hex(&data));
+    assert!(!crate::native::ARENAS.contains(&"unreadable_entries"));
+    let wire = serde_json::to_value(unknown).unwrap();
+    assert!(wire.get("stored_data").is_none());
+    assert!(wire.get("data_start").is_none());
+    assert!(wire.get("data_end").is_none());
+    let legacy = serde_json::json!({"id":"fcstd:native:unreadable_entry#Payload.bin", "name":"Payload.bin", "byte_len":data.len(), "sha256":cadmpeg_ir::hash::sha256_hex(&data), "error":"unsupported compression"});
+    let mut invalid = decoded.ir().clone();
+    invalid
+        .native
+        .namespace_mut("fcstd")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "unreadable_entries",
+            &[legacy],
+        )
+        .unwrap();
+    assert!(crate::test_support::validate_native(&invalid)
+        .iter()
+        .any(|finding| finding.message == "unregistered FCStd native arena unreadable_entries"));
+    for payload in [
+        serde_json::json!("a"),
+        serde_json::json!("gg"),
+        serde_json::json!([0]),
+    ] {
+        let mut invalid = serde_json::to_value(record).unwrap();
+        invalid["bytes"]["data"] = payload;
+        assert!(
+            serde_json::from_value::<cadmpeg_ir::source_fidelity::RetainedSourceRecord>(invalid)
+                .is_err()
+        );
+    }
 }
 
 fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_>) -> T) -> T {
@@ -200,21 +212,18 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
     let [loss] = scan.losses.as_slice() else {
         panic!("one loss: {:?}", scan.losses);
     };
-    let unreadable = crate::loss::FreecadLossCode::ArchiveEntryUnreadable
-        .note(String::new())
-        .code;
-    assert_eq!(loss.code, unreadable);
+    assert_eq!(loss.code.local_code(), "record.unreadable");
+    let unreadable = loss.code.clone();
     assert!(
-        loss.message
-            .starts_with("thumbnails/Thumbnail.png cannot be opened")
+        loss.message.starts_with("zip.entry stream=")
             && loss.message.contains("per-expansion allowance"),
         "{}",
         loss.message
     );
-    let [entry] = scan.unreadable_entries.as_slice() else {
-        panic!("one unreadable entry");
-    };
-    assert_eq!(entry.name, "thumbnails/Thumbnail.png");
+    assert_eq!(
+        scan.failed_members,
+        std::collections::BTreeSet::from(["thumbnails/Thumbnail.png".into()])
+    );
     assert!(scan.data.contains_key("Document.xml"));
     assert_eq!(ctx.resource_refusal(), None);
     assert!(ctx.finish_session().is_ok());

@@ -16,6 +16,8 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
+mod source_nurbs_reads;
+
 const EPS_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 fn with_test_context<R>(f: impl FnOnce(&DecodeContext<'_>) -> R) -> R {

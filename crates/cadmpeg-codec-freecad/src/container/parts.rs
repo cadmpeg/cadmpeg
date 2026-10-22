@@ -16,7 +16,6 @@ pub(super) struct OptionalMembers<'source> {
 
 pub(super) fn open_optional<'source>(
     ctx: &DecodeContext<'source>,
-    root: View<'source>,
     archive: &ArchiveSnapshot<'source>,
     output: &mut ParserPartOutput,
 ) -> Result<OptionalMembers<'source>, CodecError> {
@@ -29,79 +28,51 @@ pub(super) fn open_optional<'source>(
             )));
         }
     }
-    if !archive
-        .entries()
-        .iter()
-        .zip(&frames)
-        .any(|(entry, frame)| entry.name != "Document.xml" && frame.is_some())
-    {
-        return Ok(OptionalMembers::default());
-    }
-    let parsed = ctx.decode_parser_scope(output, root, spec("zip.archive")?, |stage| {
-        let mut members = OptionalMembers::default();
-        for (entry, frame) in archive.entries().iter().zip(&frames) {
-            if entry.name == "Document.xml" {
-                continue;
+    let stage = output;
+    let mut members = OptionalMembers::default();
+    for (entry, frame) in archive.entries().iter().zip(&frames) {
+        if entry.name == "Document.xml" {
+            continue;
+        }
+        let Some(frame) = *frame else {
+            return Err(CodecError::malformed(format_args!(
+                "ZIP member {} has no provable local-header and payload boundary",
+                entry.name
+            )));
+        };
+        let name = entry.name.as_str();
+        ctx.retain_bytes(
+            u64_from_index(
+                name.len()
+                    .checked_add(size_of::<(String, View<'_>)>())
+                    .ok_or_else(|| CodecError::malformed("optional ZIP member index overflows"))?,
+            ),
+            "FreeCAD optional member source index",
+        )?;
+        let payload =
+            ctx.decode_parser_part(stage, frame.header(), header_spec(ctx, frame)?, || {
+                archive.read_member_header(ctx, frame)
+            })?;
+        let Some(payload) = payload else {
+            members.failed.insert(name.to_owned());
+            continue;
+        };
+        match ctx.decode_parser_part(stage, payload.view(), spec("zip.entry")?, || {
+            archive.open_member(ctx, payload)
+        })? {
+            Some(view) => {
+                members.data.insert(name.to_owned(), view);
             }
-            let Some(frame) = *frame else {
-                // An unprovable local boundary still uses the existing fallback.
-                continue;
-            };
-            let name = entry.name.as_str();
-            ctx.retain_bytes(
-                u64_from_index(
-                    name.len()
-                        .checked_add(size_of::<(String, View<'_>)>())
-                        .ok_or_else(|| {
-                            CodecError::malformed("optional ZIP member index overflows")
-                        })?,
-                ),
-                "FreeCAD optional member source index",
-            )?;
-            let payload =
-                ctx.decode_parser_part(stage, frame.header(), header_spec(ctx, frame)?, || {
-                    archive.read_member_header(ctx, frame)
-                })?;
-            let Some(payload) = payload else {
+            None => {
                 members.failed.insert(name.to_owned());
-                continue;
-            };
-            match ctx.decode_parser_part(stage, payload.view(), spec("zip.entry")?, || {
-                archive.open_member(ctx, payload)
-            })? {
-                Some(view) => {
-                    members.data.insert(name.to_owned(), view);
-                }
-                None => {
-                    members.failed.insert(name.to_owned());
-                }
             }
-        }
-        Ok(members)
-    })?;
-    match parsed {
-        Some(members) => Ok(members),
-        None => {
-            let mut failed = BTreeSet::new();
-            for (entry, frame) in archive.entries().iter().zip(frames) {
-                if entry.name == "Document.xml" || frame.is_none() {
-                    continue;
-                }
-                let name = entry.name.as_str();
-                ctx.retain_bytes(
-                    u64_from_index(name.len().checked_add(size_of::<String>()).ok_or_else(
-                        || CodecError::malformed("failed ZIP member index overflows"),
-                    )?),
-                    "FreeCAD failed optional member index",
-                )?;
-                failed.insert(name.to_owned());
-            }
-            Ok(OptionalMembers {
-                data: BTreeMap::new(),
-                failed,
-            })
         }
     }
+    Ok(members)
+}
+
+pub(super) fn archive_spec() -> Result<PartSpec, CodecError> {
+    spec("zip.archive")
 }
 
 fn header_spec(

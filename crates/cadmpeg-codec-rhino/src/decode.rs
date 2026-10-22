@@ -527,10 +527,7 @@ impl<'a> DecodeContext<'a> {
                 continue;
             };
             if crate::instances::is_reference_class(object.class_uuid) {
-                match crate::instances::parse_reference(
-                    self.scan.data,
-                    object.class_data_range.clone(),
-                ) {
+                match crate::instances::parse_reference(self.scan.data, object.class_data_range()) {
                     Ok(_) => self.mark_decoded(source_order),
                     Err(_) => self.mark_failed(source_order),
                 };
@@ -589,7 +586,7 @@ impl<'a> DecodeContext<'a> {
                 let decoded = crate::mesh::decode(
                     self.expand,
                     self.scan.data,
-                    object.class_data_range.clone(),
+                    object.class_data_range(),
                     self.archive(),
                     crate::mesh::MeshDecodeOptions {
                         writer_version: self.scan.metadata.properties.writer_version,
@@ -684,7 +681,8 @@ impl<'a> DecodeContext<'a> {
                 || crate::curves::is_line(object.class_uuid)
                 || crate::curves::is_arc(object.class_uuid)
                 || crate::curves::is_polyline(object.class_uuid)
-                || crate::curves::is_nurbs_curve(object.class_uuid))
+                || crate::curves::is_nurbs_curve(object.class_uuid)
+                || crate::surfaces::is_nurbs_surface(object.class_uuid))
                 && source.has_source_tracking()
             {
                 let Some(key) = self.checked_object_key(&object.identity, source_order) else {
@@ -706,6 +704,12 @@ impl<'a> DecodeContext<'a> {
                         key,
                     )
                     .into()
+                } else if crate::surfaces::is_nurbs_surface(object.class_uuid) {
+                    cadmpeg_ir::ids::SurfaceId::compose(
+                        &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
+                        key,
+                    )
+                    .into()
                 } else {
                     cadmpeg_ir::ids::CurveId::compose(
                         &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
@@ -714,10 +718,13 @@ impl<'a> DecodeContext<'a> {
                     .into()
                 };
                 let extent = source
-                    .child(object.class_data_range.start, object.class_data_range.end)
+                    .child(
+                        object.class_data_range().start,
+                        object.class_data_range().end,
+                    )
                     .ok_or_else(|| crate::chunks::FramingError::OutOfBounds {
-                        offset: object.class_data_range.start,
-                        end: object.class_data_range.end,
+                        offset: object.class_data_range().start,
+                        end: object.class_data_range().end,
                         bound: source.end(),
                     })
                     .map_err(crate::container::framing_error)?;
@@ -726,37 +733,45 @@ impl<'a> DecodeContext<'a> {
                         crate::curves::decode_point_view(
                             ctx,
                             source,
-                            object.class_data_range.clone(),
+                            object.class_data_range(),
                             scale,
                         )
                     } else if crate::curves::is_line(object.class_uuid) {
                         crate::curves::decode_line_view(
                             ctx,
                             source,
-                            object.class_data_range.clone(),
+                            object.class_data_range(),
                             scale,
                         )
                     } else if crate::curves::is_arc(object.class_uuid) {
                         crate::curves::decode_arc_view(
                             ctx,
                             source,
-                            object.class_data_range.clone(),
+                            object.class_data_range(),
                             scale,
                         )
                     } else if crate::curves::is_polyline(object.class_uuid) {
                         crate::curves::decode_polyline_view(
                             ctx,
                             source,
-                            object.class_data_range.clone(),
+                            object.class_data_range(),
                             scale,
                         )
-                    } else {
+                    } else if crate::curves::is_nurbs_curve(object.class_uuid) {
                         crate::curves::decode_nurbs_view(
                             ctx,
                             source,
-                            object.class_data_range.clone(),
+                            object.class_data_range(),
                             scale,
                         )
+                    } else {
+                        crate::surfaces::decode_nurbs_view(
+                            ctx,
+                            source,
+                            object.class_data_range(),
+                            scale,
+                        )
+                        .map(|surface| crate::curves::DecodedGeometry::Surface { surface })
                     })
                 })?
             } else {
@@ -764,7 +779,7 @@ impl<'a> DecodeContext<'a> {
                     ctx,
                     self.scan.data,
                     object.class_uuid,
-                    object.class_data_range.clone(),
+                    object.class_data_range(),
                     scale,
                     self.archive(),
                 )
@@ -841,7 +856,7 @@ impl<'a> DecodeContext<'a> {
                 self.expand.ctx(),
                 self.scan.data,
                 object.class_uuid,
-                object.class_data_range.clone(),
+                object.class_data_range(),
                 scale,
                 self.archive(),
             ) {
@@ -961,7 +976,7 @@ impl<'a> DecodeContext<'a> {
         let identity = &object.identity;
         let mut hatch = match crate::hatch::decode(
             self.expand,
-            object.class_data_range.clone(),
+            object.class_data_range(),
             scale,
             self.archive(),
         ) {
@@ -1176,21 +1191,18 @@ impl<'a> DecodeContext<'a> {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let identity = &object.identity;
-        let polyedge = match crate::polyedge::decode(
-            self.expand,
-            object.class_data_range.clone(),
-            self.archive(),
-        ) {
-            Ok(value) => value,
-            Err(crate::chunks::FramingError::Resource(limit)) => {
-                return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
-            }
-            Err(error) => {
-                self.scan_warning(source_order, format_args!("polyedge retained: {error}"));
-                self.mark_failed(source_order);
-                return Ok(());
-            }
-        };
+        let polyedge =
+            match crate::polyedge::decode(self.expand, object.class_data_range(), self.archive()) {
+                Ok(value) => value,
+                Err(crate::chunks::FramingError::Resource(limit)) => {
+                    return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+                }
+                Err(error) => {
+                    self.scan_warning(source_order, format_args!("polyedge retained: {error}"));
+                    self.mark_failed(source_order);
+                    return Ok(());
+                }
+            };
         let Some(construction) = crate::polyedge::semantic_json(&polyedge) else {
             self.scan_warning(
                 source_order,
@@ -1289,7 +1301,7 @@ impl<'a> DecodeContext<'a> {
         let identity = &object.identity;
         let detail = match crate::detail::decode(
             self.scan.data,
-            object.class_data_range.clone(),
+            object.class_data_range(),
             self.archive(),
         ) {
             Ok(detail) => detail,
@@ -1432,7 +1444,7 @@ impl<'a> DecodeContext<'a> {
         let identity = &object.identity;
         let cage = match crate::cage::decode(
             self.expand,
-            object.class_data_range.clone(),
+            object.class_data_range(),
             scale,
             self.archive(),
         ) {
@@ -1575,7 +1587,7 @@ impl<'a> DecodeContext<'a> {
         let identity = &object.identity;
         let morph = match crate::morph::decode(
             self.expand,
-            object.class_data_range.clone(),
+            object.class_data_range(),
             scale,
             self.archive(),
         ) {
@@ -1657,7 +1669,7 @@ impl<'a> DecodeContext<'a> {
         let construction = match crate::curve_on_surface::decode(
             self.expand.ctx(),
             self.scan.data,
-            object.class_data_range.clone(),
+            object.class_data_range(),
             scale,
             self.archive(),
             0,
@@ -1897,7 +1909,7 @@ impl<'a> DecodeContext<'a> {
         );
         match crate::subd::decode(
             self.scan.data,
-            object.class_data_range.clone(),
+            object.class_data_range(),
             self.archive(),
             scale,
             id,
@@ -2013,7 +2025,7 @@ impl<'a> DecodeContext<'a> {
         let decoded = crate::extrusion::decode(
             self.expand,
             self.scan.data,
-            object.class_data_range.clone(),
+            object.class_data_range(),
             crate::extrusion::ExtrusionFormat {
                 archive: self.archive(),
                 writer_version: self.scan.metadata.properties.writer_version,
@@ -3127,7 +3139,7 @@ impl<'a> DecodeContext<'a> {
         let parsed = crate::brep::parse(
             self.expand.ctx(),
             self.scan.data,
-            object.class_data_range.clone(),
+            object.class_data_range(),
             self.archive(),
             self.scan.metadata.properties.writer_version,
             &object.userdata,
