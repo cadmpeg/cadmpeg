@@ -533,10 +533,12 @@ fn decode_container<'a>(
 
     let mut losses = crate::container::deviation_losses(&container.snapshot);
     let mut geometry_failure = None;
+    let mut empty_kernel_stream = false;
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
                 Ok(decoded) => {
+                    empty_kernel_stream = decoded.model_records == 0;
                     apply_kernel_header(
                         &mut ir,
                         carrier.family,
@@ -590,8 +592,11 @@ fn decode_container<'a>(
         ActiveCarrierState::Selected(_)
     ) && geometry_failure.is_none()
     {
-        geometry_failure =
-            Some("the active kernel carrier decoded no surfaces, points, or faces".to_owned());
+        geometry_failure = Some(if empty_kernel_stream {
+            "the part has no bodies: its active kernel carrier holds no model records".to_owned()
+        } else {
+            "the active kernel carrier decoded no surfaces, points, or faces".to_owned()
+        });
     }
     let presentation_projection = crate::presentation::project_bindings(
         ctx,

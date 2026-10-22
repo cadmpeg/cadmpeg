@@ -76,6 +76,12 @@ const CIRCLE_CENTER_TYPE: [u8; 16] = [
 const EQUAL_RADIUS_TYPE: [u8; 16] = [
     0xd0, 0x7d, 0x2c, 0x44, 0xd1, 0x11, 0x89, 0xe6, 0x80, 0x00, 0x6f, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
 ];
+const POLYGON_TYPE: [u8; 16] = [
+    0x38, 0x48, 0x53, 0x52, 0x9f, 0x44, 0x52, 0x55, 0xe1, 0xe1, 0xda, 0xb4, 0x10, 0xeb, 0x06, 0xc4,
+];
+const POLYGON_RELATION_TYPE: [u8; 16] = [
+    0x1f, 0x89, 0xdb, 0xfb, 0xd8, 0x47, 0x78, 0xb6, 0xb0, 0x96, 0x72, 0x85, 0xc7, 0xec, 0x8b, 0xb9,
+];
 const DISTANCE_TYPE: [u8; 16] = [
     0x58, 0x85, 0x05, 0x11, 0xd2, 0x11, 0xe3, 0x95, 0x60, 0x00, 0x0c, 0xb3, 0x89, 0x32, 0xed, 0xb0,
 ];
@@ -238,6 +244,13 @@ pub(crate) enum PmDcSketchConstraintKind {
         second: PmDcReference,
         axis: PmDcReference,
     },
+    PolygonRelation {
+        first: PmDcReference,
+        second: PmDcReference,
+        center: PmDcReference,
+        polygon: [PmDcReference; 2],
+        values: [u32; 2],
+    },
 }
 
 pub(crate) struct SketchProjection {
@@ -305,6 +318,10 @@ pub(crate) enum PmDcSketchEntityKind {
         major_radius: PositiveReal,
         minor_radius: PositiveReal,
         state: u8,
+    },
+    Polygon {
+        center: PmDcReference,
+        value: u32,
     },
 }
 
@@ -605,6 +622,7 @@ enum SketchEntityTag {
     Line,
     Circle,
     Ellipse,
+    Polygon,
 }
 
 impl SketchEntityTag {
@@ -614,6 +632,7 @@ impl SketchEntityTag {
             LINE_TYPE => Some(Self::Line),
             CIRCLE_TYPE => Some(Self::Circle),
             ELLIPSE_TYPE => Some(Self::Ellipse),
+            POLYGON_TYPE => Some(Self::Polygon),
             _ => None,
         }
     }
@@ -641,6 +660,7 @@ enum SketchConstraintTag {
     VerticalAlignment,
     Collinear,
     Symmetric,
+    PolygonRelation,
 }
 
 impl SketchConstraintTag {
@@ -666,6 +686,7 @@ impl SketchConstraintTag {
             VERTICAL_ALIGNMENT_TYPE => Some(Self::VerticalAlignment),
             COLLINEAR_TYPE => Some(Self::Collinear),
             SYMMETRIC_TYPE => Some(Self::Symmetric),
+            POLYGON_RELATION_TYPE => Some(Self::PolygonRelation),
             _ => None,
         }
     }
@@ -707,6 +728,10 @@ fn parse_entity(
         SketchEntityTag::Line => parse_line(&mut cursor)?,
         SketchEntityTag::Circle => parse_circle(&mut cursor)?,
         SketchEntityTag::Ellipse => parse_ellipse(&mut cursor)?,
+        SketchEntityTag::Polygon => PmDcSketchEntityKind::Polygon {
+            center: cursor.reference("polygon center reference")?,
+            value: cursor.u32("polygon value")?,
+        },
     };
     cursor.finish("sketch entity")?;
     Ok(PmDcSketchEntityPayload {
@@ -1099,6 +1124,16 @@ fn parse_constraint(
             first: cursor.reference("symmetric constraint first reference")?,
             second: cursor.reference("symmetric constraint second reference")?,
             axis: cursor.reference("symmetric constraint axis reference")?,
+        },
+        SketchConstraintTag::PolygonRelation => PmDcSketchConstraintKind::PolygonRelation {
+            first: cursor.reference("polygon relation first reference")?,
+            second: cursor.reference("polygon relation second reference")?,
+            center: cursor.reference("polygon relation center reference")?,
+            polygon: [
+                cursor.reference("polygon relation polygon reference")?,
+                cursor.reference("polygon relation second polygon reference")?,
+            ],
+            values: cursor.u32_array::<2>("polygon relation values")?,
         },
     };
     cursor.finish("sketch constraint")?;
@@ -1793,6 +1828,39 @@ fn project_constraint(
                 members,
             )
         }
+        PmDcSketchConstraintKind::PolygonRelation {
+            first,
+            second,
+            center,
+            polygon,
+            ..
+        } => {
+            let members = [resolve(first)?, resolve(second)?];
+            let [polygon, repeated] = polygon;
+            if polygon != repeated {
+                return None;
+            }
+            let (center, polygon) = (resolve(center)?, resolve(polygon)?);
+            if [center, polygon]
+                .iter()
+                .any(|entity| entity.sketch != members[0].sketch)
+            {
+                return None;
+            }
+            (
+                SketchConstraintDefinitionInput::Polygon {
+                    polygon: cadmpeg_ir::sketches::SketchPolygon::try_new(
+                        [members[0], members[1], center, polygon]
+                            .iter()
+                            .map(|entity| entity.id().clone())
+                            .collect(),
+                    )
+                    .ok()?,
+                },
+                None,
+                members,
+            )
+        }
         PmDcSketchConstraintKind::Symmetric {
             first,
             second,
@@ -2024,6 +2092,16 @@ fn project_geometry(
                 })
                 .ok()?,
             )
+        }
+        PmDcSketchEntityKind::Polygon { center, .. } => {
+            resolve_point(
+                entity.identity.segment_token.as_str(),
+                center.index(),
+                entities,
+            )?;
+            Some(SketchGeometry::native(cadmpeg_core::nonblank_literal!(
+                "polygon"
+            )))
         }
     }
 }
@@ -3121,6 +3199,9 @@ mod tests {
         collinear.extend_from_slice(&0u16.to_le_bytes());
         let mut midpoint = references(&[6, 4]);
         midpoint.extend_from_slice(&0u32.to_le_bytes());
+        let mut polygon_relation = references(&[4, 5, 6, 7, 7]);
+        polygon_relation.extend_from_slice(&1u32.to_le_bytes());
+        polygon_relation.extend_from_slice(&0u32.to_le_bytes());
         for (tag, parameter, tail, expected) in [
             (SketchConstraintTag::Distance, 3, distance, "distance"),
             (SketchConstraintTag::Angle, 3, angle, "angle"),
@@ -3145,6 +3226,12 @@ mod tests {
                 references(&[4, 5, 6]),
                 "symmetric",
             ),
+            (
+                SketchConstraintTag::PolygonRelation,
+                0,
+                polygon_relation,
+                "polygon_relation",
+            ),
         ] {
             let mut bytes = constraint_header(9, parameter);
             bytes.extend(tail);
@@ -3154,6 +3241,16 @@ mod tests {
             let form = serde_json::to_value(parsed.kind).expect("constraint kind")["form"].clone();
             assert_eq!(form, expected);
         }
+        let mut polygon = entity_prefix(7, 3, 0);
+        polygon.extend(references(&[4]));
+        polygon.extend_from_slice(&0u32.to_le_bytes());
+        let parsed = parse(&polygon, |_, source| {
+            parse_entity(SketchEntityTag::Polygon, source, 22).expect("polygon")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchEntityKind::Polygon { center, value: 0 } if center.index() == 4
+        ));
     }
 
     #[test]

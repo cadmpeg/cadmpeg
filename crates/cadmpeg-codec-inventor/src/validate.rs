@@ -602,6 +602,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 }
                 references.push(center.index());
             }
+            PmDcSketchEntityKind::Polygon { center, .. } => references.push(center.index()),
         }
         if !record_is_exact(
             entity.identity.segment_token.as_str(),
@@ -698,6 +699,19 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 second,
                 axis,
             } => references.extend([first.index(), second.index(), axis.index()]),
+            PmDcSketchConstraintKind::PolygonRelation {
+                first,
+                second,
+                center,
+                polygon,
+                ..
+            } => references.extend([
+                first.index(),
+                second.index(),
+                center.index(),
+                polygon[0].index(),
+                polygon[1].index(),
+            ]),
         }
         if !record_is_exact(
             constraint.identity.segment_token.as_str(),

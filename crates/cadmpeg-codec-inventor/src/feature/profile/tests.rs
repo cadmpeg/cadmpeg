@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use cadmpeg_ir::attributes::AttributeValue;
-use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileRegion};
+use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+use cadmpeg_ir::geometry::DirectedParameterRange;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,
@@ -120,6 +121,20 @@ fn edge(associative_id: i64, start: (f64, f64), end: (f64, f64)) -> ProfileEdge 
         }),
         start: Point3::new(start.0, start.1, 0.0),
         end: Point3::new(end.0, end.1, 0.0),
+        middle: None,
+    }
+}
+
+/// An edge whose carrier passes through `middle` halfway along it.
+fn edge_through(
+    associative_id: i64,
+    start: (f64, f64),
+    middle: (f64, f64),
+    end: (f64, f64),
+) -> ProfileEdge {
+    ProfileEdge {
+        middle: Some(Point3::new(middle.0, middle.1, 0.0)),
+        ..edge(associative_id, start, end)
     }
 }
 
@@ -175,7 +190,7 @@ fn index<'a>(
     entities: &'a [SketchEntity],
 ) -> ProfileIndex<'a> {
     let mut index = ProfileIndex::new(bodies, links, &[], &[], entities);
-    index.curves = (1..=5)
+    index.curves = (1..=8)
         .map(|id| {
             (
                 ("segment", SKETCH_ORDINAL, id),
@@ -216,7 +231,7 @@ fn a_loop_inside_another_selected_loop_is_a_hole_of_its_region() {
 }
 
 #[test]
-fn a_wire_edge_shorter_than_its_sketch_curve_leaves_the_selection_unresolved() {
+fn a_wire_that_does_not_close_leaves_the_selection_unresolved() {
     let (sketch, entities) = square_with_hole();
     let bodies = [profile_body((5.0, 0.0))];
     let links = [kernel_link(20, 7)];
@@ -303,4 +318,178 @@ fn an_arc_turns_by_its_chord_and_the_segment_it_bounds() {
         arc((0.5, -0.417), 0.651, 0.695, -4.531),
     ];
     assert_eq!(encloses(&crescent, Point2::new(0.898, 0.053)), Some(false));
+}
+
+#[test]
+fn a_ring_along_parts_of_curves_is_a_trimmed_region() {
+    // A divider from (10, 0) to (10, 20) splits the square; the selection is
+    // its left half.
+    let (sketch, mut entities) = square_with_hole();
+    entities.push(entity(
+        16,
+        SketchGeometryDefinition::Line {
+            start: Point2::new(10.0, 0.0),
+            end: Point2::new(10.0, 20.0),
+        },
+    ));
+    let bodies = [ProfileBody {
+        segment_token: cadmpeg_ir::identity_key!("segment"),
+        record_ordinal: BODY_ORDINAL,
+        wires: vec![ProfileWire {
+            key: 9,
+            edges: vec![
+                edge(1, (0.0, 0.0), (10.0, 0.0)),
+                edge(6, (10.0, 0.0), (10.0, 20.0)),
+                edge(3, (10.0, 20.0), (0.0, 20.0)),
+                edge(4, (0.0, 20.0), (0.0, 0.0)),
+            ],
+        }],
+    }];
+    let links = [kernel_link(20, 9)];
+    let index = index(&bodies, &links, &entities);
+    let profile = index
+        .regions("segment", SKETCH_ORDINAL, &sketch, &[20])
+        .expect("resolved profile");
+    let PlanarProfileRef::SketchRegions { regions, .. } = profile else {
+        panic!("profile regions");
+    };
+    let boundary_use = |ordinal: u32, range: [f64; 2]| SketchProfileBoundaryUse {
+        entity: SketchEntityId::mint(format!("inventor:design:sketch-entity#segment-{ordinal}"))
+            .expect("entity id"),
+        parameter_range: DirectedParameterRange::new(range).expect("range"),
+        reversed: false,
+    };
+    assert_eq!(
+        regions.as_slice(),
+        [SketchProfileRegion::trimmed(
+            vec![
+                boundary_use(11, [0.0, 0.5]),
+                boundary_use(16, [0.0, 1.0]),
+                boundary_use(13, [0.5, 1.0]),
+                boundary_use(14, [0.0, 1.0]),
+            ],
+            Vec::new(),
+        )
+        .expect("region")]
+    );
+}
+
+fn boundary_use(ordinal: u32, range: [f64; 2], reversed: bool) -> SketchProfileBoundaryUse {
+    SketchProfileBoundaryUse {
+        entity: SketchEntityId::mint(format!("inventor:design:sketch-entity#segment-{ordinal}"))
+            .expect("entity id"),
+        parameter_range: DirectedParameterRange::new(range).expect("range"),
+        reversed,
+    }
+}
+
+fn trimmed_boundary(
+    sketch: &Sketch,
+    entities: &[SketchEntity],
+    edges: Vec<ProfileEdge>,
+) -> Vec<SketchProfileBoundaryUse> {
+    let bodies = [ProfileBody {
+        segment_token: cadmpeg_ir::identity_key!("segment"),
+        record_ordinal: BODY_ORDINAL,
+        wires: vec![ProfileWire { key: 9, edges }],
+    }];
+    let links = [kernel_link(20, 9)];
+    let index = index(&bodies, &links, entities);
+    let profile = index
+        .regions("segment", SKETCH_ORDINAL, sketch, &[20])
+        .expect("resolved profile");
+    let PlanarProfileRef::SketchRegions { regions, .. } = profile else {
+        panic!("profile regions");
+    };
+    let [region] = regions.as_slice() else {
+        panic!("one region");
+    };
+    let SketchProfileRegion::Trimmed {
+        outer_boundary,
+        hole_boundaries,
+    } = region
+    else {
+        panic!("trimmed region");
+    };
+    assert!(hole_boundaries.is_empty());
+    outer_boundary.to_vec()
+}
+
+#[test]
+fn an_arc_piece_entered_at_its_start_angle_runs_forward() {
+    use std::f64::consts::FRAC_PI_2;
+    // The right half of a circle about (10, 10) from (10, 0) to (10, 20),
+    // closed below the middle by a radius along v = 10 and the lower half of
+    // the diameter. The wire enters the arc a hair below its start angle.
+    let (sketch, mut entities) = square_with_hole();
+    entities.extend([
+        entity(
+            16,
+            SketchGeometryDefinition::Arc {
+                center: Point2::new(10.0, 10.0),
+                radius: Length::new(10.0).expect("radius"),
+                start_angle: Angle::new(-FRAC_PI_2).expect("angle"),
+                end_angle: Angle::new(FRAC_PI_2).expect("angle"),
+            },
+        ),
+        entity(
+            17,
+            SketchGeometryDefinition::Line {
+                start: Point2::new(10.0, 10.0),
+                end: Point2::new(20.0, 10.0),
+            },
+        ),
+        entity(
+            18,
+            SketchGeometryDefinition::Line {
+                start: Point2::new(10.0, 0.0),
+                end: Point2::new(10.0, 20.0),
+            },
+        ),
+    ]);
+    let boundary = trimmed_boundary(
+        &sketch,
+        &entities,
+        vec![
+            edge(6, (10.0 - 1.0e-12, 0.0), (20.0, 10.0)),
+            edge(7, (20.0, 10.0), (10.0, 10.0)),
+            edge(8, (10.0, 10.0), (10.0, 0.0)),
+        ],
+    );
+    assert_eq!(
+        boundary,
+        [
+            boundary_use(16, [-FRAC_PI_2, 0.0], false),
+            boundary_use(17, [0.0, 1.0], true),
+            boundary_use(18, [0.0, 0.5], true),
+        ]
+    );
+}
+
+#[test]
+fn a_ring_along_part_of_a_circle_runs_through_the_edge_middle() {
+    use std::f64::consts::{FRAC_PI_2, PI};
+    // The right half of the 3 mm circle, closed by its vertical diameter.
+    let (sketch, mut entities) = square_with_hole();
+    entities.push(entity(
+        16,
+        SketchGeometryDefinition::Line {
+            start: Point2::new(10.0, 7.0),
+            end: Point2::new(10.0, 13.0),
+        },
+    ));
+    let boundary = trimmed_boundary(
+        &sketch,
+        &entities,
+        vec![
+            edge_through(5, (10.0, 7.0), (13.0, 10.0), (10.0, 13.0)),
+            edge(6, (10.0, 13.0), (10.0, 7.0)),
+        ],
+    );
+    assert_eq!(boundary.len(), 2);
+    let range = boundary[0].parameter_range.endpoints();
+    assert!((range[0] - 3.0 * FRAC_PI_2).abs() < 1.0e-12, "{range:?}");
+    assert!((range[1] - range[0] - PI).abs() < 1.0e-12, "{range:?}");
+    assert!(!boundary[0].reversed);
+    assert_eq!(boundary[1], boundary_use(16, [0.0, 1.0], true));
 }
