@@ -704,6 +704,7 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
                 construction: Box::new(ProceduralCurveConstruction::Exact),
                 cache_fit_tolerance: Some(-1.0),
                 parsed_domain: Some([0.0, 1.0]),
+                reversed: false,
             },
             "invalid procedural curve cache tolerance",
         ),
@@ -722,6 +723,7 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
                 ))),
                 cache_fit_tolerance: None,
                 parsed_domain: Some([0.0, 1.0]),
+                reversed: false,
             },
             "subset-curve range is not finite and ordered",
         ),
@@ -847,6 +849,7 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
                 )),
                 cache_fit_tolerance: tolerance,
                 parsed_domain: Some([0.0, 1.0]),
+                reversed: false,
             },
         );
         emit_carrier_curve(
@@ -1252,4 +1255,91 @@ fn a_tolerant_coedge_interval_off_its_knot_domain_by_noise_names_the_domain_end(
         clamp_to_knot_domain(outside, &curve).endpoints(),
         [0.99, 1.001]
     );
+}
+
+/// The support pcurves of a cached intcurve follow every reversal of its
+/// cache: a reversed curve record reverses them, and an edge use that
+/// reverses the cache again restores them.
+#[test]
+fn a_reversed_intcurve_cache_reverses_its_support_pcurves() {
+    use crate::brep::ProceduralCurveSource;
+    use crate::nurbs::proc_curve::{EmbeddedIntersection, SupportSlot};
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::math::{Point2, Point3};
+
+    for (record_reversed, edge_reversed, expected) in [
+        (false, false, [0.0, 2.0]),
+        (true, false, [-2.0, -0.0]),
+        (true, true, [0.0, 2.0]),
+    ] {
+        let pcurve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 2.0, 2.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 3.0)],
+            None,
+            false,
+        )
+        .expect("pcurve");
+        let cache = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 2.0, 2.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 3.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("cache");
+        let mut out = AsmBrep::default();
+        let mut carriers = Carriers::default();
+        carriers
+            .curve_geo
+            .insert(4, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(cache)));
+        carriers.procedural_curve_defs.insert(
+            4,
+            ProceduralCurveSource::Cached {
+                construction: Box::new(ProceduralCurveConstruction::Intersection(
+                    EmbeddedIntersection {
+                        surfaces: [
+                            SupportSlot::Surface(SurfaceGeometry::Solved(
+                                SolvedSurfaceGeometry::Unknown { record: None },
+                            )),
+                            SupportSlot::Absent,
+                        ],
+                        pcurves: [Some(pcurve), None],
+                        parameter_range: [0.0, 2.0],
+                        discontinuities: std::array::from_fn(|_| Vec::new()),
+                    },
+                    false,
+                )),
+                cache_fit_tolerance: None,
+                parsed_domain: Some([0.0, 2.0]),
+                reversed: record_reversed,
+            },
+        );
+        let edge_reversed_refs = if edge_reversed {
+            HashSet::from([4])
+        } else {
+            HashSet::new()
+        };
+        emit_carrier_curve(
+            &mut out,
+            4,
+            &mut carriers,
+            &edge_reversed_refs,
+            &HashSet::new(),
+            crate::asm_format!("f3d"),
+        )
+        .expect("carrier emission succeeds");
+        let [(_, procedural)] = out.procedural_curves.as_slice() else {
+            panic!("one procedural curve")
+        };
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
+            panic!("intersection definition")
+        };
+        assert_eq!(
+            context.parameter_range().endpoints(),
+            expected,
+            "record {record_reversed}, edge {edge_reversed}"
+        );
+    }
 }

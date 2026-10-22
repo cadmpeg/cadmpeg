@@ -523,6 +523,7 @@ pub(super) fn reverse_procedural_curve_definition(
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition {
         helix.try_reverse_parameterization()?;
     }
+    let _unreversed = definition.reverse_support_contexts();
     Ok(())
 }
 
