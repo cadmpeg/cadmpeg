@@ -16,7 +16,7 @@ use crate::rse::{
     DocumentKind, RecordFrameState, SegmentBulkState, SegmentDescriptor, SegmentKind,
 };
 
-const KERNEL_RECORD_TYPE_ID: [u8; 16] = [
+pub(crate) const KERNEL_RECORD_TYPE_ID: [u8; 16] = [
     0x5c, 0x59, 0x45, 0xf6, 0xd5, 0x11, 0x33, 0x13, 0x10, 0x00, 0x60, 0xa6, 0xbb, 0xa6, 0x47, 0xb5,
 ];
 
@@ -195,7 +195,7 @@ pub(crate) fn select_active_carrier<'a>(
     }
 }
 
-fn parse_carrier<'a>(
+pub(crate) fn parse_carrier<'a>(
     payload: View<'a>,
     segment_token: &cadmpeg_ir::ids::IdentityKey,
     record_ordinal: u32,
