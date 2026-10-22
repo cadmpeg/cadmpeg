@@ -193,6 +193,62 @@ fn assert_compound_class_checksum(
     compounds
 }
 
+/// Relative bound on a round-tripped curve coordinate, knot or weight. The
+/// writer re-encodes each value, so equal geometry can differ in the last
+/// bits.
+const EPS_COMPOUND_GEOMETRY_ROUND_TRIP: f64 = 1.0e-12;
+
+/// Each curve's solved geometry as JSON, keyed by curve identity.
+fn curve_geometry_by_id(
+    ir: &cadmpeg_ir::CadIr,
+) -> std::collections::BTreeMap<String, serde_json::Value> {
+    ir.model
+        .curves
+        .iter()
+        .map(|curve| {
+            (
+                curve.id.to_string(),
+                serde_json::to_value(curve.geometry.solved())
+                    .expect("solved curve geometry serializes"),
+            )
+        })
+        .collect()
+}
+
+/// Structural equality in which numbers agree within
+/// `EPS_COMPOUND_GEOMETRY_ROUND_TRIP` relative to their magnitude.
+fn json_numbers_close(actual: &serde_json::Value, expected: &serde_json::Value) -> bool {
+    use serde_json::Value;
+    match (actual, expected) {
+        (Value::Number(actual), Value::Number(expected)) => {
+            match (actual.as_f64(), expected.as_f64()) {
+                (Some(actual), Some(expected)) => {
+                    (actual - expected).abs()
+                        <= EPS_COMPOUND_GEOMETRY_ROUND_TRIP
+                            * actual.abs().max(expected.abs()).max(1.0)
+                }
+                _ => actual == expected,
+            }
+        }
+        (Value::Array(actual), Value::Array(expected)) => {
+            actual.len() == expected.len()
+                && actual
+                    .iter()
+                    .zip(expected)
+                    .all(|(actual, expected)| json_numbers_close(actual, expected))
+        }
+        (Value::Object(actual), Value::Object(expected)) => {
+            actual.len() == expected.len()
+                && expected.iter().all(|(key, expected)| {
+                    actual
+                        .get(key)
+                        .is_some_and(|actual| json_numbers_close(actual, expected))
+                })
+        }
+        _ => actual == expected,
+    }
+}
+
 #[test]
 fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() {
     let inputs: [(&str, &[u8]); 2] = [
@@ -209,13 +265,7 @@ fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() 
         let source = RhinoCodec
             .decode(&mut Cursor::new(input), &DecodeOptions::default())
             .expect("frozen compound source is admitted");
-        let expected = source
-            .ir()
-            .model
-            .curves
-            .iter()
-            .map(|curve| curve.geometry.solved().cloned())
-            .collect::<Vec<_>>();
+        let expected = curve_geometry_by_id(source.ir());
         for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
             let mut bytes = Vec::new();
             RhinoCodec
@@ -243,17 +293,19 @@ fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() 
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("compound geometry decodes");
-            let actual = decoded
-                .ir()
-                .model
-                .curves
-                .iter()
-                .map(|curve| curve.geometry.solved().cloned())
-                .collect::<Vec<_>>();
+            let actual = curve_geometry_by_id(decoded.ir());
             assert_eq!(
-                actual, expected,
-                "{name} {version:?}: curve geometry and order"
+                actual.keys().collect::<Vec<_>>(),
+                expected.keys().collect::<Vec<_>>(),
+                "{name} {version:?}: curve identities"
             );
+            for (id, geometry) in &expected {
+                assert!(
+                    json_numbers_close(&actual[id], geometry),
+                    "{name} {version:?}: curve {id} geometry: {} != {geometry}",
+                    actual[id]
+                );
+            }
         }
     }
 }
