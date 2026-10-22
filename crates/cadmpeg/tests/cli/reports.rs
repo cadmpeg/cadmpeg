@@ -465,7 +465,7 @@ fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
 }
 
 #[test]
-fn check_fails_on_an_error_severity_decode_loss() {
+fn check_fails_on_an_error_integrity_failure_loss() {
     let dir = tempdir().unwrap();
     let input = synthetic_rhino_point(dir.path(), "stale-crc.3dm", [1.0, 2.0, 3.0]);
     let mut bytes = fs::read(&input).unwrap();

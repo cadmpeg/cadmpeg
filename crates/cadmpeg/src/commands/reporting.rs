@@ -488,7 +488,7 @@ pub(super) fn print_check_report(
         )?;
     }
     for loss in &report.losses {
-        if loss.severity >= cadmpeg_ir::report::Severity::Error {
+        if crate::application::validators::check_failing_loss(loss) {
             writeln!(
                 writer,
                 "  [{}/{}] {}",

@@ -12,6 +12,7 @@ use cadmpeg_ir::validate::{
 };
 use cadmpeg_ir::{
     report::check::{Finding, ValidationReport},
+    report::loss::{LossNote, LossTaxonomy},
     report::Severity,
     CadIr,
 };
@@ -20,15 +21,23 @@ use cadmpeg_registry::InputCatalog;
 use super::document::LoadedDocument;
 use super::refusal::{ApplicationError, RefusalStage};
 
-/// Error and blocking findings plus error and blocking losses. The `check`
-/// verdict fails when this count is nonzero.
+/// Error and blocking findings plus error and blocking integrity-failure
+/// losses. The `check` verdict fails when this count is nonzero. An integrity
+/// failure states that the input bytes do not match their stored checksum, so
+/// the document is not a faithful read of the file; other losses describe
+/// transfer reductions, which `--reject-lossy` governs.
 pub(crate) fn check_error_count(report: &ValidationReport) -> usize {
     let losses = report
         .losses
         .iter()
-        .filter(|loss| loss.severity >= Severity::Error)
+        .filter(|loss| check_failing_loss(loss))
         .count();
     report.error_count() + losses
+}
+
+/// Whether one decode loss fails the `check` verdict.
+pub(crate) fn check_failing_loss(loss: &LossNote) -> bool {
+    loss.severity >= Severity::Error && loss.code.taxonomy() == LossTaxonomy::IntegrityFailure
 }
 
 /// Validate a loaded document under one session and retain check-stage refusals.
@@ -91,6 +100,21 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("validation context");
         validate_native(&ctx, inputs, ir).expect("validation fits service policy")
+    }
+
+    #[test]
+    fn only_an_error_integrity_failure_loss_fails_the_check_verdict() {
+        use cadmpeg_ir::report::loss::{LossKind, LossNote, LossTaxonomy};
+        use cadmpeg_ir::report::Severity;
+        let integrity = LossNote::new(LossKind::shared(LossTaxonomy::IntegrityFailure), "crc");
+        assert_eq!(integrity.severity, Severity::Error);
+        assert!(super::check_failing_loss(&integrity));
+        assert!(!super::check_failing_loss(
+            &integrity.clone().with_severity(Severity::Warning)
+        ));
+        let transfer = LossNote::new(LossKind::shared(LossTaxonomy::DecodeDiagnostic), "unit")
+            .with_severity(Severity::Error);
+        assert!(!super::check_failing_loss(&transfer));
     }
 
     #[test]

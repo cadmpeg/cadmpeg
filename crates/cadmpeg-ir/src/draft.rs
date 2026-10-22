@@ -925,6 +925,9 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                     || admitted.annotation_owners_resolve(annotations);
             }
             self.state.admission = state;
+        } else {
+            // A refused suffix leaves the facts describing the admitted prefix.
+            self.state.admission = state;
         }
         Ok(report)
     }
