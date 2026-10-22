@@ -297,10 +297,15 @@ sweep are measured under `reading: declared` with the `complement` value as
 a candidate, and the face has the caveat `orientation.unconfirmed`. When
 both readings give one value within error, the value has no reading and no
 candidate. Two sweeps are one value only when their angles, `full` flags and
-intervals agree. A body with one unconfirmed face reports its area under
-`reading: declared` with the area under that face's complement as a
-candidate; with several, the body area stays under the declared readings and
-the body's caveat count states them.
+intervals agree.
+
+A sum or union whose member value is measured under `reading: declared`
+rests on that reading: a body's `area` and `bbox` over its faces, and the
+document's `area` and `bbox` over its bodies. It carries
+`reading: declared` and a `complement` candidate, which takes every such
+member under its `complement` candidate; without a complement candidate
+for one such member, it carries no candidate. The body's caveat count
+states the unconfirmed faces.
 
 ### Witnesses
 
@@ -473,7 +478,21 @@ is body area × the largest `τ_b` of its faces plus the placement term. Of
 `C`, it is that value × the body box diagonal / `|V|`.
 
 A body with faces and no closed shell reports `area_centroid`, the
-area-weighted centroid `P_ref + Σ σ Φ_A / A`, where `A` is the body area.
+area-weighted centroid `P_ref + Σ Φ_A / A`, where `Φ_A` is the area moment
+`∫ d |N|` of a face region, which does not depend on the orientation, and
+`A` the sum of the face areas. Each face contributes the region its
+readings establish: the complement region of a face in conflict by the
+empty-reading test, else the declared region. When a witness contradicts a
+face, the area centroid is unavailable (`region.orientation-conflict`) with
+the `face_sense` candidate (every declared region) and the `loop_winding`
+candidate (the complement region of every face in conflict). When an
+unconfirmed face's region changes the value, the area centroid carries
+`reading: declared` and a `complement` candidate with every unconfirmed
+face in its complement region. Its `numeric_error` is the area moment
+error over `A` plus the largest area moment times the area error over
+`A²`. Its `model_uncertainty` is the sum over faces of boundary length ×
+`τ_b`, plus the placement term of `A`, times the body box diagonal over
+`A`.
 `document.closed_volume` is the sum of the body volumes; it is unavailable
 when one is.
 

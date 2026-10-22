@@ -430,11 +430,23 @@ fn point_text(quantity: &Quantity<Point>, unit: &str) -> String {
         format!(" {unit}")
     };
     format!(
-        "({}, {}, {}){unit}  {}",
+        "({}, {}, {}){unit}  {}{}",
         number(point.x),
         number(point.y),
         number(point.z),
-        name(&measured.method())
+        name(&measured.method()),
+        reading_text(measured)
+    )
+}
+
+/// A point value's coordinates with its unit.
+fn point_value(value: &Point, unit: &str) -> String {
+    let point = value.value.get();
+    format!(
+        "({}, {}, {}) {unit}",
+        number(point.x),
+        number(point.y),
+        number(point.z)
     )
 }
 
@@ -858,6 +870,9 @@ fn body_text(out: &mut impl Write, body: &BodyMeasures) -> io::Result<()> {
     }
     if let Some(area) = body.area() {
         line(out, "area", &scalar_text(area, "mm²"))?;
+        candidates_text(out, area, |area| {
+            format!("{} mm²", number(area.value.get()))
+        })?;
     }
     if let Some(volume) = body.volume() {
         line(out, "volume", &scalar_text(volume, "mm³"))?;
@@ -867,14 +882,17 @@ fn body_text(out: &mut impl Write, body: &BodyMeasures) -> io::Result<()> {
     }
     if let Some(centroid) = body.centroid() {
         line(out, "centroid", &point_text(centroid, "mm"))?;
+        candidates_text(out, centroid, |point| point_value(point, "mm"))?;
     }
     if let Some(centroid) = body.area_centroid() {
         line(out, "area centroid", &point_text(centroid, "mm"))?;
+        candidates_text(out, centroid, |point| point_value(point, "mm"))?;
     }
     if let Some(length) = body.length() {
         line(out, "length", &scalar_text(length, "mm"))?;
     }
     line(out, "bbox", &box_text(body.bbox()))?;
+    candidates_text(out, body.bbox(), box_corners)?;
     if let Some(vertex_box) = body.vertex_box() {
         line(out, "vertex box", &box_text(vertex_box))?;
     }
@@ -913,7 +931,11 @@ pub(super) fn text(out: &mut impl Write, report: &MeasureReport) -> io::Result<(
         .as_ref()
         .and_then(Quantity::measured)
         .map_or_else(String::new, |area| {
-            format!(", area {} mm²", number(area.value().value.get()))
+            format!(
+                ", area {} mm²{}",
+                number(area.value().value.get()),
+                reading_text(area)
+            )
         });
     let volume = document
         .closed_volume()

@@ -861,6 +861,52 @@ fn measures_sphere_cap() {
     assert!(row["orientation"]["consistent"].is_null());
 }
 
+/// The cap fixture at body level: every total that rests on the cap's
+/// unconfirmed region carries the declared reading with the complement
+/// candidate. The complement is the rest of the sphere, `z ≤ 6`: area
+/// `320π`, box `(−10, −10, −10)..(10, 10, 6)`, and area centroid `z = −2`,
+/// the middle of its `z` range; the cap's is `z = 8`.
+#[cfg(feature = "step")]
+#[test]
+fn sphere_cap_totals_rest_on_the_declared_reading() {
+    let cap = fixture("measure_sphere_cap.p21");
+    let report = measure_json(&[cap.to_str().unwrap()]);
+    let body = &report["measure"]["bodies"][0];
+    let complement = |quantity: &Value| {
+        assert_eq!(quantity["reading"], "declared", "{quantity:#}");
+        let candidates = quantity["candidates"].as_array().unwrap();
+        let [candidate] = candidates.as_slice() else {
+            panic!("one candidate: {quantity:#}");
+        };
+        assert_eq!(candidate["reading"], "complement");
+        candidate.clone()
+    };
+    let pi = std::f64::consts::PI;
+    for area in [&body["area"], &report["measure"]["document"]["area"]] {
+        assert_measured(area, 80.0 * pi, 100.0);
+        let value = complement(area)["value"].as_f64().unwrap();
+        assert!((value - 320.0 * pi).abs() <= TEST_ABSOLUTE_FLOOR * 400.0 * pi);
+    }
+    for bbox in [&body["bbox"], &report["measure"]["document"]["bbox"]] {
+        let other = complement(bbox);
+        for (corner, expected) in [("min", [-10.0; 3]), ("max", [10.0, 10.0, 6.0])] {
+            for (axis, expected) in ["x", "y", "z"].into_iter().zip(expected) {
+                let value = other[corner][axis].as_f64().unwrap();
+                assert!(
+                    (value - expected).abs() <= TEST_ABSOLUTE_FLOOR * 10.0,
+                    "{corner}.{axis}: {value}"
+                );
+            }
+        }
+    }
+    let centroid = &body["area_centroid"];
+    let z = centroid["value"]["z"].as_f64().unwrap();
+    assert!((z - 8.0).abs() <= TEST_ABSOLUTE_FLOOR * 10.0, "{z}");
+    let z = complement(centroid)["value"]["z"].as_f64().unwrap();
+    assert!((z + 2.0).abs() <= TEST_ABSOLUTE_FLOOR * 10.0, "{z}");
+    assert!(centroid["model_uncertainty"].as_f64().unwrap() > 0.0);
+}
+
 /// The sphere of radius 5 bounded by two pole vertex loops.
 #[cfg(feature = "step")]
 #[test]

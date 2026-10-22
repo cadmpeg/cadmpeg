@@ -69,6 +69,16 @@ pub(crate) struct FaceResult<'ir> {
 }
 
 impl FaceResult<'_> {
+    /// The face's area under its declared reading, or under its complement
+    /// reading when `complement` is set. A face whose region does not rest
+    /// on its orientation has one area.
+    pub(crate) fn area_reading(&self, complement: bool) -> &Quantity<Scalar> {
+        match (&self.readings.area.complement, complement) {
+            (Some(area), true) => area,
+            _ => &self.readings.area.declared,
+        }
+    }
+
     /// Report the face's values and orientation under `verdict`, decided by
     /// `witness`.
     pub(crate) fn settle_reading(&mut self, verdict: Verdict, witness: Option<Witness>) {

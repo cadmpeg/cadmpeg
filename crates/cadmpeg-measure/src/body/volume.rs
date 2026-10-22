@@ -17,7 +17,8 @@ use crate::flux::Flux;
 use crate::reason::{Category, UnavailableReason};
 use crate::report::{BodyOrientation, ClosureFlux, NormalReading, RegionRule};
 use crate::value::{
-    measured, Candidate, Errors, Method, Point, Quantity, Reading, Scalar, Unavailable, Unit,
+    measured, Candidate, Errors, Measured, Method, Point, Quantity, Reading, Scalar, Unavailable,
+    Unit,
 };
 
 /// One orientation reading of a body.
@@ -40,6 +41,43 @@ impl BodyReading {
             Self::Complement => Reading::Complement,
         }
     }
+}
+
+/// Which region each face contributes to an area centroid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Regions {
+    /// Every face's declared region.
+    Declared,
+    /// The region a witness or the empty-reading test establishes, else the
+    /// declared region.
+    Witnessed,
+    /// As `Witnessed`, with every unconfirmed face in its complement
+    /// region.
+    Complement,
+}
+
+impl Regions {
+    /// Whether a face with `verdict` contributes its complement region.
+    const fn complement(self, verdict: Verdict) -> bool {
+        match (self, verdict) {
+            (Self::Declared, _) => false,
+            (_, Verdict::Conflict | Verdict::Contradicted)
+            | (Self::Complement, Verdict::Unconfirmed) => true,
+            _ => false,
+        }
+    }
+}
+
+/// Whether two points agree within their summed error terms.
+fn same_point(a: &Measured<Point>, b: &Measured<Point>) -> bool {
+    let allowed = a.numeric_error().get()
+        + b.numeric_error().get()
+        + a.model_uncertainty().get()
+        + b.model_uncertainty().get();
+    let (first, second) = (a.value().value.get(), b.value().value.get());
+    [first.x - second.x, first.y - second.y, first.z - second.z]
+        .iter()
+        .all(|difference| difference.abs() <= allowed)
 }
 
 /// One face of a body with its result.
@@ -340,7 +378,7 @@ impl VolumeInput<'_> {
     pub(super) fn measure(&self) -> VolumeFacts {
         let in_use = self.sum(BodyReading::FaceSense);
         let orientation = self.orientation();
-        let area_centroid = self.area_centroid(&in_use);
+        let area_centroid = self.area_centroid();
         match self.failure(&in_use) {
             None => {
                 let Ok(sum) = in_use else {
@@ -407,37 +445,138 @@ impl VolumeInput<'_> {
         }
     }
 
-    /// The area-weighted centroid of a body with no closed shell.
-    fn area_centroid(&self, sum: &Result<Sum, Missing>) -> Option<Quantity<Point>> {
-        if self.shells.iter().all(|(closed, _)| *closed) && !self.shells.is_empty() {
-            return None;
-        }
-        Some(match sum {
-            Ok(sum) if self.area > 0.0 => {
-                let moment = sum.flux.area_moment();
-                let point = Point3::new(
-                    self.origin.x + moment[0] / self.area,
-                    self.origin.y + moment[1] / self.area,
-                    self.origin.z + moment[2] / self.area,
-                );
-                let numeric = sum.flux.error[7]
-                    .max(sum.flux.error[8])
-                    .max(sum.flux.error[9]);
-                measured(
-                    Point::new(point),
-                    Unit::Millimeter,
-                    Method::DivergenceQuadrature,
-                    Errors::new(numeric / self.area, 0.0),
-                    self.id,
-                )
+    /// The area moments, area and area error of the body's faces under
+    /// `regions`.
+    fn area_sum(&self, regions: Regions) -> Result<(Flux, f64, f64), Missing> {
+        let mut flux_sum = Flux::ZERO;
+        let (mut area, mut area_error) = (0.0, 0.0);
+        for member in &self.members {
+            let result = member.result;
+            let complement = regions.complement(result.verdict);
+            let missing = || Missing {
+                reason: UnavailableReason::AggregateMemberUnavailable,
+                entity: Some(member.id.to_owned()),
+                message: format!("member {} has no flux", member.id),
+            };
+            let flux = match &result.flux {
+                Some(Ok(flux)) if complement => flux.complement.ok_or_else(missing)?,
+                Some(Ok(flux)) => flux.declared,
+                Some(Err(missing)) => return Err(missing.clone()),
+                None => return Err(missing()),
+            };
+            match result.area_reading(complement) {
+                Quantity::Measured(measured) => {
+                    area += measured.value().value.get();
+                    area_error += measured.numeric_error().get();
+                }
+                Quantity::Unavailable(unavailable) => {
+                    return Err(Missing {
+                        reason: unavailable.reason(),
+                        entity: Some(unavailable.entity().unwrap_or(member.id).to_owned()),
+                        message: unavailable.message().to_owned(),
+                    })
+                }
             }
-            Ok(_) => Quantity::missing(
+            flux_sum = flux_sum.add(flux, 1.0);
+        }
+        Ok((flux_sum, area, area_error))
+    }
+
+    /// The area centroid `P_ref + M_A / A` of the faces under `regions`.
+    /// Its model uncertainty is the first-order move of the centroid when
+    /// the boundary moves by `τ_b`: the summed boundary length times `τ_b`
+    /// plus the placement term of the area, times the body box diagonal,
+    /// over the area.
+    fn area_centroid_under(&self, regions: Regions) -> Quantity<Point> {
+        let (flux, area, area_error) = match self.area_sum(regions) {
+            Ok(found) => found,
+            Err(missing) => return missing.quantity(),
+        };
+        if area <= 0.0 {
+            return Quantity::missing(
                 UnavailableReason::BoundaryUnboundedFace,
                 Some(self.id),
                 "the body has no area",
+            );
+        }
+        let moment = flux.area_moment();
+        let point = Point3::new(
+            self.origin.x + moment[0] / area,
+            self.origin.y + moment[1] / area,
+            self.origin.z + moment[2] / area,
+        );
+        let moment_error = flux.error[7].max(flux.error[8]).max(flux.error[9]);
+        let lever = moment.iter().fold(0.0_f64, |most, m| most.max(m.abs()));
+        let boundary: f64 = self
+            .members
+            .iter()
+            .map(|member| member.result.boundary_length * member.result.tau_b)
+            .sum();
+        measured(
+            Point::new(point),
+            Unit::Millimeter,
+            Method::DivergenceQuadrature,
+            Errors::new(
+                moment_error / area + lever * area_error / (area * area),
+                (boundary + (self.placement)(2, area)) * self.diagonal / area,
             ),
-            Err(missing) => missing.quantity(),
-        })
+            self.id,
+        )
+    }
+
+    /// The area-weighted centroid of a body with no closed shell, over the
+    /// regions the faces' witnesses establish. It rests on the declared
+    /// reading of every unconfirmed face, with the complement candidate; it
+    /// is unavailable with the `face_sense` and `loop_winding` candidates
+    /// when a witness contradicts a face.
+    fn area_centroid(&self) -> Option<Quantity<Point>> {
+        if self.shells.iter().all(|(closed, _)| *closed) && !self.shells.is_empty() {
+            return None;
+        }
+        let verdicts = || {
+            self.members
+                .iter()
+                .map(|member| (member.id, member.result.verdict))
+        };
+        if let Some((face, _)) = verdicts().find(|(_, verdict)| *verdict == Verdict::Contradicted) {
+            let candidates = [
+                (Regions::Declared, Reading::FaceSense),
+                (Regions::Witnessed, Reading::LoopWinding),
+            ]
+            .into_iter()
+            .filter_map(
+                |(regions, reading)| match self.area_centroid_under(regions) {
+                    Quantity::Measured(measured) => Some(measured.into_candidate(reading)),
+                    Quantity::Unavailable(_) => None,
+                },
+            )
+            .collect();
+            return Some(Quantity::Unavailable(
+                Unavailable::new(
+                    UnavailableReason::RegionOrientationConflict,
+                    Some(face),
+                    "a witness contradicts the declared orientation of a face the area centroid rests on",
+                )
+                .with_candidates(candidates),
+            ));
+        }
+        let main = self.area_centroid_under(Regions::Witnessed);
+        if !verdicts().any(|(_, verdict)| verdict == Verdict::Unconfirmed) {
+            return Some(main);
+        }
+        let Quantity::Measured(declared) = main else {
+            return Some(main);
+        };
+        Some(Quantity::Measured(
+            match self.area_centroid_under(Regions::Complement) {
+                Quantity::Measured(complement) if same_point(&declared, &complement) => declared,
+                Quantity::Measured(complement) => declared.under_reading(
+                    Reading::Declared,
+                    vec![complement.into_candidate(Reading::Complement)],
+                ),
+                Quantity::Unavailable(_) => declared.under_reading(Reading::Declared, Vec::new()),
+            },
+        ))
     }
 
     fn orientation(&self) -> BodyOrientation {

@@ -10,7 +10,7 @@ use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::CadIr;
 
-use crate::aggregate::BoxUnion;
+use crate::aggregate::{BoxUnion, ReadingSum};
 use crate::body::BodyInput;
 use crate::budget::{PassAllowance, WorkProfile};
 use crate::canonical::placement::Placement;
@@ -28,7 +28,7 @@ use crate::report::{
     Histogram, ListedOrder, MeasureReport, NormalReading, ReportTolerances, WorkReport,
 };
 use crate::select::Selection;
-use crate::value::{measured, Errors, Method, Quantity, Scalar, Unavailable, Unit};
+use crate::value::{Quantity, Scalar, Unit};
 use crate::witness::WitnessInput;
 
 /// The document a measurement pass reads.
@@ -613,28 +613,13 @@ fn total(
     unit: Unit,
     name: &str,
 ) -> Quantity<Scalar> {
-    let mut value = 0.0;
-    let mut errors = Errors::ZERO;
+    let mut sum = ReadingSum::new();
     for body in bodies {
-        match member(body) {
-            Some(Quantity::Measured(area)) => {
-                value += area.value().value.get();
-                errors = errors.add(Errors::new(
-                    area.numeric_error().get(),
-                    area.model_uncertainty().get(),
-                ));
-            }
-            Some(Quantity::Unavailable(unavailable)) => {
-                return Quantity::Unavailable(Unavailable::aggregate(
-                    unavailable.category(),
-                    &body.body,
-                    format!("member {} {name} is unavailable", body.body),
-                ));
-            }
-            None => {}
+        if let Some(quantity) = member(body) {
+            sum.add(&body.body, name, quantity);
         }
     }
-    measured(Scalar::new(value), unit, Method::Sum, errors, "document")
+    sum.finish(unit, "document")
 }
 
 fn union_box(bodies: &[BodyMeasures]) -> Quantity<crate::value::BoxValue> {

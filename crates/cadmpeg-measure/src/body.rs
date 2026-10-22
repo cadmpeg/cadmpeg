@@ -13,9 +13,9 @@ use crate::canonical::placement::Placement;
 use crate::failure::Outcome;
 use volume::{Member, VolumeInput};
 
-use crate::aggregate::BoxUnion;
+use crate::aggregate::{BoxUnion, ReadingSum};
 use crate::edges::EdgeGeometry;
-use crate::face::{box_value, FaceResult, Verdict};
+use crate::face::{box_value, FaceResult};
 use crate::geom::Aabb;
 use crate::owners::Owners;
 use crate::reason::CaveatCode;
@@ -24,7 +24,7 @@ use crate::report::{
 };
 use crate::tolerance::model_tolerance;
 use crate::value::{
-    measured, BoxKind, BoxValue, Errors, Method, Quantity, Reading, Scalar, Unavailable, Unit,
+    measured, BoxKind, BoxValue, Candidate, Errors, Method, Quantity, Scalar, Unavailable, Unit,
 };
 
 /// Open edges a shell row lists.
@@ -41,89 +41,27 @@ pub(crate) struct BodyInput<'a, 'ir> {
     pub(crate) placements: &'a HashMap<&'ir str, Outcome<Placement>>,
 }
 
-/// One aggregate of member values: a sum, or the first unavailable member.
-struct Sum {
-    value: f64,
-    errors: Errors,
-    method: Method,
-    missing: Option<Unavailable<Scalar>>,
-}
-
-impl Sum {
-    fn new() -> Self {
-        Self {
-            value: 0.0,
-            errors: Errors::ZERO,
-            method: Method::Sum,
-            missing: None,
-        }
-    }
-
-    fn add(&mut self, member: &str, quantity: &Quantity<Scalar>) {
-        match quantity {
-            Quantity::Measured(measured) => {
-                self.value += measured.value().value.get();
-                self.errors = self.errors.add(Errors::new(
-                    measured.numeric_error().get(),
-                    measured.model_uncertainty().get(),
-                ));
-            }
-            Quantity::Unavailable(unavailable) => {
-                if self.missing.is_none() {
-                    self.missing = Some(Unavailable::aggregate(
-                        unavailable.category(),
-                        member,
-                        format!(
-                            "member {member} is unavailable: {}",
-                            unavailable.reason().code()
-                        ),
-                    ));
-                }
-            }
-        }
-    }
-
-    fn finish(self, unit: Unit, entity: &str) -> Quantity<Scalar> {
-        match self.missing {
-            Some(missing) => Quantity::Unavailable(missing),
-            None => measured(
-                Scalar::new(self.value),
-                unit,
-                self.method,
-                self.errors,
-                entity,
-            ),
-        }
-    }
-}
-
 impl<'a> BodyInput<'a, '_> {
     pub(crate) fn row(&self, body: &Body) -> BodyMeasures {
         let id = body.id.as_str();
         let face_ids: Vec<&str> = self.owners.body_faces(id).collect();
         let edge_ids: Vec<&str> = self.owners.body_edges(id).collect();
         let mut surface_kinds = BTreeMap::new();
-        let mut area = Sum::new();
+        let mut area = ReadingSum::new();
         let mut caveats: BTreeMap<CaveatCode, BTreeSet<&str>> = BTreeMap::new();
         for face in &face_ids {
             let Some(result) = self.faces.get(face) else {
                 continue;
             };
             *surface_kinds.entry(result.row.carrier.kind).or_insert(0) += 1;
-            area.add(face, &result.row.measures.area);
+            area.add(face, "area", &result.row.measures.area);
             for caveat in &result.row.caveats {
                 caveats.entry(caveat.code).or_default().insert(face);
             }
         }
-        let area = (!face_ids.is_empty()).then(|| {
-            with_complement(
-                area.finish(Unit::SquareMillimeter, id),
-                &face_ids,
-                self.faces,
-            )
-        });
+        let area = (!face_ids.is_empty()).then(|| area.finish(Unit::SquareMillimeter, id));
         let length = (face_ids.is_empty() && !edge_ids.is_empty()).then(|| {
-            let mut sum = Sum::new();
+            let mut sum = ReadingSum::new();
             for edge in &edge_ids {
                 let Some(geometry) = self.edges.get(edge) else {
                     continue;
@@ -138,7 +76,7 @@ impl<'a> BodyInput<'a, '_> {
                     ),
                     Err(missing) => missing.quantity(),
                 };
-                sum.add(edge, &quantity);
+                sum.add(edge, "length", &quantity);
             }
             sum.finish(Unit::Millimeter, id)
         });
@@ -168,7 +106,10 @@ impl<'a> BodyInput<'a, '_> {
                 .and_then(Quantity::measured)
                 .map_or(0.0, |area| area.value().value.get());
             let diagonal = bbox.measured().map_or(0.0, |bbox| {
-                bbox.value().min.get().distance(bbox.value().max.get())
+                std::iter::once(bbox.value())
+                    .chain(bbox.candidates().iter().map(Candidate::value))
+                    .map(|value| value.min.get().distance(value.max.get()))
+                    .fold(0.0, f64::max)
             });
             let input = VolumeInput {
                 id,
@@ -368,50 +309,6 @@ impl<'a> BodyInput<'a, '_> {
             }
         }
         rows
-    }
-}
-
-/// A body area under the declared reading of its one unconfirmed face,
-/// with the area under that face's complement reading as a candidate. With
-/// several unconfirmed faces the sum stays under the declared readings and
-/// the body's caveat count states them.
-fn with_complement(
-    area: Quantity<Scalar>,
-    faces: &[&str],
-    results: &HashMap<&str, FaceResult<'_>>,
-) -> Quantity<Scalar> {
-    let unconfirmed: Vec<&FaceResult<'_>> = faces
-        .iter()
-        .filter_map(|face| results.get(face))
-        .filter(|result| result.verdict == Verdict::Unconfirmed)
-        .collect();
-    let ([face], Quantity::Measured(total)) = (unconfirmed.as_slice(), &area) else {
-        return area;
-    };
-    let Quantity::Measured(declared) = &face.row.measures.area else {
-        return area;
-    };
-    let [complement] = declared.candidates() else {
-        return area;
-    };
-    let value =
-        total.value().value.get() - declared.value().value.get() + complement.value().value.get();
-    let errors = Errors::new(
-        total.numeric_error().get() + complement.numeric_error().get(),
-        total.model_uncertainty().get() + complement.model_uncertainty().get(),
-    );
-    match measured(
-        Scalar::new(value),
-        Unit::SquareMillimeter,
-        Method::Sum,
-        errors,
-        &face.row.face,
-    ) {
-        Quantity::Measured(candidate) => Quantity::Measured(total.clone().under_reading(
-            Reading::Declared,
-            vec![candidate.into_candidate(Reading::Complement)],
-        )),
-        Quantity::Unavailable(_) => area,
     }
 }
 

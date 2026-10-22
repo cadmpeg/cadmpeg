@@ -319,14 +319,14 @@ fn bbox_rows(pair: [&Quantity<BoxValue>; 2], context: &Context, rows: &mut Vec<R
         quantity_rows(quantum, [Some(pair[0]), Some(pair[1])], context, rows);
         return;
     };
-    let errors = [measured_errors(a), measured_errors(b)];
-    if a.value().kind == BoxKind::Tight && b.value().kind == BoxKind::Tight {
-        equal_rows(quantum, [a.value(), b.value()], errors, context, rows);
+    let (a, b, errors) = same_reading(a, b);
+    if a.kind == BoxKind::Tight && b.kind == BoxKind::Tight {
+        equal_rows(quantum, [a, b], errors, context, rows);
         return;
     }
-    let kinds = [a.value().kind, b.value().kind].map(|kind| box_kind_name(kind).to_owned());
+    let kinds = [a.kind, b.kind].map(|kind| box_kind_name(kind).to_owned());
     let [kind_a, kind_b] = kinds;
-    let lower = [lower_bound(a.value()), lower_bound(b.value())];
+    let lower = [lower_bound(a), lower_bound(b)];
     if lower.iter().all(Option::is_none) {
         let mut row = not_compared("bbox", Some(Unit::Millimeter), CompareCause::NoLowerBound);
         row.a = Some(Operand::Text(kind_a));
@@ -336,7 +336,7 @@ fn bbox_rows(pair: [&Quantity<BoxValue>; 2], context: &Context, rows: &mut Vec<R
     }
     let mut violation: f64 = 0.0;
     let mut magnitude: f64 = 0.0;
-    for (inner, other) in [(lower[0], b.value()), (lower[1], a.value())] {
+    for (inner, other) in [(lower[0], b), (lower[1], a)] {
         let Some(inner) = inner else {
             continue;
         };
