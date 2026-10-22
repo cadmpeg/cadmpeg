@@ -33,6 +33,7 @@ const TABLE_RECORD_CAP: usize = 1 << 20;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
 const TCODE_TABLE: u32 = 0x1000_0000;
+const TABLE_FAMILY_MASK: u32 = 0xffff_f000;
 const TCODE_PROPERTIES: u32 = 0x1000_0014;
 const TCODE_SETTINGS: u32 = 0x1000_0015;
 const TCODE_BITMAP: u32 = 0x1000_0016;
@@ -851,6 +852,12 @@ fn table_rank(typecode: u32) -> Option<u8> {
     })
 }
 
+/// A table typecode outside the registry. The reader skips such a table as a
+/// bounded unit; its records have no typed owner.
+fn unregistered_table(typecode: u32) -> bool {
+    typecode & TABLE_FAMILY_MASK == TCODE_TABLE && table_rank(typecode).is_none()
+}
+
 fn table_base(typecode: u32) -> u32 {
     typecode & !TCODE_CRC
 }
@@ -1071,9 +1078,12 @@ fn scan_with_record_limit<'a>(
                 metadata,
             });
         }
-        let rank = table_rank(chunk.typecode).ok_or_else(|| {
-            CodecError::malformed(format_args!("expected table or EOF at offset {offset}"))
-        })?;
+        let rank = table_rank(chunk.typecode);
+        if rank.is_none() && !unregistered_table(chunk.typecode) {
+            return Err(CodecError::malformed(format_args!(
+                "expected table or EOF at offset {offset}"
+            )));
+        }
         let duplicate_metadata_table = match table_base(chunk.typecode) {
             TCODE_PROPERTIES => saw_properties,
             TCODE_SETTINGS => saw_settings,
@@ -1090,28 +1100,38 @@ fn scan_with_record_limit<'a>(
                 "table chunks must use long framing".to_string(),
             ));
         }
-        if matches!(
-            table_base(chunk.typecode),
-            TCODE_PROPERTIES | TCODE_SETTINGS
-        ) {
-            if duplicate_metadata_table || rank < last_rank || saw_user {
-                warnings.push_coded(crate::loss::RhinoLossCode::DuplicateRecordResolved, format_args!("metadata table {:#x} is repeated or out of order; first table owns its metadata", chunk.typecode));
+        match rank {
+            None => warnings.push(format_args!(
+                "unregistered table {:#x} at offset {offset} retained as opaque records",
+                chunk.typecode
+            )),
+            Some(rank)
+                if matches!(
+                    table_base(chunk.typecode),
+                    TCODE_PROPERTIES | TCODE_SETTINGS
+                ) =>
+            {
+                if duplicate_metadata_table || rank < last_rank || saw_user {
+                    warnings.push_coded(crate::loss::RhinoLossCode::DuplicateRecordResolved, format_args!("metadata table {:#x} is repeated or out of order; first table owns its metadata", chunk.typecode));
+                }
             }
-        } else if table_base(chunk.typecode) == TCODE_USER {
-            if !saw_user && rank < last_rank {
-                return Err(CodecError::Malformed(
-                    "user table is out of order".to_string(),
-                ));
+            Some(rank) if table_base(chunk.typecode) == TCODE_USER => {
+                if !saw_user && rank < last_rank {
+                    return Err(CodecError::Malformed(
+                        "user table is out of order".to_string(),
+                    ));
+                }
+                saw_user = true;
             }
-            saw_user = true;
-        } else {
-            if saw_user || rank <= last_rank {
-                return Err(CodecError::malformed(format_args!(
-                    "table typecode {:#x} is out of order or duplicated",
-                    chunk.typecode
-                )));
+            Some(rank) => {
+                if saw_user || rank <= last_rank {
+                    return Err(CodecError::malformed(format_args!(
+                        "table typecode {:#x} is out of order or duplicated",
+                        chunk.typecode
+                    )));
+                }
+                last_rank = rank;
             }
-            last_rank = rank;
         }
         let retain_records = retain_record_descriptors(chunk.typecode);
         let mut records = Vec::new();
@@ -1155,7 +1175,9 @@ fn scan_with_record_limit<'a>(
             let record = Record::from_chunk(&child);
             let opaque = table_base(chunk.typecode) == TCODE_USER
                 || !record_is_allowed(chunk.typecode, record.typecode, record.is_short());
-            if !record_is_allowed(chunk.typecode, record.typecode, record.is_short()) {
+            if rank.is_some()
+                && !record_is_allowed(chunk.typecode, record.typecode, record.is_short())
+            {
                 if known_record(record.typecode)
                     && !expected_record(TCODE_PROPERTIES, record.typecode)
                     && !expected_record(TCODE_SETTINGS, record.typecode)

@@ -567,6 +567,61 @@ fn tagged_attributes_reject_nonfinite_numeric_items() {
 }
 
 #[test]
+fn a_duplicated_layer_uuid_keeps_the_index_binding_and_withholds_the_uuid() {
+    let layer = settings::LayerRecord {
+        source: settings::SourceRange { range: 0..1 },
+        index: 0,
+        iges_level: Some(0),
+        render_material_index: -1,
+        color: [10, 20, 30, 255],
+        name: "Layer".to_string(),
+        description: None,
+        visible: true,
+        locked: false,
+        id: Some(Uuid::from_wire([1; 16])),
+        hierarchy: None,
+        linetype_index: None,
+        plot: None,
+        display_material_id: None,
+        no_clipping_planes: None,
+        visible_in_new_details: None,
+        rendering_range: None,
+        extension_items: Vec::new(),
+        embedded_linetype: None,
+        embedded_section_style: None,
+        per_viewport_settings: Vec::new(),
+    };
+    let mut second = layer.clone();
+    second.index = 1;
+    second.name = "Second".to_string();
+    let mut metadata = settings::DocumentMetadata::default();
+    metadata.layers.extend([layer, second]);
+    let mut attributes = parse_attributes(
+        &fixed_attributes(1, 0, None),
+        0..fixed_attributes(1, 0, None).len(),
+        0..fixed_attributes(1, 0, None).len(),
+        ArchiveVersion::V4,
+        None,
+        &mut Diagnostics::new(),
+    )
+    .expect("required invariant");
+    attributes.layer_index = 1;
+    let objects = vec![ObjectRecord::Framed(Box::new(descriptor(attributes, 10)))];
+    let mut warnings = Diagnostics::new();
+    let objects = crate::objects::resolve_identities(objects, &metadata, &mut warnings)
+        .expect("resolve identities");
+    let identity = objects[0].identity().expect("required invariant");
+    assert_eq!(identity.layer_index, 1);
+    let layer = identity
+        .layer
+        .as_ref()
+        .expect("the index binding is unique");
+    assert_eq!(layer.name, "Second");
+    assert_eq!(layer.id, None);
+    assert_eq!(identity.effective_color, Some([10, 20, 30, 255]));
+}
+
+#[test]
 pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     let layer = settings::LayerRecord {
         source: settings::SourceRange { range: 0..1 },
@@ -638,8 +693,10 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     attributes.color_source = crate::objects::ColorSource::Parent;
     attributes.object_mode = 0xf3;
     let parent = vec![ObjectRecord::Framed(Box::new(descriptor(attributes, 20)))];
+    let mut warnings = Diagnostics::new();
     let parent = crate::objects::resolve_identities(parent, &metadata, &mut warnings)
         .expect("resolve identities");
+    assert!(!warnings.iter().any(|warning| warning.contains("color")));
     assert_eq!(
         parent[0]
             .identity()

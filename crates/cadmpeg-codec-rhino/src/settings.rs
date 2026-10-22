@@ -2656,7 +2656,7 @@ pub(crate) fn parse_metadata(
                                 warnings.push_coded(
                                     crate::loss::RhinoLossCode::DuplicateRecordResolved,
                                     format_args!(
-                                "duplicate layer UUID {id}; first record owns archive identity"
+                                "duplicate layer UUID {id}; raw UUIDs preserved and UUID bindings withheld"
                                                                 ),
                                 );
                             } else {

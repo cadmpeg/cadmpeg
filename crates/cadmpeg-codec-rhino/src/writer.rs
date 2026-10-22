@@ -67,7 +67,10 @@ const TCODE_OBJECT_TABLE: u32 = 0x1000_0013;
 const TCODE_HISTORY_RECORD_TABLE: u32 = 0x1000_0026;
 const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
 const TCODE_PROPERTIES_OPENNURBS_VERSION: u32 = 0xa000_0026;
-const OPENNURBS_WRITER_VERSION: i64 = 0xa000_0026;
+/// OpenNURBS 8.35 of 8 September 2026, whose record layouts the writer emits.
+const OPENNURBS_WRITER_VERSION: i64 = 2_425_133_316;
+/// The same version in the year-month-day form that archive 50 stores.
+const OPENNURBS_WRITER_VERSION_ARCHIVE_50: i64 = 202_609_088;
 const TCODE_UNITS_AND_TOLERANCES: u32 = 0x2000_8031;
 const TCODE_LAYER_RECORD: u32 = 0x2000_8050;
 const TCODE_OBJECT_RECORD: u32 = 0x2000_8070;
@@ -220,6 +223,17 @@ fn write_seekable(
     Ok(())
 }
 
+/// The archive OpenNURBS version a written archive declares. Archive 50
+/// stores the year-month-day form of the version.
+fn declared_opennurbs_version(version: RhinoArchiveVersion) -> i64 {
+    match version {
+        RhinoArchiveVersion::V5 => OPENNURBS_WRITER_VERSION_ARCHIVE_50,
+        RhinoArchiveVersion::V6 | RhinoArchiveVersion::V7 | RhinoArchiveVersion::V8 => {
+            OPENNURBS_WRITER_VERSION
+        }
+    }
+}
+
 fn write_archive_prefix(
     ir: &CadIr,
     version: RhinoArchiveVersion,
@@ -231,7 +245,7 @@ fn write_archive_prefix(
         TCODE_PROPERTIES_TABLE,
         &[short_chunk(
             TCODE_PROPERTIES_OPENNURBS_VERSION,
-            OPENNURBS_WRITER_VERSION,
+            declared_opennurbs_version(version),
         )],
     )?)?;
     output.write_all(&table(
@@ -994,16 +1008,9 @@ fn brep_payload(
         .iter()
         .enumerate()
         .map(|(index, loop_)| {
-            let face = &model.faces[loop_.face];
             let mut record = wire_index(index)?.to_le_bytes().to_vec();
             record.extend(indexes(&wire_indexes(loop_.coedges.iter().copied())?)?);
-            record.extend(
-                brep_loop_type(
-                    face.source.loop_role(&loop_.source.id),
-                    face.loops.first() == Some(&index),
-                )
-                .to_le_bytes(),
-            );
+            record.extend(brep_loop_type(loop_.role)?.to_le_bytes());
             record.extend(wire_index(loop_.face)?.to_le_bytes());
             Ok(record)
         })
@@ -1077,12 +1084,13 @@ fn brep_trim_type(edge_use_count: usize, two_uses_in_one_loop: bool) -> i32 {
     }
 }
 
-fn brep_loop_type(role: LoopBoundaryRole, first_on_face: bool) -> i32 {
+fn brep_loop_type(role: LoopBoundaryRole) -> Result<i32, CodecError> {
     match role {
-        LoopBoundaryRole::Outer => 1,
-        LoopBoundaryRole::Inner => 2,
-        LoopBoundaryRole::Unspecified if first_on_face => 1,
-        LoopBoundaryRole::Unspecified => 2,
+        LoopBoundaryRole::Outer => Ok(1),
+        LoopBoundaryRole::Inner => Ok(2),
+        LoopBoundaryRole::Unspecified => Err(CodecError::malformed(
+            "a written Brep loop has no outer or inner role",
+        )),
     }
 }
 

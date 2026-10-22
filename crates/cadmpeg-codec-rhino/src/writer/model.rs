@@ -9,7 +9,12 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vertex};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Sense, Vertex,
+};
+
+/// Samples per trim when the trim direction classifies a loop.
+const TRIM_DIRECTION_SAMPLES: u8 = 16;
 
 use super::{
     admit_pcurve, check_frame, check_nurbs_curve, check_nurbs_surface, check_object_attributes,
@@ -82,6 +87,8 @@ pub(super) struct WritableCoedge<'a> {
     pub(super) reversed_3d: bool,
     pub(super) c2: ([u8; 16], Vec<u8>),
     pub(super) fit_tolerance: f64,
+    /// Explicit trim-directed parameter-space curve.
+    pcurve: Option<&'a Pcurve>,
 }
 
 pub(super) struct WritablePcurve<'a> {
@@ -96,6 +103,8 @@ pub(super) struct WritableLoop<'a> {
     /// Coedges in Rhino trim order, with the face on their left about the
     /// surface normal.
     pub(super) coedges: Vec<usize>,
+    /// Outer or inner, from the face classification or the trim direction.
+    pub(super) role: LoopBoundaryRole,
 }
 
 pub(super) struct WritableFace<'a> {
@@ -645,6 +654,7 @@ impl<'a> WritableModel<'a> {
                     source: loop_,
                     face,
                     coedges,
+                    role: faces[face].source.loop_role(&loop_.id),
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
@@ -694,6 +704,7 @@ impl<'a> WritableModel<'a> {
                         )))
                     }
                 };
+                let explicit_pcurve = pcurve.as_ref().map(|pcurve| pcurve.source);
                 let fit_tolerance = pcurve
                     .as_ref()
                     .and_then(|pcurve| pcurve.source.fit_tolerance())
@@ -745,6 +756,7 @@ impl<'a> WritableModel<'a> {
                     reversed_3d,
                     c2,
                     fit_tolerance,
+                    pcurve: explicit_pcurve,
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
@@ -911,7 +923,135 @@ impl<'a> WritableModel<'a> {
                 }
             }
         }
+        result.classify_loops(ir)?;
         Ok(result)
+    }
+
+    /// Resolves each unclassified loop role. OpenNURBS requires the first loop
+    /// of a face to be outer and later loops to be inner, and computes the type
+    /// from the trim direction: a counterclockwise loop is outer.
+    fn classify_loops(&mut self, ir: &CadIr) -> Result<(), CodecError> {
+        for face in 0..self.faces.len() {
+            let loops = self.faces[face].loops.clone();
+            if loops
+                .iter()
+                .all(|index| self.loops[*index].role != LoopBoundaryRole::Unspecified)
+            {
+                continue;
+            }
+            if let [only] = loops.as_slice() {
+                self.loops[*only].role = LoopBoundaryRole::Outer;
+                continue;
+            }
+            let tolerance = stated_write_tolerance(
+                self.faces[face].source.tolerance,
+                ir,
+                self.faces[face].source.id.as_str(),
+            )?;
+            let mut outer = Vec::new();
+            for index in &loops {
+                let twice_area = self.loop_twice_area(*index)?;
+                if !twice_area.is_finite() || twice_area.abs() <= tolerance * tolerance {
+                    return Err(CodecError::NotImplemented(format!(
+                        "loop {} has no trim direction to classify it",
+                        self.loops[*index].source.id.as_str()
+                    )));
+                }
+                self.loops[*index].role = if twice_area > 0.0 {
+                    outer.push(*index);
+                    LoopBoundaryRole::Outer
+                } else {
+                    LoopBoundaryRole::Inner
+                };
+            }
+            let [outer] = outer.as_slice() else {
+                return Err(CodecError::NotImplemented(format!(
+                    "face {} trim directions state {} outer loops",
+                    self.faces[face].source.id.as_str(),
+                    outer.len()
+                )));
+            };
+            let face = &mut self.faces[face];
+            face.loops.retain(|index| index != outer);
+            face.loops.insert(0, *outer);
+        }
+        Ok(())
+    }
+
+    /// Twice the signed parameter-space area of a loop, sampled along each
+    /// trim in Rhino trim direction.
+    fn loop_twice_area(&self, loop_index: usize) -> Result<f64, CodecError> {
+        let loop_ = &self.loops[loop_index];
+        let surface = &self.surfaces[self.faces[loop_.face].surface];
+        let mut boundary = Vec::new();
+        for position in &loop_.coedges {
+            let coedge = &self.coedges[*position];
+            let edge = &self.edges[coedge.edge];
+            let domain = edge.domain;
+            for step in 0..TRIM_DIRECTION_SAMPLES {
+                let fraction = f64::from(step) / f64::from(TRIM_DIRECTION_SAMPLES);
+                let sample =
+                    cadmpeg_ir::math::interpolate(domain[0].get(), domain[1].get(), fraction)
+                        .ok_or_else(|| CodecError::malformed("non-finite trim sample parameter"))?;
+                let uv = match surface {
+                    WritableFaceSurface::Plane {
+                        origin,
+                        normal,
+                        u_axis,
+                    } => {
+                        let parameter = if coedge.reversed_3d {
+                            cadmpeg_ir::math::reflect_parameter(sample, domain[0], domain[1])
+                                .ok_or_else(|| {
+                                    CodecError::malformed("reversed edge parameter is non-finite")
+                                })?
+                        } else {
+                            sample
+                        };
+                        // A non-finite point gives a non-finite area, which is refused.
+                        let point = match edge.curve.point(parameter) {
+                            Ok(point) => point.get(),
+                            Err(failure) => failure.non_finite()?.ok_or_else(|| {
+                                CodecError::malformed(format_args!(
+                                    "edge curve {} cannot be evaluated over its edge domain",
+                                    edge.curve_id
+                                ))
+                            })?,
+                        };
+                        let uv = super::plane_uv(point, *origin, *u_axis, normal.cross(*u_axis));
+                        [uv[0], uv[1]]
+                    }
+                    WritableFaceSurface::Nurbs { .. } => {
+                        let pcurve = coedge.pcurve.ok_or_else(|| {
+                            CodecError::NotImplemented(format!(
+                                "coedge {} has no explicit pcurve",
+                                coedge.source.id.as_str()
+                            ))
+                        })?;
+                        let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
+                            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                            &pcurve.geometry,
+                            sample.get(),
+                        ) {
+                            Ok(uv) => uv.get(),
+                            Err(failure) => failure.non_finite()?.ok_or_else(|| {
+                                CodecError::malformed(format_args!(
+                                    "pcurve {} cannot be evaluated over its edge domain",
+                                    pcurve.id.as_str()
+                                ))
+                            })?,
+                        };
+                        [uv.u, uv.v]
+                    }
+                };
+                boundary.push(uv);
+            }
+        }
+        Ok(boundary
+            .iter()
+            .zip(boundary.iter().cycle().skip(1))
+            .take(boundary.len())
+            .map(|(from, to)| from[0] * to[1] - to[0] * from[1])
+            .sum())
     }
 
     /// The start and end vertices of a coedge in Rhino trim direction.

@@ -320,7 +320,9 @@ pub(crate) fn apply_userdata(
     for extra in userdata
         .iter()
         .filter_map(UserdataDescriptor::known)
-        .filter(|value| value.class_uuid == GRADIENT_COLOR_DATA)
+        .filter(|value| {
+            value.class_uuid == GRADIENT_COLOR_DATA && value.item_uuid == GRADIENT_COLOR_DATA
+        })
     {
         match parse_gradient_userdata(data, extra, scale, archive) {
             Ok(gradient) => {
@@ -629,7 +631,7 @@ pub(crate) mod tests {
             range: 0..payload.len(),
             version: (2, 2),
             class_uuid: GRADIENT_COLOR_DATA,
-            item_uuid: Uuid::nil(),
+            item_uuid: GRADIENT_COLOR_DATA,
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,

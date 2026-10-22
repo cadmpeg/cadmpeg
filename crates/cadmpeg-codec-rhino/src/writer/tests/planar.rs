@@ -463,3 +463,80 @@ fn planar_solid_orientation_is_translation_and_scale_invariant() {
         assert_eq!(planar_solid_orientation(&model), 2);
     }
 }
+
+fn unclassified_hole_sheet(hole: &[Point3]) -> cadmpeg_ir::CadIr {
+    let mut ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(4.0, 0.0, 0.0),
+        Point3::new(4.0, 3.0, 0.0),
+        Point3::new(0.0, 3.0, 0.0),
+    ]);
+    add_polygon_hole(&mut ir, hole);
+    let loops = ir.model.faces[0].loops.to_vec();
+    ir.model.faces[0].loops =
+        cadmpeg_ir::topology::FaceLoops::unspecified(loops.into_iter().rev().collect());
+    ir.model.loops.reverse();
+    ir
+}
+
+fn write_v8(ir: &cadmpeg_ir::CadIr) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(
+            EncodeInput { ir, fidelity: None },
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))?;
+    Ok(bytes)
+}
+
+#[test]
+fn unclassified_loops_take_their_role_from_trim_direction() {
+    let ir = unclassified_hole_sheet(&[
+        Point3::new(1.0, 1.0, 0.0),
+        Point3::new(1.0, 2.0, 0.0),
+        Point3::new(3.0, 2.0, 0.0),
+        Point3::new(3.0, 1.0, 0.0),
+    ]);
+    let bytes = write_v8(&ir).expect("write the sheet");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the written sheet");
+    // The reader falls back from a face whose first loop is not outer.
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .all(|loss| !loss.code.to_string().contains("brep-fallback")),
+        "{:?}",
+        decoded.report().losses
+    );
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().model.loops.len(), 2);
+    let model = crate::writer::model::WritableModel::try_new(&ir).expect("writable sheet");
+    let outer = &model.loops[model.faces[0].loops[0]];
+    assert_eq!(outer.source.id.as_str(), "cadir:model:loop#polygon");
+    assert_eq!(outer.role, cadmpeg_ir::topology::LoopBoundaryRole::Outer);
+    assert_eq!(
+        model.loops[model.faces[0].loops[1]].role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Inner
+    );
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("validate the neutral model")
+        .is_ok());
+}
+
+#[test]
+fn two_counterclockwise_unclassified_loops_are_refused() {
+    let ir = unclassified_hole_sheet(&[
+        Point3::new(1.0, 1.0, 0.0),
+        Point3::new(3.0, 1.0, 0.0),
+        Point3::new(3.0, 2.0, 0.0),
+        Point3::new(1.0, 2.0, 0.0),
+    ]);
+    assert!(matches!(
+        write_v8(&ir),
+        Err(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("2 outer loops")
+    ));
+}

@@ -1634,12 +1634,8 @@ fn resolve_identity(
             ));
             None
         }
-        ColorSource::Parent if definition_member => {
-            warnings.push(format_args!(
-                "object {object_id} parent color remains unresolved"
-            ));
-            None
-        }
+        // Each placing instance reference supplies the member color.
+        ColorSource::Parent if definition_member => None,
         ColorSource::Parent => layer.map(|value| value.color),
         ColorSource::Invalid(raw) => {
             warnings.push_coded(
@@ -1671,7 +1667,7 @@ fn resolve_identity(
     let layer = layer
         .map(|value| {
             Ok::<LayerRef, cadmpeg_core::CodecError>(LayerRef {
-                id: value.id,
+                id: layers.unique_id(value),
                 name: value.name.clone(),
             })
         })
@@ -1961,6 +1957,7 @@ pub(crate) fn resolve_identities(
 
 struct LayerLookup<'a> {
     entries: HashMap<i32, LayerEntry<'a>>,
+    id_counts: HashMap<Uuid, usize>,
 }
 
 enum LayerEntry<'a> {
@@ -1978,10 +1975,21 @@ impl<'a> LayerLookup<'a> {
     fn new() -> Self {
         Self {
             entries: HashMap::new(),
+            id_counts: HashMap::new(),
         }
     }
 
+    /// The layer UUID when exactly one layer record serializes it.
+    fn unique_id(&self, layer: &crate::settings::LayerRecord) -> Option<Uuid> {
+        layer
+            .id
+            .filter(|id| self.id_counts.get(id).copied() == Some(1))
+    }
+
     fn insert(&mut self, layer: &'a crate::settings::LayerRecord) {
+        if let Some(id) = layer.id {
+            *self.id_counts.entry(id).or_insert(0) += 1;
+        }
         match self.entries.entry(layer.index) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(LayerEntry::Unique(layer));

@@ -1198,3 +1198,49 @@ fn optional_properties_tables_do_not_control_independent_objects() {
         assert!(!scan.opaque_records.is_empty());
     }
 }
+
+#[test]
+fn unregistered_table_typecode_is_skipped_as_a_bounded_unit() {
+    let archive = ArchiveVersion::V5;
+    let future_record = crc_chunk(archive, 0x2000_80a0, &[7, 7]);
+    let bytes = minimal_document(
+        "90",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0022, &[]),
+            table(archive, 0x1000_0027, &[future_record]),
+            table(archive, 0x1000_0028, &[]),
+            table(archive, 0x1000_0021, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let scan = super::scan_owned(bytes).expect("an unregistered table is bounded");
+    assert_eq!(scan.tables.len(), 7);
+    assert!(scan.objects.is_empty());
+    assert_eq!(scan.opaque_records.len(), 1);
+    assert_eq!(scan.opaque_records[0].table_typecode, 0x1000_0027);
+    assert_eq!(scan.opaque_records[0].record.typecode, 0x2000_80a0);
+    assert!(scan
+        .warnings
+        .messages()
+        .any(|note| note.contains("unregistered table 0x10000027")));
+}
+
+#[test]
+fn a_top_level_chunk_outside_the_table_family_remains_fatal() {
+    let archive = ArchiveVersion::V5;
+    let bytes = minimal_document(
+        "90",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_1027, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    assert!(matches!(
+        super::scan_owned(bytes),
+        Err(CodecError::Malformed(message)) if message.contains("expected table or EOF")
+    ));
+}

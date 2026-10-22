@@ -252,3 +252,47 @@ fn malformed_gradient_userdata_retains_typed_hatch_and_complete_object_record() 
     assert_eq!(retained.data(), Some(hatch.as_slice()));
     assert_valid(&result);
 }
+
+#[test]
+fn the_first_readable_duplicate_gradient_owns_the_hatch_gradient() {
+    let archive = ArchiveVersion::V8;
+    let malformed =
+        crate::test_support::test_dump::anonymous_chunk(archive, 0, &5_i32.to_le_bytes());
+    let malformed = gradient_userdata_with_payload(archive, &malformed);
+    let valid = gradient_userdata(archive, 1);
+    for userdata in [
+        [malformed.clone(), valid.clone()].concat(),
+        [valid.clone(), malformed.clone()].concat(),
+    ] {
+        let hatch = hatch_record(archive, &userdata);
+        let result = decode(support::archive_writer("80", 202_608_010, &[hatch]));
+        let parameters = hatch_parameters(&result);
+        assert!(parameters
+            .get("gradient")
+            .is_some_and(|value| value.contains("linear")));
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.message.contains("hatch userdata extension failed")
+                && loss.message.contains("invalid gradient type")
+        }));
+        assert_valid(&result);
+    }
+}
+
+#[test]
+fn a_gradient_class_under_another_item_uuid_is_not_the_hatch_gradient() {
+    let archive = ArchiveVersion::V8;
+    let userdata =
+        crate::test_support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
+            archive,
+            crate::hatch::GRADIENT_COLOR_DATA.to_wire(),
+            [0x5a; 16],
+            GRADIENT_APPLICATION,
+            60,
+            202_608_010,
+            &gradient_payload(archive, 1),
+        );
+    let hatch = hatch_record(archive, &userdata);
+    let result = decode(support::archive_writer("80", 202_608_010, &[hatch]));
+    assert!(!hatch_parameters(&result).contains_key("gradient"));
+    assert_valid(&result);
+}

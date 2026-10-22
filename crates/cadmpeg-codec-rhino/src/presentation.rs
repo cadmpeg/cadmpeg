@@ -31,6 +31,12 @@ use crate::settings::{self, MillimeterScale, StandardUnit, UnitBinding};
 use crate::wire::{read_finite, scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
+/// First OpenNURBS version whose archive-60-or-later material uses the
+/// anonymous form.
+const FIRST_WRITER_WITH_MODERN_MATERIAL: i64 = 2_348_833_910;
+/// Last archive-60 OpenNURBS version whose minor-0 dimension style ends
+/// before the arrow-block UUIDs.
+const LAST_WRITER_WITHOUT_ARROW_BLOCKS: i64 = 2_348_833_437;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
 const UTF8_STRING_CHUNK: u32 = 0x4000_8001;
 const MATERIAL_TABLE: u32 = 0x1000_0010;
@@ -2446,7 +2452,8 @@ fn parse_material(
     if matches!(archive, ArchiveVersion::V2 | ArchiveVersion::V3) {
         return parse_v2_v3_material(ctx, data, range, source_offset, physically_based);
     }
-    let framed = data.get(range.start).copied() == Some(0);
+    let framed = archive.value() >= 60
+        && writer_version.is_some_and(|version| version >= FIRST_WRITER_WITH_MODERN_MATERIAL);
     let (mut reader, component, minor, modern) = if framed {
         let (mut reader, version) = anonymous(data, range, archive)?;
         if version.0 != 1 || version.1 < 0 {
@@ -3178,7 +3185,7 @@ fn named_child(
 fn dimension_style_controls(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    archive: ArchiveVersion,
+    (archive, writer_version): (ArchiveVersion, Option<i64>),
     scale: MillimeterScale,
     minor: i32,
 ) -> Result<DimensionControlEntries, FramingError> {
@@ -3291,6 +3298,13 @@ fn dimension_style_controls(
     put!("angular_zero_suppression", reader.u32()?);
     put!("alternate_below", reader.bool()?);
     put!("arrow_types", [reader.u32()?, reader.u32()?, reader.u32()?]);
+    if minor <= 0
+        && archive == ArchiveVersion::V6
+        && writer_version.is_none_or(|version| version <= LAST_WRITER_WITHOUT_ARROW_BLOCKS)
+    {
+        reader.skip_remaining()?;
+        return Ok(values);
+    }
     put!(
         "arrow_block_uuids",
         [
@@ -3624,7 +3638,7 @@ fn parse_dimension_style(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
-    archive: ArchiveVersion,
+    (archive, writer_version): (ArchiveVersion, Option<i64>),
     scale: MillimeterScale,
     source_offset: usize,
 ) -> Result<DimensionStyleRecord, FramingError> {
@@ -3666,7 +3680,13 @@ fn parse_dimension_style(
     let suppress_extension_line_1 = reader.bool()?;
     let suppress_extension_line_2 = reader.bool()?;
     let parent = uuid(&mut reader)?;
-    let controls = dimension_style_controls(data, &mut reader, archive, scale, version.1)?;
+    let controls = dimension_style_controls(
+        data,
+        &mut reader,
+        (archive, writer_version),
+        scale,
+        version.1,
+    )?;
     Ok(DimensionStyleRecord {
         id: if component.id.is_nil() {
             format!("rhino:presentation:dimension_style#record-{source_offset}")
@@ -4846,7 +4866,7 @@ pub(crate) fn install(
                         ctx,
                         scan.data,
                         range,
-                        scan.archive,
+                        (scan.archive, scan.metadata.properties.writer_version),
                         scale,
                         record.range.start,
                     ) {

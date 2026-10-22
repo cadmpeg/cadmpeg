@@ -998,7 +998,7 @@ fn dimension_style_future_minor_preserves_known_prefix_and_suffix() {
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
-        ArchiveVersion::V8,
+        (ArchiveVersion::V8, None),
         crate::settings::MillimeterScale::IDENTITY,
         321,
     )
@@ -1039,7 +1039,7 @@ fn dimension_style_current_minor_transfers_new_text_controls() {
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
-        ArchiveVersion::V8,
+        (ArchiveVersion::V8, None),
         crate::settings::MillimeterScale::IDENTITY,
         654,
     )
@@ -1053,6 +1053,46 @@ fn dimension_style_current_minor_transfers_new_text_controls() {
         serde_json::json!(1.75)
     );
     assert_eq!(value.source_offset, 654);
+}
+
+fn minor_zero_dimension_style_without_arrow_blocks() -> Vec<u8> {
+    let chunk = dimension_style_chunk(0, &[]);
+    let body = &chunk[20..chunk.len() - 4];
+    let end = body
+        .windows(16)
+        .position(|window| window == [0x66; 16])
+        .expect("the fixture writes arrow-block UUIDs");
+    anonymous(0, &body[..end])
+}
+
+#[test]
+fn archive_60_minor_0_dimension_style_stops_before_arrow_blocks_for_old_writers() {
+    let bytes = minor_zero_dimension_style_without_arrow_blocks();
+    let parse = |archive, writer_version| {
+        parse_dimension_style(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            0..bytes.len(),
+            (archive, writer_version),
+            crate::settings::MillimeterScale::IDENTITY,
+            0,
+        )
+    };
+    for writer_version in [None, Some(2_348_833_437)] {
+        let value = parse(ArchiveVersion::V6, writer_version).expect("old writer form");
+        assert_eq!(
+            value.details.controls()["arrow_types"],
+            serde_json::json!([82, 83, 84])
+        );
+        assert!(!value
+            .details
+            .controls()
+            .0
+            .iter()
+            .any(|(name, _)| name == "arrow_block_uuids"));
+    }
+    assert!(parse(ArchiveVersion::V6, Some(2_348_833_438)).is_err());
+    assert!(parse(ArchiveVersion::V7, None).is_err());
 }
 
 #[test]

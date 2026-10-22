@@ -2,7 +2,7 @@
 
 use crate::writer::{
     archive_body_len, archive_final_size, brep_loop_type, brep_trim_type, check_object_attributes,
-    native_i32_count, object_attributes_payload, utf16, wire_index,
+    declared_opennurbs_version, native_i32_count, object_attributes_payload, utf16, wire_index,
 };
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
@@ -92,12 +92,12 @@ fn brep_trim_type_distinguishes_boundary_mated_and_seam_uses() {
 }
 
 #[test]
-fn explicit_loop_role_overrides_face_list_order() {
+fn loop_type_is_written_only_for_a_resolved_role() {
     use cadmpeg_ir::topology::LoopBoundaryRole;
 
-    assert_eq!(brep_loop_type(LoopBoundaryRole::Inner, true), 2);
-    assert_eq!(brep_loop_type(LoopBoundaryRole::Outer, false), 1);
-    assert_eq!(brep_loop_type(LoopBoundaryRole::Unspecified, true), 1);
+    assert_eq!(brep_loop_type(LoopBoundaryRole::Inner).unwrap(), 2);
+    assert_eq!(brep_loop_type(LoopBoundaryRole::Outer).unwrap(), 1);
+    assert!(brep_loop_type(LoopBoundaryRole::Unspecified).is_err());
 }
 
 #[test]
@@ -279,4 +279,21 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
         .expect_err("layer metadata must not be discarded");
     assert!(error.to_string().contains("survival handling"));
     assert_eq!(output, [0xaa]);
+}
+
+#[test]
+fn written_archives_declare_the_reference_opennurbs_version() {
+    // ON::Version() and ArchiveOpenNURBSVersionToWrite() of OpenNURBS
+    // 8.35.26251.13000.
+    assert_eq!(
+        declared_opennurbs_version(RhinoArchiveVersion::V5),
+        202_609_088
+    );
+    for version in [
+        RhinoArchiveVersion::V6,
+        RhinoArchiveVersion::V7,
+        RhinoArchiveVersion::V8,
+    ] {
+        assert_eq!(declared_opennurbs_version(version), 2_425_133_316);
+    }
 }

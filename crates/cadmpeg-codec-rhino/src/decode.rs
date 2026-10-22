@@ -2089,6 +2089,33 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
+    /// Removes the source-record links this expansion added to `targets`.
+    fn unlink_expansion_targets(
+        &mut self,
+        mut targets: Vec<String>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        targets.sort_unstable();
+        let Some(undo) = &mut self.expansion_undo else {
+            return Ok(());
+        };
+        let mut removed = Vec::new();
+        undo.links.retain(|(record, link)| {
+            let omitted = targets.binary_search(link).is_ok();
+            if omitted {
+                removed.push((*record, link.clone()));
+            }
+            !omitted
+        });
+        for (record, link) in removed {
+            if let Some((_, links)) = self.session.unknown_links_mut(record)? {
+                if let Ok(position) = links.binary_search(&link) {
+                    links.remove(position);
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn expand_reference_inner(
         &mut self,
         source_order: usize,
@@ -2388,15 +2415,19 @@ impl<'a> DecodeContext<'a> {
             || model.procedural_surfaces.len() > procedural_surface_start
         {
             let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
+            let mut omitted = Vec::new();
             for procedure in &model.procedural_curves[procedural_curve_start..] {
                 annotations.remove_entity(procedure.id.as_str());
+                omitted.push(procedure.id.as_str().to_owned());
             }
             for procedure in &model.procedural_surfaces[procedural_surface_start..] {
                 annotations.remove_entity(procedure.id.as_str());
+                omitted.push(procedure.id.as_str().to_owned());
             }
             self.annotations = annotations.build();
             model.procedural_curves.truncate(procedural_curve_start);
             model.procedural_surfaces.truncate(procedural_surface_start);
+            self.unlink_expansion_targets(omitted)?;
             self.report.phase_warnings.push(format_args!("instance: transformed procedural definition omitted; exact solved carrier retained"));
         }
         for id in derived_ids {

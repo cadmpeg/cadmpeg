@@ -1526,6 +1526,7 @@ fn parse_named_cplanes(
     record: &Record,
     archive: ArchiveVersion,
     scale: MillimeterScale,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<NamedConstructionPlane>, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let count_offset = reader.position();
@@ -1543,6 +1544,15 @@ fn parse_named_cplanes(
                 reader.position(),
                 "named construction-plane record is invalid",
             ));
+        }
+        if let Some(warning) = direct_view_child_checksum_warning(data, &chunk)? {
+            push_view_loss(
+                losses,
+                crate::loss::RhinoLossCode::IntegrityFailure,
+                chunk.header_start,
+                view_checksum_tag(chunk.typecode),
+                format_args!("{warning}"),
+            );
         }
 
         values.push(NamedConstructionPlane {
@@ -1607,7 +1617,8 @@ pub(crate) fn install(
                     );
                     continue;
                 };
-                match parse_named_cplanes(ctx, scan.data, record, scan.archive, scale) {
+                match parse_named_cplanes(ctx, scan.data, record, scan.archive, scale, &mut losses)
+                {
                     Ok(values) => {
                         cplanes.extend(values);
                     }
@@ -1777,9 +1788,47 @@ mod tests {
             &record,
             archive,
             crate::settings::MillimeterScale::IDENTITY,
+            &mut Vec::new(),
         )
         .expect("parse named construction planes");
         assert_eq!(values.len(), 1);
+    }
+
+    #[test]
+    fn named_construction_plane_child_crc_is_checked_before_transfer() {
+        let archive = ArchiveVersion::V5;
+        let mut bytes = 1_i32.to_le_bytes().to_vec();
+        bytes.extend(crc_chunk(
+            archive,
+            super::VIEW_CPLANE,
+            &construction_plane(),
+        ));
+        let crc = bytes.len() - 4;
+        bytes[crc] ^= 0xff;
+        let record = Record::long(NAMED_CPLANES, 0..bytes.len(), 0..bytes.len());
+        let mut losses = Vec::new();
+        let values = super::parse_named_cplanes(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            &mut losses,
+        )
+        .expect("a stale child CRC is recoverable");
+        assert_eq!(values.len(), 1);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.to_string(),
+            "rhino/container.integrity-failure"
+        );
+        assert_eq!(
+            losses[0]
+                .provenance
+                .as_ref()
+                .and_then(|value| value.tag.as_deref()),
+            Some("VIEW/CPLANE")
+        );
     }
 
     #[test]

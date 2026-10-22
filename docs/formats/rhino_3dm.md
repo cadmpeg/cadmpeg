@@ -224,7 +224,11 @@ CRC32("123456789") = 0xcbf43926
 ```
 
 A checksum mismatch does not change the declared framing boundary. A missing
-checksum or invalid boundary makes the chunk structurally invalid.
+checksum or invalid boundary makes the chunk structurally invalid. The reader
+reads the body of a chunk whose CRC does not match and keeps the fields it
+reads. Each mismatch is an integrity failure at error severity. The reader that
+consumes a nested CRC-bearing chunk checks that chunk, because the CRC of its
+container excludes it.
 
 ### 4.2 Bounded cursors
 
@@ -409,10 +413,6 @@ document termination.
 | named construction planes | `0x20008035` |
 | named views               | `0x20008036` |
 | views                     | `0x20008037` |
-
-The writer-version property is the openNURBS packed version `0xa0000026`.
-Version-gated readers use this stored value independently of the archive
-version.
 | current layer             | `0xa0000038` |
 | current material          | `0x20008039` |
 | current color             | `0x2000803a` |
@@ -433,6 +433,17 @@ version.
 | dictionary entry          | `0x40008012` |
 | dictionary end            | `0xc0000013` |
 | XDATA                     | `0x40000001` |
+
+The writer-version property is a short chunk with typecode `0xa0000026`. Its
+value is the archive OpenNURBS version. Archives 2 through 4 and 50 store that
+version in the year-month-day form `((yyyy × 100 + mm) × 100 + dd) × 10 + n`,
+where `n` is the major version clamped to 9. Archives 60 and later store the
+packed form
+`(((major × 128 + minor) × 65536 + time) × 4 + platform) | 0x80000000`,
+where `time` is `(year − 2000) × 367 + day of year` and `platform` is 0
+developer, 1 Windows, or 2 Mac OS.
+Version-gated readers use this stored value independently of the archive
+version.
 
 The compressed-preview record (`0x20008025`) body is:
 
@@ -562,7 +573,17 @@ The normal V2+ table sequence is:
 18. EOF.
 
 Optional tables may be absent. A table is a bounded table chunk containing
-record chunks. A short `TCODE_ENDOFTABLE` with value zero normally terminates
+record chunks.
+
+A top-level long chunk whose typecode satisfies
+`typecode & 0xfffff000 == 0x10000000` and that is not in the section 6.1
+registry is an unregistered table. It occupies no position in the table
+sequence and can occur between any two tables; the reader skips it as one
+bounded unit and the table order of the registered tables is unchanged. Its
+records have no typed owner and remain opaque source records. Archive version
+90 writes the unregistered tables `0x10000027`, `0x10000028`, and
+`0x10000029` between the hatch-pattern table and the instance-definition
+table. Any other top-level typecode before end of file is a framing error. A short `TCODE_ENDOFTABLE` with value zero normally terminates
 the records. If the marker is absent, the table chunk boundary terminates the
 records and scanning emits a warning. A present marker must be the final table
 child. Every record is contained within the table bound.
@@ -749,8 +770,10 @@ reference through nested definitions to the referenced definition geometry.
 
 A class userdata chunk begins with a packed version byte.
 
-An object accepts one userdata item for each item UUID. A duplicate item UUID
-is rejected by attachment, so the first serialized item owns the object state.
+An object accepts one userdata item for each item UUID. The reader reads each
+item before attachment and discards an item whose read fails. Attachment
+rejects an item whose item UUID is already attached, so the first serialized
+item that reads owns the object state.
 Attached built-in extension readers that select by class UUID use the first
 serialized matching item; later matching items remain bounded source records and
 do not replace it. An obsolete extension that is consumed by `DeleteAfterRead`
@@ -2387,9 +2410,17 @@ userdata transfer diagnostic. No class-owned userdata field is admitted when
 this fallback applies.
 
 The archive layer index is the object-reference key. If two layer records use
-one archive index, component registration keeps the original index on the
-first record and assigns a distinct unused index to each later record.
-References to the original index therefore resolve to the first record.
+one archive index, OpenNURBS component registration keeps the original index on
+the first record and assigns a distinct unused index to each later record. If
+two layer records use one UUID, registration keeps the UUID on the first record
+and generates a new UUID for each later record.
+
+CADIR decision: the decoder generates no index or UUID. Each layer record keeps
+its serialized index and UUID. An object reference to a duplicated index binds
+no layer, and the decoder reports the collision. An object reference to a
+unique index binds that layer; when the layer UUID is duplicated, the binding
+names the layer without its UUID. A presentation layer whose UUID is duplicated
+is keyed by its index and source offset.
 
 ### 8.4 Rendering attributes
 
@@ -2550,7 +2581,10 @@ weight 0.0.
 
 The color source values are 0 layer color, 1 object color, 2 unresolved
 material color, and 3 parent color for an instance-definition member or layer
-color for another object. Other values retain the raw selector, leave neutral
+color for another object. A member with source 3 takes the effective color of
+each instance reference that places it, at placement; a reference whose own
+source is 3 inside another definition passes on the color of its placing
+reference. A member that no reference places has no color. Other values retain the raw selector, leave neutral
 color unset, and emit a typed degradation loss.
 
 The low nibble of object mode is 0 normal, 1 hidden, 2 locked, or 3 instance-
@@ -3689,9 +3723,17 @@ i32 reversed surface
 i32 face material channel
 ```
 
-An explicit neutral outer or inner boundary role selects loop type 1 or 2.
-When the role is unspecified, the first loop of a face is outer and the other
-loops are inner.
+The first loop index of a face names an outer loop, and every later loop
+index names an inner or slit loop. OpenNURBS computes an outer or inner type
+from the trim direction in surface parameter space: a counterclockwise loop is
+outer and a clockwise loop is inner.
+
+An explicit neutral outer or inner boundary role selects loop type 1 or 2. A
+single unclassified loop is outer, because the first loop of a face is outer.
+For a face with more unclassified loops, the signed parameter-space area of
+each loop, sampled along its trims, selects outer for a positive area and
+inner for a negative area. The writer places the outer loop first. A face with a degenerate
+loop area, or with other than one counterclockwise loop, is refused.
 
 The face array uses packed version 1.1 below archive 70 and 1.2 at archive 70
 and later. Version 1.1 appends one UUID per face. Version 1.2 then appends a
@@ -4427,6 +4469,11 @@ remain typed. The `gradient` parameter is omitted, the codec emits the existing
 `hatch userdata extension failed` diagnostic, and the complete containing
 `TCODE_OBJECT_RECORD` remains retained. No field from the failed gradient
 payload enters typed native data.
+
+The hatch gradient is the userdata item whose class UUID and item UUID are both
+the `ON_GradientColorData` class UUID. Among such items, the first one whose
+payload reads owns the gradient. A failed item is not attached, so a later
+duplicate that reads supplies the gradient.
 
 ### 18.3 Detail views
 
@@ -5261,8 +5308,12 @@ Before writer version 1 December 2009, transparent RGB `(128,128,128)` is the
 obsolete default and the diffuse color replaces the complete transparent
 color.
 
-For archive versions 4, 5, and 50, the class-data payload begins with packed
-version `2.0`, followed by one anonymous long chunk. This outer version is a
+The archive version and the archive OpenNURBS version select the material
+form. Archive versions 60 and later with an archive OpenNURBS version of at
+least 2348833910 use the anonymous form above. Archive versions 4, 5, and 50,
+and archive versions 60 and later whose archive OpenNURBS version is absent or
+below 2348833910, use the packed form: the class-data payload begins with
+packed version `2.0`, followed by one anonymous long chunk. This outer version is a
 material-format discriminator; it has no fields beyond the child boundary.
 The child has major 1 and a nonnegative minor. Minor 1 adds the obsolete
 library string; minor 2 adds material channels; minor 3 adds shareable and
@@ -6033,6 +6084,11 @@ bool alternate text below main text
 3 × UUID arrow block IDs
 ```
 
+The minor-0 record of an archive-60 file whose archive OpenNURBS version is
+absent or at most 2348833437 ends after the leader arrow type: it has no
+arrow-block UUIDs, and the reader stops there and skips the rest of the chunk.
+Every other record carries the three UUIDs.
+
 The text-style index is the V5 referenced index in V1–V5 archives and is the
 unset `i32` value in V6 and later archives. A `color` is four channel bytes.
 The three child chunks and later fields are appended in minor gates:
@@ -6319,8 +6375,10 @@ repeat count times:
 ```
 
 The named-construction-plane list has the same count framing, with one long
-`TCODE_VIEW_CPLANE` child per count. The named-view and active-view lists use
-long `TCODE_VIEW_RECORD` children. The list records are CRC-bearing; their CRC
+`TCODE_VIEW_CPLANE` child per count. The reader checks the CRC of each counted
+`TCODE_VIEW_CPLANE` child before the plane transfers; a mismatch is an
+integrity failure tagged `VIEW/CPLANE`, and the plane transfers. The named-view
+and active-view lists use long `TCODE_VIEW_RECORD` children. The list records are CRC-bearing; their CRC
 covers the count and any direct suffix bytes and excludes each complete child
 chunk. Each child has its own CRC and bounded body. The readers require
 the defined child typecode for every counted child; an unexpected typecode or
@@ -6927,6 +6985,11 @@ if minor >= 1:
 if minor >= 2: i32 earth-coordinate-system enum
 ```
 
+When the minor is below 2, the latitude, longitude, and elevation are all zero,
+and the archive OpenNURBS version is absent or at most 2348834428, the three
+values are unset: the zeros do not state a position. The decoder admits no
+earth-anchor field.
+
 The earth-anchor writer emits version `1.2`. The legacy elevation-reference
 values are 0 ground level, 1 mean sea level, and 2 center of earth. The current
 earth-coordinate-system values are 0 unset, 1 ground level, 2 mean sea level,
@@ -7144,3 +7207,9 @@ grammar, but it does not by itself admit the object. All positional slots,
 cross-record references, finite-value gates, and topology invariants required
 by that grammar must pass. If one required invariant fails, the complete
 object record remains opaque and no partial typed topology is committed.
+
+A rejected candidate leaves no staged entity, annotation, or source-record
+link. A source record links to staged entities only after the candidate is
+admitted. Instance expansion records each link it adds; a rejected expansion
+removes every recorded link, and a placed entity that the expansion omits
+loses the links to it.

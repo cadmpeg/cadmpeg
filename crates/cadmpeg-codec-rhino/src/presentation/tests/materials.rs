@@ -332,3 +332,34 @@ fn physically_based_material_version_one_defaults_alpha() {
     assert_eq!(material.revision.version(), 1);
     assert_eq!(material.revision.alpha(), crate::test_support::finite(1.0));
 }
+
+#[test]
+fn archive_and_writer_versions_select_the_packed_material_form() {
+    let bytes = legacy_material_bytes([5, 6, 7, 8]);
+    let parse = |archive, writer_version| {
+        parse_material(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            MaterialParseInput {
+                range: 0..bytes.len(),
+                archive,
+                writer_version,
+                source_offset: 0,
+                physically_based: None,
+            },
+            &mut Vec::new(),
+        )
+    };
+    for writer_version in [None, Some(200_912_009), Some(2_348_833_909)] {
+        let material = parse(ArchiveVersion::V8, writer_version).expect("packed material form");
+        assert_eq!(material.name, "steel");
+        assert_eq!(material.diffuse, [5, 6, 7, 8]);
+    }
+    assert_eq!(
+        parse(ArchiveVersion::V8, Some(200_912_009))
+            .expect("packed material form")
+            .transparent,
+        [5, 6, 7, 8]
+    );
+    assert!(parse(ArchiveVersion::V8, Some(2_348_833_910)).is_err());
+}
