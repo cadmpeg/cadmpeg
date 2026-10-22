@@ -805,6 +805,10 @@ pub(crate) fn decode_parameter_owners(
         let bytes = scan.entry_bytes(&entry.name)?;
         let at = usize::try_from(header.byte_offset)
             .map_err(|_| malformed("primary header offset exceeds the platform address space"))?;
+        if records.frames(owner_index).next().is_none() {
+            // The lone record is the paired record of an omitted owner frame.
+            continue;
+        }
         let end = records
             .frames(owner_index)
             .find_map(|(start, end)| (start == at).then_some(end))
@@ -984,7 +988,7 @@ fn parse_parameter_owner_with(
         (repeated_scope(at)
             && frame.get(at + width) == Some(&1)
             && variant <= 1
-            && frame.get(at + width + 2) == Some(&0))
+            && frame.get(at + width + 2).is_some_and(|flag| *flag <= 1))
         .then_some((at, Some(variant)))
     });
     let with_compact_variant = companion_marker.checked_sub(width + 2).and_then(|at| {

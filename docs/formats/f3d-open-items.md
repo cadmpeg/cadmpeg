@@ -348,6 +348,41 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** An ownerless feature input has no owner binding in the current parameter model, and the meaning of the set trailer bytes is unknown.
 
+### DR-85. Flagged empty mesh-collection word
+
+**Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged empty mesh collection store, and can a flagged collection have bodies?
+
+**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. Every flagged collection is empty, and its u32 is `1`.
+
+**Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value and shows whether a flagged collection keeps bodies.
+
+### DR-86. Linked component-binding entity
+
+**Question.** What is the entity that a linked component context binding names between the component reference and the context UUID?
+
+**Known.** `f3d.md` §3.1 "A Design component naming-space type" gives the linked form. The entity is registered to type GUID `8ACBA2E5-5A4C-4438-8351-276DE96E6982`, add-in name `Fusion`, base-type GUID `046D6232-EDAB-414D-9CB0-A2E3F115AE1C`, and type version `4`. In a Design stream that uses the linked form, every component except the root component binds in this form, and several components can name the same entity.
+
+**Need.** A writer must emit the entity to produce the linked form. The shared entity can group components by their parent component or source document.
+
+
+### DR-87. Parameter-owner flag byte
+
+**Question.** What does the flag byte after the `variant` byte of a parameter owner store?
+
+**Known.** `f3d.md` §3.1 "Every dimension or feature-input parameter stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero.
+
+**Need.** The flag can mark a driven or suppressed parameter. A design that toggles one dimension between driving and driven, saved in each state, fixes the meaning.
+
+
+### DR-88. Secondary asset-folder run
+
+**Question.** What separates the assets of the secondary asset-folder run of the top-level manifest from the assets of the first run?
+
+**Known.** `f3d.md` §1.3 "The asset-folder tail is the unique suffix" gives both runs. The secondary run is empty in most documents. In documents that also store a toolpath, animation, or simulation asset, it lists the `Simulation Model` folder, and the first run lists the Design, toolpath, and animation folders.
+
+**Need.** A writer must place each asset in the correct run. A document with two simulation studies, or with a simulation asset and no toolpath, shows which asset kinds the secondary run holds.
+
+
 ## 2. External references
 
 ### DR-82. Other joint freedom codes and the limit flags

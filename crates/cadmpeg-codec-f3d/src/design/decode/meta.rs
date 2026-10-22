@@ -22,6 +22,11 @@ use crate::records::{
 const COMPONENT_MODULE: &str = "Component";
 const COMPONENT_NAMING_SPACE_BASE_TYPE_GUID: &str = "21F379C8-CAFD-4985-B461-767673A4C502";
 const COMPONENT_UUID_RESERVED_LENGTHS: [usize; 2] = [2, 3];
+/// Type of the entity a linked component binding names between the
+/// component reference and its context UUID.
+const COMPONENT_BINDING_LINK_TYPE_GUID: &str = "8ACBA2E5-5A4C-4438-8351-276DE96E6982";
+/// Zero bytes after each reference of a linked component binding.
+const COMPONENT_BINDING_LINK_RESERVED_LEN: usize = 2;
 
 /// Stable Design type identity of the record that owns the ordered feature
 /// scope list.
@@ -145,6 +150,36 @@ fn typed_component_context_uuid(bytes: &[u8], after_reference: usize) -> Option<
         .find_map(|at| Some((lp_utf16_bounded(bytes, at, 36..=36)?.0, at)))
 }
 
+/// The component, context UUID, and UUID offset of a linked binding at
+/// `marker`: a component reference and a reference to a link entity, each
+/// followed by its reserved zero bytes, then the context UUID.
+fn linked_component_binding(
+    bytes: &[u8],
+    marker: usize,
+    component_entities: &HashSet<u64>,
+    link_entities: &HashSet<u64>,
+) -> Option<(u64, crate::records::mesh::DesignRelaxedGuidText, usize)> {
+    let reference_len = 1 + 8 + COMPONENT_BINDING_LINK_RESERVED_LEN;
+    let reference = |at: usize, targets: &HashSet<u64>| {
+        let entity = View::u64_le_at(bytes, at.checked_add(1)?)?;
+        let reserved = bytes.get(at.checked_add(9)?..at.checked_add(reference_len)?)?;
+        (bytes.get(at) == Some(&1)
+            && targets.contains(&entity)
+            && reserved.iter().all(|byte| *byte == 0))
+        .then_some(entity)
+    };
+    if marker > 0 && bytes.get(marker - 1) == Some(&1) {
+        return None;
+    }
+    let component_record_index = reference(marker, component_entities)?;
+    let link = marker.checked_add(reference_len)?;
+    reference(link, link_entities)?;
+    let uuid_offset = link.checked_add(reference_len)?;
+    let (context_uuid, _) = lp_utf16_bounded(bytes, uuid_offset, 36..=36)?;
+    let context_uuid = crate::records::mesh::DesignRelaxedGuidText::try_from(context_uuid).ok()?;
+    Some((component_record_index, context_uuid, uuid_offset))
+}
+
 /// Decode each component entity's UUID-bound local naming space.
 pub(crate) fn decode_component_naming_spaces(
     scan: &ContainerScan,
@@ -203,6 +238,35 @@ pub(crate) fn decode_component_naming_spaces(
                 };
                 let Ok(context_uuid) =
                     crate::records::mesh::DesignRelaxedGuidText::try_from(context_uuid)
+                else {
+                    continue;
+                };
+                insert_component_naming_space(
+                    &mut by_component,
+                    bulk_name,
+                    marker,
+                    component_record_index,
+                    context_uuid,
+                    uuid_offset,
+                )?;
+            }
+        }
+        let link_entities = meta
+            .types
+            .iter()
+            .filter(|design_type| {
+                design_type.module == DESIGN_MODULE_FUSION
+                    && design_type
+                        .type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case(COMPONENT_BINDING_LINK_TYPE_GUID)
+            })
+            .flat_map(|design_type| design_type.entities.values().copied())
+            .collect::<HashSet<_>>();
+        if !link_entities.is_empty() {
+            for marker in 0..bytes.len() {
+                let Some((component_record_index, context_uuid, uuid_offset)) =
+                    linked_component_binding(bytes, marker, &component_entities, &link_entities)
                 else {
                     continue;
                 };

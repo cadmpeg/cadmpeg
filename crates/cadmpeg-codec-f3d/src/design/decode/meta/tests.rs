@@ -474,6 +474,69 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
 }
 
 #[test]
+fn component_naming_space_binds_through_a_linked_entity() {
+    const CONTEXT_UUID: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+    fn archive(link_type_guid: &str) -> Vec<u8> {
+        let meta = design_metastream_with_records(
+            &[
+                (
+                    "11111111-2222-3333-4444-555555555555",
+                    "21F379C8-CAFD-4985-B461-767673A4C502",
+                    0,
+                    "Component",
+                    &[17],
+                ),
+                (
+                    link_type_guid,
+                    "046D6232-EDAB-414D-9CB0-A2E3F115AE1C",
+                    4,
+                    "Fusion",
+                    &[5],
+                ),
+            ],
+            &[],
+        );
+        let mut bulk = vec![0xaa, 0xbb, 1];
+        bulk.extend_from_slice(&17_u64.to_le_bytes());
+        bulk.extend_from_slice(&[0, 0, 1]);
+        bulk.extend_from_slice(&5_u64.to_le_bytes());
+        bulk.extend_from_slice(&[0, 0]);
+        crate::test_support::lp_utf16(&mut bulk, CONTEXT_UUID);
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(&bulk).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    let spaces = with_scan(
+        &archive("8ACBA2E5-5A4C-4438-8351-276DE96E6982"),
+        decode_component_naming_spaces,
+    )
+    .expect("linked component naming space");
+    let [space] = spaces.as_slice() else {
+        panic!("expected one component naming space");
+    };
+    assert_eq!(space.component_record_index, 17);
+    assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
+    assert_eq!(space.byte_offset, 2);
+    assert_eq!(space.context_uuid_offset, u64_from_index(2 + 11 + 11));
+
+    let error = with_scan(
+        &archive("99999999-8888-7777-6666-555555555555"),
+        decode_component_naming_spaces,
+    )
+    .expect_err("a link entity of another type does not bind the component");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
 fn component_naming_space_keeps_context_and_id() {
     let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let context_uuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";

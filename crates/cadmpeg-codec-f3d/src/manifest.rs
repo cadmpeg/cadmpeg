@@ -427,16 +427,14 @@ fn expect_lineage_urn(lineage_urn: Utf16View<'_>) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<Vec<Utf16View<'_>>, CodecError> {
-    let mut cursor = Cursor::from_offset(bytes, at)?;
-    let _active_asset_guid = cursor.guid("top-level manifest active-asset GUID")?;
-    let asset_folder_count = bounded_nonzero_count(
-        cursor.u32("top-level manifest asset-folder count")?,
-        MAX_ASSET_FOLDERS,
-        "top-level manifest asset-folder count",
-    )?;
-    let mut asset_folder_bases = Vec::new();
-    for ordinal in 0..asset_folder_count {
+/// Append `count` unique asset-folder bases from `cursor`.
+fn take_asset_folder_bases<'a>(
+    cursor: &mut Cursor<'a>,
+    count: usize,
+    asset_folder_bases: &mut Vec<Utf16View<'a>>,
+) -> Result<(), CodecError> {
+    for _ in 0..count {
+        let ordinal = asset_folder_bases.len();
         let field = format!("top-level manifest asset-folder base {ordinal}");
         let base = cursor.utf16(&field)?;
         validate_asset_base_view(base)?;
@@ -449,7 +447,25 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<Vec<Utf16View<'_>>, Co
         }
         asset_folder_bases.push(base);
     }
-    cursor.expect_u32("top-level manifest terminal word", 0)?;
+    Ok(())
+}
+
+fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<Vec<Utf16View<'_>>, CodecError> {
+    let mut cursor = Cursor::from_offset(bytes, at)?;
+    let _active_asset_guid = cursor.guid("top-level manifest active-asset GUID")?;
+    let asset_folder_count = bounded_nonzero_count(
+        cursor.u32("top-level manifest asset-folder count")?,
+        MAX_ASSET_FOLDERS,
+        "top-level manifest asset-folder count",
+    )?;
+    let mut asset_folder_bases = Vec::new();
+    take_asset_folder_bases(&mut cursor, asset_folder_count, &mut asset_folder_bases)?;
+    let secondary_folder_count = bounded_count(
+        cursor.u32("top-level manifest secondary asset-folder count")?,
+        MAX_ASSET_FOLDERS,
+        "top-level manifest secondary asset-folder count",
+    )?;
+    take_asset_folder_bases(&mut cursor, secondary_folder_count, &mut asset_folder_bases)?;
     if cursor.exhausted() {
         return Ok(asset_folder_bases);
     }

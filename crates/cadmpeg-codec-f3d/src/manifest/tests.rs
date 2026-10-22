@@ -58,6 +58,39 @@ fn legacy_top_level_manifest_accepts_both_terminal_forms() {
 }
 
 #[test]
+fn top_level_manifest_reads_a_secondary_asset_folder_group() {
+    fn manifest(secondary: &str) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        push_ascii(&mut bytes, "3-2-0-0").unwrap();
+        push_ascii(&mut bytes, "FusionDocType").unwrap();
+        push_utf16(&mut bytes, ".f3d").unwrap();
+        push_utf16(&mut bytes, "Fusion Document").unwrap();
+        push_utf16(&mut bytes, "A Fusion Document").unwrap();
+        push_utf16(&mut bytes, GENERATED_DOCUMENT_GUID).unwrap();
+        push_utf16(&mut bytes, GENERATED_DOCUMENT_ASSET_GUID).unwrap();
+        push_u32(&mut bytes, 0x0800_06e1);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        push_utf16(&mut bytes, DESIGN_GUID).unwrap();
+        push_u32(&mut bytes, 2);
+        push_utf16(&mut bytes, "Design Base").unwrap();
+        push_utf16(&mut bytes, "Toolpath").unwrap();
+        push_u32(&mut bytes, 1);
+        push_utf16(&mut bytes, secondary).unwrap();
+        bytes.push(1);
+        push_utf16(&mut bytes, "NA_EXPORT").unwrap();
+        bytes
+    }
+
+    let parsed = parse_top_level(&manifest("Simulation Model")).unwrap();
+    assert_eq!(
+        parsed.asset_folder_bases,
+        ["Design Base", "Toolpath", "Simulation Model"]
+    );
+    assert!(parse_top_level(&manifest("Toolpath")).is_err());
+}
+
+#[test]
 fn top_level_manifest_accepts_a_terminal_export_flag_without_a_marker() {
     let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
     let mut marker = Vec::new();
