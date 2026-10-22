@@ -10491,6 +10491,81 @@ source = "spec"
 anchor = "offset 34 stores u32 one"
 
 [[record]]
+name = "referenced_angle_revolve_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The referenced-angle form has a 365-byte frame and six ordered references"
+size = 50
+note = "Offsets are relative to the Revolve primary indexed header. The marked angle-owner reference occupies offsets 39 through 49."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and the preceding Revolve envelope are outside this field run."
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "It uses the marker-one prologue through offset 33"
+
+[[record.field]]
+name = "zero_value"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "It uses the marker-one prologue through offset 33"
+
+[[record.field]]
+name = "operation"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "It uses the marker-one prologue through offset 33"
+
+[[record.field]]
+name = "extent_kind"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "It uses the marker-one prologue through offset 33"
+
+[[record.field]]
+name = "direction_kind"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "It uses the marker-one prologue through offset 33"
+
+[[record.field]]
+name = "flag"
+offset = 34
+type = "u8"
+source = "spec"
+anchor = "Offset 34 is marker `1`"
+
+[[record.field]]
+name = "structural_constant"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "offset 35 stores u32 one"
+
+[[record.field]]
+name = "angle_reference_marker"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "The marked angle-owner reference starts at offset 39"
+
+[[record.gap]]
+offset = 40
+size = 10
+note = "The marked reference stores the u32 angle-owner record index followed by six zero bytes."
+
+[[record]]
 name = "current_extrude_operation_fields"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
