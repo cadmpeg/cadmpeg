@@ -811,19 +811,24 @@ neutral model has no filled-region or page-viewport entity, so
 **Need.** A neutral filled-region carrier with pattern and gradient fields, and
 a neutral page viewport with projection, clipping, display, and scale.
 
-### IN-01. Non-affine instance transforms have no occurrence
+### IN-01. Instance references without a neutral occurrence
 
 **Question.** What neutral occurrence survives for an `ON_InstanceRef` whose
-transform is not affine?
+transform is not affine, or that is a member of a definition no occurrence
+places?
 
 **Known.** `ON_InstanceRef` stores a 4×4 `ON_Xform`. The neutral occurrence
 placement is an affine 3×4 transform. A reference with a nonzero projective
 row has no neutral placement, so it produces no occurrence and no expanded
-geometry; the native product-occurrence record keeps the definition UUID.
+geometry; the native product-occurrence record keeps the definition UUID. A
+reference inside a definition becomes a child occurrence of each placed
+occurrence of that definition. The neutral product model has no
+definition-to-definition usage without a placed parent, so a reference inside
+an unplaced definition has no occurrence and remains a retained object.
 
-**Need.** A neutral placement that carries a projective row, or a typed
-occurrence that keeps the definition reference with the transform marked as
-not representable.
+**Need.** A neutral placement that carries a projective row, and a neutral
+definition-level usage of one definition by another, or a typed record that
+keeps both relationships with the unrepresentable part marked.
 
 ### PF-01. Rhino decode repeatedly validates the full accumulated model
 
