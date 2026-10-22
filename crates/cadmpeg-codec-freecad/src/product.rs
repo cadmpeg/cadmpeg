@@ -98,7 +98,7 @@ pub(crate) fn transfer(
         let copy_on_change_group =
             linked_target(&owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
         let copy_on_change_touched = bool_property(&owned, "LinkCopyOnChangeTouched")?;
-        let scale = scale_property(&owned)?;
+        let scale = scale_property(&owned, kind == ProductKind::Occurrence)?;
         let element_visibility = bool_list(&owned, "VisibilityList")?;
         let element_objects = sole_named_property("product", &owned, "ElementList")?
             .map(|property| link_list(property, "App::PropertyLinkList", "ElementList"))
@@ -390,7 +390,11 @@ pub(crate) fn transfer_neutral(
                 let element_properties = element_object
                     .and_then(|object| properties_by_owner.get(object.as_str()))
                     .map_or(&[][..], Vec::as_slice);
-                scale_property(element_properties)?.map(cadmpeg_ir::units::FiniteVector::get)
+                let restore_uniform = element_object
+                    .and_then(|object| record_by_object.get(object.as_str()))
+                    .is_some_and(|record| matches!(record.node, ProductNode::Occurrence(_)));
+                scale_property(element_properties, restore_uniform)?
+                    .map(cadmpeg_ir::units::FiniteVector::get)
             } else if is_array {
                 record
                     .element_scales()
@@ -1200,12 +1204,23 @@ fn neutral_link_target(
     }))
 }
 
-fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<FiniteVector<3>>, CodecError> {
-    if let Some(property) = sole_named_property("product", properties, "ScaleVector")? {
-        return vector_property(property).map(Some);
+fn scale_property(
+    properties: &[&PropertyRecord],
+    restore_uniform: bool,
+) -> Result<Option<FiniteVector<3>>, CodecError> {
+    let vector = sole_named_property("product", properties, "ScaleVector")?
+        .map(vector_property)
+        .transpose()?;
+    let restore_uniform = restore_uniform
+        && vector.is_some_and(|vector| {
+            let [x, y, z] = vector.get();
+            x == y && y == z
+        });
+    if vector.is_some() && !restore_uniform {
+        return Ok(vector);
     }
     let Some(property) = sole_named_property("product", properties, "Scale")? else {
-        return Ok(None);
+        return Ok(restore_uniform.then_some([FiniteReal::ONE; 3].into()));
     };
     let value = single_value(property, "App::PropertyFloat", "Scale", "Float")?;
     let Some(value) = value.attributes.get("value") else {

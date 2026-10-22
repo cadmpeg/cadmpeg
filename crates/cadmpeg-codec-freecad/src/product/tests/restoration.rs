@@ -358,3 +358,64 @@ fn element_list_suppresses_only_owned_link_element_runtimes() {
         }
     }
 }
+
+#[test]
+fn link_restore_migrates_uniform_scale_vector_from_scalar_scale() {
+    for runtime in ["App::Link", "App::LinkElement"] {
+        for (vector, scalar, expected) in [
+            ([2.0, 2.0, 2.0], Some(3.0), [3.0, 3.0, 3.0]),
+            ([2.0, 3.0, 4.0], Some(5.0), [2.0, 3.0, 4.0]),
+            ([2.0, 2.0, 2.0], None, [1.0, 1.0, 1.0]),
+        ] {
+            let [x, y, z] = vector;
+            let scalar_property = scalar.map_or(String::new(), |scalar| format!(r#"<Property name="Scale" type="App::PropertyFloat"><Float value="{scalar}"/></Property>"#));
+            let count = 2 + usize::from(scalar.is_some());
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="{runtime}" name="Instance"/></Objects>
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object>
+<Object name="Instance"><Properties Count="{count}">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="{x}" valueY="{y}" valueZ="{z}"/></Property>{scalar_property}
+</Properties></Object></ObjectData></Document>"#
+            );
+            let decoded = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            let [occurrence] = decoded.ir().model.occurrences.as_slice() else {
+                panic!("one scalar link")
+            };
+            for (axis, expected) in expected.into_iter().enumerate() {
+                assert_eq!(
+                    occurrence.transform.rows()[axis][axis],
+                    expected,
+                    "{runtime}: vector={vector:?}, scalar={scalar:?}"
+                );
+            }
+            assert_eq!(
+                occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
+                [1.0; 3]
+            );
+            let properties = decoded
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<native::PropertyRecord>("properties")
+                .unwrap();
+            let raw_vector = properties
+                .iter()
+                .find(|property| property.name == "ScaleVector")
+                .unwrap();
+            assert!(raw_vector.xml.text().contains(&format!("valueX=\"{x}\"")));
+            assert_eq!(
+                properties.iter().any(|property| property.name == "Scale"),
+                scalar.is_some()
+            );
+            assert_valid_document(decoded.ir());
+        }
+    }
+}

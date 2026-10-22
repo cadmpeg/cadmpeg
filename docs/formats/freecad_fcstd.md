@@ -552,8 +552,9 @@ properties with one `XLink` target. `LinkCopyOnChangeGroup` is an `App::Property
 `App::PropertyBool` properties with one `Bool` value. `ElementCount` is an
 `App::PropertyIntegerConstraint` with one `Integer` value. `Scale` is an `App::PropertyFloat`
 with one `Float` value, and `ScaleVector` is an `App::PropertyVector` with one `PropertyVector`
-value carrying `valueX`, `valueY`, and `valueZ`; `ScaleVector` is authoritative when both scale
-carriers are present. `VisibilityList` is an `App::PropertyBoolList` with one `BoolList` root and
+value carrying `valueX`, `valueY`, and `valueZ`. Link restoration keeps a nonuniform `ScaleVector`
+authoritative. A uniform `ScaleVector` takes the scalar `Scale` value on all axes; an absent `Scale`
+has the built-in default one. Both original carriers remain independently persisted properties. `VisibilityList` is an `App::PropertyBoolList` with one `BoolList` root and
 a `value` bit string. Its characters are ordered most-significant bit first: for a string of length
 `n`, character `n - 1 - i` is `1` when `ElementList` element `i` is visible and `0` when it is
 hidden. The typed native property record retains the complete bit string. CADIR decision:
