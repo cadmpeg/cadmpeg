@@ -4939,6 +4939,37 @@ Unstated regions:
 
 - `0..10` (10 B): Ten zero bytes precede the override mask.
 
+## `sheet_metal_bend_radius_override_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 21 B
+
+Offsets are relative to the end of the indexed header of the BendRadius override bundle.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 11 | `bend_radius_owner` | `bytes[11]` | little | spec | precede a reference to the parameter owner |
+
+Unstated regions:
+
+- `0..10` (10 B): Ten zero bytes follow the indexed header.
+
+## `sheet_metal_relief_override_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 47 B
+
+Offsets are relative to the end of the indexed header of the relief override bundle. The width owner follows the counted depth and remnant references.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 4 | `count` | `u32` | little | spec | precede u32 count `2` · value `2` |
+| 14 | 11 | `bend_depth_owner` | `bytes[11]` | little | spec | owner references for BendDepth and BendRemnant in that order |
+| 25 | 11 | `bend_remnant_owner` | `bytes[11]` | little | spec | owner references for BendDepth and BendRemnant in that order |
+| 36 | 11 | `bend_width_owner` | `bytes[11]` | little | spec | then an owner reference for BendWidth |
+
+Unstated regions:
+
+- `0..10` (10 B): Ten zero bytes follow the indexed header.
+
 ## `local_component_occurrence_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 209 B

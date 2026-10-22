@@ -16473,6 +16473,68 @@ type = "u32"
 source = "spec"
 anchor = "ten zero bytes and a u32 override mask"
 
+[[record]]
+name = "sheet_metal_bend_radius_override_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Mask `4` can accompany"
+size = 21
+note = "Offsets are relative to the end of the indexed header of the BendRadius override bundle."
+
+[[record.gap]]
+offset = 0
+size = 10
+note = "Ten zero bytes follow the indexed header."
+
+[[record.field]]
+name = "bend_radius_owner"
+offset = 10
+type = "bytes[11]"
+source = "spec"
+anchor = "precede a reference to the parameter owner"
+
+[[record]]
+name = "sheet_metal_relief_override_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Mask `240` can accompany"
+size = 47
+note = "Offsets are relative to the end of the indexed header of the relief override bundle. The width owner follows the counted depth and remnant references."
+
+[[record.gap]]
+offset = 0
+size = 10
+note = "Ten zero bytes follow the indexed header."
+
+[[record.field]]
+name = "count"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "precede u32 count `2`"
+value = 2
+
+[[record.field]]
+name = "bend_depth_owner"
+offset = 14
+type = "bytes[11]"
+source = "spec"
+anchor = "owner references for BendDepth and BendRemnant in that order"
+
+[[record.field]]
+name = "bend_remnant_owner"
+offset = 25
+type = "bytes[11]"
+source = "spec"
+anchor = "owner references for BendDepth and BendRemnant in that order"
+
+[[record.field]]
+name = "bend_width_owner"
+offset = 36
+type = "bytes[11]"
+source = "spec"
+anchor = "then an owner reference for BendWidth"
+
 # --- §3.1 local component occurrences ---------------------------------------
 
 [[record]]
