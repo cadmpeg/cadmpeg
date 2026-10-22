@@ -18,7 +18,8 @@ fn group() -> crate::records::topology::extrude_selection::DesignExtrudeSelectio
         opaque_index_offset: 58,
         opaque_scalar: 0.0,
         opaque_scalar_offset: 62,
-        variant: false,
+        variant: Some(false),
+        typed_references: false,
         paired_class_tag: "259".into(),
         paired_byte_offset: 111,
     })

@@ -119,7 +119,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         );
         assert_eq!(group.opaque_index.get(), 180);
         assert_eq!(group.opaque_scalar().get(), 0.25);
-        assert!(group.variant);
+        assert_eq!(group.variant, Some(true));
         assert_eq!(group.paired_byte_offset(), u64_from_index(paired_at));
 
         let member_record = DesignRecordHeader {
@@ -315,6 +315,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             primary_id: std::num::NonZeroU64::new(586).unwrap(),
             secondary_id: 0,
             geometry: None,
+            planar_z_noise: None,
         };
         bind_extrude_selection_geometry(
             std::slice::from_mut(&mut member),

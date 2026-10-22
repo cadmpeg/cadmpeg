@@ -2468,6 +2468,16 @@ impl<'a> F3dDecodeSession<'a> {
         self.admit_model_entities("admit F3D geometry entities")?;
         let prereqs = self.decode_product_prereqs(&path)?;
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
+        if prereqs.design_superseded_scope_envelopes != 0 {
+            push_loss_vec(
+                &mut self.report.losses,
+                F3dLossCode::FeatureScopeEnvelopeSuperseded,
+                format_args!(
+                    "{} duplicate feature scope envelope(s) differ from the primary-indexed envelope of their record and were not decoded.",
+                    prereqs.design_superseded_scope_envelopes
+                ),
+            );
+        }
         let path = self.decode_products(path, &prereqs)?;
         let design = self.decode_design_state(&path, &prereqs)?;
         self.finalize(path, prereqs, design)
@@ -4130,6 +4140,13 @@ fn populate_annotations(
             note!(&entity.id, "sketch_curve");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
                 note!(projected, "sketch_entity");
+                // Admitted z noise is read as zero, so the projected
+                // endpoints are derived rather than byte-exact.
+                if entity.planar_z_noise.is_some() {
+                    for field in ["geometry.start", "geometry.end"] {
+                        annotations.derived(projected, field)?;
+                    }
+                }
             }
         }
         for entity in &native.sketch_surfaces {

@@ -222,6 +222,9 @@ pub(crate) enum DesignSketchFrameForm {
     MemberExplicit {
         paired_byte_offset: u64,
         transform: SketchPlacementMatrix,
+        /// The closing head reference carries an inline type GUID, making
+        /// the frame forty bytes longer.
+        typed_reference: bool,
     },
 }
 
@@ -252,7 +255,15 @@ impl DesignSketchFrame {
             DesignSketchFrameForm::ScopeExplicit(_) => 329,
             DesignSketchFrameForm::ScopeGenesisExplicit(_) => 341,
             DesignSketchFrameForm::MemberCompact { .. } => 34,
-            DesignSketchFrameForm::MemberExplicit { .. } => 162,
+            DesignSketchFrameForm::MemberExplicit {
+                typed_reference, ..
+            } => {
+                if typed_reference {
+                    202
+                } else {
+                    162
+                }
+            }
         }
     }
     fn transform(&self) -> &[[f64; 4]; 4] {
@@ -426,9 +437,10 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
             (true, 34) => Form::MemberCompact {
                 paired_byte_offset: wire.paired_byte_offset,
             },
-            (true, 162) => Form::MemberExplicit {
+            (true, length @ (162 | 202)) => Form::MemberExplicit {
                 paired_byte_offset: wire.paired_byte_offset,
                 transform: wire.transform.try_into()?,
+                typed_reference: length == 202,
             },
             _ => return Err("frame_length is invalid for member_run_head".into()),
         };

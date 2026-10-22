@@ -1039,6 +1039,12 @@ impl DesignParameterCompanion {
         self.timestamp_micros_offset
     }
 
+    /// Start of the owned payload: the timestamp is followed by eight zero
+    /// bytes in both reference spellings of the prefix.
+    pub(crate) fn payload_byte_offset(&self) -> Option<u64> {
+        self.timestamp_micros_offset.checked_add(16)
+    }
+
     /// Owned payload, when the binding pass reached this companion.
     #[must_use]
     pub(crate) fn payload(&self) -> Option<&DesignCompanionPayload> {

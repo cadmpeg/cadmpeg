@@ -29,6 +29,9 @@ pub(super) struct ProductPrereqs {
     /// Per-stream counts of typed parameter frames that match no parameter
     /// grammar; the session reports them as losses.
     pub(super) design_parameter_unparsed: Vec<UnparsedParameterRecords>,
+    /// Non-equivalent duplicate scope envelopes superseded by the
+    /// primary-indexed envelope; the session reports them as a loss.
+    pub(super) design_superseded_scope_envelopes: usize,
     pub(super) design_entity_headers: Vec<DesignEntityHeader>,
     /// Headers of the records that entity headers index. Sketch relations
     /// decode from this set only.
@@ -85,6 +88,7 @@ impl ProductPrereqs {
             design_types,
             design_parameters,
             design_parameter_unparsed: _,
+            design_superseded_scope_envelopes: _,
             design_entity_headers,
             design_record_headers,
             design_owner_record_headers,
@@ -174,11 +178,15 @@ pub(super) fn decode(
                 recipes: &construction_recipes,
             },
         )?;
-    crate::design::decode::scopes::parameter_scope::admit_history_bound_scope_variants(
-        ctx,
-        &mut design_parameter_scopes,
-        &history_index,
-    )?;
+    let primary_frames =
+        crate::design::decode::scopes::parameter_scope::design_primary_frame_offsets(scan)?;
+    let design_superseded_scope_envelopes =
+        crate::design::decode::scopes::parameter_scope::admit_history_bound_scope_variants(
+            ctx,
+            &mut design_parameter_scopes,
+            &history_index,
+            &primary_frames,
+        )?;
     let design_joint_motions =
         crate::design::decode::joint_motion::decode_joint_motions(scan, &design_parameter_scopes)?;
     let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(scan)
@@ -201,6 +209,7 @@ pub(super) fn decode(
         design_types,
         design_parameters,
         design_parameter_unparsed,
+        design_superseded_scope_envelopes,
         design_entity_headers,
         design_record_headers,
         design_owner_record_headers,

@@ -293,6 +293,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         primary_id: std::num::NonZeroU64::new(51).unwrap(),
         secondary_id: 0,
         geometry: None,
+        planar_z_noise: None,
     };
     let annotation_point_entity = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#radial-extension-point").unwrap(),
@@ -390,6 +391,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
         secondary_id: 0,
         geometry: None,
+        planar_z_noise: None,
     });
     let mut entities_with_refs = entities.clone();
     for (entity, curve) in entities_with_refs.iter_mut().zip(&curves) {

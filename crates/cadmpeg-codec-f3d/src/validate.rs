@@ -7621,17 +7621,20 @@ fn validate_parameter_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>)
         let unique_index = companion_indices.insert((native_stream, companion.record_index()));
         let unique_owner = companion_owners.insert((native_stream, companion.owner_record_index()));
         let owner = owners_by_index.get(&(native_stream, companion.owner_record_index()));
-        let valid = companion
-            .byte_offset()
-            .checked_add(42)
-            .is_some_and(|expected_offset| companion.timestamp_micros_offset() == expected_offset)
-            && payload.is_none_or(|payload| {
-                companion
-                    .byte_offset()
-                    .checked_add(58)
-                    .is_some_and(|expected_offset| payload.byte_offset() == expected_offset)
-            })
-            && (payload.is_none() || payload_end.is_some())
+        // The timestamp follows a plain (offset 42) or typed (offset 82)
+        // owner reference.
+        let valid = [42, 82].into_iter().any(|relative| {
+            companion
+                .byte_offset()
+                .checked_add(relative)
+                .is_some_and(|expected_offset| {
+                    companion.timestamp_micros_offset() == expected_offset
+                })
+        }) && payload.is_none_or(|payload| {
+            companion
+                .payload_byte_offset()
+                .is_some_and(|expected_offset| payload.byte_offset() == expected_offset)
+        }) && (payload.is_none() || payload_end.is_some())
             && payload
                 .map_or(
                     &[][..],
@@ -7818,8 +7821,7 @@ fn validate_dimension_locus_pairs<'a>(
         let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
             companion
-                .byte_offset()
-                .checked_add(58)
+                .payload_byte_offset()
                 .is_some_and(|expected_offset| pair.byte_offset() >= expected_offset)
                 && !native.design_parameter_owners.iter().any(|owner| {
                     design_stream(owner.id()) == native_stream
@@ -7884,13 +7886,11 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .get(&(native_stream, record_index))
                 .is_some_and(|companion| {
                     companion
-                        .byte_offset()
-                        .checked_add(58)
+                        .payload_byte_offset()
                         .is_some_and(|expected_offset| frame.byte_offset() >= expected_offset)
                         && companion.payload().is_some_and(|payload| {
                             companion
-                                .byte_offset()
-                                .checked_add(58)
+                                .payload_byte_offset()
                                 .and_then(|offset| offset.checked_add(payload.byte_length()))
                                 .is_some_and(|expected_offset| {
                                     frame.paired_byte_offset() < expected_offset
@@ -8079,8 +8079,7 @@ fn validate_dimension_locus_groups<'a>(
         let companion = companions_by_index.get(&(native_stream, group.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
             companion
-                .byte_offset()
-                .checked_add(58)
+                .payload_byte_offset()
                 .is_some_and(|expected_offset| group.byte_offset >= expected_offset)
                 && !native.design_parameter_owners.iter().any(|owner| {
                     design_stream(owner.id()) == native_stream
@@ -8210,8 +8209,7 @@ fn validate_dimension_null_locus_pairs<'a>(
         let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
             companion
-                .byte_offset()
-                .checked_add(58)
+                .payload_byte_offset()
                 .is_some_and(|expected_offset| pair.byte_offset() >= expected_offset)
                 && !native.design_parameter_owners.iter().any(|owner| {
                     design_stream(owner.id()) == native_stream

@@ -19,6 +19,7 @@ use crate::layout::design_parameter_owner_prefix as owner_prefix;
 use crate::layout::design_parameter_typed_compact_owned_prefix as typed;
 use crate::layout::indexed_companion_record_prefix as companion_prefix;
 use crate::layout::indexed_design_record_header as indexed_header;
+use crate::layout::typed_reference_companion_prefix as typed_companion;
 use crate::records::{
     decal::DesignRecordHeader,
     entity_header::DesignEntityHeader,
@@ -1199,8 +1200,10 @@ pub(crate) fn decode_parameter_companions(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let at = usize::try_from(header.byte_offset).ok();
-        let prefix = at.and_then(|at| at.checked_add(58).and_then(|end| bytes.get(at..end)));
-        let Some(parsed) = prefix.and_then(parse_parameter_companion) else {
+        let Some(parsed) = at
+            .and_then(|at| bytes.get(at..))
+            .and_then(parse_parameter_companion)
+        else {
             continue;
         };
         if parsed.record_index != owner.companion_record_index()
@@ -1246,7 +1249,41 @@ impl ParsedParameterCompanion {
     }
 }
 
-fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> {
+/// Parse the companion prefix at the start of `frame` in either reference
+/// spelling.
+fn parse_parameter_companion(frame: &[u8]) -> Option<ParsedParameterCompanion> {
+    parse_plain_parameter_companion(frame.get(..companion_prefix::LEN)?)
+        .or_else(|| parse_typed_parameter_companion(frame.get(..typed_companion::LEN)?))
+}
+
+/// Parse the typed-reference companion prefix: the indexed header, twenty
+/// zero bytes, a typed owner reference, the nonzero timestamp, and eight
+/// zero bytes.
+fn parse_typed_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> {
+    let (class_tag, after_tag) = lp_ascii_filtered_view(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
+    let timestamp_at = typed_companion::TIMESTAMP_MICROS;
+    if prefix.len() != typed_companion::LEN
+        || after_tag != indexed_header::RECORD_INDEX
+        || prefix.get(typed_companion::ZERO_RUN_20..typed_companion::OWNER_REFERENCE)
+            != Some(&[0; 20])
+        || prefix.get(typed_companion::ZERO_RUN_8..typed_companion::LEN) != Some(&[0; 8])
+    {
+        return None;
+    }
+    let owner_record_index =
+        crate::bytes::typed_local_reference_target(prefix, typed_companion::OWNER_REFERENCE)?;
+    let timestamp_micros = std::num::NonZeroU64::new(View::u64_le_at(prefix, timestamp_at)?)?;
+    Some(ParsedParameterCompanion {
+        class_tag,
+        record_index: View::u32_le_at(prefix, indexed_header::RECORD_INDEX)?,
+        owner_record_index,
+        timestamp_micros,
+        timestamp_micros_offset: FrameRelative(i128::from(u64_from_index(timestamp_at))),
+    })
+}
+
+fn parse_plain_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> {
     let (class_tag, after_tag) = lp_ascii_filtered_view(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
     let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
     if prefix.len() != companion_prefix::LEN

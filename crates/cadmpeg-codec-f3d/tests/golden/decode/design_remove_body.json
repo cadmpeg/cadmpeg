@@ -646,6 +646,7 @@
           }
         ],
         "design_parameters": [],
+        "design_profile_curve_selections": [],
         "design_record_headers": [
           {
             "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1006",

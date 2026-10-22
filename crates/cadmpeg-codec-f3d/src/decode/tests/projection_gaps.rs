@@ -312,6 +312,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         primary_id: std::num::NonZeroU64::new(1).unwrap(),
         secondary_id: 2,
         geometry: None,
+        planar_z_noise: None,
     });
     native.lost_edge_references.push(
         LostEdgeReference::new(
