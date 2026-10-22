@@ -14,6 +14,61 @@ use crate::design::decode::sketch::decode_sketch_texts_from_stream;
 use crate::design::decode::sketch::decode_sketch_curve_identities_from_stream;
 
 #[test]
+fn original_text_records_preserve_styles_and_refuse_unrepresented_orientation() {
+    let cases = crate::test_support::sketch_text::original_text_records();
+    assert_eq!(cases.len(), 65);
+    for case in cases {
+        let text = case.decode();
+        assert_eq!(text.text, case.text, "{}", case.label);
+        assert_eq!(text.font_family, case.font_family, "{}", case.label);
+        assert_eq!(text.font_weight, case.font_weight, "{}", case.label);
+        assert_eq!(
+            text.height.get().to_bits(),
+            (case.height_cm * 10.0).to_bits(),
+            "{}",
+            case.label
+        );
+        assert_eq!(text.raw_bytes, case.source_hex, "{}", case.label);
+        assert_eq!(
+            super::super::sketch_text_neutral_state(&text),
+            Some(case.neutral_state),
+            "{}",
+            case.label
+        );
+        let replay: crate::records::sketch_geometry::SketchText =
+            serde_json::from_value(serde_json::to_value(&text).unwrap()).unwrap();
+        assert_eq!(replay, text, "{}", case.label);
+    }
+}
+
+#[test]
+fn txt_tag_font_weight_is_retained_without_a_neutral_weight_assignment() {
+    let case = crate::test_support::sketch_text::original_text_records()
+        .into_iter()
+        .find(|case| case.label == "synthetic text record")
+        .unwrap();
+    let mut bytes = case.source_hex.as_ref().to_vec();
+    assert_eq!(bytes.len(), 429);
+    assert_eq!(bytes[376..380], 400i32.to_le_bytes());
+    for weight in [i32::MIN, -1, 0, 700, 701, 900, i32::MAX] {
+        bytes[376..380].copy_from_slice(&weight.to_le_bytes());
+        let text = super::super::decode_sketch_text_record(
+            &bytes,
+            "Design/BulkStream.dat",
+            case.class_tag.clone().try_into().unwrap(),
+            case.class_version,
+            case.record_index,
+            0,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(text.font_weight, weight);
+        assert_eq!(text.raw_bytes.as_ref(), bytes);
+        assert!(cadmpeg_ir::sketches::SketchFontWeight::try_from(text.font_weight).is_err());
+    }
+}
+
+#[test]
 fn native_sketch_text_refuses_zero_height() {
     let text = decode_sketch_text(&sketch_text_record(
         &[("textex_tag", 109)],

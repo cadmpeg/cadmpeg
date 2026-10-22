@@ -113,6 +113,8 @@ pub(crate) enum F3dLossCode {
     SketchSurfaceUnprojected,
     /// Decoded sketch text records have no neutral sketch entity.
     SketchTextUnprojected,
+    /// Sketch text retains style or orientation state absent from neutral text.
+    SketchTextStyleUnprojected,
     /// Decoded sketch relations have no neutral constraint.
     SketchRelationUnprojected,
     /// A spatial sketch's closed-profile search stopped at a local cap.
@@ -276,6 +278,7 @@ impl F3dLossCode {
         Self::SketchCurveUnprojected,
         Self::SketchSurfaceUnprojected,
         Self::SketchTextUnprojected,
+        Self::SketchTextStyleUnprojected,
         Self::SketchRelationUnprojected,
         Self::SketchProfileSearchCapped,
         Self::DimensionUnprojected,
@@ -386,6 +389,7 @@ impl F3dLossCode {
             Self::SketchCurveUnprojected => "sketch.curve-unprojected",
             Self::SketchSurfaceUnprojected => "sketch.surface-unprojected",
             Self::SketchTextUnprojected => "sketch.text-unprojected",
+            Self::SketchTextStyleUnprojected => "sketch.text-style-unprojected",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
             Self::DimensionUnprojected => "dimension.unprojected",
@@ -511,6 +515,7 @@ impl F3dLossCode {
             | Self::SketchCurveUnprojected
             | Self::SketchSurfaceUnprojected
             | Self::SketchTextUnprojected
+            | Self::SketchTextStyleUnprojected
             | Self::SketchRelationUnprojected
             | Self::SketchProfileSearchCapped
             | Self::DimensionUnprojected
@@ -602,6 +607,7 @@ impl F3dLossCode {
             | Self::SketchCurveUnprojected
             | Self::SketchSurfaceUnprojected
             | Self::SketchTextUnprojected
+            | Self::SketchTextStyleUnprojected
             | Self::SketchRelationUnprojected
             | Self::SketchProfileSearchCapped
             | Self::DimensionUnprojected
@@ -753,6 +759,7 @@ mod tests {
                 "sketch.curve-unprojected",
                 "sketch.surface-unprojected",
                 "sketch.text-unprojected",
+                "sketch.text-style-unprojected",
                 "sketch.relation-unprojected",
                 "sketch.profile-search-capped",
                 "dimension.unprojected",

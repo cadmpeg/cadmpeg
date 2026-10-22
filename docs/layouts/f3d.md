@@ -4052,6 +4052,32 @@ Unstated regions:
 
 - `5..38` (33 B): The compact scalar lanes use the same offsets as the standard construction tail.
 
+## `sketch_txt_tag_post_reference_members`
+
+Spec §3.1 · layout: byte offsets · size: 15 B
+
+Offsets start after the counted post-string reference run.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 3 | `preweight` | `bytes[3]` | little | spec | Its text string is followed by a u32-counted reference run · value `[0, 1, 0]` |
+| 3 | 4 | `font_weight` | `i32` | little | spec | Its text string is followed by a u32-counted reference run |
+| 7 | 8 | `cached_natural_width_cm` | `f64` | little | spec | Its text string is followed by a u32-counted reference run |
+
+## `sketch_text_legacy_presentation_suffix`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Offsets start at the thirty-byte inherited presentation suffix before the owning-sketch reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `prefix` | `u32` | little | spec | The legacy text presentation suffix is thirty bytes · value `0` |
+| 4 | 1 | `present` | `u8` | little | spec | The legacy text presentation suffix is thirty bytes · value `1` |
+| 5 | 20 | `default_components` | `f32[5]` | little | spec | The legacy text presentation suffix is thirty bytes |
+| 25 | 4 | `zero_word` | `u32` | little | spec | The legacy text presentation suffix is thirty bytes · value `0` |
+| 29 | 1 | `zero_byte` | `u8` | little | spec | The legacy text presentation suffix is thirty bytes · value `0` |
+
 ## `edge_flange_fixed_operation_section`
 
 Spec §3.1 · layout: byte offsets · size: 79 B

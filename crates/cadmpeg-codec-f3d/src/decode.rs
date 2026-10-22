@@ -343,6 +343,7 @@ struct DesignProjectionGaps {
     unprojected_sketch_curves: usize,
     unprojected_sketch_surfaces: usize,
     unprojected_sketch_texts: usize,
+    unprojected_sketch_text_styles: usize,
     unprojected_sketch_relations: usize,
     unprojected_dimensions: usize,
     profile_selections: usize,
@@ -1389,7 +1390,18 @@ fn design_projection_gaps(
         unprojected_sketch_texts: native
             .sketch_texts
             .iter()
-            .filter(|text| !projected_sketch_entity_refs.contains(text.id.as_str()))
+            .filter(|text| {
+                !projected_sketch_entity_refs.contains(text.id.as_str())
+                    && crate::design::decode::sketch::sketch_text_neutral_state(text) != Some(false)
+            })
+            .count(),
+        unprojected_sketch_text_styles: native
+            .sketch_texts
+            .iter()
+            .filter(|text| {
+                !projected_sketch_entity_refs.contains(text.id.as_str())
+                    && crate::design::decode::sketch::sketch_text_neutral_state(text) == Some(false)
+            })
             .count(),
         unprojected_sketch_relations: native
             .sketch_relations
@@ -2054,6 +2066,14 @@ fn report_design_projection_gaps(
         format_args!(
             "{} decoded sketch text record(s) have no neutral sketch entity.",
             gaps.unprojected_sketch_texts
+        ),
+    )?;
+    push(
+        F3dLossCode::SketchTextStyleUnprojected,
+        gaps.unprojected_sketch_text_styles,
+        format_args!(
+            "{} decoded sketch text record(s) retain unsupported style or orientation state.",
+            gaps.unprojected_sketch_text_styles
         ),
     )?;
     push(

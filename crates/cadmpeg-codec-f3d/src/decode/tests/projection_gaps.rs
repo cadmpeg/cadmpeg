@@ -26,6 +26,28 @@ fn design_projection_gaps(
 }
 
 #[test]
+fn original_text_style_gaps_have_a_distinct_loss_count() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    for case in crate::test_support::sketch_text::original_text_records() {
+        let mut native = F3dNative::default();
+        native.sketch_texts.push(case.decode());
+        let gaps = design_projection_gaps(&ir, &native);
+        assert_eq!(
+            gaps.unprojected_sketch_text_styles,
+            usize::from(!case.neutral_state),
+            "{}",
+            case.label
+        );
+        assert_eq!(
+            gaps.unprojected_sketch_texts,
+            usize::from(case.neutral_state),
+            "{}",
+            case.label
+        );
+    }
+}
+
+#[test]
 fn design_projection_gaps_count_unresolved_body_map_pairs() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
@@ -440,6 +462,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             unprojected_sketch_curves: 1,
             unprojected_sketch_surfaces: 0,
             unprojected_sketch_texts: 0,
+            unprojected_sketch_text_styles: 0,
             unprojected_sketch_relations: 0,
             unprojected_dimensions: 0,
             profile_selections: 2,
