@@ -5279,6 +5279,27 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_frames.rs` — The run starts at scope offset 526.
 
+## `assembly_wide_scope`
+
+Spec §Assembly operands · layout: byte offsets · size: not stated
+
+This size-less byte record describes the frame-sense prefix of the 945-byte scope. Offsets are relative to the scope's primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The 945-byte `Assemble` scope uses the wide operand-frame form |
+| 20 | 1 | `wide_marker` | `u8` | little | spec | `u8 1` at offset 20 |
+| 21 | 4 | `zero_run_21` | `bytes[4]` | little | spec | four zero bytes, the frame-sense byte at offset 25 |
+| 25 | 1 | `frame_sense` | `u8` | little | spec | the frame-sense byte at offset 25 |
+| 26 | 11 | `zero_run_26` | `bytes[11]` | little | spec | zero bytes at offsets 26 through 36 |
+
+Unstated regions:
+
+- `11..20` (9 B): Bytes 11 through 19 precede the wide marker and are not read for the frame sense.
+
 ## `assembly_compact_wide_scope`
 
 Spec §Assembly operands · layout: byte offsets · size: not stated
@@ -5292,7 +5313,7 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The 806-, 850- and 861-byte `Assemble` scopes use the compact wide |
 | 11 | 10 | `zero_run_11` | `bytes[10]` | little | spec | Bytes 11 through 20 are zero |
-| 21 | 1 | `operand_flag` | `u8` | little | spec | byte 21 is `0` or `1` |
+| 21 | 1 | `operand_flag` | `u8` | little | spec | byte 21 is the frame-sense byte |
 | 22 | 10 | `zero_run_22` | `bytes[10]` | little | spec | bytes 22 through 31 are zero |
 | 32 | 11 | `first_operand_reference` | `bytes[11]` | little | spec | the operand references are at offsets 32 and 254 |
 | 43 | 7 | `first_reference_zero_run` | `bytes[7]` | little | spec | seven zero bytes follow each reference |

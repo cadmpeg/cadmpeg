@@ -5170,6 +5170,18 @@ pub(crate) mod assembly_compact_wide_limit_owner_run {
     pub(crate) const SECOND_LIMIT_OWNER_REFERENCE: usize = 15;
 }
 
+/// Byte offsets for the `assembly_wide_scope` record.
+///
+/// Spec §Assembly operands.
+///
+/// ```text
+/// This size-less byte record describes the frame-sense prefix of the 945-byte scope. Offsets are relative to the scope's primary indexed header.
+/// ```
+pub(crate) mod assembly_wide_scope {
+    /// Offset of `frame_sense` (`u8`). Spec §Assembly operands.
+    pub(crate) const FRAME_SENSE: usize = 25;
+}
+
 /// Byte offsets for the `assembly_compact_wide_scope` record.
 ///
 /// Spec §Assembly operands.
