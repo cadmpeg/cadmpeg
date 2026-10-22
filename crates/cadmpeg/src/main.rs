@@ -327,8 +327,9 @@ enum Command {
     #[command(
         mut_arg("output", |arg| arg.long("report").visible_alias("output").help("Write a JSON report to this file")),
         display_order = 3,
-        after_help = "Examples:\n  cadmpeg diff a.sldprt b.step\n  cadmpeg diff before.f3d after.f3d\n\n\
-                      Exit status 1 means the models differ.\n\
+        after_help = "Examples:\n  cadmpeg diff a.sldprt b.step\n  cadmpeg diff before.f3d after.f3d\n  cadmpeg diff part.step part_rt.step --geometry\n\n\
+                      Exit status 1 means the models differ. With --geometry it means the\n\
+                      measured geometry does not agree, or the comparison cannot decide.\n\
                       `inspect cmp` compares raw bytes, not decoded models."
     )]
     Diff {
@@ -351,11 +352,32 @@ enum Command {
         /// Write JSON to standard output.
         #[arg(long)]
         json: bool,
+        /// Measure every body of both models in model space and compare
+        /// them without entity IDs. Exit status follows the geometry verdict.
+        #[arg(long, conflicts_with = "container_only")]
+        geometry: bool,
+        /// Relative floor of the geometry comparison tolerance: finite, at
+        /// least 0 and less than 1.
+        #[arg(long, requires = "geometry", value_name = "REL", value_parser = parse_relative_floor)]
+        geometry_tolerance: Option<f64>,
+        /// Write the geometry comparison table to standard output.
+        #[arg(long, requires = "geometry", conflicts_with = "json")]
+        tsv: bool,
         #[command(flatten)]
         report: OptionalFileDestination,
         #[command(flatten)]
         decode: DecodeArgs,
     },
+}
+
+/// Parse a relative comparison floor.
+fn parse_relative_floor(text: &str) -> Result<f64, String> {
+    let value: f64 = text
+        .parse()
+        .map_err(|_| format!("{text} is not a number"))?;
+    cadmpeg_measure::compare::CompareOptions::new(value)
+        .map(|options| options.relative_floor())
+        .ok_or_else(|| format!("{text} is not finite, at least 0 and less than 1"))
 }
 
 /// Restore `SIG_DFL` so a closed stdout pipe delivers SIGPIPE instead of a
@@ -437,6 +459,9 @@ fn main() -> ExitCode {
             input_format_a,
             input_format_b,
             json,
+            geometry,
+            geometry_tolerance,
+            tsv,
             report,
             decode,
         } => commands::diff(
@@ -450,7 +475,16 @@ fn main() -> ExitCode {
                 forced: input_format_b,
             },
             &decode,
-            json,
+            commands::DiffOutput {
+                json,
+                geometry: geometry.then(|| measure::geometry_diff::GeometryArgs {
+                    compare: geometry_tolerance
+                        .and_then(cadmpeg_measure::compare::CompareOptions::new)
+                        .unwrap_or_default(),
+                    profile: decode.policy.limits.work_profile(),
+                    tsv,
+                }),
+            },
             report.0.as_ref(),
         ),
         Command::Convert {

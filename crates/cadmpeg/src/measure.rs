@@ -6,6 +6,7 @@
 //! session, and prints text, TSV or the JSON command report.
 
 mod args;
+pub(crate) mod geometry_diff;
 mod render;
 
 use std::io::{self, Write};
@@ -107,21 +108,20 @@ pub(crate) fn measure(
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;
         }
-        if loaded.ir.decode_depth() == DecodeDepth::Container {
-            return Err(ConversionRefusal::InsufficientMeasureDepth {
-                depth: DepthReport {
-                    needed: DecodeDepth::Geometry,
-                    recorded: DecodeDepth::Container,
-                },
-                decode_report: loaded.decode_report().cloned(),
-            }
-            .into());
-        }
+        require_geometry(&loaded)?;
         let selection = command.selection.resolve(&loaded.ir)?;
         let geometry_transferred = loaded
             .decode_report()
             .is_none_or(DecodeReport::geometry_transferred);
-        let report = run(command, &loaded, &selection, geometry_transferred)?;
+        let report = run(
+            Session {
+                options: &command.options,
+                profile: command.profile,
+            },
+            &loaded,
+            &selection,
+            geometry_transferred,
+        )?;
         if !geometry_transferred {
             eprintln!("note: the decode transferred no geometry");
         }
@@ -153,15 +153,37 @@ pub(crate) fn measure(
     report_failure(result, command.path, command.report, "measure", json)
 }
 
+/// The decode policy and work profile one measurement session runs under.
+#[derive(Clone, Copy)]
+struct Session<'a> {
+    options: &'a DecodeOptions,
+    profile: WorkProfile,
+}
+
+/// Refuse a document that holds no geometry.
+fn require_geometry(loaded: &LoadedDocument) -> Result<(), ApplicationError> {
+    if loaded.ir.decode_depth() == DecodeDepth::Container {
+        return Err(ConversionRefusal::InsufficientMeasureDepth {
+            depth: DepthReport {
+                needed: DecodeDepth::Geometry,
+                recorded: DecodeDepth::Container,
+            },
+            decode_report: loaded.decode_report().cloned(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
 /// Measure the loaded document under one session.
 fn run(
-    command: &MeasureCommand<'_>,
+    session: Session<'_>,
     loaded: &LoadedDocument,
     selection: &cadmpeg_measure::Selection,
     geometry_transferred: bool,
 ) -> Result<MeasureReport, ApplicationError> {
     let arena = DecodeArena::new();
-    let ctx = DecodeContext::for_loaded_input(&arena, &command.options.policy, loaded.input_bytes)
+    let ctx = DecodeContext::for_loaded_input(&arena, &session.options.policy, loaded.input_bytes)
         .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Measure))?;
     let input = MeasureInput {
         ir: &loaded.ir,
@@ -171,7 +193,7 @@ fn run(
     let measured = Measurer::new(
         input,
         MeasureOptions {
-            work: command.profile,
+            work: session.profile,
         },
     )
     .measure(&ctx, selection);

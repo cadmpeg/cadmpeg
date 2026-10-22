@@ -210,6 +210,23 @@ cadmpeg diff before.f3d after.f3d --json
 It reports unit, tolerance, arena membership, and modified entity fields.
 Exit status `1` indicates a difference.
 
+`diff --geometry` measures every body of both models in model space and
+compares the bodies without entity IDs:
+
+```sh
+cadmpeg convert part.step -o part_rt.step --to step:ap242-e3
+cadmpeg diff part.step part_rt.step --geometry
+cadmpeg diff part.step part_rt.step --geometry --tsv
+```
+
+Area, volume, centroid, box, shell closure and orientation compare within a
+tolerance made of both values' errors and a relative floor
+(`--geometry-tolerance REL`, default `1e-9`). The verdict is `agree`,
+`disagree` or `inconclusive`; exit status `1` means `disagree` or
+`inconclusive`. `--tsv` prints one row per compared value; `--json` adds a
+`geometry` member with both measurements and the comparison to the report.
+`docs/measurement.md` states the comparison rules.
+
 ## Measure models
 
 `measure` reads a native CAD file or a CADIR document and measures it in

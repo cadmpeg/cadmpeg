@@ -35,7 +35,9 @@ use crate::application::transcoder::{
 };
 use crate::application::validators::validate_loaded;
 use crate::loader;
+use crate::measure::geometry_diff::{GeometryArgs, GeometryBody, GeometryDiff};
 use crate::DecodeArgs;
+use cadmpeg_measure::compare::Verdict;
 
 type CommandResult<T> = std::result::Result<T, ApplicationError>;
 
@@ -199,22 +201,40 @@ struct InspectPayload<'a> {
 struct DiffReportPayload<'a> {
     diff: &'a cadmpeg_ir::IrDiff,
     source_fidelity: &'a reporting::FidelitySummary,
+    geometry: Option<GeometryBody<'a>>,
+    verdict: Option<Verdict>,
 }
 
 impl DiffReportPayload<'_> {
     fn different(&self) -> bool {
-        !self.diff.is_empty() || fidelity_differs(self.source_fidelity)
+        match self.verdict {
+            Some(verdict) => verdict != Verdict::Agree,
+            None => !self.diff.is_empty() || fidelity_differs(self.source_fidelity),
+        }
     }
 }
 
 impl Serialize for DiffReportPayload<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("DiffReportPayload", 3)?;
+        let fields = if self.geometry.is_some() { 4 } else { 3 };
+        let mut state = serializer.serialize_struct("DiffReportPayload", fields)?;
         state.serialize_field("different", &self.different())?;
         state.serialize_field("diff", self.diff)?;
         state.serialize_field("source_fidelity", self.source_fidelity)?;
+        if let Some(geometry) = &self.geometry {
+            state.serialize_field("geometry", geometry)?;
+        }
         state.end()
     }
+}
+
+/// How `diff` prints its result.
+#[derive(Clone, Copy)]
+pub(crate) struct DiffOutput {
+    /// Write the JSON report to standard output.
+    pub(crate) json: bool,
+    /// Compare the measured geometry of both models.
+    pub(crate) geometry: Option<GeometryArgs>,
 }
 
 /// Inspect a native container and print its entries.
@@ -544,9 +564,10 @@ pub(crate) fn diff(
     a: DiffInput<'_>,
     b: DiffInput<'_>,
     args: &DecodeArgs,
-    json: bool,
+    output: DiffOutput,
     report_path: Option<&FileDestination>,
 ) -> CommandResult<ExitCode> {
+    let DiffOutput { json, geometry } = output;
     let result = (|| {
         if let Some(report_path) = report_path {
             report_path.check(a.path)?;
@@ -558,18 +579,41 @@ pub(crate) fn diff(
         print_load_notice(&right);
         let result = cadmpeg_ir::diff(&left.ir, &right.ir);
         let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
+        let measured = match &geometry {
+            Some(geometry) => Some(GeometryDiff::measure(
+                &left,
+                &right,
+                &args.options(),
+                geometry,
+            )?),
+            None => None,
+        };
         let payload = DiffReportPayload {
             diff: &result,
             source_fidelity: &fidelity,
+            geometry: measured
+                .as_ref()
+                .map(|measured| measured.body(&left, &right)),
+            verdict: measured.as_ref().map(GeometryDiff::verdict),
         };
         write_json_report(a.path, report_path, "diff", &payload)?;
+        let status = if payload.different() {
+            ExitCode::from(1)
+        } else {
+            ExitCode::SUCCESS
+        };
         if json {
             println!("{}", command_report_json("diff", &payload)?);
-            return Ok(if payload.different() {
-                ExitCode::from(1)
+            return Ok(status);
+        }
+        if let (Some(measured), Some(geometry)) = (&measured, &geometry) {
+            let mut stdout = std::io::stdout();
+            if geometry.tsv {
+                write!(stdout, "{}", measured.tsv())?;
             } else {
-                ExitCode::SUCCESS
-            });
+                measured.text(&mut stdout, [a.path, b.path])?;
+            }
+            return Ok(status);
         }
         println!("diff {} vs {}", a.path.display(), b.path.display());
         if let Some((before, after)) = &result.tolerance_change {

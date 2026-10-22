@@ -18,7 +18,7 @@ use serde::Serialize;
 use super::args::Level;
 
 /// The serialized name of a unit-like enum value.
-fn name<T: Serialize>(value: &T) -> String {
+pub(super) fn name<T: Serialize>(value: &T) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(text)) => text,
         Ok(other) => other.to_string(),
@@ -326,7 +326,7 @@ pub(super) fn tsv(report: &MeasureReport, level: Level) -> String {
 }
 
 /// A number with 12 significant digits.
-fn number(value: f64) -> String {
+pub(super) fn number(value: f64) -> String {
     significant(value, 11)
 }
 
