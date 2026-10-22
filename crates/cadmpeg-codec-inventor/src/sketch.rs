@@ -34,6 +34,8 @@ const EPS_SKETCH_PROJECT_PLACEMENT_E10: f64 = 1.0e-10;
 /// stored circle. It equals the kernel linear tolerance, so the projected arc
 /// ends meet their point records within the document tolerance.
 const EPS_SKETCH_ARC_END_ON_CIRCLE_CM: f64 = 1.0e-6;
+/// First save version whose midpoint relation ends with a u32 value.
+const MIDPOINT_VALUE_VERSION: u8 = 20;
 const CIRCLE_STATE_ARC: u8 = 0;
 const CIRCLE_STATE_FULL: u8 = 1;
 
@@ -207,6 +209,9 @@ pub(crate) enum PmDcSketchConstraintKind {
     Midpoint {
         entity: PmDcReference,
         point: PmDcReference,
+        /// The trailing value of save version 20 and later.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value: Option<u32>,
     },
     Fix {
         entity: PmDcReference,
@@ -1063,6 +1068,9 @@ fn parse_constraint(
         SketchConstraintTag::Midpoint => PmDcSketchConstraintKind::Midpoint {
             entity: cursor.reference("midpoint constraint entity reference")?,
             point: cursor.reference("midpoint constraint point reference")?,
+            value: (version >= MIDPOINT_VALUE_VERSION)
+                .then(|| cursor.u32("midpoint constraint value"))
+                .transpose()?,
         },
         SketchConstraintTag::Fix => PmDcSketchConstraintKind::Fix {
             entity: cursor.reference("fix constraint entity reference")?,
@@ -1679,7 +1687,7 @@ fn project_constraint(
                 members,
             )
         }
-        PmDcSketchConstraintKind::Midpoint { entity, point } => {
+        PmDcSketchConstraintKind::Midpoint { entity, point, .. } => {
             let members = [resolve(point)?, resolve(entity)?];
             (
                 SketchConstraintDefinitionInput::Midpoint {
@@ -2984,6 +2992,31 @@ mod tests {
     }
 
     #[test]
+    fn a_midpoint_relation_ends_with_a_value_from_save_version_20() {
+        let mut bytes = constraint_header(9, 0);
+        bytes.extend_from_slice(&(0x8000_0000u32 | 6).to_le_bytes());
+        bytes.extend_from_slice(&(0x8000_0000u32 | 4).to_le_bytes());
+        let parsed = parse(&bytes, |_, source| {
+            parse_constraint(SketchConstraintTag::Midpoint, source, 19).expect("version 19")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchConstraintKind::Midpoint { value: None, .. }
+        ));
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        for version in [20, 21] {
+            let parsed = parse(&bytes, |_, source| {
+                parse_constraint(SketchConstraintTag::Midpoint, source, version)
+                    .expect("version 20 or later")
+            });
+            assert!(matches!(
+                parsed.kind,
+                PmDcSketchConstraintKind::Midpoint { value: Some(7), .. }
+            ));
+        }
+    }
+
+    #[test]
     fn parses_generated_legacy_constraint_header_without_maps() {
         let mut bytes = legacy_constraint_header(9, 0);
         bytes.extend_from_slice(&4u32.to_le_bytes());
@@ -3024,15 +3057,12 @@ mod tests {
         angle.extend_from_slice(&0x0au16.to_le_bytes());
         let mut collinear = references(&[6, 7]);
         collinear.extend_from_slice(&0u16.to_le_bytes());
+        let mut midpoint = references(&[6, 4]);
+        midpoint.extend_from_slice(&0u32.to_le_bytes());
         for (tag, parameter, tail, expected) in [
             (SketchConstraintTag::Distance, 3, distance, "distance"),
             (SketchConstraintTag::Angle, 3, angle, "angle"),
-            (
-                SketchConstraintTag::Midpoint,
-                0,
-                references(&[6, 4]),
-                "midpoint",
-            ),
+            (SketchConstraintTag::Midpoint, 0, midpoint, "midpoint"),
             (SketchConstraintTag::Fix, 0, references(&[4]), "fix"),
             (
                 SketchConstraintTag::HorizontalAlignment,
@@ -3346,6 +3376,7 @@ mod tests {
         let mut midpoint = constraint_header(8, 0);
         midpoint.extend_from_slice(&(0x8000_0000u32 | 7).to_le_bytes());
         midpoint.extend_from_slice(&(0x8000_0000u32 | 4).to_le_bytes());
+        midpoint.extend_from_slice(&0u32.to_le_bytes());
         let midpoint = parse(&midpoint, |_, source| {
             parse_constraint(SketchConstraintTag::Midpoint, source, 22).expect("midpoint")
         });

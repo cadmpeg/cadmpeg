@@ -689,7 +689,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             | PmDcSketchConstraintKind::Collinear { first, second, .. } => {
                 references.extend([first.index(), second.index()]);
             }
-            PmDcSketchConstraintKind::Midpoint { entity, point } => {
+            PmDcSketchConstraintKind::Midpoint { entity, point, .. } => {
                 references.extend([entity.index(), point.index()]);
             }
             PmDcSketchConstraintKind::Fix { entity } => references.push(entity.index()),

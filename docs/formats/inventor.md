@@ -324,7 +324,7 @@ Type `100a0d59d111cae680006fb1e13554c7` encodes an angle dimension between two l
 
 Types `bf70e821d011d0d20008ccbc0663dc09`, `b07b170fd11196e680006fb1e13554c7`, `c0a3558fd1115ee0800066b1e13554c7`, `5052da64d1115ee0800066b1e13554c7`, `e07b9a5ad1115de0800066b1e13554c7`, and `107cdd0dd1119ce680006fb1e13554c7` encode midpoint, fix, horizontal-alignment, vertical-alignment, collinear, and symmetric relations. Their constraint-header parameter is null. After the constraint header:
 
-- midpoint stores a line or arc reference and a point reference; the point is the midpoint of the curve;
+- midpoint stores a line or arc reference and a point reference, followed from save version 20 by `value:u32`; the point is the midpoint of the curve;
 - fix stores one entity reference;
 - horizontal alignment stores two point references; the points have the same v coordinate;
 - vertical alignment stores two point references; the points have the same u coordinate;
