@@ -478,8 +478,12 @@ not create fabricated parameter identities.
 
 Spreadsheet sheets are equation-tree nodes. Every persisted used cell becomes an ordered design
 parameter whose identity includes its sheet and address. Address and alias remain separate;
-content, display unit, alignment, style, colors, and spans are retained independently. Plain numeric
-content supplies a dimensionless evaluated value, while formula content remains an expression.
+content, display unit, alignment, style, colors, and spans are retained independently. A cell's
+content states its own value when it is a `'`-quoted string, or a number with an optional length
+unit (`nm`, `um`, `mm`, `cm`, `dm`, `m`, `km`, `in`, `"`, `ft`, `'`, `thou`, `mil`, `yd`) or angle
+unit (`deg`, `°`, `rad`), written directly or as the whole `=` formula: a number alone is
+dimensionless, a length becomes millimetres and an angle radians. Other formula content remains an
+expression without a value. Content without a leading `=` is a literal and references nothing.
 Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet and feature
 parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
 match their declared framing. Parameter ordinals use stable dependency order and persisted cell
