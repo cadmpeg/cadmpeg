@@ -108,7 +108,7 @@ impl PartOutput {
             .and_then(|sum| sum.checked_add(size_of::<FailureHome>()))
             .ok_or_else(|| CodecError::malformed("part failure staging storage overflows"))?;
         ctx.retain_bytes(u64_from_index(bytes), "part failure staging")?;
-        reserve(ctx, &mut self.failures, 1)?;
+        super::reserve_output(ctx, self.staged, &mut self.failures, 1)?;
         self.failures.push(FailureHome {
             id,
             dropped: dropped.into_iter().collect(),

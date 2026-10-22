@@ -575,3 +575,65 @@ fn a_child_part_with_its_parents_identity_is_refused_not_replaced() {
     }
     assert!(output.fidelity().parts().is_empty());
 }
+
+/// Retained bytes charged to decode one point record `depth` parts deep, or
+/// the same part nesting with no record.
+fn nested_point_cost(depth: usize, with_point: bool) -> u64 {
+    fn nest(
+        ctx: &DecodeContext<'_>,
+        output: &mut PartOutput,
+        view: View<'_>,
+        depth: usize,
+        with_point: bool,
+    ) -> Result<(), CodecError> {
+        if depth == 0 {
+            if with_point {
+                let position = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                    .expect("literal finite coordinates");
+                output.insert_model(
+                    ctx,
+                    Point::new(
+                        "step:model:point#nested"
+                            .try_into()
+                            .expect("point identity"),
+                        position,
+                        None,
+                    ),
+                )?;
+            }
+            return Ok(());
+        }
+        let level = PartLevel::parse("step.simple_entity_instance").expect("table level");
+        // Each level starts one byte later, so every part has its own identity.
+        let inner = view
+            .child(view.start() + 1, view.end())
+            .expect("inner part");
+        ctx.decode_part(output, view, PartSpec::new(level, Vec::new()), |stage| {
+            nest(ctx, stage, inner, depth - 1, with_point)
+        })?
+        .ok_or_else(|| CodecError::malformed("nested part gave up"))
+    }
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"####", &arena, &DecodePolicy::default()).expect("root");
+    let before = ctx.retained_bytes_available();
+    let mut output = PartOutput::new(CodecFormat::Step);
+    nest(&ctx, &mut output, root, depth, with_point).expect("nested parts decode");
+    assert_eq!(output.model().points.len(), usize::from(with_point));
+    before - ctx.retained_bytes_available()
+}
+
+#[test]
+fn a_staged_record_is_charged_once_whatever_its_part_depth() {
+    // The record's storage moves from each stage to its parent unchanged. It
+    // is charged to the session retained budget once, at the root output.
+    let at_root = nested_point_cost(0, true) - nested_point_cost(0, false);
+    assert!(at_root > 0);
+    for depth in [1, 3] {
+        assert_eq!(
+            nested_point_cost(depth, true) - nested_point_cost(depth, false),
+            at_root,
+            "depth {depth}"
+        );
+    }
+}
