@@ -438,6 +438,20 @@ mod tests {
     }
 
     #[test]
+    fn unsupported_definition_framing_does_not_use_structural_color_fallback() {
+        let mut bytes = face_color_definition(16);
+        let field_names = 8 + FACE_COLOR_FAMILY.len() + 24;
+        bytes.splice(field_names..field_names + 2, [0xff, 0xff, 0, 1]);
+        bytes.extend(bare_entity(700, 1, 16, &[0, 0, 0, 0, 0, 1]));
+        bytes.extend(color(900, [0.25, 0.5, 0.75], false));
+
+        let facts = scan_metadata(&bytes, false);
+
+        assert!(facts.face_colors.is_empty());
+        assert!(facts.face_color_versions.is_empty());
+    }
+
+    #[test]
     fn conflicting_definition_does_not_use_structural_color_fallback() {
         let mut bytes = face_color_definition(16);
         bytes.extend(attribute_definition("OTHER_FAMILY", 16));

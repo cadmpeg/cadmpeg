@@ -104,6 +104,28 @@ fn short_index(buf: &[u8], at: usize) -> Option<u16> {
     View::u16_be_at(buf, at).filter(|node| *node > 1 && *node <= i16::MAX.unsigned_abs())
 }
 
+fn definition_frame(buf: &[u8], p: usize) -> Option<(u16, Vec<u8>)> {
+    let identifier = short_index(buf, p + attr_def::IDENTIFIER)?;
+    if [attr_def::NEXT_DEFINITION, attr_def::FIELD_NAMES]
+        .into_iter()
+        .any(|offset| {
+            View::u16_be_at(buf, p + offset).is_none_or(|index| index > i16::MAX.unsigned_abs())
+        })
+    {
+        return None;
+    }
+    let count = View::u32_be_at(buf, p + attr_def::FIELD_COUNT)?;
+    let fields_start = p.checked_add(attr_def::LEN)?;
+    let available = buf.len().checked_sub(fields_start)?;
+    let count = cadmpeg_core::decode::bounded_len(u64::from(count), 1, available)?;
+    let owners = buf.get(p + attr_def::LEGAL_OWNERS..fields_start)?;
+    let fields = &buf[fields_start..fields_start + count];
+    if owners.iter().any(|value| *value > 1) || fields.iter().any(|value| *value > 10) {
+        return None;
+    }
+    Some((identifier, buf[p..fields_start + count].to_vec()))
+}
+
 fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
     let mut names = HashMap::new();
     for off in 0..buf.len() {
@@ -141,38 +163,11 @@ fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
         let Some(node) = short_index(buf, p + attr_def::NODE_INDEX) else {
             continue;
         };
-        let Some(identifier) = short_index(buf, p + attr_def::IDENTIFIER) else {
-            continue;
-        };
-        if View::u16_be_at(buf, p + attr_def::NEXT_DEFINITION)
-            .is_none_or(|next| next > i16::MAX.unsigned_abs())
-        {
-            continue;
+        if let Some(frame) = definition_frame(buf, p) {
+            consistent_insert(&mut definitions, node, frame);
+        } else {
+            definitions.insert(node, None);
         }
-        let Some(count) = View::u32_be_at(buf, p + attr_def::FIELD_COUNT) else {
-            continue;
-        };
-        let Some(fields_start) = p.checked_add(attr_def::LEN) else {
-            continue;
-        };
-        let Some(available) = buf.len().checked_sub(fields_start) else {
-            continue;
-        };
-        let Some(count) = cadmpeg_core::decode::bounded_len(u64::from(count), 1, available) else {
-            continue;
-        };
-        let Some(owners) = buf.get(p + attr_def::LEGAL_OWNERS..fields_start) else {
-            continue;
-        };
-        let fields = &buf[fields_start..fields_start + count];
-        if owners.iter().any(|value| *value > 1) || fields.iter().any(|value| *value > 10) {
-            continue;
-        }
-        consistent_insert(
-            &mut definitions,
-            node,
-            (identifier, buf[p..fields_start + count].to_vec()),
-        );
     }
     definitions
         .into_iter()
@@ -616,6 +611,17 @@ mod tests {
         let mut bad_field = bytes;
         *bad_field.last_mut().expect("field type") = 11;
         assert!(!definition_table(&bad_field).values().any(Option::is_some));
+    }
+
+    #[test]
+    fn extended_field_name_references_do_not_use_short_header_offsets() {
+        let mut bytes = Vec::new();
+        append_definition(&mut bytes, ATOM_ID, 41, 91);
+        let field_names = 8 + ATOM_ID.len() + 24;
+        bytes.splice(field_names..field_names + 2, [0xff, 0xff, 0, 1]);
+        assert!(definition_table(&bytes)
+            .get(&91)
+            .is_some_and(Option::is_none));
     }
 
     #[test]
