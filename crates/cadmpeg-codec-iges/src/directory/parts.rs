@@ -15,12 +15,13 @@ pub(crate) fn parse(
     global: GlobalTable,
     ctx: &DecodeContext<'_>,
     output: &mut ParserPartOutput,
-) -> Result<Vec<DirectoryEntry>, CodecError> {
+) -> Result<DirectoryParts, CodecError> {
     let source = scan
         .source_view()
         .ok_or_else(|| CodecError::malformed("Directory source view is absent"))?;
     ctx.capture_part_extent(source)?;
     let mut entries = Vec::new();
+    let mut given_up = Vec::new();
     let mut at = 0;
     while at < scan.lines.len() {
         if !matches!(
@@ -54,6 +55,7 @@ pub(crate) fn parse(
         let spec = part_spec("iges.directory_section", framing)?;
         let parsed = ctx.decode_parser_scope(output, extent, spec, |children| {
             let mut entries = Vec::new();
+            let mut given_up = Vec::new();
             for pair in lines.chunks(2) {
                 ctx.charge_entities(1, "iges_directory_entries")?;
                 let extent = source_extent(source, pair)?;
@@ -76,7 +78,7 @@ pub(crate) fn parse(
                 }
                 framing.sort_unstable_by_key(|range| (range.start, range.end));
                 let spec = part_spec("iges.directory_entry", framing)?;
-                if let Some(entry) = ctx.decode_parser_part(children, extent, spec, || {
+                match ctx.decode_parser_part(children, extent, spec, || {
                     let ScannedLine::Card {
                         sequence,
                         line: first,
@@ -91,18 +93,50 @@ pub(crate) fn parse(
                     parse_pair(*sequence, first, second.physical(), global)
                         .map_err(CodecError::malformed)
                 })? {
-                    append_parser_item(ctx, &mut entries, entry)?;
+                    Some(entry) => append_parser_item(ctx, &mut entries, entry)?,
+                    None => append_given_up(ctx, &mut given_up, pair)?,
                 }
             }
-            Ok(entries)
+            Ok((entries, given_up))
         })?;
-        if let Some(parsed) = parsed {
-            for entry in parsed {
-                append_parser_item(ctx, &mut entries, entry)?;
+        match parsed {
+            Some((parsed, parsed_given_up)) => {
+                for entry in parsed {
+                    append_parser_item(ctx, &mut entries, entry)?;
+                }
+                for sequence in parsed_given_up {
+                    append_parser_item(ctx, &mut given_up, sequence)?;
+                }
+            }
+            // The section part covers every entry in it.
+            None => {
+                for pair in lines.chunks(2) {
+                    append_given_up(ctx, &mut given_up, pair)?;
+                }
             }
         }
     }
-    Ok(entries)
+    Ok(DirectoryParts { entries, given_up })
+}
+
+/// The Directory Entries of a Directory parse and the given-up ones.
+#[derive(Debug)]
+pub(crate) struct DirectoryParts {
+    pub(crate) entries: Vec<DirectoryEntry>,
+    /// First-card sequence numbers of the given-up Directory Entries. A
+    /// Parameter Data card whose back-pointer names one depends on that part.
+    pub(crate) given_up: Vec<u32>,
+}
+
+fn append_given_up(
+    ctx: &DecodeContext<'_>,
+    given_up: &mut Vec<u32>,
+    pair: &[ScannedLine],
+) -> Result<(), CodecError> {
+    match pair.first() {
+        Some(ScannedLine::Card { sequence, .. }) => append_parser_item(ctx, given_up, *sequence),
+        _ => Ok(()),
+    }
 }
 
 fn absolute(source: View<'_>, offset: u64) -> Result<usize, CodecError> {

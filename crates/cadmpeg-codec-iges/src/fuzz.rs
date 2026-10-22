@@ -50,7 +50,12 @@ pub fn parameters(data: &[u8]) {
     else {
         return;
     };
-    let _probe = crate::parameter::assemble(&scan, &directory, &quarantined, &global);
+    let _probe = crate::parameter::assemble(
+        &scan,
+        &directory,
+        quarantined.iter().map(|record| record.sequence),
+        &global,
+    );
 }
 
 #[cfg(test)]

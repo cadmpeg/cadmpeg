@@ -13,13 +13,13 @@ use super::{
     ParsedOwned, Token, TokenValue,
 };
 use crate::card::{CardScan, PhysicalLine, Section};
-use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
+use crate::directory::DirectoryEntry;
 use crate::global::ResolvedGlobal;
 
 pub(crate) fn assemble(
     scan: &CardScan<'_>,
     directory: &[DirectoryEntry],
-    quarantined_directory: &[QuarantinedDirectoryRecord],
+    excluded_directory: impl IntoIterator<Item = u32>,
     global: &ResolvedGlobal,
     ctx: &DecodeContext<'_>,
     output: &mut PartOutput,
@@ -33,7 +33,7 @@ pub(crate) fn assemble(
         append_parameter_item(ctx, &mut cards, card)?;
     }
     if cards.is_empty() || !contiguous(source, &cards)? {
-        return super::assemble(scan, directory, quarantined_directory, global);
+        return super::assemble(scan, directory, excluded_directory, global);
     }
     let extent = extent(source, &cards)?;
     let source_points = global
@@ -54,7 +54,7 @@ pub(crate) fn assemble(
             super::assemble_with(
                 scan,
                 directory,
-                quarantined_directory,
+                excluded_directory,
                 global,
                 |owned, lines, ownership| {
                     if !source_parts.initialized {
