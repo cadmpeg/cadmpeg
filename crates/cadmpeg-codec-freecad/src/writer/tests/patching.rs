@@ -70,7 +70,6 @@ fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
 
 #[test]
 fn property_edits_use_value_order_when_raw_xml_is_identical() {
-    let raw_value = r#"<String value="same"/>"#;
     let mut values = (0..2)
         .map(|order| ValueRecord {
             parent: None,
@@ -84,29 +83,20 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
     values[1]
         .attributes
         .insert("value".into(), "changed".into());
-    let property = {
-        let property = PropertyRecord {
-            dynamic: None,
-            id: "test:property#values".into(),
-            owner: "test:object#owner".into(),
-            name: "Values".into(),
-            type_name: "App::PropertyStringList".into(),
-            family: crate::native::PropertyFamily::List,
-            status: None,
-            body: Some(crate::native::PropertyBody::Persisted {
-                values,
-                links: Vec::new(),
-                side_entries: Vec::new(),
-            }),
-            order: 0,
-        };
-        let _source = crate::test_support::source_fidelity::xml_layout_fixture(
-            &property.id,
-            &(format!(
-                r#"<Property name="Values" type="App::PropertyStringList">{raw_value}{raw_value}</Property>"#
-            )),
-        );
-        property
+    let property = PropertyRecord {
+        dynamic: None,
+        id: "test:property#values".into(),
+        owner: "test:object#owner".into(),
+        name: "Values".into(),
+        type_name: "App::PropertyStringList".into(),
+        family: crate::native::PropertyFamily::List,
+        status: None,
+        body: Some(crate::native::PropertyBody::Persisted {
+            values,
+            links: Vec::new(),
+            side_entries: Vec::new(),
+        }),
+        order: 0,
     };
     let output = crate::writer::xml::native(&property).unwrap().unwrap();
     assert_eq!(output.matches(r#"value="same""#).count(), 1);
@@ -127,27 +117,20 @@ fn xml_serialization_preserves_normalized_whitespace() {
         decoded_json: None,
         text: Some("a\tb\nc\rd".into()),
     };
-    let property = {
-        let property = PropertyRecord {
-            dynamic: None,
-            id: "test:property#whitespace".into(),
-            owner: "test:object#owner".into(),
-            name: "Text".into(),
-            type_name: "App::PropertyString".into(),
-            family: crate::native::PropertyFamily::String,
-            status: None,
-            order: 0,
-            body: Some(crate::native::PropertyBody::Persisted {
-                values: vec![value],
-                links: Vec::new(),
-                side_entries: Vec::new(),
-            }),
-        };
-        let _source = crate::test_support::source_fidelity::xml_layout_fixture(
-            &property.id,
-            &("<Property/>"),
-        );
-        property
+    let property = PropertyRecord {
+        dynamic: None,
+        id: "test:property#whitespace".into(),
+        owner: "test:object#owner".into(),
+        name: "Text".into(),
+        type_name: "App::PropertyString".into(),
+        family: crate::native::PropertyFamily::String,
+        status: None,
+        order: 0,
+        body: Some(crate::native::PropertyBody::Persisted {
+            values: vec![value],
+            links: Vec::new(),
+            side_entries: Vec::new(),
+        }),
     };
     let serialized = crate::writer::xml::native(&property).unwrap().unwrap();
     assert!(serialized.contains("a&#9;b&#10;c&#13;d"));
