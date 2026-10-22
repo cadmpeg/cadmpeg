@@ -901,6 +901,109 @@ mod tests {
     use cadmpeg_ir::topology::Sense;
     use std::collections::HashSet;
 
+    fn merge_bridge(attr: u16, owner: u16) -> super::Bridge {
+        super::Bridge {
+            attr,
+            refs: [201, 202, 203, 204, 205],
+            sequence: 947,
+            sense: Sense::Forward,
+            owner: Some(owner),
+            offset: 0,
+        }
+    }
+
+    #[test]
+    fn bridge_membership_uses_partition_presence_and_typed_identity_or_owner_selection() {
+        for partition_present in [false, true] {
+            for typed_selection in [false, true] {
+                let original = merge_bridge(71, 101);
+                let mut partition = super::Tables::default();
+                if partition_present {
+                    partition.insert_bridge(original.clone());
+                }
+                let mut deltas = super::Tables::default();
+                let mut competing = merge_bridge(71, 141);
+                competing.refs[2] = 307;
+                competing.sequence = 948;
+                competing.sense = Sense::Reversed;
+                competing.offset = 80;
+                for record in [
+                    competing.clone(),
+                    merge_bridge(73, 103),
+                    merge_bridge(79, 109),
+                    merge_bridge(83, 113),
+                ] {
+                    deltas.insert_bridge(record);
+                }
+                let selected = HashSet::from([71, 73, 109]);
+                partition.merge_deltas(deltas, typed_selection.then_some(&selected));
+                let expected = match (partition_present, typed_selection) {
+                    (false, false) => HashSet::from([71, 73, 79, 83]),
+                    (_, true) => HashSet::from([71, 73, 79]),
+                    (true, false) => HashSet::from([71]),
+                };
+                assert_eq!(
+                    partition.bridges.keys().copied().collect::<HashSet<_>>(),
+                    expected
+                );
+                assert_eq!(
+                    partition.bridges[&71],
+                    if partition_present {
+                        original
+                    } else {
+                        competing
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn deltas_fill_missing_subordinates_and_preserve_partition_point_coordinates() {
+        let point = |attr, xyz_m| super::Point {
+            attr,
+            refs: vec![0, 501, 502, 503],
+            xyz_m,
+            xyz_offset: 16,
+            offset: 0,
+        };
+        let mut partition = super::Tables::default();
+        partition.points.insert(501, point(501, [1.0, 2.0, 3.0]));
+        partition.loops.insert(
+            401,
+            super::Loop {
+                attr: 401,
+                refs: [0, 411, 71, 0],
+                offset: 0,
+            },
+        );
+        let mut deltas = super::Tables::default();
+        deltas.points.insert(501, point(501, [4.0, 5.0, 6.0]));
+        deltas.points.insert(502, point(502, [7.0, 8.0, 9.0]));
+        deltas.loops.insert(
+            401,
+            super::Loop {
+                attr: 401,
+                refs: [0, 421, 73, 0],
+                offset: 20,
+            },
+        );
+        deltas.loops.insert(
+            402,
+            super::Loop {
+                attr: 402,
+                refs: [0, 431, 79, 0],
+                offset: 40,
+            },
+        );
+        partition.merge_deltas(deltas, None);
+        assert_eq!(partition.points[&501].xyz_m, [1.0, 2.0, 3.0]);
+        assert_eq!(partition.points[&501].refs, vec![0, 501, 502, 503]);
+        assert_eq!(partition.points[&502].xyz_m, [7.0, 8.0, 9.0]);
+        assert_eq!(partition.loops[&401].refs, [0, 411, 71, 0]);
+        assert_eq!(partition.loops[&402].refs, [0, 431, 79, 0]);
+    }
+
     #[test]
     fn bare_parasolid_point_copies_four_references() {
         let mut bytes = vec![0, 0x1d];

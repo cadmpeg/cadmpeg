@@ -18,14 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Body classification
 
-### BC-03. Superseded partition faces
-
-**Question.** How does a deltas topology record replace a partition face when the replacement has a different bridge or owner identity?
-
-**Known.** `sldprt.md` §6 states that partition topology has precedence for shared identities and that a complete deltas record can supersede a partition face when the native record identifies the replacement.
-
-**Need.** We must know the replacement relation to avoid retaining a superseded partition face or emitting both faces.
-
 ### BC-04. Duplicate topology record identities
 
 **Question.** Which occurrence is authoritative when one stream contains multiple valid topology records with the same attribute but different references or coordinates?

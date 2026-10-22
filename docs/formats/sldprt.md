@@ -1399,9 +1399,22 @@ A deltas change set can re-create subordinate topology and geometry records unde
 Partition topology is the base set for one site. Typed BODY, SHELL, REGION,
 and FACE nodes are combined before body membership is validated. A deltas
 node with an identity present in the partition does not replace the partition
-node. A missing deltas node is retained when its bridge attribute or bridge
-owner is named by the validated typed FACE set. An unselected compact deltas
-bridge is not part of the merged topology.
+node. When the partition bridge table is nonempty, a deltas bridge with an
+absent identity is retained only when its bridge attribute or bridge owner is
+named by the validated typed FACE set. Without valid typed ownership, no
+deltas bridge is added to a nonempty partition bridge table.
+
+An empty partition bridge table adopts all deltas bridges when valid typed
+ownership is absent. With valid typed ownership, it adopts only deltas bridges
+selected by bridge attribute or bridge owner. This adoption fills an empty
+table; it does not replace a partition face. In every branch, missing loop,
+edge-use, coedge, vertex-use, and point identities are filled from deltas.
+Existing partition point coordinates remain unchanged.
+
+A compact FACE bridge and a change-roster cell contain no old-face-to-new-face
+relation. A different bridge identity does not select a partition face for
+replacement. Sequence equality, owner changes, reference overlap, geometry,
+record order, and roster adjacency do not establish partition-face replacement.
 
 For bridges whose owner field is greater than one, the owner identifies the canonical face entity and the bridge identifies a face use. Bridges with the same owner and identical reference, marker, and walked loop/surface payload are duplicate uses; the bridge encoded first is canonical. Bridges with the same owner and non-equivalent payloads are alternate uses without a selector; the decoder withholds every use for that owner and reports the unresolved owner.
 
