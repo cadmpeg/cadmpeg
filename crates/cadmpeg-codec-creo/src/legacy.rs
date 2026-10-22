@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural grammar for legacy ASCII persistence records.
 
-use crate::source_bytes::SourceBytes as NativeBytes;
+use cadmpeg_ir::native::bytes::NativeBytes;
 
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
@@ -261,7 +261,7 @@ pub(crate) enum ObjectPayload {
     /// A type-0 payload outside the defined object forms.
     Opaque {
         /// Uninterpreted payload bytes after the attribute identifier.
-        bytes: crate::source_bytes::SourceBytes<Vec<u8>>,
+        bytes: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
     },
 }
 

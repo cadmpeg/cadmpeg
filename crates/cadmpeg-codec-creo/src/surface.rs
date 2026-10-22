@@ -1080,7 +1080,7 @@ pub(crate) struct SurfaceParameterScalarFrame {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SurfaceParameterOpaqueSpan {
     /// Exact source bytes in the span.
-    pub(crate) raw: crate::source_bytes::SourceBytes<Vec<u8>>,
+    pub(crate) raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
     /// Byte offset relative to the start of the parameter body.
     pub(crate) offset: usize,
 }
@@ -1089,10 +1089,7 @@ impl serde::Serialize for SurfaceParameterOpaqueSpan {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut wire = serializer.serialize_struct("SurfaceParameterOpaqueSpan", 3)?;
-        wire.serialize_field(
-            "raw",
-            &self.raw.clone().with_untyped(cadmpeg_ir::ArenaClass::Model),
-        )?;
+        wire.serialize_field("raw", &self.raw)?;
         wire.serialize_field("offset", &self.offset)?;
         wire.serialize_field("length", &self.raw.len())?;
         wire.end()
@@ -1106,7 +1103,7 @@ pub(crate) struct SurfaceParameterScalar {
     /// structurally framed token whose numeric mapping is not defined.
     pub(crate) value: Option<f64>,
     /// Exact source bytes occupied by the token.
-    pub(crate) raw: crate::source_bytes::SourceBytes<Vec<u8>>,
+    pub(crate) raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
     /// Byte offset relative to the start of the parameter body.
     pub(crate) offset: usize,
 }
@@ -1204,7 +1201,7 @@ pub(crate) struct TabulatedCylinderCurveReplay {
     /// Reference following the control-point-array header.
     pub(crate) successor_reference: u32,
     /// Four individually bounded packed control-point bodies.
-    pub(crate) control_point_bodies: [crate::source_bytes::SourceBytes; 4],
+    pub(crate) control_point_bodies: [cadmpeg_ir::native::bytes::NativeBytes; 4],
     /// Two-coordinate control points when both scalar tokens consume their
     /// complete packed bodies.
     pub(crate) control_points: [Option<[f64; 2]>; 4],
@@ -2500,7 +2497,7 @@ pub(crate) struct PlaneEnvelopeRecord {
     /// means equality cannot be decided from the scalar token pair.
     pub(crate) corner_coordinate_equal: [Option<bool>; 3],
     /// Exact token bytes for each declared envelope scalar slot.
-    pub(crate) scalar_tokens: Vec<crate::source_bytes::SourceBytes>,
+    pub(crate) scalar_tokens: Vec<cadmpeg_ir::native::bytes::NativeBytes>,
     /// Byte offset of the plane row in the original stream.
     pub(crate) row_offset: usize,
     /// Byte offset of the envelope body in the original stream.
