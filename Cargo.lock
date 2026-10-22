@@ -454,6 +454,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-measure"
+version = "0.6.5"
+dependencies = [
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "cadmpeg-parasolid"
 version = "0.6.5"
 dependencies = [

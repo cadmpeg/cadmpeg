@@ -197,6 +197,14 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_BIASED_SIGNIFICAND_EXPONENT`         | `0x7fe - 1`                                             | N    | `f64` exponent-field limit for exact summation.                                                                                                                                                                                                                              |
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_SIGNIFICAND_BITS`                    | `53`                                                    | N    | `f64` significand width.                                                                                                                                                                                                                                                     |
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_SCALED_EXPONENT`                     | `EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS_I32 * 64 + 1` | N    | Accumulator exponent range.                                                                                                                                                                                                                                                  |
+| `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_MEASURE_PASS_WORK_PER_ITEM`         | `1 << 22`                                              | 4    | Measurement pass allowance per face and edge of the document under `--limits desktop`. The allowance is `max(MEASURE_PASS_WORK_FLOOR, k × (faces + edges))`. An item that finds the pass empty makes its remaining quantities `evaluation.work-exhausted`, and `document.work.exhausted` is true; measurement continues. |
+| `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_MEASURE_PASS_WORK_PER_ITEM_SERVICE` | `1 << 18`                                              | 4    | The same per-item allowance under `--limits service`. |
+| `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_FACE_MEASURE_WORK`                  | `1 << 26`                                              | 4    | One face's slice of the pass allowance. Exhaustion makes the face's remaining quantities `evaluation.work-exhausted`; measurement continues. |
+| `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_EDGE_MEASURE_WORK`                  | `1 << 22`                                              | 4    | One edge's slice of the pass allowance. Exhaustion makes the edge's remaining quantities `evaluation.work-exhausted`; measurement continues. |
+| `cadmpeg-measure`        | `src/quadrature/gauss_kronrod.rs`                 | `MAX_QUADRATURE_INTERVALS`               | `1 << 12`                                              | 4    | Panels of one adaptive integral. At the cap the subdivision stops; an estimate above the acceptance limit makes the quantity `quadrature.not-converged`; measurement continues. |
+| `cadmpeg-measure`        | `src/quadrature/extremum.rs`                      | `MAX_EXTREMUM_REFINEMENT_STEPS`          | `64`                                                   | 4    | Bisection steps of one extremum root. Exhaustion keeps the last bracket, whose width enters the numeric error; measurement continues. |
+| `cadmpeg-measure`        | `src/traversal.rs`                                | `MAX_RING_CHAIN_STEPS`                   | `1 << 16`                                              | 4    | Steps of one ring traversal search. Exhaustion makes the face's bounded quantities `evaluation.work-exhausted`; measurement continues. |
+| `cadmpeg-measure`        | `src/boundary/piece.rs`                           | `MAX_NESTING_SAMPLES_PER_PIECE`          | `1 << 10`                                              | 4    | Samples of one boundary piece's unwrap reference and polyline. An unwrap that needs more makes the face's bounded quantities `evaluation.work-exhausted`; a polyline stops refining at the cap; measurement continues. |
 | `cadmpeg-asm`            | `src/nurbs/reader.rs`                              | `MAX_NURBS_POLES`                         | `100_000`                                               | 2    | Pole count derived from one knot multiplicity table. `checked_knot_layout` returns `None` and the spline is not read.                                                                                                                                                        |
 | `cadmpeg-asm`            | `src/nurbs/reader.rs`                              | `MAX_NURBS_DEGREE`                        | `20`                                                    | 1    | Admitted ASM spline degree range `1..=20`. A higher degree is not read.                                                                                                                                                                                                      |
 | `cadmpeg-asm`            | `src/nurbs/reader.rs`                              | `MAX_EXPANDED_NURBS_KNOTS`                | `MAX_NURBS_POLES + MAX_NURBS_DEGREE + 1`                | 2    | Expanded knot count, checked per run before expansion. Excess returns `None`.                                                                                                                                                                                                |
@@ -447,21 +455,21 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 232.
+Production `MAX_*` constants: 240.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 30    |
 | 2    | Per-input bound            | 69    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 107   |
+| 4    | Local work cap             | 115   |
 | N    | Not a decode bound         | 26    |
-|      | Total                      | 232   |
+|      | Total                      | 240   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 8, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
