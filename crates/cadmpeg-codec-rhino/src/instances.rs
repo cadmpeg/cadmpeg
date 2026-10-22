@@ -450,21 +450,6 @@ fn unit_detail<'a>(
     let unit = payload.u32()?;
     let meters_per_unit = payload.f64()?;
     let custom_name = utf16_retained(ctx, &mut payload, "Rhino instance unit name")?;
-    let standard_scale = if unit == 0 {
-        Some(1.0)
-    } else {
-        i32::try_from(unit)
-            .ok()
-            .and_then(crate::settings::standard_scale)
-            .map(|scale| scale / 1000.0)
-    };
-    if unit != 11
-        && (!custom_name.is_empty() || standard_scale.is_some_and(|scale| scale != meters_per_unit))
-    {
-        warnings.push_coded(RhinoLossCode::RedundantFieldRepaired, format_args!(
-            "redundant instance unit detail contradicts unit {unit}; meters-per-unit {meters_per_unit} and custom name {custom_name:?} retained"
-        ));
-    }
     payload.skip_remaining()?;
     UnitDetail::new(unit, meters_per_unit, custom_name)
         .map_err(|message| FramingError::structural(payload.position(), message))
@@ -756,6 +741,29 @@ fn reference_settings<'a>(
     Ok(chunk.range())
 }
 
+/// The unit system of a packed definition below minor 1.4: the minor-1.2 enum
+/// and, for custom units, the minor-1.3 scale. Custom units without a positive
+/// scale become meters.
+fn legacy_unit_detail(unit: u32, meters_per_unit: f64) -> UnitDetail {
+    const METERS: u32 = 4;
+    const CUSTOM: u32 = 11;
+    if unit == CUSTOM {
+        if let Ok(custom) = UnitDetail::new(CUSTOM, meters_per_unit, String::new()) {
+            return custom;
+        }
+        return UnitDetail {
+            unit: METERS,
+            meters_per_unit: UnitScale::OtherBits(1.0_f64.to_bits()),
+            custom_name: String::new(),
+        };
+    }
+    UnitDetail {
+        unit,
+        meters_per_unit: UnitScale::OtherBits(1.0_f64.to_bits()),
+        custom_name: String::new(),
+    }
+}
+
 fn parse_v5(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
@@ -767,7 +775,7 @@ fn parse_v5(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
     let version = (packed >> 4, packed & 0x0f);
-    if version.0 != 1 || version.1 < 6 {
+    if version.0 != 1 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported V5 definition version",
@@ -801,18 +809,26 @@ fn parse_v5(
     ) {
         legacy_linked_path.clear();
     }
-    reader.skip(48)?;
-    // The complete unit-detail child replaces these legacy unit fields.
-    reader.skip(12)?;
-    let legacy_relative_path = reader.bool()?;
+    let minor = version.1;
+    if minor >= 1 {
+        // The linked-file checksum: u64 size, u64 time, and 8 × u32 CRC.
+        reader.skip(48)?;
+    }
+    let legacy_unit = if minor >= 2 { reader.u32()? } else { 0 };
+    let legacy_meters_per_unit = if minor >= 3 { reader.f64()? } else { 0.0 };
+    let legacy_relative_path = minor >= 3 && reader.bool()?;
     let legacy_relative_linked_path = if legacy_relative_path {
         std::mem::take(&mut legacy_linked_path)
     } else {
         String::new()
     };
-    let units = unit_detail(ctx, data, &mut reader, archive, warnings)?;
-    let linked_depth = reader.i32()?;
-    let mut linked_appearance = reader.u32()?;
+    let units = if minor >= 4 {
+        unit_detail(ctx, data, &mut reader, archive, warnings)?
+    } else {
+        legacy_unit_detail(legacy_unit, legacy_meters_per_unit)
+    };
+    let linked_depth = if minor >= 5 { reader.i32()? } else { 0 };
+    let mut linked_appearance = if minor >= 6 { reader.u32()? } else { 0 };
     if matches!(kind, DefinitionKind::Linked) && !matches!(linked_appearance, 1 | 2) {
         linked_appearance = if archive.value() < 50 { 1 } else { 2 };
     }
@@ -976,7 +992,7 @@ fn extract_member_ids(
     let mut outer = BoundedReader::new(data, range.start, range.end)?;
     if v5_layout {
         let packed = outer.u8()?;
-        if packed >> 4 != 1 || packed & 0x0f < 6 {
+        if packed >> 4 != 1 {
             return Err(FramingError::structural(
                 outer.position(),
                 "unsupported V5 definition version",
@@ -1174,7 +1190,7 @@ pub(crate) fn parse_definitions(
                 .copied()
                 .unwrap_or_default();
             let v5_layout =
-                archive == ArchiveVersion::V5 || (archive == ArchiveVersion::V6 && first != 0x00);
+                archive.value() <= 50 || (archive == ArchiveVersion::V6 && first != 0x00);
             match extract_member_ids(data, class.class_data_range.clone(), archive, v5_layout) {
                 Ok(member_ids) => {
                     result.scan.member_object_ids.extend(member_ids);

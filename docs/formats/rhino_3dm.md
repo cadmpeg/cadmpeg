@@ -223,6 +223,10 @@ CRC32(empty)       = 0x00000000
 CRC32("123456789") = 0xcbf43926
 ```
 
+A CRC-bearing table record whose body is one complete nested class chunk, such
+as `TCODE_INSTANCE_DEFINITION_RECORD`, has an empty direct range. Its stored
+CRC is `CRC32(empty)`.
+
 A checksum mismatch does not change the declared framing boundary. A missing
 checksum or invalid boundary makes the chunk structurally invalid.
 
@@ -3983,10 +3987,12 @@ continuity, and closure.
 
 ## 18. Instance definitions and references
 
-Instance-definition records are in the instance-definition table. Archive
-versions through 50 use packed major version 1, minor 6. An archive-60 legacy
-record may use packed minor 7; archive versions 60 and later otherwise use an
-anonymous major-1 V6 payload. The packed field order is:
+Instance-definition records are in the instance-definition table. Every
+archive version through 50 uses the packed major-1 payload, with minor 0
+through 7. An archive-60 record uses the packed payload when its first
+class-data byte is not zero, and the anonymous major-1 V6 payload otherwise;
+archive versions 70 and later use the anonymous payload. The packed field
+order is:
 
 ```
 definition UUID
@@ -4007,7 +4013,11 @@ minor >= 6: linked component appearance
 minor >= 7: file-reference presence and record
 ```
 
-The unit-system detail replaces the earlier unit fields. A version-1.7 reader
+The unit-system detail replaces the earlier unit fields. Below minor 2 the
+definition has no unit system. At minor 2 and 3 the unit enum is the unit
+system; custom units (enum 11) take the minor-3 meters-per-unit value when it
+is positive and are meters otherwise. Below minor 5 the nested depth is 0, and
+below minor 6 the linked component appearance is unset. A version-1.7 reader
 skips all bytes after the optional file-reference record as an abandoned tail.
 
 For a linked definition, the legacy relative-path Boolean makes the
@@ -4049,6 +4059,15 @@ Definition membership comes from the ordered definition UUID array, not object
 attributes. The reference payload carries one transform and one bounding box.
 The known prefix ends at the enclosing instance-reference class-data boundary;
 later bytes remain bounded there.
+Each `ON_InstanceRef` record is one placed occurrence of the definition it
+names. The occurrence exists independently of member expansion: its
+definition UUID and transform remain the source relationship when the
+definition is missing, linked, or has members that do not expand. A reference
+object that is a member of a definition is one child occurrence inside each
+occurrence of that definition, in definition member order. A definition that
+contains an occurrence of itself, directly or through nested definitions,
+forms a cycle; the cycle has no further child occurrences.
+
 The transform applies to the definition as a whole. When transfer of one
 member emits more than one typed geometry carrier, the same transform is applied
 to every carrier emitted from that member, including a body carrier and any
@@ -4207,7 +4226,11 @@ types are 3 and 4 respectively.
 When the common annotation has no scaling field, model-space text scaling is
 false. Minor 3 selects the dimension-style index from the dimension-style slot
 for dimensions. For text, it selects the text-style slot first, then the
-initial slot, then the dimension-style slot. A text annotation with zero
+initial slot, then the dimension-style slot. The initial slot of a text
+annotation (type 7) is a text-style index: it names a font-table record. The
+initial slot of every other annotation type is a dimension-style index. A
+negative index names no style. A dimension-style or text-style index names the
+table record with the same archive index. A text annotation with zero
 justification becomes top-left, and its plane origin moves by one text height
 along the plane y axis. V5 text, leader, and ordinate annotation types map to
 neutral types 9, 10, and 6.
@@ -4964,14 +4987,15 @@ least three directed uses, valid edge pointers, and endpoint continuity.
 
 ### 19.6 Instance-definition exact tables
 
-The instance-definition table record contains the class payload. Archive 50
-uses packed version 1.6. Archive 60 accepts the legacy packed version 1.7
-form and the anonymous V6 form; archives 70 and 80 use the anonymous V6 form.
+The instance-definition table record contains the class payload. Archives
+through 50 use the packed form with minor 0 through 7. Archive 60 accepts the
+packed form and the anonymous V6 form; archives 70 and 80 use the anonymous V6
+form.
 
 V5 packed field order:
 
 ```
-u8 packed version = 0x16 or 0x17
+u8 packed version = 0x10 through 0x17
 UUID definition ID
 i32 UUID-array count
 count × UUID member object ID
@@ -4993,8 +5017,8 @@ minor >= 7:
   if true: file-reference record
 ```
 
-The packed V5 reader requires major version 1. It reads each field through the
-minor-1.6 appearance field. At minor 1.7 it reads the file-reference presence
+The packed V5 reader requires major version 1. It reads each field that the
+stored minor gates, through the minor-1.6 appearance field. At minor 1.7 it reads the file-reference presence
 byte and, when set, the file-reference record; the writer then emits one
 obsolete linked-layer-settings Boolean. The reader does not assign that final
 Boolean a field meaning and returns after the file-reference record, so the

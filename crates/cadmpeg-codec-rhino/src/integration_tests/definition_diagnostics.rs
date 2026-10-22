@@ -273,7 +273,7 @@ fn each_failed_definition_keeps_its_own_diagnostic_location() {
 
 #[test]
 fn container_only_keeps_recorded_definition_field_losses() {
-    let record = definition_record(false, false, 0.002);
+    let record = definition_record(true, false, 0.001);
     let document = bytes::document_with_definitions("80", ArchiveVersion::V8, &[record], &[]);
     for depth in [
         cadmpeg_core::decode::DecodeDepth::Full,
@@ -288,20 +288,20 @@ fn container_only_keeps_recorded_definition_field_losses() {
                         ..DecodeOptions::default()
                     },
                 )
-                .expect("contradictory stored unit detail"),
+                .expect("unit-detail checksum mismatch"),
         );
         assert!(result
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == crate::loss::RhinoLossCode::RedundantFieldRepaired.kind()));
+            .any(|loss| loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind()));
     }
 }
 
 #[test]
 fn definition_field_losses_keep_each_record_location_before_later_failure() {
     for malformed_tail in [false, true] {
-        let record = definition_record(false, malformed_tail, 0.002);
+        let record = definition_record(true, malformed_tail, 0.001);
         let document = bytes::document_with_definitions(
             "80",
             ArchiveVersion::V8,
@@ -339,9 +339,7 @@ fn definition_field_losses_keep_each_record_location_before_later_failure() {
                 .report()
                 .losses
                 .iter()
-                .filter(|loss| {
-                    loss.code == crate::loss::RhinoLossCode::RedundantFieldRepaired.kind()
-                })
+                .filter(|loss| loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind())
                 .map(|loss| {
                     let provenance = loss.provenance.as_ref().expect("located field loss");
                     assert_eq!(provenance.tag.as_deref(), Some("INSTANCE_DEFINITION_TABLE"));

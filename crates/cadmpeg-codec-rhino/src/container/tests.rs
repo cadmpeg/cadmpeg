@@ -567,6 +567,34 @@ fn named_view_checksum_excludes_complete_child_chunks() {
 }
 
 #[test]
+fn instance_definition_record_checksum_excludes_its_nested_class_chunk() {
+    let archive = ArchiveVersion::V6;
+    let class = long_chunk(archive, 0x0002_7ffa, &[1, 2, 3, 4]);
+    let class_range = 0..class.len();
+    let record = crc_chunk_excluding(
+        archive,
+        0x2000_8076,
+        &class,
+        std::slice::from_ref(&class_range),
+    );
+    let stored = record.len() - 4;
+    assert_eq!(record[stored..], 0_u32.to_le_bytes());
+    assert_eq!(
+        checksum_warning(&record, 0x2000_8076, 0, record.len(), archive)
+            .expect("instance-definition record checksum framing"),
+        None
+    );
+
+    let whole_body = crc_chunk(archive, 0x2000_8076, &class);
+    assert!(
+        checksum_warning(&whole_body, 0x2000_8076, 0, whole_body.len(), archive)
+            .expect("instance-definition record checksum framing")
+            .is_some(),
+        "a CRC over the nested class chunk is a mismatch"
+    );
+}
+
+#[test]
 fn negative_view_list_count_is_reported_by_checksum_warning() {
     let archive = ArchiveVersion::V5;
     let body = (-1_i32).to_le_bytes();

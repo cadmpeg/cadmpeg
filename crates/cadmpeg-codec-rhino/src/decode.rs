@@ -29,7 +29,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroUsize;
 
 fn instance_members_are_unique(members: &[crate::wire::Uuid]) -> bool {
@@ -402,6 +402,12 @@ pub(crate) struct DecodeContext<'a> {
     definition_candidates: HashMap<crate::wire::Uuid, usize>,
     expansion_budget: ExpansionBudget,
     expansion_undo: Option<ExpansionUndo>,
+    /// Table records that object records name by UUID or archive index.
+    resources: crate::presentation::ResourceIndex,
+    /// Presentation-table losses and opaque records, reported at commit.
+    presentation: Option<crate::container::NativeInstall>,
+    /// Native annotation arenas, installed at commit.
+    annotation_arenas: Option<crate::annotations::NativeArenas>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -446,9 +452,16 @@ impl<'a> DecodeContext<'a> {
             definition_candidates,
             expansion_budget: ExpansionBudget::new(),
             expansion_undo: None,
+            resources: crate::presentation::ResourceIndex::default(),
+            presentation: None,
+            annotation_arenas: None,
         };
         context.retain_object_records()?;
         context.retain_opaque_records()?;
+        let presentation =
+            crate::presentation::install(session, scan, context.session.document_mut()?)?;
+        context.resources = presentation.resources;
+        context.presentation = Some(presentation.native);
         Ok(context)
     }
 
@@ -1027,6 +1040,7 @@ impl<'a> DecodeContext<'a> {
                         (!identity.name.is_empty()).then_some(identity.name.as_str()),
                         object,
                         order,
+                        &self.resources,
                     ) {
                         Ok(value) => value,
                         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
@@ -1076,6 +1090,139 @@ impl<'a> DecodeContext<'a> {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Admit the neutral definition and occurrence graph independently of
+    /// instance geometry expansion.
+    fn decode_occurrences(&mut self) -> Result<(), cadmpeg_core::CodecError> {
+        let Some(scale) = self.neutral_scale() else {
+            return Ok(());
+        };
+        let product = crate::product::neutral(self.expand.ctx(), self.scan, scale)?;
+        if product.definitions.is_empty() && product.occurrences.is_empty() {
+            return Ok(());
+        }
+        for (source_order, reason) in &product.omitted {
+            self.scan_warning(
+                *source_order,
+                format_args!("instance occurrence omitted: {reason}"),
+            );
+        }
+        let links = product
+            .owners
+            .iter()
+            .zip(&product.occurrences)
+            .map(|(source_order, occurrence)| (*source_order, occurrence.id.as_str().to_owned()))
+            .collect::<Vec<_>>();
+        let definitions = product.definitions;
+        let occurrences = product.occurrences;
+        match self.validate_candidate(|candidate, _annotations| {
+            candidate.model.product_definitions.extend(definitions);
+            candidate.model.occurrences.extend(occurrences);
+        }) {
+            Ok(()) => {
+                for (source_order, link) in links {
+                    self.append_link(source_order, &link)?;
+                    self.mark_decoded(source_order);
+                }
+            }
+            Err(CandidateError::Codec(error)) => return Err(error),
+            Err(error) => self.scan_warnings_for_class(
+                "instance",
+                format_args!(
+                    "instance occurrence graph rejected atomically by IR validation: {error}"
+                ),
+            ),
+        }
+        Ok(())
+    }
+
+    /// Decode text, leader, text-dot, and arrow annotations and admit their
+    /// semantic content independently of shape carriers.
+    fn decode_annotations(&mut self) -> Result<(), cadmpeg_core::CodecError> {
+        use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationId};
+
+        let collected = crate::annotations::collect(self.expand.ctx(), self.scan)?;
+        self.report.typed_losses.extend(collected.losses);
+        for projection in collected.projections {
+            let source_order = projection.source_order;
+            let Some(object) = self.scan.objects[source_order].framed() else {
+                continue;
+            };
+            if self.is_definition_member(object) {
+                self.scan_warning(source_order, format_args!("definition-member annotation retained because annotation instance expansion is unsupported"));
+                continue;
+            }
+            let Ok(order) = u32::try_from(self.session.document().model.semantic_annotations.len())
+            else {
+                self.scan_warning(
+                    source_order,
+                    format_args!(
+                        "annotation retained because the annotation arena exceeds u32 ordinals"
+                    ),
+                );
+                continue;
+            };
+            let style = crate::annotations::style_binding(&self.resources, projection.style)?;
+            let key = cadmpeg_ir::ids::IdentityKey::try_new(projection.key)
+                .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+            let id = SemanticAnnotationId::try_from(format!(
+                "rhino:annotation:annotation#{}",
+                key.as_str()
+            ))
+            .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+            let object = self.session.unknowns()[source_order]
+                .id()
+                .as_str()
+                .to_owned();
+            let annotation = SemanticAnnotation {
+                id,
+                object: object.clone(),
+                kind: projection.kind,
+                runtime_type: projection.runtime_type.to_owned(),
+                order,
+                text: projection.text,
+                references: style.reference.into_iter().collect(),
+                value: None,
+                format: projection.format,
+                position: projection.position,
+                parameters: projection.parameters,
+                assets: Vec::new(),
+                native_ref: object,
+            };
+            let links = [annotation.id.as_str().to_owned()];
+            match self.validate_candidate(|candidate, _annotations| {
+                candidate.model.semantic_annotations.push(annotation);
+            }) {
+                Ok(()) => {
+                    self.append_links(source_order, &links)?;
+                    self.mark_decoded(source_order);
+                    if style.unresolved {
+                        self.report.typed_losses.push(
+                            RhinoLossCode::DimensionStyleUnresolved.note(format_args!(
+                                "annotation record {source_order} style reference is not \
+                                 resolved to a decoded record"
+                            )),
+                        );
+                    }
+                    if projection.rich_text_unflattened {
+                        self.report.typed_losses.push(
+                            RhinoLossCode::AnnotationRichTextUnflattened.note(format_args!(
+                                "annotation record {source_order} carries RTF text without a \
+                                 plain-text fragment"
+                            )),
+                        );
+                    }
+                }
+                Err(CandidateError::Codec(error)) => return Err(error),
+                Err(error) => self.scan_warning(
+                    source_order,
+                    format_args!("annotation candidate rejected: {error}"),
+                ),
+            }
+        }
+        self.annotation_arenas = Some(collected.arenas);
         Ok(())
     }
 
@@ -2060,6 +2207,34 @@ impl<'a> DecodeContext<'a> {
         Ok(false)
     }
 
+    /// Removes links to entities an expansion appended and then omitted.
+    fn unlink_omitted(
+        &mut self,
+        omitted: &HashSet<String>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if omitted.is_empty() {
+            return Ok(());
+        }
+        let mut records = Vec::new();
+        if let Some(undo) = &mut self.expansion_undo {
+            undo.links.retain(|(record, link)| {
+                let keep = !omitted.contains(link);
+                if !keep {
+                    records.push(*record);
+                }
+                keep
+            });
+        }
+        records.sort_unstable();
+        records.dedup();
+        for record in records {
+            if let Some((_, links)) = self.session.unknown_links_mut(record)? {
+                links.retain(|link| !omitted.contains(link));
+            }
+        }
+        Ok(())
+    }
+
     /// Removes the links and outcomes a rejected expansion added. Links were
     /// only inserted, each once, into sorted lists, so removing them restores
     /// every touched record exactly.
@@ -2382,6 +2557,7 @@ impl<'a> DecodeContext<'a> {
             let id = subd.id.as_str().to_string();
             derived_ids.push(id);
         }
+        let mut omitted = HashSet::new();
         let procedural_curve_start = before.arena_len::<ProceduralCurve>();
         let procedural_surface_start = before.arena_len::<ProceduralSurface>();
         if model.procedural_curves.len() > procedural_curve_start
@@ -2390,9 +2566,11 @@ impl<'a> DecodeContext<'a> {
             let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
             for procedure in &model.procedural_curves[procedural_curve_start..] {
                 annotations.remove_entity(procedure.id.as_str());
+                omitted.insert(procedure.id.as_str().to_owned());
             }
             for procedure in &model.procedural_surfaces[procedural_surface_start..] {
                 annotations.remove_entity(procedure.id.as_str());
+                omitted.insert(procedure.id.as_str().to_owned());
             }
             self.annotations = annotations.build();
             model.procedural_curves.truncate(procedural_curve_start);
@@ -2402,6 +2580,8 @@ impl<'a> DecodeContext<'a> {
         for id in derived_ids {
             annotate_derived(&mut self.annotations, &id);
         }
+        links.retain(|link| !omitted.contains(link));
+        self.unlink_omitted(&omitted)?;
         Ok(links)
     }
 
@@ -2593,22 +2773,21 @@ impl<'a> DecodeContext<'a> {
         for loss in &self.scan.metadata.losses {
             self.report.phase_losses.push(loss.clone());
         }
-        self.report.typed_losses.extend(crate::annotations::install(
-            ctx,
-            self.scan,
-            self.session.document_mut()?,
-        )?);
+        self.annotation_arenas
+            .take()
+            .unwrap_or_default()
+            .install(ctx, self.session.document_mut()?)?;
         let document_data =
             crate::document_data::install(ctx, self.scan, self.session.document_mut()?)?;
         self.report.typed_losses.extend(document_data.losses);
         for source in document_data.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        let presentation =
-            crate::presentation::install(ctx, self.scan, self.session.document_mut()?)?;
-        self.report.typed_losses.extend(presentation.losses);
-        for source in presentation.opaque_records {
-            self.retain_opaque_record(&source)?;
+        if let Some(presentation) = self.presentation.take() {
+            self.report.typed_losses.extend(presentation.losses);
+            for source in presentation.opaque_records {
+                self.retain_opaque_record(&source)?;
+            }
         }
         self.report.typed_losses.extend(crate::product::install(
             ctx,
@@ -6332,7 +6511,9 @@ pub(crate) fn decode(
 ) -> Result<Decoded, cadmpeg_core::CodecError> {
     let mut context = DecodeContext::new(scan, expand)?;
     context.decode_geometry()?;
+    context.decode_occurrences()?;
     context.decode_dimensions()?;
+    context.decode_annotations()?;
     context.retain_unbound_history_geometry()?;
     let geometry_context = context.neutral_scale().map(|scale| {
         (

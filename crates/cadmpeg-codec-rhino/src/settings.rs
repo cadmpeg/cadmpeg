@@ -1344,6 +1344,7 @@ fn parse_application(
     Ok(value)
 }
 
+#[cfg(test)]
 pub(crate) fn standard_scale(value: i32) -> Option<f64> {
     StandardUnit::from_value(value).map(StandardUnit::millimeters_per_unit)
 }

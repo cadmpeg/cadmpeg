@@ -365,6 +365,10 @@ fn angular_measurement(first: [f64; 2], second: [f64; 2]) -> f64 {
     (second[1].atan2(second[0]) - first).rem_euclid(std::f64::consts::TAU)
 }
 
+/// The legacy annotation type of a text object, whose style index names a
+/// text style.
+pub(crate) const LEGACY_TEXT_KIND: i32 = 7;
+
 pub(crate) struct LegacyAnnotation {
     pub(crate) kind: i32,
     pub(crate) text_display_mode: i32,
@@ -1461,6 +1465,7 @@ pub(crate) fn project(
     name: Option<&str>,
     object: &str,
     order: u32,
+    styles: &crate::presentation::ResourceIndex,
 ) -> Result<
     (
         cadmpeg_ir::semantic_annotations::SemanticAnnotation,
@@ -1692,7 +1697,7 @@ pub(crate) fn project(
         })
         .filter(|point| point.iter().all(|value| value.is_finite()));
 
-    // dimstyle/detail targets are not resolvable here: nil -> null reference;
+    // A detail target is not resolvable here: nil -> null reference;
     // non-nil -> charge and keep the raw UUID in parameters.
     let mut references = BTreeMap::new();
     let mut unresolved = Vec::new();
@@ -1722,18 +1727,29 @@ pub(crate) fn project(
         }
     };
     reference(
-        "dimstyle_id",
-        match &dimension.family {
-            DimensionFamily::Modern { dimstyle_id } => Some(*dimstyle_id),
-            DimensionFamily::Legacy { .. } | DimensionFamily::V2 { .. } => None,
-        },
-        RhinoLossCode::DimensionStyleUnresolved,
-    )?;
-    reference(
         "detail_measured",
         Some(dimension.detail_measured),
         RhinoLossCode::DimensionDetailReferenceUnresolved,
     )?;
+
+    let style = crate::annotations::style_binding(
+        styles,
+        match &dimension.family {
+            DimensionFamily::Modern { dimstyle_id } => {
+                crate::annotations::StyleReference::Uuid(*dimstyle_id)
+            }
+            DimensionFamily::Legacy { dimstyle_index, .. } => {
+                crate::annotations::StyleReference::Index(*dimstyle_index)
+            }
+            DimensionFamily::V2 { .. } => crate::annotations::StyleReference::Absent,
+        },
+    )?;
+    if let Some((role, targets)) = style.reference {
+        references.insert(role, targets);
+    }
+    if style.unresolved {
+        unresolved.push(RhinoLossCode::DimensionStyleUnresolved);
+    }
 
     let value = cadmpeg_ir::scalar::FiniteReal::new(value)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("dimension value must be finite"))?;
@@ -1788,7 +1804,14 @@ pub(crate) fn semantic_json(dimension: &Dimension) -> Result<String, cadmpeg_cor
             map.end()
         }
     }
-    let (annotation, _) = project(dimension, "embedded-history-dimension", None, "", 0)?;
+    let (annotation, _) = project(
+        dimension,
+        "embedded-history-dimension",
+        None,
+        "",
+        0,
+        &crate::presentation::ResourceIndex::default(),
+    )?;
     crate::wire::canonical_json(&DimensionJson(&annotation))
 }
 
@@ -2432,8 +2455,15 @@ pub(crate) mod tests {
             ArchiveVersion::V8,
         )
         .expect("valid linear dimension");
-        let (annotation, _) = super::project(&dimension, "embedded-history-dimension", None, "", 0)
-            .expect("dimension projection");
+        let (annotation, _) = super::project(
+            &dimension,
+            "embedded-history-dimension",
+            None,
+            "",
+            0,
+            &crate::presentation::ResourceIndex::default(),
+        )
+        .expect("dimension projection");
         let baseline = serde_json::json!({
             "kind": "dimension",
             "runtime_type": annotation.runtime_type,

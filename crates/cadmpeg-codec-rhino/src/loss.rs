@@ -244,6 +244,8 @@ pub(crate) enum RhinoLossCode {
     /// Body kind came from the closed-shell gauge or from an unverified stored
     /// solid flag rather than from a flag the writer stamp vouches for.
     TopologyBodyKindGaugeSubstituted,
+    /// Annotation RTF text has no plain-text fragment in neutral text.
+    AnnotationRichTextUnflattened,
 }
 
 impl RhinoLossCode {
@@ -293,6 +295,7 @@ impl RhinoLossCode {
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
         Self::TopologyBodyKindGaugeSubstituted,
+        Self::AnnotationRichTextUnflattened,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -342,6 +345,7 @@ impl RhinoLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::TopologyBodyKindGaugeSubstituted => "topology.body-kind-gauge-substituted",
+            Self::AnnotationRichTextUnflattened => "annotation.rich-text-unflattened",
         }
     }
 
@@ -407,6 +411,7 @@ impl RhinoLossCode {
             Self::WriterSupportGeometryWithheld => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::AnnotationRichTextUnflattened => LossTaxonomy::PmiOmitted,
         }
     }
 
@@ -504,6 +509,7 @@ mod tests {
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",
                 "topology.body-kind-gauge-substituted",
+                "annotation.rich-text-unflattened",
             ]
         );
     }
