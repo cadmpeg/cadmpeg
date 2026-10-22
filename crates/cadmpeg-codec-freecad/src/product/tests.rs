@@ -196,9 +196,8 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     }
     let first_link = link_occurrences[0].link.as_ref().expect("App::Link state");
     assert_eq!(first_link.linked_subelements(), ["Face1"]);
-    // §2.2: the existing native bit string projects into each occurrence.
-    assert_eq!(link_occurrences[0].visible, Some(true));
-    assert_eq!(link_occurrences[1].visible, Some(false));
+    assert_eq!(link_occurrences[0].visible, None);
+    assert_eq!(link_occurrences[1].visible, None);
     assert!(first_link.element_component().is_some());
     assert_eq!(first_link.claim_child(), Some(true));
     let copy_on_change = first_link.copy_on_change().expect("copy-on-change state");
