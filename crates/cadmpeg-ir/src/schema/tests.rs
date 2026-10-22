@@ -83,6 +83,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         faces: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         edges: crate::features::DistinctMembers::try_from(vec![historical_edge.clone()]).unwrap(),
         vertices: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edge_geometry: Vec::new(),
         native_ref: None,
     };
     let feature = Feature {
@@ -155,6 +156,17 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         })
         .unwrap();
     assert_eq!(borrowed_feature_references, feature_references);
+    let mut local_members = Vec::new();
+    crate::schema::rewrite::typed::RewriteIdentities::visit_local_members(
+        feature.evaluation.definition(),
+        &ctx,
+        &mut |member| {
+            local_members.push(member.to_owned());
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(local_members, vec!["test:model:historical-edge#local"]);
 
     let mut ir = CadIr::empty();
     ir.model.feature_input_topologies.push(state);

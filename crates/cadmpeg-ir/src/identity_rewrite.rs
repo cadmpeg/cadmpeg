@@ -94,6 +94,11 @@ macro_rules! rewrite_record {
                 $(crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
                 Ok(())
             }
+            fn visit_local_members(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("walk typed local member fields")?;
+                $(crate::schema::rewrite::typed::RewriteIdentities::visit_local_members(&self.$field, ctx, visitor)?;)*
+                Ok(())
+            }
             fn rewrite_identities<RewriteMapFn>(self, rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>, identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError>
             where RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
                 let _depth = rewrite_context.enter_nested("typed rewrite record")?;
@@ -108,6 +113,12 @@ macro_rules! rewrite_record {
                 let _depth = ctx.enter_nested("walk typed reference fields")?;
                 let Self($($field),*) = self;
                 $(crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references($field, ctx, visitor)?;)*
+                Ok(())
+            }
+            fn visit_local_members(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("walk typed local member fields")?;
+                let Self($($field),*) = self;
+                $(crate::schema::rewrite::typed::RewriteIdentities::visit_local_members($field, ctx, visitor)?;)*
                 Ok(())
             }
             fn rewrite_identities<RewriteMapFn>(self, rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>, identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError>
@@ -134,6 +145,16 @@ macro_rules! rewrite_enum {
                     $(Self::$variant $(($($tuple),*))? $({$($field),*})? => {
                         $($(crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references($tuple, ctx, visitor)?;)*)?
                         $($(crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references($field, ctx, visitor)?;)*)?
+                        Ok(())
+                    },)*
+                }
+            }
+            fn visit_local_members(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("walk typed local member fields")?;
+                match self {
+                    $(Self::$variant $(($($tuple),*))? $({$($field),*})? => {
+                        $($(crate::schema::rewrite::typed::RewriteIdentities::visit_local_members($tuple, ctx, visitor)?;)*)?
+                        $($(crate::schema::rewrite::typed::RewriteIdentities::visit_local_members($field, ctx, visitor)?;)*)?
                         Ok(())
                     },)*
                 }
