@@ -6,4 +6,4 @@ mod extremum;
 mod gauss_kronrod;
 
 pub(crate) use extremum::extrema;
-pub(crate) use gauss_kronrod::{integrate, Target};
+pub(crate) use gauss_kronrod::{integrate, nodes as gauss_kronrod_nodes, Target};

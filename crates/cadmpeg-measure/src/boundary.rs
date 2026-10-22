@@ -8,6 +8,7 @@
 //! remaining parameter jump that maps to one surface point becomes a
 //! synthesized segment. The closing jump gives the loop's net shift.
 
+pub(crate) mod pcurve;
 pub(crate) mod piece;
 
 use std::collections::HashMap;
@@ -26,6 +27,7 @@ use crate::owners::Owners;
 use crate::reason::UnavailableReason;
 use crate::report::{DeclaredRole, ListedOrder, UvSource};
 use crate::traversal::{traverse, TraversalError};
+use pcurve::UseFrame;
 use piece::{CoedgeUse, Piece};
 
 /// The boundary of one face.
@@ -62,6 +64,25 @@ pub(crate) struct ResolvedLoop<'ir> {
     /// The largest distance between a boundary point and its inverted
     /// surface point.
     pub(crate) off_surface: f64,
+    /// Whether the traversal direction is known for every coedge.
+    pub(crate) directed: bool,
+}
+
+/// A coedge's 3D curve, its interval in traversal order, and the source
+/// its inverted image reports.
+type ThreeD<'ir> = (Rc<CurveChart<'ir>>, [f64; 2], UvSource);
+
+/// The pieces of one coedge.
+enum CoedgePieces<'ir> {
+    /// Pieces in traversal order; `directed` is false when the direction of
+    /// a closed pcurve-only coedge is not known.
+    Pieces {
+        pieces: Vec<Piece<'ir>>,
+        directed: bool,
+    },
+    /// A degenerate coedge at a singular point: a segment along the singular
+    /// line between its neighbours.
+    Pole,
 }
 
 /// What the resolver needs to know about the face.
@@ -110,6 +131,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
                         net_shift: [0, 0],
                         max_gap: 0.0,
                         off_surface: 0.0,
+                        directed: true,
                     }),
                     None => Err(MeasureFailure::unavailable(
                         UnavailableReason::BoundaryCoedgeUnresolved,
@@ -245,37 +267,65 @@ impl<'ir> FaceFrame<'_, 'ir> {
         let mut pieces: Vec<Piece<'ir>> = Vec::new();
         let mut max_gap: f64 = 0.0;
         let mut off_surface: f64 = 0.0;
+        let mut directed = true;
+        let mut pending_pole: Option<&'ir Coedge> = None;
+        let mut leading_pole: Option<&'ir Coedge> = None;
+        let alone = coedges.len() == 1;
         for coedge in coedges {
-            let mut piece = self.coedge_piece(eval, coedge)?;
-            off_surface = off_surface.max(piece.off_surface);
+            let new_pieces = match self.coedge_pieces(eval, coedge, alone)? {
+                CoedgePieces::Pole => {
+                    if let Some(earlier) = pending_pole.replace(coedge) {
+                        pending_pole = Some(earlier);
+                    }
+                    continue;
+                }
+                CoedgePieces::Pieces {
+                    pieces: new_pieces,
+                    directed: known,
+                } => {
+                    directed &= known;
+                    new_pieces
+                }
+            };
             let (start_vertex, end_vertex) = self.oriented_ends(coedge);
-            let start = piece.start_point(eval)?;
-            let end = piece.end_point(eval)?;
-            for (vertex, point) in [(start_vertex, start), (end_vertex, end)] {
-                if let Some(position) = self.owners.vertex_position(vertex) {
-                    max_gap = max_gap.max(self.body.point(position).distance(point));
-                }
+            if let (Some(first), Some(position)) = (
+                new_pieces.first(),
+                self.owners.vertex_position(start_vertex),
+            ) {
+                max_gap = max_gap.max(self.body.point(position).distance(first.start_point(eval)?));
             }
-            if let Some(previous) = pieces.last() {
-                let from = previous.end_uv(eval, self.chart)?;
-                let to = piece.start_uv(eval, self.chart)?;
-                piece.shift = lift(periods, from, to);
-                let to = piece.start_uv(eval, self.chart)?;
-                let gap = previous.end_point(eval)?.distance(start);
-                max_gap = max_gap.max(gap);
-                if let Some(junction) =
-                    self.junction(previous.end_point(eval)?, start, from, to, gap)?
-                {
-                    pieces.push(junction);
-                }
+            if let (Some(last), Some(position)) =
+                (new_pieces.last(), self.owners.vertex_position(end_vertex))
+            {
+                max_gap = max_gap.max(self.body.point(position).distance(last.end_point(eval)?));
             }
-            pieces.push(piece);
+            for mut piece in new_pieces {
+                off_surface = off_surface.max(piece.off_surface);
+                let start = piece.start_point(eval)?;
+                if let Some(previous) = pieces.last() {
+                    let from = previous.end_uv(eval, self.chart)?;
+                    let to = piece.start_uv(eval, self.chart)?;
+                    piece.shift = lift(periods, from, to);
+                    let to = piece.start_uv(eval, self.chart)?;
+                    let end = previous.end_point(eval)?;
+                    let gap = end.distance(start);
+                    max_gap = max_gap.max(gap);
+                    if let Some(junction) =
+                        self.junction(end, start, from, to, gap, pending_pole.take())?
+                    {
+                        pieces.push(junction);
+                    }
+                } else if let Some(pole) = pending_pole.take() {
+                    leading_pole = Some(pole);
+                }
+                pieces.push(piece);
+            }
         }
         let (Some(first), Some(last)) = (pieces.first(), pieces.last()) else {
             return Err(MeasureFailure::unavailable(
                 UnavailableReason::BoundaryCoedgeUnresolved,
                 None,
-                "the ring has no coedge",
+                "the ring has no coedge with a curve",
             ));
         };
         let start = first.start_uv(eval, self.chart)?;
@@ -307,7 +357,8 @@ impl<'ir> FaceFrame<'_, 'ir> {
                 target[direction] = start[direction] + turns * period;
             }
         }
-        match self.junction(end_point, start_point, end, target, gap) {
+        let closing_pole = pending_pole.or(leading_pole);
+        match self.junction(end_point, start_point, end, target, gap, closing_pole) {
             Ok(Some(closing)) => pieces.push(closing),
             Ok(None) => {}
             Err(MeasureFailure::Unavailable { .. }) => {
@@ -328,6 +379,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
             net_shift,
             max_gap,
             off_surface,
+            directed,
         })
     }
 
@@ -341,6 +393,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
         from: [f64; 2],
         to: [f64; 2],
         gap: f64,
+        pole: Option<&'ir Coedge>,
     ) -> Measure<Option<Piece<'ir>>> {
         if gap > self.alpha {
             return Err(MeasureFailure::unavailable(
@@ -349,9 +402,30 @@ impl<'ir> FaceFrame<'_, 'ir> {
                 format!("consecutive pieces are {gap} mm apart"),
             ));
         }
+        if let Some(pole) = pole {
+            if from != to {
+                self.check_segment(from_point, to_point, from, to)?;
+            }
+            return Ok(Some(Piece::pole(pole, from, to, from_point)));
+        }
         if from == to {
             return Ok(None);
         }
+        self.check_segment(from_point, to_point, from, to)?;
+        let singular = self.chart.singular_at(from_point, self.alpha)
+            && self.chart.singular_at(to_point, self.alpha);
+        Ok(Some(Piece::segment(from, to, from_point, singular)))
+    }
+
+    /// Require the straight parameter segment between two junction points to
+    /// map within the allowance of both.
+    fn check_segment(
+        &self,
+        from_point: Point3,
+        to_point: Point3,
+        from: [f64; 2],
+        to: [f64; 2],
+    ) -> Measure<()> {
         let middle = [from[0].midpoint(to[0]), from[1].midpoint(to[1])];
         let reached = self.chart.partials(middle[0], middle[1]).point;
         if reached.distance(from_point) > self.alpha || reached.distance(to_point) > self.alpha {
@@ -361,44 +435,112 @@ impl<'ir> FaceFrame<'_, 'ir> {
                 "a parameter jump between pieces does not map to one surface point",
             ));
         }
-        let singular = self.chart.singular_at(from_point, self.alpha)
-            && self.chart.singular_at(to_point, self.alpha);
-        Ok(Some(Piece::segment(from, to, from_point, singular)))
+        Ok(())
     }
 
-    /// The piece of one coedge on the 3D interval of its curve.
-    fn coedge_piece(&self, eval: &Eval<'_, '_>, coedge: &'ir Coedge) -> Measure<Piece<'ir>> {
+    /// The pieces of one coedge: a pole, its pcurve uses, or its 3D curve
+    /// interval inverted onto the carrier.
+    fn coedge_pieces(
+        &self,
+        eval: &Eval<'_, '_>,
+        coedge: &'ir Coedge,
+        alone: bool,
+    ) -> Measure<CoedgePieces<'ir>> {
         let entity = coedge.id.as_str();
-        let (curve, interval, uv_source) = if let Some(use_curve) = &coedge.use_curve {
-            let Some(record) = self.owners.curve(use_curve.curve.as_str()) else {
-                return Err(MeasureFailure::unavailable(
-                    UnavailableReason::CarrierUnresolved,
-                    Some(entity),
-                    "the coedge's use-curve does not resolve",
-                ));
-            };
-            (
-                Rc::new(CurveChart::new(record, self.body)?),
-                use_curve.parameter_range.endpoints(),
-                UvSource::InvertedUseCurve,
-            )
-        } else {
-            let Some(edge) = self.edges.get(coedge.edge.as_str()) else {
+        let Some(edge) = self.edges.get(coedge.edge.as_str()) else {
+            return Err(MeasureFailure::unavailable(
+                UnavailableReason::BoundaryCoedgeUnresolved,
+                Some(entity),
+                "the coedge's edge does not resolve",
+            ));
+        };
+        let (start_vertex, end_vertex) = self.oriented_ends(coedge);
+        let start = self
+            .owners
+            .vertex_position(start_vertex)
+            .map(|point| self.body.point(point));
+        let end = self
+            .owners
+            .vertex_position(end_vertex)
+            .map(|point| self.body.point(point));
+        if edge.closed() && (edge.degenerate || edge.curve.is_err()) {
+            if let Some(point) = start {
+                if self.chart.singular_at(point, self.alpha) {
+                    return Ok(CoedgePieces::Pole);
+                }
+            }
+        }
+        let three_d = self.three_d(coedge, edge)?;
+        if !coedge.pcurves.is_empty() {
+            let (Some(start), Some(end)) = (start, end) else {
                 return Err(MeasureFailure::unavailable(
                     UnavailableReason::BoundaryCoedgeUnresolved,
                     Some(entity),
-                    "the coedge's edge does not resolve",
+                    "the coedge's vertices have no points",
                 ));
             };
-            let curve = edge.curve.clone().map_err(|missing| missing.failure())?;
-            let [t0, t1] = edge.interval.clone().map_err(|missing| missing.failure())?;
-            let interval = match coedge.sense {
-                Sense::Forward => [t0, t1],
-                Sense::Reversed => [t1, t0],
+            let frame = UseFrame {
+                owners: self.owners,
+                chart: self.chart,
+                alpha: self.alpha,
+                start,
+                end,
+                closed: edge.closed(),
+                curve: three_d
+                    .as_ref()
+                    .map(|(curve, interval, _)| (&**curve, *interval)),
+                edge_range: edge
+                    .edge
+                    .param_range()
+                    .map(cadmpeg_ir::units::FiniteVector::get),
             };
-            (curve, interval, UvSource::InvertedEdgeCurve)
+            let resolved = frame
+                .resolve(
+                    eval,
+                    &coedge.pcurves,
+                    alone && pcurve::nesting_domain(self.chart),
+                )
+                .map_err(|failure| failure.at(entity))?;
+            let farthest = frame
+                .witness(eval, &resolved.spans)
+                .map_err(|failure| failure.at(entity))?;
+            let uv_source = if resolved.spans.len() > 1 {
+                UvSource::PcurveChain
+            } else {
+                UvSource::Pcurve
+            };
+            let pieces = resolved
+                .spans
+                .into_iter()
+                .map(|span| {
+                    Piece::pcurve(
+                        span,
+                        self.chart,
+                        CoedgeUse {
+                            coedge,
+                            uv_source,
+                            alpha: self.alpha,
+                        },
+                        farthest,
+                    )
+                })
+                .collect();
+            return Ok(CoedgePieces::Pieces {
+                pieces,
+                directed: resolved.directed,
+            });
+        }
+        let Some((curve, interval, uv_source)) = three_d else {
+            return Err(match &edge.curve {
+                Err(missing) => missing.failure().at(entity),
+                Ok(_) => MeasureFailure::unavailable(
+                    UnavailableReason::BoundaryCoedgeUnresolved,
+                    Some(entity),
+                    "the coedge has no pcurve and no 3D interval",
+                ),
+            });
         };
-        Piece::inverted(
+        let piece = Piece::inverted(
             eval,
             self.chart,
             curve,
@@ -409,7 +551,43 @@ impl<'ir> FaceFrame<'_, 'ir> {
                 alpha: self.alpha,
             },
         )
-        .map_err(|failure| failure.at(entity))
+        .map_err(|failure| failure.at(entity))?;
+        Ok(CoedgePieces::Pieces {
+            pieces: vec![piece],
+            directed: true,
+        })
+    }
+
+    /// The coedge's 3D curve and its interval in traversal order: the
+    /// use-curve, else the edge curve on its interval by sense. `None` when
+    /// the edge has no usable curve interval.
+    fn three_d(
+        &self,
+        coedge: &'ir Coedge,
+        edge: &EdgeGeometry<'ir>,
+    ) -> Measure<Option<ThreeD<'ir>>> {
+        if let Some(use_curve) = &coedge.use_curve {
+            let Some(record) = self.owners.curve(use_curve.curve.as_str()) else {
+                return Err(MeasureFailure::unavailable(
+                    UnavailableReason::CarrierUnresolved,
+                    Some(coedge.id.as_str()),
+                    "the coedge's use-curve does not resolve",
+                ));
+            };
+            return Ok(Some((
+                Rc::new(CurveChart::new(record, self.body)?),
+                use_curve.parameter_range.endpoints(),
+                UvSource::InvertedUseCurve,
+            )));
+        }
+        let (Ok(curve), Ok([t0, t1])) = (&edge.curve, &edge.interval) else {
+            return Ok(None);
+        };
+        let interval = match coedge.sense {
+            Sense::Forward => [*t0, *t1],
+            Sense::Reversed => [*t1, *t0],
+        };
+        Ok(Some((curve.clone(), interval, UvSource::InvertedEdgeCurve)))
     }
 }
 
@@ -446,7 +624,7 @@ fn close_through_singular_line(pieces: &mut [Piece<'_>], net_shift: &mut [i32; 2
     };
     let length = match &segment.source {
         piece::Source::Segment { from, to, .. } => to[0] - from[0],
-        piece::Source::Curve(_) => return,
+        piece::Source::Curve(_) | piece::Source::Pcurve { .. } => return,
     };
     if (length + delta).abs() >= period {
         return;

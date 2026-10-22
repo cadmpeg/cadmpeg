@@ -236,7 +236,21 @@ impl<'ir> FaceInput<'_, 'ir> {
             (Err(missing), _) | (_, Err(missing)) => (missing.quantity(), None),
         };
 
-        let orientation: FaceOrientation = face_orientation(face, region.as_ref().ok());
+        let directed: Vec<bool> = match &boundary {
+            Ok(boundary) => boundary
+                .resolved
+                .loops
+                .iter()
+                .map(|resolution| {
+                    resolution
+                        .outcome
+                        .as_ref()
+                        .map_or(true, |resolved| resolved.directed)
+                })
+                .collect(),
+            Err(_) => Vec::new(),
+        };
+        let orientation: FaceOrientation = face_orientation(face, region.as_ref().ok(), &directed);
         let mut caveats = Vec::new();
         let loops = self.loops(face, &boundary, region.as_ref().ok(), &mut caveats);
         caveats.sort();

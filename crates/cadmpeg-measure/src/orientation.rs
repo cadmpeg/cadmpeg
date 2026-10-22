@@ -21,8 +21,9 @@ pub(crate) fn declared_normal(face: &Face) -> NormalReading {
     }
 }
 
-/// The oriented normal the loops give against their computed roles.
-pub(crate) fn loop_normal(region: &Region) -> NormalReading {
+/// The oriented normal the loops give against their computed roles. A loop
+/// whose direction is not known (`directed[index]` false) does not vote.
+pub(crate) fn loop_normal(region: &Region, directed: &[bool]) -> NormalReading {
     match region.rule {
         RegionRule::Nesting | RegionRule::DomainExterior => {}
         RegionRule::WholeSurface | RegionRule::DeclaredOrientation => {
@@ -31,7 +32,10 @@ pub(crate) fn loop_normal(region: &Region) -> NormalReading {
     }
     let mut agree = false;
     let mut oppose = false;
-    for member in &region.loops {
+    for (index, member) in region.loops.iter().enumerate() {
+        if !directed.get(index).copied().unwrap_or(true) {
+            continue;
+        }
         if member.factor > 0.0 {
             agree = true;
         } else if member.factor < 0.0 {
@@ -47,7 +51,11 @@ pub(crate) fn loop_normal(region: &Region) -> NormalReading {
 }
 
 /// The orientation facts of a face whose region is `region`.
-pub(crate) fn face_orientation(face: &Face, region: Option<&Region>) -> FaceOrientation {
+pub(crate) fn face_orientation(
+    face: &Face,
+    region: Option<&Region>,
+    directed: &[bool],
+) -> FaceOrientation {
     let declared = declared_normal(face);
     let Some(region) = region else {
         return FaceOrientation {
@@ -58,7 +66,7 @@ pub(crate) fn face_orientation(face: &Face, region: Option<&Region>) -> FaceOrie
             classification: Classification::Unspecified,
         };
     };
-    let loops = loop_normal(region);
+    let loops = loop_normal(region, directed);
     let consistent = match loops {
         NormalReading::Mixed => Some(false),
         NormalReading::NotDeterminable => None,

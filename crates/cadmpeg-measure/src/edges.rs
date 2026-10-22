@@ -10,17 +10,21 @@
 use std::rc::Rc;
 
 use cadmpeg_core::decode::ResourceLimit;
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, EdgeCarrier};
 
 use crate::bbox::{curve_box, point_box, CurveBox};
+use crate::boundary::pcurve::{Span, UseFrame};
 use crate::canonical::curve::{CurveChart, CurveShape};
 use crate::canonical::placement::Placement;
+use crate::canonical::Carrier;
 use crate::context::Eval;
 use crate::face::box_value;
 use crate::failure::{settle, Measure, MeasureFailure, Outcome};
+use crate::geom::{combine, Aabb};
 use crate::length::{curve_length, Length};
 use crate::owners::Owners;
+use crate::quadrature::{extrema, integrate, Target};
 use crate::reason::UnavailableReason;
 use crate::report::{CurveKind, EdgeMeasures, EdgeParameters, RowStatus, StatusTally};
 use crate::tolerance::{allowance, model_tolerance};
@@ -114,6 +118,37 @@ pub(crate) fn measure_edge<'ir>(
         (Some(start), Some(end)) => start.distance(end).max(alpha),
         _ => alpha,
     };
+    if edge.carrier.curve().is_none() {
+        if let (Ok(placement), Some(start), Some(end)) = (body, start, end) {
+            let traced = settle(
+                pcurve_trace(
+                    eval,
+                    owners,
+                    edge,
+                    &PcurveEnds {
+                        placement: *placement,
+                        alpha,
+                        start,
+                        end,
+                    },
+                )
+                .map_err(|failure| failure.at(id)),
+            )?;
+            if let Ok(Some(trace)) = traced {
+                return Ok(EdgeGeometry {
+                    edge,
+                    tau,
+                    curve,
+                    interval,
+                    length: Ok(trace.length),
+                    bbox: Ok(trace.bbox),
+                    start: Some(start),
+                    end: Some(end),
+                    degenerate: trace.degenerate,
+                });
+            }
+        }
+    }
     let (length, bbox) = match (&curve, &interval) {
         (Ok(chart), Ok(range)) => (
             settle(curve_length(eval, chart, *range, scale).map_err(|failure| failure.at(id)))?,
@@ -140,6 +175,150 @@ pub(crate) fn measure_edge<'ir>(
         end,
         degenerate,
     })
+}
+
+/// The ends of an edge with no 3D curve.
+struct PcurveEnds {
+    placement: Placement,
+    alpha: f64,
+    start: Point3,
+    end: Point3,
+}
+
+/// The length, box and degeneracy of an edge traced by its pcurves.
+struct Trace {
+    length: Length,
+    bbox: CurveBox,
+    degenerate: bool,
+}
+
+/// Trace an edge with no 3D curve through the pcurve uses of its first
+/// coedge that has any, mapped through that coedge's face surface. `None`
+/// when no coedge of the edge has a pcurve.
+fn pcurve_trace(
+    eval: &Eval<'_, '_>,
+    owners: &Owners<'_>,
+    edge: &Edge,
+    ends: &PcurveEnds,
+) -> Measure<Option<Trace>> {
+    let Some(coedge) = owners
+        .edge_coedges(edge.id.as_str())
+        .iter()
+        .copied()
+        .find(|coedge| !coedge.pcurves.is_empty())
+    else {
+        return Ok(None);
+    };
+    let surface = owners
+        .coedge_face(coedge)
+        .and_then(|face| owners.face(face))
+        .and_then(|face| owners.surface(face.surface.as_str()))
+        .ok_or_else(|| {
+            MeasureFailure::unavailable(
+                UnavailableReason::CarrierUnresolved,
+                Some(coedge.id.as_str()),
+                "the coedge's face surface does not resolve",
+            )
+        })?;
+    let carrier = Carrier::resolve(surface, ends.placement)?;
+    let chart = carrier.chart()?;
+    let (start, end) = match coedge.sense {
+        cadmpeg_ir::topology::Sense::Forward => (ends.start, ends.end),
+        cadmpeg_ir::topology::Sense::Reversed => (ends.end, ends.start),
+    };
+    let frame = UseFrame {
+        owners,
+        chart,
+        alpha: ends.alpha,
+        start,
+        end,
+        closed: edge.start == edge.end,
+        curve: None,
+        edge_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+    };
+    let resolved = frame.resolve(eval, &coedge.pcurves, true)?;
+    let scale = start.distance(end).max(ends.alpha);
+    let velocity = |span: &Span<'_>, t: f64| -> Measure<(Point3, Vector3)> {
+        let uv = span.uv(eval, t)?;
+        let duv = span.duv(eval, t)?;
+        let partials = chart.partials(uv[0], uv[1]);
+        Ok((
+            partials.point,
+            combine(&[(duv[0], partials.du), (duv[1], partials.dv)]),
+        ))
+    };
+    let mut length = Length {
+        value: 0.0,
+        numeric_error: 0.0,
+        method: Method::BoundaryQuadrature,
+    };
+    for span in &resolved.spans {
+        let mut charge = |units| eval.charge(units);
+        let mut speed = |t: f64| -> Measure<[f64; 1]> { Ok([velocity(span, t)?.1.norm()]) };
+        let integral = integrate(
+            &mut charge,
+            &mut speed,
+            span.t0.min(span.t1),
+            span.t0.max(span.t1),
+            &span.breaks(),
+            Target { scale: [scale] },
+        )?;
+        if !integral.converged {
+            return Err(MeasureFailure::unavailable(
+                UnavailableReason::QuadratureNotConverged,
+                None,
+                "the length quadrature did not converge",
+            ));
+        }
+        length.value += integral.value[0];
+        length.numeric_error += integral.error[0];
+    }
+    let degenerate = edge.start == edge.end && length.value <= ends.alpha;
+    if degenerate {
+        return Ok(Some(Trace {
+            length: Length {
+                value: 0.0,
+                numeric_error: length.value,
+                method: Method::ClosedForm,
+            },
+            bbox: point_box(start),
+            degenerate,
+        }));
+    }
+    let mut aabb = Aabb::of_point(start);
+    aabb.include(end);
+    let mut numeric_error: f64 = 0.0;
+    for span in &resolved.spans {
+        for (axis, direction) in [
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut charge = |units| eval.charge(units);
+            let mut f = |t: f64| -> Measure<(f64, f64)> {
+                let (point, tangent) = velocity(span, t)?;
+                Ok((
+                    point.vector_from(Point3::new(0.0, 0.0, 0.0)).dot(direction),
+                    tangent.dot(direction),
+                ))
+            };
+            let found = extrema(&mut charge, &mut f, span.t0, span.t1, &span.breaks())?;
+            aabb.min[axis] = aabb.min[axis].min(found.min);
+            aabb.max[axis] = aabb.max[axis].max(found.max);
+            numeric_error = numeric_error.max(found.error);
+        }
+    }
+    Ok(Some(Trace {
+        length,
+        bbox: CurveBox {
+            aabb,
+            numeric_error,
+        },
+        degenerate,
+    }))
 }
 
 fn interval(

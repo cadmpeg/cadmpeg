@@ -8,6 +8,7 @@ use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Coedge;
 
+use super::pcurve::Span;
 use crate::canonical::curve::CurveChart;
 use crate::canonical::surface::Chart;
 use crate::context::Eval;
@@ -23,6 +24,8 @@ const MAX_NESTING_SAMPLES_PER_PIECE: usize = 1 << 10;
 pub(crate) enum Source<'ir> {
     /// A 3D curve interval inverted onto the carrier.
     Curve(Rc<CurveChart<'ir>>),
+    /// A pcurve use mapped through the carrier.
+    Pcurve { span: Span<'ir>, chart: Chart },
     /// A straight parameter segment whose image is one model point.
     Segment {
         from: [f64; 2],
@@ -89,6 +92,39 @@ impl<'ir> Piece<'ir> {
             reference: vec![(0.0, from), (1.0, to)],
             periods: [None, None],
             alpha: 0.0,
+        }
+    }
+
+    /// A pcurve use on `chart`, traversed from `span.t0` to `span.t1`.
+    pub(crate) fn pcurve(
+        span: Span<'ir>,
+        chart: &Chart,
+        use_: CoedgeUse<'ir>,
+        off_surface: f64,
+    ) -> Self {
+        Self {
+            coedge: Some(use_.coedge),
+            source: Source::Pcurve {
+                span,
+                chart: *chart,
+            },
+            t0: span.t0,
+            t1: span.t1,
+            shift: [0.0, 0.0],
+            uv_source: use_.uv_source,
+            off_surface,
+            reference: Vec::new(),
+            periods: chart.periods(),
+            alpha: use_.alpha,
+        }
+    }
+
+    /// A pole segment of a degenerate coedge from `from` to `to` at `point`.
+    pub(crate) fn pole(coedge: &'ir Coedge, from: [f64; 2], to: [f64; 2], point: Point3) -> Self {
+        Self {
+            coedge: Some(coedge),
+            uv_source: UvSource::Pole,
+            ..Self::segment(from, to, point, true)
         }
     }
 
@@ -219,6 +255,13 @@ impl<'ir> Piece<'ir> {
                 uv: self.segment_uv(*from, *to, t),
                 duv: [to[0] - from[0], to[1] - from[1]],
             }),
+            Source::Pcurve { span, .. } => {
+                let uv = span.uv(eval, t)?;
+                Ok(Sample {
+                    uv: [uv[0] + self.shift[0], uv[1] + self.shift[1]],
+                    duv: span.duv(eval, t)?,
+                })
+            }
             Source::Curve(curve) => {
                 let point = curve.point(eval, t)?;
                 let tangent = curve.tangent(eval, t)?;
@@ -248,6 +291,10 @@ impl<'ir> Piece<'ir> {
     pub(crate) fn uv(&self, eval: &Eval<'_, '_>, chart: &Chart, t: f64) -> Measure<[f64; 2]> {
         match &self.source {
             Source::Segment { from, to, .. } => Ok(self.segment_uv(*from, *to, t)),
+            Source::Pcurve { span, .. } => {
+                let uv = span.uv(eval, t)?;
+                Ok([uv[0] + self.shift[0], uv[1] + self.shift[1]])
+            }
             Source::Curve(curve) => {
                 let point = curve.point(eval, t)?;
                 let (lifted, _) = self.lifted(chart, t, point);
@@ -277,6 +324,10 @@ impl<'ir> Piece<'ir> {
         match &self.source {
             Source::Segment { point, .. } => Ok(*point),
             Source::Curve(curve) => curve.point(eval, t),
+            Source::Pcurve { span, chart } => {
+                let uv = span.uv(eval, t)?;
+                Ok(chart.partials(uv[0], uv[1]).point)
+            }
         }
     }
 
@@ -284,6 +335,7 @@ impl<'ir> Piece<'ir> {
     pub(crate) fn breaks(&self) -> Vec<f64> {
         match &self.source {
             Source::Curve(curve) => curve.breaks(),
+            Source::Pcurve { span, .. } => span.breaks(),
             Source::Segment { .. } => Vec::new(),
         }
     }
@@ -306,11 +358,28 @@ impl<'ir> Piece<'ir> {
             let end = self.uv(eval, chart, self.t1)?;
             return Ok(vec![start, end]);
         }
-        let mut points: Vec<(f64, [f64; 2])> = self
-            .reference
-            .iter()
-            .map(|(t, uv)| (*t, [uv[0] + self.shift[0], uv[1] + self.shift[1]]))
-            .collect();
+        let mut points: Vec<(f64, [f64; 2])> = match &self.source {
+            Source::Pcurve { span, .. } => {
+                let mut parameters = vec![self.t0];
+                let mut inner = span.breaks();
+                inner.sort_by(f64::total_cmp);
+                if self.t1 < self.t0 {
+                    inner.reverse();
+                }
+                parameters.extend(inner);
+                parameters.push(self.t1);
+                let mut points = Vec::with_capacity(parameters.len());
+                for t in parameters {
+                    points.push((t, self.uv(eval, chart, t)?));
+                }
+                points
+            }
+            _ => self
+                .reference
+                .iter()
+                .map(|(t, uv)| (*t, [uv[0] + self.shift[0], uv[1] + self.shift[1]]))
+                .collect(),
+        };
         let mut index = 0;
         while index + 1 < points.len() {
             let (ta, a) = points[index];

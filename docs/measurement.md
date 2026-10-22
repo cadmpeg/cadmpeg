@@ -151,6 +151,33 @@ value other than `traversal` adds the face caveat `boundary.ring-order`. Area
 and flux are sums of per-piece integrals, so the listed order changes no
 value once the traversal is known.
 
+## Boundaries
+
+Each coedge takes its parameter-plane image from the first of these that
+applies:
+
+1. A pole segment, when the coedge is degenerate and its vertex lies at a
+   singular point of the carrier.
+2. Its pcurve uses.
+3. Its 3D curve interval, inverted onto the carrier.
+
+A single pcurve use takes the first candidate interval whose mapped ends lie
+within the allowance of the coedge's ends: the use's stored range, the
+pcurve's stored range, its trim range, the edge interval and its negation,
+the pcurve's domain, and then an interval recovered by Newton steps. A
+closed coedge takes its direction from the tangent of its 3D curve, else
+from the use's stored range. Several uses form a chain from the coedge's
+start to its end.
+
+When the coedge also has a 3D curve, the pcurve image at the Gauss–Kronrod
+nodes of every breakpoint interval must lie on that curve within the larger
+of the allowance and the pcurve's fit tolerance, at curve parameters that
+advance monotonically over the curve's interval. Otherwise the face's bounded
+quantities are `boundary.pcurve-curve-mismatch`. `coedges[].uv_source`
+names the source of each coedge. An edge with no 3D curve takes its length
+and box from the pcurve uses of its first coedge, mapped through that
+coedge's face surface.
+
 ## Regions
 
 `region` states the rule that decides a face's area:

@@ -46,6 +46,17 @@ const WG: [f64; 4] = [
 /// Integrand evaluations of one rule application.
 pub(crate) const NODES: usize = 15;
 
+/// The 15 Kronrod nodes of `[a, b]`, ordered from `a` to `b`.
+pub(crate) fn nodes(a: f64, b: f64) -> [f64; NODES] {
+    let center = a.midpoint(b);
+    let half = (b - a) / 2.0;
+    std::array::from_fn(|index| match index {
+        0..=6 => center - half * XGK[index],
+        7 => center,
+        _ => center + half * XGK[14 - index],
+    })
+}
+
 /// Intervals of one integral.
 const MAX_QUADRATURE_INTERVALS: usize = 1 << 12;
 

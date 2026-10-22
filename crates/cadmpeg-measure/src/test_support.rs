@@ -5,17 +5,19 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, LineCurve, PlaneSurface,
 };
+use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, DirectedParameterRange, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
-    VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+    SurfaceId, VertexId,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing,
-    Point, Region, Sense, Shell, Vertex,
+    PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
 
@@ -322,6 +324,64 @@ impl Builder {
             start.clone(),
             end.clone(),
         )
+    }
+
+    /// An edge with no 3D curve.
+    pub(crate) fn bare_edge(&mut self, start: &VertexId, end: &VertexId) -> EdgeId {
+        self.edge(EdgeCarrier::unbounded(None), start.clone(), end.clone())
+    }
+
+    /// Append the line pcurve `origin + t·direction` on `range` to the
+    /// pcurve uses of the coedge at `position` of ring `ring` of `face`.
+    pub(crate) fn line_pcurve(
+        &mut self,
+        face: &FaceId,
+        [ring, position]: [usize; 2],
+        origin: [f64; 2],
+        direction: [f64; 2],
+        range: [f64; 2],
+    ) {
+        let n = self.serial();
+        let pcurve = id(PcurveId::mint, "pcurve", n);
+        self.ir.model.pcurves.push(Pcurve {
+            id: pcurve.clone(),
+            geometry: PcurveGeometry::Line(
+                LinePcurve::try_new(
+                    Point2::new(origin[0], origin[1]),
+                    Point2::new(direction[0], direction[1]),
+                )
+                .expect("line pcurve"),
+            ),
+            metadata: PcurveMetadata::default(),
+        });
+        let loop_id = self
+            .ir
+            .model
+            .faces
+            .iter()
+            .find(|candidate| candidate.id == *face)
+            .and_then(|face| face.loops.iter().nth(ring).cloned())
+            .expect("face loop");
+        let coedge_id = self
+            .ir
+            .model
+            .loops
+            .iter()
+            .find(|candidate| candidate.id == loop_id)
+            .and_then(|face_loop| face_loop.coedges().get(position).cloned())
+            .expect("loop coedge");
+        let coedge = self
+            .ir
+            .model
+            .coedges
+            .iter_mut()
+            .find(|candidate| candidate.id == coedge_id)
+            .expect("coedge");
+        coedge.pcurves.push(PcurveUse {
+            pcurve,
+            isoparametric: None,
+            parameter_range: Some(DirectedParameterRange::new(range).expect("range")),
+        });
     }
 
     /// A cylinder surface.

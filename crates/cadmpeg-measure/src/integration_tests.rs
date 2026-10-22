@@ -5,4 +5,5 @@ mod acceptance;
 mod cones;
 mod cube;
 mod cylinders;
+mod pcurves;
 mod serialization;

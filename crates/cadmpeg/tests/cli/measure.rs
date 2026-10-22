@@ -11,16 +11,16 @@ use std::path::Path;
 #[cfg(feature = "step")]
 use std::path::PathBuf;
 
-#[cfg(any(feature = "step", feature = "fcstd"))]
+#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
 use assert_cmd::Command;
 #[cfg(any(feature = "step", feature = "fcstd"))]
 use predicates::prelude::predicate;
-#[cfg(feature = "step")]
+#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
 use serde_json::Value;
 #[cfg(feature = "step")]
 use tempfile::tempdir;
 
-#[cfg(feature = "step")]
+#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
 /// Relative floor of the comparison of a measured value with its expression.
 const TEST_ABSOLUTE_FLOOR: f64 = 1.0e-9;
 
@@ -39,12 +39,12 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-#[cfg(any(feature = "step", feature = "fcstd"))]
+#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
 fn cadmpeg() -> Command {
     Command::cargo_bin("cadmpeg").unwrap()
 }
 
-#[cfg(feature = "step")]
+#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
 /// Run `measure ARGS --json`, require exit 0 and parse stdout.
 fn measure_json(args: &[&str]) -> Value {
     let output = cadmpeg()
@@ -75,7 +75,7 @@ fn measure_text(args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 
-#[cfg(feature = "step")]
+#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
 /// Assert a measured quantity within its numeric error plus the test floor
 /// relative to `max(|expected|, scale)`.
 fn assert_measured(quantity: &Value, expected: f64, scale: f64) {
@@ -141,6 +141,11 @@ fn dump(input: &Path, output: &Path, extra: &[&str]) {
         .assert()
         .success();
 }
+
+#[cfg(feature = "fcstd")]
+mod freecad;
+#[cfg(feature = "iges")]
+mod iges;
 
 #[cfg(feature = "step")]
 #[test]

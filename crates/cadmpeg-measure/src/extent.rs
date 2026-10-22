@@ -80,6 +80,17 @@ pub(crate) fn axial_range(
                     include(found.max - base);
                     numeric_error = numeric_error.max(found.numeric_error);
                 }
+                Source::Pcurve { chart, .. } => {
+                    let mut charge = |units| eval.charge(units);
+                    let mut f = |t: f64| -> Measure<(f64, f64)> {
+                        let sample = piece.sample(eval, chart, t)?;
+                        Ok((axis.h * sample.uv[1], axis.h * sample.duv[1]))
+                    };
+                    let found = extrema(&mut charge, &mut f, piece.t0, piece.t1, &piece.breaks())?;
+                    include(found.min);
+                    include(found.max);
+                    numeric_error = numeric_error.max(found.error);
+                }
             }
         }
     }

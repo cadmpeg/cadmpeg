@@ -80,7 +80,18 @@ impl<'ir> CurveChart<'ir> {
     /// The chart of `curve` placed by `body`.
     pub(crate) fn new(curve: &'ir Curve, body: Placement) -> Measure<Self> {
         let (kind, placement, shape) = match &curve.geometry {
-            CurveGeometry::Procedural { .. } => {
+            CurveGeometry::Procedural {
+                cache: Some(cache), ..
+            } => {
+                let (leaf_geometry, chain) = leaf(cache)?;
+                let placement = chain.then(body)?;
+                (
+                    CurveKind::Procedural,
+                    placement,
+                    Self::closed_form(leaf_geometry, placement),
+                )
+            }
+            CurveGeometry::Procedural { cache: None, .. } => {
                 (CurveKind::Procedural, body, CurveShape::Evaluated)
             }
             CurveGeometry::Solved(geometry) => {
@@ -338,6 +349,23 @@ impl<'ir> CurveChart<'ir> {
         }
         match self.shape {
             CurveShape::Evaluated => {
+                if let Some(Ok((SolvedCurveGeometry::Nurbs(nurbs), _))) =
+                    self.curve.geometry.solved().map(leaf)
+                {
+                    let Some(local) = self.placement.inverse_point(point) else {
+                        return Ok(None);
+                    };
+                    eval.charge(1)?;
+                    let found = cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                        eval.ctx,
+                        nurbs,
+                        local,
+                        tolerance / self.placement.scale,
+                        seed,
+                    )
+                    .map_err(MeasureFailure::from_codec)?;
+                    return Ok(found.map(cadmpeg_ir::scalar::FiniteReal::get));
+                }
                 let Some(local) = self.body.inverse_point(point) else {
                     return Ok(None);
                 };
