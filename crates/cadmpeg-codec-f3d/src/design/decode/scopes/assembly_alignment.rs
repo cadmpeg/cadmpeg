@@ -43,11 +43,31 @@ impl TryFrom<AsBuiltAlignmentDraft> for assembly::DesignAssemblyAlignmentForm {
     }
 }
 
+/// [`exact_assembly_alignment_with_types`] without the stream's record types.
+#[cfg(test)]
 pub(super) fn exact_assembly_alignment(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
+) -> Result<Option<DesignAssemblyAlignment>, CodecError> {
+    exact_assembly_alignment_with_types(
+        bytes,
+        records,
+        scope,
+        parameter_owners,
+        &std::collections::HashMap::new(),
+    )
+}
+
+/// The alignment of an assembly scope. `stream_types` names the stream's
+/// record types, which admit typed operand-path records.
+pub(super) fn exact_assembly_alignment_with_types(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    parameter_owners: &[DesignParameterOwner],
+    stream_types: &super::assembly_operand_paths::StreamTypes<'_>,
 ) -> Result<Option<DesignAssemblyAlignment>, CodecError> {
     use assembly::DesignAssemblyAlignmentForm;
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Assemble) {
@@ -220,6 +240,19 @@ pub(super) fn exact_assembly_alignment(
                 {
                     return None;
                 }
+            } else if generation
+                .operand_frame_variant()
+                .is_some_and(crate::design::assembly::AssemblyOperandFrameVariant::is_wide_family)
+            {
+                // The wide scope lists its four owners first in its reference table.
+                if !scope
+                    .reference_members()
+                    .values()
+                    .take(owners.len())
+                    .eq(owners.iter().map(|owner| &owner.value))
+                {
+                    return None;
+                }
             } else if !scope
                 .reference_members()
                 .values()
@@ -232,7 +265,7 @@ pub(super) fn exact_assembly_alignment(
             (angle, offset, owners)
         };
         let form = if scope.kind() == scope::DesignFeatureKind::AsBuilt {
-            let paths = match exact_assembly_operand_paths(bytes, records, scope) {
+            let paths = match exact_assembly_operand_paths(bytes, records, scope, stream_types) {
                 Ok(paths) => paths,
                 Err(error) => return Some(Err(error)),
             };
@@ -271,7 +304,7 @@ pub(super) fn exact_assembly_alignment(
                 if direct.is_some() {
                     direct
                 } else {
-                    let paths = match exact_assembly_operand_paths(bytes, records, scope) {
+                    let paths = match exact_assembly_operand_paths(bytes, records, scope, stream_types) {
                         Ok(paths) => paths,
                         Err(error) => return Some(Err(error)),
                     };
@@ -280,7 +313,7 @@ pub(super) fn exact_assembly_alignment(
                     })
                 }
             } else {
-                let paths = match exact_assembly_operand_paths(bytes, records, scope) {
+                let paths = match exact_assembly_operand_paths(bytes, records, scope, stream_types) {
                     Ok(paths) => paths,
                     Err(error) => return Some(Err(error)),
                 };

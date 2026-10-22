@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,7 +16,7 @@ permissions:
 # otherwise runs stale and current pipelines to completion side by side.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -32,13 +35,21 @@ jobs:
   changes:
     name: Select affected crates
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       packages: ${{ steps.scope.outputs.packages }}
       full: ${{ steps.scope.outputs.full }}
       rust: ${{ steps.scope.outputs.rust }}
-      features: ${{ steps.scope.outputs.features }}
+      fuzz: ${{ steps.scope.outputs.fuzz }}
+      sldprt_cli: ${{ steps.scope.outputs.sldprt_cli }}
+      step_cli: ${{ steps.scope.outputs.step_cli }}
       schema: ${{ steps.scope.outputs.schema }}
       iges: ${{ steps.scope.outputs.iges }}
+      static: ${{ steps.scope.outputs.static }}
+      audit: ${{ steps.scope.outputs.audit }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -47,51 +58,47 @@ jobs:
       - name: Select gate inputs
         id: scope
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          PUSH_BASE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
         run: |
-          if [ "${{ github.event_name }}" = pull_request ]; then
-            git fetch --no-tags --depth=1 origin "$BASE"
-            python3 scripts/ci_scope.py --base "$BASE" --github-output "$GITHUB_OUTPUT"
+          set -euo pipefail
+          mode=()
+          case "$EVENT" in
+            pull_request) base="$PR_BASE" ;;
+            merge_group) base="$QUEUE_BASE" ;;
+            *)
+              base="$PUSH_BASE"
+              mode=(--cache-writer)
+              tested="$(gh api "repos/$REPOSITORY/actions/runs?head_sha=$SHA&event=merge_group&status=success" \
+                --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
+              if [ "$tested" -gt 0 ]; then mode=(--tested); fi
+              ;;
+          esac
+          if [ -n "$base" ] && [ "$base" != 0000000000000000000000000000000000000000 ] \
+              && git fetch --no-tags --depth=1 origin "$base"; then
+            python3 scripts/ci_scope.py --base "$base" "${mode[@]}" --github-output "$GITHUB_OUTPUT"
           else
             python3 scripts/ci_scope.py --full --github-output "$GITHUB_OUTPUT"
           fi
 
-  # The stable gate is three jobs rather than one long one. Clippy compiles the
-  # workspace through `clippy-driver`, whose artifacts are separate from the
-  # ones `cargo test` builds, so the work is additive and the steps only ever
-  # queued behind each other. Splitting makes the gate's wall-clock the slowest
-  # job instead of the sum of every step.
-  lint:
+  # Python policy checks need no Rust build and run beside clippy.
+  static:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' }}
-    name: fmt / clippy (stable)
-    env:
-      CI_PACKAGES: ${{ needs.changes.outputs.packages }}
-      CI_FULL: ${{ needs.changes.outputs.full }}
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.static == 'true') }}
+    name: static checks
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Require valid gate selection
         shell: bash
         run: test "${{ needs.changes.result }}" = success
       - name: Checkout
         uses: actions/checkout@v7.0.1
-
-      - name: Install pinned toolchain
-        if: needs.changes.outputs.rust == 'true'
-        uses: ./.github/actions/pinned-rust
-        with:
-          components: rustfmt, clippy
-
-      - name: Match cargo's job count to the runner
-        if: needs.changes.outputs.rust == 'true'
-        uses: ./.github/actions/cargo-job-count
-
-      - name: Cache cargo registry and target
-        if: needs.changes.outputs.rust == 'true'
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: stable
-          save-if: false
 
       - name: Specification reference check
         # Open-items documents cite the specification by section and paragraph
@@ -148,12 +155,45 @@ jobs:
           set -euo pipefail
           python3 scripts/render-format-support.py --check
 
+  # The stable gate is three jobs rather than one long one. Clippy compiles the
+  # workspace through `clippy-driver`, whose artifacts are separate from the
+  # ones `cargo test` builds, so the work is additive and the steps only ever
+  # queued behind each other. Splitting makes the gate's wall-clock the slowest
+  # job instead of the sum of every step.
+  lint:
+    needs: changes
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    name: fmt / clippy (stable)
+    env:
+      CI_PACKAGES: ${{ needs.changes.outputs.packages }}
+      CI_FULL: ${{ needs.changes.outputs.full }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require valid gate selection
+        shell: bash
+        run: test "${{ needs.changes.result }}" = success
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install pinned toolchain
+        uses: ./.github/actions/pinned-rust
+        with:
+          components: rustfmt, clippy
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: clippy
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
       - name: Format check
-        if: needs.changes.outputs.rust == 'true'
         run: cargo fmt --all --check
 
       - name: Clippy
-        if: needs.changes.outputs.rust == 'true'
         # Lint levels come from `[workspace.lints]` in Cargo.toml, so no
         # trailing flags here. Trailing flags are part of the compilation
         # fingerprint, and a flagged run and a bare run evict each other's
@@ -164,12 +204,15 @@ jobs:
 
   test:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true)) }}
     name: test (stable)
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
+      # The bounded IGES gate builds a release binary; LTO only adds link time.
+      CARGO_PROFILE_RELEASE_LTO: "false"
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Require valid gate selection
         shell: bash
@@ -192,15 +235,20 @@ jobs:
           shared-key: stable
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2.87.28
+        with:
+          tool: cargo-nextest
+
       - name: Unit and integration tests
         # Compile selected packages and their dependencies before running.
         # A separate `cargo build` step would repeat that compilation.
-        run: python3 scripts/ci_cargo.py test --bins --tests --no-fail-fast
+        run: python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
 
       - name: Inventor CLI evidence tests
         if: contains(fromJSON(needs.changes.outputs.packages), 'cadmpeg')
         # These two tooling tests need the default CLI built by the Rust gate.
-        # The lint job runs the remaining Python tests without a CLI build.
+        # The static job runs the remaining Python tests without a CLI build.
         run: |
           test -x target/debug/cadmpeg
           python3 -m unittest -q \
@@ -211,8 +259,8 @@ jobs:
         if: needs.changes.outputs.iges == 'true'
         # Give every synthesized IGES fixture independent decode, validation,
         # conversion, generated-file decode, and generated-file validation
-        # deadlines under the unattended resource profile. Use the production
-        # profile so the deadline measures codec behavior rather than an
+        # deadlines under the unattended resource profile. Use an optimized
+        # build so the deadline measures codec behavior rather than an
         # unoptimized debug binary.
         run: |
           set -euo pipefail
@@ -233,9 +281,10 @@ jobs:
 
   features:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.features == 'true') }}
-    name: schema / fuzz (stable)
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || ((needs.changes.outputs.schema == 'true' || needs.changes.outputs.sldprt_cli == 'true' || needs.changes.outputs.step_cli == 'true') && github.event.pull_request.draft != true)) }}
+    name: schema / feature gates (stable)
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - name: Require valid gate selection
         shell: bash
@@ -253,9 +302,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: features
-          workspaces: |
-            . -> target
-            crates/cadmpeg-fuzz -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Schema feature
@@ -267,6 +313,42 @@ jobs:
           cargo test -q -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
           cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
             --features cadmpeg-core/schema,cadmpeg-asm/schema
+
+      - name: Single-codec CLI feature gate
+        if: needs.changes.outputs.sldprt_cli == 'true'
+        # Per-codec optional deps must keep a one-feature binary compiling.
+        run: cargo check -q -p cadmpeg --no-default-features --features sldprt
+
+      - name: STEP-only low-confidence regression
+        if: needs.changes.outputs.step_cli == 'true'
+        # This test target only exists when STEP is enabled without FCStd or F3D.
+        run: cargo test -q -p cadmpeg --no-default-features --features step --test low_confidence_inspect
+
+  fuzz:
+    needs: changes
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.fuzz == 'true' && github.event.pull_request.draft != true)) }}
+    name: fuzz crate (stable)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require valid gate selection
+        shell: bash
+        run: test "${{ needs.changes.result }}" = success
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install pinned toolchain
+        uses: ./.github/actions/pinned-rust
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: fuzz
+          workspaces: crates/cadmpeg-fuzz -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Fuzz targets compile
         # The fuzz crate declares its own `[workspace]`, so every other job
@@ -286,21 +368,14 @@ jobs:
         # `test = false`, so this builds and runs no harness.
         run: cargo test -q --manifest-path crates/cadmpeg-fuzz/Cargo.toml
 
-      - name: Single-codec CLI feature gate
-        # Per-codec optional deps must keep a one-feature binary compiling.
-        run: cargo check -q -p cadmpeg --no-default-features --features sldprt
-
-      - name: STEP-only low-confidence regression
-        # This test target only exists when STEP is enabled without FCStd or F3D.
-        run: cargo test -q -p cadmpeg --no-default-features --features step --test low_confidence_inspect
-
   # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
   # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.
   msrv:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true)) }}
     name: MSRV check (1.88)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
@@ -333,14 +408,16 @@ jobs:
         run: python3 scripts/ci_cargo.py check
 
   # Byte-level codecs are the code most likely to break across platforms.
+  # These jobs run in the merge queue and on main, not on PR pushes.
   cross-platform:
     needs: changes
-    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ github.event_name != 'pull_request' && always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     name: build / test (${{ matrix.os }})
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -363,21 +440,32 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Unit and integration tests
-        run: python3 scripts/ci_cargo.py test --bins --tests --no-fail-fast
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2.87.28
+        with:
+          tool: cargo-nextest
 
-  # RustSec advisory scan of the dependency tree.
+      - name: Unit and integration tests
+        run: python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
+
+  # RustSec advisory scan of a changed dependency tree; audit.yml scans daily.
   audit:
+    needs: changes
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.audit == 'true') }}
     name: cargo audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
+      - name: Require valid gate selection
+        shell: bash
+        run: test "${{ needs.changes.result }}" = success
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
       - name: Install cargo-audit
         # Prebuilt binary; rustsec/audit-check compiled cargo-audit from
         # source on every run and dominated the pipeline's wall-clock.
-        uses: taiki-e/install-action@v2.87.28
+        uses: taiki-e/install-action@v2.87.29
         with:
           tool: cargo-audit
 

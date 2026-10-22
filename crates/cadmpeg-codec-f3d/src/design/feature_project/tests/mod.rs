@@ -21,6 +21,7 @@ mod parameter_cycles;
 mod parameters;
 mod pattern;
 mod pipe;
+mod primitives;
 mod replace_face;
 mod revolve;
 mod scope_properties;

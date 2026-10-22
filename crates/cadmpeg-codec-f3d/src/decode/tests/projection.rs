@@ -792,7 +792,6 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "primitive",
-            "placement": null,
             "solid": {
                 "kind": "cylinder",
                 "radius": {"kind": "radius", "value": {"kind": "literal", "value": 15.0}},
@@ -805,7 +804,6 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
     assert!(feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "primitive",
-            "placement": null,
             "solid": {
                 "kind": "cylinder",
                 "radius": {"kind": "radius", "value": {"kind": "literal", "value": 15.0}},

@@ -948,10 +948,10 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("CopyPaste"),
         FeatureDefinition::Operation(FeatureOperation::InsertComponent {
             occurrence: crate::ids::neutral_component_occurrence_id(
-                &"33333333-3333-4333-8333-333333333333"
-                    .to_owned()
-                    .try_into()
-                    .unwrap()
+                &crate::records::mesh::DesignOccurrenceKey::try_from(
+                    "33333333-3333-4333-8333-333333333333".to_owned()
+                )
+                .unwrap()
             ),
         })
     );

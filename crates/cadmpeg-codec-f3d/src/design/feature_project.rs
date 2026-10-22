@@ -1686,15 +1686,18 @@ fn project_solid_primitive(
                 ..
             },
         )) => {
-            let placement = if let Some(transform) = transform {
-                let mut matrix = *transform.value.as_ref();
-                for row in matrix.iter_mut().take(3) {
-                    row[3] *= 10.0;
+            let placement = match transform {
+                Some(frame) => {
+                    let rows = frame.value.rows();
+                    let row = |index: usize| {
+                        let [x, y, z, translation] = rows[index];
+                        [x, y, z, translation * 10.0]
+                    };
+                    Some(cadmpeg_ir::features::FeatureRigidPlacement::new(
+                        cadmpeg_ir::transform::Transform::affine([row(0), row(1), row(2)])?,
+                    )?)
                 }
-                cadmpeg_ir::transform::Transform::affine([matrix[0], matrix[1], matrix[2]])?
-            } else {
-                // The unshifted cylinder form uses the source model frame.
-                cadmpeg_ir::transform::Transform::identity()
+                None => None,
             };
             FeatureDefinition::Operation(FeatureOperation::Primitive {
                 solid: PrimitiveSolid::new(PrimitiveSolidKind::Cylinder {
@@ -1713,7 +1716,7 @@ fn project_solid_primitive(
                     angle: Angle::FULL_TURN.into(),
                 })
                 .ok()?,
-                placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::new(placement)?),
+                placement,
                 op: operation(*result),
             })
         }

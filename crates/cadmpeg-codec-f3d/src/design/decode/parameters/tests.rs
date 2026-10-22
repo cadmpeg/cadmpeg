@@ -1552,3 +1552,31 @@ fn wide_discriminated_parameter_stores_four_zero_bytes_before_its_discriminator(
     nonzero[24] = 1;
     assert!(parse_design_parameter_record(&nonzero).is_none());
 }
+
+#[test]
+fn discriminated_parameter_with_the_00_01_11_tail_has_discriminator_6() {
+    let mut frame = parameter_record(
+        Some(2553),
+        "-65.0 deg",
+        "alignAngle",
+        Some("deg"),
+        "d1",
+        -1.134,
+    );
+    frame[22..30].copy_from_slice(&6u64.to_le_bytes());
+    let tail = frame.len() - 10;
+    frame[tail] = 0x11;
+    let parameter = parse_design_parameter_record(&frame).expect("tail 0x11 parameter");
+    assert_eq!(parameter.name(), "d1");
+    assert_eq!(parameter.evaluated_value().get(), -1.134);
+    assert_eq!(
+        parameter
+            .family_discriminator()
+            .map(|field| field.value.code()),
+        Some(6)
+    );
+
+    // The 00 01 11 tail belongs to discriminator 6 only.
+    frame[22..30].copy_from_slice(&0u64.to_le_bytes());
+    assert!(parse_design_parameter_record(&frame).is_none());
+}

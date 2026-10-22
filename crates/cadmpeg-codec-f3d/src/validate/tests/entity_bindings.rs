@@ -178,3 +178,71 @@ fn placement_contiguous_visibility_has_no_finding() {
         assert!(findings.is_empty());
     })
 }
+
+/// Two components each number their sketch Geometry members from 1: the
+/// sketches of entities 5 and 25 lie in the components rooted at 3 and 20.
+fn two_component_placements(with_components: bool) -> crate::native::F3dNative {
+    let mut native = crate::native::F3dNative::default();
+    for (ordinal, (suffix, header_offset, ordinal_offset)) in
+        [(5_u64, 10_u64, 100_u64), (25, 110, 200)]
+            .into_iter()
+            .enumerate()
+    {
+        let mut header = validation_entity_header(Vec::new());
+        header.id = format!("f3d:Design/BulkStream.dat:entity-header#{header_offset}");
+        header.byte_offset = Some(header_offset);
+        header.entity_id = crate::records::identity::DesignEntityId::from_parts("sketch", suffix);
+        native.design_entity_headers.push(header);
+        let mut placement = validation_placement(None, Some(1), true);
+        placement.id = format!("f3d:Design/BulkStream.dat:sketch-placement#{ordinal_offset}");
+        placement.record_index = u32::try_from(ordinal).unwrap() + 1;
+        placement.entity_id =
+            crate::records::identity::DesignEntityId::from_parts("sketch", suffix);
+        placement.visibility = Some(
+            crate::records::sketch_placement::DesignSketchVisibility::new(
+                std::num::NonZeroU32::new(1).unwrap(),
+                ordinal_offset,
+                true,
+            )
+            .unwrap(),
+        );
+        native.design_sketch_placements.push(placement);
+    }
+    if with_components {
+        for (root, offset) in [(3_u64, 1000_u64), (20, 2000)] {
+            native.design_component_naming_spaces.push(
+                crate::records::recipes::DesignComponentNamingSpace {
+                    id: format!("f3d:Design/BulkStream.dat:design-component-naming-space#{offset}"),
+                    byte_offset: Some(offset),
+                    component_record_index: root,
+                    context_uuid: "11111111-1111-4111-8111-111111111111"
+                        .to_owned()
+                        .try_into()
+                        .unwrap(),
+                    context_uuid_offset: Some(offset + 12),
+                },
+            );
+        }
+    }
+    native
+}
+
+#[test]
+fn sketch_geometry_ordinals_count_within_each_component() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = two_component_placements(true);
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        let mut findings = Vec::new();
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert!(findings.is_empty(), "{findings:?}");
+
+        // Without components both sketches share one count, and the second
+        // ordinal 1 repeats.
+        let native = two_component_placements(false);
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        let mut findings = Vec::new();
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert_eq!(findings.len(), 1);
+    })
+}

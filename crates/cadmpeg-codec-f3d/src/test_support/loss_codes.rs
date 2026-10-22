@@ -16,6 +16,7 @@ pub(crate) const ALL: &[F3dLossCode] = &[
     F3dLossCode::ComponentInsertUnplaced,
     F3dLossCode::ComponentInsertOrderUnknown,
     F3dLossCode::AssemblyJointUnprojected,
+    F3dLossCode::AssemblyJointMotionUndecoded,
     F3dLossCode::DrawingDocumentOmitted,
     F3dLossCode::HistoryBindingBudgetExceeded,
     F3dLossCode::HistoryBindingWorkExceeded,
