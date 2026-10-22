@@ -15,6 +15,8 @@ impl CadIr {
     /// display colour is set. An explicit face assignment precedes body fallback;
     /// an occurrence assignment precedes its single-body prototype fallback.
     pub fn effective_display_color(&self, target: &AppearanceTarget) -> Option<Color> {
+        let typed_target = target.typed_record_target(&self.model);
+        let target = typed_target.as_ref().unwrap_or(target);
         let display = match target {
             AppearanceTarget::Body(id) => self
                 .model
@@ -63,7 +65,14 @@ impl CadIr {
         self.model
             .appearance_bindings
             .iter()
-            .filter(|binding| binding.target == *target)
+            .filter(|binding| {
+                binding
+                    .target
+                    .typed_record_target(&self.model)
+                    .as_ref()
+                    .unwrap_or(&binding.target)
+                    == target
+            })
             .find_map(|binding| {
                 self.model
                     .appearances
@@ -78,6 +87,8 @@ impl CadIr {
     /// remain independent facts; a hidden containing layer or occurrence hides
     /// its descendants. A body query never combines its different instances.
     pub fn effective_visibility(&self, target: &AppearanceTarget) -> Option<bool> {
+        let typed_target = target.typed_record_target(&self.model);
+        let target = typed_target.as_ref().unwrap_or(target);
         let mut answer = None;
         let mut targets = vec![target.clone()];
         if let Some(body) = self.target_body(target) {
@@ -152,12 +163,14 @@ impl CadIr {
                         .and_then(|body| body.visible),
                 );
             }
-            for binding in self
-                .model
-                .appearance_bindings
-                .iter()
-                .filter(|binding| binding.target == *target)
-            {
+            for binding in self.model.appearance_bindings.iter().filter(|binding| {
+                binding
+                    .target
+                    .typed_record_target(&self.model)
+                    .as_ref()
+                    .unwrap_or(&binding.target)
+                    == target
+            }) {
                 gate(&mut answer, binding.visible);
             }
             let identities = self.target_objects(target);
@@ -341,6 +354,11 @@ impl CadIr {
                     .and_then(|record| record.native_ref.as_ref())
                 {
                     ids.insert(native.as_str());
+                }
+            }
+            AppearanceTarget::Record { arena, id } => {
+                if self.model.contains_record(*arena, id) {
+                    ids.insert(id.as_str());
                 }
             }
             AppearanceTarget::Source { source_id } => {

@@ -163,6 +163,7 @@ pub fn source_attribute(
         values.push(value);
     }
     Ok(SourceAttribute {
+        native_ref: None,
         id: brep_id!(format, AttributeId, "attribute", record.index),
         target,
         name: record.name.clone(),

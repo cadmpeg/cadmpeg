@@ -258,6 +258,7 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
 struct NotImplementedEncoder;
 
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: cadmpeg_ir::codec::FormatId =
         cadmpeg_ir::codec::FormatId::new("not-implemented-test");
     const REQUEST: cadmpeg_core::decode::DecodeDepth = cadmpeg_core::decode::DecodeDepth::Full;

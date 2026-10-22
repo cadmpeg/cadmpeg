@@ -9,6 +9,80 @@ use crate::decode::budget::DecodeBudget;
 use crate::decode::{u64_from_index, ByteRange, SpaceId, View};
 use crate::CodecError;
 
+/// An immutable description of one explicitly registered source stream.
+///
+/// This snapshot contains provenance, not read coverage or B1 classification.
+#[derive(Debug, PartialEq, Eq)]
+pub struct SourceStream {
+    name: String,
+    byte_len: u64,
+    origin: SourceOrigin,
+}
+
+impl SourceStream {
+    /// Canonical stable name; identical reopens produce one inventory entry.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    /// Exact stream domain length; the domain starts at zero.
+    pub fn byte_len(&self) -> u64 {
+        self.byte_len
+    }
+    /// Explicit physical, stored, expanded or composite provenance.
+    pub fn origin(&self) -> &SourceOrigin {
+        &self.origin
+    }
+}
+
+/// Provenance of a stream, expressed only in canonical stream names.
+#[derive(Debug, PartialEq, Eq)]
+pub enum SourceOrigin {
+    /// The physical input, occupying `[0, byte_len)`.
+    Root,
+    /// A stored one-to-one alias; it is not another physical input.
+    Alias {
+        /// Canonical parent stream name.
+        parent: String,
+        /// Exact extent in the parent, with the same length as this stream.
+        extent: ByteRange,
+    },
+    /// Decoded bytes from one exact compressed parent extent.
+    Expanded {
+        /// Canonical parent stream name.
+        parent: String,
+        /// Entire compressed extent justified by a semantic child read.
+        extent: ByteRange,
+    },
+    /// Concatenated source extents in contiguous child-coordinate order.
+    Composite {
+        /// Exact segment mappings, including empty inputs when present.
+        segments: Vec<SourceSegment>,
+    },
+}
+
+/// One composite child interval and its exact parent mapping.
+#[derive(Debug, PartialEq, Eq)]
+pub struct SourceSegment {
+    child: ByteRange,
+    parent: String,
+    extent: ByteRange,
+}
+
+impl SourceSegment {
+    /// Interval in the composite stream.
+    pub fn child(&self) -> ByteRange {
+        self.child
+    }
+    /// Canonical name of the source stream for this interval.
+    pub fn parent(&self) -> &str {
+        &self.parent
+    }
+    /// Equal-length interval in that parent stream.
+    pub fn extent(&self) -> ByteRange {
+        self.extent
+    }
+}
+
 #[derive(Debug, Default)]
 pub(super) struct Streams {
     root: Option<Stream>,
@@ -217,6 +291,151 @@ impl Streams {
                 .ok_or_else(|| CodecError::malformed("composite source length overflows"))?;
         }
         self.register(budget, space, name, byte_len, Origin::Composite(parts))
+    }
+
+    pub(super) fn contains(
+        &self,
+        budget: &DecodeBudget,
+        part: View<'_>,
+        owner_stream: &str,
+        owner: ByteRange,
+    ) -> Result<bool, CodecError> {
+        #[derive(Clone, Copy)]
+        struct Extent {
+            space: SpaceId,
+            range: ByteRange,
+        }
+
+        let initial = Extent {
+            space: part.space(),
+            range: ByteRange {
+                start: u64_from_index(part.start()),
+                end: u64_from_index(part.end()),
+            },
+        };
+        let mut pending = Vec::new();
+        reserve(budget, &mut pending, 1)?;
+        pending.push(initial);
+        let mut seen: Vec<Extent> = Vec::new();
+        while let Some(current) = pending.pop() {
+            let stream = self.get(current.space)?;
+            validate_extent(stream, current.range)?;
+            if stream.name == owner_stream {
+                if current.range.start < owner.start || current.range.end > owner.end {
+                    return Ok(false);
+                }
+                continue;
+            }
+            // Empty extents have no parent-byte ownership proof. Direct
+            // same-stream containment above still handles empty parts exactly.
+            if current.range.start == current.range.end {
+                return Ok(false);
+            }
+            if seen.iter().any(|old| {
+                old.space == current.space
+                    && old.range.start <= current.range.start
+                    && old.range.end >= current.range.end
+            }) {
+                continue;
+            }
+            reserve(budget, &mut seen, 1)?;
+            seen.push(current);
+            let mut push = |space, range| -> Result<(), CodecError> {
+                reserve(budget, &mut pending, 1)?;
+                pending.push(Extent { space, range });
+                Ok(())
+            };
+            match &stream.origin {
+                None => return Ok(false),
+                Some(Origin::Alias { parent, extent }) => {
+                    let range = translate(current.range.start..current.range.end, 0, extent.start)?;
+                    push(
+                        *parent,
+                        ByteRange {
+                            start: range.start,
+                            end: range.end,
+                        },
+                    )?;
+                }
+                Some(Origin::Compressed { parent, extent }) => push(*parent, *extent)?,
+                Some(Origin::Composite(parts)) => {
+                    for part in parts {
+                        let end = part
+                            .start
+                            .checked_add(part.extent.end.abs_diff(part.extent.start))
+                            .ok_or_else(|| {
+                                CodecError::malformed("composite segment end overflows")
+                            })?;
+                        let start = current.range.start.max(part.start);
+                        let end = current.range.end.min(end);
+                        if start < end {
+                            let range = translate(start..end, part.start, part.extent.start)?;
+                            push(
+                                part.parent,
+                                ByteRange {
+                                    start: range.start,
+                                    end: range.end,
+                                },
+                            )?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    pub(super) fn snapshot(&self, budget: &DecodeBudget) -> Result<Vec<SourceStream>, CodecError> {
+        let mut streams = Vec::new();
+        reserve(
+            budget,
+            &mut streams,
+            self.derived
+                .len()
+                .checked_add(usize::from(self.root.is_some()))
+                .ok_or_else(|| budget.retained_allocation_failed(u64::MAX, "source inventory"))?,
+        )?;
+        for stream in self.root.iter().chain(&self.derived) {
+            let origin = match &stream.origin {
+                None => SourceOrigin::Root,
+                Some(Origin::Alias { parent, extent }) => SourceOrigin::Alias {
+                    parent: copy_string(budget, self.name(*parent)?)?,
+                    extent: *extent,
+                },
+                Some(Origin::Compressed { parent, extent }) => SourceOrigin::Expanded {
+                    parent: copy_string(budget, self.name(*parent)?)?,
+                    extent: *extent,
+                },
+                Some(Origin::Composite(parts)) => {
+                    let mut segments = Vec::new();
+                    reserve(budget, &mut segments, parts.len())?;
+                    for part in parts {
+                        let end = part
+                            .start
+                            .checked_add(part.extent.end.abs_diff(part.extent.start))
+                            .ok_or_else(|| {
+                                CodecError::malformed("composite segment end overflows")
+                            })?;
+                        segments.push(SourceSegment {
+                            child: ByteRange {
+                                start: part.start,
+                                end,
+                            },
+                            parent: copy_string(budget, self.name(part.parent)?)?,
+                            extent: part.extent,
+                        });
+                    }
+                    SourceOrigin::Composite { segments }
+                }
+            };
+            streams.push(SourceStream {
+                name: copy_string(budget, &stream.name)?,
+                byte_len: stream.byte_len,
+                origin,
+            });
+        }
+        streams.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+        Ok(streams)
     }
 
     pub(super) fn project(

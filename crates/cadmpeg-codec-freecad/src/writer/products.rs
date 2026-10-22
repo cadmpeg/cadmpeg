@@ -9,7 +9,7 @@ use crate::loss::FreecadLossCode;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::products::{
-    CopyOnChangePolicy, ExternalDocument, OccurrenceParent, ProductDefinitionKind,
+    AssemblyGraph, CopyOnChangePolicy, ExternalDocument, OccurrenceParent, ProductDefinitionKind,
     PrototypeReference,
 };
 use cadmpeg_ir::report::loss::LossNote;
@@ -408,9 +408,27 @@ pub(super) fn write(
     body_names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let graph = AssemblyGraph::new(&ir.model.occurrences).map_err(CodecError::malformed)?;
     let mut groups = definitions(ir, objects, names, body_names, losses)?;
     let mut used: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
     for occurrence in &ir.model.occurrences {
+        if graph.effective_transform(&occurrence.id).is_none() {
+            names.remove(occurrence.id.as_str());
+            losses.push(
+                FreecadLossCode::ExportOccurrenceNotTransferred.note(format!(
+                    "occurrence {} omitted because its placement or an ancestor placement is unknown",
+                    occurrence.id
+                )),
+            );
+            continue;
+        }
+        // Admission uses the whole parent chain; native Placement stays local.
+        let Some(effective) = occurrence
+            .effective_transform()
+            .map_err(CodecError::malformed)?
+        else {
+            continue;
+        };
         // Container occurrences are the placement of their own definition,
         // rather than an additional use of that same container.
         let container = match &occurrence.prototype {
@@ -466,9 +484,6 @@ pub(super) fn write(
                 link_state(object, reference, names, losses)?;
             }
         }
-        let effective = occurrence
-            .effective_transform()
-            .map_err(CodecError::malformed)?;
         let (rigid, scale) = split_scale(effective).unwrap_or((effective, [1.0; 3]));
         object.set(
             "Placement",
@@ -495,6 +510,9 @@ pub(super) fn write(
     let mut children: Vec<_> = ir.model.occurrences.iter().collect();
     children.sort_by_key(|occurrence| occurrence.ordinal);
     for occurrence in children {
+        if graph.effective_transform(&occurrence.id).is_none() {
+            continue;
+        }
         if let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent {
             let parent = names
                 .get(parent.as_str())

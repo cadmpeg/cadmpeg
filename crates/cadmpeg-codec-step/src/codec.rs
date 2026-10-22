@@ -31,6 +31,7 @@ pub struct StepCodec {
 }
 
 impl EncoderBackend for StepCodec {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Writes B-rep, product structure, presentation and PMI; design arenas are
     /// reported as omitted, not read.

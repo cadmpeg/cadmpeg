@@ -22,7 +22,7 @@ use model::{
 };
 
 use crate::loss::RhinoLossCode;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
@@ -124,24 +124,27 @@ struct WriteOutcome {
 }
 
 fn write(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: RhinoArchiveVersion,
     output: &mut dyn Write,
 ) -> Result<WriteOutcome, CodecError> {
     let mut staged = tempfile::tempfile()?;
-    let losses = write_seekable(ir, version, &mut staged)?;
+    let losses = write_seekable(ctx, ir, version, &mut staged)?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, output)?;
     Ok(losses)
 }
 
 fn write_seekable(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: RhinoArchiveVersion,
     output: &mut dyn WriteSeek,
 ) -> Result<WriteOutcome, CodecError> {
-    let mut plan = prepare_write(ir, version)?;
+    let mut plan = prepare_write(ctx, ir, version)?;
     plan.losses.extend(write_archive_prefix(
+        ctx,
         ir,
         version,
         &plan.written_bodies,
@@ -168,6 +171,7 @@ fn write_seekable(
             &cadmpeg_ir::appearance::AppearanceTarget::Point(point.id.clone()),
             point.source_object.as_ref(),
         );
+        ctx.charge_entities(1, "write Rhino object record")?;
         output.write_all(&attributed_object_record(
             ir,
             1,
@@ -189,6 +193,7 @@ fn write_seekable(
             &cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
             curve.source_object.as_ref(),
         );
+        ctx.charge_entities(1, "write Rhino object record")?;
         output.write_all(&curve_object_record(ir, payload, id, display)?)?;
     }
     for (id, (class, payload)) in &plan.surfaces {
@@ -203,6 +208,7 @@ fn write_seekable(
             &cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
             surface.source_object.as_ref(),
         );
+        ctx.charge_entities(1, "write Rhino object record")?;
         output.write_all(&attributed_object_record(
             ir, 8, *class, payload, id, display,
         )?)?;
@@ -214,6 +220,7 @@ fn write_seekable(
             &cadmpeg_ir::appearance::AppearanceTarget::Tessellation(mesh.id.to_string()),
             mesh.source_object.as_ref(),
         );
+        ctx.charge_entities(1, "write Rhino object record")?;
         output.write_all(&mesh_object_record(
             ir,
             &payload,
@@ -222,13 +229,16 @@ fn write_seekable(
         )?)?;
     }
 
-    let references = tables::products::references(ir)?;
+    let (references, occurrence_losses) = tables::products::references(ir)?;
+    plan.losses.extend(occurrence_losses);
     for record in &references {
+        ctx.charge_entities(1, "write Rhino object record")?;
         output.write_all(record)?;
     }
     let (annotations, annotation_losses) = tables::annotations::records(ir)?;
     plan.losses.extend(annotation_losses);
     for record in &annotations {
+        ctx.charge_entities(1, "write Rhino object record")?;
         output.write_all(record)?;
     }
 
@@ -238,7 +248,7 @@ fn write_seekable(
     output.seek(SeekFrom::Start(table_start + 4))?;
     output.write_all(&body_len.to_le_bytes())?;
     output.seek(SeekFrom::Start(table_end))?;
-    output.write_all(&table(TCODE_HISTORY_RECORD_TABLE, &[])?)?;
+    output.write_all(&table(ctx, TCODE_HISTORY_RECORD_TABLE, &[])?)?;
     let final_size = archive_final_size(output.stream_position()?)?;
     output.write_all(&long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?)?;
     let free_points = ir
@@ -263,6 +273,7 @@ fn write_seekable(
 }
 
 fn write_archive_prefix(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: RhinoArchiveVersion,
     written_bodies: &std::collections::BTreeSet<String>,
@@ -276,7 +287,7 @@ fn write_archive_prefix(
     )];
     let documents = tables::document::properties(ir)?;
     properties.extend(documents.records);
-    output.write_all(&table(TCODE_PROPERTIES_TABLE, &properties)?)?;
+    output.write_all(&table(ctx, TCODE_PROPERTIES_TABLE, &properties)?)?;
     let mut settings = vec![units_record(
         ir.tolerances.linear.get(),
         ir.tolerances.angular.get(),
@@ -284,7 +295,7 @@ fn write_archive_prefix(
     settings.extend(tables::document::settings(ir)?);
     let views = tables::views::settings(ir)?;
     settings.extend(views.settings);
-    output.write_all(&table(TCODE_SETTINGS_TABLE, &settings)?)?;
+    output.write_all(&table(ctx, TCODE_SETTINGS_TABLE, &settings)?)?;
     for typecode in [
         TCODE_BITMAP_TABLE,
         TCODE_TEXTURE_MAPPING_TABLE,
@@ -308,9 +319,9 @@ fn write_archive_prefix(
             TCODE_LINETYPE_TABLE => tables::native::linetypes(ir)?,
             _ => Vec::new(),
         };
-        output.write_all(&table(typecode, &records)?)?;
+        output.write_all(&table(ctx, typecode, &records)?)?;
         if typecode == TCODE_LINETYPE_TABLE {
-            output.write_all(&table(TCODE_LAYER_TABLE, &tables::layers(ir)?)?)?;
+            output.write_all(&table(ctx, TCODE_LAYER_TABLE, &tables::layers(ir)?)?)?;
         }
     }
     let mut losses = documents.losses;
@@ -343,12 +354,11 @@ fn content_limitation(error: &CodecError) -> bool {
     matches!(error, CodecError::UnsupportedContent(_))
 }
 
-fn prepare_write(
-    ir: &CadIr,
+fn prepare_write<'a>(
+    ctx: &DecodeContext<'_>,
+    ir: &'a CadIr,
     archive_version: RhinoArchiveVersion,
-) -> Result<WritePlan<'_>, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
+) -> Result<WritePlan<'a>, CodecError> {
     if ir.tolerances.angular.get() > std::f64::consts::PI {
         return Err(CodecError::InvalidInput(
             "Rhino angular tolerance must not exceed pi".into(),
@@ -538,7 +548,7 @@ fn prepare_write(
             }
             Err(error) => return Err(error),
         }
-        brep_count += loose::write(&baked, &mut brep_records, &mut losses)?;
+        brep_count += loose::write(ctx, &baked, &mut brep_records, &mut losses)?;
         if baked.model.faces.is_empty() {
             continue;
         }
@@ -565,7 +575,7 @@ fn prepare_write(
             baked.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
         }
         let payload = match WritableModel::try_new(&baked)
-            .and_then(|model| brep_payload(&ctx, &model, archive_version))
+            .and_then(|model| brep_payload(ctx, &model, archive_version))
         {
             Ok(payload) => payload,
             Err(error)
@@ -575,7 +585,7 @@ fn prepare_write(
                 let last_payload = std::cell::RefCell::new(None);
                 let (reduced, reduction_losses) = reduce::sheet(&baked, |candidate| {
                     let payload = WritableModel::try_new(candidate)
-                        .and_then(|model| brep_payload(&ctx, &model, archive_version))?;
+                        .and_then(|model| brep_payload(ctx, &model, archive_version))?;
                     last_payload.replace(Some(payload));
                     Ok(())
                 })?;
@@ -601,6 +611,7 @@ fn prepare_write(
         let body = &baked.model.bodies[0];
         written_bodies.insert(body.id.to_string());
         brep_count += 1;
+        ctx.charge_entities(1, "write Rhino object record")?;
         brep_records.write_all(&brep_object_record(
             ir,
             &payload,
@@ -1710,8 +1721,16 @@ fn short_chunk(typecode: u32, value: i64) -> Vec<u8> {
     bytes
 }
 
-fn table(typecode: u32, records: &[Vec<u8>]) -> Result<Vec<u8>, CodecError> {
-    let mut body = records.concat();
+fn table(
+    ctx: &DecodeContext<'_>,
+    typecode: u32,
+    records: &[Vec<u8>],
+) -> Result<Vec<u8>, CodecError> {
+    let mut body = Vec::new();
+    for record in records {
+        ctx.charge_entities(1, "write Rhino table record")?;
+        body.extend(record);
+    }
     body.extend(short_chunk(TCODE_ENDOFTABLE, 0));
     long_chunk(typecode, &body)
 }
@@ -2514,4 +2533,4 @@ fn utf16(value: &str) -> Result<Vec<u8>, CodecError> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

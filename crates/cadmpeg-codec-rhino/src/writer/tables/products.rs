@@ -5,7 +5,9 @@ use super::{
     anonymous, attributed_object_record, class_wrapper_with_direct, crc_chunk_with_direct,
     neutral_object_uuid, records, utf16, wire_index, CadIr, CodecError, Value,
 };
-use cadmpeg_ir::products::{Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference};
+use cadmpeg_ir::products::{
+    AssemblyGraph, Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference,
+};
 
 const DEFINITION_CLASS: [u8; 16] = [
     0xf6, 0xbf, 0xf8, 0x26, 0x18, 0x26, 0x7f, 0x41, 0xa1, 0x58, 0x15, 0x3d, 0x64, 0xa9, 0x49, 0x89,
@@ -21,7 +23,11 @@ fn unset_bounds(output: &mut Vec<u8>) {
     }
 }
 
-fn children<'a>(ir: &'a CadIr, definition: &ProductDefinition) -> Vec<&'a Occurrence> {
+fn children<'a>(
+    ir: &'a CadIr,
+    graph: &AssemblyGraph<'_>,
+    definition: &ProductDefinition,
+) -> Vec<&'a Occurrence> {
     // An occurrence tree repeats nested uses of a shared definition. The
     // native definition owns each source child slot once; each slot retains
     // its own relative placement rather than a composed world placement.
@@ -31,7 +37,9 @@ fn children<'a>(ir: &'a CadIr, definition: &ProductDefinition) -> Vec<&'a Occurr
         let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
             continue;
         };
-        if !parent_instances.contains(&parent.as_str()) {
+        if graph.effective_transform(&occurrence.id).is_none()
+            || !parent_instances.contains(&parent.as_str())
+        {
             continue;
         }
         if !result.iter().any(|existing: &&Occurrence| {
@@ -63,6 +71,7 @@ pub(in crate::writer) fn definitions(
     ir: &CadIr,
     written_bodies: &std::collections::BTreeSet<String>,
 ) -> Result<Vec<Vec<u8>>, CodecError> {
+    let graph = AssemblyGraph::new(&ir.model.occurrences).map_err(CodecError::malformed)?;
     let mut result = Vec::new();
     for definition in &ir.model.product_definitions {
         let native = definition
@@ -83,7 +92,7 @@ pub(in crate::writer) fn definitions(
             .filter(|body| written_bodies.contains(body.as_str()))
             .map(|body| neutral_object_uuid(body.as_str()))
             .chain(
-                children(ir, definition)
+                children(ir, &graph, definition)
                     .iter()
                     .map(|occurrence| neutral_object_uuid(occurrence.id.as_str())),
             )
@@ -134,7 +143,22 @@ pub(in crate::writer) fn definitions(
     Ok(result)
 }
 
-pub(in crate::writer) fn references(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
+pub(in crate::writer) fn references(
+    ir: &CadIr,
+) -> Result<(Vec<Vec<u8>>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
+    let graph = AssemblyGraph::new(&ir.model.occurrences).map_err(CodecError::malformed)?;
+    let losses = ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| graph.effective_transform(&occurrence.id).is_none())
+        .map(|occurrence| {
+            crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                "occurrence {} omitted because its placement or an ancestor placement is unknown",
+                occurrence.id
+            ))
+        })
+        .collect();
     let mut result = Vec::new();
     let mut selected = ir
         .model
@@ -143,11 +167,14 @@ pub(in crate::writer) fn references(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecErr
         .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
         .collect::<Vec<_>>();
     for definition in &ir.model.product_definitions {
-        selected.extend(children(ir, definition));
+        selected.extend(children(ir, &graph, definition));
     }
     selected.sort_by(|left, right| left.id.cmp(&right.id));
     selected.dedup_by(|left, right| left.id == right.id);
     for occurrence in selected {
+        if graph.effective_transform(&occurrence.id).is_none() {
+            continue;
+        }
         let PrototypeReference::Local { definition } = &occurrence.prototype else {
             continue;
         };
@@ -161,13 +188,11 @@ pub(in crate::writer) fn references(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecErr
         }
         let mut payload = vec![0x10];
         payload.extend(neutral_object_uuid(definition.as_str()));
-        let transform = if let Some(linked) = occurrence.linked_prototype {
-            occurrence
-                .transform
-                .compose(linked)
-                .map_err(CodecError::malformed)?
-        } else {
-            occurrence.transform
+        let Some(transform) = occurrence
+            .effective_transform()
+            .map_err(CodecError::malformed)?
+        else {
+            continue;
         };
         for value in transform.rows().iter().flatten() {
             payload.extend(value.to_le_bytes());
@@ -187,5 +212,8 @@ pub(in crate::writer) fn references(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecErr
             display,
         )?);
     }
-    Ok(result)
+    Ok((result, losses))
 }
+
+#[cfg(test)]
+mod tests;

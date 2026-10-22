@@ -8,7 +8,7 @@ use crate::writer::xml::{self, Object};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::products::{
-    JointLimits, JointOperand, JointOperands, OperandContainer, PairedJointKind,
+    AssemblyGraph, JointLimits, JointOperand, JointOperands, OperandContainer, PairedJointKind,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -237,6 +237,7 @@ pub(super) fn write(
     names: &mut HashMap<String, String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let graph = AssemblyGraph::new(&ir.model.occurrences).map_err(CodecError::malformed)?;
     let native = ir
         .native
         .namespace("fcstd")
@@ -245,6 +246,23 @@ pub(super) fn write(
         .unwrap_or_default();
     let mut used: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
     for joint in &ir.model.assembly_joints {
+        if let Some(unknown) = joint.connectors().find_map(|connector| {
+            let OperandContainer::Occurrence { occurrence, .. } = &connector.operand.container
+            else {
+                return None;
+            };
+            ir.model.occurrences.iter().find(|candidate| {
+                candidate.id == *occurrence && graph.effective_transform(&candidate.id).is_none()
+            })
+        }) {
+            losses.push(
+                FreecadLossCode::ExportJointOperandNotTransferred.note(format!(
+                    "joint {} omitted because occurrence {} has unknown placement",
+                    joint.id, unknown.id
+                )),
+            );
+            continue;
+        }
         let label = match joint.operands() {
             JointOperands::Grounded { .. } => "",
             JointOperands::Pair { kind, .. } => {

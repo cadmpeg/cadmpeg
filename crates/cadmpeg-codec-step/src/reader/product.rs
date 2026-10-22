@@ -388,7 +388,7 @@ pub(super) fn decode(
             },
             parent: OccurrenceParent::Root {},
             ordinal: root_ordinal,
-            transform: Transform::identity(),
+            transform: Some(Transform::identity()),
             linked_prototype: None,
 
             name: None,
@@ -512,17 +512,12 @@ pub(super) fn decode(
                 break 'expansion;
             }
             let ordinal = child_ordinals.entry(parent.clone()).or_default();
-            let transform = if let Some(transform) = placements.get(&usage_id).copied() {
-                transform
-            } else {
-                if missing_placement_reports.insert(usage_id) {
-                    losses.push(StepLossCode::NauoPlacementUnresolved.note(format!(
-                        "NAUO #{usage_id} has no resolved occurrence transform; \
-                             identity placement was used"
-                    )));
-                }
-                Transform::identity()
-            };
+            let transform = placements.get(&usage_id).copied();
+            if transform.is_none() && missing_placement_reports.insert(usage_id) {
+                losses.push(StepLossCode::NauoPlacementUnresolved.note(format!(
+                    "NAUO #{usage_id} has no resolved occurrence transform; source placement is unknown"
+                )));
+            }
 
             ir.model.occurrences.push(Occurrence {
                 id: id.clone(),

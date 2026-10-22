@@ -120,13 +120,16 @@ macro_rules! declare_arena_dispositions {
                 let mut losses = Vec::new();
                 $(
                     if self.$field == ArenaDisposition::Omitted && !model.$field.is_empty() {
+                        let mut ids: Vec<_> = model.$field.iter().map(EntitySchema::identity).collect();
+                        ids.sort_unstable();
                         losses.push(
                             ExportLossCode::ArenaOmitted(arena_kind(&model.$field))
                             .note(format!(
                                 "the {format} write does not represent model arena `{}`: \
-                                 {} record(s) omitted",
+                                 {} record(s) omitted: {}",
                                 stringify!($field),
-                                model.$field.len(),
+                                ids.len(),
+                                ids.join(", "),
                             )),
                         );
                     }

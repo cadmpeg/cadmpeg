@@ -22,9 +22,10 @@ fn typed_group_name_and_uuid_are_authored_without_source_bytes() {
     let archive = crate::test_support::test_dump::minimal_document(
         "80",
         &[
-            crate::writer::table(crate::writer::TCODE_SETTINGS_TABLE, &[]).expect("settings"),
-            super::super::super::table(TCODE_GROUP_TABLE, &records).expect("table"),
-            crate::writer::table(crate::writer::TCODE_OBJECT_TABLE, &[]).expect("objects"),
+            crate::writer::tests::table(crate::writer::TCODE_SETTINGS_TABLE, &[])
+                .expect("settings"),
+            crate::writer::tests::table(TCODE_GROUP_TABLE, &records).expect("table"),
+            crate::writer::tests::table(crate::writer::TCODE_OBJECT_TABLE, &[]).expect("objects"),
         ],
     );
     let arena = DecodeArena::new();

@@ -32,7 +32,7 @@ fn edited_neutral_text_and_position_regenerate_the_annotation_object() {
     let archive = crate::test_support::test_dump::minimal_document(
         "80",
         &[
-            super::super::super::table(
+            crate::writer::tests::table(
                 TCODE_SETTINGS_TABLE,
                 &[super::super::super::units_record(
                     ir.tolerances.linear.get(),
@@ -41,7 +41,7 @@ fn edited_neutral_text_and_position_regenerate_the_annotation_object() {
                 .expect("units")],
             )
             .expect("settings"),
-            super::super::super::table(TCODE_OBJECT_TABLE, &objects).expect("objects"),
+            crate::writer::tests::table(TCODE_OBJECT_TABLE, &objects).expect("objects"),
         ],
     );
     let decoded = crate::RhinoCodec

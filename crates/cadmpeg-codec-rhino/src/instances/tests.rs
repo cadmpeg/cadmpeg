@@ -897,11 +897,17 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
     assert_eq!(ir.model.occurrences.len(), 2);
     assert_ne!(ir.model.occurrences[0].id, ir.model.occurrences[1].id);
     assert_eq!(
-        ir.model.occurrences[0].transform.rows(),
+        ir.model.occurrences[0]
+            .transform
+            .expect("source occurrence placement")
+            .rows(),
         transform(1.0, [10.0, 0.0, 0.0])
     );
     assert_eq!(
-        ir.model.occurrences[1].transform.rows(),
+        ir.model.occurrences[1]
+            .transform
+            .expect("source occurrence placement")
+            .rows(),
         transform(1.0, [20.0, 0.0, 0.0])
     );
     let unknowns = ir.native_unknowns("rhino").expect("source records");
@@ -983,7 +989,10 @@ fn instance_placement_preserves_member_carriers_in_prototype_coordinates() {
     assert_eq!(curve.control_points()[1].x, 2.0);
     assert_eq!(result.ir().model.occurrences.len(), 1);
     assert_eq!(
-        result.ir().model.occurrences[0].transform.rows()[0][3],
+        result.ir().model.occurrences[0]
+            .transform
+            .expect("source occurrence placement")
+            .rows()[0][3],
         10.0
     );
     assert!(
@@ -1062,11 +1071,17 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
     let occurrences = &result.ir().model.occurrences;
     assert_eq!(occurrences.len(), 2);
     assert_eq!(
-        occurrences[0].transform.rows(),
+        occurrences[0]
+            .transform
+            .expect("source occurrence placement")
+            .rows(),
         transform(1.0, [10.0, 0.0, 0.0])
     );
     assert_eq!(
-        occurrences[1].transform.rows(),
+        occurrences[1]
+            .transform
+            .expect("source occurrence placement")
+            .rows(),
         transform(2.0, [0.0, 0.0, 0.0])
     );
     let graph = cadmpeg_ir::products::AssemblyGraph::new(occurrences).expect("assembly graph");
@@ -1200,7 +1215,13 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
         mesh.vertex_normals()[0].get(),
         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 1.0)
     );
-    assert_eq!(result.ir().model.occurrences[0].transform.rows(), rows);
+    assert_eq!(
+        result.ir().model.occurrences[0]
+            .transform
+            .expect("source occurrence placement")
+            .rows(),
+        rows
+    );
     let subd = &result.ir().model.subds[0];
     assert_eq!(
         wire::field::<Vec<subd::SubdVertex>>(&(subd.cage), "vertices")[2]
@@ -1302,7 +1323,10 @@ pub(crate) fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     ));
     assert_eq!(result.ir().model.occurrences.len(), 1);
     assert_eq!(
-        result.ir().model.occurrences[0].transform.rows(),
+        result.ir().model.occurrences[0]
+            .transform
+            .expect("source occurrence placement")
+            .rows(),
         transform(2.0, [0.0, 0.0, 0.0])
     );
     assert!(

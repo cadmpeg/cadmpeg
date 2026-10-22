@@ -42,6 +42,10 @@ pub(crate) enum FreecadLossCode {
     ExportFeatureNotTransferred,
     /// An assembly joint has no writable `FreeCAD` joint family.
     ExportJointNotTransferred,
+    /// An occurrence has no source placement to write.
+    ExportOccurrenceNotTransferred,
+    /// A joint operand occurrence has no writable placement.
+    ExportJointOperandNotTransferred,
     /// A neutral body has an unsupported exact carrier.
     ExportGeometryNotTransferred,
     /// An appearance member has no exact `FreeCAD` GUI encoding.
@@ -114,6 +118,8 @@ impl FreecadLossCode {
         Self::ExportArenaNotTransferred,
         Self::ExportFeatureNotTransferred,
         Self::ExportJointNotTransferred,
+        Self::ExportOccurrenceNotTransferred,
+        Self::ExportJointOperandNotTransferred,
         Self::ExportGeometryNotTransferred,
         Self::ExportAppearanceNotTransferred,
         Self::ExportPresentationNotTransferred,
@@ -157,6 +163,8 @@ impl FreecadLossCode {
             Self::ExportArenaNotTransferred => "arena.not-transferred",
             Self::ExportFeatureNotTransferred => "feature.not-transferred",
             Self::ExportJointNotTransferred => "joint.not-transferred",
+            Self::ExportOccurrenceNotTransferred => "occurrence.not-transferred",
+            Self::ExportJointOperandNotTransferred => "joint.operand-not-transferred",
             Self::ExportGeometryNotTransferred => "geometry.not-transferred",
             Self::ExportAppearanceNotTransferred => "appearance.not-transferred",
             Self::ExportPresentationNotTransferred => "presentation.not-transferred",
@@ -199,7 +207,9 @@ impl FreecadLossCode {
         match self {
             Self::ExpressionReferenceUnresolved
             | Self::AttributePropertyUnprojected
-            | Self::ExportAttributeNotTransferred => Severity::Warning,
+            | Self::ExportAttributeNotTransferred
+            | Self::ExportOccurrenceNotTransferred
+            | Self::ExportJointOperandNotTransferred => Severity::Warning,
             Self::ExportFeatureNotTransferred
             | Self::ExportJointNotTransferred
             | Self::ExportGeometryNotTransferred => Severity::Error,
@@ -239,6 +249,9 @@ impl FreecadLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::ExportOccurrenceNotTransferred | Self::ExportJointOperandNotTransferred => {
+                LossTaxonomy::AssemblyPlacementsNotTransferred
+            }
             Self::ExpressionReferenceUnresolved
             | Self::AttributePropertyUnprojected
             | Self::ExportAttributeNotTransferred => LossTaxonomy::MetadataNotTransferred,
@@ -372,6 +385,14 @@ const SOURCE_RECORD_COVERAGE: &[(FreecadLossCode, SourceRecordCoverage)] = &[
     ),
     (
         FreecadLossCode::ExportJointNotTransferred,
+        SourceRecordCoverage::Writer,
+    ),
+    (
+        FreecadLossCode::ExportOccurrenceNotTransferred,
+        SourceRecordCoverage::Writer,
+    ),
+    (
+        FreecadLossCode::ExportJointOperandNotTransferred,
         SourceRecordCoverage::Writer,
     ),
     (
@@ -616,6 +637,8 @@ mod tests {
                 "arena.not-transferred",
                 "feature.not-transferred",
                 "joint.not-transferred",
+                "occurrence.not-transferred",
+                "joint.operand-not-transferred",
                 "geometry.not-transferred",
                 "appearance.not-transferred",
                 "presentation.not-transferred",

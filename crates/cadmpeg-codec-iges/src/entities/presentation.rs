@@ -152,6 +152,7 @@ fn appearance(
     if ir.model.appearances.iter().all(|item| item.id != id) {
         ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearances.push(Appearance {
+            native_ref: None,
             id,
             name,
             asset_guid: None,
@@ -620,6 +621,7 @@ pub(super) fn project(
         appearance(ir, appearance_id.clone(), None, color, ctx)?;
         ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: crate::ids::appearance_binding(
                 &crate::ids::Stem::word_directory(crate::ids::Word::FreeGeometry, sequence)
                     .slot(index),
@@ -652,6 +654,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: crate::ids::appearance_binding(&crate::ids::Stem::word_directory(
                 crate::ids::Word::Body,
                 sequence,
@@ -729,6 +732,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: crate::ids::appearance_binding(&crate::ids::Stem::word_directory(
                 crate::ids::Word::Face,
                 sequence,

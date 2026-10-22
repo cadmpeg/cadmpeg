@@ -41,6 +41,7 @@ impl Annotations {
     ) -> AnnotationIndex {
         let index = AnnotationIndex(ir.model.pmi.len());
         ir.model.pmi.push(PmiAnnotation {
+            native_ref: None,
             id: super::pmi_id(id),
             name: draft.name.filter(|value| !value.is_empty()),
             targets: draft.targets,

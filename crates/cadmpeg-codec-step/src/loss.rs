@@ -169,6 +169,8 @@ pub(crate) enum StepLossCode {
     OccurrenceNoLocalProduct,
     /// An occurrence placement is not rigid.
     OccurrencePlacementNotRigid,
+    /// An occurrence has no source placement to write.
+    OccurrencePlacementUnknown,
     /// A body carries a non-rigid transform.
     BodyNonRigidTransform,
     /// Hidden body visibility assignments are unsupported by the target schema.
@@ -426,6 +428,7 @@ impl StepLossCode {
         Self::OccurrenceUnresolvedParent,
         Self::OccurrenceNoLocalProduct,
         Self::OccurrencePlacementNotRigid,
+        Self::OccurrencePlacementUnknown,
         Self::BodyNonRigidTransform,
         Self::HiddenBodyVisibilityUnsupported,
         Self::HiddenAppearanceVisibilityUnsupported,
@@ -600,6 +603,7 @@ impl StepLossCode {
             }
             Self::OccurrenceUnresolvedParent => "occurrence.unresolved-parent",
             Self::OccurrenceNoLocalProduct => "occurrence.no-local-product",
+            Self::OccurrencePlacementUnknown => "occurrence.placement-unknown",
             Self::OccurrencePlacementNotRigid => "occurrence.placement-not-rigid",
             Self::BodyNonRigidTransform => "body.non-rigid-transform",
             Self::HiddenBodyVisibilityUnsupported => "body.hidden-visibility-unsupported",
@@ -759,6 +763,7 @@ impl StepLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::OccurrencePlacementUnknown => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::ContainerMemberNoncanonical
             | Self::ParseNoncanonicalSyntax
             | Self::ParsePreambleOmitted
@@ -1240,6 +1245,7 @@ mod tests {
                 "occurrence.unresolved-parent",
                 "occurrence.no-local-product",
                 "occurrence.placement-not-rigid",
+                "occurrence.placement-unknown",
                 "body.non-rigid-transform",
                 "body.hidden-visibility-unsupported",
                 "presentation.hidden-appearance-visibility-unsupported",

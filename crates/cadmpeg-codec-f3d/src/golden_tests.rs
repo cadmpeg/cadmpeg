@@ -8,6 +8,7 @@
 //! rejects, so one over a clean tree leaves the tree clean. Fixture
 //! regeneration is separate: `UPDATE_GOLDEN_FIXTURES=1`.
 
+mod damaged;
 mod source_representation;
 
 use cadmpeg_test_support::EditableDecodeResult;
@@ -733,6 +734,7 @@ fn golden_snapshots_are_byte_identical() {
             &mut failures,
         );
     }
+    damaged::check_snapshots(update, &root, &mut failures);
     assert!(
         failures.is_empty(),
         "{} golden artifact(s) drifted; if the change is intended regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden` and review the diff:\n\n{}",

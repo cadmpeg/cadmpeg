@@ -331,7 +331,7 @@ pub(super) fn transfer_part_product(
             },
             parent: OccurrenceParent::Root {},
             ordinal: 0,
-            transform: Transform::identity(),
+            transform: Some(Transform::identity()),
             linked_prototype: None,
             name: Some(occurrence_name),
             visible: None,

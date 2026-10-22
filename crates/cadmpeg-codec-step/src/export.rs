@@ -715,6 +715,22 @@ impl<'a> Builder<'a> {
                         .or_default()
                         .push((spec, &binding.id));
                 }
+                AppearanceTarget::Record { arena, id }
+                    if arena.as_str() == "bodies" && ir.model.contains_record(*arena, id) =>
+                {
+                    body_candidates
+                        .entry(id.as_str())
+                        .or_default()
+                        .push((spec, &binding.id));
+                }
+                AppearanceTarget::Record { arena, id }
+                    if arena.as_str() == "faces" && ir.model.contains_record(*arena, id) =>
+                {
+                    face_candidates
+                        .entry(id.as_str())
+                        .or_default()
+                        .push((spec, &binding.id));
+                }
                 AppearanceTarget::Occurrence(_)
                 | AppearanceTarget::Surface(_)
                 | AppearanceTarget::Curve(_)
@@ -722,6 +738,7 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Edge(_)
                 | AppearanceTarget::Vertex(_)
                 | AppearanceTarget::Tessellation(_)
+                | AppearanceTarget::Record { .. }
                 | AppearanceTarget::Source { .. } => {}
             }
         }
@@ -908,7 +925,9 @@ impl<'a> Builder<'a> {
             let Some(color) = appearance.base_color else {
                 continue;
             };
-            if let AppearanceTarget::Face(id) = &binding.target {
+            let typed_target = binding.target.typed_record_target(&ir.model);
+            let binding_target = typed_target.as_ref().unwrap_or(&binding.target);
+            if let AppearanceTarget::Face(id) = binding_target {
                 if ir
                     .model
                     .faces
@@ -922,7 +941,7 @@ impl<'a> Builder<'a> {
                     continue;
                 }
             }
-            let (target, style_kind) = match &binding.target {
+            let (target, style_kind) = match binding_target {
                 AppearanceTarget::Face(id) => (
                     self.face_step_refs.get(id.as_str()).copied(),
                     StyleKind::Surface,
@@ -953,6 +972,7 @@ impl<'a> Builder<'a> {
                     self.occurrence_step_refs.get(id.as_str()).copied(),
                     StyleKind::Surface,
                 ),
+                AppearanceTarget::Record { .. } => (None, StyleKind::Surface),
                 AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
@@ -965,6 +985,7 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Vertex(id) => id.as_str().to_owned(),
                     AppearanceTarget::Tessellation(id) => id.clone(),
                     AppearanceTarget::Occurrence(id) => id.as_str().to_owned(),
+                    AppearanceTarget::Record { id, .. } => id.clone(),
                     AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
                 };
                 direct_unstyled.insert(target_id);
@@ -1432,9 +1453,23 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let unknown_placements = occurrences
+            .iter()
+            .filter(|occurrence| graph.effective_transform(&occurrence.id).is_none())
+            .map(|occurrence| occurrence.id.clone())
+            .collect::<BTreeSet<_>>();
+        for id in &unknown_placements {
+            self.loss(
+                StepLossCode::OccurrencePlacementUnknown,
+                format!("occurrence '{id}' omitted because its placement or an ancestor placement is unknown"),
+            );
+        }
         let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         for occurrence in occurrences {
+            if unknown_placements.contains(&occurrence.id) {
+                continue;
+            }
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
                 continue;
             };
@@ -1448,7 +1483,8 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let transform = match occurrence.effective_transform() {
-                Ok(transform) => transform,
+                Ok(Some(transform)) => transform,
+                Ok(None) => continue,
                 Err(error) => {
                     self.loss(
                         StepLossCode::AssemblyGraphInvalid,
@@ -1539,9 +1575,13 @@ impl<'a> Builder<'a> {
         }
 
         for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
+            if unknown_placements.contains(&occurrence.id) {
+                continue;
+            }
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
                 let transform = match occurrence.effective_transform() {
-                    Ok(transform) => transform,
+                    Ok(Some(transform)) => transform,
+                    Ok(None) => continue,
                     Err(error) => {
                         self.loss(
                             StepLossCode::AssemblyGraphInvalid,
@@ -1598,7 +1638,8 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let transform = match occurrence.effective_transform() {
-                Ok(transform) => transform,
+                Ok(Some(transform)) => transform,
+                Ok(None) => continue,
                 Err(error) => {
                     self.loss(
                         StepLossCode::AssemblyGraphInvalid,

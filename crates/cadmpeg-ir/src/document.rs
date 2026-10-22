@@ -705,6 +705,14 @@ macro_rules! declare_arena_name {
         }
 
         impl Model {
+            /// Tests identity membership in exactly the registered neutral arena.
+            pub fn contains_record(&self, arena: ArenaName, id: &str) -> bool {
+                $(if arena.as_str() == stringify!($field) {
+                    return self.$field.iter().any(|record| crate::schema::EntitySchema::identity(record) == id);
+                })*
+                false
+            }
+
             /// The first registered arena of this class that holds a record.
             #[must_use]
             pub fn populated_arena(&self, class: ArenaClass) -> Option<ArenaName> {
@@ -741,6 +749,36 @@ arena_registry!(declare_model);
 arena_registry!(assert_entity_schemas);
 arena_registry!(declare_model_view);
 classified_arena_registry!(declare_arena_name);
+
+impl Serialize for ArenaName {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ArenaName {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        Self::parse(&name)
+            .ok_or_else(|| serde::de::Error::custom(format!("unregistered neutral arena {name}")))
+    }
+}
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for ArenaName {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ArenaName".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let names = Self::ALL
+            .iter()
+            .map(|name| name.as_str())
+            .collect::<Vec<_>>();
+        schemars::json_schema!({"type":"string", "enum": names})
+    }
+}
+
+rewrite_scalar!(ArenaName);
 
 /// Borrowed geometry and topology arenas for an embedded semantic record.
 pub struct GeometrySnapshot<'a> {

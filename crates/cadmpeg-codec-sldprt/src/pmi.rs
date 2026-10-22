@@ -258,6 +258,7 @@ pub(crate) fn patch_payload(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     let source_records = parse_payload(&ctx, payload, &mut Vec::new())?;
+    drop(ctx);
     for record in native
         .pmi_dimensions
         .iter()
@@ -583,6 +584,7 @@ pub(crate) fn apply_to_parameters(
             _ => source_value.map(Dimension::Literal),
         };
         result.annotations.push(PmiAnnotation {
+            native_ref: None,
             id: id.clone(),
             name: None,
             visible: None,
@@ -593,6 +595,7 @@ pub(crate) fn apply_to_parameters(
         });
         if let Some(text) = record.display_text().filter(|text| !text.is_empty()) {
             result.annotations.push(PmiAnnotation {
+                native_ref: None,
                 id: PmiId::mint(format!("sldprt:model:pmi#presentation:{}", record.guid))
                     .map_err(CodecError::malformed)?,
                 name: None,
@@ -615,6 +618,7 @@ pub(crate) fn apply_to_parameters(
             ),
         ] {
             result.attributes.push(SourceAttribute {
+                native_ref: None,
                 id: AttributeId::mint(format!("sldprt:model:attribute#pmi:{}:{name}", record.guid))
                     .map_err(CodecError::malformed)?,
                 target: AttributeTarget::Pmi(id.clone()),

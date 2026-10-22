@@ -42,6 +42,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
         AppearanceId::mint("generated:test:appearance#0").expect("identity grammar");
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.appearances = vec![Appearance {
+        native_ref: None,
         id: appearance_id.clone(),
         name: Some("Prism-Generated".into()),
         asset_guid: Some(visual_guid.into()),
@@ -423,6 +424,7 @@ fn synthesized_appearance_properties_report_each_unwritten_key() {
         })
         .collect();
         ir.model.appearances.push(Appearance {
+            native_ref: None,
             id: "test:model:appearance#properties".try_into().unwrap(),
             name: Some("test".into()),
             asset_guid: Some("11111111-2222-3333-4444-555555555555".into()),

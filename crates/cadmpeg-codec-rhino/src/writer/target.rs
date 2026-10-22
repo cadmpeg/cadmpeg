@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino target resolution and export reporting.
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
@@ -35,8 +36,14 @@ pub(crate) fn plan(
         return Err(target.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
     let version = RhinoArchiveVersion::ALL[index];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        mode: DecodeMode::Salvage,
+        limits: input.limits,
+    };
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let mut bytes = Vec::new();
-    let outcome = super::write(input.ir, version, &mut bytes)?;
+    let outcome = super::write(&ctx, input.ir, version, &mut bytes)?;
     let mut losses = outcome.losses;
     let vertex_quantization = !version.stores_mesh_vertices_as_f64()
         && input
@@ -264,7 +271,8 @@ pub(crate) fn plan(
              so no other target avoids it",
         ));
     }
-    let coverage = ArenaCoverage::Declared(coverage::verified(input.ir, &bytes));
+    let coverage = ArenaCoverage::Declared(coverage::verified(&ctx, input.ir, &bytes));
+    ctx.finish_session()?;
     Ok(ExportBody {
         native_dispositions: super::native_dispositions(input.ir)?,
         synthesis_cause: None,

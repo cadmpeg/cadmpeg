@@ -19,6 +19,13 @@ use cadmpeg_core::text::NonBlankString;
 pub struct Appearance {
     /// Stable arena id.
     pub id: AppearanceId,
+    /// Typed native record from which this neutral record was projected.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
     /// Display/preset name stored in the source, when present.
     #[serde(
         default,
@@ -199,11 +206,53 @@ pub enum AppearanceTarget {
     Point(crate::ids::PointId),
     /// Tessellated geometry appearance.
     Tessellation(String),
+    /// Ownership by an existing neutral record in a registered model arena.
+    Record {
+        /// Registered neutral arena containing the record.
+        arena: crate::document::ArenaName,
+        /// Identity of a record in that arena.
+        id: String,
+    },
     /// Native presentation carrier without a neutral geometry arena.
     Source {
         /// Native source entity identity.
         source_id: String,
     },
+}
+
+impl AppearanceTarget {
+    /// Returns the specific geometry target for an addressed neutral geometry record.
+    /// Other neutral arenas retain their general `Record` target.
+    pub fn typed_record_target(&self, model: &crate::document::Model) -> Option<Self> {
+        let Self::Record { arena, id } = self else {
+            return None;
+        };
+        macro_rules! target {
+            ($field:ident, $variant:ident) => {
+                model
+                    .$field
+                    .iter()
+                    .find(|record| record.id.as_str() == id)
+                    .map(|record| Self::$variant(record.id.clone()))
+            };
+        }
+        match arena.as_str() {
+            "bodies" => target!(bodies, Body),
+            "occurrences" => target!(occurrences, Occurrence),
+            "faces" => target!(faces, Face),
+            "edges" => target!(edges, Edge),
+            "vertices" => target!(vertices, Vertex),
+            "surfaces" => target!(surfaces, Surface),
+            "curves" => target!(curves, Curve),
+            "points" => target!(points, Point),
+            "tessellations" => model
+                .tessellations
+                .iter()
+                .find(|record| record.id.as_str() == id)
+                .map(|record| Self::Tessellation(record.id.to_string())),
+            _ => None,
+        }
+    }
 }
 
 /// An explicit appearance assignment.
@@ -213,6 +262,13 @@ pub enum AppearanceTarget {
 pub struct AppearanceBinding {
     /// Globally unique deterministic assignment identity.
     pub id: crate::ids::AppearanceBindingId,
+    /// Typed native record from which this neutral record was projected.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
     /// Assigned topology entity.
     pub target: AppearanceTarget,
     /// Referenced appearance asset.
@@ -264,3 +320,5 @@ cadmpeg_core::named_optional_field!(deserialize_object_type, String, "object_typ
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 
 mod identity_rewrite;
+
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");

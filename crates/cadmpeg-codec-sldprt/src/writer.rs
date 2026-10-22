@@ -4386,6 +4386,7 @@ mod nurbs_write_tests {
     fn unsupported_pmi_is_reported_and_omitted_from_current_content() {
         let mut ir = CadIr::empty();
         ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
+            native_ref: None,
             id: cadmpeg_ir::ids::PmiId::mint("sldprt:model:pmi#A1").expect("identity grammar"),
             name: Some("datum A".into()),
             visible: None,

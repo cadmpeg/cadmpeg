@@ -2,15 +2,16 @@
 //! Resource ceilings for one decode session, and the local work counter.
 //!
 //! A session counts input bytes, decompressed bytes, retained output bytes,
-//! entities, and recursion depth. A refusal in any of them fuses the session:
-//! every later charge fails and `finish_session` returns the refusal.
+//! entities, and recursion depth. A session refusal permanently fuses the
+//! budget. A part refusal blocks further work until its owning part runner
+//! acknowledges it after rollback; cumulative resource charges remain.
 
 use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::CodecError;
 
-use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
+use super::error::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, RETAINED_BASE,
     RETAINED_PER_INPUT_BYTE,
@@ -165,6 +166,7 @@ impl DecodeBudget {
         operation: &'static str,
     ) -> ResourceLimit {
         let resource = ResourceLimit {
+            scope: LimitScope::for_dimension(dimension),
             dimension,
             reason,
             limit,
@@ -172,8 +174,33 @@ impl DecodeBudget {
             additional,
             operation,
         };
+        self.refuse_resource(resource)
+    }
+
+    pub(super) fn refuse_resource(&self, resource: ResourceLimit) -> ResourceLimit {
+        // A later part refusal cannot replace a session refusal. A session
+        // refusal remains fatal even if a part fault was raised first.
+        let resource = match self.fuse.get() {
+            Some(previous)
+                if previous.scope == LimitScope::Session || resource.scope == LimitScope::Part =>
+            {
+                previous
+            }
+            _ => resource,
+        };
         self.fuse.set(Some(resource));
         resource
+    }
+
+    pub(super) fn recover_part(&self, expected: ResourceLimit) -> Result<(), ResourceLimit> {
+        match self.fuse.get() {
+            Some(actual) if actual == expected && actual.scope == LimitScope::Part => {
+                self.fuse.set(None);
+                Ok(())
+            }
+            Some(actual) => Err(actual),
+            None => Ok(()),
+        }
     }
 
     pub(super) fn refuse(

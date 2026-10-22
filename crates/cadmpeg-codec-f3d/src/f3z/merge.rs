@@ -244,7 +244,7 @@ impl MergeSession<'_, '_> {
             let placement = if reference.transform.is_some() {
                 "Design occurrence transform"
             } else {
-                "identity placement"
+                "unknown placement"
             };
             parent_report.notes.push(format!(
                     "xref {label}: merged {} as occurrence {occurrence} ({placement}; {descendants} nested occurrence(s))",

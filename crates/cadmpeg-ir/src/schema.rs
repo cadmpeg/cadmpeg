@@ -356,15 +356,15 @@ impl EntitySchema for crate::tessellation::Tessellation {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);
-impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, target, appearance, source_entity_id, object_type, visible, channels);
-impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id; id, target, name, values);
-impl_entity_schema!(crate::pmi::PmiAnnotation, PmiAnnotation, id; id, name, visible, targets, definition);
+impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, native_ref, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);
+impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, native_ref, target, appearance, source_entity_id, object_type, visible, channels);
+impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id; id, native_ref, target, name, values);
+impl_entity_schema!(crate::pmi::PmiAnnotation, PmiAnnotation, id; id, native_ref, name, visible, targets, definition);
 impl_entity_schema!(
     crate::presentation::PresentationLayer,
     PresentationLayer,
     id;
-    id, name, description, parent, visible, items
+    id, native_ref, name, description, parent, visible, items
 );
 
 #[cfg(test)]

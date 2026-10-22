@@ -41,7 +41,9 @@ fn nested_subfigures_project_names_and_local_placements() {
         .expect("root product occurrence exists");
     let child = ir.model.occurrences.iter().find(|occurrence| matches!(&occurrence.parent, OccurrenceParent::Occurrence { occurrence: parent } if *parent == root.id)).expect("nested child occurrence refers to the root");
     assert_eq!(
-        root.transform.affine_rows(),
+        root.transform
+            .expect("authored root placement")
+            .affine_rows(),
         [
             [2.0, 0.0, 0.0, 10.0],
             [0.0, 2.0, 0.0, 20.0],
@@ -49,7 +51,10 @@ fn nested_subfigures_project_names_and_local_placements() {
         ]
     );
     assert_eq!(
-        child.transform.affine_rows(),
+        child
+            .transform
+            .expect("source occurrence placement")
+            .affine_rows(),
         [
             [0.5, 0.0, 0.0, 1.0],
             [0.0, 0.5, 0.0, 2.0],

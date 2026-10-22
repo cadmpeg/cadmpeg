@@ -122,6 +122,7 @@ pub(super) fn decode(
                 ir.model
                     .attributes
                     .push(cadmpeg_ir::attributes::SourceAttribute {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::AttributeId::from(crate::ids::data(
                             crate::ids::kind!("document-reference-source"),
                             id,

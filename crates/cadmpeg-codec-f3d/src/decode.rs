@@ -5207,6 +5207,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                 ))
             })?;
             new_bindings.push(AppearanceBinding {
+                native_ref: None,
                 // The face id completes the key: one appearance attribute GUID
                 // reaches every face carrying it, so the assignment pair alone
                 // repeats across those faces.

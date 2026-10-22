@@ -592,6 +592,7 @@ fn transfer_schema_one(
             }
         }
         plan.appearances.push(Appearance {
+            native_ref: None,
             id: appearance_id.clone(),
             name: Some(format!("{name} shape appearance")),
             asset_guid: None,
@@ -606,6 +607,7 @@ fn transfer_schema_one(
         });
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
+                native_ref: None,
                 id: binding_id(format_args!(
                     "fcstd:appearance:binding#{provider_key}:{index}"
                 ))?,
@@ -1144,6 +1146,7 @@ fn transfer_primitive_appearance(
         );
     }
     plan.appearances.push(Appearance {
+        native_ref: None,
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} {label} appearance")),
         asset_guid: None,
@@ -1173,6 +1176,7 @@ fn transfer_primitive_appearance(
     });
     for (index, target) in targets.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
+            native_ref: None,
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"
             ))?,
@@ -3875,6 +3879,7 @@ fn transfer_shape_appearances(
                         decode_color(material.diffuse, Some(material.transparency.get())).map(Some),
                     )?;
                     plan.bindings.push(AppearanceBinding {
+                        native_ref: None,
                         id: binding_id(format_args!(
                             "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
                         ))?,
@@ -4017,6 +4022,7 @@ fn material_appearance(
             .ok_or_else(|| CodecError::malformed(format_args!("GUI material {name} is non-finite")))
     };
     Ok(Appearance {
+        native_ref: None,
         id,
         name: Some(format!("{provider_name} face {} material", index + 1)),
         asset_guid: (!material.uuid.is_empty()).then(|| material.uuid.clone()),
@@ -4084,6 +4090,7 @@ fn bind_material_faces(
         let face = face.id.clone();
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
         plan.bindings.push(AppearanceBinding {
+            native_ref: None,
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#shape-material:{provider_key}:{binding_index}"
             ))?,
@@ -4231,6 +4238,7 @@ fn transfer_topology_colors(
             }
             if !emitted_appearance {
                 plan.appearances.push(Appearance {
+                    native_ref: None,
                     id: appearance_id.clone(),
                     name: Some(format!(
                         "{provider_name} {}{} appearance",
@@ -4288,6 +4296,7 @@ fn transfer_topology_colors(
             let topology_key = crate::native::id_key(topology_id);
             let kind_key = topology_binding_kind(kind);
             plan.bindings.push(AppearanceBinding {
+                native_ref: None,
                 id: binding_id(format_args!(
                     "fcstd:appearance:binding#{kind_key}:{provider_key}:{}:{topology_key}",
                     index + 1,

@@ -28,6 +28,7 @@ fn malformed_design() -> CodecError {
 
 fn recursion_refusal() -> CodecError {
     CodecError::ResourceLimit(ResourceLimit {
+        scope: cadmpeg_core::decode::LimitScope::Part,
         dimension: ResourceDimension::RecursionDepth,
         reason: ResourceFailure::BudgetExceeded,
         limit: 1,

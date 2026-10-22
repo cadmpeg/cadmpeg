@@ -26,7 +26,6 @@ pub(super) fn project(
     let mut products = Vec::new();
     let mut attributes = Vec::new();
     let mut appearances = Vec::new();
-    let mut projected = BTreeMap::<String, (&[&str], String, String)>::new();
     for (arena, records) in namespace.arenas() {
         for record in records {
             let fields = record.fields()?;
@@ -46,10 +45,6 @@ pub(super) fn project(
                     let product_id = cadmpeg_ir::ids::ProductDefinitionId::compose(
                         &cadmpeg_ir::identity_namespace!("nx", "document", "product"),
                         cadmpeg_ir::identity_key!("prototype-").then(products.len()),
-                    );
-                    projected.insert(
-                        record.id().to_owned(),
-                        (&["name"], "neutral_product".into(), product_id.to_string()),
                     );
                     products.push(ProductDefinition {
                         id: product_id,
@@ -78,15 +73,8 @@ pub(super) fn project(
                             &cadmpeg_ir::identity_namespace!("nx", "document", "attribute"),
                             cadmpeg_ir::identity_key!("jt-string-").then(attributes.len()),
                         );
-                        projected.insert(
-                            record.id().to_owned(),
-                            (
-                                &["value", "code_units"],
-                                "neutral_attribute".into(),
-                                attribute_id.to_string(),
-                            ),
-                        );
                         attributes.push(SourceAttribute {
+                            native_ref: Some(record.id().to_owned()),
                             id: attribute_id,
                             target: AttributeTarget::Source {
                                 source_id: record.id().to_owned(),
@@ -108,14 +96,6 @@ pub(super) fn project(
                 }
                 "display_jt_material_attributes" => {
                     let appearance = material(record.id(), &fields)?;
-                    projected.insert(
-                        record.id().to_owned(),
-                        (
-                            &["diffuse", "ambient", "specular", "emission", "shininess"],
-                            "neutral_appearance".into(),
-                            appearance.id.to_string(),
-                        ),
-                    );
                     appearances.push(appearance);
                 }
                 "external_references"
@@ -130,22 +110,6 @@ pub(super) fn project(
                     )));
                 }
                 _ => {}
-            }
-        }
-    }
-    for records in ir.native.namespace_mut("nx").arenas_mut().values_mut() {
-        for record in records {
-            if let Some((consumed, field, target)) = projected.get(record.id()) {
-                let mut fields = record.fields()?;
-                for key in *consumed {
-                    fields.remove(*key);
-                }
-                fields.insert(field.clone(), Value::String(target.clone()));
-                *record = cadmpeg_ir::native::NativeRecord::new(
-                    cadmpeg_ir::ids::Identity::try_from(record.id())
-                        .map_err(CodecError::malformed)?,
-                    fields,
-                )?;
             }
         }
     }
@@ -208,6 +172,7 @@ fn material(
             )
         });
     Ok(cadmpeg_ir::appearance::Appearance {
+        native_ref: Some(id.to_owned()),
         id: cadmpeg_ir::ids::AppearanceId::mint(format!("{id}:appearance"))
             .map_err(CodecError::malformed)?,
         name: None,
@@ -222,3 +187,6 @@ fn material(
         textures: Vec::new(),
     })
 }
+
+#[cfg(test)]
+mod tests;

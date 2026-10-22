@@ -48,6 +48,7 @@ pub(super) fn project(
         property.neutral_values = Some(project_fields(
             ir,
             &property.source_entity,
+            &property.id,
             &owners,
             "name",
             vec![(
@@ -107,6 +108,7 @@ pub(super) fn project(
             let label_targets = BTreeMap::from([(entity.id.clone(), assigned)]);
             let values = project_fields(
                 ir,
+                &entity.id,
                 &entity.id,
                 std::slice::from_ref(&entity.id),
                 name,

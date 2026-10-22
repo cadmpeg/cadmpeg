@@ -26,6 +26,7 @@ fn named_body_document() -> CadIr {
 
 fn appearance(id: &str) -> Appearance {
     Appearance {
+        native_ref: None,
         id: AppearanceId::mint(id).unwrap(),
         name: None,
         asset_guid: None,
@@ -42,6 +43,7 @@ fn appearance(id: &str) -> Appearance {
 
 fn binding(id: &str, target: AppearanceTarget, appearance: &str) -> AppearanceBinding {
     AppearanceBinding {
+        native_ref: None,
         id: AppearanceBindingId::mint(id).unwrap(),
         target,
         appearance: AppearanceId::mint(appearance).unwrap(),

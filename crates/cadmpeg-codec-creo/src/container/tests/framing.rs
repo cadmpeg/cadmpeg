@@ -119,7 +119,7 @@ fn scan_decodes_length_prefixed_native_model_name() {
     ));
     assert_eq!(
         occurrence.transform,
-        cadmpeg_ir::transform::Transform::identity()
+        Some(cadmpeg_ir::transform::Transform::identity())
     );
     assert_annotation(
         &result.source_fidelity().annotations,

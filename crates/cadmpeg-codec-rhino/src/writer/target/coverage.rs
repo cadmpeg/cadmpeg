@@ -9,37 +9,30 @@
 //! the existing `Reported` disposition in place.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::schema::rewrite::{self, typed::RewriteIdentities};
 use cadmpeg_ir::CadIr;
 use serde::Serialize;
 use serde_json::Value;
 
-pub(super) fn verified(ir: &CadIr, bytes: &[u8]) -> ArenaDispositions {
+pub(super) fn verified(ctx: &DecodeContext<'_>, ir: &CadIr, bytes: &[u8]) -> ArenaDispositions {
     let mut coverage = super::COVERAGE;
-    let Ok(decoded) = crate::RhinoCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-    else {
+    let Ok(decoded) = crate::RhinoCodec.decode_with_context(ctx, View::over_retained(bytes)) else {
         return coverage;
     };
     let output = decoded.ir();
     let Some(ids) = ordinal_identities(ir, output) else {
         return coverage;
     };
-    let arena = DecodeArena::new();
-    let Ok((ctx, _)) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())
-    else {
-        return coverage;
-    };
     // One injective map is shared by every arena, including references into
     // geometry arenas that remain Reported. Ordinary strings are not remapped.
     macro_rules! verify {
         ($($field:ident),+ $(,)?) => {$({
-            if agrees(&ctx, &ir.model.$field, &output.model.$field, &ids) {
+            if agrees(ctx, &ir.model.$field, &output.model.$field, &ids) {
                 coverage.$field = ArenaDisposition::Written;
             }
         })+};

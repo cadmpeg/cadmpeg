@@ -1253,6 +1253,7 @@ fn project_with_topology(
                         entry.insert(system_id.clone());
                         let datum_system = system_id.clone();
                         projected.push(PmiAnnotation {
+                            native_ref: None,
                             id: system_id,
                             name: None,
                             visible: None,
@@ -1267,6 +1268,7 @@ fn project_with_topology(
             };
             let (defined_unit, defined_area_unit, defined_area_second_unit) = defined_area(entity);
             projected.push(PmiAnnotation {
+                native_ref: None,
                 id,
                 name: object_name(entity),
                 visible: None,
@@ -1382,6 +1384,7 @@ fn project_datum(
     let name = object_name(entity);
     Ok(
         (short_class(&entity.class) == "GdtDatum").then_some(PmiAnnotation {
+            native_ref: None,
             id,
             name,
             visible: None,
@@ -1451,6 +1454,7 @@ fn project_lower_profile_tier(
         .filter(|name| !name.is_empty())
         .map(|name| format!("{name} lower tier"));
     Ok(Some(PmiAnnotation {
+        native_ref: None,
         id,
         name,
         visible: None,
@@ -1543,6 +1547,7 @@ fn project_dimension(
         return Ok(None);
     };
     Ok(Some(PmiAnnotation {
+        native_ref: None,
         id,
         name: object_name(entity),
         visible: None,

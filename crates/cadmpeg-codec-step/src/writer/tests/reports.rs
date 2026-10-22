@@ -297,12 +297,14 @@ fn writer_reports_root_occurrence_scale() {
         },
         parent: cadmpeg_ir::products::OccurrenceParent::Root {},
         ordinal: 0,
-        transform: Transform::affine([
-            [2.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ])
-        .expect("finite scaling"),
+        transform: Some(
+            Transform::affine([
+                [2.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .expect("finite scaling"),
+        ),
         linked_prototype: None,
         name: Some("Scaled root".into()),
         visible: None,
@@ -460,7 +462,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         prototype: cadmpeg_ir::products::PrototypeReference::Unresolved {},
         parent: cadmpeg_ir::products::OccurrenceParent::Root {},
         ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
         linked_prototype: None,
 
         name: None,
@@ -476,7 +478,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         },
         parent: cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent },
         ordinal: 1,
-        transform: cadmpeg_ir::transform::Transform::identity(),
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
         linked_prototype: None,
 
         name: None,
@@ -623,6 +625,7 @@ fn writer_reports_dangling_appearance_binding() {
     let binding = "test:model:appearance-binding#dangling";
     let appearance = AppearanceId::mint("test:model:appearance#missing").expect("identity grammar");
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: binding.try_into().expect("valid identity"),
         target: AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
         appearance: appearance.clone(),
@@ -656,6 +659,7 @@ fn writer_reports_appearance_without_base_color() {
         AppearanceId::mint("test:model:appearance#colorless").expect("identity grammar");
     let binding = "test:model:appearance-binding#colorless";
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: appearance.clone(),
         name: None,
         asset_guid: None,
@@ -669,6 +673,7 @@ fn writer_reports_appearance_without_base_color() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: binding.try_into().expect("valid identity"),
         target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
         appearance: appearance.clone(),
@@ -721,6 +726,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
         ),
     ] {
         ir.model.appearances.push(Appearance {
+            native_ref: None,
             id,
             name: None,
             asset_guid: None,
@@ -736,6 +742,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
     }
     let mut bindings = vec![
         AppearanceBinding {
+            native_ref: None,
             id: "test:model:binding#red".try_into().expect("valid identity"),
             target: target.clone(),
             appearance: red,
@@ -745,6 +752,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             channels: std::collections::BTreeMap::new(),
         },
         AppearanceBinding {
+            native_ref: None,
             id: "test:model:binding#blue"
                 .try_into()
                 .expect("valid identity"),
@@ -1135,6 +1143,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let appearance = AppearanceId::mint("test:model:appearance#hidden").expect("identity grammar");
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: appearance.clone(),
         name: None,
         asset_guid: None,
@@ -1150,6 +1159,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: "test:model:appearance-binding#hidden-face"
             .try_into()
             .expect("valid identity"),
@@ -1184,6 +1194,7 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
+        native_ref: None,
         parent: None,
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),

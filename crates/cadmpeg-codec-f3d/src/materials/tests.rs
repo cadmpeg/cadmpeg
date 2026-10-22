@@ -427,6 +427,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance = cadmpeg_ir::appearance::Appearance {
+        native_ref: None,
         id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#second")
             .expect("identity grammar"),
         name: None,
@@ -483,6 +484,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
 fn presetless_assignment_matches_only_its_visual_guid() {
     let appearance_guid = "11111111-2222-3333-4444-555555555555";
     let mut appearance = cadmpeg_ir::appearance::Appearance {
+        native_ref: None,
         id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#catalog")
             .expect("identity grammar"),
         name: None,
@@ -554,6 +556,7 @@ fn complete_visual_token_selects_one_revision_record() {
     let base_token = "11111111-2222-3333-4444-555555555555";
     let revised_token = "11111111-2222-3333-4444-555555555555_Post2015";
     let appearance = |id: &str, token: &str| cadmpeg_ir::appearance::Appearance {
+        native_ref: None,
         id: cadmpeg_ir::ids::AppearanceId::mint(id).expect("identity grammar"),
         name: None,
         asset_guid: Some(token.into()),
@@ -598,6 +601,7 @@ fn complete_visual_token_selects_one_revision_record() {
 #[test]
 fn visual_preset_fallback_requires_one_record() {
     let appearance = |id: &str| cadmpeg_ir::appearance::Appearance {
+        native_ref: None,
         id: cadmpeg_ir::ids::AppearanceId::mint(id).expect("identity grammar"),
         name: Some("Prism-017".into()),
         asset_guid: None,
@@ -886,6 +890,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         "test:model:face#3",
     ] {
         ir.model.attributes.push(SourceAttribute {
+            native_ref: None,
             id: format!("test:model:attribute#{}", face.rsplit_once('#').unwrap().1)
                 .try_into()
                 .expect("valid identity"),
@@ -898,6 +903,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         });
     }
     let appearance = |id: &str, token: &str| Appearance {
+        native_ref: None,
         id: id.try_into().expect("valid identity"),
         name: None,
         asset_guid: None,
@@ -1000,6 +1006,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let face = ir.model.faces[0].id.clone();
         ir.model.attributes.push(SourceAttribute {
+            native_ref: None,
             id: "f3d:test:attribute#face-material"
                 .try_into()
                 .expect("valid identity"),
@@ -1011,6 +1018,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
             ],
         });
         ir.model.appearances.push(Appearance {
+            native_ref: None,
             id: "test:model:appearance#face"
                 .try_into()
                 .expect("valid identity"),
@@ -1638,6 +1646,7 @@ fn appearance_loss_report() -> cadmpeg_ir::codec::DecodeBody {
 
 fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {
     cadmpeg_ir::appearance::Appearance {
+        native_ref: None,
         id: cadmpeg_ir::ids::AppearanceId::mint(format!("f3d:design:appearance#{guid}"))
             .expect("identity grammar"),
         name: Some("Prism-Opaque".to_owned()),

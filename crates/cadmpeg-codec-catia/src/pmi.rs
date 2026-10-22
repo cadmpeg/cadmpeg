@@ -53,6 +53,7 @@ pub(crate) fn transfer_dimensions(
         }
         ctx.charge_entities(1, "admit CATIA PMI dimension")?;
         ir.model.pmi.push(PmiAnnotation {
+            native_ref: Some(entity.id.clone()),
             id,
             name: None,
             visible: None,

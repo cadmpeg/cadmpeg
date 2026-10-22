@@ -6,12 +6,12 @@
 //! refuses with the session's recursion-depth dimension before the parser or
 //! other code walks it recursively. A scan of the text gives the depth and
 //! bounds the tree's storage. A tree that could need more than the
-//! per-expansion allowance is [`CodecError::NotImplemented`] and leaves the
-//! session open.
+//! per-expansion allowance raises a part-scoped resource refusal. The owning
+//! part transaction acknowledges that refusal before processing siblings.
 
 use std::collections::HashSet;
 
-use super::{u64_from_index, DecodeContext, DepthGuard};
+use super::{u64_from_index, DecodeContext, DepthGuard, ResourceDimension};
 use crate::CodecError;
 
 /// Attributes in one XML tag. roxmltree compares each attribute with the
@@ -97,10 +97,23 @@ impl DecodeContext<'_> {
     fn admit_json(&self, text: &str, operation: &'static str) -> Result<u64, CodecError> {
         let shape = json_shape(text);
         let allowance = self.per_expand_allowance();
-        if json_storage_bytes(u64_from_index(text.len()), &shape)
-            .is_none_or(|bytes| bytes > allowance)
-        {
-            return Err(tree_too_large("JSON", allowance, operation));
+        let storage = json_storage_bytes(u64_from_index(text.len()), &shape).ok_or_else(|| {
+            self.refuse_part_limit(
+                ResourceDimension::RetainedBytes,
+                allowance,
+                0,
+                u64::MAX,
+                operation,
+            )
+        })?;
+        if storage > allowance {
+            return Err(self.refuse_part_limit(
+                ResourceDimension::RetainedBytes,
+                allowance,
+                0,
+                storage,
+                operation,
+            ));
         }
         Ok(shape.depth)
     }
@@ -115,22 +128,46 @@ impl DecodeContext<'_> {
     ) -> Result<roxmltree::Document<'input>, CodecError> {
         let shape = xml_shape(text);
         if shape.tag_attributes > MAX_XML_TAG_ATTRIBUTES {
-            return Err(CodecError::NotImplemented(format!(
-                "{operation}: an XML tag has more than {MAX_XML_TAG_ATTRIBUTES} attributes"
-            )));
+            return Err(self.refuse_part_limit(
+                ResourceDimension::Entities,
+                MAX_XML_TAG_ATTRIBUTES,
+                0,
+                shape.tag_attributes,
+                operation,
+            ));
         }
         let prefixes = u64_from_index(shape.prefixes.len());
         if prefixes > MAX_XML_NAMESPACE_PREFIXES {
-            return Err(CodecError::NotImplemented(format!(
-                "{operation}: the XML text declares more than \
-                 {MAX_XML_NAMESPACE_PREFIXES} namespace prefixes"
-            )));
+            return Err(self.refuse_part_limit(
+                ResourceDimension::Entities,
+                MAX_XML_NAMESPACE_PREFIXES,
+                0,
+                prefixes,
+                operation,
+            ));
         }
         let allowance = self.per_expand_allowance();
-        let nodes_limit = xml_storage_bytes(&shape, prefixes)
-            .and_then(|bytes| allowance.checked_sub(bytes))
+        let storage = xml_storage_bytes(&shape, prefixes).ok_or_else(|| {
+            self.refuse_part_limit(
+                ResourceDimension::RetainedBytes,
+                allowance,
+                0,
+                u64::MAX,
+                operation,
+            )
+        })?;
+        let nodes_limit = allowance
+            .checked_sub(storage)
             .and_then(|rest| xml_nodes_limit(rest, shape.less_than))
-            .ok_or_else(|| tree_too_large("XML", allowance, operation))?;
+            .ok_or_else(|| {
+                self.refuse_part_limit(
+                    ResourceDimension::RetainedBytes,
+                    allowance,
+                    0,
+                    storage,
+                    operation,
+                )
+            })?;
         // roxmltree node ids are `u32`; a larger limit leaves the parser's own.
         let mut options = roxmltree::ParsingOptions::default();
         if let Ok(limit) = u32::try_from(nodes_limit) {
@@ -139,7 +176,13 @@ impl DecodeContext<'_> {
         // roxmltree recurses once per element level.
         self.at_depth(shape.depth, operation, || {
             roxmltree::Document::parse_with_options(text, options).map_err(|error| match error {
-                roxmltree::Error::NodesLimitReached => tree_too_large("XML", allowance, operation),
+                roxmltree::Error::NodesLimitReached => self.refuse_part_limit(
+                    ResourceDimension::Entities,
+                    nodes_limit,
+                    nodes_limit,
+                    1,
+                    operation,
+                ),
                 error => Self::tree_malformed(error),
             })
         })
@@ -166,13 +209,6 @@ impl DecodeContext<'_> {
         let depth = self.admit_json(text, operation)?;
         self.at_depth(depth, operation, || Self::deserialize_json(text))
     }
-}
-
-fn tree_too_large(kind: &str, allowance: u64, operation: &str) -> CodecError {
-    CodecError::NotImplemented(format!(
-        "{operation}: the {kind} tree could need more than the \
-         {allowance}-byte per-expansion allowance"
-    ))
 }
 
 #[derive(Clone, Copy)]
@@ -713,20 +749,40 @@ mod tests {
         run(&ctx)
     }
 
-    fn with_expand_ceiling<T>(bytes: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
-        let arena = DecodeArena::new();
+    fn with_expand_ceiling<T>(
+        bytes: u64,
+        run: impl FnOnce(&DecodeContext<'_>, crate::decode::View<'_>) -> T,
+    ) -> T {
         let mut policy = DecodePolicy::default();
         policy.limits.max_decompressed_bytes_per_expand = bytes;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("valid fixture");
-        run(&ctx)
+        with_part_root(policy, run)
+    }
+
+    fn with_part_root<T>(
+        policy: DecodePolicy,
+        run: impl FnOnce(&DecodeContext<'_>, crate::decode::View<'_>) -> T,
+    ) -> T {
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("valid fixture");
+        run(&ctx, root)
     }
 
     fn is_depth_refusal<T: std::fmt::Debug>(result: &Result<T, CodecError>) -> bool {
         matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RecursionDepth)
     }
 
-    fn is_unsupported<T: std::fmt::Debug>(result: &Result<T, CodecError>, text: &str) -> bool {
-        matches!(result, Err(CodecError::NotImplemented(message)) if message.contains(text))
+    fn is_part_limit(
+        ctx: &DecodeContext<'_>,
+        root: crate::decode::View<'_>,
+        run: impl FnOnce() -> Result<(), CodecError>,
+        dimension: ResourceDimension,
+        allowance: u64,
+    ) -> bool {
+        let part = ctx
+            .part_transaction(root, run)
+            .expect("part limit is recoverable");
+        matches!(part.result(), Err(CodecError::ResourceLimit(limit)) if limit.scope == crate::decode::LimitScope::Part && limit.dimension == dimension && limit.limit == allowance && limit.reason == crate::decode::ResourceFailure::BudgetExceeded)
     }
 
     #[test]
@@ -926,11 +982,14 @@ mod tests {
     #[test]
     fn xml_tree_past_the_per_expand_allowance_is_unsupported() {
         let document = |elements: usize| format!("<r>{}</r>", "<a/>".repeat(elements));
-        with_expand_ceiling(1 << 20, |ctx| {
+        with_expand_ceiling(1 << 20, |ctx, root| {
             assert!(ctx.parse_xml(&document(1 << 10), "XML").is_ok());
-            assert!(is_unsupported(
-                &ctx.parse_xml(&document(1 << 14), "XML"),
-                "the XML tree could need more than the 1048576-byte per-expansion allowance"
+            assert!(is_part_limit(
+                ctx,
+                root,
+                || ctx.parse_xml(&document(1 << 14), "XML").map(drop),
+                ResourceDimension::RetainedBytes,
+                1 << 20
             ));
             assert_eq!(ctx.resource_refusal(), None);
         });
@@ -944,11 +1003,16 @@ mod tests {
                 tag + if index + 1 == attributes { "/>" } else { "" }
             })
         };
-        with_depth(256, |ctx| {
+        with_part_root(DecodePolicy::default(), |ctx, root| {
             assert!(ctx.parse_xml(&tag(MAX_XML_TAG_ATTRIBUTES), "XML").is_ok());
-            assert!(is_unsupported(
-                &ctx.parse_xml(&tag(MAX_XML_TAG_ATTRIBUTES + 1), "XML"),
-                "an XML tag has more than 256 attributes"
+            assert!(is_part_limit(
+                ctx,
+                root,
+                || ctx
+                    .parse_xml(&tag(MAX_XML_TAG_ATTRIBUTES + 1), "XML")
+                    .map(drop),
+                ResourceDimension::Entities,
+                MAX_XML_TAG_ATTRIBUTES
             ));
             assert_eq!(ctx.resource_refusal(), None);
         });
@@ -963,13 +1027,18 @@ mod tests {
             }
             text + "</r>"
         };
-        with_depth(256, |ctx| {
+        with_part_root(DecodePolicy::default(), |ctx, root| {
             assert!(ctx
                 .parse_xml(&document(MAX_XML_NAMESPACE_PREFIXES), "XML")
                 .is_ok());
-            assert!(is_unsupported(
-                &ctx.parse_xml(&document(MAX_XML_NAMESPACE_PREFIXES + 1), "XML"),
-                "the XML text declares more than 256 namespace prefixes"
+            assert!(is_part_limit(
+                ctx,
+                root,
+                || ctx
+                    .parse_xml(&document(MAX_XML_NAMESPACE_PREFIXES + 1), "XML")
+                    .map(drop),
+                ResourceDimension::Entities,
+                MAX_XML_NAMESPACE_PREFIXES
             ));
             assert_eq!(ctx.resource_refusal(), None);
         });
@@ -990,17 +1059,23 @@ mod tests {
     #[test]
     fn json_tree_past_the_per_expand_allowance_is_unsupported() {
         let document = |maps: usize| format!("[{}]", vec![r#"{"a":0}"#; maps].join(","));
-        with_expand_ceiling(1 << 20, |ctx| {
+        with_expand_ceiling(1 << 20, |ctx, root| {
             assert!(ctx.parse_json_value(&document(1 << 8), "JSON").is_ok());
-            let message =
-                "the JSON tree could need more than the 1048576-byte per-expansion allowance";
-            assert!(is_unsupported(
-                &ctx.parse_json_value(&document(1 << 11), "JSON"),
-                message
+            assert!(is_part_limit(
+                ctx,
+                root,
+                || ctx.parse_json_value(&document(1 << 11), "JSON").map(drop),
+                ResourceDimension::RetainedBytes,
+                1 << 20
             ));
-            assert!(is_unsupported(
-                &ctx.parse_json::<serde_json::Value>(&document(1 << 11), "JSON"),
-                message
+            assert!(is_part_limit(
+                ctx,
+                root,
+                || ctx
+                    .parse_json::<serde_json::Value>(&document(1 << 11), "JSON")
+                    .map(drop),
+                ResourceDimension::RetainedBytes,
+                1 << 20
             ));
             assert_eq!(ctx.resource_refusal(), None);
         });

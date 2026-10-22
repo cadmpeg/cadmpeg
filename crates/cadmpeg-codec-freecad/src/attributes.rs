@@ -355,6 +355,7 @@ pub(crate) fn transfer(
         }
         if let Some(values) = values(property) {
             attributes.push(SourceAttribute {
+                native_ref: Some(property.id.clone()),
                 id: AttributeId::mint(crate::native::model_id(
                     "attribute",
                     &property.id,

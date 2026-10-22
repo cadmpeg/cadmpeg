@@ -1038,6 +1038,7 @@ fn the_metadata_projection_refuses_a_length_that_overflows_in_source_units() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 
     let attribute = SourceAttribute {
+        native_ref: None,
         id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:default_reference_plane#0")
             .unwrap(),
         target: AttributeTarget::Document,
@@ -1069,6 +1070,7 @@ fn patched_retained_metadata(
     let id = format!("sldprt:metadata:{name}#0:0");
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.attributes.push(SourceAttribute {
+        native_ref: None,
         id: cadmpeg_ir::ids::AttributeId::mint(&id).unwrap(),
         target: AttributeTarget::Document,
         name: name.into(),

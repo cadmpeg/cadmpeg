@@ -148,3 +148,161 @@ fn nested_link_group_children_decode_with_their_instance_parent() {
         "every nested member has the actual App::Link instance as parent"
     );
 }
+
+#[test]
+fn missing_occurrence_pose_omits_only_that_object_with_named_loss() {
+    let mut ir = CadIr::empty();
+    let definition = definition("Prototype");
+    let mut unknown = occurrence("Unknown", &definition, None);
+    unknown.transform = None;
+    let known = occurrence("Known", &definition, None);
+    let joint_id = cadmpeg_ir::products::JointId::mint("authored:model:joint#Unknown").unwrap();
+    ir.model
+        .assembly_joints
+        .push(cadmpeg_ir::products::AssemblyJoint::grounded(
+            joint_id.clone(),
+            cadmpeg_ir::products::JointConnector {
+                operand: cadmpeg_ir::products::JointOperand::occurrence(
+                    unknown.id.clone(),
+                    "Body",
+                    vec![],
+                ),
+                frame: cadmpeg_ir::transform::Transform::identity(),
+                detached: false,
+            },
+            None,
+        ));
+    ir.model.product_definitions.push(definition.clone());
+    ir.model
+        .occurrences
+        .extend([unknown.clone(), known.clone()]);
+    let mut objects = Vec::new();
+    let mut names = HashMap::from([(definition.id.as_str().to_owned(), "Prototype".to_owned())]);
+    let mut losses = Vec::new();
+    write(&ir, &mut objects, &mut names, &HashMap::new(), &mut losses).unwrap();
+    assert!(!names.contains_key(unknown.id.as_str()));
+    assert!(!names.contains_key(joint_id.as_str()));
+    let known_name = names.get(known.id.as_str()).expect("known sibling object");
+    let object = objects
+        .iter()
+        .find(|object| object.name == *known_name)
+        .unwrap();
+    assert!(object.properties.contains_key("Placement"));
+    let omitted = losses
+        .iter()
+        .filter(|loss| {
+            loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == "occurrence.not-transferred"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(omitted.len(), 1);
+    assert!(omitted[0].message.contains(unknown.id.as_str()));
+    assert!(!omitted[0].message.contains(known.id.as_str()));
+    let joints = losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "joint.operand-not-transferred")
+        .collect::<Vec<_>>();
+    assert_eq!(joints.len(), 1);
+    assert!(joints[0].message.contains(unknown.id.as_str()));
+    assert!(joints[0].message.contains(joint_id.as_str()));
+    assert_eq!(ir.model.occurrences[0].transform, None);
+    assert_eq!(
+        ir.model.occurrences[1].transform,
+        Some(cadmpeg_ir::transform::Transform::identity())
+    );
+}
+
+#[test]
+fn unknown_ancestor_omits_descendants_and_dependent_joint_without_composing_local_frames() {
+    use cadmpeg_ir::products::{AssemblyJoint, JointConnector, JointId, JointOperand};
+    use cadmpeg_ir::transform::Transform;
+    let mut ir = CadIr::empty();
+    let leaf = definition("Leaf");
+    let definition = definition("Prototype");
+    let translated = |x| {
+        Transform::affine([
+            [1.0, 0.0, 0.0, x],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .unwrap()
+    };
+    let mut unknown = occurrence("Unknown", &definition, None);
+    unknown.transform = None;
+    let child = occurrence("Child", &leaf, Some(&unknown));
+    let grandchild = occurrence("Grandchild", &leaf, Some(&child));
+    let mut known = occurrence("Known", &definition, None);
+    known.ordinal = 1;
+    known.transform = Some(translated(10.0));
+    let mut known_child = occurrence("KnownChild", &leaf, Some(&known));
+    known_child.transform = Some(translated(3.0));
+    ir.model
+        .product_definitions
+        .extend([definition.clone(), leaf.clone()]);
+    ir.model.occurrences.extend([
+        unknown.clone(),
+        child.clone(),
+        grandchild.clone(),
+        known.clone(),
+        known_child.clone(),
+    ]);
+    let joint_id = JointId::mint("authored:model:joint#Child").unwrap();
+    ir.model.assembly_joints.push(AssemblyJoint::grounded(
+        joint_id.clone(),
+        JointConnector {
+            operand: JointOperand::occurrence(child.id.clone(), "Body", vec![]),
+            frame: Transform::identity(),
+            detached: false,
+        },
+        None,
+    ));
+    let mut objects = Vec::new();
+    let mut names = HashMap::from([
+        (definition.id.as_str().to_owned(), "Prototype".to_owned()),
+        (leaf.id.as_str().to_owned(), "Leaf".to_owned()),
+    ]);
+    let mut losses = Vec::new();
+    write(&ir, &mut objects, &mut names, &HashMap::new(), &mut losses).unwrap();
+    let omitted = losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "occurrence.not-transferred")
+        .collect::<Vec<_>>();
+    assert_eq!(omitted.len(), 3);
+    for row in [&unknown, &child, &grandchild] {
+        assert!(!names.contains_key(row.id.as_str()));
+        assert_eq!(
+            omitted
+                .iter()
+                .filter(|loss| loss.message.contains(row.id.as_str()))
+                .count(),
+            1
+        );
+    }
+    for (row, x) in [(&known, "10"), (&known_child, "3")] {
+        let object = objects
+            .iter()
+            .find(|object| Some(&object.name) == names.get(row.id.as_str()))
+            .unwrap();
+        let document = roxmltree::Document::parse(&object.properties["Placement"]).unwrap();
+        assert_eq!(
+            document
+                .descendants()
+                .find(|node| node.has_tag_name("PropertyPlacement"))
+                .unwrap()
+                .attribute("Px"),
+            Some(x)
+        );
+    }
+    let joint_losses = losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "joint.operand-not-transferred")
+        .collect::<Vec<_>>();
+    assert_eq!(joint_losses.len(), 1);
+    assert!(joint_losses[0].message.contains(joint_id.as_str()));
+    assert!(joint_losses[0].message.contains(child.id.as_str()));
+    assert!(!names.contains_key(joint_id.as_str()));
+    assert_eq!(
+        ir.model.occurrences[1].transform,
+        Some(Transform::identity())
+    );
+}

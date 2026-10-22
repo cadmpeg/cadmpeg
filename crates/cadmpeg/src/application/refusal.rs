@@ -936,6 +936,12 @@ mod tests {
                 (ResourceFailure::AllocationFailed, "allocation_failed"),
             ] {
                 let limit = ResourceLimit {
+                    scope: match dimension {
+                        cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
+                            cadmpeg_core::decode::LimitScope::Part
+                        }
+                        _ => cadmpeg_core::decode::LimitScope::Session,
+                    },
                     dimension,
                     reason,
                     limit: u64::MAX,

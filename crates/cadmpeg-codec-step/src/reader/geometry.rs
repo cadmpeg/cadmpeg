@@ -97,6 +97,7 @@ fn retain_geometry_name(
         return;
     };
     attributes.push(cadmpeg_ir::attributes::SourceAttribute {
+        native_ref: None,
         id: cadmpeg_ir::ids::AttributeId::from(ids::data(
             kind!("geometry-name"),
             IdentityKey::from(source).dash(attributes.len()),

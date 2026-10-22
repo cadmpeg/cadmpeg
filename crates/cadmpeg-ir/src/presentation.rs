@@ -336,6 +336,13 @@ pub enum PresentationItem {
 pub struct PresentationLayer {
     /// Stable layer identity.
     pub id: LayerId,
+    /// Typed native record from which this neutral record was projected.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
     /// Layer name.
     pub name: String,
     /// Containing layer, when this layer belongs to a hierarchy.
@@ -485,6 +492,7 @@ mod tests {
     fn source_layer_items_validate_without_fabricated_geometry() {
         let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
+            native_ref: None,
             id: LayerId::mint("test:presentation:layer#construction").expect("valid identity"),
             parent: None,
             name: "construction".into(),
@@ -504,6 +512,7 @@ mod tests {
     fn empty_layer_name_is_valid() {
         let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
+            native_ref: None,
             id: LayerId::mint("test:presentation:layer#unnamed").expect("valid identity"),
             parent: None,
             name: String::new(),
@@ -523,6 +532,7 @@ mod tests {
     fn missing_typed_layer_item_is_invalid() {
         let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
+            native_ref: None,
             id: LayerId::mint("test:presentation:layer#missing").expect("valid identity"),
             parent: None,
             name: "missing".into(),

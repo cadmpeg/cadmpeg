@@ -34,9 +34,10 @@ fn source_free_text_style_retains_font_names_weight_and_panose() {
     let archive = crate::test_support::test_dump::minimal_document(
         "80",
         &[
-            crate::writer::table(crate::writer::TCODE_SETTINGS_TABLE, &[]).expect("settings"),
-            super::super::super::table(TCODE_FONT_TABLE, &authored).unwrap(),
-            crate::writer::table(crate::writer::TCODE_OBJECT_TABLE, &[]).expect("objects"),
+            crate::writer::tests::table(crate::writer::TCODE_SETTINGS_TABLE, &[])
+                .expect("settings"),
+            crate::writer::tests::table(TCODE_FONT_TABLE, &authored).unwrap(),
+            crate::writer::tests::table(crate::writer::TCODE_OBJECT_TABLE, &[]).expect("objects"),
         ],
     );
     let arena = DecodeArena::new();

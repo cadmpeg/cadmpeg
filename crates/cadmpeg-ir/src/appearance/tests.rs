@@ -17,6 +17,7 @@ fn appearance_asset_and_binding_round_trip() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let body = ir.model.bodies[0].id.clone();
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: AppearanceId::mint("synthetic:test:appearance#prism-001").expect("valid identity"),
         name: Some("Prism-001".into()),
         asset_guid: Some("visual-guid".into()),
@@ -56,6 +57,7 @@ fn appearance_asset_and_binding_round_trip() {
         }],
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: "synthetic:test:appearance-binding#0"
             .try_into()
             .expect("valid identity"),
@@ -68,6 +70,7 @@ fn appearance_asset_and_binding_round_trip() {
         channels: std::collections::BTreeMap::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: "synthetic:test:appearance-binding#edge"
             .try_into()
             .expect("valid identity"),
@@ -80,6 +83,7 @@ fn appearance_asset_and_binding_round_trip() {
         channels: std::collections::BTreeMap::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: "synthetic:test:appearance-binding#vertex"
             .try_into()
             .expect("valid identity"),

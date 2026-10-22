@@ -17,7 +17,8 @@ every presentation-only IGES record as an object; requiring a shape is
 therefore a separate assertion for generated geometry profiles.
 
 When ``CADMPEG_IGES_EXPECTATIONS`` is set, the JSON manifest must contain one
-entry for every input filename and no other entries. Each entry may specify
+entry for every root-relative input filename and no other entries. Inputs under
+``damaged/`` retain that prefix in both the manifest and the report. Each entry may specify
 exact topology counts, a bounding box, and scalar measures with explicit
 absolute or relative tolerances. The report records the measured values and
 the expectation status.
@@ -252,20 +253,20 @@ def main() -> None:
     expectations = (
         load_expectations(Path(expectations_path)) if expectations_path else None
     )
+    candidates = list(input_directory.iterdir())
+    damaged = input_directory / "damaged"
+    if damaged.is_dir():
+        candidates.extend(damaged.rglob("*"))
     files = sorted(
-        (
-            path
-            for path in input_directory.iterdir()
-            if path.is_file() and path.suffix.lower() in {".igs", ".iges"}
-        ),
-        key=lambda path: path.name,
+        (path for path in candidates if path.is_file() and path.suffix.lower() in {".igs", ".iges"}),
+        key=lambda path: path.relative_to(input_directory).as_posix(),
     )
     if not files:
         print(f"no IGES files found in {input_directory}", file=sys.stderr)
         raise SystemExit(1)
     if expectations is not None:
         expected_names = set(expectations)
-        actual_names = {path.name for path in files}
+        actual_names = {path.relative_to(input_directory).as_posix() for path in files}
         missing = sorted(actual_names - expected_names)
         extra = sorted(expected_names - actual_names)
         if missing or extra:
@@ -279,7 +280,8 @@ def main() -> None:
     results = []
     failures = []
     for path in files:
-        expectation = expectations.get(path.name) if expectations is not None else None
+        filename = path.relative_to(input_directory).as_posix()
+        expectation = expectations.get(filename) if expectations is not None else None
         metrics = None
         try:
             entry_require_shape = require_shape or bool(
@@ -296,7 +298,7 @@ def main() -> None:
             if expectation_errors:
                 raise ValueError("expectation mismatch: " + "; ".join(expectation_errors))
         except Exception as error:  # FreeCAD modules raise Python and OCC exceptions.
-            failure = {"filename": path.name, "error": str(error)}
+            failure = {"filename": filename, "error": str(error)}
             if metrics is not None:
                 failure["observed"] = metrics
             if expectation is not None:
@@ -304,7 +306,7 @@ def main() -> None:
             failures.append(failure)
             print(f"FAIL {path}: {error}", file=sys.stderr)
         else:
-            result = {"filename": path.name, **metrics}
+            result = {"filename": filename, **metrics}
             if expectation is not None:
                 result["expectation"] = {"status": "passed", "spec": expectation}
             results.append(result)

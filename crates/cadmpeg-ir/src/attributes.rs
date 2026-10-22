@@ -58,6 +58,13 @@ pub enum AttributeTarget {
     Drawing(crate::drawings::DrawingId),
     /// Attribute is owned by an object view provider.
     ViewPresentation(crate::presentation::PresentationId),
+    /// Ownership by an existing neutral record in a registered model arena.
+    Record {
+        /// Registered neutral arena containing the record.
+        arena: crate::document::ArenaName,
+        /// Identity of a record in that arena.
+        id: String,
+    },
     /// Attribute is owned by a retained typed native object with no neutral entity.
     Source {
         /// Identity of an existing typed native record or source-object association.
@@ -109,6 +116,13 @@ impl AttributeValue {
 pub struct SourceAttribute {
     /// Stable id of this attribute record.
     pub id: AttributeId,
+    /// Typed native record from which this neutral record was projected.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
     /// Entity this attribute is attached to.
     pub target: AttributeTarget,
     /// Source attribute name, as recorded in the native attribute table.
@@ -131,3 +145,5 @@ mod tests {
 }
 
 mod identity_rewrite;
+
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");

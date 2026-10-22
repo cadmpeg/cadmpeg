@@ -13,6 +13,7 @@ fn generic_attribute_uses_current_name_values_and_exact_owner_identity() {
         .try_into()
         .expect("valid authored test identity");
     ir.model.attributes.push(SourceAttribute {
+        native_ref: None,
         id: attribute.clone(),
         target: AttributeTarget::Point(point.clone()),
         name: "finish".into(),
@@ -49,6 +50,7 @@ fn missing_owner_omits_only_the_attribute_with_a_named_loss() {
         .try_into()
         .expect("valid authored test identity");
     ir.model.attributes.push(SourceAttribute {
+        native_ref: None,
         id: id.clone(),
         target: AttributeTarget::Point(
             "test:model:point#missing"
@@ -76,6 +78,7 @@ fn short_current_carrier_name_is_consumed_by_directory_label_only() {
         .try_into()
         .expect("valid authored test identity");
     ir.model.attributes.push(SourceAttribute {
+        native_ref: None,
         id: id.clone(),
         target: AttributeTarget::Point(point),
         name: "name".into(),
@@ -95,6 +98,7 @@ fn short_current_carrier_name_is_consumed_by_directory_label_only() {
 fn long_current_carrier_name_uses_one_property_and_a_blank_label() {
     let mut ir = CadIr::empty();
     ir.model.attributes.push(SourceAttribute {
+        native_ref: None,
         id: "test:model:attribute#name"
             .try_into()
             .expect("valid authored test identity"),

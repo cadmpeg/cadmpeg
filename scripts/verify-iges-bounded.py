@@ -114,6 +114,7 @@ def load_decode_refusal(report_path: Path) -> tuple[dict[str, object] | None, st
 
 
 def input_files(root: Path) -> list[Path]:
+    """Find all inputs, including fixtures below ``damaged/``, in path order."""
     return sorted(
         (
             path
@@ -270,7 +271,11 @@ def verify_file(
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input_dir", type=Path, help="directory containing .igs or .iges files")
+    parser.add_argument(
+        "input_dir",
+        type=Path,
+        help="fixture root containing .igs or .iges files, including damaged/ descendants",
+    )
     parser.add_argument(
         "--cadmpeg",
         default=os.environ.get("CADMPEG_BIN", "cadmpeg"),

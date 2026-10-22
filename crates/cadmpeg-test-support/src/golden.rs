@@ -131,15 +131,18 @@ impl Harness {
 
     /// Points the harness at fixture inputs outside `tests/golden/fixtures`.
     ///
-    /// The `FreeCAD` goldens have no fixture tree of their own; their inputs are
-    /// the corpus archives under `corpus/freecad_fcstd/fixtures`.
+    /// The `FreeCAD` regular inputs are the corpus archives under
+    /// `corpus/freecad_fcstd/fixtures`. Canonical damaged inputs remain under
+    /// `tests/golden/fixtures/damaged` even when the regular root is overridden.
     #[must_use]
     pub fn with_fixture_dir(mut self, fixture_dir: PathBuf) -> Self {
         self.fixture_dir = fixture_dir;
         self
     }
 
-    /// Sorted fixture stems, guarded against an empty fixture directory so the
+    /// Sorted fixture stems, including `damaged/` and its descendants.
+    ///
+    /// Guarded against an empty fixture directory so the
     /// harness cannot pass without comparing anything.
     ///
     /// # Panics
@@ -147,7 +150,21 @@ impl Harness {
     /// Panics when the fixture directory cannot be read or holds no input with
     /// the configured extension.
     fn fixtures(&self) -> Vec<String> {
-        let fixtures = stems(&self.fixture_dir, self.fixture_extension);
+        let mut fixtures = stems(&self.fixture_dir, self.fixture_extension);
+        let canonical = self.golden_dir.join("fixtures");
+        if self.fixture_dir != canonical && canonical.join("damaged").is_dir() {
+            for name in stems(&canonical, self.fixture_extension)
+                .into_iter()
+                .filter(|name| name.starts_with("damaged/"))
+            {
+                assert!(
+                    !fixtures.contains(&name),
+                    "duplicate damaged fixture stem across fixture roots: {name}"
+                );
+                fixtures.push(name);
+            }
+            fixtures.sort();
+        }
         assert!(
             !fixtures.is_empty(),
             "no `*.{}` fixture under {}; the harness would pass vacuously",
@@ -164,9 +181,15 @@ impl Harness {
     /// Panics when the fixture cannot be read, which means a golden lost its
     /// input rather than that a codec misbehaved.
     fn fixture_bytes(&self, name: &str) -> Vec<u8> {
-        let input = self
+        let mut input = self
             .fixture_dir
             .join(format!("{name}.{}", self.fixture_extension));
+        if name.starts_with("damaged/") && !input.is_file() {
+            input = self
+                .golden_dir
+                .join("fixtures")
+                .join(format!("{name}.{}", self.fixture_extension));
+        }
         std::fs::read(&input)
             .unwrap_or_else(|error| panic!("read fixture {}: {error}", input.display()))
     }
@@ -213,7 +236,8 @@ impl Harness {
     ///
     /// A [`Branch::root`] branch writes `{name}.json`
     /// directly under `tests/golden`. Otherwise `{name}.json` lives under
-    /// `tests/golden/{kind}/`.
+    /// `tests/golden/{kind}/`. Names beginning with `damaged/` retain that
+    /// relative directory in every branch, for example `decode/damaged/cut.json`.
     ///
     /// JSON files in those directories whose stems are not in `inputs` fail as
     /// orphans. An empty `inputs` slice panics so the check cannot pass
@@ -265,6 +289,15 @@ impl Harness {
             "no golden branches; the harness would pass vacuously"
         );
         let update = std::env::var_os("UPDATE_GOLDEN").is_some();
+        for (name, _) in inputs {
+            assert!(
+                !name.is_empty()
+                    && Path::new(name)
+                        .components()
+                        .all(|component| matches!(component, std::path::Component::Normal(_))),
+                "golden input name must be a relative stem: {name}"
+            );
+        }
         let names: Vec<String> = inputs.iter().map(|(name, _)| name.clone()).collect();
         let mut failures: Vec<String> = Vec::new();
         for branch in branches {
@@ -337,6 +370,10 @@ impl Harness {
             };
             let Some(failure) = failure else { continue };
             if update {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)
+                        .unwrap_or_else(|error| panic!("create {}: {error}", parent.display()));
+                }
                 std::fs::write(&path, actual.as_bytes())
                     .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
             } else {
@@ -364,26 +401,78 @@ impl Harness {
     }
 }
 
-/// Sorted stems of every file in `dir` whose extension is `extension`.
+/// Sorted relative stems in `dir` and its optional `damaged/` subtree.
+///
+/// Other root subdirectories belong to other branches or fixture sources.
 ///
 /// # Panics
 ///
-/// Panics when `dir` cannot be read.
+/// Panics when a directory or its entries cannot be read.
 fn stems(dir: &Path, extension: &str) -> Vec<String> {
-    let mut names: Vec<String> = std::fs::read_dir(dir)
-        .unwrap_or_else(|error| panic!("read {}: {error}", dir.display()))
-        .map(|entry| {
-            entry
-                .unwrap_or_else(|error| panic!("read entry: {error}"))
-                .path()
-        })
-        .filter_map(|path| {
-            let (stem, found) = path.file_stem().zip(path.extension())?;
-            (found == extension).then(|| stem.to_string_lossy().into_owned())
-        })
-        .collect();
+    let mut names = Vec::new();
+    collect_stems(dir, extension, "", false, &mut names);
     names.sort();
     names
+}
+
+fn collect_stems(
+    dir: &Path,
+    extension: &str,
+    prefix: &str,
+    recursive: bool,
+    names: &mut Vec<String>,
+) {
+    for entry in
+        std::fs::read_dir(dir).unwrap_or_else(|error| panic!("read {}: {error}", dir.display()))
+    {
+        let entry = entry.unwrap_or_else(|error| panic!("read entry: {error}"));
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .unwrap_or_else(|error| panic!("read type {}: {error}", path.display()));
+        if file_type.is_dir() && (recursive || entry.file_name() == "damaged") {
+            let child = format!("{prefix}{}/", entry.file_name().to_string_lossy());
+            collect_stems(&path, extension, &child, true, names);
+        } else if path.is_file() && path.extension().is_some_and(|found| found == extension) {
+            if let Some(stem) = path.file_stem() {
+                names.push(format!("{prefix}{}", stem.to_string_lossy()));
+            }
+        }
+    }
+}
+
+/// Relative artifact names for a bespoke golden branch, including `damaged/`.
+///
+/// Unexpected root directories remain names in the result so an orphan check
+/// still rejects them. Directories inside `damaged/` group its artifacts.
+///
+/// # Panics
+///
+/// Panics when a branch directory or its entries cannot be read.
+#[must_use]
+pub fn artifact_names(dir: &Path) -> Vec<String> {
+    let mut names = Vec::new();
+    collect_artifact_names(dir, "", false, &mut names);
+    names.sort();
+    names
+}
+
+fn collect_artifact_names(dir: &Path, prefix: &str, recursive: bool, names: &mut Vec<String>) {
+    for entry in
+        std::fs::read_dir(dir).unwrap_or_else(|error| panic!("read {}: {error}", dir.display()))
+    {
+        let entry = entry.unwrap_or_else(|error| panic!("read entry: {error}"));
+        let name = entry.file_name();
+        let relative = format!("{prefix}{}", name.to_string_lossy());
+        let file_type = entry
+            .file_type()
+            .unwrap_or_else(|error| panic!("read type {}: {error}", entry.path().display()));
+        if file_type.is_dir() && (recursive || name == "damaged") {
+            collect_artifact_names(&entry.path(), &format!("{relative}/"), true, names);
+        } else {
+            names.push(relative);
+        }
+    }
 }
 
 /// Reads a golden with `\r\n` folded to `\n`.
@@ -482,6 +571,9 @@ pub fn snapshot_text(value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    mod artifacts;
+    mod damaged;
+
     use std::cell::Cell;
     use std::path::PathBuf;
     use std::sync::{Mutex, MutexGuard};

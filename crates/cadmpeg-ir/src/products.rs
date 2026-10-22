@@ -201,8 +201,13 @@ pub struct Occurrence {
     pub parent: OccurrenceParent,
     /// Stable zero-based source order within the parent.
     pub ordinal: u32,
-    /// Placement relative to the direct container.
-    pub transform: Transform,
+    /// Placement relative to the direct container; absent when the source states none.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform"
+    )]
+    pub transform: Option<Transform>,
     /// Linked prototype placement contribution when link-transform policy applies.
     #[serde(
         default,
@@ -414,12 +419,16 @@ pub struct CopyOnChange {
 }
 
 impl Occurrence {
-    /// Placement after applying the linked prototype contribution, when present.
-    pub fn effective_transform(&self) -> Result<Transform, crate::transform::TransformError> {
-        self.linked_prototype
-            .map_or(Ok(self.transform), |prototype| {
-                self.transform.compose(prototype)
+    /// Placement after applying the linked prototype contribution, or unknown when the local pose is absent.
+    pub fn effective_transform(
+        &self,
+    ) -> Result<Option<Transform>, crate::transform::TransformError> {
+        self.transform
+            .map(|transform| {
+                self.linked_prototype
+                    .map_or(Ok(transform), |prototype| transform.compose(prototype))
             })
+            .transpose()
     }
 }
 
@@ -654,7 +663,7 @@ mod tests {
             prototype: PrototypeReference::Unresolved {},
             parent,
             ordinal: 0,
-            transform: translation(x),
+            transform: Some(translation(x)),
             linked_prototype: None,
             name: None,
             visible: None,
@@ -687,6 +696,7 @@ mod tests {
                 &crate::index::PublicStorage
             ))
             .expect("resolved child")
+            .expect("authored child placement")
             .rows()[0][3],
             13.0
         );
@@ -1703,3 +1713,5 @@ cadmpeg_core::named_optional_field!(
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(deserialize_transform, Transform, "transform");

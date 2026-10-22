@@ -111,7 +111,7 @@ fn duplicate_component_insert_placements_do_not_depend_on_the_retained_allowance
         [0.0, 0.0, 1.0, 30.0],
     ])
     .unwrap();
-    assert_eq!(occurrences[0].transform, expected);
+    assert_eq!(occurrences[0].transform, Some(expected));
 
     for (allowance, outcome) in below_full_charge(&bytes, bound.retained_bytes, 16) {
         if let Ok(decoded) = outcome {

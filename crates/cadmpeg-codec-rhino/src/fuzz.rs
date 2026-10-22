@@ -47,7 +47,7 @@ pub fn container(data: &[u8]) {
         &cadmpeg_core::decode::DecodePolicy::service(),
     ) {
         let _probe = crate::container::scan(&ctx, data);
-    }
+    };
 }
 
 /// Exercises chunk framing at sequential and arbitrary bounded offsets.
@@ -140,7 +140,7 @@ pub fn nurbs(data: &[u8]) {
             crate::settings::MillimeterScale::IDENTITY,
             selected_archive(data[1]),
         );
-    }
+    };
 }
 
 /// Exercises compressed-buffer inflation and checksum handling.
@@ -167,7 +167,7 @@ pub fn brep(data: &[u8]) {
             None,
             &[],
         );
-    }
+    };
 }
 
 /// Exercises `SubD` framing, archive ID maps, and directed rings.

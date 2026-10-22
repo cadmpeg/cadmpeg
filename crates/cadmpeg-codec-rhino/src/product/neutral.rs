@@ -154,7 +154,7 @@ impl Projection<'_> {
                 }
             }),
             ordinal,
-            transform,
+            transform: Some(transform),
             linked_prototype: None,
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             visible: object
@@ -458,11 +458,17 @@ mod tests {
             );
             assert_eq!(ir.model.occurrences.len(), 2);
             assert_eq!(
-                ir.model.occurrences[0].transform.rows(),
+                ir.model.occurrences[0]
+                    .transform
+                    .expect("source occurrence placement")
+                    .rows(),
                 placement(10.0, 0.0)
             );
             assert_eq!(
-                ir.model.occurrences[1].transform.rows(),
+                ir.model.occurrences[1]
+                    .transform
+                    .expect("source occurrence placement")
+                    .rows(),
                 placement(20.0, 0.0)
             );
             assert!(ir.model.occurrences.iter().all(|occurrence|matches!(&occurrence.prototype,PrototypeReference::Local {definition} if *definition==ir.model.product_definitions[0].id)));
@@ -520,7 +526,10 @@ mod tests {
             assert_eq!(ir.model.occurrences.len(), 2);
             let parent = &ir.model.occurrences[0];
             let child = &ir.model.occurrences[1];
-            assert_eq!(child.transform.rows(), placement(0.0, 7.0));
+            assert_eq!(
+                child.transform.expect("source occurrence placement").rows(),
+                placement(0.0, 7.0)
+            );
             assert_eq!(
                 child.parent,
                 OccurrenceParent::Occurrence {

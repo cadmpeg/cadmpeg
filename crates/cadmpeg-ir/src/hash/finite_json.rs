@@ -16,7 +16,9 @@ use std::cell::{Cell, RefCell};
 use cadmpeg_core::decode::ResourceLimit;
 
 mod admission;
-use admission::{Admission, StandardAdmission};
+use admission::{Admission, EncodeAdmission, StandardAdmission};
+mod records;
+use records::RecordPath;
 use std::fmt::Display;
 
 use serde::ser::{
@@ -65,6 +67,15 @@ pub(super) fn write_canonical_json<A: Admission, W: std::io::Write, T: Serialize
         return Err(CanonicalJsonError::NonFinite { value });
     }
     outcome.map_err(CanonicalJsonError::Serialize)
+}
+
+/// Writes the existing CADIR wire shape, admitting each emitted arena record.
+pub(crate) fn write_cadir_json<W: std::io::Write>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    writer: W,
+    value: &crate::CadIr,
+) -> Result<(), CanonicalJsonError> {
+    write_canonical_json(EncodeAdmission(ctx), writer, value)
 }
 
 /// Renders `value` as canonical pretty JSON text, refusing a non-finite float.
@@ -130,12 +141,17 @@ impl<A: Admission> FiniteGuard<A> {
 struct FiniteSerializer<'guard, S, A: Admission> {
     inner: S,
     guard: &'guard FiniteGuard<A>,
+    path: RecordPath,
 }
 
 impl<'guard, S, A: Admission> FiniteSerializer<'guard, S, A> {
     /// Returns an adapter over `inner` that reports refusals through `guard`.
     fn new(inner: S, guard: &'guard FiniteGuard<A>) -> Self {
-        Self { inner, guard }
+        Self {
+            inner,
+            guard,
+            path: RecordPath::Root,
+        }
     }
 }
 
@@ -143,12 +159,16 @@ impl<'guard, S, A: Admission> FiniteSerializer<'guard, S, A> {
 struct FiniteValue<'guard, 'value, T: ?Sized, A: Admission> {
     value: &'value T,
     guard: &'guard FiniteGuard<A>,
+    path: RecordPath,
 }
 
 impl<T: ?Sized + Serialize, A: Admission> Serialize for FiniteValue<'_, '_, T, A> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.value
-            .serialize(FiniteSerializer::new(serializer, self.guard))
+        self.value.serialize(FiniteSerializer {
+            inner: serializer,
+            guard: self.guard,
+            path: self.path,
+        })
     }
 }
 
@@ -156,6 +176,7 @@ impl<T: ?Sized + Serialize, A: Admission> Serialize for FiniteValue<'_, '_, T, A
 struct FiniteCompound<'guard, C, A: Admission + 'guard> {
     inner: C,
     guard: &'guard FiniteGuard<A>,
+    path: RecordPath,
     _depth: A::Depth<'guard>,
     _variant_depth: Option<A::Depth<'guard>>,
 }
@@ -166,10 +187,12 @@ impl<'guard, C, A: Admission> FiniteCompound<'guard, C, A> {
         guard: &'guard FiniteGuard<A>,
         depth: A::Depth<'guard>,
         variant_depth: Option<A::Depth<'guard>>,
+        path: RecordPath,
     ) -> Self {
         Self {
             inner,
             guard,
+            path,
             _depth: depth,
             _variant_depth: variant_depth,
         }
@@ -179,6 +202,7 @@ impl<'guard, C, A: Admission> FiniteCompound<'guard, C, A> {
         FiniteValue {
             value,
             guard: self.guard,
+            path: RecordPath::Other,
         }
     }
 }
@@ -290,7 +314,9 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
-        self.inner.serialize_some(&FiniteValue { value, guard })
+        let path = self.path;
+        self.inner
+            .serialize_some(&FiniteValue { value, guard, path })
     }
 
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
@@ -320,8 +346,9 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     ) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
+        let path = self.path;
         self.inner
-            .serialize_newtype_struct(name, &FiniteValue { value, guard })
+            .serialize_newtype_struct(name, &FiniteValue { value, guard, path })
     }
 
     fn serialize_newtype_variant<T: ?Sized + Serialize>(
@@ -333,24 +360,31 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     ) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
-        self.inner
-            .serialize_newtype_variant(name, index, variant, &FiniteValue { value, guard })
+        let path = self.path;
+        self.inner.serialize_newtype_variant(
+            name,
+            index,
+            variant,
+            &FiniteValue { value, guard, path },
+        )
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
         let depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
+        let path = self.path;
         self.inner
             .serialize_seq(len)
-            .map(|inner| FiniteCompound::new(inner, guard, depth, None))
+            .map(|inner| FiniteCompound::new(inner, guard, depth, None, path))
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Self::Error> {
         let depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
+        let path = self.path;
         self.inner
             .serialize_tuple(len)
-            .map(|inner| FiniteCompound::new(inner, guard, depth, None))
+            .map(|inner| FiniteCompound::new(inner, guard, depth, None, path))
     }
 
     fn serialize_tuple_struct(
@@ -360,9 +394,10 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     ) -> Result<Self::SerializeTupleStruct, Self::Error> {
         let depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
+        let path = self.path;
         self.inner
             .serialize_tuple_struct(name, len)
-            .map(|inner| FiniteCompound::new(inner, guard, depth, None))
+            .map(|inner| FiniteCompound::new(inner, guard, depth, None, path))
     }
 
     fn serialize_tuple_variant(
@@ -375,17 +410,19 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
         let depth = self.guard.enter::<S::Error>()?;
         let variant_depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
+        let path = self.path;
         self.inner
             .serialize_tuple_variant(name, index, variant, len)
-            .map(|inner| FiniteCompound::new(inner, guard, depth, Some(variant_depth)))
+            .map(|inner| FiniteCompound::new(inner, guard, depth, Some(variant_depth), path))
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
         let depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
+        let path = self.path;
         self.inner
             .serialize_map(len)
-            .map(|inner| FiniteCompound::new(inner, guard, depth, None))
+            .map(|inner| FiniteCompound::new(inner, guard, depth, None, path))
     }
 
     fn serialize_struct(
@@ -395,9 +432,10 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     ) -> Result<Self::SerializeStruct, Self::Error> {
         let depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
+        let path = self.path;
         self.inner
             .serialize_struct(name, len)
-            .map(|inner| FiniteCompound::new(inner, guard, depth, None))
+            .map(|inner| FiniteCompound::new(inner, guard, depth, None, path))
     }
 
     fn serialize_struct_variant(
@@ -410,9 +448,10 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
         let depth = self.guard.enter::<S::Error>()?;
         let variant_depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
+        let path = self.path;
         self.inner
             .serialize_struct_variant(name, index, variant, len)
-            .map(|inner| FiniteCompound::new(inner, guard, depth, Some(variant_depth)))
+            .map(|inner| FiniteCompound::new(inner, guard, depth, Some(variant_depth), path))
     }
 
     fn collect_str<T: ?Sized + Display>(self, value: &T) -> Result<Self::Ok, Self::Error> {
@@ -430,6 +469,10 @@ impl<C: SerializeSeq, A: Admission> SerializeSeq for FiniteCompound<'_, C, A> {
     type Error = C::Error;
 
     fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
+        if self.path == RecordPath::Records {
+            self.guard
+                .admit::<_, Self::Error>(self.guard.admission.record())?;
+        }
         let wrapped = self.wrap(value);
         self.inner.serialize_element(&wrapped)
     }
@@ -491,7 +534,8 @@ impl<C: SerializeMap, A: Admission> SerializeMap for FiniteCompound<'_, C, A> {
     }
 
     fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-        let wrapped = self.wrap(value);
+        let mut wrapped = self.wrap(value);
+        wrapped.path = self.path.map_value();
         self.inner.serialize_value(&wrapped)
     }
 
@@ -509,7 +553,8 @@ impl<C: SerializeStruct, A: Admission> SerializeStruct for FiniteCompound<'_, C,
         name: &'static str,
         value: &T,
     ) -> Result<(), Self::Error> {
-        let wrapped = self.wrap(value);
+        let mut wrapped = self.wrap(value);
+        wrapped.path = self.path.field(name);
         self.inner.serialize_field(name, &wrapped)
     }
 

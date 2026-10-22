@@ -460,6 +460,11 @@ pub(super) fn check_references(
             {
                 ref_error(findings, &owner, "occurrence", id.as_str());
             }
+            AppearanceTarget::Record { arena, id } => {
+                if !ir.model.contains_record(*arena, id) {
+                    ref_error(findings, &owner, "record in named neutral arena", id);
+                }
+            }
             AppearanceTarget::Source { .. } => {}
             _ => {}
         }
@@ -619,6 +624,8 @@ pub(super) fn check_references(
                 .iter()
                 .any(|record| record.id.as_str() == id.as_str()))
             .then_some(("tessellation", id.as_str())),
+            AttributeTarget::Record { arena, id } => (!ir.model.contains_record(*arena, id))
+                .then_some(("record in named neutral arena", id.as_str())),
             AttributeTarget::Source { source_id } => (!ids.native_record_owns(source_id)
                 && !source_objects.contains(source_id.as_str()))
             .then_some(("source object", source_id.as_str())),

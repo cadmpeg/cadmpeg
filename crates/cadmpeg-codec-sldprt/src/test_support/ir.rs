@@ -288,7 +288,7 @@ pub(crate) fn encode_decode_result(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::codec:
     let mut encoded = Vec::new();
     SldprtCodec
         .plan(
-            cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
+            cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
             TargetRequest::Inherit,
         )
         .and_then(|plan| plan.write_to(&mut encoded))

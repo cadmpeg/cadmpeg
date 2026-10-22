@@ -16,7 +16,7 @@ pub(super) struct AttributeExport {
     pub(super) losses: Vec<LossNote>,
 }
 
-fn target_id(target: &AttributeTarget) -> Option<&str> {
+fn target_id<'a>(ir: &CadIr, target: &'a AttributeTarget) -> Option<&'a str> {
     match target {
         AttributeTarget::Document => None,
         AttributeTarget::Body(id) => Some(id.as_str()),
@@ -40,6 +40,9 @@ fn target_id(target: &AttributeTarget) -> Option<&str> {
         AttributeTarget::SemanticAnnotation(id) => Some(id.as_str()),
         AttributeTarget::Drawing(id) => Some(id.as_str()),
         AttributeTarget::ViewPresentation(id) => Some(id.as_str()),
+        AttributeTarget::Record { arena, id } => {
+            ir.model.contains_record(*arena, id).then_some(id.as_str())
+        }
         AttributeTarget::Source { source_id } => Some(source_id),
     }
 }
@@ -294,7 +297,7 @@ pub(super) fn append(
                             fields
                                 .owner
                                 .as_ref()
-                                .and_then(target_id)
+                                .and_then(|target| target_id(ir, target))
                                 .and_then(|id| targets.get(id))
                                 .cloned()
                                 .unwrap_or_default()
@@ -360,7 +363,7 @@ pub(super) fn append(
         if result.preserved.contains(attribute.id.as_str()) {
             continue;
         }
-        let owners = target_id(&attribute.target)
+        let owners = target_id(ir, &attribute.target)
             .and_then(|id| targets.get(id))
             .cloned()
             .unwrap_or_default();

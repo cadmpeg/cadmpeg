@@ -200,9 +200,9 @@ pub(crate) fn project_occurrences(
                     )?;
                     continue;
                 };
-                (transform, suppressed.then_some(false))
+                (Some(transform), suppressed.then_some(false))
             }
-            None if suppressed => (Transform::identity(), Some(false)),
+            None if suppressed => (None, Some(false)),
             None => {
                 count_unresolved(&mut unresolved_placements, UnresolvedCause::Placement)?;
                 continue;
@@ -818,8 +818,20 @@ mod tests {
             panic!("one occurrence must be projected");
         };
         assert_eq!(projected.ordinal, 2);
-        assert_eq!(projected.transform.rows()[0][3], 12.5);
-        assert_eq!(projected.transform.rows()[1][3], -20.0);
+        assert_eq!(
+            projected
+                .transform
+                .expect("source occurrence placement")
+                .rows()[0][3],
+            12.5
+        );
+        assert_eq!(
+            projected
+                .transform
+                .expect("source occurrence placement")
+                .rows()[1][3],
+            -20.0
+        );
         let PrototypeReference::External { document, object } = &projected.prototype else {
             panic!("the persisted file reference must remain external");
         };
@@ -985,7 +997,7 @@ mod tests {
         let [projected] = projection.occurrences.as_slice() else {
             panic!("one suppressed occurrence must be projected");
         };
-        assert_eq!(projected.transform, Transform::identity());
+        assert_eq!(projected.transform, None);
         assert_eq!(projected.visible, Some(false));
         let PrototypeReference::External { document, .. } = &projected.prototype else {
             panic!("the persisted document identity must remain external");

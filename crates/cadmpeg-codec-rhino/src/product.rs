@@ -458,7 +458,13 @@ mod tests {
             ];
             if expected_units == "millimeter" {
                 assert_eq!(ir.model.occurrences.len(), 1);
-                assert_eq!(ir.model.occurrences[0].transform.rows(), expected_rows);
+                assert_eq!(
+                    ir.model.occurrences[0]
+                        .transform
+                        .expect("source occurrence placement")
+                        .rows(),
+                    expected_rows
+                );
                 // #213 keeps source fields after projection.
                 assert_eq!(occurrence["transform"], serde_json::json!(expected_rows));
                 assert_eq!(occurrence["transform_units"], expected_units);

@@ -8,6 +8,7 @@ use crate::transform::Transform;
 
 fn binding(target: AppearanceTarget) -> AppearanceBinding {
     AppearanceBinding {
+        native_ref: None,
         id: "test:display:binding#one".try_into().unwrap(),
         target,
         appearance: "test:display:appearance#one".try_into().unwrap(),
@@ -25,6 +26,7 @@ fn layer(
     items: Vec<PresentationItem>,
 ) -> PresentationLayer {
     PresentationLayer {
+        native_ref: None,
         id: id.try_into().unwrap(),
         name: id.into(),
         parent: parent.map(|id| id.try_into().unwrap()),
@@ -40,7 +42,7 @@ fn occurrence(id: &str, parent: OccurrenceParent, visible: Option<bool>) -> Occu
         prototype: PrototypeReference::Unresolved {},
         parent,
         ordinal: 0,
-        transform: Transform::identity(),
+        transform: Some(Transform::identity()),
         linked_prototype: None,
         name: None,
         visible,
@@ -56,6 +58,7 @@ fn display_colour_wins_without_modifying_the_independent_material() {
     let material = Color::from_rgba8(20, 40, 60, 255);
     let display = Color::from_rgba8(200, 100, 50, 255);
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: "test:display:appearance#one".try_into().unwrap(),
         name: None,
         asset_guid: None,
