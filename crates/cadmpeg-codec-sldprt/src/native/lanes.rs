@@ -5,7 +5,7 @@ use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
 use cadmpeg_core::decode::DecodeContext;
 
-pub(super) fn expected_lanes<'a>(
+pub(crate) fn expected_lanes<'a>(
     ctx: &DecodeContext<'_>,
     native: &'a SldprtNative,
 ) -> Result<Vec<(&'a FeatureInputLane, FeatureInputLane)>, cadmpeg_ir::NativeConvertError> {

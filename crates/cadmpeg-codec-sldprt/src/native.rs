@@ -329,9 +329,8 @@ pub(crate) struct DocumentMetadata {
     pub(crate) semantic_annotations: Vec<cadmpeg_ir::semantic_annotations::SemanticAnnotation>,
 }
 
-pub(crate) mod source;
-
-mod lanes;
+#[cfg(test)]
+pub(crate) mod lanes;
 
 impl SldprtNative {
     pub(crate) fn load(

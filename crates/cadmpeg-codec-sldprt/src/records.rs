@@ -1566,11 +1566,6 @@ impl SketchInputEntity {
         self.object_index
     }
 
-    /// Attach a position admitted from the matching source-fidelity lane.
-    pub(crate) fn attach_source_position(&mut self, offset: Option<u64>) {
-        self.offset = offset;
-    }
-
     /// Returns the feature-local object identifier.
     pub(crate) fn local_id(&self) -> Option<u32> {
         self.local_id
@@ -2551,11 +2546,9 @@ mod tests {
             sketch_entities: vec![entity],
         };
         let wire = serde_json::to_value(&lane).expect("lane JSON");
-        let mut semantic_lane = lane.clone();
-        semantic_lane.sketch_entities[0].attach_source_position(None);
         assert_eq!(
             serde_json::from_value::<FeatureInputLane>(wire.clone()).expect("lane round trip"),
-            semantic_lane
+            lane
         );
         assert_eq!(wire["sketch_entities"][0]["link_selector"], 3);
         for missing in ["links", "link_selector"] {
@@ -2570,11 +2563,9 @@ mod tests {
         let mut empty = wire.clone();
         empty["sketch_entities"][0]["links"] = serde_json::json!([]);
         assert!(serde_json::from_value::<FeatureInputLane>(empty).is_err());
-        let mut moved = lane.clone();
-        moved.sketch_entities[0].attach_source_position(Some(3));
-        let error = moved.sketch_entities[0]
-            .validate_against_payload(&lane.native_payload)
-            .unwrap_err();
+        let mut moved = wire.clone();
+        moved["sketch_entities"][0]["offset"] = serde_json::json!(3);
+        let error = serde_json::from_value::<FeatureInputLane>(moved).unwrap_err();
         assert!(error
             .to_string()
             .contains("is not a marker in native_payload"));
