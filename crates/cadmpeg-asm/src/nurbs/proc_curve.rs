@@ -2894,7 +2894,7 @@ pub(crate) fn analytic_support(
             let major_radius = cur.take_f64()? * LEN_TO_MM;
             let minor_radius = cur.take_f64()? * LEN_TO_MM;
             let ref_direction = normalized(cur.take_vector3()?)?;
-            let chart = SupportChart::torus(major_radius, cur.take_bool()?);
+            let chart = SupportChart::torus(major_radius, minor_radius, cur.take_bool()?);
             let (center, frame) = admitted_placement(point, axis, ref_direction)?;
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(TorusSurface::new(

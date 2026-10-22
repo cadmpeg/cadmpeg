@@ -135,10 +135,17 @@ pub(crate) enum FrameMap {
     /// A decoded cone axis opposite the native axis negates both frame
     /// coordinates.
     Negated,
-    /// A decoded torus major radius opposite the native one maps the
-    /// longitude `u` and latitude `v` to `(u + pi, pi - v)`, which reaches
-    /// the same point with the same tube-outward normal.
-    OppositeMajor,
+    /// A torus whose decoded radii differ in sign from the radii of its
+    /// native chart.
+    Torus {
+        /// The decoded major radius is opposite the native one. The longitude
+        /// `u` and latitude `v` map to `(u + pi, pi - v)`, which reaches the
+        /// same point with the same tube-outward normal.
+        opposite_major: bool,
+        /// The decoded minor radius is negative. The native chart uses its
+        /// magnitude, so the latitude moves by `pi`.
+        opposite_minor: bool,
+    },
 }
 
 impl FrameMap {
@@ -146,10 +153,19 @@ impl FrameMap {
         match self {
             Self::Frame => frame,
             Self::Negated => Point2::new(-frame.u, -frame.v),
-            Self::OppositeMajor => Point2::new(
-                frame.u + std::f64::consts::PI,
-                std::f64::consts::PI - frame.v,
-            ),
+            Self::Torus {
+                opposite_major,
+                opposite_minor,
+            } => {
+                let (mut u, mut v) = (frame.u, frame.v);
+                if opposite_major {
+                    (u, v) = (u + std::f64::consts::PI, std::f64::consts::PI - v);
+                }
+                if opposite_minor {
+                    v += std::f64::consts::PI;
+                }
+                Point2::new(u, v)
+            }
         }
     }
 }
@@ -185,15 +201,19 @@ impl SupportChart {
         }
     }
 
-    /// The chart of a torus with stored major radius `major` and v-sense slot
-    /// `reverse_v`. A negative major radius places each tube center on the
-    /// far side of the axis; the torus decodes with its magnitude, the same
-    /// tube circle.
-    pub(crate) fn torus(major: f64, reverse_v: bool) -> Self {
+    /// The chart of a torus with stored major radius `major`, minor radius
+    /// `minor`, and v-sense slot `reverse_v`. A negative major radius places
+    /// each tube center on the far side of the axis; the torus decodes with
+    /// its magnitude, the same tube circle. The native chart uses the
+    /// magnitude of the minor radius, and the torus decodes with its sign.
+    pub(crate) fn torus(major: f64, minor: f64, reverse_v: bool) -> Self {
         Self::Native {
             chart: NativeChart::LatitudeFirst { reverse_v },
-            map: if major < 0.0 {
-                FrameMap::OppositeMajor
+            map: if major < 0.0 || minor < 0.0 {
+                FrameMap::Torus {
+                    opposite_major: major < 0.0,
+                    opposite_minor: minor < 0.0,
+                }
             } else {
                 FrameMap::Frame
             },
