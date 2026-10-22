@@ -90,6 +90,8 @@ fn history_state_predecessors_are_component_qualified() {
             component_record_index,
             context_uuid: context_uuid.to_owned().try_into().expect("GUID"),
             context_uuid_offset: component_record_index + 12,
+            name: None,
+            name_offset: None,
         }
     };
     let naming_spaces = [

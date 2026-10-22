@@ -16,6 +16,8 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_record_index, i32, "record_index");
 cadmpeg_core::named_optional_field!(deserialize_record_index_offset, u64, "record_index_offset");
+cadmpeg_core::named_optional_field!(deserialize_component_name, String, "name");
+cadmpeg_core::named_optional_field!(deserialize_component_name_offset, u64, "name_offset");
 /// Component-local Design naming space bound to a context UUID.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignComponentNamingSpace {
@@ -29,6 +31,21 @@ pub(crate) struct DesignComponentNamingSpace {
     pub(crate) context_uuid: DesignRelaxedGuidText,
     /// Byte offset of the UUID length prefix.
     pub(crate) context_uuid_offset: u64,
+    /// The component's name, stored after the context UUID at the end of the
+    /// component's definition record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_component_name"
+    )]
+    pub(crate) name: Option<String>,
+    /// Byte offset of the name's length prefix.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_component_name_offset"
+    )]
+    pub(crate) name_offset: Option<u64>,
 }
 
 /// Original authoring time attached to a solved ASM entity.

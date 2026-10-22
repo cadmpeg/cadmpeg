@@ -352,6 +352,8 @@ pub(crate) struct ComponentDefinition {
     pub(crate) root_entity: u64,
     /// UUID that selects the component naming space.
     pub(crate) context_uuid: crate::records::mesh::DesignRelaxedGuidText,
+    /// The component's name, when its definition record stores one.
+    pub(crate) name: Option<String>,
 }
 
 /// Local component definitions of one Design stream.
@@ -412,6 +414,7 @@ pub(crate) fn decode_local_components(
                 ComponentDefinition {
                     root_entity: space.component_record_index,
                     context_uuid: space.context_uuid.clone(),
+                    name: space.name.clone(),
                 },
             );
         }

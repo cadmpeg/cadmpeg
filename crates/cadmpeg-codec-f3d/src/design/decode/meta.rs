@@ -106,12 +106,23 @@ fn insert_component_naming_space(
     component_record_index: u64,
     context_uuid: crate::records::mesh::DesignRelaxedGuidText,
     context_uuid_offset: usize,
+    name: Option<(String, usize)>,
 ) -> Result<(), CodecError> {
-    if let Some(existing) = by_component.get(&component_record_index) {
+    let name_offset = name
+        .as_ref()
+        .map(|(_, at)| u64::try_from(*at))
+        .transpose()
+        .map_err(|_| CodecError::malformed("f3d component name offset exceeds u64"))?;
+    if let Some(existing) = by_component.get_mut(&component_record_index) {
         if existing.context_uuid != context_uuid {
             return Err(crate::design::text::malformed_design(format_args!(
                 "Design component {component_record_index} has conflicting context UUID bindings"
             )));
+        }
+        // Only the component's definition record carries the name.
+        if existing.name.is_none() {
+            existing.name = name.map(|(name, _)| name);
+            existing.name_offset = name_offset;
         }
         return Ok(());
     }
@@ -129,9 +140,29 @@ fn insert_component_naming_space(
             component_record_index,
             context_uuid,
             context_uuid_offset,
+            name: name.map(|(name, _)| name),
+            name_offset,
         },
     );
     Ok(())
+}
+
+/// The component name after a binding's context UUID: an LP-UTF16 name and
+/// two zero bytes that end the indexed record. Other binding sites store no
+/// name.
+fn component_name_after_context_uuid(bytes: &[u8], uuid_offset: usize) -> Option<(String, usize)> {
+    let name_at = uuid_offset.checked_add(4 + 2 * 36)?;
+    let (name, end) = lp_utf16_bounded(bytes, name_at, 1..=256)?;
+    if name.chars().any(char::is_control) || bytes.get(end..end.checked_add(2)?)? != [0, 0] {
+        return None;
+    }
+    let after = end.checked_add(2)?;
+    let record_ends = after == bytes.len()
+        || (View::u32_le_at(bytes, after) == Some(3)
+            && bytes
+                .get(after.checked_add(4)?..after.checked_add(7)?)
+                .is_some_and(|tag| tag.iter().all(u8::is_ascii_digit)));
+    record_ends.then_some((name, name_at))
 }
 
 /// The counted context UUID after a typed component reference and its offset.
@@ -248,6 +279,7 @@ pub(crate) fn decode_component_naming_spaces(
                     component_record_index,
                     context_uuid,
                     uuid_offset,
+                    component_name_after_context_uuid(bytes, uuid_offset),
                 )?;
             }
         }
@@ -277,6 +309,7 @@ pub(crate) fn decode_component_naming_spaces(
                     component_record_index,
                     context_uuid,
                     uuid_offset,
+                    component_name_after_context_uuid(bytes, uuid_offset),
                 )?;
             }
         }
@@ -325,6 +358,7 @@ pub(crate) fn decode_component_naming_spaces(
                 component_record_index,
                 context_uuid,
                 uuid_offset,
+                component_name_after_context_uuid(bytes, uuid_offset),
             )?;
         }
         if let Some(missing) = component_entities
