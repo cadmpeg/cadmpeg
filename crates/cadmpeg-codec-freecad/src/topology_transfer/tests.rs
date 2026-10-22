@@ -4,7 +4,7 @@ use super::{
     is_identity, normalize_occt_curve_range, normalize_pcurve_parameter_range, occurrence_label,
     pcurve_geometry, select_exact_curve_representation, select_pcurve_representation,
     source_topology_indices, unique_fallback_polygon_representation, IndexedPolygon, OccurrenceKey,
-    SourceOccurrenceKey, Tables,
+    PcurveSelection, SourceOccurrenceKey, Tables,
 };
 use crate::brep::{
     surface_parameter_affine, TextCurve, TextCurve2d, TextEdgeRepresentation, TextLocation,
@@ -541,9 +541,8 @@ fn edge_representation_selection_follows_family_rules() {
         0,
         Transform::identity(),
     )
-    .unwrap()
-    .expect("first matching pcurve");
-    assert_eq!(selected.0, 0);
+    .unwrap();
+    assert!(matches!(selected, PcurveSelection::Selected(1, _)));
 
     let exact_precedes_polygon = [representation(5, 1), representation(1, 1)];
     let selected = select_exact_curve_representation(7, &exact_precedes_polygon, &tables)
@@ -1085,7 +1084,7 @@ Co 1001000 +2 0 *
         .model
         .coedges
         .iter()
-        .any(|coedge| { coedge.pcurves[0].pcurve.as_str().ends_with("3%3A2%3A1") }));
+        .any(|coedge| { coedge.pcurves[0].pcurve.as_str().ends_with("3%3A3%3A1") }));
     assert_eq!(result.ir().model.appearances.len(), 3);
     assert_eq!(result.ir().model.appearance_bindings.len(), 5);
     assert_eq!(

@@ -55,3 +55,14 @@ Apply this boundary to every phase:
   unknowns in the open-items file.
 - Keep every contribution self-contained and reproducible after all analysis-only resources are
   removed.
+
+## Pcurve location identity
+
+Pcurve candidates match by surface identity and exact composed transform. A nonzero
+transform difference, including a sub-`1.0e-12` difference, does not match. Competing candidates with
+one native location-table index select the last serialized representation. Competing candidates
+with distinct location-table indices retain their native records but omit the neutral pcurve with
+`pcurve.location-ambiguous`; matrix equality does not prove native location equality.
+This conservative case includes compound-location aliases: neutral projection does not yet compare
+the native datum/power chains. The affected coedge retains its edge incidence but has no neutral
+pcurve. The loss has blocking severity.

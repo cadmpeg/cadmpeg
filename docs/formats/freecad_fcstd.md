@@ -343,17 +343,21 @@ ranges are equal. Equivalent repeats select the first representation for the exa
 carrier and parameter range. A repeat with different curve geometry, carrier location, or
 parameter range is malformed. Only when no 3D curve exists can the first stored polygon
 representation supply an approximate carrier; a second fallback polygon is malformed. Polygon
-carriers that coexist with an exact 3D curve do not compete for the neutral carrier. For a face
-use, the first pcurve representation whose surface and composed location equal the face surface
-supplies the pcurve; later matching pcurves remain native and do not replace it. Equality of the
-composed locations is exact; a nonzero difference, including a sub-`1.0e-12` difference, does not
-match. A closed-surface
-representation supplies its second pcurve when the edge use is reversed. A primary and secondary
-pcurve in one closed-surface representation are one paired edge representation, not duplicate
-matching pcurves for one face use. Polygon carriers are separate representation families and are
-not implied by pcurve multiplicity. The neutral analytic-surface frame uses the cross product of
-its axis and reference direction. If the persisted plane frame has the opposite V direction, the
-pcurve V parameter is negated. If a persisted cylinder, cone, sphere, or torus frame has the
+carriers that coexist with an exact 3D curve do not compete for the neutral carrier.
+
+Pcurve restoration processes representations in serialized order. A later single or paired
+pcurve replaces the preceding representation for the same surface identity and native location.
+The replacement supplies its own curve references and parameter range. A native location has an
+ordered chain of elementary-location identities and integer powers; equal affine matrices do not
+establish equal native locations. A surface and location with no later replacement keep their
+representation. Face access selects the restored representation on its surface and relative
+native location. A closed-surface representation supplies its second pcurve when the edge use is
+reversed. A primary and secondary pcurve in one closed-surface representation are one paired edge
+representation, not duplicate matching pcurves for one face use. Polygon carriers are separate
+representation families and are not implied by pcurve multiplicity.
+
+The neutral analytic-surface frame uses the cross product of its axis and reference direction.
+If the persisted plane frame has the opposite V direction, the pcurve V parameter is negated. If a persisted cylinder, cone, sphere, or torus frame has the
 opposite circumferential direction, the pcurve U parameter is negated. Either reversal also turns
 the neutral surface normal against the persisted one, so the face's sense against its neutral
 surface is the persisted face orientation reversed; its wires keep their orientation. A trimmed or

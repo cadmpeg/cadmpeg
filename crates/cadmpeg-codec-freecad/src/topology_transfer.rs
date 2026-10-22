@@ -1473,15 +1473,24 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         else {
             return Ok(None);
         };
-        let Some((index, representation)) = select_pcurve_representation(
+        let selection = select_pcurve_representation(
             representations,
             &self.tables,
             edge_transform,
             surface.index(),
             surface_transform,
-        )?
-        else {
-            return Ok(None);
+        )?;
+        let (index, representation) = match selection {
+            PcurveSelection::Missing => return Ok(None),
+            PcurveSelection::Selected(index, representation) => (index, representation),
+            PcurveSelection::AmbiguousLocation => {
+                self.losses
+                    .push(FreecadLossCode::PcurveLocationAmbiguous.note(format!(
+                        "edge TShape {} has matching pcurves at distinct native locations",
+                        edge_use.shape,
+                    )));
+                return Ok(None);
+            }
         };
         let reversed = is_reversed(edge_use.orientation);
         let (curve_index, parameter_range, secondary) = match representation {
@@ -2148,14 +2157,21 @@ fn edge_endpoint_uses(
     })
 }
 
+#[derive(Debug)]
+enum PcurveSelection<'a> {
+    Missing,
+    Selected(usize, &'a TextEdgeRepresentation),
+    AmbiguousLocation,
+}
+
 fn select_pcurve_representation<'a>(
     representations: &'a [TextEdgeRepresentation],
     tables: &Tables<'_>,
     edge_transform: Transform,
     surface: usize,
     surface_transform: Transform,
-) -> Result<Option<(usize, &'a TextEdgeRepresentation)>, CodecError> {
-    let mut matched = None;
+) -> Result<PcurveSelection<'a>, CodecError> {
+    let mut matched = PcurveSelection::Missing;
     for (index, representation) in representations.iter().enumerate() {
         match representation {
             TextEdgeRepresentation::Pcurve {
@@ -2175,8 +2191,12 @@ fn select_pcurve_representation<'a>(
                     surface_transform,
                 ) =>
             {
-                matched = Some((index, representation));
-                break;
+                if let PcurveSelection::Selected(_, previous) = matched {
+                    if previous.location() != *location {
+                        return Ok(PcurveSelection::AmbiguousLocation);
+                    }
+                }
+                matched = PcurveSelection::Selected(index, representation);
             }
             _ => {}
         }
@@ -2319,3 +2339,6 @@ mod numerical_range_tests;
 
 #[cfg(test)]
 mod located_geometry_tests;
+
+#[cfg(test)]
+mod pcurve_selection_tests;

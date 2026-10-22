@@ -15,29 +15,6 @@ Each item has an identifier and these fields:
 
 ## 4. Exact-topology transfer
 
-### ET-01. Competing face pcurve representations
-
-**Question.** When an edge has two or more curve-on-surface representations whose surface identity
-and composed location match one face use, which representation supplies that use's pcurve?
-
-**Known.** One edge can retain several ordered representations. A kind-3 closed-surface
-representation contains a defined primary/secondary pair, selected by edge-use orientation. This
-paired form is distinct from two separate representations that both match the same face use. For
-exact 3D curves, equal curve identity, location, and parameter range establish equivalence, and a
-conflicting repeat is invalid. No corresponding equivalence rule is specified for separate matching
-pcurve representations.
-
-**Need.** Determine the OCCT restore and traversal semantics that associate a curve-on-surface
-representation with a particular face use. Define the representation identity and equality fields
-that either select one representation without order dependence or make competing matches invalid.
-
-**Conflict.** The current neutral projection selects the first matching representation in serialized
-order. Therefore two source records with the same set of matching representations in a different
-order can produce different neutral pcurves.
-
-**Note.** Keep the representation-selection rule separate from pcurve parameter normalization and
-from the primary/secondary rule inside one closed-surface representation.
-
 ## 5. Design projection
 
 ### DP-01. Sketch profile identity and connectivity
