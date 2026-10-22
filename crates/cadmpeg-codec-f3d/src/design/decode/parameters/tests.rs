@@ -724,6 +724,29 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
         0
     )
     .is_none());
+
+    // Class tags are dynamic: a frame of the parameter-owner type is admitted
+    // under any class tag, and keeps the shape requirements.
+    let evaluated = crate::records::identity::Located {
+        value: 1.0,
+        offset: 700,
+    };
+    let typed = super::parse_admitted_legacy_parameter_owner_68(
+        &legacy_parameter_owner_68_frame("318"),
+        evaluated,
+        0,
+        true,
+    )
+    .and_then(|parsed| parsed.into_record("Design/BulkStream.dat", 0))
+    .expect("owner-typed legacy frame");
+    assert_eq!(typed.class_tag().as_str(), "318");
+    assert!(
+        super::parse_admitted_legacy_parameter_owner_68(&malformed, evaluated, 0, true).is_none()
+    );
+    let wire = serde_json::to_value(&typed).unwrap();
+    assert!(
+        serde_json::from_value::<crate::records::parameters::DesignParameterOwner>(wire).is_ok()
+    );
 }
 
 #[test]

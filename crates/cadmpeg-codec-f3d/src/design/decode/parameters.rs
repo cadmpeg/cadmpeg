@@ -697,6 +697,9 @@ pub(crate) fn design_parameter_discriminator(source_kind: &str) -> u64 {
 
 /// Whether a class tag admits the legacy owner grammar without scope or scalar
 /// lanes.
+/// Design type of every parameter-owner record.
+const PARAMETER_OWNER_TYPE_GUID: &str = "D91D429C-1BB5-4640-B49F-69AF14F463E9";
+
 pub(crate) fn is_legacy_parameter_owner_68_class(class_tag: &str) -> bool {
     matches!(
         class_tag,
@@ -772,9 +775,29 @@ pub(crate) fn decode_parameter_owners(
             ));
         }
 
+        // Primary frames whose MetaStream type is the parameter-owner type.
+        let owner_typed = super::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            .and_then(|meta| {
+                super::meta::design_primary_frames(bytes, &meta)
+                    .ok()
+                    .map(|frames| {
+                        frames
+                            .iter()
+                            .filter(|frame| {
+                                frame
+                                    .design_type
+                                    .type_guid
+                                    .as_str()
+                                    .eq_ignore_ascii_case(PARAMETER_OWNER_TYPE_GUID)
+                            })
+                            .map(|frame| frame.start)
+                            .collect::<HashSet<_>>()
+                    })
+            })
+            .unwrap_or_default();
         streams
             .entry(stream)
-            .or_insert((entry, IndexedRecordOffsets::build(bytes)));
+            .or_insert((entry, IndexedRecordOffsets::build(bytes), owner_typed));
     }
     let mut out = Vec::new();
     for parameter in parameters {
@@ -799,7 +822,7 @@ pub(crate) fn decode_parameter_owners(
             // projection reports the unresolved binding as a loss.
             continue;
         };
-        let (entry, records) = streams
+        let (entry, records, owner_typed) = streams
             .get(scope)
             .ok_or_else(|| malformed("has no containing Design BulkStream"))?;
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -817,8 +840,22 @@ pub(crate) fn decode_parameter_owners(
             offset: parameter.evaluated_value_offset(),
         };
         let owner = parse_parameter_owner(frame)
-            .or_else(|| parse_legacy_parameter_owner_68(frame, evaluated, header.byte_offset))
-            .or_else(|| parse_legacy_parameter_owner_88(frame, evaluated, header.byte_offset))
+            .or_else(|| {
+                parse_admitted_legacy_parameter_owner_68(
+                    frame,
+                    evaluated,
+                    header.byte_offset,
+                    owner_typed.contains(&at),
+                )
+            })
+            .or_else(|| {
+                parse_admitted_legacy_parameter_owner_88(
+                    frame,
+                    evaluated,
+                    header.byte_offset,
+                    owner_typed.contains(&at),
+                )
+            })
             .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?
             .into_record(&entry.name, header.byte_offset)
             .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
@@ -1058,13 +1095,25 @@ fn parse_parameter_owner_with(
 ///
 /// The class admission is intentional. A short frame is not enough to select
 /// this grammar because older class tags also occur on modern owner records.
+#[cfg(test)]
 fn parse_legacy_parameter_owner_68(
     frame: &[u8],
     evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
 ) -> Option<ParsedParameterOwner> {
+    parse_admitted_legacy_parameter_owner_68(frame, evaluated, frame_start, false)
+}
+
+/// The legacy 68-byte owner grammar, admitted when the frame has the
+/// parameter-owner type (`owner_typed`) or one of the listed class tags.
+fn parse_admitted_legacy_parameter_owner_68(
+    frame: &[u8],
+    evaluated: crate::records::identity::Located<f64>,
+    frame_start: u64,
+    owner_typed: bool,
+) -> Option<ParsedParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-    if !is_legacy_parameter_owner_68_class(class_tag)
+    if !(owner_typed || is_legacy_parameter_owner_68_class(class_tag))
         || frame.len() != legacy_owner_68::LEN
         || after_tag != indexed_header::RECORD_INDEX
         || frame.get(legacy_owner_68::ZERO_RUN_8..legacy_owner_68::FIRST_MARKER) != Some(&[0; 8])
@@ -1107,13 +1156,25 @@ fn parse_legacy_parameter_owner_68(
 
 /// Parse the legacy owner envelope whose scope is repeated in the suffix but
 /// whose scalar and local-ordinal lanes are absent.
+#[cfg(test)]
 fn parse_legacy_parameter_owner_88(
     frame: &[u8],
     evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
 ) -> Option<ParsedParameterOwner> {
+    parse_admitted_legacy_parameter_owner_88(frame, evaluated, frame_start, false)
+}
+
+/// The legacy 88-byte owner grammar, admitted when the frame has the
+/// parameter-owner type (`owner_typed`) or one of the listed class tags.
+fn parse_admitted_legacy_parameter_owner_88(
+    frame: &[u8],
+    evaluated: crate::records::identity::Located<f64>,
+    frame_start: u64,
+    owner_typed: bool,
+) -> Option<ParsedParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-    if !is_legacy_parameter_owner_88_class(class_tag)
+    if !(owner_typed || is_legacy_parameter_owner_88_class(class_tag))
         || frame.len() != legacy_owner_88::LEN
         || after_tag != indexed_header::RECORD_INDEX
         || frame.get(legacy_owner_88::ZERO_RUN_8..legacy_owner_88::FIRST_MARKER) != Some(&[0; 8])

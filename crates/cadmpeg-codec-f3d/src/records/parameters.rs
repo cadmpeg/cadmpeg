@@ -811,16 +811,10 @@ impl DesignParameterOwner {
         );
         let legacy = wire.local_ordinal == 0
             && match wire.frame_length {
-                68 => {
-                    crate::design::decode::parameters::is_legacy_parameter_owner_68_class(
-                        wire.class_tag.as_str(),
-                    ) && wire.scope_record_index == 0
-                }
-                88 => {
-                    crate::design::decode::parameters::is_legacy_parameter_owner_88_class(
-                        wire.class_tag.as_str(),
-                    ) && wire.scope_record_index != 0
-                }
+                // Class tags are dynamic; the decoder admits these forms by the
+                // owner record's type, so the wire form is its length and lanes.
+                68 => wire.scope_record_index == 0,
+                88 => wire.scope_record_index != 0,
                 _ => false,
             };
         if !modern && !typed && !legacy {
