@@ -70,6 +70,28 @@ const CIRCLE_CENTER_TYPE: [u8; 16] = [
 const EQUAL_RADIUS_TYPE: [u8; 16] = [
     0xd0, 0x7d, 0x2c, 0x44, 0xd1, 0x11, 0x89, 0xe6, 0x80, 0x00, 0x6f, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
 ];
+const DISTANCE_TYPE: [u8; 16] = [
+    0x58, 0x85, 0x05, 0x11, 0xd2, 0x11, 0xe3, 0x95, 0x60, 0x00, 0x0c, 0xb3, 0x89, 0x32, 0xed, 0xb0,
+];
+const ANGLE_TYPE: [u8; 16] = [
+    0x10, 0x0a, 0x0d, 0x59, 0xd1, 0x11, 0xca, 0xe6, 0x80, 0x00, 0x6f, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
+const MIDPOINT_TYPE: [u8; 16] = sketch_entity_id(0x21e8_70bf);
+const FIX_TYPE: [u8; 16] = [
+    0xb0, 0x7b, 0x17, 0x0f, 0xd1, 0x11, 0x96, 0xe6, 0x80, 0x00, 0x6f, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
+const HORIZONTAL_ALIGNMENT_TYPE: [u8; 16] = [
+    0xc0, 0xa3, 0x55, 0x8f, 0xd1, 0x11, 0x5e, 0xe0, 0x80, 0x00, 0x66, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
+const VERTICAL_ALIGNMENT_TYPE: [u8; 16] = [
+    0x50, 0x52, 0xda, 0x64, 0xd1, 0x11, 0x5e, 0xe0, 0x80, 0x00, 0x66, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
+const COLLINEAR_TYPE: [u8; 16] = [
+    0xe0, 0x7b, 0x9a, 0x5a, 0xd1, 0x11, 0x5d, 0xe0, 0x80, 0x00, 0x66, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
+const SYMMETRIC_TYPE: [u8; 16] = [
+    0x10, 0x7c, 0xdd, 0x0d, 0xd1, 0x11, 0x9c, 0xe6, 0x80, 0x00, 0x6f, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
 
 const fn sketch_entity_id(time_low: u32) -> [u8; 16] {
     let first = time_low.to_le_bytes();
@@ -109,7 +131,7 @@ pub(crate) struct PmDcConstraintHeader {
 type PmDcReferenceScalarMap = crate::pmdc::PmDcPairedMap<FiniteReal>;
 type PmDcReferencePairMap = crate::pmdc::PmDcPairedMap<PmDcReference>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcSketchConstraintKind {
     Coincident {
@@ -168,6 +190,44 @@ pub(crate) enum PmDcSketchConstraintKind {
     EqualRadius {
         first: PmDcReference,
         second: PmDcReference,
+    },
+    Distance {
+        value: u32,
+        first: PmDcReference,
+        second: PmDcReference,
+        values: [FiniteReal; 6],
+    },
+    Angle {
+        value: u32,
+        first: PmDcReference,
+        second: PmDcReference,
+        values: [FiniteReal; 2],
+        flags: u16,
+    },
+    Midpoint {
+        entity: PmDcReference,
+        point: PmDcReference,
+    },
+    Fix {
+        entity: PmDcReference,
+    },
+    HorizontalAlignment {
+        first: PmDcReference,
+        second: PmDcReference,
+    },
+    VerticalAlignment {
+        first: PmDcReference,
+        second: PmDcReference,
+    },
+    Collinear {
+        first: PmDcReference,
+        second: PmDcReference,
+        state: u16,
+    },
+    Symmetric {
+        first: PmDcReference,
+        second: PmDcReference,
+        axis: PmDcReference,
     },
 }
 
@@ -561,6 +621,14 @@ enum SketchConstraintTag {
     Diameter,
     CircleCenter,
     EqualRadius,
+    Distance,
+    Angle,
+    Midpoint,
+    Fix,
+    HorizontalAlignment,
+    VerticalAlignment,
+    Collinear,
+    Symmetric,
 }
 
 impl SketchConstraintTag {
@@ -578,6 +646,14 @@ impl SketchConstraintTag {
             DIAMETER_TYPE => Some(Self::Diameter),
             CIRCLE_CENTER_TYPE => Some(Self::CircleCenter),
             EQUAL_RADIUS_TYPE => Some(Self::EqualRadius),
+            DISTANCE_TYPE => Some(Self::Distance),
+            ANGLE_TYPE => Some(Self::Angle),
+            MIDPOINT_TYPE => Some(Self::Midpoint),
+            FIX_TYPE => Some(Self::Fix),
+            HORIZONTAL_ALIGNMENT_TYPE => Some(Self::HorizontalAlignment),
+            VERTICAL_ALIGNMENT_TYPE => Some(Self::VerticalAlignment),
+            COLLINEAR_TYPE => Some(Self::Collinear),
+            SYMMETRIC_TYPE => Some(Self::Symmetric),
             _ => None,
         }
     }
@@ -971,6 +1047,44 @@ fn parse_constraint(
             first: cursor.reference("equal-radius constraint first reference")?,
             second: cursor.reference("equal-radius constraint second reference")?,
         },
+        SketchConstraintTag::Distance => PmDcSketchConstraintKind::Distance {
+            value: cursor.u32("distance dimension value")?,
+            first: cursor.reference("distance dimension first reference")?,
+            second: cursor.reference("distance dimension second reference")?,
+            values: f64_array(&mut cursor, "distance dimension values")?,
+        },
+        SketchConstraintTag::Angle => PmDcSketchConstraintKind::Angle {
+            value: cursor.u32("angle dimension value")?,
+            first: cursor.reference("angle dimension first reference")?,
+            second: cursor.reference("angle dimension second reference")?,
+            values: f64_array(&mut cursor, "angle dimension values")?,
+            flags: cursor.u16("angle dimension flags")?,
+        },
+        SketchConstraintTag::Midpoint => PmDcSketchConstraintKind::Midpoint {
+            entity: cursor.reference("midpoint constraint entity reference")?,
+            point: cursor.reference("midpoint constraint point reference")?,
+        },
+        SketchConstraintTag::Fix => PmDcSketchConstraintKind::Fix {
+            entity: cursor.reference("fix constraint entity reference")?,
+        },
+        SketchConstraintTag::HorizontalAlignment => PmDcSketchConstraintKind::HorizontalAlignment {
+            first: cursor.reference("horizontal alignment first reference")?,
+            second: cursor.reference("horizontal alignment second reference")?,
+        },
+        SketchConstraintTag::VerticalAlignment => PmDcSketchConstraintKind::VerticalAlignment {
+            first: cursor.reference("vertical alignment first reference")?,
+            second: cursor.reference("vertical alignment second reference")?,
+        },
+        SketchConstraintTag::Collinear => PmDcSketchConstraintKind::Collinear {
+            first: cursor.reference("collinear constraint first reference")?,
+            second: cursor.reference("collinear constraint second reference")?,
+            state: cursor.u16("collinear constraint state")?,
+        },
+        SketchConstraintTag::Symmetric => PmDcSketchConstraintKind::Symmetric {
+            first: cursor.reference("symmetric constraint first reference")?,
+            second: cursor.reference("symmetric constraint second reference")?,
+            axis: cursor.reference("symmetric constraint axis reference")?,
+        },
     };
     cursor.finish("sketch constraint")?;
     Ok(PmDcSketchConstraintPayload {
@@ -978,6 +1092,17 @@ fn parse_constraint(
         header,
         kind,
     })
+}
+
+fn f64_array<const N: usize>(
+    cursor: &mut Cursor<'_>,
+    field: &str,
+) -> Result<[FiniteReal; N], CodecError> {
+    let mut values = [FiniteReal::ZERO; N];
+    for value in &mut values {
+        *value = cursor.f64(field)?;
+    }
+    Ok(values)
 }
 
 fn distance_constraint_fields(
@@ -1512,6 +1637,123 @@ fn project_constraint(
                 SketchConstraintDefinitionInput::Equal {
                     first: members[0].id().clone(),
                     second: members[1].id().clone(),
+                },
+                None,
+                members,
+            )
+        }
+        PmDcSketchConstraintKind::Distance { first, second, .. } => {
+            let members = [resolve(first)?, resolve(second)?];
+            let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
+            (
+                SketchConstraintDefinitionInput::DistanceLoci {
+                    first: SketchLocus::Entity(members[0].id().clone()),
+                    second: SketchLocus::Entity(members[1].id().clone()),
+                    parameter,
+                },
+                None,
+                members,
+            )
+        }
+        PmDcSketchConstraintKind::Angle { first, second, .. } => {
+            let members = [resolve(first)?, resolve(second)?];
+            let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
+            (
+                SketchConstraintDefinitionInput::Native {
+                    native_kind: cadmpeg_core::text::NonBlankString::new("angle_dimension")?,
+                    native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
+                    native_flags: Some(u64::from(constraint.header.content.flags)),
+                    native_properties: std::collections::BTreeMap::new(),
+                    entities: members.iter().map(|entity| entity.id().clone()).collect(),
+                    parameter: Some(parameter),
+                    operands: vec![
+                        native_operand(constraint, cadmpeg_core::nonblank_literal!("first"), first),
+                        native_operand(
+                            constraint,
+                            cadmpeg_core::nonblank_literal!("second"),
+                            second,
+                        ),
+                    ],
+                },
+                None,
+                members,
+            )
+        }
+        PmDcSketchConstraintKind::Midpoint { entity, point } => {
+            let members = [resolve(point)?, resolve(entity)?];
+            (
+                SketchConstraintDefinitionInput::Midpoint {
+                    point: SketchLocus::Entity(members[0].id().clone()),
+                    entity: members[1].id().clone(),
+                },
+                None,
+                members,
+            )
+        }
+        PmDcSketchConstraintKind::Fix { entity } => {
+            let member = resolve(entity)?;
+            (
+                SketchConstraintDefinitionInput::Fixed {
+                    entity: member.id().clone(),
+                },
+                None,
+                [member, member],
+            )
+        }
+        PmDcSketchConstraintKind::HorizontalAlignment { first, second }
+        | PmDcSketchConstraintKind::VerticalAlignment { first, second } => {
+            let members = [resolve(first)?, resolve(second)?];
+            let axis = if matches!(
+                constraint.kind,
+                PmDcSketchConstraintKind::HorizontalAlignment { .. }
+            ) {
+                cadmpeg_ir::sketches::SketchCoordinateAxis::V
+            } else {
+                cadmpeg_ir::sketches::SketchCoordinateAxis::U
+            };
+            (
+                SketchConstraintDefinitionInput::SameCoordinate {
+                    relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                        SketchLocus::Entity(members[0].id().clone()),
+                        SketchLocus::Entity(members[1].id().clone()),
+                        axis,
+                    )
+                    .ok()?,
+                },
+                None,
+                members,
+            )
+        }
+        PmDcSketchConstraintKind::Collinear {
+            first,
+            second,
+            state,
+        } => {
+            let members = [resolve(first)?, resolve(second)?];
+            (
+                SketchConstraintDefinitionInput::Collinear {
+                    first: members[0].id().clone(),
+                    second: members[1].id().clone(),
+                },
+                Some(u32::from(state)),
+                members,
+            )
+        }
+        PmDcSketchConstraintKind::Symmetric {
+            first,
+            second,
+            axis,
+        } => {
+            let members = [resolve(first)?, resolve(second)?];
+            let axis = resolve(axis)?;
+            if axis.sketch != members[0].sketch {
+                return None;
+            }
+            (
+                SketchConstraintDefinitionInput::Symmetric {
+                    first: SketchLocus::Entity(members[0].id().clone()),
+                    second: SketchLocus::Entity(members[1].id().clone()),
+                    axis: axis.id().clone(),
                 },
                 None,
                 members,
@@ -2094,8 +2336,8 @@ mod tests {
         inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
         project, PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcSketchPayload,
         PmDcTransformPayload, SketchConstraintTag, SketchEntityTag, SketchInventory, CIRCLE_TYPE,
-        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, POINT_TYPE, SKETCH_TYPE,
-        TRANSFORM_TYPE,
+        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE,
+        SKETCH_TYPE, TRANSFORM_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcReference, PmDcReferenceList};
@@ -2739,6 +2981,69 @@ mod tests {
     }
 
     #[test]
+    fn parses_generated_relation_and_dimension_records() {
+        let references = |values: &[u32]| {
+            values
+                .iter()
+                .flat_map(|value| (0x8000_0000 | value).to_le_bytes())
+                .collect::<Vec<_>>()
+        };
+        let reals = |values: &[f64]| {
+            values
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<_>>()
+        };
+        let mut distance = 0u32.to_le_bytes().to_vec();
+        distance.extend(references(&[4, 5]));
+        distance.extend(reals(&[0.0, 0.0, f64::MAX, 0.0, f64::MAX, 0.0]));
+        let mut angle = 0u32.to_le_bytes().to_vec();
+        angle.extend(references(&[6, 7]));
+        angle.extend(reals(&[0.5, 1.5]));
+        angle.extend_from_slice(&0x0au16.to_le_bytes());
+        let mut collinear = references(&[6, 7]);
+        collinear.extend_from_slice(&0u16.to_le_bytes());
+        for (tag, parameter, tail, expected) in [
+            (SketchConstraintTag::Distance, 3, distance, "distance"),
+            (SketchConstraintTag::Angle, 3, angle, "angle"),
+            (
+                SketchConstraintTag::Midpoint,
+                0,
+                references(&[6, 4]),
+                "midpoint",
+            ),
+            (SketchConstraintTag::Fix, 0, references(&[4]), "fix"),
+            (
+                SketchConstraintTag::HorizontalAlignment,
+                0,
+                references(&[4, 5]),
+                "horizontal_alignment",
+            ),
+            (
+                SketchConstraintTag::VerticalAlignment,
+                0,
+                references(&[4, 5]),
+                "vertical_alignment",
+            ),
+            (SketchConstraintTag::Collinear, 0, collinear, "collinear"),
+            (
+                SketchConstraintTag::Symmetric,
+                0,
+                references(&[4, 5, 6]),
+                "symmetric",
+            ),
+        ] {
+            let mut bytes = constraint_header(9, parameter);
+            bytes.extend(tail);
+            let parsed = parse(&bytes, |_, source| {
+                parse_constraint(tag, source, 22).expect(expected)
+            });
+            let form = serde_json::to_value(parsed.kind).expect("constraint kind")["form"].clone();
+            assert_eq!(form, expected);
+        }
+    }
+
+    #[test]
     fn parses_generated_dimensional_constraint_branches() {
         for type_id in [
             SketchConstraintTag::HorizontalDistance,
@@ -2968,7 +3273,7 @@ mod tests {
     fn half_disc_inventory() -> SketchInventory {
         let (mut inventory, mut sketch) = closed_square_inventory();
         let (marker, metadata, _) = sketch.entities.clone().into_parts();
-        let references = [4, 5, 6, 7, 8]
+        let references = [4, 5, 6, 7, 8, 9]
             .map(|index| PmDcReference::new(index, false).expect("test reference index fits"));
         sketch.entities = PmDcReferenceList::new(marker, metadata, references.to_vec())
             .expect("half-disc entity list");
@@ -3015,6 +3320,19 @@ mod tests {
             )
         })
         .collect();
+        // The origin is the midpoint of the closing line.
+        let mut midpoint = constraint_header(8, 0);
+        midpoint.extend_from_slice(&(0x8000_0000u32 | 7).to_le_bytes());
+        midpoint.extend_from_slice(&(0x8000_0000u32 | 4).to_le_bytes());
+        let midpoint = parse(&midpoint, |_, source| {
+            parse_constraint(SketchConstraintTag::Midpoint, source, 22).expect("midpoint")
+        });
+        inventory.constraints = vec![Located::new(
+            midpoint,
+            crate::record_identity::RecordTypeId::from_bytes(MIDPOINT_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            8,
+        )];
         inventory
     }
 
@@ -3041,6 +3359,14 @@ mod tests {
             })
             .expect("projected arc");
         assert_eq!(arc, (10.0, 0.0, std::f64::consts::PI));
+        assert!(matches!(
+            projected
+                .constraints
+                .iter()
+                .map(|constraint| constraint.definition.kind())
+                .collect::<Vec<_>>()[..],
+            [cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Midpoint { .. }]
+        ));
         assert_eq!(projected.sketches[0].profiles.len(), 1);
         assert_eq!(projected.sketches[0].profiles[0].len(), 2);
     }
