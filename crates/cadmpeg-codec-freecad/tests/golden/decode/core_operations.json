@@ -18866,7 +18866,7 @@
               "fcstd:model:loop#Hole:AddSubShape:Hole.AddSubShape.brp:14%408893b334789793ee%3A1"
             ]
           },
-          "sense": "reversed",
+          "sense": "forward",
           "shell": "fcstd:model:shell#Hole:AddSubShape:Hole.AddSubShape.brp:20%408893b334789793ee",
           "surface": "fcstd:model:surface#Hole:AddSubShape:Hole.AddSubShape.brp:3%408893b334789793ee",
           "tolerance": 1e-7
@@ -18879,7 +18879,7 @@
               "fcstd:model:loop#Hole:AddSubShape:Hole.AddSubShape.brp:19%408893b334789793ee%3A1"
             ]
           },
-          "sense": "reversed",
+          "sense": "forward",
           "shell": "fcstd:model:shell#Hole:AddSubShape:Hole.AddSubShape.brp:20%408893b334789793ee",
           "surface": "fcstd:model:surface#Hole:AddSubShape:Hole.AddSubShape.brp:4%408893b334789793ee",
           "tolerance": 1e-7
@@ -18892,7 +18892,7 @@
               "fcstd:model:loop#Hole:AddSubShape:Hole.AddSubShape.brp:4%408893b334789793ee%3A1"
             ]
           },
-          "sense": "reversed",
+          "sense": "forward",
           "shell": "fcstd:model:shell#Hole:AddSubShape:Hole.AddSubShape.brp:20%408893b334789793ee",
           "surface": "fcstd:model:surface#Hole:AddSubShape:Hole.AddSubShape.brp:1%408893b334789793ee",
           "tolerance": 1e-7
@@ -18905,7 +18905,7 @@
               "fcstd:model:loop#Hole:AddSubShape:Hole.AddSubShape.brp:9%408893b334789793ee%3A1"
             ]
           },
-          "sense": "reversed",
+          "sense": "forward",
           "shell": "fcstd:model:shell#Hole:AddSubShape:Hole.AddSubShape.brp:20%408893b334789793ee",
           "surface": "fcstd:model:surface#Hole:AddSubShape:Hole.AddSubShape.brp:2%408893b334789793ee",
           "tolerance": 1e-7
@@ -18997,7 +18997,7 @@
               "fcstd:model:loop#Hole:Shape:Hole.Shape.brp:40%3A1"
             ]
           },
-          "sense": "forward",
+          "sense": "reversed",
           "shell": "fcstd:model:shell#Hole:Shape:Hole.Shape.brp:51",
           "surface": "fcstd:model:surface#Hole:Shape:Hole.Shape.brp:8%408893b334789793ee",
           "tolerance": 1e-7
@@ -19010,7 +19010,7 @@
               "fcstd:model:loop#Hole:Shape:Hole.Shape.brp:45%408893b334789793ee%3A1"
             ]
           },
-          "sense": "forward",
+          "sense": "reversed",
           "shell": "fcstd:model:shell#Hole:Shape:Hole.Shape.brp:51",
           "surface": "fcstd:model:surface#Hole:Shape:Hole.Shape.brp:9%408893b334789793ee",
           "tolerance": 1e-7
@@ -19023,7 +19023,7 @@
               "fcstd:model:loop#Hole:Shape:Hole.Shape.brp:50%408893b334789793ee%3A1"
             ]
           },
-          "sense": "forward",
+          "sense": "reversed",
           "shell": "fcstd:model:shell#Hole:Shape:Hole.Shape.brp:51",
           "surface": "fcstd:model:surface#Hole:Shape:Hole.Shape.brp:10%408893b334789793ee",
           "tolerance": 1e-7
@@ -19193,7 +19193,7 @@
               "fcstd:model:loop#HoleBody:Shape:HoleBody.Shape.brp:40%3A1"
             ]
           },
-          "sense": "forward",
+          "sense": "reversed",
           "shell": "fcstd:model:shell#HoleBody:Shape:HoleBody.Shape.brp:51",
           "surface": "fcstd:model:surface#HoleBody:Shape:HoleBody.Shape.brp:4%408893b334789793ee",
           "tolerance": 1e-7
@@ -19206,7 +19206,7 @@
               "fcstd:model:loop#HoleBody:Shape:HoleBody.Shape.brp:45%408893b334789793ee%3A1"
             ]
           },
-          "sense": "forward",
+          "sense": "reversed",
           "shell": "fcstd:model:shell#HoleBody:Shape:HoleBody.Shape.brp:51",
           "surface": "fcstd:model:surface#HoleBody:Shape:HoleBody.Shape.brp:8%408893b334789793ee",
           "tolerance": 1e-7
@@ -19219,7 +19219,7 @@
               "fcstd:model:loop#HoleBody:Shape:HoleBody.Shape.brp:50%408893b334789793ee%3A1"
             ]
           },
-          "sense": "forward",
+          "sense": "reversed",
           "shell": "fcstd:model:shell#HoleBody:Shape:HoleBody.Shape.brp:51",
           "surface": "fcstd:model:surface#HoleBody:Shape:HoleBody.Shape.brp:9%408893b334789793ee",
           "tolerance": 1e-7
@@ -19349,7 +19349,7 @@
               "fcstd:model:loop#Mirror:Shape:Mirror.Shape.brp:11%3A1"
             ]
           },
-          "sense": "forward",
+          "sense": "reversed",
           "shell": "fcstd:model:shell#Mirror:Shape:Mirror.Shape.brp:12",
           "surface": "fcstd:model:surface#Mirror:Shape:Mirror.Shape.brp:3",
           "tolerance": 1e-7
@@ -19362,7 +19362,7 @@
               "fcstd:model:loop#Mirror:Shape:Mirror.Shape.brp:7%3A1"
             ]
           },
-          "sense": "reversed",
+          "sense": "forward",
           "shell": "fcstd:model:shell#Mirror:Shape:Mirror.Shape.brp:12",
           "surface": "fcstd:model:surface#Mirror:Shape:Mirror.Shape.brp:1",
           "tolerance": 1e-7
@@ -19375,7 +19375,7 @@
               "fcstd:model:loop#Mirror:Shape:Mirror.Shape.brp:9%3A1"
             ]
           },
-          "sense": "reversed",
+          "sense": "forward",
           "shell": "fcstd:model:shell#Mirror:Shape:Mirror.Shape.brp:12",
           "surface": "fcstd:model:surface#Mirror:Shape:Mirror.Shape.brp:2",
           "tolerance": 1e-7
@@ -19453,7 +19453,7 @@
               "fcstd:model:loop#PartChamfer:Shape:PartChamfer.Shape.brp:24%3A1"
             ]
           },
-          "sense": "reversed",
+          "sense": "forward",
           "shell": "fcstd:model:shell#PartChamfer:Shape:PartChamfer.Shape.brp:40",
           "surface": "fcstd:model:surface#PartChamfer:Shape:PartChamfer.Shape.brp:3"
         },
@@ -19841,7 +19841,7 @@
               "fcstd:model:loop#Revolution:Shape:Revolution.Shape.brp:7%3A1"
             ]
           },
-          "sense": "forward",
+          "sense": "reversed",
           "shell": "fcstd:model:shell#Revolution:Shape:Revolution.Shape.brp:8",
           "surface": "fcstd:model:surface#Revolution:Shape:Revolution.Shape.brp:1",
           "tolerance": 1e-7

@@ -3231,7 +3231,7 @@
               "fcstd:model:loop#Cut:Shape:Cut.Shape.brp:41%3A1"
             ]
           },
-          "sense": "forward",
+          "sense": "reversed",
           "shell": "fcstd:model:shell#Cut:Shape:Cut.Shape.brp:42",
           "surface": "fcstd:model:surface#Cut:Shape:Cut.Shape.brp:7%40c15ae4a939ac7ba4",
           "tolerance": 1e-7
@@ -3244,7 +3244,7 @@
               "fcstd:model:loop#Cylinder:Shape:Cylinder.Shape.brp:5%40c15ae4a939ac7ba4%3A1"
             ]
           },
-          "sense": "reversed",
+          "sense": "forward",
           "shell": "fcstd:model:shell#Cylinder:Shape:Cylinder.Shape.brp:8%40c15ae4a939ac7ba4",
           "surface": "fcstd:model:surface#Cylinder:Shape:Cylinder.Shape.brp:1",
           "tolerance": 1e-7
