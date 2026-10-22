@@ -332,13 +332,22 @@ fn scanner_obeys_shared_session_limits_and_checks_view_ownership() {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(b"<root><child/></root>", &arena, &policy)
             .expect("root");
-        let error = ctx
-            .scan_xml_elements(root, XmlEncoding::Utf8, "bounded scan")
-            .expect_err("shared refusal");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.scope == LimitScope::Session)
-        );
-        assert!(ctx.resource_refusal().is_some());
+        let result = ctx.scan_xml_elements(root, XmlEncoding::Utf8, "bounded scan");
+        if retained {
+            let error = result.expect_err("shared refusal");
+            assert!(
+                matches!(error, CodecError::ResourceLimit(limit) if limit.scope == LimitScope::Session)
+            );
+            assert!(ctx.resource_refusal().is_some());
+        } else {
+            // A framing node is not an entity; the records built from the
+            // elements are charged by their decoder.
+            let scan = result.expect("framing charges no entities");
+            assert_eq!(scan.elements().len(), 2);
+            assert_eq!(ctx.resource_refusal(), None);
+            ctx.charge_entities(1, "the whole entity allowance remains")
+                .expect("no entity charged by the scan");
+        }
     }
     let arena = DecodeArena::new();
     let (ctx, root) =
@@ -372,6 +381,7 @@ fn temporary_name_index_limit_is_part_scoped_and_does_not_clear_session_totals()
     let second = root
         .child(split, bytes.len())
         .expect("next complete element");
+    let retained_before = ctx.retained_bytes_available();
     let outcome = ctx
         .part_transaction(first, || {
             ctx.scan_xml_elements(first, XmlEncoding::Utf8, "limited name index")
@@ -386,10 +396,11 @@ fn temporary_name_index_limit_is_part_scoped_and_does_not_clear_session_totals()
         .expect("no active-name index needed");
     assert_eq!(scan.elements().len(), 1);
     assert_eq!(scan.elements()[0].extent().window(), b"<good/>");
-    let error = ctx
-        .charge_entities(1, "attempted frames remain charged")
-        .expect_err("two previous frames consumed the allowance");
     assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.scope == LimitScope::Session && limit.dimension == ResourceDimension::Entities && limit.used == 2)
+        ctx.retained_bytes_available() < retained_before,
+        "attempted frame storage remains charged to the session"
     );
+    // Framing nodes are not entities: the session entity allowance is whole.
+    ctx.charge_entities(2, "the whole entity allowance remains")
+        .expect("no entity charged by either scan");
 }
