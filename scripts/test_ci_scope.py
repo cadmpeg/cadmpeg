@@ -92,6 +92,18 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(scope['rust'])
         self.assertFalse(scope['fuzz'])
 
+    def test_preflight_tools_skip_rust(self):
+        scope = select(ROOT, ['scripts/preflight.py', 'scripts/preflight_branch.py',
+                              'scripts/test_preflight_branch.py'])
+        self.assertFalse(scope['rust'])
+        self.assertFalse(scope['full'])
+
+    def test_only_named_preflight_tools_skip_rust(self):
+        for path in ['scripts/preflight-data.json', 'scripts/preflight/helper.py',
+                     'scripts/sub/preflight_x.py', 'scripts/preflightx.py']:
+            with self.subTest(path=path):
+                self.assertTrue(select(ROOT, [path])['full'])
+
     def test_codec_selects_facade_and_cli_dependents(self):
         scope = select(ROOT, ['crates/cadmpeg-codec-iges/src/reader.rs'])
         self.assertIn('cadmpeg-codec-iges', scope['packages'])
