@@ -2034,17 +2034,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
-            parameter_range: if entry.form == 0 {
-                Some(
-                    IncreasingParameterInterval::new([0.0, length]).ok_or_else(|| {
-                        CodecError::malformed(
-                            "IGES finite line has no increasing physical interval",
-                        )
-                    })?,
-                )
-            } else {
-                None
-            },
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(start, direction),
