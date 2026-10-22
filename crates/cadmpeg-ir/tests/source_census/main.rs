@@ -58,6 +58,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "keyless",
     ),
     ("crates/cadmpeg-ir/src/document.rs", "ArenaName", "keyless"),
+    (
+        "crates/cadmpeg-ir/src/source_fidelity/parts.rs",
+        "PartLevel",
+        "keyless",
+    ),
     ("crates/cadmpeg-ir/src/document.rs", "CadIr", "wire"),
     ("crates/cadmpeg-ir/src/document.rs", "CensusKey", "keyless"),
     (

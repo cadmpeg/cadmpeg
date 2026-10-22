@@ -95,7 +95,7 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
             .losses
             .iter()
             .any(|loss| loss.code.local_code() == "native.records-omitted"
-                && loss.message.contains("f3d.asm_histories")),
+                && loss.message == "the step write omits 1 native record(s) from `f3d.asm_histories`: f3d:test:asm-history#0"),
         "{:?}",
         plan.report().losses
     );

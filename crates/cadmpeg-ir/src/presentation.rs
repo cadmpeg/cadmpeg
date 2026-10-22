@@ -112,6 +112,18 @@ struct PresentationDocumentWire {
     native_ref: Option<String>,
 }
 
+impl crate::schema::EntitySchema for PresentationDocument {
+    const KIND: crate::schema::EntityKind = crate::schema::EntityKind::PresentationDocument;
+
+    fn identity(&self) -> &str {
+        self.id.as_str()
+    }
+
+    fn native_reference(&self) -> Option<&str> {
+        self.native_ref.as_deref()
+    }
+}
+
 impl PresentationDocument {
     /// Construct document presentation with no persisted states.
     #[must_use]

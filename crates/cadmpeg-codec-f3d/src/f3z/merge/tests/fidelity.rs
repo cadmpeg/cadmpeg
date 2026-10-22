@@ -31,7 +31,7 @@ fn source(stream: &str) -> SourceFidelity {
 fn source_rescoping_preserves_bytes_extent_tag_and_exactness() {
     let input = source("member");
     let original = input.retained_record(ID).unwrap().clone();
-    let output = rescope_fidelity(input.clone(), "part/occurrence-0").unwrap();
+    let output = rescope_fidelity(input.clone(), "part/occurrence-0", &Default::default()).unwrap();
     let id = "f3d:xref/part/occurrence-0/native:record#one";
     let retained = output.retained_record(id).unwrap();
     assert_eq!(retained.data(), original.data());
@@ -51,9 +51,9 @@ fn source_rescoping_preserves_bytes_extent_tag_and_exactness() {
 
 #[test]
 fn occurrence_and_stream_boundaries_cannot_alias() {
-    let first = rescope_fidelity(source("b/c"), "a").unwrap();
-    let second = rescope_fidelity(source("c"), "a/b").unwrap();
-    let escaped = rescope_fidelity(source("c"), "a%2Fb").unwrap();
+    let first = rescope_fidelity(source("b/c"), "a", &Default::default()).unwrap();
+    let second = rescope_fidelity(source("c"), "a/b", &Default::default()).unwrap();
+    let escaped = rescope_fidelity(source("c"), "a%2Fb", &Default::default()).unwrap();
     let owner = |fidelity: &SourceFidelity| {
         fidelity
             .retained_records()
@@ -73,8 +73,12 @@ fn source_rescoping_preserves_absent_provenance_tag() {
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap());
     builder.note(ID, &stream, 7, None);
-    let output =
-        rescope_fidelity(SourceFidelity::with_annotations(builder.build()), "part").unwrap();
+    let output = rescope_fidelity(
+        SourceFidelity::with_annotations(builder.build()),
+        "part",
+        &Default::default(),
+    )
+    .unwrap();
     assert_eq!(
         output.annotations.provenance["f3d:xref/part/native:record#one"].tag,
         None
@@ -88,7 +92,7 @@ fn source_rescoping_and_append_union_unrepresented_classes() {
     parent.mark_untyped(ID, [Model]).unwrap();
     let mut child = source("member");
     child.mark_untyped(ID, [Design]).unwrap();
-    let rescoped = rescope_fidelity(child, "part/occurrence-0").unwrap();
+    let rescoped = rescope_fidelity(child, "part/occurrence-0", &Default::default()).unwrap();
     assert!(rescoped.unrepresented().contains(&Design));
     assert!(!rescoped.unrepresented().contains(&Model));
     parent.append(rescoped).unwrap();
@@ -130,7 +134,7 @@ fn record_layout_rescoping_preserves_alias_reads_pointers_and_payloads() {
     let mut input = SourceFidelity::default();
     input.insert_record_layout(id, layout.clone()).unwrap();
 
-    let output = rescope_fidelity(input, "part/occurrence-0").unwrap();
+    let output = rescope_fidelity(input, "part/occurrence-0", &Default::default()).unwrap();
     let scoped = &output.record_layout()["f3d:xref/part/occurrence-0/native:record#one"];
     let prefix = "f3d:xref/part%2Foccurrence-0/";
     assert_eq!(scoped.stream(), format!("{prefix}member/inner"));

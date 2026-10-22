@@ -1418,9 +1418,6 @@ pub(crate) struct GuiViewProviderRecord {
     pub(crate) expanded: Option<bool>,
     /// Source order in `ViewProviderData`.
     pub(crate) order: usize,
-    /// Exact provider XML.
-    #[serde(skip)]
-    pub(crate) raw_xml: String,
 }
 
 /// One persisted property owned by a GUI view provider.
@@ -1912,9 +1909,6 @@ pub(crate) struct ExtensionRecord {
     pub(crate) type_name: String,
     /// Source-order index.
     pub(crate) order: usize,
-    /// Exact extension XML.
-    #[serde(skip)]
-    pub(crate) raw_xml: String,
 }
 
 /// Dynamic-property persistence metadata.

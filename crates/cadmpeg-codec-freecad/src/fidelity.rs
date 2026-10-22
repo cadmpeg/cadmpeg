@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-only archive and XML images. No native record serializes these bytes.
 
+use std::collections::BTreeMap;
+use std::ops::Range;
+
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::native::bytes::NativeBytes;
+use cadmpeg_ir::source_fidelity::RecordLayout;
 use cadmpeg_ir::{
     ids::UnknownId, ArenaClasses, RetainedBytes, RetainedSourceRecord, SourceFidelity,
 };
@@ -220,3 +226,70 @@ pub(crate) fn mark_unreadable(
     }
     Ok(())
 }
+
+pub(crate) fn xml_layout_payload(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    id: &str,
+    range: Range<usize>,
+    payloads: &mut BTreeMap<String, NativeBytes>,
+) -> Result<(), CodecError> {
+    if range.start >= range.end || range.end > source.window().len() {
+        return Err(CodecError::malformed(
+            "XML record range escapes its source entry",
+        ));
+    }
+    let start = source
+        .start()
+        .checked_add(range.start)
+        .ok_or_else(|| CodecError::malformed("XML record start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(range.end)
+        .ok_or_else(|| CodecError::malformed("XML record end overflows"))?;
+    let extent = source
+        .child(start, end)
+        .ok_or_else(|| CodecError::malformed("XML record range escapes its source entry"))?;
+    let bytes = ctx.record(id, extent, || {
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(extent.window().len()),
+            "retain FCStd XML layout payload",
+        )?;
+        let mut bytes = ctx.alloc_filled(
+            extent.window().len(),
+            0_u8,
+            "retain FCStd XML layout payload",
+        )?;
+        bytes.copy_from_slice(extent.window());
+        Ok(NativeBytes::from(bytes))
+    })?;
+    if payloads.insert(id.to_owned(), bytes).is_some() {
+        return Err(CodecError::malformed(
+            "duplicate XML layout payload identity",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn install_layouts(
+    ctx: &DecodeContext<'_>,
+    fidelity: &mut SourceFidelity,
+    mut payloads: BTreeMap<String, NativeBytes>,
+) -> Result<(), CodecError> {
+    for capture in ctx.take_record_captures()? {
+        let (id, mut layout) = RecordLayout::from_capture(capture);
+        if let Some(bytes) = payloads.remove(&id) {
+            layout.insert_payload("raw_xml".into(), bytes)?;
+        }
+        fidelity.insert_record_layout(id, layout)?;
+    }
+    if !payloads.is_empty() {
+        return Err(CodecError::malformed(
+            "XML payload has no completed record capture",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

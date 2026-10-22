@@ -412,3 +412,5 @@ mod scanner_tests {
         assert!(error.contains(&cause.to_string()), "{error}");
     }
 }
+
+mod native_linkage;

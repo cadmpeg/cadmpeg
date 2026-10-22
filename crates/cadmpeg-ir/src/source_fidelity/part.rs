@@ -121,6 +121,18 @@ impl TryFrom<RecordLayoutWire> for RecordLayout {
 }
 
 impl RecordLayout {
+    /// A given-up part has a real source extent and no committed semantic reads.
+    pub(super) fn from_part_capture(capture: &cadmpeg_core::decode::PartCapture) -> Self {
+        Self {
+            stream: capture.stream().to_owned(),
+            offset: capture.offset(),
+            byte_len: capture.byte_len(),
+            reads: BTreeMap::new(),
+            pointers: BTreeMap::new(),
+            payloads: BTreeMap::new(),
+        }
+    }
+
     /// Consumes a completed tracked capture, preserving its record identity.
     ///
     /// Core admits actual stream bounds and merges read intervals before this

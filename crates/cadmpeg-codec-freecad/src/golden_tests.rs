@@ -75,8 +75,11 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// descends only what the snapshot keeps. The digest reads the typed arenas, so
 /// it is unaffected by either step.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    {
+    let value = match cadmpeg_test_support::golden::decode(
+        &FcstdCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
@@ -241,9 +244,12 @@ fn encode_once(
     bytes: &[u8],
 ) -> Result<(cadmpeg_ir::report::export::ExportReport, Vec<u8>), String> {
     let decoded = EditableDecodeResult::from(
-        FcstdCodec
-            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-            .map_err(|error| error.to_string())?,
+        cadmpeg_test_support::golden::decode(
+            &FcstdCodec,
+            &mut Cursor::new(bytes.to_vec()),
+            &DecodeOptions::default(),
+        )
+        .map_err(|error| error.to_string())?,
     );
     let mut produced = Vec::new();
     let report = Encoder::plan(
@@ -300,7 +306,11 @@ fn golden_output_is_deterministic() {
 /// frozen too.
 fn step_snapshot(bytes: &[u8]) -> String {
     let decoded = EditableDecodeResult::from(
-        match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
+        match cadmpeg_test_support::golden::decode(
+            &FcstdCodec,
+            &mut Cursor::new(bytes.to_vec()),
+            &DecodeOptions::default(),
+        ) {
             Ok(decoded) => decoded,
             Err(error) => return format!("decode_error: {error}\n"),
         },

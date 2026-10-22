@@ -16,6 +16,7 @@ mod canon;
 pub mod catalogue;
 mod compare;
 mod copy;
+mod provenance;
 mod replay;
 pub(crate) mod view;
 

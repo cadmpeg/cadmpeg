@@ -68,6 +68,25 @@ use std::path::{Path, PathBuf};
 
 use cadmpeg_ir::compare::values_agree;
 
+/// Decode a golden input and check every actual native row before snapshot projection.
+///
+/// Refusals keep their original type and result. A successful decode is audited
+/// before a caller can elide native rows, summarize them, or edit the document.
+///
+/// # Panics
+///
+/// Panics if a native row refers outward to a neutral-only identity or a neutral
+/// native link has no actual native row.
+pub fn decode(
+    codec: &dyn cadmpeg_ir::codec::Codec,
+    reader: &mut dyn cadmpeg_core::ReadSeek,
+    options: &cadmpeg_ir::codec::DecodeOptions,
+) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
+    let decoded = codec.decode(reader, options)?;
+    crate::native_linkage::assert_native_linkage(decoded.ir());
+    Ok(decoded)
+}
+
 /// One snapshot branch: a subdirectory of `tests/golden` and the function that
 /// produces the text pinned there.
 pub struct Branch {

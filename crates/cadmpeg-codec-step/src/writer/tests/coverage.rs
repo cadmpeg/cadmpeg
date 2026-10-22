@@ -63,7 +63,7 @@ fn own_native_drawing_records_are_omitted_and_reported() {
     assert!(plan.report().losses.iter().any(|loss| {
         loss.code.local_code() == "native.records-omitted"
             && loss.severity == cadmpeg_ir::report::Severity::Info
-            && loss.message.contains("step.drawing_targets")
+            && loss.message == "the step write omits 1 native record(s) from `step.drawing_targets`: step:test:drawing-target#0"
     }));
     assert_eq!(
         plan.report().coverage.disposition(EntityKind::Surface),

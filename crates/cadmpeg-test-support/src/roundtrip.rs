@@ -61,7 +61,7 @@ where
     C: Codec + Encoder,
 {
     let decoded = crate::EditableDecodeResult::from(
-        Codec::decode(
+        crate::golden::decode(
             codec,
             &mut std::io::Cursor::new(fixture.to_vec()),
             &DecodeOptions::default(),
@@ -127,7 +127,7 @@ pub fn semantic_roundtrip<C>(
 ) where
     C: Codec + Encoder,
 {
-    let decoded = Codec::decode(
+    let decoded = crate::golden::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
         &DecodeOptions::default(),
@@ -235,7 +235,7 @@ pub fn mutation_roundtrip<C>(
 where
     C: Codec + Encoder,
 {
-    let decoded = Codec::decode(
+    let decoded = crate::golden::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
         &DecodeOptions::default(),

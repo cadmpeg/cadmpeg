@@ -58,7 +58,11 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 }
 
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match SatCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
+    let value = match cadmpeg_test_support::golden::decode(
+        &SatCodec,
+        &mut Cursor::new(bytes),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             serde_json::json!({
@@ -104,9 +108,12 @@ fn geometry_depth_agrees_with_full_depth() {
 #[test]
 fn asm_attributes_and_display_color_have_distinct_neutral_homes() {
     let bytes = crate::test_support::test_streams::attributed_sphere_stream();
-    let result = SatCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("attributed sphere decodes");
+    let result = cadmpeg_test_support::golden::decode(
+        &SatCodec,
+        &mut Cursor::new(bytes),
+        &DecodeOptions::default(),
+    )
+    .expect("attributed sphere decodes");
     assert!(!result.ir().model.attributes.is_empty());
     assert!(result.ir().model.appearances.is_empty());
     assert!(result.ir().model.appearance_bindings.is_empty());

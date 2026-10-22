@@ -10,6 +10,62 @@ use crate::decode::{
 use crate::CodecError;
 
 #[test]
+fn captured_extent_preserves_named_alias_and_enclosing_record_without_reads() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"A12345Z", &arena, &DecodePolicy::default()).unwrap();
+    let alias = ctx
+        .register_named_slice(root, ByteRange { start: 1, end: 6 }, "archive/member")
+        .unwrap();
+    ctx.record("outer", root, || {
+        let capture = ctx.capture_part_extent(alias.child(1, 4).unwrap())?;
+        assert_eq!(
+            capture.into_parts(),
+            ("archive/member".into(), 1, 3, Some("outer".into()))
+        );
+        Ok(())
+    })
+    .unwrap();
+    let captures = ctx.take_record_captures().unwrap();
+    assert_eq!(captures.len(), 1);
+    assert_eq!(captures[0].id(), "outer");
+    assert!(captures[0].reads().is_empty());
+    let streams = ctx.source_streams().unwrap();
+    assert_eq!(streams.len(), 2);
+    assert!(streams.iter().any(|stream| {
+        stream.name() == "archive/member"
+            && matches!(stream.origin(), crate::decode::SourceOrigin::Alias { parent, extent }
+                if parent == "file" && *extent == ByteRange { start: 1, end: 6 })
+    }));
+}
+
+#[test]
+fn extent_capture_alone_creates_no_record_or_semantic_read() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"source", &arena, &DecodePolicy::default()).unwrap();
+    let capture = ctx.capture_part_extent(root.child(2, 5).unwrap()).unwrap();
+    assert_eq!(capture.into_parts(), ("file".into(), 2, 3, None));
+    assert!(ctx.take_record_captures().unwrap().is_empty());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn extent_capture_rejects_detached_and_foreign_session_views() {
+    let arena = DecodeArena::new();
+    let foreign_arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"same", &arena, &DecodePolicy::default()).unwrap();
+    let (_, foreign) =
+        DecodeContext::from_root_bytes(b"same", &foreign_arena, &DecodePolicy::default()).unwrap();
+    assert!(ctx.capture_part_extent(foreign).is_err());
+    assert!(ctx
+        .capture_part_extent(crate::decode::View::over_retained(b"same"))
+        .is_err());
+    assert!(ctx.take_record_captures().unwrap().is_empty());
+}
+
+#[test]
 fn failed_part_discards_its_reads_and_committed_children_without_losing_siblings() {
     let arena = DecodeArena::new();
     let (ctx, root) =

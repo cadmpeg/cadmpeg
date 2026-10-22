@@ -54,8 +54,11 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// fidelity. A decode error is frozen too: refusing a document is
 /// contract-relevant behavior, so this never panics on codec output.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match IgesCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    {
+    let value = match cadmpeg_test_support::golden::decode(
+        &IgesCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = cadmpeg_test_support::EditableDecodeResult::from(result);
             serde_json::json!({
@@ -76,15 +79,18 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 /// `decode_error` / `encode_error`. The writer stamps `SystemTime::now()` into
 /// G-section field 18; that wall-clock value is replaced before freeze.
 fn encode_snapshot(bytes: &[u8]) -> String {
-    let decoded =
-        match IgesCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => result,
-            Err(error) => {
-                return snapshot_text(&serde_json::json!({
-                    "decode_error": error.to_string()
-                }))
-            }
-        };
+    let decoded = match cadmpeg_test_support::golden::decode(
+        &IgesCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
+        Ok(result) => result,
+        Err(error) => {
+            return snapshot_text(&serde_json::json!({
+                "decode_error": error.to_string()
+            }))
+        }
+    };
     let outcome = Encoder::plan(
         &IgesCodec,
         EncodeInput::new(decoded.ir(), None),
