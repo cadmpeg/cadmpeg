@@ -717,7 +717,7 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
 }
 
 #[test]
-fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
+fn semantic_writer_synthesizes_an_empty_configuration_name_and_rejects_a_duplicate() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
@@ -730,13 +730,29 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
         .as_mut()
         .expect("resolved configuration name")
         .clear();
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("empty name"), "{error}");
+    // #237 item 1, #217 §5.0: a patch failure selects synthesis, which
+    // writes the configuration under its identity and names it in a loss.
+    let configuration = decoded.ir().model.configurations[0].id.to_string();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(matches!(
+        plan.report().synthesis_cause(),
+        Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason })
+            if reason.contains("empty name")
+    ));
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&configuration)));
 
     decoded.ir_mut().model.configurations[0].name = Some("Default".to_string());
     let mut duplicate = decoded.ir().model.configurations[0].clone();

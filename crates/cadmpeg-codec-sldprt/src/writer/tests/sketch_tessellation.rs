@@ -964,13 +964,12 @@ fn semantic_writer_expands_indexed_tessellation() {
 }
 
 #[test]
-fn semantic_writer_refuses_more_auxiliary_channels_than_the_table_carries() {
+fn semantic_writer_synthesizes_past_more_auxiliary_channels_than_the_table_carries() {
     use cadmpeg_ir::tessellation::Tessellation;
 
     // The display-list table carries exactly three auxiliary channels after
     // the strip, position and normal channels. A mesh stating a fourth is an
-    // IR value the format cannot carry, so the write refuses and names the
-    // field instead of writing the first three and dropping the rest.
+    // IR value the format cannot carry.
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_display_list(&triangle_body())),
@@ -994,20 +993,33 @@ fn semantic_writer_refuses_more_auxiliary_channels_than_the_table_carries() {
     extended.faces = original.faces.clone();
     decoded.ir_mut().model.tessellations[0] = extended;
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
+    // #237 item 1, #217 §5.0: the patch path's refusal selects synthesis,
+    // which writes the tessellation without the channels the table cannot
+    // carry and names the omission.
+    let expected = cadmpeg_core::CodecError::InvalidInput(
+        "tessellation channels: the SLDPRT display-list table carries exactly three \
+         auxiliary channels after the strip, position and normal channels"
+            .into(),
     )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::InvalidInput(_)),
-        "{error}"
-    );
-    assert!(
-        error.to_string().contains(
-            "tessellation channels: the SLDPRT display-list table carries exactly three auxiliary channels"
-        ),
-        "{error}"
-    );
+    .to_string();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(matches!(
+        plan.report().synthesis_cause(),
+        Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason })
+            if *reason == expected
+    ));
+    let tessellation = original.id.to_string();
+    assert!(plan.report().losses.iter().any(|loss| loss
+        .message
+        .contains(&format!("tessellation {tessellation}"))
+        && loss.message.contains("omitted")));
 }
