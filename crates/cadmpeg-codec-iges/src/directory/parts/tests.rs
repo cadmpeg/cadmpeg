@@ -52,7 +52,7 @@ fn actual_directory_callbacks_match_original_values_and_independent_source_exten
     let table = global::parse(&scan).unwrap().0.global_table();
     let expected = directory::parse(&scan, table, &ctx).unwrap().0;
     let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = parse(&scan, table, &ctx, &mut output).unwrap();
+    let actual = parse(&scan, table, &ctx, &mut output).unwrap().entries;
     assert_eq!(actual, expected);
     let (_, native, fidelity, losses) = output
         .into_parts(&ctx)
@@ -125,7 +125,9 @@ fn failed_real_pair_has_one_shared_home_and_preserves_the_independent_peer() {
     let scan = card::scan_source(root, &ctx).unwrap();
     let table = global::parse(&scan).unwrap().0.global_table();
     let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let entries = parse(&scan, table, &ctx, &mut output).unwrap();
+    let parsed = parse(&scan, table, &ctx, &mut output).unwrap();
+    assert_eq!(parsed.given_up, [3]);
+    let entries = parsed.entries;
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].sequence, 1);
     let baseline = card::scan(&original).unwrap();
@@ -175,7 +177,13 @@ fn a_trailing_single_directory_card_uses_its_actual_known_extent() {
     let scan = card::scan_source(root, &ctx).unwrap();
     let table = global::parse(&scan).unwrap().0.global_table();
     let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    assert_eq!(parse(&scan, table, &ctx, &mut output).unwrap().len(), 1);
+    assert_eq!(
+        parse(&scan, table, &ctx, &mut output)
+            .unwrap()
+            .entries
+            .len(),
+        1
+    );
     let (_, native, fidelity, losses) = output
         .into_parts(&ctx)
         .expect("finalize parser dependencies")

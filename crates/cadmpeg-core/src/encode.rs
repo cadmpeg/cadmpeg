@@ -155,6 +155,29 @@ impl EncodeBuffer<'_> {
         true
     }
 
+    /// Moves the bytes from `start` to the end in front of the bytes before
+    /// `start`, in place. The length and the resource charge do not change.
+    /// Returns false, without mutation, when `start` exceeds the length.
+    #[must_use]
+    pub fn rotate_tail_to_front(&mut self, start: usize) -> bool {
+        let Some(tail) = self.bytes.len().checked_sub(start) else {
+            return false;
+        };
+        self.bytes.rotate_right(tail);
+        true
+    }
+
+    /// Hands over the retained bytes and refunds their charge.
+    ///
+    /// The session no longer bounds the returned bytes. A caller uses this
+    /// for the final output only, in place of a copy that the session does
+    /// not charge.
+    #[must_use]
+    pub fn into_vec(mut self) -> Vec<u8> {
+        // `Drop` refunds `charged_capacity`.
+        std::mem::take(&mut self.bytes)
+    }
+
     /// Backing bytes currently charged to the caller's retained allowance.
     #[must_use]
     pub const fn capacity(&self) -> usize {

@@ -195,7 +195,12 @@ fn project_skips_a_revolution_surface_over_its_pole_limit() {
     let (global, _) = crate::test_support::parse_global(&scan).unwrap();
     let (directory, parameters) = crate::test_support::with_service_context(&bytes, |ctx| {
         let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx)?;
-        let parameters = crate::parameter::assemble(&scan, &directory, &quarantined, &global)?;
+        let parameters = crate::parameter::assemble(
+            &scan,
+            &directory,
+            quarantined.iter().map(|record| record.sequence),
+            &global,
+        )?;
         Ok::<_, CodecError>((directory, parameters))
     })
     .unwrap();

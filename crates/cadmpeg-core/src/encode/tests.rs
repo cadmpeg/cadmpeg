@@ -106,6 +106,44 @@ fn an_in_place_length_patch_cannot_grow_or_capture_a_missing_range() {
 }
 
 #[test]
+fn an_in_place_rotation_keeps_the_length_and_the_charge() {
+    let mut limits = ResourceLimits::service();
+    limits.max_retained_bytes = 6;
+    let session = EncodeSession::new(limits);
+    let mut buffer = session.buffer();
+    buffer
+        .append(b"bodyhd", "body then header")
+        .expect("exact retained ceiling");
+    assert!(buffer.rotate_tail_to_front(4));
+    assert_eq!(buffer.as_bytes(), b"hdbody");
+    assert!(!buffer.rotate_tail_to_front(7));
+    assert_eq!(buffer.as_bytes(), b"hdbody");
+    assert!(buffer.rotate_tail_to_front(6));
+    assert_eq!(buffer.as_bytes(), b"hdbody");
+    let error = buffer
+        .append(b"x", "after rotation")
+        .expect_err("rotation is not a retained allocation");
+    assert_eq!((error.limit, error.used, error.additional), (6, 6, 1));
+}
+
+#[test]
+fn handing_over_the_bytes_refunds_their_charge() {
+    let mut limits = ResourceLimits::service();
+    limits.max_retained_bytes = 5;
+    let session = EncodeSession::new(limits);
+    let mut first = session.buffer();
+    first
+        .append(b"final", "final output")
+        .expect("exact ceiling");
+    assert_eq!(first.into_vec(), b"final");
+    let mut second = session.buffer();
+    second
+        .append(b"again", "next output")
+        .expect("handed-over bytes are no longer charged");
+    session.finish().expect("no refusal");
+}
+
+#[test]
 fn the_largest_caller_entity_ceiling_does_not_wrap() {
     let mut limits = ResourceLimits::service();
     limits.max_entities = u64::MAX;

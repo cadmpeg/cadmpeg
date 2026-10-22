@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::{ByteRange, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::SourceFidelity;
 
-use super::super::{occurrence_stream_prefix, rescope};
 use crate::decode::source_layout::{install, PendingLayouts};
 
 const OWNER: &str = "f3d:native:scope#one";
@@ -42,28 +41,15 @@ fn nested_member_batches_follow_actual_native_and_stream_rescoping_at_final_hand
     let draft = || BTreeMap::from([(OWNER.to_owned(), BTreeMap::from([(FIELD.to_owned(), 4)]))]);
     let mut first_pending = PendingLayouts::new(first_batch, draft());
     let mut second_pending = PendingLayouts::new(second_batch, draft());
-    let part_ids = Default::default();
     let inner = "inner/occurrence-0";
     let outer = "outer/occurrence-0";
     for pending in [&mut first_pending, &mut second_pending] {
         pending
-            .rescope(
-                &ctx,
-                occurrence_stream_prefix(inner)
-                    .expect("actual inner prefix")
-                    .as_str(),
-                |id| rescope(id, inner, &part_ids),
-            )
+            .rescope(&ctx, inner)
             .expect("stage actual inner mapping");
     }
     first_pending
-        .rescope(
-            &ctx,
-            occurrence_stream_prefix(outer)
-                .expect("actual outer prefix")
-                .as_str(),
-            |id| rescope(id, outer, &part_ids),
-        )
+        .rescope(&ctx, outer)
         .expect("nested outer mapping");
     assert!(ctx.take_record_captures().is_err());
     ancestor.commit().expect("all ancestors committed");

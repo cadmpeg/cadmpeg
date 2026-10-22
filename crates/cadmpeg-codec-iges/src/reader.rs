@@ -305,17 +305,22 @@ impl<'a> PhysicalParse<'a> {
         } else {
             global::parse(&scan)?
         };
-        let (directory, quarantined_directory) = if scan.source_view().is_some() {
-            (
-                directory::parts::parse(&scan, global.global_table(), ctx, &mut parser_parts)?,
-                Vec::new(),
-            )
+        // A given-up Directory Entry owns its Parameter Data cards, as a
+        // quarantined one does: they are not unclaimed (#215 rules 2-3).
+        let (directory, quarantined_directory, given_up_directory) = if scan.source_view().is_some()
+        {
+            let parsed =
+                directory::parts::parse(&scan, global.global_table(), ctx, &mut parser_parts)?;
+            (parsed.entries, Vec::new(), parsed.given_up)
         } else if let Some(identities) = binary_identities {
-            directory::parse_with_keys(&scan, global.global_table(), ctx, |grammar| {
-                identities.semantic_sequence(grammar)
-            })?
+            let (directory, quarantined) =
+                directory::parse_with_keys(&scan, global.global_table(), ctx, |grammar| {
+                    identities.semantic_sequence(grammar)
+                })?;
+            (directory, quarantined, Vec::new())
         } else {
-            directory::parse(&scan, global.global_table(), ctx)?
+            let (directory, quarantined) = directory::parse(&scan, global.global_table(), ctx)?;
+            (directory, quarantined, Vec::new())
         };
         global_losses.extend(directory::metadata_losses(&directory));
         let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
@@ -325,17 +330,16 @@ impl<'a> PhysicalParse<'a> {
             quarantined: quarantined_parameters,
             recoveries: parameter_recoveries,
             given_up: given_up_parameters,
-        } = if scan.source_view().is_some() {
-            parameter::parts::assemble(
-                &scan,
-                &directory,
-                &quarantined_directory,
-                &global,
-                ctx,
-                &mut parts,
-            )?
-        } else {
-            parameter::assemble(&scan, &directory, &quarantined_directory, &global)?
+        } = {
+            let excluded = given_up_directory
+                .iter()
+                .copied()
+                .chain(quarantined_directory.iter().map(|record| record.sequence));
+            if scan.source_view().is_some() {
+                parameter::parts::assemble(&scan, &directory, excluded, &global, ctx, &mut parts)?
+            } else {
+                parameter::assemble(&scan, &directory, excluded, &global)?
+            }
         };
         let conditional_losses = global
             .conditional_double_precision_losses(parameter::uses_double_precision(&parameters));
@@ -664,6 +668,8 @@ fn decode_with_occurrence_limits(
                 .arenas_mut()
                 .entry(name)
                 .or_default();
+            // The part helper charged these records when its root output
+            // received them. This move is not a new retained copy.
             let bytes = cadmpeg_core::decode::u64_from_index(
                 records
                     .len()
@@ -672,7 +678,6 @@ fn decode_with_occurrence_limits(
                         CodecError::malformed("IGES parser record composition overflows")
                     })?,
             );
-            ctx.retain_bytes(bytes, "IGES parser record composition")?;
             destination.try_reserve(records.len()).map_err(|_| {
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::RetainedBytes,

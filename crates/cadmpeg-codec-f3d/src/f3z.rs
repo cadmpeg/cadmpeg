@@ -17,7 +17,7 @@ use crate::loss::F3dLossCode;
 use cadmpeg_ir::report::loss::LossNote;
 
 mod archive;
-mod merge;
+pub(crate) mod merge;
 
 fn push_loss(losses: &mut Vec<LossNote>, code: F3dLossCode, args: std::fmt::Arguments<'_>) {
     losses.push(code.note(args.to_string()));

@@ -163,6 +163,50 @@ fn duplicate_actual_target_mapping_never_replaces_an_installed_capture() {
             capture.with_mapping(&ctx, Some("same".into()), "")
         })
         .is_err());
-    assert_eq!(fidelity.record_layout().len(), 1);
-    assert_eq!(fidelity.record_layout()["same"].reads()["file"], [0..1]);
+    assert!(fidelity.record_layout().is_empty());
+}
+
+#[test]
+fn a_stream_prefix_charges_only_its_added_bytes() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"abcd", &arena, &DecodePolicy::default()).expect("root");
+    ctx.record("record", root, || {
+        assert_eq!(root.read_at(0, 1), Some(b"a".as_slice()));
+        Ok(())
+    })
+    .expect("real source capture");
+    let prefix = "member/";
+    let mut charged = None;
+    let mut fidelity = SourceFidelity::default();
+    fidelity
+        .install_mapped_record_captures(&ctx, |capture| {
+            let before = ctx.retained_bytes_available();
+            let mapped = capture.with_mapping(&ctx, None, prefix)?;
+            charged = Some(before - ctx.retained_bytes_available());
+            Ok(mapped)
+        })
+        .expect("prefixed capture");
+    // The containing stream and one read stream each gain the prefix.
+    assert_eq!(charged, Some(2 * prefix.len() as u64));
+    assert_eq!(
+        fidelity.record_layout()["record"].reads()["member/file"],
+        [0..1]
+    );
+}
+
+#[test]
+fn install_record_captures_refuses_a_batched_capture_and_installs_nothing() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"abcd", &arena, &DecodePolicy::default()).expect("root");
+    ctx.record("plain", root, || Ok(()))
+        .expect("unbatched capture");
+    ctx.record_batch(|| ctx.record("batched", root, || Ok(())))
+        .expect("batched capture");
+    let mut fidelity = SourceFidelity::default();
+    assert!(fidelity
+        .install_record_captures(&ctx, |_, _| Ok(()))
+        .is_err());
+    assert!(fidelity.record_layout().is_empty());
 }

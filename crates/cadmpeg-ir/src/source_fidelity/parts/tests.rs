@@ -132,14 +132,21 @@ fn given_up_part_has_one_exact_source_home_and_successful_sibling_is_unchanged()
     assert_eq!(output.fidelity().retained_records().len(), 1);
     assert_eq!(output.fidelity().record_layout().len(), 1);
     assert!(output.fidelity().record_layout()[id].reads().is_empty());
-    // No event-driven class marking: the B1 partition finalizer owns this.
-    assert!(output.fidelity().unrepresented().is_empty());
-    assert!(output
-        .fidelity()
-        .retained_record(id)
-        .expect("unclassified source home")
-        .untyped()
-        .is_empty());
+    // #215 rule 1: the given-up bytes are B1, so their classes enter
+    // `unrepresented`. The stub links no record, so §3.1 gives both classes.
+    let both = crate::document::ArenaClasses::from([
+        crate::document::ArenaClass::Model,
+        crate::document::ArenaClass::Design,
+    ]);
+    assert_eq!(output.fidelity().unrepresented(), both);
+    assert_eq!(
+        output
+            .fidelity()
+            .retained_record(id)
+            .expect("classified source home")
+            .untyped(),
+        &both
+    );
     assert_eq!(output.fidelity().parts().len(), 2);
     let failed = &output.fidelity().parts()[id];
     assert_eq!(failed.state(), &PartState::GivenUp {});
@@ -636,6 +643,42 @@ fn a_staged_record_is_charged_once_whatever_its_part_depth() {
             "depth {depth}"
         );
     }
+}
+
+#[test]
+fn a_given_up_part_linked_to_a_neutral_owner_takes_the_owner_class() {
+    // #215 rule 1 and §3.1: the classes of the given-up bytes are those of the
+    // record the stub links; a neutral owner contributes its own arena class.
+    let source = b"#2=CARTESIAN_POINT('',(1,2,3));#1=UNKNOWN(255);";
+    let split = source
+        .iter()
+        .position(|byte| *byte == b';')
+        .expect("first terminator")
+        + 1;
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::default()).expect("root");
+    let owner = root.child(0, split).expect("owner record");
+    let bad = root.child(split, source.len()).expect("failed part");
+    let mut output = PartOutput::new(CodecFormat::Step);
+    insert_point(&ctx, &mut output, owner, "step:model:point#owner").expect("owner");
+    let given_up = ctx
+        .record("step:model:point#owner", root, || {
+            ctx.decode_part(&mut output, bad, entity_spec(bad), |_| {
+                Err::<(), _>(CodecError::NotImplemented("UNKNOWN entity family".into()))
+            })
+        })
+        .expect("recoverable part");
+    assert!(given_up.is_none());
+    let unknowns = output
+        .native()
+        .namespace("step")
+        .expect("namespace")
+        .arena_as::<NativeUnknownRecord>("unknowns")
+        .expect("stub");
+    assert_eq!(unknowns[0].links[0].as_str(), "step:model:point#owner");
+    let model = crate::document::ArenaClasses::from([crate::document::ArenaClass::Model]);
+    assert_eq!(output.fidelity().unrepresented(), model);
 }
 
 mod state;

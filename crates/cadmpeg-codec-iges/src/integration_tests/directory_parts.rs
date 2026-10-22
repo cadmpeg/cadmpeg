@@ -73,4 +73,20 @@ fn public_fixed_ascii_decode_composes_shared_failure_and_keeps_real_point_conten
         .losses
         .iter()
         .all(|loss| loss.code != crate::loss::IgesLossCode::DirectoryRecordQuarantined.kind()));
+    // #215 damaged-part test: no loss code other than record.unreadable that
+    // the undamaged decode does not charge.
+    let codes = |losses: &[cadmpeg_ir::report::loss::LossNote]| {
+        let mut codes: Vec<_> = losses.iter().map(|loss| loss.code.to_string()).collect();
+        codes.sort_unstable();
+        codes
+    };
+    let mut expected = codes(&baseline.report().losses);
+    expected.push(
+        cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+            .note(String::new())
+            .code
+            .to_string(),
+    );
+    expected.sort_unstable();
+    assert_eq!(codes(&decoded.report().losses), expected);
 }

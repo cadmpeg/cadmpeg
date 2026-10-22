@@ -29,8 +29,7 @@ fn emit(ir: &CadIr, limit: u64, already_used: u64) -> Result<Vec<u8>, CodecError
     policy.limits.max_entities = limit;
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     ctx.charge_entities(already_used, "earlier writer work")?;
-    let mut bytes = Vec::new();
-    super::super::write(&ctx, ir, RhinoArchiveVersion::V8, &mut bytes)?;
+    let (bytes, _) = super::super::write(&ctx, ir, RhinoArchiveVersion::V8)?;
     ctx.finish_session()?;
     Ok(bytes)
 }
@@ -104,26 +103,6 @@ fn public_rhino_plan_obeys_a_caller_limit_below_a_golden_record_count() {
     };
     assert_eq!(limit.dimension, ResourceDimension::Entities);
     assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-}
-
-#[test]
-fn rhino_staged_write_preserves_the_actual_destination_io_error() {
-    use std::fs::File;
-    use std::io::Write;
-    let mut file =
-        File::open(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")).expect("read-only manifest");
-    let expected = file.write_all(b"x").expect_err("read-only destination");
-    let arena = DecodeArena::new();
-    let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), DecodeDepth::Full);
-    let error = super::super::write(&ctx, &points(), RhinoArchiveVersion::V8, &mut file)
-        .err()
-        .expect("copying staged bytes to a read-only file fails");
-    let CodecError::Io(actual) = error else {
-        panic!("actual destination IO evidence");
-    };
-    assert_eq!(actual.kind(), expected.kind());
-    assert_eq!(actual.raw_os_error(), expected.raw_os_error());
-    assert_eq!(actual.to_string(), expected.to_string());
 }
 
 #[test]

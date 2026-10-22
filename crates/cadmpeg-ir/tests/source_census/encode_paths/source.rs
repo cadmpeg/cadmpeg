@@ -8,6 +8,7 @@ use syn::spanned::Spanned;
 use syn::visit::{self, Visit};
 
 use super::bindings::Value;
+use super::resolve::Item;
 use super::rules::{self, Aliases, Body};
 use super::{absolute, module_scope, Function, Graph};
 
@@ -86,6 +87,23 @@ fn imports(items: &[syn::Item], inherited: &Aliases, scope: &[String]) -> Aliase
     aliases
 }
 
+fn globs(tree: &syn::UseTree, prefix: &[String], found: &mut Vec<Vec<String>>) {
+    match tree {
+        syn::UseTree::Path(part) => {
+            let mut path = prefix.to_vec();
+            path.push(part.ident.to_string());
+            globs(&part.tree, &path, found);
+        }
+        syn::UseTree::Group(group) => {
+            for item in &group.items {
+                globs(item, prefix, found);
+            }
+        }
+        syn::UseTree::Glob(_) => found.push(prefix.to_vec()),
+        syn::UseTree::Name(_) | syn::UseTree::Rename(_) => {}
+    }
+}
+
 struct LocalImports(Aliases);
 impl<'ast> Visit<'ast> for LocalImports {
     fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
@@ -100,6 +118,8 @@ struct Loader<'a> {
     root: &'a Path,
     seen: BTreeSet<(PathBuf, Vec<String>)>,
     graph: Graph,
+    /// Type parameters of the `impl` or `trait` whose methods are loading.
+    outer_generics: BTreeSet<String>,
 }
 impl Loader<'_> {
     fn file(&mut self, file: &Path, scope: &[String], inherited: &Aliases) {
@@ -134,10 +154,26 @@ impl Loader<'_> {
         inherited: &Aliases,
     ) {
         let aliases = imports(items, inherited, scope);
+        if module_scope(scope).len() == scope.len() {
+            self.graph.modules.insert(scope.to_vec());
+        }
+        self.register(items, scope);
         for item in items {
             let syn::Item::Use(item) = item else { continue };
             if test_only(&item.attrs) {
                 continue;
+            }
+            let mut found = Vec::new();
+            globs(&item.tree, &[], &mut found);
+            for glob in found {
+                let target = absolute(&rules::resolve_names(glob, &aliases, None), scope);
+                if target != scope {
+                    self.graph
+                        .globs
+                        .entry(scope.to_vec())
+                        .or_default()
+                        .insert(target);
+                }
             }
             let mut declared = Aliases::new();
             rules::import(&item.tree, &[], &mut declared);
@@ -221,6 +257,24 @@ impl Loader<'_> {
                             }
                         }
                     }
+                    for member in &item.items {
+                        match member {
+                            syn::ImplItem::Const(constant) if !test_only(&constant.attrs) => {
+                                if let Some(owner) = &owner {
+                                    let mut path = owner.clone();
+                                    path.push(constant.ident.to_string());
+                                    self.graph.items.insert(path, Item::Value);
+                                }
+                            }
+                            syn::ImplItem::Macro(invocation) if !test_only(&invocation.attrs) => {
+                                if let Some(generator) = invocation.mac.path.segments.last() {
+                                    self.generated(&generator.ident, invocation.mac.tokens.clone());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.outer_generics = type_parameters(&item.generics);
                     for method in &item.items {
                         if let syn::ImplItem::Fn(method) = method {
                             if !test_only(&method.attrs) {
@@ -235,8 +289,17 @@ impl Loader<'_> {
                             }
                         }
                     }
+                    self.outer_generics.clear();
                 }
                 syn::Item::Trait(item) if !test_only(&item.attrs) => {
+                    self.outer_generics = type_parameters(&item.generics);
+                    for member in &item.items {
+                        if let syn::TraitItem::Const(constant) = member {
+                            let mut path = owner_path(vec![item.ident.to_string()], scope);
+                            path.push(constant.ident.to_string());
+                            self.graph.items.insert(path, Item::Value);
+                        }
+                    }
                     for method in &item.items {
                         if let syn::TraitItem::Fn(method) = method {
                             if !test_only(&method.attrs) {
@@ -257,6 +320,7 @@ impl Loader<'_> {
                             }
                         }
                     }
+                    self.outer_generics.clear();
                 }
                 syn::Item::Mod(item) if !test_only(&item.attrs) => {
                     let mut nested = scope.to_vec();
@@ -307,6 +371,13 @@ impl Loader<'_> {
                     }
                 }
                 syn::Item::Macro(item) if !test_only(&item.attrs) => {
+                    let generator = item
+                        .ident
+                        .as_ref()
+                        .or_else(|| item.mac.path.segments.last().map(|part| &part.ident));
+                    if let Some(generator) = generator {
+                        self.generated(generator, item.mac.tokens.clone());
+                    }
                     if let Some(name) = &item.ident {
                         let mut scan = Body::new(aliases.clone(), None);
                         scan.tokens(item.mac.tokens.clone());
@@ -319,10 +390,66 @@ impl Loader<'_> {
                             root: false,
                             root_trait: None,
                             is_macro: true,
+                            generics: BTreeSet::new(),
                             calls: scan.calls,
                             sites: scan.sites,
                             path_checks: scan.path_checks,
                         });
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Maps each identifier in a macro definition or item-level invocation to
+    /// the macro, so a call to an item the macro generates reaches its body.
+    fn generated(&mut self, generator: &syn::Ident, tokens: proc_macro2::TokenStream) {
+        for token in tokens {
+            match token {
+                proc_macro2::TokenTree::Ident(name) => {
+                    self.graph
+                        .generated
+                        .entry(name.to_string())
+                        .or_default()
+                        .insert(generator.to_string());
+                }
+                proc_macro2::TokenTree::Group(group) => self.generated(generator, group.stream()),
+                _ => {}
+            }
+        }
+    }
+
+    fn register(&mut self, items: &[syn::Item], scope: &[String]) {
+        let items_found = &mut self.graph.items;
+        let mut add = |names: &[&syn::Ident], kind: Item| {
+            let mut path = scope.to_vec();
+            path.extend(names.iter().map(ToString::to_string));
+            items_found.insert(path, kind);
+        };
+        for item in items {
+            match item {
+                syn::Item::Struct(item) if !test_only(&item.attrs) => {
+                    add(&[&item.ident], Item::Type)
+                }
+                syn::Item::Union(item) if !test_only(&item.attrs) => {
+                    add(&[&item.ident], Item::Type)
+                }
+                syn::Item::Type(item) if !test_only(&item.attrs) => add(&[&item.ident], Item::Type),
+                syn::Item::Trait(item) if !test_only(&item.attrs) => {
+                    self.outer_generics = type_parameters(&item.generics);
+                    add(&[&item.ident], Item::Trait)
+                }
+                syn::Item::Const(item) if !test_only(&item.attrs) => {
+                    add(&[&item.ident], Item::Value)
+                }
+                syn::Item::Static(item) if !test_only(&item.attrs) => {
+                    add(&[&item.ident], Item::Value)
+                }
+                syn::Item::Enum(item) if !test_only(&item.attrs) => {
+                    add(&[&item.ident], Item::Type);
+                    for variant in &item.variants {
+                        add(&[&item.ident, &variant.ident], Item::Value);
                     }
                 }
                 _ => {}
@@ -369,6 +496,8 @@ impl Loader<'_> {
         for value in local.0.values_mut() {
             *value = absolute(value, scope);
         }
+        let mut generics = type_parameters(&signature.generics);
+        generics.extend(self.outer_generics.iter().cloned());
         let mut scan = Body::new(local.0, owner.as_deref());
         scan.bindings.push();
         for argument in &signature.inputs {
@@ -386,10 +515,12 @@ impl Loader<'_> {
             root,
             root_trait,
             is_macro: false,
+            generics,
             calls: scan.calls,
             sites: scan.sites,
             path_checks: scan.path_checks,
         });
+        let outer = std::mem::take(&mut self.outer_generics);
         for item in nested.0 {
             self.items(
                 &[item],
@@ -399,7 +530,15 @@ impl Loader<'_> {
                 aliases,
             );
         }
+        self.outer_generics = outer;
     }
+}
+
+fn type_parameters(generics: &syn::Generics) -> BTreeSet<String> {
+    generics
+        .type_params()
+        .map(|parameter| parameter.ident.to_string())
+        .collect()
 }
 
 fn owner_path(path: Vec<String>, scope: &[String]) -> Vec<String> {
@@ -456,7 +595,9 @@ pub(super) fn workspace(root: &Path) -> Graph {
         root,
         seen: BTreeSet::new(),
         graph: Graph::default(),
+        outer_generics: BTreeSet::new(),
     };
+    loader.graph.externals = external_crates(&manifest);
     let members = manifest
         .split_once("members = [")
         .expect("explicit workspace members")
@@ -486,6 +627,22 @@ pub(super) fn workspace(root: &Path) -> Graph {
     loader.graph
 }
 
+/// The `[workspace.dependencies]` crates that are not workspace members.
+fn external_crates(manifest: &str) -> BTreeSet<String> {
+    let Some((_, section)) = manifest.split_once("[workspace.dependencies]") else {
+        return BTreeSet::new();
+    };
+    section
+        .lines()
+        .map(str::trim)
+        .take_while(|line| !line.starts_with('['))
+        .filter(|line| !line.starts_with('#') && !line.contains("path ="))
+        .filter_map(|line| line.split_once('='))
+        .map(|(name, _)| name.trim().replace('-', "_"))
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
 #[cfg(test)]
 pub(super) fn fixture(text: &str) -> Graph {
     let parsed = syn::parse_file(text).expect("synthetic Rust source");
@@ -494,6 +651,7 @@ pub(super) fn fixture(text: &str) -> Graph {
         root,
         seen: BTreeSet::new(),
         graph: Graph::default(),
+        outer_generics: BTreeSet::new(),
     };
     loader.items(
         &parsed.items,

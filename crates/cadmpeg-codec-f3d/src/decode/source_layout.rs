@@ -13,7 +13,7 @@ use cadmpeg_ir::SourceFidelity;
 pub(crate) struct PendingLayouts {
     batch: RecordBatchId,
     pointers: BTreeMap<String, BTreeMap<String, u64>>,
-    owner_ids: BTreeMap<String, String>,
+    occurrences: Vec<String>,
     stream_prefix: String,
 }
 
@@ -25,36 +25,29 @@ impl PendingLayouts {
         Self {
             batch,
             pointers,
-            owner_ids: BTreeMap::new(),
+            occurrences: Vec::new(),
             stream_prefix: String::new(),
         }
     }
 
-    /// Stage the exact identity and stream mappings used by the native merge.
+    /// Stage the identity and stream mappings the native merge applies to
+    /// every record of this batch under one F3Z occurrence.
     pub(crate) fn rescope(
         &mut self,
         ctx: &DecodeContext<'_>,
-        prefix: &str,
-        mut identity: impl FnMut(&str) -> Option<String>,
+        occurrence: &str,
     ) -> Result<(), CodecError> {
-        let mut mapped = BTreeMap::new();
-        for id in self.pointers.keys() {
-            let current = self.owner_ids.get(id).unwrap_or(id);
-            let target = identity(current).unwrap_or_else(|| current.to_owned());
-            if mapped.values().any(|other| other == &target) {
-                return Err(CodecError::malformed(
-                    "F3Z pending layout owner identities collide",
-                ));
-            }
-            let bytes = id
-                .len()
-                .checked_add(target.len())
-                .and_then(|bytes| bytes.checked_add(size_of::<(String, String)>()))
-                .ok_or_else(|| CodecError::malformed("F3Z pending layout identities overflow"))?;
-            ctx.retain_bytes(u64_from_index(bytes), "F3Z pending layout identities")?;
-            mapped.insert(id.to_owned(), target);
-        }
+        let prefix = crate::f3z::merge::occurrence_stream_prefix(occurrence)?;
+        let bytes = occurrence
+            .len()
+            .checked_add(size_of::<String>())
+            .ok_or_else(|| CodecError::malformed("F3Z pending occurrence overflows"))?;
+        ctx.retain_bytes(u64_from_index(bytes), "F3Z pending layout occurrence")?;
+        self.occurrences
+            .try_reserve_exact(1)
+            .map_err(|_| allocation(ctx, u64_from_index(bytes), "F3Z pending layout occurrence"))?;
         let length = prefix
+            .as_str()
             .len()
             .checked_add(self.stream_prefix.len())
             .ok_or_else(|| CodecError::malformed("F3Z pending stream prefix overflows"))?;
@@ -67,11 +60,20 @@ impl PendingLayouts {
                 "F3Z pending layout stream prefix",
             )
         })?;
-        stream_prefix.push_str(prefix);
+        stream_prefix.push_str(prefix.as_str());
         stream_prefix.push_str(&self.stream_prefix);
-        self.owner_ids = mapped;
+        self.occurrences.push(occurrence.to_owned());
         self.stream_prefix = stream_prefix;
         Ok(())
+    }
+
+    /// The record id the native merge gives a member-local record id.
+    fn target(&self, id: &str) -> String {
+        self.occurrences
+            .iter()
+            .fold(id.to_owned(), |current, occurrence| {
+                crate::f3z::merge::rescope_record_id(&current, occurrence).unwrap_or(current)
+            })
     }
 }
 
@@ -97,7 +99,10 @@ pub(crate) fn append(
     Ok(())
 }
 
-/// Consume only final, genuine captures, then apply the recorded merge mappings.
+/// Install every final capture, then apply the recorded merge mappings.
+///
+/// A capture with a pointer draft gains its pointers. A pointer draft with no
+/// committed capture is an internal invariant failure.
 pub(crate) fn install(
     ctx: &DecodeContext<'_>,
     fidelity: &mut SourceFidelity,
@@ -105,27 +110,19 @@ pub(crate) fn install(
 ) -> Result<(), CodecError> {
     let mut staged = SourceFidelity::default();
     staged.install_mapped_record_captures(ctx, |mut capture| {
-        let batch = capture
+        let Some(member) = capture
             .batch_id()
-            .ok_or_else(|| CodecError::malformed("F3D capture has no member batch"))?;
-        let member = pending
-            .iter_mut()
-            .find(|member| member.batch == batch)
-            .ok_or_else(|| CodecError::malformed("F3D capture has no pending member"))?;
-        let pointers = member
-            .pointers
-            .remove(capture.id())
-            .ok_or_else(|| CodecError::malformed("F3D captured owner has no pointer draft"))?;
-        let target = member.owner_ids.remove(capture.id());
-        for (field, offset) in pointers {
+            .and_then(|batch| pending.iter_mut().find(|member| member.batch == batch))
+        else {
+            return Ok(capture);
+        };
+        for (field, offset) in member.pointers.remove(capture.id()).into_iter().flatten() {
             capture.fields_mut().insert_pointer(field, offset)?;
         }
-        capture.with_mapping(ctx, target, &member.stream_prefix)
+        let target = member.target(capture.id());
+        capture.with_mapping(ctx, Some(target), &member.stream_prefix)
     })?;
-    if pending
-        .iter()
-        .any(|member| !member.pointers.is_empty() || !member.owner_ids.is_empty())
-    {
+    if pending.iter().any(|member| !member.pointers.is_empty()) {
         return Err(CodecError::malformed(
             "F3D pointer draft has no committed owner capture",
         ));

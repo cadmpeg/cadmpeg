@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
 mod bindings;
+mod resolve;
 mod rules;
 mod source;
 #[cfg(test)]
@@ -42,6 +43,8 @@ struct Function {
     root: bool,
     root_trait: Option<Vec<String>>,
     is_macro: bool,
+    /// Type parameters in scope; a call through one dispatches by name.
+    generics: BTreeSet<String>,
     calls: BTreeSet<Call>,
     sites: Vec<Site>,
     path_checks: Vec<PathCheck>,
@@ -67,6 +70,18 @@ struct Graph {
     capacities: Vec<(String, String)>,
     global: Vec<String>,
     aliases: BTreeMap<Vec<String>, BTreeSet<Vec<String>>>,
+    globs: BTreeMap<Vec<String>, BTreeSet<Vec<String>>>,
+    modules: BTreeSet<Vec<String>>,
+    items: BTreeMap<Vec<String>, resolve::Item>,
+    externals: BTreeSet<String>,
+    generated: BTreeMap<String, BTreeSet<String>>,
+}
+
+#[derive(Default)]
+struct Walk {
+    previous: BTreeMap<usize, Option<usize>>,
+    unresolved: BTreeSet<(usize, Vec<String>)>,
+    external: BTreeSet<(usize, Vec<String>)>,
 }
 
 impl Graph {
@@ -99,11 +114,37 @@ impl Graph {
         found
     }
 
+    /// Every path that `path` names through named re-exports and aliases and
+    /// through the glob imports of the modules on its route.
+    fn resolved_paths(&self, path: &[String]) -> BTreeSet<Vec<String>> {
+        let mut found = BTreeSet::new();
+        let mut pending = VecDeque::from([path.to_vec()]);
+        while let Some(path) = pending.pop_front() {
+            if found.contains(&path) {
+                continue;
+            }
+            for form in self.forwarded_paths(&path) {
+                for split in 1..form.len() {
+                    for glob in self.globs.get(&form[..split]).into_iter().flatten() {
+                        let mut next = glob.clone();
+                        next.extend_from_slice(&form[split..]);
+                        if !found.contains(&next) && found.len() < resolve::EXPANSION_LIMIT {
+                            pending.push_back(next);
+                        }
+                    }
+                }
+                found.insert(form);
+            }
+            found.insert(path);
+        }
+        found
+    }
+
     fn is_root(&self, function: &Function) -> bool {
         function.root
             || function.root_trait.as_ref().is_some_and(|path| {
                 symbol_candidates(path, function).iter().any(|candidate| {
-                    self.forwarded_paths(candidate).iter().any(|path| {
+                    self.resolved_paths(candidate).iter().any(|path| {
                         path.iter().map(String::as_str).eq([
                             "cadmpeg_ir",
                             "codec",
@@ -116,95 +157,84 @@ impl Graph {
     }
 
     fn reachable(&self) -> BTreeMap<usize, Option<usize>> {
-        let mut methods: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
-        let mut symbols: BTreeMap<Vec<String>, Vec<usize>> = BTreeMap::new();
-        let mut macros: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+        self.walk().previous
+    }
 
-        for (index, function) in self.functions.iter().enumerate() {
-            if function.is_macro {
-                macros.entry(&function.name).or_default().push(index);
-            } else if let Some(owner) = &function.owner {
-                methods.entry(&function.name).or_default().push(index);
-                let mut path = owner.clone();
-                path.push(function.name.clone());
-                symbols.entry(path).or_default().push(index);
-            } else {
-                let mut path = function.scope.clone();
-                path.push(function.name.clone());
-                symbols.entry(path).or_default().push(index);
-            }
-        }
-        let mut previous = BTreeMap::new();
+    fn walk(&self) -> Walk {
+        let index = resolve::Index::new(self);
+        let mut walk = Walk::default();
         let mut pending = VecDeque::new();
-        for (index, function) in self.functions.iter().enumerate() {
+        for (at, function) in self.functions.iter().enumerate() {
             if self.is_root(function) {
-                previous.insert(index, None);
-                pending.push_back(index);
+                walk.previous.insert(at, None);
+                pending.push_back(at);
             }
         }
-        while let Some(index) = pending.pop_front() {
-            for call in &self.functions[index].calls {
+        while let Some(at) = pending.pop_front() {
+            for call in &self.functions[at].calls {
                 let mut groups = Vec::new();
                 match call {
                     Call::Method(name) => {
-                        groups.extend(methods.get(name.as_str()));
+                        groups.extend(index.methods.get(name.as_str()).cloned());
                     }
                     Call::Macro(name) => {
-                        groups.extend(macros.get(name.as_str()));
+                        groups.extend(index.macros.get(name.as_str()).cloned());
                     }
                     Call::UnresolvedValue(_) => {}
-                    Call::Function(path) => {
-                        for candidate in symbol_candidates(path, &self.functions[index]) {
-                            let mut resolved = false;
-                            for candidate in self.forwarded_paths(&candidate) {
-                                if let Some(found) = symbols.get(&candidate) {
-                                    groups.push(found);
-                                    resolved = true;
-                                }
-                            }
-                            if resolved {
-                                break;
-                            }
+                    Call::Function(path) => match index.resolve(&self.functions[at], path) {
+                        resolve::Resolution::Functions(found) => groups.push(found),
+                        resolve::Resolution::NotCallable => {}
+                        resolve::Resolution::External => {
+                            walk.external.insert((at, path.clone()));
                         }
-                    }
+                        resolve::Resolution::Unresolved => {
+                            walk.unresolved.insert((at, path.clone()));
+                        }
+                    },
                 }
-                for &next in groups.into_iter().flatten() {
-                    if let std::collections::btree_map::Entry::Vacant(entry) = previous.entry(next)
+                for next in groups.into_iter().flatten() {
+                    if let std::collections::btree_map::Entry::Vacant(entry) =
+                        walk.previous.entry(next)
                     {
-                        entry.insert(Some(index));
+                        entry.insert(Some(at));
                         pending.push_back(next);
                     }
                 }
             }
         }
-        previous
+        walk
+    }
+
+    fn chain(&self, reached: &BTreeMap<usize, Option<usize>>, index: usize) -> String {
+        let mut chain = Vec::new();
+        let mut at = Some(index);
+        while let Some(index) = at {
+            chain.push(self.functions[index].label());
+            at = reached[&index];
+        }
+        chain.reverse();
+        chain.join(" -> ")
     }
 
     fn findings(&self) -> Vec<String> {
-        let reached = self.reachable();
+        let walk = self.walk();
+        let reached = &walk.previous;
         let mut found = self.global.clone();
         for &index in reached.keys() {
             let function = &self.functions[index];
-            let mut chain = Vec::new();
-            let mut at = Some(index);
-            while let Some(index) = at {
-                chain.push(self.functions[index].label());
-                at = reached[&index];
-            }
-            chain.reverse();
+            let chain = self.chain(reached, index);
             for call in &function.calls {
                 if let Call::UnresolvedValue(name) = call {
                     found.push(format!(
-                        "{}: unresolved callable value {name}; no static target proved [via {}]",
+                        "{}: unresolved callable value {name}; no static target proved [via {chain}]",
                         function.label(),
-                        chain.join(" -> ")
                     ));
                 }
             }
             let mut sites = function.sites.clone();
             for check in &function.path_checks {
                 for candidate in symbol_candidates(&check.path, function) {
-                    for path in self.forwarded_paths(&candidate) {
+                    for path in self.resolved_paths(&candidate) {
                         sites.extend(rules::check(&path, check.span, check.construction));
                     }
                 }
@@ -214,14 +244,18 @@ impl Graph {
                     continue;
                 }
                 found.push(format!(
-                    "{}:{}:{}: {} [via {}]",
-                    function.file,
-                    site.line,
-                    site.column,
-                    site.rule,
-                    chain.join(" -> ")
+                    "{}:{}:{}: {} [via {chain}]",
+                    function.file, site.line, site.column, site.rule,
                 ));
             }
+        }
+        for (index, path) in &walk.unresolved {
+            found.push(format!(
+                "{}: unresolved workspace call {}; no workspace function proved [via {}]",
+                self.functions[*index].label(),
+                path.join("::"),
+                self.chain(reached, *index)
+            ));
         }
         found.sort();
         found.dedup();
@@ -229,34 +263,31 @@ impl Graph {
     }
 
     fn unresolved_symbols(&self) -> Vec<String> {
-        let mut symbols = BTreeSet::new();
-        for function in &self.functions {
-            if function.is_macro {
-                continue;
-            }
-            let mut path = function
-                .owner
-                .clone()
-                .unwrap_or_else(|| function.scope.clone());
-            path.push(function.name.clone());
-            symbols.insert(path);
-        }
-        let mut unresolved = BTreeSet::new();
-        for &index in self.reachable().keys() {
-            let function = &self.functions[index];
-            for call in &function.calls {
-                if let Call::Function(path) = call {
-                    if !symbol_candidates(path, function).iter().any(|path| {
-                        self.forwarded_paths(path)
-                            .iter()
-                            .any(|path| symbols.contains(path))
-                    }) {
-                        unresolved.insert(format!("{}: {} (no workspace target proved; external/constructor/reexport/function-flow classification remains unresolved)", function.label(), path.join("::")));
-                    }
-                }
-            }
-        }
-        unresolved.into_iter().collect()
+        self.walk()
+            .unresolved
+            .iter()
+            .map(|(index, path)| {
+                format!(
+                    "{}: {} (no workspace target proved; classification remains unresolved)",
+                    self.functions[*index].label(),
+                    path.join("::")
+                )
+            })
+            .collect()
+    }
+
+    fn external_calls(&self) -> Vec<String> {
+        self.walk()
+            .external
+            .iter()
+            .map(|(index, path)| {
+                format!(
+                    "{}: {} (outside the workspace)",
+                    self.functions[*index].label(),
+                    path.join("::")
+                )
+            })
+            .collect()
     }
 
     fn capacity_owner(&self, function: &Function) -> bool {
@@ -355,6 +386,6 @@ fn encode_path_constructions_follow_the_typed_error_contract() {
         "no EncoderBackend roots found"
     );
     let found = graph.findings();
-    let unresolved = graph.unresolved_symbols();
-    assert!(found.is_empty(), "{} conservative encode-path finding(s); CodecError candidates require fidelity/synthesis catch-boundary review:\n{}\n{} unresolved symbol classifications (first ten):\n{}", found.len(), found.join("\n"), unresolved.len(), unresolved.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
+    let external = graph.external_calls();
+    assert!(found.is_empty(), "{} conservative encode-path finding(s); CodecError candidates require fidelity/synthesis catch-boundary review:\n{}\n{} external call classifications (first ten):\n{}", found.len(), found.join("\n"), external.len(), external.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
 }

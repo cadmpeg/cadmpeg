@@ -40,8 +40,8 @@ impl CapturedRecordLayout {
 
     /// Apply the owner's admitted target identity and exact stream prefix.
     ///
-    /// The owned target identity is moved, not copied. New stream names and
-    /// their index storage use the caller's retained-byte budget. Captured
+    /// The owned target identity is moved, not copied. The added prefix
+    /// bytes of each stream name use the caller's retained-byte budget. Captured
     /// coordinates, read intervals, pointers and payloads remain unchanged.
     pub fn with_mapping(
         mut self,
@@ -65,12 +65,14 @@ impl SourceFidelity {
     /// Drains the context once. Each callback owns one genuine capture; only
     /// this helper constructs its read layout and installs the mapped result.
     /// Duplicate target identities are errors. Pending ancestor transactions
-    /// cannot release captures. Mapper failure installs no later captures.
+    /// cannot release captures. The install is atomic: a mapper failure or a
+    /// duplicate identity installs no capture.
     pub fn install_mapped_record_captures(
         &mut self,
         ctx: &DecodeContext<'_>,
         mut map: impl FnMut(CapturedRecordLayout) -> Result<CapturedRecordLayout, CodecError>,
     ) -> Result<(), CodecError> {
+        let mut staged = SourceFidelity::default();
         for capture in ctx.take_record_captures()? {
             let batch = capture.batch_id();
             let (id, layout) = RecordLayout::from_capture(capture);
@@ -79,9 +81,9 @@ impl SourceFidelity {
                 u64_from_index(size_of::<(String, RecordLayout)>()),
                 "captured record layout index",
             )?;
-            self.insert_record_layout(mapped.id, mapped.layout)?;
+            staged.insert_record_layout(mapped.id, mapped.layout)?;
         }
-        Ok(())
+        self.append(staged)
     }
 }
 

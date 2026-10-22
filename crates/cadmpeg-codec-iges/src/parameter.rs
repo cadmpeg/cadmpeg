@@ -3,7 +3,7 @@
 
 use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
 
-use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
+use crate::directory::DirectoryEntry;
 use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::bounded_len;
@@ -3975,16 +3975,19 @@ fn parse_legacy_owned(
     }
 }
 
+/// `excluded_directory` holds the first-card sequence of each quarantined or
+/// given-up Directory Entry. A Parameter Data card whose back-pointer names
+/// one is part of that excluded record, not an unclaimed card.
 pub(crate) fn assemble(
     scan: &CardScan,
     directory: &[DirectoryEntry],
-    quarantined_directory: &[QuarantinedDirectoryRecord],
+    excluded_directory: impl IntoIterator<Item = u32>,
     global: &ResolvedGlobal,
 ) -> Result<ParameterAssembly, CodecError> {
     assemble_with(
         scan,
         directory,
-        quarantined_directory,
+        excluded_directory,
         global,
         |owned, lines, _| parse_legacy_owned(owned, lines, global),
     )
@@ -3999,7 +4002,7 @@ enum ParsedOwned {
 fn assemble_with(
     scan: &CardScan<'_>,
     directory: &[DirectoryEntry],
-    quarantined_directory: &[QuarantinedDirectoryRecord],
+    excluded_directory: impl IntoIterator<Item = u32>,
     global: &ResolvedGlobal,
     mut parse: impl FnMut(
         &Ownership<'_>,
@@ -4068,14 +4071,12 @@ fn assemble_with(
     {
         accounted.insert(sequence);
     }
-    let mut quarantined_sequences = BTreeSet::new();
-    for record in quarantined_directory {
-        quarantined_sequences.insert(record.sequence);
-    }
+    let mut excluded_sequences = BTreeSet::new();
+    excluded_sequences.extend(excluded_directory);
     for (sequence, line) in &lines {
         let pointer = back_pointers.get(sequence).copied().flatten();
         if accounted.contains(sequence)
-            || pointer.is_some_and(|value| quarantined_sequences.contains(&value))
+            || pointer.is_some_and(|value| excluded_sequences.contains(&value))
         {
             continue;
         }

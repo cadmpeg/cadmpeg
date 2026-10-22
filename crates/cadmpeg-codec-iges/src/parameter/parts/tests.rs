@@ -38,9 +38,9 @@ fn actual_parameter_callbacks_preserve_original_values_and_independent_source_ex
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
         .unwrap()
         .0;
-    let expected = crate::parameter::assemble(&scan, &directory, &[], &global).unwrap();
+    let expected = crate::parameter::assemble(&scan, &directory, [], &global).unwrap();
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, &[], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
     assert_eq!(actual.records, expected.records);
     assert!(actual.given_up.is_empty());
     assert_eq!(
@@ -153,9 +153,9 @@ fn failed_parameter_record_has_one_exact_shared_home_and_preserves_successful_pe
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
         .unwrap()
         .0;
-    let expected = crate::parameter::assemble(&scan, &directory, &[], &global).unwrap();
+    let expected = crate::parameter::assemble(&scan, &directory, [], &global).unwrap();
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, &[], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
     assert_eq!(actual.records, expected.records);
     assert_eq!(actual.records.len(), 1);
     assert_eq!(actual.records[0].directory_sequence, 3);
@@ -261,9 +261,9 @@ fn cross_card_hollerith_token_reads_actual_composite_payload_without_headers_or_
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
         .unwrap()
         .0;
-    let expected = crate::parameter::assemble(&scan, &directory, &[], &global).unwrap();
+    let expected = crate::parameter::assemble(&scan, &directory, [], &global).unwrap();
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, &[], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
     assert_eq!(actual.records, expected.records);
     assert_eq!(actual.records[0].string(2), Some(payload.as_bytes()));
     let streams = ctx.source_streams().unwrap();
@@ -318,9 +318,9 @@ fn bounded_macro_record_uses_real_callback_without_invented_child_or_content_rea
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
         .unwrap()
         .0;
-    let expected = crate::parameter::assemble(&scan, &directory, &[], &global).unwrap();
+    let expected = crate::parameter::assemble(&scan, &directory, [], &global).unwrap();
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, &[], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
     assert_eq!(actual.records, expected.records);
     assert_eq!(actual.records.len(), 1);
     let (_, _, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
@@ -342,9 +342,9 @@ fn missing_parameter_bytes_never_acquire_a_fabricated_source_part() {
     let directory = crate::directory::parse(&scan, global.global_table(), &ctx)
         .unwrap()
         .0;
-    let expected = crate::parameter::assemble(&scan, &directory, &[], &global).unwrap();
+    let expected = crate::parameter::assemble(&scan, &directory, [], &global).unwrap();
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, &[], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
     assert_eq!(actual.records, expected.records);
     assert_eq!(actual.records.len(), 1);
     assert_eq!(actual.records[0].directory_sequence, 1);
@@ -367,12 +367,12 @@ fn detached_scan_and_session_budget_refusal_create_no_parameter_failure_home() {
         .unwrap()
         .0;
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    assert!(assemble(&detached, &directory, &[], &global, &ctx, &mut output).is_err());
+    assert!(assemble(&detached, &directory, [], &global, &ctx, &mut output).is_err());
     let scan = card::scan_source(root, &ctx).unwrap();
     ctx.retain_bytes(ctx.retained_bytes_available(), "consume caller allowance")
         .unwrap();
     assert!(matches!(
-        assemble(&scan, &directory, &[], &global, &ctx, &mut output),
+        assemble(&scan, &directory, [], &global, &ctx, &mut output),
         Err(CodecError::ResourceLimit(_))
     ));
     let (_, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
@@ -426,7 +426,7 @@ fn distinct_conflicted_source_parts_keep_one_home_each_and_a_successful_peer() {
         .unwrap()
         .0;
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, &[], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
     assert_eq!(actual.given_up, std::collections::BTreeSet::from([1, 3]));
     assert_eq!(actual.records.len(), 1);
     assert_eq!(actual.records[0].directory_sequence, 5);
@@ -475,7 +475,7 @@ fn unreadable_point_coordinates_give_up_the_actual_part_and_keep_the_semantic_pe
         .unwrap()
         .0;
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let records = assemble(&scan, &directory, &[], &global, &ctx, &mut output).unwrap();
+    let records = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
     assert!(records.given_up.is_empty());
     assert_eq!(records.records.len(), 2);
     assert_eq!(records.records[0].directory_sequence, 1);
@@ -540,7 +540,7 @@ fn failed_coordinate_field_discards_only_its_actual_composite_and_parent_reads()
         .unwrap()
         .0;
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let records = assemble(&scan, &directory, &[], &global, &ctx, &mut output).unwrap();
+    let records = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
     assert!(records.given_up.is_empty());
     assert_eq!(records.records.len(), 2);
     assert!(records.records[0].tokens()[3].is_none());
@@ -594,7 +594,7 @@ fn foreign_source_session_cannot_install_coordinate_parts_or_reads() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    assert!(assemble(&scan, &directory, &[], &global, &ctx, &mut output).is_err());
+    assert!(assemble(&scan, &directory, [], &global, &ctx, &mut output).is_err());
     let (model, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
     assert!(model.points.is_empty());
     assert!(model.vertices.is_empty());
@@ -637,7 +637,7 @@ fn cross_card_numeric_failure_rolls_back_reads_in_each_actual_source_segment() {
         .unwrap()
         .0;
     let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
-    let actual = assemble(&scan, &directory, &[], &global, &ctx, &mut output).unwrap();
+    let actual = assemble(&scan, &directory, [], &global, &ctx, &mut output).unwrap();
     assert_eq!(actual.records.len(), 2);
     assert!(actual.given_up.is_empty());
     assert!(actual.quarantined.is_empty());

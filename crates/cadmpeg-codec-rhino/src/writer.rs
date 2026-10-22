@@ -2,7 +2,6 @@
 //! Native Rhino 3DM archive writing.
 
 use crate::mesh::FaceIndexWidth;
-use std::io::Write;
 
 mod attributes;
 mod compounds;
@@ -140,28 +139,34 @@ struct WriteOutcome {
     subds: usize,
 }
 
+/// Build the archive and hand over its staged bytes with no copy.
 fn write(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: RhinoArchiveVersion,
-    output: &mut dyn Write,
-) -> Result<WriteOutcome, CodecError> {
+) -> Result<(Vec<u8>, WriteOutcome), CodecError> {
     let session = EncodeSession::new(ctx.policy().limits);
     let mut staged = session.buffer();
     let outcome = write_buffered(ctx, ir, version, &session, &mut staged)?;
     session.finish()?;
-    output.write_all(staged.as_bytes())?;
-    Ok(outcome)
+    Ok((staged.into_vec(), outcome))
 }
 
-fn write_buffered(
+fn write_buffered<'budget>(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: RhinoArchiveVersion,
-    session: &EncodeSession,
-    output: &mut EncodeBuffer<'_>,
+    session: &'budget EncodeSession,
+    output: &mut EncodeBuffer<'budget>,
 ) -> Result<WriteOutcome, CodecError> {
     let mut plan = prepare_write(ctx, ir, version, session)?;
+    // The B-rep records are staged before the prefix, which names their
+    // bodies. The prefix and the object table header are appended after the
+    // records in the same buffer and rotated in front of them, so the
+    // records are not held twice.
+    debug_assert!(output.is_empty(), "the Rhino archive starts empty");
+    std::mem::swap(output, &mut plan.brep_records);
+    let brep_len = output.len();
     plan.losses.extend(write_archive_prefix(
         ctx,
         ir,
@@ -170,15 +175,15 @@ fn write_buffered(
         &plan.materials,
         output,
     )?);
-    let table_start = output.len();
+    let table_start = output.len() - brep_len;
     output.append(
         &TCODE_OBJECT_TABLE.to_le_bytes(),
         "retain Rhino archive bytes",
     )?;
     output.append(&0_i64.to_le_bytes(), "retain Rhino archive bytes")?;
-    let body_start = output.len();
-
-    output.append(plan.brep_records.as_bytes(), "retain Rhino archive bytes")?;
+    let body_start = output.len() - brep_len;
+    let rotated = output.rotate_tail_to_front(brep_len);
+    debug_assert!(rotated, "the staged B-rep records precede the prefix");
     for point in ir.model.points.iter().filter(|point| {
         !plan.topology_points.contains(point.id.as_str())
             && !is_support(point.source_object.as_ref())

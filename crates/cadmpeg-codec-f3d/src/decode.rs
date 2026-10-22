@@ -3113,11 +3113,8 @@ pub(crate) fn decode_patch_baseline<'a>(
     }
     let mut decoded = decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
     decoded.ir.source = Some(decoded.source.clone());
-    source_layout::install(
-        ctx,
-        &mut decoded.source_fidelity,
-        std::mem::take(&mut decoded.pending_layouts),
-    )?;
+    // The patch path reads the native layout and the IR, not record layouts.
+    decoded.pending_layouts.clear();
     Ok(decoded)
 }
 

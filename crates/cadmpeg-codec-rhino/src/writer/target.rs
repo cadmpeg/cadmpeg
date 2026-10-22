@@ -35,8 +35,7 @@ pub(crate) fn plan(
         limits: input.limits,
     };
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-    let mut bytes = Vec::new();
-    let outcome = super::write(&ctx, input.ir, version, &mut bytes)?;
+    let (bytes, outcome) = super::write(&ctx, input.ir, version)?;
     let mut losses = outcome.losses;
     let vertex_quantization = !version.stores_mesh_vertices_as_f64()
         && input

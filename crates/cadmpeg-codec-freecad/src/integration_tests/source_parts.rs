@@ -65,6 +65,7 @@ fn the_real_codec_composes_shared_unknowns_and_retains_successful_member_records
 #[test]
 fn source_repacking_cannot_silently_omit_a_shared_given_up_member() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
+    use cadmpeg_ir::document::ArenaClass;
     use cadmpeg_ir::report::export::WritePath;
     let bytes = zip_fixture::archive(&[
         RawEntry::stored("Document.xml", b"<Document SchemaVersion='4' FileVersion='1'><Objects Count='0'/><ObjectData Count='0'/></Document>"),
@@ -84,7 +85,7 @@ fn source_repacking_cannot_silently_omit_a_shared_given_up_member() {
         WritePath::Synthesized { .. }
     ));
     assert!(
-        matches!(output.report().synthesis_cause(), Some(SynthesisCause::PatchDeclined { reason })
-        if reason.contains("cannot preserve unreadable ZIP payloads"))
+        matches!(output.report().synthesis_cause(), Some(SynthesisCause::SourceUnrepresented { classes })
+        if classes.contains(&ArenaClass::Model))
     );
 }

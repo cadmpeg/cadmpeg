@@ -189,8 +189,13 @@ pub(crate) fn retained_fixed_ascii(
         let (global, _) = crate::global::parse(&scan).expect("retained global parses");
         let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx)
             .expect("retained directory parses");
-        let parameters = crate::parameter::assemble(&scan, &directory, &quarantined, &global)
-            .expect("retained parameters assemble");
+        let parameters = crate::parameter::assemble(
+            &scan,
+            &directory,
+            quarantined.iter().map(|record| record.sequence),
+            &global,
+        )
+        .expect("retained parameters assemble");
         (quarantined, parameters)
     })
 }
