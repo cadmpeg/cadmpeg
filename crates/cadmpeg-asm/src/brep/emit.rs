@@ -3298,6 +3298,7 @@ fn emit_carrier_curve(
             construction,
             cache_fit_tolerance,
             parsed_domain: solved_domain,
+            reversed: record_reversed,
         }) => {
             let definition = (|| -> Result<_, CarrierCurveError> {
                 Ok(match *construction {
@@ -3652,6 +3653,12 @@ fn emit_carrier_curve(
                 })
             })();
             definition.and_then(|mut definition| {
+                // The pcurves follow each reversal of the cache.
+                let edge_reversed =
+                    reversed_curve_refs.contains(&i) && !forward_curve_refs.contains(&i);
+                if record_reversed != edge_reversed {
+                    let _unreversed = definition.reverse_support_contexts();
+                }
                 // A construction that owns a revision-gated cache form states
                 // the tolerance inside it; the native legacy value is that same
                 // tolerance and is not written a second time.

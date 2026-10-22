@@ -649,6 +649,17 @@ impl CirclePcurve {
         &self.y_axis
     }
 
+    /// The same circle traversed as `-t`: the second axis changes sign.
+    /// Negation keeps the axis finite and nonzero and every other field is
+    /// kept, so nothing is checked.
+    #[must_use]
+    pub fn reversed_about_zero(&self) -> Self {
+        Self {
+            y_axis: self.y_axis.negated(),
+            ..*self
+        }
+    }
+
     /// Return the radius.
     #[must_use]
     pub const fn radius(&self) -> PositiveReal {
@@ -865,6 +876,16 @@ impl HarmonicPcurve {
     #[must_use]
     pub const fn sine(&self) -> &FinitePoint2 {
         &self.sine
+    }
+
+    /// The same harmonic curve traversed as `-t`: the sine coefficient
+    /// changes sign. Negation keeps it finite, so nothing is checked.
+    #[must_use]
+    pub fn reversed_about_zero(&self) -> Self {
+        Self {
+            sine: self.sine.negated(),
+            ..*self
+        }
     }
 }
 

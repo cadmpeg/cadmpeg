@@ -259,6 +259,14 @@ the record grammar does not identify one construction.
 
 **Need.** A thread surface with a tangential profile component or on a conical path, together with its edges, fixes both terms.
 
+### GC-44. Blend supports whose cache misses the intersection curve
+
+**Question.** Which contract does an `int_int_cur` meet when its support is a blend spline surface whose solved cache lies farther from the intersection curve than the cache fit tolerance?
+
+**Known.** `asm.md` §6.3 "**`int_int_cur`** has context-first" states the construction as the intersection of the two ordered supports, each with a BS2 parameter curve. An embedded `spline` support decodes to its solved NURBS cache; its subtype and its cache fit tolerance are not retained. For `rb_blend_spl_sur` and `srf_srf_v_bl_spl_sur` supports the cache fit tolerance is at most `0.01` mm, but the intersection curve endpoints lie up to `0.033` mm from the cache surface, and the support pcurve endpoints mapped through the cache lie up to `0.066` mm from them. The edges on these curves carry no tolerance. `asm.md` §6.3 "**`var_blend_spl_sur` / `srf_srf_v_bl_spl_sur`**" defines an approximation-current integer: `0` marks a cache that does not describe the surface.
+
+**Need.** The approximation-current values and cache fit tolerances of the failing supports, together with the exact blend surface evaluated at the support pcurve endpoints, show whether the cache or the pcurve departs from the construction. That evidence fixes the endpoint contract of such a support.
+
 ## 2. Topology
 
 ### TG-01. Missing partner coedge substitution

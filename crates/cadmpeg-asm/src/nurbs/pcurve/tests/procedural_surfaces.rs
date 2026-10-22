@@ -1860,3 +1860,112 @@ fn surface_offset_layout_walks_both_integer_widths() {
         assert!(layout.distance < layout.shift && layout.shift < layout.scale);
     }
 }
+
+/// The decoder states the support context of a reversed intcurve cache on
+/// `-t`. Patching that context writes the record's subtype parameter again,
+/// for a reversed record, for a curve used only by reversed edges, and not
+/// when the two reversals cancel.
+#[test]
+fn a_reversed_intersection_context_patches_on_the_subtype_parameter() {
+    use crate::sab::{Record, Token};
+    use cadmpeg_ir::geometry::{
+        IntcurveSupportContext, IntcurveSupportSide, ProceduralCurveDefinition,
+    };
+
+    let int_width = RefWidth::Four;
+    for (record_reversed, edge_reversed) in [(true, false), (false, true), (true, true)] {
+        let mut bytes = vec![if record_reversed { 0x0a } else { 0x0b }, 0x0f, 0x0d, 11];
+        bytes.extend_from_slice(b"int_int_cur");
+        for _ in 0..2 {
+            bytes.extend_from_slice(&[0x0d, 0x06]);
+            bytes.extend_from_slice(b"spline");
+            bytes.extend_from_slice(&surface_block(int_width));
+        }
+        bytes.extend_from_slice(&pcurve_block(int_width));
+        bytes.extend_from_slice(&pcurve_block(int_width));
+        push_f64(&mut bytes, -2.0);
+        push_f64(&mut bytes, 3.0);
+        for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
+            push_int(
+                &mut bytes,
+                0x04,
+                i64::try_from(values.len()).expect("test value fits"),
+                int_width,
+            );
+            for value in values {
+                push_f64(&mut bytes, *value);
+            }
+        }
+        bytes.push(0x0b);
+        bytes.push(0x10);
+        let curve = Record {
+            index: 1,
+            name: "intcurve-curve".into(),
+            tokens: lex_test_span(&bytes, int_width).expect("valid intcurve fixture"),
+            offset: 0,
+            len: bytes.len(),
+        };
+        let mut edge_tokens = vec![Token::Ref(-1); 8];
+        edge_tokens.push(Token::Ref(1));
+        edge_tokens.push(if edge_reversed {
+            Token::True
+        } else {
+            Token::False
+        });
+        let edge = Record {
+            index: 2,
+            name: "edge".into(),
+            tokens: edge_tokens.into(),
+            offset: 0,
+            len: 0,
+        };
+        let edits = crate::edit::AsmEditSet::from_framed(vec![curve.clone(), edge], int_width, 1.0);
+        let unsupported = || IntcurveSupportSide {
+            surface: None,
+            pcurve: None,
+        };
+        // The edit moves the last discontinuity, stated on `-t` when the
+        // cache is reversed once.
+        let reversed_once = record_reversed != edge_reversed;
+        let context = if reversed_once {
+            IntcurveSupportContext::try_new(
+                [unsupported(), unsupported()],
+                [-3.0, 2.0],
+                [vec![-0.25], vec![], vec![-0.8, -0.5]],
+            )
+        } else {
+            IntcurveSupportContext::try_new(
+                [unsupported(), unsupported()],
+                [-2.0, 3.0],
+                [vec![0.25], vec![], vec![0.5, 0.8]],
+            )
+        }
+        .expect("valid support context");
+        let definition = ProceduralCurveDefinition::Intersection {
+            context,
+            discontinuity_flag: false,
+            cache: None,
+        };
+        edits
+            .patch_procedural_curve_definition(&mut bytes, &curve, &definition)
+            .expect("patch the intersection context");
+
+        let layout = intersection_patch_layout(&bytes, int_width).expect("layout");
+        let read = |offset: usize| {
+            f64::from_le_bytes(bytes[offset..offset + 8].try_into().expect("f64 payload"))
+        };
+        assert_eq!(
+            layout.parameter_range.map(read),
+            [-2.0, 3.0],
+            "record {record_reversed}, edge {edge_reversed}"
+        );
+        assert_eq!(
+            layout
+                .discontinuities
+                .map(|offsets| offsets.into_iter().map(read).collect::<Vec<_>>()),
+            [vec![0.25], vec![], vec![0.5, 0.8]],
+            "record {record_reversed}, edge {edge_reversed}"
+        );
+        assert_eq!(bytes[0], if record_reversed { 0x0a } else { 0x0b });
+    }
+}
