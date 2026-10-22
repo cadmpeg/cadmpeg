@@ -16,6 +16,7 @@ use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_anchor, Point2, "anchor");
+cadmpeg_core::named_optional_field!(deserialize_planar_z_noise, [f64; 3], "planar_z_noise");
 cadmpeg_core::named_optional_field!(deserialize_base_id, u64, "base_id");
 cadmpeg_core::named_optional_field!(deserialize_closure, SketchPointClosureSerde, "closure");
 cadmpeg_core::named_optional_field!(deserialize_entity_genesis, u64, "entity_genesis");
@@ -1449,7 +1450,11 @@ pub(crate) struct SketchCurveIdentity {
     /// Raw z components of a compact planar line's start, displacement, and
     /// direction when at least one is nonzero floating-point noise that the
     /// projection reads as zero.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_planar_z_noise"
+    )]
     pub(crate) planar_z_noise: Option<[f64; 3]>,
 }
 

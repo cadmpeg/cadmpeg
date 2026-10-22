@@ -152,7 +152,11 @@ pub(crate) struct DesignExtrudeSelectionGroupWire {
     pub(crate) opaque_scalar_offset: u64,
     /// Boolean byte between the two nested-record references; absent in the
     /// typed-reference form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_variant"
+    )]
     pub(crate) variant: Option<bool>,
     /// Whether every reference uses the 51-byte typed spelling.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -746,6 +750,7 @@ cadmpeg_core::named_optional_field!(
     SketchRelationOperand,
     "resolved_geometry"
 );
+cadmpeg_core::named_optional_field!(deserialize_variant, bool, "variant");
 
 #[cfg(test)]
 mod tests;
