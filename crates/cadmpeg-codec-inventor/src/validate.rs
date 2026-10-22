@@ -576,12 +576,16 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 endpoint_of,
                 center_of,
                 tail,
+                links,
                 ..
             } => {
                 add_list(endpoint_of);
                 add_list(center_of);
                 if let PointTail::Present { associations, .. } = tail {
                     add_list(associations);
+                }
+                if let Some(links) = links {
+                    add_list(links);
                 }
             }
             PmDcSketchEntityKind::Line {
@@ -895,12 +899,17 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 radius,
                 selection,
                 continuity,
-            } => references.extend([
-                edges.index(),
-                radius.index(),
-                selection.index(),
-                continuity.index(),
-            ]),
+                option,
+            } => references.extend(
+                [
+                    edges.index(),
+                    radius.index(),
+                    selection.index(),
+                    continuity.index(),
+                ]
+                .into_iter()
+                .chain(option.map(crate::pmdc::PmDcReference::index)),
+            ),
             PmDcFeaturePropertyKind::Enumeration { .. }
             | PmDcFeaturePropertyKind::WideEnumeration { .. }
             | PmDcFeaturePropertyKind::Boolean { .. }
