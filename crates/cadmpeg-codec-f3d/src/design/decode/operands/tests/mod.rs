@@ -12,6 +12,7 @@ mod face_sources;
 mod recipe_structures;
 mod recipes;
 mod selection;
+mod typed_profile;
 mod work_point;
 
 mod body_recipes;

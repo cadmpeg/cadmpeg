@@ -381,6 +381,32 @@ pub(crate) fn take_reference<'a>(
     Some(reference)
 }
 
+/// Byte width of a same-segment reference that carries an inline type GUID.
+pub(crate) const TYPED_LOCAL_REFERENCE_LEN: usize = 51;
+
+/// The u32 target of the typed local reference that occupies exactly
+/// `bytes[at..at + 51]`: `01`, u64 target, LP-ASCII 36 type GUID, `00 00`.
+pub(crate) fn typed_local_reference_target(bytes: &[u8], at: usize) -> Option<u32> {
+    let mut cursor = at;
+    let reference = take_reference(bytes, &mut cursor)?;
+    let (target, guid) = reference.local()?;
+    (guid.is_some() && cursor == at.checked_add(TYPED_LOCAL_REFERENCE_LEN)?)
+        .then(|| u32::try_from(target).ok())
+        .flatten()
+}
+
+/// The u32 target of the local reference at `at` in one spelling: the plain
+/// eleven-byte `01 + u32 + six zero bytes` or the 51-byte typed reference.
+pub(crate) fn local_reference_target(bytes: &[u8], at: usize, typed: bool) -> Option<u32> {
+    if typed {
+        typed_local_reference_target(bytes, at)
+    } else if bytes.get(at) == Some(&1) && bytes.get(at + 5..at + 11) == Some(&[0u8; 6][..]) {
+        View::u32_le_at(bytes, at + 1)
+    } else {
+        None
+    }
+}
+
 /// Whether `value` is a 36-character hyphenated hexadecimal GUID.
 pub(crate) fn is_guid_hyphenated(value: &str) -> bool {
     value.len() == 36

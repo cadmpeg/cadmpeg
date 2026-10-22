@@ -78,6 +78,9 @@ pub(crate) enum F3dLossCode {
     FeatureScopeUnprojected,
     /// A decoded native feature envelope has no interpreted specialized payload.
     FeatureScopePayloadUninterpreted,
+    /// A non-equivalent duplicate scope envelope was superseded by the
+    /// primary-indexed envelope.
+    FeatureScopeEnvelopeSuperseded,
     /// Decoded Design parameters have no neutral parameter.
     ParameterUnprojected,
     /// Typed compact parameter frames match no parameter grammar.
@@ -255,6 +258,7 @@ impl F3dLossCode {
         Self::FeatureDefinitionIncomplete,
         Self::FeatureScopeUnprojected,
         Self::FeatureScopePayloadUninterpreted,
+        Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
         Self::ParameterRecordUnparsed,
         Self::ParameterOwnerUnrecognized,
@@ -362,6 +366,7 @@ impl F3dLossCode {
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
+            Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
@@ -486,6 +491,7 @@ impl F3dLossCode {
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
+            | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
             | Self::ParameterRecordUnparsed
             | Self::ParameterOwnerUnrecognized
@@ -576,6 +582,7 @@ impl F3dLossCode {
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
+            | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterUnitUntyped
@@ -724,6 +731,7 @@ mod tests {
                 "feature.definition-incomplete",
                 "feature.scope-unprojected",
                 "feature.scope-payload-uninterpreted",
+                "feature.scope-envelope-superseded",
                 "parameter.unprojected",
                 "parameter.record-unparsed",
                 "parameter.owner-unrecognized",

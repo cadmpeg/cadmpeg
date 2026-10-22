@@ -32,6 +32,8 @@ use crate::layout::shifted_extrude_prologue as shifted_extrude;
 use crate::layout::shifted_reference_aware_extrude_class_323_symmetric_prefix as shifted_reference_aware_323_symmetric;
 use crate::layout::shifted_reference_aware_extrude_class_323_tail as shifted_reference_aware_323_tail;
 use crate::layout::shifted_reference_aware_extrude_scope_prefix as shifted_reference_aware;
+use crate::layout::shifted_typed_reference_extrude_prologue as shifted_typed;
+use crate::layout::typed_reference_extrude_prologue as typed_prologue;
 use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::extrude::DesignExtrudePrologue;
 use crate::records::feature::extrude::DesignExtrudePrologueReference;
@@ -949,6 +951,45 @@ fn exact_current_extrude_prologue(
     reference_members: &[u32],
     legacy_class_415_symmetric_distance: bool,
 ) -> Option<DesignExtrudePrologue> {
+    exact_current_extrude_prologue_with(
+        bytes,
+        start,
+        reference_count_at,
+        reference_members,
+        legacy_class_415_symmetric_distance,
+        false,
+    )
+}
+
+/// The Extrude prologue of a typed-reference scope, which has only the
+/// typed form.
+pub(super) fn exact_typed_extrude_prologue(
+    bytes: &[u8],
+    start: usize,
+    reference_count_at: usize,
+    reference_members: &[u32],
+) -> Option<DesignExtrudePrologue> {
+    exact_current_extrude_prologue_with(
+        bytes,
+        start,
+        reference_count_at,
+        reference_members,
+        false,
+        true,
+    )
+}
+
+/// The current Extrude prologue in one reference spelling. The typed form
+/// stores the operation fields at offset 22 with no prologue reference, and
+/// its present extent slots are 51-byte typed references.
+fn exact_current_extrude_prologue_with(
+    bytes: &[u8],
+    start: usize,
+    reference_count_at: usize,
+    reference_members: &[u32],
+    legacy_class_415_symmetric_distance: bool,
+    typed: bool,
+) -> Option<DesignExtrudePrologue> {
     const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
     if legacy_class_415_symmetric_distance
@@ -961,8 +1002,29 @@ fn exact_current_extrude_prologue(
     {
         return None;
     }
-    let direct_offset = start.checked_add(28)?;
-    let reference = if bytes.get(start.checked_add(25)?) == Some(&1) {
+    let direct_offset = if typed {
+        let marker = start.checked_add(shifted_typed::MARKER)?;
+        if bytes.get(
+            start.checked_add(typed_prologue::ZERO_RUN_11)?
+                ..start.checked_add(typed_prologue::OPERATION)?,
+        )? == [0; 11]
+        {
+            start.checked_add(typed_prologue::OPERATION)?
+        } else if bytes.get(start.checked_add(shifted_typed::ZERO_RUN_9)?..marker)? == [0; 9]
+            && View::u32_le_at(bytes, marker)? == 1
+            && bytes.get(
+                start.checked_add(shifted_typed::ZERO_RUN_2)?
+                    ..start.checked_add(shifted_typed::OPERATION)?,
+            )? == [0; 2]
+        {
+            start.checked_add(shifted_typed::OPERATION)?
+        } else {
+            return None;
+        }
+    } else {
+        start.checked_add(28)?
+    };
+    let reference = if !typed && bytes.get(start.checked_add(25)?) == Some(&1) {
         let reference_record_index_offset = start.checked_add(26)?;
         let record_index = View::u32_le_at(bytes, reference_record_index_offset)?;
         let prefix_tail = start.checked_add(30)?;
@@ -1076,14 +1138,21 @@ fn exact_current_extrude_prologue(
             0 => extent_cursor = extent_cursor.checked_add(1)?,
             1 => {
                 *slot_present = true;
-                let record_index = marked_record_reference(bytes, extent_cursor)?;
+                let (record_index, width) = if typed {
+                    (
+                        crate::bytes::typed_local_reference_target(bytes, extent_cursor)?,
+                        crate::bytes::TYPED_LOCAL_REFERENCE_LEN,
+                    )
+                } else {
+                    (marked_record_reference(bytes, extent_cursor)?, 11)
+                };
                 if !reference_members.contains(&record_index) {
                     return None;
                 }
                 if slot_ordinal == 6 {
                     final_slot_reference = Some(record_index);
                 }
-                extent_cursor = extent_cursor.checked_add(11)?;
+                extent_cursor = extent_cursor.checked_add(width)?;
             }
             _ => return None,
         }
