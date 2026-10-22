@@ -861,8 +861,11 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 Ok::<_, CodecError>((index, triangulation, vertices, triangles, scale))
             })
             .transpose()?;
+        // A left-handed OCCT frame turns the neutral surface normal around, so
+        // the face's sense against it turns too; its wires keep their sense.
+        let mut normal_reversed = false;
         let surface_id = if let Some(surface) = surface {
-            surface.resolve(self.tables.surfaces)?;
+            normal_reversed = surface.resolve(self.tables.surfaces)?.normal_reversed();
             self.located_surface(ir, surface.index(), surface_transform)?
         } else if let Some((index, triangulation, vertices, triangles, deflection_scale)) =
             &located_triangulation
@@ -1040,7 +1043,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             id: face_id.clone(),
             shell: shell.clone(),
             surface: surface_id,
-            sense: sense(face_reversed),
+            sense: sense(face_reversed ^ normal_reversed),
             loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
             name: None,
             color: None,

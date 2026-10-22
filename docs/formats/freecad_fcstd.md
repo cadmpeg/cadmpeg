@@ -354,7 +354,10 @@ matching pcurves for one face use. Polygon carriers are separate representation 
 not implied by pcurve multiplicity. The neutral analytic-surface frame uses the cross product of
 its axis and reference direction. If the persisted plane frame has the opposite V direction, the
 pcurve V parameter is negated. If a persisted cylinder, cone, sphere, or torus frame has the
-opposite circumferential direction, the pcurve U parameter is negated. A cone pcurve V parameter
+opposite circumferential direction, the pcurve U parameter is negated. Either reversal also turns
+the neutral surface normal against the persisted one, so the face's sense against its neutral
+surface is the persisted face orientation reversed; its wires keep their orientation. A trimmed or
+offset surface takes the reversal of its basis. A cone pcurve V parameter
 is also multiplied by the cosine of the cone half-angle to convert persisted slant distance to
 neutral axial distance. A surface of revolution uses U as its rotation angle and V as its directrix
 parameter. A trimmed surface converts its persisted support-coordinate bounds and pcurves to

@@ -2173,6 +2173,24 @@ pub(crate) enum TextSurface {
 }
 
 impl TextSurface {
+    /// Whether the surface's OCCT frame is left-handed. The neutral carrier
+    /// keeps the right-handed frame and a reversed parameter, so its normal is
+    /// opposite the OCCT normal; a trimmed or offset surface inherits it from
+    /// its basis.
+    pub(crate) fn normal_reversed(&self) -> bool {
+        match self {
+            Self::Plane { v_reversed, .. } => *v_reversed,
+            Self::Cylinder { u_reversed, .. }
+            | Self::Cone { u_reversed, .. }
+            | Self::Sphere { u_reversed, .. }
+            | Self::Torus { u_reversed, .. } => *u_reversed,
+            Self::Trimmed { basis, .. } | Self::Offset { basis, .. } => {
+                basis.surface().normal_reversed()
+            }
+            Self::Nurbs(_) | Self::Extrusion { .. } | Self::Revolution { .. } => false,
+        }
+    }
+
     /// Inline records this surface carries over its leaf record.
     const fn nesting_depth(&self) -> usize {
         match self {
