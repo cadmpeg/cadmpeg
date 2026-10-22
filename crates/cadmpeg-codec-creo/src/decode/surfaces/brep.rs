@@ -22,9 +22,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use crate::container::ContainerScan;
 use crate::topology::HalfEdgeId;
 
-use super::super::expanded::half_edge_ref;
 use super::super::native::annotate;
-use super::super::records::CreoFaceAdmissionRejectionRecord;
 use super::super::sweep::profiles::line_pcurve;
 use super::super::uniqueness::{exactly_one, ExactIdPositions, NumberedIdentityPositions};
 use crate::decode::analytic::carriers::{
@@ -52,7 +50,6 @@ use super::{fc05_cap_pair_model_frame, fc05_model_frame, NativeSurfaceNamespaces
 
 const EPS_PARAMETER_AGREE: f64 = 1.0e-9;
 const EPS_GEOMETRY_AGREE: f64 = 1.0e-9;
-const FACE_REJECTION_SAMPLE_LIMIT: usize = 4;
 
 #[derive(Clone, Copy)]
 pub(in crate::decode) struct NativeBrepCurveEvidence<'a> {
@@ -96,19 +93,6 @@ impl FaceAdmissionRejection {
         Self::TwoEdgeParameterProof,
         Self::LoopOrdering,
     ];
-
-    const fn key(self) -> &'static str {
-        match self {
-            Self::MissingSurfaceCarrier => "missing_surface_carrier",
-            Self::MissingOrientation => "missing_orientation",
-            Self::AmbiguousSurfaceCarrier => "ambiguous_surface_carrier",
-            Self::MissingLoops => "missing_loops",
-            Self::UnresolvedBoundaryVertices => "unresolved_boundary_vertices",
-            Self::AmbiguousBoundaryCurve => "ambiguous_boundary_curve",
-            Self::TwoEdgeParameterProof => "two_edge_parameter_proof",
-            Self::LoopOrdering => "loop_ordering",
-        }
-    }
 
     const fn coverage_key(self) -> cadmpeg_ir::report::decode::CoverageKey {
         match self {
@@ -224,11 +208,11 @@ pub(in super::super) struct BrepTransferDiagnostics {
 }
 
 impl BrepTransferDiagnostics {
-    fn reject_face(&mut self, reason: FaceAdmissionRejection, face_id: u32) {
+    pub(in super::super) fn reject_face(&mut self, reason: FaceAdmissionRejection, face_id: u32) {
         self.reject_face_with_detail(reason, FaceAdmissionDetail::face(face_id));
     }
 
-    fn reject_face_with_detail(
+    pub(in super::super) fn reject_face_with_detail(
         &mut self,
         reason: FaceAdmissionRejection,
         detail: FaceAdmissionDetail,
@@ -237,7 +221,6 @@ impl BrepTransferDiagnostics {
             .push(FaceAdmissionDiagnostic { reason, detail });
     }
 
-    /// The rejection count and bounded detail samples for a reason.
     pub(in super::super) fn evidence(
         &self,
         reason: FaceAdmissionRejection,
@@ -248,38 +231,8 @@ impl BrepTransferDiagnostics {
             .filter(move |diagnostic| diagnostic.reason == reason);
         (
             matching.clone().count(),
-            matching
-                .take(FACE_REJECTION_SAMPLE_LIMIT)
-                .map(|diagnostic| &diagnostic.detail),
+            matching.map(|diagnostic| &diagnostic.detail),
         )
-    }
-
-    pub(in super::super) fn face_admission_rejection_records(
-        &self,
-    ) -> Vec<CreoFaceAdmissionRejectionRecord> {
-        let mut records = Vec::new();
-        for diagnostic in &self.face_rejection_diagnostics {
-            let detail = &diagnostic.detail;
-            let id = format!("creo:brep:face_admission_rejection#{}", detail.face_id);
-            let mut boundary_half_edges = Vec::new();
-            boundary_half_edges.extend(
-                detail
-                    .boundary_half_edges
-                    .iter()
-                    .copied()
-                    .map(half_edge_ref),
-            );
-            let mut vertex_ids = Vec::new();
-            vertex_ids.extend_from_slice(&detail.vertex_ids);
-            records.push(CreoFaceAdmissionRejectionRecord {
-                id,
-                face_id: detail.face_id,
-                reason: diagnostic.reason.key(),
-                boundary_half_edges,
-                vertex_ids,
-            });
-        }
-        records
     }
 
     pub(in super::super) fn record_coverage(

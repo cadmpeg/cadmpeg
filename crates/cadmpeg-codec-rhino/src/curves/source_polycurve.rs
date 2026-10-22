@@ -57,7 +57,8 @@ impl Source<'_, '_, '_> {
         depth: usize,
     ) -> Result<DecodedGeometry, GeometryError> {
         let leaf = super::is_line(class) || super::is_polyline(class);
-        if !super::is_polycurve(class) && !leaf {
+        let on_surface = class == crate::curve_on_surface::CLASS;
+        if !super::is_polycurve(class) && !leaf && !on_surface {
             return super::decode_inner(
                 self.ctx,
                 self.data,
@@ -74,6 +75,9 @@ impl Source<'_, '_, '_> {
                 range.start,
                 "curve recursion limit exceeded",
             ));
+        }
+        if on_surface {
+            return self.read_model_curve(range, path, depth + 1);
         }
         let key = if path == "root" {
             self.key.clone()
@@ -111,6 +115,45 @@ impl Source<'_, '_, '_> {
                 self.read(range, path, depth)
             })
         })?
+    }
+
+    fn read_model_curve(
+        &self,
+        range: Range<usize>,
+        path: &str,
+        depth: usize,
+    ) -> Result<DecodedGeometry, GeometryError> {
+        let construction = crate::curve_on_surface::decode_with_model(
+            self.ctx,
+            self.data,
+            range,
+            self.scale,
+            self.archive,
+            depth,
+            |class, range| {
+                if super::is_line(class) || super::is_polyline(class) {
+                    self.decode(class, range, path, depth)
+                } else {
+                    super::decode_inner(
+                        self.ctx,
+                        self.data,
+                        class,
+                        range,
+                        self.scale,
+                        self.archive,
+                        depth,
+                    )
+                }
+            },
+        )?;
+        let Some(mut curve) = construction.model_curve else {
+            return Err(GeometryError::unsupported(
+                construction.source_range.start,
+                "curve-on-surface has no stored model-space carrier",
+            ));
+        };
+        curve.warnings_mut().prepend(construction.warnings);
+        Ok(DecodedGeometry::Curve { curve })
     }
 
     fn read_leaf(

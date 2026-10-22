@@ -23,15 +23,15 @@ impl std::fmt::Display for BrepRejectionDetails<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut first_reason = true;
         for reason in FaceAdmissionRejection::ALL {
-            let (count, samples) = self.0.evidence(reason);
+            let (count, faces) = self.0.evidence(reason);
             if count == 0 {
                 continue;
             }
             if !first_reason {
                 f.write_str(", ")?;
             }
-            write!(f, "{}={} (sample faces: ", reason.label(), count)?;
-            for (index, detail) in samples.enumerate() {
+            write!(f, "{}={} (faces: ", reason.label(), count)?;
+            for (index, detail) in faces.enumerate() {
                 if index != 0 {
                     f.write_str(",")?;
                 }
@@ -970,8 +970,75 @@ pub(super) fn push_structural_layer_notes(
 #[cfg(test)]
 mod tests {
     use super::{push_brep_transfer_note, unstatable_vertex_orbit_note};
-    use crate::decode::surfaces::brep::BrepTransferDiagnostics;
+    use crate::decode::surfaces::brep::{
+        BrepTransferDiagnostics, FaceAdmissionDetail, FaceAdmissionRejection,
+    };
     use crate::topology::{HalfEdgeId, Side};
+
+    #[test]
+    fn brep_rejection_loss_names_every_face_without_a_sample_limit() {
+        let mut diagnostics = BrepTransferDiagnostics::default();
+        diagnostics.candidate_face_count = 6;
+        diagnostics.admitted_face_count = 1;
+        diagnostics.emitted_face_count = 1;
+        for face_id in 10..16 {
+            diagnostics.reject_face(FaceAdmissionRejection::MissingLoops, face_id);
+        }
+        let mut losses = Vec::new();
+        push_brep_transfer_note(
+            &mut cadmpeg_ir::ArenaClasses::default(),
+            &mut losses,
+            &diagnostics,
+            0,
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "geometry.brep-incomplete");
+        assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Blocking);
+        let (_, rejection) = losses[0]
+            .message
+            .split_once("First-failure rejection counts are: ")
+            .unwrap();
+        let (rejection, _) = rejection
+            .split_once(". Component admission gate: ")
+            .unwrap();
+        assert_eq!(rejection, "missing loops=6 (faces: 10,11,12,13,14,15)");
+    }
+
+    #[test]
+    fn brep_rejection_loss_keeps_nested_operands_in_the_report() {
+        let mut diagnostics = BrepTransferDiagnostics::default();
+        diagnostics.reject_face_with_detail(
+            FaceAdmissionRejection::UnresolvedBoundaryVertices,
+            FaceAdmissionDetail {
+                face_id: 17,
+                boundary_half_edges: vec![HalfEdgeId {
+                    curve_id: 4,
+                    side: Side::Zero,
+                }],
+                vertex_ids: vec![9],
+            },
+        );
+        let mut losses = Vec::new();
+        push_brep_transfer_note(
+            &mut cadmpeg_ir::ArenaClasses::default(),
+            &mut losses,
+            &diagnostics,
+            0,
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "geometry.brep-incomplete");
+        let (_, rejection) = losses[0]
+            .message
+            .split_once("First-failure rejection counts are: ")
+            .unwrap();
+        let (rejection, _) = rejection
+            .split_once(". Component admission gate: ")
+            .unwrap();
+        assert_eq!(
+            rejection,
+            "unresolved boundary vertices=1 (faces: 17[edges:4:0;vertices:9])"
+        );
+    }
 
     #[test]
     fn brep_report_preserves_component_and_vertex_evidence() {

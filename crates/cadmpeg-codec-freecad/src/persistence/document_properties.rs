@@ -20,6 +20,7 @@ pub(crate) fn selected(node: roxmltree::Node<'_, '_>) -> bool {
         Some("App::PropertyInteger") => "Integer",
         Some("App::PropertyBool") => "Bool",
         Some("App::PropertyFloat") => "Float",
+        Some("App::PropertyVector") => "PropertyVector",
         _ => return false,
     };
     if !node.has_tag_name("Property")
@@ -58,6 +59,11 @@ pub(crate) fn selected(node: roxmltree::Node<'_, '_>) -> bool {
         return false;
     }
     if !string && value.first_child().is_some() {
+        return false;
+    }
+    if tag == "PropertyVector"
+        && super::direct_vector_value(node, "App::PropertyVector") != Some(value)
+    {
         return false;
     }
     if let Some(text) = value.first_child().filter(roxmltree::Node::is_text) {
@@ -173,7 +179,7 @@ pub(crate) fn decode<'source>(
                                 stage.insert_native(
                                     ctx,
                                     "properties",
-                                    crate::native::document_scalar::DocumentScalar::new(property.clone())?,
+                                    crate::native::document_value::DocumentValue::new(property.clone())?,
                                 )?;
                             } else {
                                 stage.insert_native(

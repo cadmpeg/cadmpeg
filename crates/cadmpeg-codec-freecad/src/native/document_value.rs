@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Typed identity ownership for admitted document scalar properties.
+//! Typed identity ownership for admitted document value properties.
 
 use super::{PropertyBody, PropertyRecord};
 use cadmpeg_core::decode::DecodeContext;
@@ -8,34 +8,37 @@ use cadmpeg_ir::schema::rewrite::typed::prune::{DependencyPosition, DependencyRe
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use serde::{Deserialize, Serialize};
 
-pub(crate) struct DocumentScalar(PropertyRecord);
+pub(crate) struct DocumentValue(PropertyRecord);
 
-impl DocumentScalar {
+impl DocumentValue {
     pub(crate) fn new(property: PropertyRecord) -> Result<Self, CodecError> {
         if !matches!(
             property.type_name.as_str(),
-            "App::PropertyInteger" | "App::PropertyBool" | "App::PropertyFloat"
+            "App::PropertyInteger"
+                | "App::PropertyBool"
+                | "App::PropertyFloat"
+                | "App::PropertyVector"
         ) || !matches!(&property.body, PropertyBody::Persisted { links, side_entries, .. } if links.is_empty() && side_entries.is_empty())
         {
             return Err(CodecError::malformed(
-                "document scalar has a different property grammar",
+                "document value has a different property grammar",
             ));
         }
         Ok(Self(property))
     }
 }
 
-impl Serialize for DocumentScalar {
+impl Serialize for DocumentValue {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.0.serialize(serializer)
     }
 }
-impl<'de> Deserialize<'de> for DocumentScalar {
+impl<'de> Deserialize<'de> for DocumentValue {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Self::new(PropertyRecord::deserialize(deserializer)?).map_err(serde::de::Error::custom)
     }
 }
-impl RewriteIdentities for DocumentScalar {
+impl RewriteIdentities for DocumentValue {
     fn visit_identity_references(
         &self,
         _ctx: &DecodeContext<'_>,

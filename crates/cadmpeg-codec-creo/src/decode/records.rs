@@ -456,15 +456,6 @@ pub(super) struct CreoFaceComponentRecord<'a> {
     curve_ids: &'a [u32],
 }
 
-#[derive(Serialize)]
-pub(super) struct CreoFaceAdmissionRejectionRecord {
-    pub(super) id: String,
-    pub(super) face_id: u32,
-    pub(super) reason: &'static str,
-    pub(super) boundary_half_edges: Vec<CreoHalfEdgeRef>,
-    pub(super) vertex_ids: Vec<u32>,
-}
-
 #[derive(Debug, Serialize)]
 pub(super) struct CreoExpandedSectionRecord {
     pub(super) id: String,

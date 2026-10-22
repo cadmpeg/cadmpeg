@@ -741,7 +741,7 @@ pub(in super::super) fn build_ir(
         &mut source_carriers,
     )?;
     attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
-    emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations, &brep_diagnostics)?;
+    emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations)?;
     collect_feature_coverage(
         scan,
         &ir,

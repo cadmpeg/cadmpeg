@@ -653,3 +653,5 @@ mod document_string_parts;
 mod document_integer_parts;
 
 mod document_scalar_parts;
+
+mod document_vector_parts;

@@ -46,6 +46,20 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<CurveOnSurface, GeometryError> {
+    decode_with_model(ctx, data, range, scale, archive, depth, |class, range| {
+        crate::curves::decode_inner(ctx, data, class, range, scale, archive, depth)
+    })
+}
+
+pub(crate) fn decode_with_model(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    range: Range<usize>,
+    scale: MillimeterScale,
+    archive: ArchiveVersion,
+    depth: usize,
+    decode_model: impl FnOnce(Uuid, Range<usize>) -> Result<DecodedGeometry, GeometryError>,
+) -> Result<CurveOnSurface, GeometryError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let mut warnings = Diagnostics::new();
     let c2 = class(data, &mut reader, archive, &mut warnings)?;
@@ -84,15 +98,7 @@ pub(crate) fn decode(
                 "nested curve-on-surface C3 carrier is invalid",
             ));
         }
-        let decoded = crate::curves::decode_inner(
-            ctx,
-            data,
-            c3.class_uuid,
-            c3.class_data_range,
-            scale,
-            archive,
-            depth,
-        )?;
+        let decoded = decode_model(c3.class_uuid, c3.class_data_range)?;
         let DecodedGeometry::Curve { curve } = decoded else {
             return Err(GeometryError::malformed(
                 reader.position(),

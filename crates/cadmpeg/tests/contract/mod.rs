@@ -5,3 +5,6 @@ mod partial_parts;
 
 #[cfg(feature = "step")]
 mod one_home;
+
+#[cfg(feature = "fcstd")]
+mod freecad_one_home;
