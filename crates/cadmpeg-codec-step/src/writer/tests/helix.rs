@@ -172,3 +172,34 @@ fn a_face_on_an_uncached_helix_surface_is_written_on_a_fitted_bspline_surface() 
     assert!(!codes.contains(&StepLossCode::ProceduralReducedToCarrier.kind()));
     assert!(!codes.contains(&StepLossCode::ProceduralDefinitionNotWritten.kind()));
 }
+
+#[test]
+fn a_helix_without_a_bspline_within_the_tolerance_reports_its_failed_fit() {
+    let mut ir = helix_edge_doc(false);
+    ir.tolerances.linear = cadmpeg_ir::scalar::PositiveLength::new(f64::MIN_POSITIVE).unwrap();
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+
+    let failed: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::HelixFitFailed.kind())
+        .collect();
+    assert_eq!(failed.len(), 1, "{:?}", report.losses);
+    assert!(
+        failed[0]
+            .message
+            .contains("1 beyond the linear tolerance at the segment bound"),
+        "{}",
+        failed[0].message
+    );
+    let codes: Vec<_> = report.losses.iter().map(|loss| loss.code.clone()).collect();
+    assert!(!codes.contains(&StepLossCode::HelixFittedToBspline.kind()));
+    assert!(!codes.contains(&StepLossCode::ProceduralDefinitionNotWritten.kind()));
+}

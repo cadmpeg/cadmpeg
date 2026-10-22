@@ -2035,7 +2035,7 @@ fn native_cacheless_procedural_surface_definition(
             native_f64(bytes, value);
         }
         if let HelixSurfaceProfile::Circle(circle) = profile {
-            native_f64(bytes, circle.length().get());
+            native_f64(bytes, circle.angle().get());
         }
         for value in path_angle_range {
             native_f64(bytes, value);

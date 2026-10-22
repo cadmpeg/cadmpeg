@@ -275,7 +275,7 @@ fn helix_surface_preserves_finite_directed_ranges_and_signed_profiles() {
     let wire = serde_json::to_value(surface).unwrap();
     assert_eq!(
         wire["profile"],
-        json!({"kind": "circle", "length": -1.0, "radius": -2.0})
+        json!({"kind": "circle", "angle": -1.0, "radius": -2.0})
     );
     assert_eq!(
         serde_json::from_value::<HelixSurfaceConstruction>(wire.clone()).unwrap(),

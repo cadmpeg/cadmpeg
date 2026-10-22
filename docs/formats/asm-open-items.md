@@ -239,11 +239,11 @@ the record grammar does not identify one construction.
 
 **Question.** Does the apex term of a `helix_int_cur` count revolutions from angle zero or from the interval start `t0`?
 
-**Known.** `asm.md` §6.3 `helix_int_cur` counts the pitch term from angle zero: the edge endpoints of helices with a nonzero `t0` lie on their vertices only with `q=t/(2π)`. The specification applies the same `q` to the apex term. No decoded helix has both a nonzero `t0` and a nonzero apex factor, and at `t0=0` the two origins agree.
+**Known.** `asm.md` §6.3 `helix_int_cur` counts the pitch term from angle zero: the edge endpoints of helices with a nonzero `t0` lie on their vertices only with `q=t/(2π)`. The formula of that paragraph and the evaluator apply the same `q` to the apex term. No decoded helix has both a nonzero `t0` and a nonzero apex factor, and at `t0=0` the two origins agree.
 
 **Need.** A conical helix with a nonzero `t0` and a nonzero apex factor, together with its edge vertices, separates the two origins. A wrong origin offsets the radius of every evaluated point by the same length.
 
-### GC-41. Profile angle of a `helix_spl_circ`
+### GC-42. Profile angle of a `helix_spl_circ`
 
 **Question.** Which point of the profile circle does a profile parameter `u` select, and what does the angle stored before the path control?
 
@@ -251,7 +251,7 @@ the record grammar does not identify one construction.
 
 **Need.** A writer that emits pcurves on this surface needs the map. A rule that also holds for the cap-edge pcurves settles it.
 
-### GC-42. Tangential and apex terms of a `helix_spl_line` profile
+### GC-43. Tangential and apex terms of a `helix_spl_line` profile
 
 **Question.** Does the `y` coefficient of a `helix_spl_line` direction scale `τ(t)`, and does the profile vector include the apex factor's radial scale?
 

@@ -289,6 +289,9 @@ pub(crate) enum StepLossCode {
     /// Helix definitions without a solved carrier were written as fitted
     /// cubic B-splines.
     HelixFittedToBspline,
+    /// A helix definition without a solved carrier had no B-spline within the
+    /// linear tolerance, so its carrier was not written.
+    HelixFitFailed,
     /// A procedural definition has no emitted native construction or solved carrier.
     ProceduralDefinitionNotWritten,
     /// Source-native records were not represented.
@@ -495,6 +498,7 @@ impl StepLossCode {
         Self::SourceAttributeNotWritten,
         Self::ProceduralReducedToCarrier,
         Self::HelixFittedToBspline,
+        Self::HelixFitFailed,
         Self::ProceduralDefinitionNotWritten,
         Self::SourceNativeRecordOmitted,
         Self::RegionNoWritableOuterShell,
@@ -680,6 +684,7 @@ impl StepLossCode {
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
             Self::HelixFittedToBspline => "geometry.helix-fitted-to-bspline",
+            Self::HelixFitFailed => "geometry.helix-fit-failed",
             Self::ProceduralDefinitionNotWritten => "geometry.procedural-definition-not-written",
             Self::SourceNativeRecordOmitted => "native.source-record-omitted",
             Self::RegionNoWritableOuterShell => "topology.region-no-writable-outer-shell",
@@ -840,6 +845,7 @@ impl StepLossCode {
             | Self::PmiAngleUnitUnresolved
             | Self::ValidationMeasureUnitUnresolved
             | Self::GeometryCarrierNotWritten
+            | Self::HelixFitFailed
             | Self::ProceduralDefinitionNotWritten => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyRootRejected
             | Self::TopologyRootIncomplete
@@ -1098,6 +1104,7 @@ mod tests {
                 "attribute.source-record-not-written",
                 "geometry.procedural-reduced-to-carrier",
                 "geometry.helix-fitted-to-bspline",
+                "geometry.helix-fit-failed",
                 "geometry.procedural-definition-not-written",
                 "native.source-record-omitted",
                 "topology.region-no-writable-outer-shell",

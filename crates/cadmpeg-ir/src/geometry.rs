@@ -2567,7 +2567,7 @@ impl HelixCurveConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixCircleProfileWire")]
 pub struct HelixCircleProfile {
-    length: FiniteReal,
+    angle: FiniteReal,
     radius: FiniteReal,
 }
 
@@ -2576,25 +2576,25 @@ pub struct HelixCircleProfile {
 #[serde(deny_unknown_fields)]
 struct HelixCircleProfileWire {
     /// Native angle stored before the path, in radians.
-    length: f64,
+    angle: f64,
     /// Signed circular profile radius.
     radius: f64,
 }
 
 impl HelixCircleProfile {
     /// Admit parameters that satisfy the helix payload contract.
-    pub fn try_new(length: f64, radius: f64) -> Result<Self, &'static str> {
+    pub fn try_new(angle: f64, radius: f64) -> Result<Self, &'static str> {
         if radius == 0.0 {
             return Err("helix circle profile radius must be finite and nonzero");
         }
-        let length = FiniteReal::new(length).ok_or("helix circle profile length must be finite")?;
+        let angle = FiniteReal::new(angle).ok_or("helix circle profile angle must be finite")?;
         let radius = FiniteReal::new(radius).ok_or("helix circle profile radius must be finite")?;
-        Ok(Self { length, radius })
+        Ok(Self { angle, radius })
     }
     /// Native angle stored before the path, in radians.
     #[must_use]
-    pub const fn length(&self) -> FiniteReal {
-        self.length
+    pub const fn angle(&self) -> FiniteReal {
+        self.angle
     }
 
     /// Signed circular profile radius.
@@ -2607,7 +2607,7 @@ impl HelixCircleProfile {
 impl TryFrom<HelixCircleProfileWire> for HelixCircleProfile {
     type Error = &'static str;
     fn try_from(wire: HelixCircleProfileWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.length, wire.radius)
+        Self::try_new(wire.angle, wire.radius)
     }
 }
 

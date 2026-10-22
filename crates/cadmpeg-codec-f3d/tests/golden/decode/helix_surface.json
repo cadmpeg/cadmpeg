@@ -368,7 +368,7 @@
               },
               "profile": {
                 "kind": "circle",
-                "length": 1.25,
+                "angle": 1.25,
                 "radius": 7.5
               }
             }
