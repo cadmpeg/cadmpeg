@@ -1132,7 +1132,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 let base = CurveId::mint(crate::native::model_id(
                     "curve",
                     &self.payload.id,
-                    &format!("{source}"),
+                    format!("{source}"),
                 ))
                 .ok()?;
                 occt_subset_local_range(ir, &base, param_range?)
@@ -2504,7 +2504,12 @@ fn occt_subset_local_range(
                 if local < -EPS_TOPOLOGY_TRANSFER_GEOMETRY
                     || local > span + EPS_TOPOLOGY_TRANSFER_GEOMETRY =>
             {
-                local.rem_euclid(period)
+                let wrapped = local.rem_euclid(period);
+                if period - wrapped <= EPS_TOPOLOGY_TRANSFER_GEOMETRY {
+                    0.0
+                } else {
+                    wrapped
+                }
             }
             _ => local,
         };

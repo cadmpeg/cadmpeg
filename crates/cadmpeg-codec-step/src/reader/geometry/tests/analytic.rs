@@ -572,7 +572,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     for (curve_id, expected_range) in [
         (13u64, [-std::f64::consts::FRAC_PI_2, 0.0]),
         (14u64, [-std::f64::consts::FRAC_PI_2, 0.0]),
-        (18u64, [-std::f64::consts::FRAC_PI_2, 0.0]),
+        (18u64, [0.0, std::f64::consts::FRAC_PI_2]),
         (20u64, [-std::f64::consts::FRAC_PI_2, 0.0]),
     ] {
         let construction_id =
@@ -614,6 +614,16 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     assert!((cartesian_end.y - 6.0).abs() < 1.0e-12);
 
     let index = ModelIndex::build(decoded.ir());
+    for (parameter, [x, y]) in [(0.0, [2.0, 0.0]), (std::f64::consts::FRAC_PI_2, [0.0, 6.0])] {
+        let nested = model_curve_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &CurveId::mint("step:data:curve#18").expect("identity grammar"),
+            parameter,
+        )
+        .expect("nested trim point");
+        assert!((nested.x - x).abs() < 1.0e-12 && (nested.y - y).abs() < 1.0e-12);
+    }
     let replica_start = model_curve_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &index,

@@ -427,6 +427,8 @@ fn append_name_properties(
 }
 
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
+    let lowered = subset_carriers::lower_subset_curves(ir)?;
+    let ir = lowered.as_ref();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
     let ctx = &ctx;
@@ -7936,3 +7938,5 @@ fn finite(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
 mod tests;
 
 mod ownership;
+
+mod subset_carriers;

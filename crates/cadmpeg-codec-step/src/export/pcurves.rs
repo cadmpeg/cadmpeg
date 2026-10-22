@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::f64::consts::TAU;
 
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2};
-use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedSurfaceGeometry};
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::units::FinitePoint2;
@@ -18,22 +18,22 @@ const EPS_PARAMETER_RANGE_MATCH: f64 = 1.0e-9;
 const EPS_LOOP_JOIN: f64 = 1.0e-6;
 
 /// `SURFACE_CURVE` inherits the 3D curve's parameterization, so a spline
-/// pcurve must run on its edge's range. A coedge use states its interval on the
-/// pcurve's own parameter, directed from the edge's start to its end; a
-/// decreasing interval runs against the edge. The affine map from the edge
+/// pcurve must run on its edge's range. `source_range` is the use interval on
+/// the pcurve's own parameter, directed from the edge's start to its end; a
+/// decreasing interval runs against the pcurve. The affine map from the edge
 /// range onto that interval moves the knots, and a decreasing interval also
 /// reverses the knot and pole order. The parameter-space locus is unchanged.
 /// The mapping is per use: a shared pcurve can serve different edge ranges.
 pub(super) fn align_spline_to_edge<'a>(
     geometry: &'a PcurveGeometry,
-    source_range: Option<DirectedParameterRange>,
+    source_range: Option<[f64; 2]>,
     edge: &Edge,
 ) -> Cow<'a, PcurveGeometry> {
     let aligned = (|| {
         let PcurveGeometry::Nurbs { nurbs } = geometry else {
             return None;
         };
-        let [source_start, source_end] = source_range?.endpoints();
+        let [source_start, source_end] = source_range?;
         let [target_start, target_end] = edge.param_range()?.get();
         let source_span = source_end - source_start;
         let target_span = target_end - target_start;

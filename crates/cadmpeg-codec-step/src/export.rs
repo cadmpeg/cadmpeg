@@ -256,6 +256,9 @@ struct WrittenSurface {
 mod pcurves;
 
 /// One coedge's parameter-space use, including its own parameter interval.
+/// A pcurve's parameter-space start and end.
+type PcurveEnds = ([f64; 2], [f64; 2]);
+
 #[derive(Clone, Copy)]
 struct PcurveUse<'a> {
     use_: &'a cadmpeg_ir::topology::PcurveUse,
@@ -3049,8 +3052,20 @@ impl<'a> Builder<'a> {
         let surface_id = use_.surface;
         let pcurve = self.pcurves.get(pcurve_id).copied()?;
         self.curves.get(edge.curve()?.as_str())?;
-        let aligned =
-            pcurves::align_spline_to_edge(&pcurve.geometry, use_.use_.parameter_range, edge);
+        let surface = self.emit_surface(surface_id)?;
+        if self.surface_is_fitted_helix(surface_id) {
+            return None;
+        }
+        let range = self
+            .directed_use_range(
+                &pcurve.geometry,
+                use_.use_.parameter_range,
+                surface_id,
+                edge,
+            )
+            .ok()
+            .flatten();
+        let aligned = pcurves::align_spline_to_edge(&pcurve.geometry, range, edge);
         let shift = self
             .pcurve_period_shifts
             .get(use_.coedge)
@@ -3060,10 +3075,6 @@ impl<'a> Builder<'a> {
             Some(moved) if shift != [0.0, 0.0] => std::borrow::Cow::Owned(moved),
             _ => aligned,
         };
-        let surface = self.emit_surface(surface_id)?;
-        if self.surface_is_fitted_helix(surface_id) {
-            return None;
-        }
         let reversed_cone = self.surface_chart_reversed(surface_id);
         let curve = if reversed_cone {
             geometry::pcurve_on_reversed_cone(&mut self.emitter, &aligned)?
@@ -3138,7 +3149,7 @@ impl<'a> Builder<'a> {
     fn coedge_pcurve_ends(
         &self,
         coedge: &str,
-    ) -> Result<Option<([f64; 2], [f64; 2])>, cadmpeg_core::decode::ResourceLimit> {
+    ) -> Result<Option<PcurveEnds>, cadmpeg_core::decode::ResourceLimit> {
         let Some(coedge) = self.coedges.get(coedge).copied() else {
             return Ok(None);
         };
@@ -3160,7 +3171,12 @@ impl<'a> Builder<'a> {
         ) {
             return Ok(None);
         }
-        let aligned = pcurves::align_spline_to_edge(&pcurve.geometry, use_.parameter_range, edge);
+        let Some((surface, _)) = self.coedge_faces.get(coedge.id.as_str()).copied() else {
+            return Ok(None);
+        };
+        let directed =
+            self.directed_use_range(&pcurve.geometry, use_.parameter_range, surface, edge)?;
+        let aligned = pcurves::align_spline_to_edge(&pcurve.geometry, directed, edge);
         let at = |parameter: f64| {
             Ok::<_, cadmpeg_core::decode::ResourceLimit>(
                 cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
@@ -3182,6 +3198,69 @@ impl<'a> Builder<'a> {
             Sense::Forward => (start, end),
             Sense::Reversed => (end, start),
         }))
+    }
+
+    /// A pcurve use interval directed from `edge`'s start to its end. The IR
+    /// states a use interval in either order, so the end whose surface image
+    /// lies nearer the edge's start vertex starts it. The two ends of a closed
+    /// edge lift to one vertex, so only an increasing interval is directed
+    /// there.
+    fn directed_use_range(
+        &self,
+        pcurve: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
+        range: Option<cadmpeg_ir::geometry::DirectedParameterRange>,
+        surface: &str,
+        edge: &Edge,
+    ) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+        use cadmpeg_ir::eval::admission::EvaluationAdmission;
+        use cadmpeg_ir::eval::finite_or_refusal;
+        let Some([first, second]) =
+            range.map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+        else {
+            return Ok(None);
+        };
+        let position = |vertex: &cadmpeg_ir::ids::VertexId| {
+            let vertex = self.vertices.get(vertex.as_str())?;
+            Some(self.points.get(vertex.point.as_str())?.position().get())
+        };
+        let (Some(surface), Some(start), Some(end)) = (
+            self.surfaces.get(surface),
+            position(&edge.start),
+            position(&edge.end),
+        ) else {
+            return Ok(None);
+        };
+        let lift = |parameter: f64| {
+            let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+                EvaluationAdmission::Standard,
+                pcurve,
+                parameter,
+            ))?
+            else {
+                return Ok(None);
+            };
+            let uv = uv.get();
+            finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+                EvaluationAdmission::Standard,
+                self.ir,
+                &surface.geometry,
+                uv.u,
+                uv.v,
+            ))
+            .map(|point| point.map(cadmpeg_ir::features::FinitePoint3::get))
+        };
+        let (Some(at_first), Some(at_second)) = (lift(first)?, lift(second)?) else {
+            return Ok(None);
+        };
+        let forward = at_first.distance(start).max(at_second.distance(end));
+        let backward = at_first.distance(end).max(at_second.distance(start));
+        Ok(if forward < backward {
+            Some([first, second])
+        } else if backward < forward {
+            Some([second, first])
+        } else {
+            (first <= second).then_some([first, second])
+        })
     }
 
     fn emit_vertex(&mut self, vertex_id: &str) -> Option<Ref> {
@@ -3533,12 +3612,35 @@ impl<'a> Builder<'a> {
     }
 
     /// Whether `curve` has a STEP carrier: a supported solved carrier, a
-    /// helix construction the writer fits, or a procedural curve the writer
-    /// samples.
+    /// helix construction the writer fits, a procedural curve the writer
+    /// samples, or a subset of a writable source, which [`Self::emit_curve`]
+    /// writes as a `TRIMMED_CURVE` whatever its cache.
     fn curve_is_writable(&mut self, curve: &Curve) -> bool {
-        geometry::curve_is_supported(&curve.geometry)
-            || self.unsolved_helix(curve.id.as_str()).is_some()
-            || self.approximations.curve(curve.id.as_str()).is_some()
+        let mut visited = BTreeSet::new();
+        let mut current = curve;
+        loop {
+            if geometry::curve_is_supported(&current.geometry)
+                || self.unsolved_helix(current.id.as_str()).is_some()
+                || self.approximations.curve(current.id.as_str()).is_some()
+            {
+                return true;
+            }
+            let Some(ProceduralCurveDefinition::Subset(subset)) = self
+                .procedural_curves
+                .get(current.id.as_str())
+                .copied()
+                .map(ProceduralCurve::definition)
+            else {
+                return false;
+            };
+            if !visited.insert(current.id.clone()) {
+                return false;
+            }
+            let Some(source) = self.curves.get(subset.source().as_str()).copied() else {
+                return false;
+            };
+            current = source;
+        }
     }
 
     /// The construction id and helix of a curve whose helix construction

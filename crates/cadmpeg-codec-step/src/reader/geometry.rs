@@ -1291,9 +1291,6 @@ pub(super) fn decode(
             let _attached = procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
 
             carrier_index.curves.insert(id, curve_index);
-            if parameter_offset != 0.0 {
-                curve_parameter_offsets.insert(id, parameter_offset);
-            }
             typed.insert(id);
             wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
             continue;

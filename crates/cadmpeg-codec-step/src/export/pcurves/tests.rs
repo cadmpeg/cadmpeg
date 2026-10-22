@@ -54,7 +54,7 @@ fn whole_period_shifts_move_knots_without_moving_poles_or_the_shared_source() {
     let PcurveGeometry::Nurbs { nurbs: source } = &geometry else {
         panic!("spline")
     };
-    let range = Some(DirectedParameterRange::new([-1.0, 0.0]).unwrap());
+    let range = Some([-1.0, 0.0]);
     for turns in [-2.0, -1.0, 1.0, 2.0] {
         let shift = turns * TAU;
         let aligned = super::align_spline_to_edge(&geometry, range, &edge([shift - 1.0, shift]));
@@ -76,7 +76,7 @@ fn whole_period_shifts_move_knots_without_moving_poles_or_the_shared_source() {
 #[test]
 fn a_use_that_already_runs_on_the_edge_range_or_states_no_range_is_kept() {
     let geometry = spline();
-    let range = Some(DirectedParameterRange::new([-1.0, 0.0]).unwrap());
+    let range = Some([-1.0, 0.0]);
     for (range, edge) in [(range, edge([-1.0, 0.0])), (None, edge([TAU - 1.0, TAU]))] {
         assert!(matches!(
             super::align_spline_to_edge(&geometry, range, &edge),
@@ -104,7 +104,7 @@ fn point_at(geometry: &PcurveGeometry, t: f64) -> Point2 {
 #[test]
 fn a_decreasing_use_reverses_the_spline_onto_the_increasing_edge_range() {
     let geometry = spline();
-    let range = Some(DirectedParameterRange::new([0.0, -1.0]).unwrap());
+    let range = Some([0.0, -1.0]);
     let aligned = super::align_spline_to_edge(&geometry, range, &edge([2.0, 3.0]));
     let PcurveGeometry::Nurbs { nurbs } = aligned.as_ref() else {
         panic!("spline")
@@ -124,7 +124,7 @@ fn a_decreasing_use_reverses_the_spline_onto_the_increasing_edge_range() {
 #[test]
 fn a_scaled_use_maps_the_spline_onto_the_edge_range_linearly() {
     let geometry = spline();
-    let range = Some(DirectedParameterRange::new([-1.0, 0.0]).unwrap());
+    let range = Some([-1.0, 0.0]);
     let aligned = super::align_spline_to_edge(&geometry, range, &edge([0.0, 10.0]));
     for (t, s) in [(0.0, -1.0), (2.5, -0.75), (10.0, 0.0)] {
         let expected = point_at(&geometry, s);
@@ -279,5 +279,117 @@ fn a_shifted_spline_moves_every_pole_and_keeps_its_knots() {
     {
         assert!((moved.get().u - (source.get().u - TAU)).abs() < EPS_KNOT);
         assert!((moved.get().v - (source.get().v + 1.0)).abs() < EPS_KNOT);
+    }
+}
+
+/// The unit cube with the surface of a face on its first edge replaced by a
+/// plane whose u axis runs along that edge from its start vertex, and a
+/// linear spline pcurve from `from` to `to` in that plane.
+fn cube_edge_with_pcurve(from: f64, to: f64) -> (cadmpeg_ir::CadIr, PcurveGeometry, String, Edge) {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let edge = ir.model.edges[0].clone();
+    let position = |vertex: &cadmpeg_ir::ids::VertexId| {
+        let vertex = ir.model.vertices.iter().find(|v| v.id == *vertex).unwrap();
+        ir.model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .unwrap()
+            .position()
+            .get()
+    };
+    let (start, end) = (position(&edge.start), position(&edge.end));
+    let along = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
+    let length = (along.x * along.x + along.y * along.y + along.z * along.z).sqrt();
+    let along = Vector3::new(along.x / length, along.y / length, along.z / length);
+    let normal = if along.x.abs() < 0.5 {
+        Vector3::new(0.0, along.z, -along.y)
+    } else {
+        Vector3::new(along.y, -along.x, 0.0)
+    };
+    let width = (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z).sqrt();
+    let normal = Vector3::new(normal.x / width, normal.y / width, normal.z / width);
+    let coedge = ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge == edge.id)
+        .unwrap();
+    let face = ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.loops.contains(&coedge.owner_loop))
+        .unwrap();
+    let surface_id = face.surface.clone();
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == surface_id)
+        .unwrap()
+        .geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(start, normal, along).unwrap(),
+        ),
+    );
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            PcurveNurbsPoles::Polynomial {
+                points: vec![
+                    Point2::new(from * length, 0.0),
+                    Point2::new(to * length, 0.0),
+                ],
+            },
+            false,
+        )
+        .unwrap(),
+    };
+    (ir, pcurve, surface_id.as_str().to_owned(), edge)
+}
+
+#[test]
+fn a_use_interval_is_directed_by_the_vertex_its_surface_image_reaches() {
+    for (from, to, stored, expected) in [
+        (0.0, 1.0, [1.0, 0.0], [0.0, 1.0]),
+        (0.0, 1.0, [0.0, 1.0], [0.0, 1.0]),
+        (1.0, 0.0, [0.0, 1.0], [1.0, 0.0]),
+        (1.0, 0.0, [1.0, 0.0], [1.0, 0.0]),
+    ] {
+        let (ir, pcurve, surface, edge) = cube_edge_with_pcurve(from, to);
+        let builder = super::super::Builder::new(&ir, crate::StepSchema::Ap214).unwrap();
+        let directed = builder
+            .directed_use_range(
+                &pcurve,
+                Some(DirectedParameterRange::new(stored).unwrap()),
+                &surface,
+                &edge,
+            )
+            .unwrap();
+        assert_eq!(
+            directed,
+            Some(expected),
+            "pcurve {from} -> {to}, use {stored:?}"
+        );
+    }
+}
+
+#[test]
+fn a_closed_edge_directs_only_an_increasing_use_interval() {
+    let (mut ir, pcurve, surface, mut edge) = cube_edge_with_pcurve(0.0, 0.0);
+    edge.end = edge.start.clone();
+    ir.model.edges[0] = edge.clone();
+    let builder = super::super::Builder::new(&ir, crate::StepSchema::Ap214).unwrap();
+    for (stored, expected) in [([0.0, 1.0], Some([0.0, 1.0])), ([1.0, 0.0], None)] {
+        let directed = builder
+            .directed_use_range(
+                &pcurve,
+                Some(DirectedParameterRange::new(stored).unwrap()),
+                &surface,
+                &edge,
+            )
+            .unwrap();
+        assert_eq!(directed, expected);
     }
 }
