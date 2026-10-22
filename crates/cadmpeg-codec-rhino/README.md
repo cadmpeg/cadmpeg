@@ -5,7 +5,7 @@ supported `CadIr` documents back to `.3dm`.
 
 <!-- generated: capability rhino -->
 
-Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#rhino-3dm)).
+Support: L2 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#rhino-3dm)).
 
 <!-- /generated: capability rhino -->
 

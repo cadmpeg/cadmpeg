@@ -64,15 +64,15 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 
 <!-- generated: capability-lines -->
 
-- **Autodesk Inventor `.ipt` and `.iam`** — L1 ([profile](docs/format-support.md#autodesk-inventor-ipt-and-iam))
-- **ASM/ACIS bare `.sat`/`.smt`/`.smb`/`.sab` streams** — L1 ([profile](docs/format-support.md#asmacis-bare-satsmtsmbsab-streams))
+- **Autodesk Inventor `.ipt` and `.iam`** — L3 ([profile](docs/format-support.md#autodesk-inventor-ipt-and-iam))
+- **ASM/ACIS bare `.sat`/`.smt`/`.smb`/`.sab` streams** — L3 ([profile](docs/format-support.md#asmacis-bare-satsmtsmbsab-streams))
 - **FreeCAD `.FCStd`** — L5 ([profile](docs/format-support.md#freecad-fcstd))
 - **IGES** — L9 ([profile](docs/format-support.md#iges))
-- **Rhino `.3dm`** — L1 ([profile](docs/format-support.md#rhino-3dm))
-- **SolidWorks `.sldprt`** — L1 ([profile](docs/format-support.md#solidworks-sldprt))
-- **Fusion 360 `.f3d`** — L4 ([profile](docs/format-support.md#fusion-360-f3d))
+- **Rhino `.3dm`** — L2 ([profile](docs/format-support.md#rhino-3dm))
+- **SolidWorks `.sldprt`** — L3 ([profile](docs/format-support.md#solidworks-sldprt))
+- **Fusion 360 `.f3d`** — L5 ([profile](docs/format-support.md#fusion-360-f3d))
 - **Siemens NX `.prt`** — L1 ([profile](docs/format-support.md#siemens-nx-prt))
-- **CATIA V5 `.CATPart`** — L1 ([profile](docs/format-support.md#catia-v5-catpart))
+- **CATIA V5 `.CATPart`** — L3 ([profile](docs/format-support.md#catia-v5-catpart))
 - **Creo Parametric `.prt`** — L1 ([profile](docs/format-support.md#creo-parametric-prt))
 - **STEP Part 21** — L8 ([profile](docs/format-support.md#step-part-21))
 

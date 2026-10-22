@@ -18,7 +18,7 @@
 //! outcome decides whether the report carries geometry.
 //!
 //! <!-- generated: capability sat -->
-//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#asmacis-bare-satsmtsmbsab-streams)).
+//! Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#asmacis-bare-satsmtsmbsab-streams)).
 //! <!-- /generated: capability sat -->
 
 mod coverage;
