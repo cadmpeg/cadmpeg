@@ -83,6 +83,17 @@ fn body_recipe_reference_table_is_admitted(
         })
 }
 
+/// A rigid `As-built` alignment has no parameter owners, so its angle and
+/// offset are zero.
+fn rigid_alignment_scalars_hold(
+    alignment: &records::feature::assembly::DesignAssemblyAlignment,
+    rigid_as_built: bool,
+) -> bool {
+    !rigid_as_built
+        || !alignment.owners.is_empty()
+        || (alignment.angle() == 0.0 && alignment.offset() == [0.0; 3])
+}
+
 fn valid_assembly_operand_path_link(
     scope: &records::feature::scope::DesignParameterScope,
     path: &records::feature::assembly::DesignAssemblyOperandPath,
@@ -2541,13 +2552,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         _ => false,
                     }
                 } else {
-                    alignment_lane_bounds.is_some_and(|(alignment_start, alignment_end)| {
-                        alignment_end
-                            .checked_sub(alignment_start)
-                            .is_some_and(|expected_offset| {
-                                alignment.owners.len() == expected_offset
-                            })
-                            && alignment.owners.iter().zip(&values).enumerate().all(
+                    rigid_alignment_scalars_hold(alignment, rigid_as_built)
+                        && alignment_lane_bounds.is_some_and(|(alignment_start, alignment_end)| {
+                            alignment_end.checked_sub(alignment_start).is_some_and(
+                                |expected_offset| alignment.owners.len() == expected_offset,
+                            ) && alignment.owners.iter().zip(&values).enumerate().all(
                                 |(ordinal, (lane, value))| {
                                     native.design_parameter_owners.iter().any(|owner| {
                                         design_stream(owner.id()) == native_stream
@@ -2560,7 +2569,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     })
                                 },
                             )
-                    })
+                        })
                 };
                 let alignment_reference_link = if let Some(generation) = as_built_421_generation {
                     alignment.limits().is_some_and(|limits| {

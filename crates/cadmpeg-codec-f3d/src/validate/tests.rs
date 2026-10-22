@@ -1930,3 +1930,16 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
 }
 
 mod face_recipe_lengths;
+
+/// An owner-less rigid alignment holds only a zero angle and offset.
+#[test]
+fn rigid_alignment_without_owners_requires_zero_scalars() {
+    use crate::records::feature::assembly::DesignAssemblyAlignment;
+    let zero = DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap();
+    let turned = DesignAssemblyAlignment::try_new(0.5, [0.0; 3], Vec::new(), None).unwrap();
+    let moved = DesignAssemblyAlignment::try_new(0.0, [0.0, 1.0, 0.0], Vec::new(), None).unwrap();
+    assert!(super::rigid_alignment_scalars_hold(&zero, true));
+    assert!(!super::rigid_alignment_scalars_hold(&turned, true));
+    assert!(!super::rigid_alignment_scalars_hold(&moved, true));
+    assert!(super::rigid_alignment_scalars_hold(&turned, false));
+}

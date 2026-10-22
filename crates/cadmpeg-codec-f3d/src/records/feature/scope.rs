@@ -2232,13 +2232,20 @@ impl DesignParameterScope {
                 ))
             }
         }
-        // Only the rigid 269-byte `As-built` scope stores an empty reference
-        // table.
+        // Only the rigid `As-built` scope stores an empty reference table,
+        // with its count at offset 153 + 11(N - 2) for N members.
         let rigid_as_built =
             crate::design::assembly::rigid_as_built_scope(draft.frame_length, kind == "As-built");
+        let empty_table_at = crate::design::assembly::rigid_group_member_count(draft.frame_length)
+            .and_then(|members| members.checked_sub(2)?.checked_mul(11))
+            .and_then(|shift| {
+                shift.checked_add(crate::layout::assembly_rigid_as_built_scope::REFERENCE_COUNT)
+            })
+            .and_then(|offset| draft.byte_offset.checked_add(u64::try_from(offset).ok()?));
         if !(draft.byte_offset < draft.reference_count_offset
             && draft.reference_count_offset < draft.kind_offset)
-            || (draft.reference_members.is_empty() && !rigid_as_built)
+            || (draft.reference_members.is_empty()
+                && !(rigid_as_built && empty_table_at == Some(draft.reference_count_offset)))
         {
             return Err(fail("reference_count_offset/reference_members"));
         }
