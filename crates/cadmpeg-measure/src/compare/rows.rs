@@ -28,6 +28,13 @@ pub(super) struct Context {
 }
 
 impl Context {
+    /// An upper bound of the tolerance of a length row between values of
+    /// magnitude at most `magnitude` whose error terms sum to at most
+    /// `errors` on each side.
+    pub(super) fn length_bound(&self, magnitude: f64, errors: f64) -> f64 {
+        2.0 * errors + self.floor * magnitude.max(self.scale)
+    }
+
     /// `e_a + e_b + u_a + u_b + floor × max(|a|, |b|, L^d)`.
     fn tolerance(&self, dimension: i32, values: [f64; 2], errors: [Errors; 2]) -> f64 {
         let [a, b] = values;
@@ -103,7 +110,7 @@ const fn reading_name(reading: Reading) -> &'static str {
     }
 }
 
-const fn kind_name(kind: BodyKind) -> &'static str {
+pub(super) const fn kind_name(kind: BodyKind) -> &'static str {
     match kind {
         BodyKind::Solid => "solid",
         BodyKind::Sheet => "sheet",
@@ -380,7 +387,7 @@ fn has_numeric(body: &BodyMeasures) -> bool {
 
 /// Whether a body compares by its signature: no measured numeric quantity,
 /// and every unavailable value of category `input` or `undefined`.
-fn signature_only(body: &BodyMeasures) -> bool {
+pub(super) fn signature_only(body: &BodyMeasures) -> bool {
     if has_numeric(body) {
         return false;
     }

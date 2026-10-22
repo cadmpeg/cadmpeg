@@ -79,7 +79,8 @@ fn writer_round_trip_keeps_measured_body_geometry() {
         decoded.ir(),
         &after,
         &CompareOptions::default(),
-    );
+    )
+    .expect("one body pair fits the pair allowance");
     assert_eq!(comparison.verdict(), Verdict::Agree, "{comparison:#?}");
     let [body] = after.bodies().as_slice() else {
         panic!("one body row");

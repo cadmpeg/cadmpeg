@@ -199,6 +199,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_SCALED_EXPONENT`                     | `EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS_I32 * 64 + 1` | N    | Accumulator exponent range.                                                                                                                                                                                                                                                  |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_MEASURE_PASS_WORK_PER_ITEM`         | `1 << 22`                                              | 4    | Measurement pass allowance per face and edge of the document under `--limits desktop`. The allowance is `max(MEASURE_PASS_WORK_FLOOR, k × (faces + edges))`. An item that finds the pass empty makes its remaining quantities `evaluation.work-exhausted`, and `document.work.exhausted` is true; measurement continues. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_MEASURE_PASS_WORK_PER_ITEM_SERVICE` | `1 << 18`                                              | 4    | The same per-item allowance under `--limits service`. |
+| `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_COMPARE_PAIR_WORK_PER_BODY`         | `1 << 12`                                              | N    | Pair allowance of an ID-free comparison (`diff --geometry`) per body of both documents under `--limits desktop`. The allowance is `max(COMPARE_PAIR_WORK_FLOOR, k × bodies)`, `COMPARE_PAIR_WORK_FLOOR = 1 << 20`. Each evaluation of a body pair that can be compatible charges one unit. Exhaustion refuses the comparison at the `measure` stage; it is not a decode bound. |
+| `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_COMPARE_PAIR_WORK_PER_BODY_SERVICE` | `1 << 8`                                               | N    | The same per-body pair allowance under `--limits service`. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_FACE_MEASURE_WORK`                  | `1 << 26`                                              | 4    | One face's slice of the pass allowance. Exhaustion makes the face's remaining quantities `evaluation.work-exhausted`; measurement continues. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_EDGE_MEASURE_WORK`                  | `1 << 22`                                              | 4    | One edge's slice of the pass allowance. Exhaustion makes the edge's remaining quantities `evaluation.work-exhausted`; measurement continues. |
 | `cadmpeg-measure`        | `src/quadrature/gauss_kronrod.rs`                 | `MAX_QUADRATURE_INTERVALS`               | `1 << 12`                                              | 4    | Panels of one adaptive integral. At the cap the subdivision stops; an estimate above the acceptance limit makes the quantity `quadrature.not-converged`; measurement continues. |
@@ -459,7 +461,7 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 244.
+Production `MAX_*` constants: 246.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -467,13 +469,13 @@ Production `MAX_*` constants: 244.
 | 2    | Per-input bound            | 69    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 119   |
-| N    | Not a decode bound         | 26    |
-|      | Total                      | 244   |
+| N    | Not a decode bound         | 28    |
+|      | Total                      | 246   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 12, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 14, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,

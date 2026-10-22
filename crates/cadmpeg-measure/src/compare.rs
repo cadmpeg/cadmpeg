@@ -12,36 +12,50 @@
 //! bodies by multiplicity in ID order, and a class that is not is
 //! ambiguous.
 
+mod candidates;
 mod classes;
 mod placement;
 mod rows;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
+use cadmpeg_core::decode::{u64_from_index, ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_ir::CadIr;
 use serde::Serialize;
 
+use crate::budget::WorkProfile;
 use crate::reason::CompareCause;
 use crate::report::{BodyMeasures, MeasureReport};
 use crate::select::SurfaceKind;
 use crate::tolerance::COMPARE_RELATIVE_FLOOR;
 use crate::value::Unit;
+use candidates::{compatible_pairs, PairWork};
 use classes::{classes, Class};
-use rows::{body_rows, document_rows, BodyComparison, Context};
+use rows::{body_rows, document_rows, Context};
 
 /// Options of an ID-free comparison.
 #[derive(Debug, Clone, Copy)]
 pub struct CompareOptions {
     relative_floor: f64,
+    work: WorkProfile,
 }
 
 impl CompareOptions {
     /// Options with the relative floor `relative_floor`, which must be
-    /// finite, at least 0 and less than 1.
+    /// finite, at least 0 and less than 1, under the desktop work profile.
     #[must_use]
     pub fn new(relative_floor: f64) -> Option<Self> {
-        (relative_floor.is_finite() && (0.0..1.0).contains(&relative_floor))
-            .then_some(Self { relative_floor })
+        (relative_floor.is_finite() && (0.0..1.0).contains(&relative_floor)).then_some(Self {
+            relative_floor,
+            work: WorkProfile::Desktop,
+        })
+    }
+
+    /// The same options under the work profile `work`, which sets the pair
+    /// allowance.
+    #[must_use]
+    pub const fn with_work(self, work: WorkProfile) -> Self {
+        Self { work, ..self }
     }
 
     /// The relative floor of every tolerance.
@@ -49,13 +63,41 @@ impl CompareOptions {
     pub const fn relative_floor(&self) -> f64 {
         self.relative_floor
     }
+
+    /// The work profile that sets the pair allowance.
+    #[must_use]
+    pub const fn work(&self) -> WorkProfile {
+        self.work
+    }
 }
 
 impl Default for CompareOptions {
     fn default() -> Self {
         Self {
             relative_floor: COMPARE_RELATIVE_FLOOR,
+            work: WorkProfile::Desktop,
         }
+    }
+}
+
+/// The body pair evaluations a comparison may use and has used.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct CompareWork {
+    allowance: usize,
+    used: usize,
+}
+
+impl CompareWork {
+    /// The pair allowance.
+    #[must_use]
+    pub const fn allowance(&self) -> usize {
+        self.allowance
+    }
+
+    /// The pair evaluations used.
+    #[must_use]
+    pub const fn used(&self) -> usize {
+        self.used
     }
 }
 
@@ -284,6 +326,7 @@ pub struct Comparison {
     unmeasured_b: Vec<String>,
     ambiguous: Vec<Ambiguous>,
     inconclusive_causes: Vec<CompareCause>,
+    work: CompareWork,
 }
 
 impl Comparison {
@@ -352,6 +395,12 @@ impl Comparison {
     pub fn inconclusive_causes(&self) -> &[CompareCause] {
         &self.inconclusive_causes
     }
+
+    /// The pair evaluations the comparison used.
+    #[must_use]
+    pub const fn work(&self) -> CompareWork {
+        self.work
+    }
 }
 
 /// The larger diagonal of the two document boxes.
@@ -367,14 +416,22 @@ fn scale(a: &MeasureReport, b: &MeasureReport) -> f64 {
 /// Compare two documents measured in model space. `a_ir` and `b_ir` supply
 /// the occurrence structure that decides whether model-space bodies are the
 /// documents' instances.
-#[must_use]
+///
+/// Only body pairs that can be compatible are evaluated, each charged to the
+/// pair allowance of `options`; the rows of a pair are kept only for the
+/// paired bodies.
+///
+/// # Errors
+///
+/// A [`ResourceLimit`] when the comparison needs more pair evaluations than
+/// the allowance holds.
 pub fn compare(
     a_ir: &CadIr,
     a: &MeasureReport,
     b_ir: &CadIr,
     b: &MeasureReport,
     options: &CompareOptions,
-) -> Comparison {
+) -> Result<Comparison, ResourceLimit> {
     let placement = Placements {
         a: placement::class(a_ir),
         b: placement::class(b_ir),
@@ -390,31 +447,29 @@ pub fn compare(
         .chain(b.bodies().iter().map(|body| (true, body)))
         .collect();
     let count = bodies.len();
-    let mut comparisons: BTreeMap<(usize, usize), BodyComparison> = BTreeMap::new();
-    for first in 0..count {
-        for second in first + 1..count {
-            comparisons.insert(
-                (first, second),
-                body_rows(bodies[first].1, bodies[second].1, &context),
-            );
-        }
-    }
+    let Some(allowance) = options.work.pair_allowance(count) else {
+        return Err(ResourceLimit {
+            dimension: ResourceDimension::Entities,
+            reason: ResourceFailure::BudgetExceeded,
+            limit: 0,
+            used: u64_from_index(count),
+            additional: 0,
+            operation: "geometry comparison pair allowance",
+        });
+    };
+    let mut work = PairWork { allowance, used: 0 };
+    let members: Vec<&BodyMeasures> = bodies.iter().map(|(_, body)| *body).collect();
+    let edges = compatible_pairs(&members, &context, &mut work)?;
+    let compatible_set: HashSet<(usize, usize)> = edges.iter().copied().collect();
     let compatible = |first: usize, second: usize| {
-        let key = if first < second {
-            (first, second)
-        } else {
-            (second, first)
-        };
-        comparisons
-            .get(&key)
-            .is_some_and(|comparison| comparison.compatible)
+        compatible_set.contains(&(first.min(second), first.max(second)))
     };
     let sides: Vec<bool> = bodies.iter().map(|(side, _)| *side).collect();
     let measurable: Vec<bool> = bodies
         .iter()
         .map(|(_, body)| rows::measurable(body))
         .collect();
-    let found = classes(&sides, &measurable, &compatible);
+    let found = classes(&sides, &measurable, &edges, &compatible);
     let id = |index: usize| bodies[index].1.body().to_owned();
 
     let mut causes: Vec<CompareCause> = Vec::new();
@@ -426,14 +481,11 @@ pub fn compare(
         match class {
             Class::Paired(paired) => {
                 for (first, second) in paired {
-                    let Some(comparison) = comparisons.remove(&(first, second)) else {
-                        continue;
-                    };
                     let (body_a, body_b) = (bodies[first].1, bodies[second].1);
                     pairs.push(Pair {
                         a: id(first),
                         b: id(second),
-                        quantities: comparison.rows,
+                        quantities: body_rows(body_a, body_b, &context).rows,
                         informational: Informational {
                             surface_kinds_a: body_a.surface_kinds().clone(),
                             surface_kinds_b: body_b.surface_kinds().clone(),
@@ -503,7 +555,7 @@ pub fn compare(
     };
     let [unmatched_a, unmatched_b] = unmatched;
     let [unmeasured_a, unmeasured_b] = unmeasured;
-    Comparison {
+    Ok(Comparison {
         verdict,
         relative_floor: options.relative_floor,
         placement,
@@ -515,5 +567,9 @@ pub fn compare(
         unmeasured_b,
         ambiguous,
         inconclusive_causes: causes,
-    }
+        work: CompareWork {
+            allowance,
+            used: work.used,
+        },
+    })
 }

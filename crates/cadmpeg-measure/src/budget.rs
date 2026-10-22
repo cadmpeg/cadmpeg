@@ -28,6 +28,18 @@ pub const MAX_MEASURE_PASS_WORK_PER_ITEM: usize = 1 << 22;
 /// profile.
 pub const MAX_MEASURE_PASS_WORK_PER_ITEM_SERVICE: usize = 1 << 18;
 
+/// The smallest pair allowance of an ID-free comparison, in body pair
+/// evaluations.
+const COMPARE_PAIR_WORK_FLOOR: usize = 1 << 20;
+
+/// Pair evaluations of an ID-free comparison per body of both documents
+/// under the desktop profile.
+const MAX_COMPARE_PAIR_WORK_PER_BODY: usize = 1 << 12;
+
+/// Pair evaluations of an ID-free comparison per body of both documents
+/// under the service profile.
+const MAX_COMPARE_PAIR_WORK_PER_BODY_SERVICE: usize = 1 << 8;
+
 /// One face slice: traversal, resolver, regions, quadrature, extents, box and
 /// flux of one face.
 const MAX_FACE_MEASURE_WORK: usize = 1 << 26;
@@ -57,6 +69,19 @@ impl WorkProfile {
         items
             .checked_mul(per_item)
             .map(|scaled| scaled.max(MEASURE_PASS_WORK_FLOOR))
+    }
+
+    /// The pair allowance of an ID-free comparison of `bodies` bodies of
+    /// both documents, absent when it does not fit a `usize`.
+    #[must_use]
+    pub fn pair_allowance(self, bodies: usize) -> Option<usize> {
+        let per_body = match self {
+            Self::Desktop => MAX_COMPARE_PAIR_WORK_PER_BODY,
+            Self::Service => MAX_COMPARE_PAIR_WORK_PER_BODY_SERVICE,
+        };
+        bodies
+            .checked_mul(per_body)
+            .map(|scaled| scaled.max(COMPARE_PAIR_WORK_FLOOR))
     }
 }
 
@@ -184,6 +209,22 @@ mod tests {
                 Some(MEASURE_PASS_WORK_FLOOR.max(3 * per_item))
             );
             assert_eq!(profile.pass_allowance(1 << 20), Some((1 << 20) * per_item));
+        }
+    }
+
+    #[test]
+    fn pair_allowance_scales_with_bodies_above_the_floor() {
+        use super::{
+            COMPARE_PAIR_WORK_FLOOR, MAX_COMPARE_PAIR_WORK_PER_BODY,
+            MAX_COMPARE_PAIR_WORK_PER_BODY_SERVICE,
+        };
+        for (profile, per_body) in [
+            (WorkProfile::Desktop, MAX_COMPARE_PAIR_WORK_PER_BODY),
+            (WorkProfile::Service, MAX_COMPARE_PAIR_WORK_PER_BODY_SERVICE),
+        ] {
+            assert_eq!(profile.pair_allowance(2), Some(COMPARE_PAIR_WORK_FLOOR));
+            assert_eq!(profile.pair_allowance(1 << 16), Some((1 << 16) * per_body));
+            assert_eq!(profile.pair_allowance(usize::MAX), None);
         }
     }
 

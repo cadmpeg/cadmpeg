@@ -7,6 +7,8 @@
 //! the two documents by multiplicity in ID order and leaves the surplus
 //! unmatched. A class that is not clean is ambiguous.
 
+use std::collections::BTreeMap;
+
 /// One class of bodies, by index into the bodies of both documents.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Class {
@@ -20,46 +22,58 @@ pub(super) enum Class {
     Ambiguous(Vec<usize>),
 }
 
+/// The root of `index` in a union-find forest, halving the path to it.
+fn root(parent: &mut [usize], mut index: usize) -> usize {
+    while parent[index] != index {
+        parent[index] = parent[parent[index]];
+        index = parent[index];
+    }
+    index
+}
+
 /// The classes of the bodies whose sides are `sides` (`false` for the first
-/// document), whose comparability is `measurable`, under `compatible`.
+/// document), whose comparability is `measurable`, connected by the
+/// compatible pairs `edges` and tested for cleanness by `compatible`.
 /// Indices of each side are in ID order.
 pub(super) fn classes(
     sides: &[bool],
     measurable: &[bool],
+    edges: &[(usize, usize)],
     compatible: &dyn Fn(usize, usize) -> bool,
 ) -> Vec<Class> {
     let count = sides.len();
-    let mut component: Vec<usize> = (0..count).collect();
+    let mut parent: Vec<usize> = (0..count).collect();
     let mut found = Vec::new();
     for (index, measured) in measurable.iter().enumerate() {
         if !measured {
             found.push(Class::Unmeasured(index));
         }
     }
-    for first in 0..count {
-        for second in first + 1..count {
-            if measurable[first] && measurable[second] && compatible(first, second) {
-                let (from, to) = (component[first], component[second]);
-                if from != to {
-                    for label in &mut component {
-                        if *label == to {
-                            *label = from;
-                        }
-                    }
-                }
+    for &(first, second) in edges {
+        if measurable[first] && measurable[second] {
+            let (from, to) = (root(&mut parent, first), root(&mut parent, second));
+            if from != to {
+                parent[to.max(from)] = to.min(from);
             }
         }
     }
-    let mut seen = Vec::new();
-    for index in 0..count {
-        if !measurable[index] || seen.contains(&component[index]) {
+    let mut components: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    let mut order = Vec::new();
+    for (index, measured) in measurable.iter().enumerate() {
+        if !measured {
             continue;
         }
-        let label = component[index];
-        seen.push(label);
-        let members: Vec<usize> = (index..count)
-            .filter(|member| measurable[*member] && component[*member] == label)
-            .collect();
+        let label = root(&mut parent, index);
+        let members = components.entry(label).or_default();
+        if members.is_empty() {
+            order.push(label);
+        }
+        members.push(index);
+    }
+    for label in order {
+        let Some(members) = components.remove(&label) else {
+            continue;
+        };
         let clean = members.iter().enumerate().all(|(position, first)| {
             members
                 .iter()
@@ -96,7 +110,21 @@ pub(super) fn classes(
 
 #[cfg(test)]
 mod tests {
-    use super::{classes, Class};
+    use super::Class;
+
+    /// The classes under `compatible`, connected by every compatible pair.
+    fn classes(
+        sides: &[bool],
+        measurable: &[bool],
+        compatible: &dyn Fn(usize, usize) -> bool,
+    ) -> Vec<Class> {
+        let count = sides.len();
+        let edges: Vec<(usize, usize)> = (0..count)
+            .flat_map(|first| (first + 1..count).map(move |second| (first, second)))
+            .filter(|(first, second)| compatible(*first, *second))
+            .collect();
+        super::classes(sides, measurable, &edges, compatible)
+    }
 
     #[test]
     fn coincident_bodies_pair_by_multiplicity() {

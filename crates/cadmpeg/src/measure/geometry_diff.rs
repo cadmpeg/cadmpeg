@@ -8,6 +8,7 @@
 use std::io::{self, Write};
 use std::path::Path;
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::decode::DecodeReport;
 use cadmpeg_ir::DecodeOptions;
 use cadmpeg_measure::compare::{compare, CompareOptions, Comparison, Operand, Row, Verdict};
@@ -18,7 +19,7 @@ use serde::Serialize;
 use super::render::{name, number};
 use super::{input_summary, require_geometry, run, MeasureBody, Session};
 use crate::application::document::LoadedDocument;
-use crate::application::refusal::ApplicationError;
+use crate::application::refusal::{ApplicationError, RefusalStage};
 
 /// How the geometry comparison runs.
 #[derive(Debug, Clone, Copy)]
@@ -79,7 +80,16 @@ impl GeometryDiff {
         };
         let a = measured(left)?;
         let b = measured(right)?;
-        let comparison = compare(&left.ir, &a, &right.ir, &b, &args.compare);
+        let comparison = compare(
+            &left.ir,
+            &a,
+            &right.ir,
+            &b,
+            &args.compare.with_work(args.profile),
+        )
+        .map_err(|limit| {
+            ApplicationError::from(CodecError::ResourceLimit(limit)).at_stage(RefusalStage::Measure)
+        })?;
         Ok(Self { a, b, comparison })
     }
 

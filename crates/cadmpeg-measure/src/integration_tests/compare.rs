@@ -59,7 +59,7 @@ fn comparison(a: &CadIr, b: &CadIr) -> Comparison {
 fn comparison_with(a: &CadIr, b: &CadIr, options: CompareOptions) -> Comparison {
     let report_a = measure(a, &Selection::default());
     let report_b = measure(b, &Selection::default());
-    compare(a, &report_a, b, &report_b, &options)
+    compare(a, &report_a, b, &report_b, &options).expect("within the pair allowance")
 }
 
 fn translated(ir: &CadIr, x: f64) -> CadIr {
@@ -345,4 +345,28 @@ fn a_nurbs_body_turned_about_its_centroid_disagrees_by_its_box() {
     let violation = row.difference().expect("violation");
     assert!((violation - 0.5).abs() <= 1.0e-9, "{violation}");
     assert_eq!(comparison(&plain, &plain).verdict(), Verdict::Agree);
+}
+
+/// Forty cubes 100 mm apart along `x` in each document. Only the two
+/// copies of one cube overlap, so the comparison evaluates forty pairs,
+/// not the 3160 pairs of eighty bodies.
+#[test]
+fn disjoint_bodies_evaluate_only_overlapping_pairs() {
+    let count = 40;
+    let row = |prefix: &str| {
+        let cube = cube();
+        (0..count)
+            .map(|index| {
+                let copy = renamed(&cube, "synthetic:cube:", &format!("{prefix}{index}:"));
+                translated(&copy, 100.0 * f64::from(index))
+            })
+            .reduce(|all, next| merged(&all, &next))
+            .expect("cubes")
+    };
+    let (a, b) = (row("synthetic:a"), row("synthetic:b"));
+    assert_eq!(a.model.bodies.len(), 40);
+    let result = comparison(&a, &b);
+    assert_eq!(result.verdict(), Verdict::Agree);
+    assert_eq!(result.pairs().len(), 40);
+    assert_eq!(result.work().used(), 40);
 }

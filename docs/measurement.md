@@ -552,6 +552,19 @@ and matches bodies by their measured geometry, not by their IDs.
   unmatched; else `inconclusive` when a cause applies, including
   `compare.nothing-compared`; else `agree`. Surface-kind counts and `visible`
   are informational.
+- Work. Only body pairs that can be compatible are evaluated, and only the
+  rows of paired bodies are kept. A signature body is evaluated against the
+  signature bodies of the same kind, counts and reason codes. Two bodies
+  whose boxes are measured under no reading and have a lower bound are
+  evaluated when their boxes overlap along the axis of the widest spread of
+  box centres, within the largest box tolerance of the comparison; a box row
+  of two bodies that do not overlap disagrees. Every other body is evaluated
+  against every body that is not a signature body. Each evaluation charges
+  one unit of the pair allowance
+  `max(2^20, k × (bodies of both documents))`, with `k` set by `--limits`.
+  A comparison that needs more evaluations is refused as a resource limit at
+  the `measure` stage. `comparison.work` states the allowance and the
+  evaluations used.
 
 ## Numerical facts
 
