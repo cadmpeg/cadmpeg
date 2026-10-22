@@ -1059,3 +1059,30 @@ pub(crate) fn parse<T>(bytes: &[u8], parser: impl FnOnce(&DecodeContext<'_>, Vie
     let (ctx, source) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("view");
     parser(&ctx, source)
 }
+
+pub(crate) fn primary_envelope_fixture_with_revisions(revisions: &[u8]) -> Vec<u8> {
+    const MINI_SECTOR_SIZE: usize = 64;
+    const DIRECTORY_ENTRY_SIZE: usize = 128;
+    const STREAM_START: usize = 116;
+    const STREAM_LENGTH: usize = 120;
+    assert!(revisions.len() <= MINI_SECTOR_SIZE);
+    let mut file = primary_envelope_fixture();
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service()).unwrap();
+    let snapshot = cadmpeg_container::compound::CompoundSnapshot::new(&ctx, root).unwrap();
+    let stream = snapshot.stream("RSeStorage/RSeDbRevisionInfo").unwrap();
+    let directory = SECTOR_SIZE
+        + cadmpeg_core::decode::index_from_u32(stream.id().directory_id()) * DIRECTORY_ENTRY_SIZE;
+    let root_mini_start = View::u32_le_at(&file, SECTOR_SIZE + STREAM_START).unwrap();
+    let mini_start = View::u32_le_at(&file, directory + STREAM_START).unwrap();
+    let physical = (cadmpeg_core::decode::index_from_u32(root_mini_start) + 1) * SECTOR_SIZE
+        + cadmpeg_core::decode::index_from_u32(mini_start) * MINI_SECTOR_SIZE;
+    drop(snapshot);
+    drop(ctx);
+    file[physical..physical + MINI_SECTOR_SIZE].fill(0);
+    file[physical..physical + revisions.len()].copy_from_slice(revisions);
+    file[directory + STREAM_LENGTH..directory + STREAM_LENGTH + size_of::<u64>()]
+        .copy_from_slice(&cadmpeg_core::decode::u64_from_index(revisions.len()).to_le_bytes());
+    file
+}

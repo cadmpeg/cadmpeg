@@ -366,6 +366,7 @@ pub(crate) struct RseInventory<'a> {
     pub(crate) databases: Vec<DatabaseDescriptor<'a>>,
     pub(crate) registry: ParsedState<SegmentRegistry>,
     pub(crate) revisions: ParsedState<RevisionTable>,
+    pub(crate) revision_source: Option<View<'a>>,
     pub(crate) segments: Vec<SegmentDescriptor<'a>>,
     pub(crate) unpaired_metadata: Vec<SegmentToken>,
     pub(crate) unpaired_bulk: Vec<SegmentToken>,
@@ -454,13 +455,17 @@ impl<'a> RseInventory<'a> {
                 Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
             },
         };
+        let mut revision_source = None;
         let revisions = match snapshot.stream("RSeStorage/RSeDbRevisionInfo") {
             None => ParsedState::Absent,
-            Some(stream) => match snapshot
-                .open(ctx, stream)
-                .and_then(|view| parse_revisions(view.window()))
-            {
-                Ok(value) => ParsedState::Parsed(value),
+            Some(stream) => match snapshot.open(ctx, stream) {
+                Ok(view) => {
+                    revision_source = Some(view);
+                    match parse_revisions(view.window()) {
+                        Ok(value) => ParsedState::Parsed(value),
+                        Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
+                    }
+                }
                 Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
             },
         };
@@ -546,6 +551,7 @@ impl<'a> RseInventory<'a> {
             databases: database_descriptors,
             registry,
             revisions,
+            revision_source,
             segments,
             unpaired_metadata,
             unpaired_bulk,

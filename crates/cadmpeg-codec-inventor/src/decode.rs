@@ -5,6 +5,7 @@ mod database_parts;
 mod document_native_projection;
 mod property_sections;
 mod property_streams;
+mod revision_parts;
 mod rse_native_projection;
 
 use cadmpeg_ir::annotations::StreamHandle;
@@ -400,8 +401,12 @@ fn decode_container<'a>(
             .collect::<Result<Vec<_>, _>>()?,
         ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
     };
+    let source_revision_count = match container.rse.revision_source {
+        Some(source) => revision_parts::stage(ctx, &mut assembly_inventory.parts, source)?,
+        None => 0,
+    };
     let revisions = match &container.rse.revisions {
-        ParsedState::Parsed(table) => table
+        ParsedState::Parsed(table) if container.rse.revision_source.is_none() => table
             .entries
             .iter()
             .enumerate()
@@ -421,13 +426,15 @@ fn decode_container<'a>(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?,
-        ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
+        ParsedState::Parsed(_) | ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
     };
     if let ParsedState::Unavailable(detail) = &container.rse.registry {
         structural_issues.push(structural_issue(ctx, "segment_registry", detail)?);
     }
-    if let ParsedState::Unavailable(detail) = &container.rse.revisions {
-        structural_issues.push(structural_issue(ctx, "revision_table", detail)?);
+    if container.rse.revision_source.is_none() {
+        if let ParsedState::Unavailable(detail) = &container.rse.revisions {
+            structural_issues.push(structural_issue(ctx, "revision_table", detail)?);
+        }
     }
     let projection = rse_native_projection::project(ctx, container, &assembly_inventory.parts)?;
     structural_issues.extend(projection.identity_issues);
@@ -1145,7 +1152,10 @@ fn decode_container<'a>(
             crate::coverage::RSE_REGISTRY_ENTRIES,
             segment_registry.len(),
         ),
-        (crate::coverage::RSE_REVISIONS, revisions.len()),
+        (
+            crate::coverage::RSE_REVISIONS,
+            revisions.len() + source_revision_count,
+        ),
         (crate::coverage::RSE_SEGMENT_PAIRS, segment_pairs.len()),
         (crate::coverage::RSE_SEGMENT_META, segment_meta.len()),
         (crate::coverage::RSE_META_TYPES, meta_types.len()),

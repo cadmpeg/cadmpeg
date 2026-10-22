@@ -10,7 +10,7 @@ use crate::native::{
     PropertyRecord, ValueRecord,
 };
 
-pub(crate) mod document_strings;
+pub(crate) mod document_properties;
 pub(crate) mod source;
 
 const MAX_OBJECTS: usize = 1_000_000;
@@ -147,12 +147,12 @@ pub(crate) fn parse_document_source<'source>(
     Ok(graph)
 }
 
-pub(crate) fn parse_document_source_with_strings<'source>(
+pub(crate) fn parse_document_source_with_properties<'source>(
     ctx: &cadmpeg_core::decode::DecodeContext<'source>,
     view: cadmpeg_core::decode::View<'source>,
     xml: &roxmltree::Document<'_>,
     schema: Vocabulary,
-    strings: Option<&document_strings::RootStrings>,
+    strings: Option<&document_properties::RootProperties>,
 ) -> Result<Graph, CodecError> {
     if strings.is_none() {
         return parse_document_source(ctx, view, xml, schema);
@@ -168,7 +168,7 @@ fn parse_document_impl(
     xml: &roxmltree::Document<'_>,
     schema: Vocabulary,
     source: Option<&source::Source<'_, '_>>,
-    strings: Option<&document_strings::RootStrings>,
+    strings: Option<&document_properties::RootProperties>,
 ) -> Result<Graph, CodecError> {
     let root = xml.root_element();
     let mut losses = Vec::new();
@@ -620,7 +620,7 @@ fn parse_properties_impl(
     property_sources: &mut std::collections::BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source: Option<&source::Source<'_, '_>>,
-    skip_strings: bool,
+    skip_adopted: bool,
 ) -> Result<(), CodecError> {
     let property_nodes = container
         .children()
@@ -632,7 +632,7 @@ fn parse_properties_impl(
         .collect::<Vec<_>>();
     let mut names = HashSet::new();
     for node in transient_property_nodes.iter().chain(property_nodes.iter()) {
-        if skip_strings && document_strings::selected(*node) {
+        if skip_adopted && document_properties::selected(*node) {
             continue;
         }
         let name = node.attribute("name").ok_or_else(|| {
@@ -696,7 +696,7 @@ fn parse_properties_impl(
         output.push(property);
     }
     for (order, node) in property_nodes.into_iter().enumerate() {
-        if skip_strings && document_strings::selected(node) {
+        if skip_adopted && document_properties::selected(node) {
             continue;
         }
         let name = required_attr(node, "name")?;

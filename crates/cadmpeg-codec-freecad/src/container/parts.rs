@@ -76,7 +76,7 @@ pub(super) struct Document<'source> {
     pub(super) xml: roxmltree::Document<'source>,
     pub(super) facts: crate::native::DocumentFacts,
     pub(super) schema: String,
-    pub(super) strings: Option<crate::persistence::document_strings::RootStrings>,
+    pub(super) root_properties: Option<crate::persistence::document_properties::RootProperties>,
     pub(super) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
@@ -137,19 +137,19 @@ pub(super) fn document<'source>(
                             let (facts, schema) =
                                 super::parse_document_impl(&xml, &mut losses, Some(&source))?;
                             root_stage.insert_native(ctx, "document", facts.clone())?;
-                            let strings = crate::persistence::document_strings::decode(
+                            let root_properties = crate::persistence::document_properties::decode(
                                 ctx, view, &xml, root_stage,
                             )?;
-                            Ok((facts, schema, strings))
+                            Ok((facts, schema, root_properties))
                         })
                     },
                 )?;
-                Ok(facts.map(|(facts, schema, strings)| Document {
+                Ok(facts.map(|(facts, schema, root_properties)| Document {
                     view,
                     xml,
                     facts,
                     schema,
-                    strings,
+                    root_properties,
                     losses,
                 }))
             })

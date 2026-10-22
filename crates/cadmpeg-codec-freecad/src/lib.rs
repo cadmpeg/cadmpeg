@@ -885,7 +885,7 @@ impl CodecBackend for FcstdCodec {
         let decode_document = !ctx.container_only();
         if decode_document {
             let document_xml = &scan.document_xml;
-            let mut graph = persistence::parse_document_source_with_strings(
+            let mut graph = persistence::parse_document_source_with_properties(
                 ctx,
                 *scan
                     .data
@@ -893,7 +893,7 @@ impl CodecBackend for FcstdCodec {
                     .ok_or_else(|| CodecError::malformed("properties have no document source"))?,
                 document_xml,
                 persistence::Vocabulary::from_declaration(&scan.schema_version)?,
-                scan.document_strings.as_ref(),
+                scan.document_properties.as_ref(),
             )?;
             scan.losses.extend(graph.losses);
             persistence::resolve_side_entries(&mut graph.properties, &scan.data, &mut scan.losses)?;
@@ -1339,11 +1339,11 @@ impl CodecBackend for FcstdCodec {
                 .map(|namespace| namespace.arena_as::<native::PropertyRecord>("properties"))
                 .transpose()?
                 .unwrap_or_default();
-            transfer_losses.extend(attributes::transfer_with_document_strings(
+            transfer_losses.extend(attributes::transfer_with_document_properties(
                 &mut ir,
                 &objects,
                 &properties,
-                scan.document_strings.as_ref(),
+                scan.document_properties.as_ref(),
             )?);
         }
         let mut losses = if ctx.container_only() {

@@ -383,7 +383,19 @@ pub(crate) fn gui_state_content(
 }
 
 #[derive(Debug, Clone)]
+enum GeometryEmission {
+    Unknown,
+    None {
+        kind: String,
+        extensions: Vec<String>,
+        properties: BTreeMap<String, String>,
+    },
+    Present,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct Object {
+    geometry: GeometryEmission,
     pub(crate) name: String,
     pub(crate) kind: String,
     pub(crate) properties: BTreeMap<String, String>,
@@ -395,6 +407,7 @@ pub(crate) struct Object {
 impl Object {
     pub(crate) fn new(name: String, kind: &str, label: &str) -> Self {
         Self {
+            geometry: GeometryEmission::Unknown,
             name,
             kind: kind.into(),
             properties: [("Label".into(), string("Label", label))].into(),
@@ -405,7 +418,82 @@ impl Object {
     }
 
     pub(crate) fn set(&mut self, name: &str, property: String) {
+        self.geometry = GeometryEmission::Unknown;
         self.properties.insert(name.into(), property);
+    }
+
+    pub(crate) fn mark_grouping_only(&mut self) {
+        self.geometry = GeometryEmission::None {
+            kind: self.kind.clone(),
+            extensions: self.extensions.clone(),
+            properties: self.properties.clone(),
+        };
+    }
+
+    pub(crate) fn mark_geometry_written(&mut self) {
+        self.geometry = GeometryEmission::Present;
+    }
+
+    pub(crate) fn geometry_empty(&self) -> bool {
+        matches!(&self.geometry, GeometryEmission::None { kind, extensions, properties }
+            if self.kind == *kind && self.extensions == *extensions && self.properties == *properties)
+    }
+
+    pub(crate) fn set_text(&mut self, name: &str, value: &str) {
+        self.set_metadata(name, string(name, value));
+    }
+
+    pub(crate) fn set_boolean(&mut self, name: &str, value: bool) {
+        self.set_metadata(
+            name,
+            scalar(name, "App::PropertyBool", "Bool", u8::from(value)),
+        );
+    }
+
+    pub(crate) fn set_projection_text(&mut self, name: &str, value: &str) {
+        self.projection_metadata(
+            name,
+            "App::PropertyString",
+            &element("String", &[("value", value.to_owned())]),
+        );
+    }
+
+    pub(crate) fn set_projection_boolean(&mut self, name: &str, value: bool) {
+        self.projection_metadata(
+            name,
+            "App::PropertyBool",
+            &element("Bool", &[("value", u8::from(value).to_string())]),
+        );
+    }
+
+    pub(crate) fn set_projection_texts(&mut self, name: &str, values: &[String]) {
+        let rows = values
+            .iter()
+            .map(|value| element("String", &[("value", value.clone())]))
+            .collect::<String>();
+        self.projection_metadata(
+            name,
+            "App::PropertyStringList",
+            &format!("<StringList count=\"{}\">{rows}</StringList>", values.len()),
+        );
+    }
+
+    fn set_metadata(&mut self, name: &str, property: String) {
+        if let GeometryEmission::None { properties, .. } = &mut self.geometry {
+            properties.insert(name.into(), property.clone());
+        }
+        self.properties.insert(name.into(), property);
+    }
+
+    fn projection_metadata(&mut self, name: &str, kind: &str, content: &str) {
+        self.set_metadata(
+            name,
+            property(name, kind, content).replacen(
+                "<Property ",
+                "<Property group=\"CADIR\" hide=\"1\" ",
+                1,
+            ),
+        );
     }
 }
 
@@ -416,3 +504,6 @@ pub(crate) fn document(
 ) -> String {
     crate::builder::document_xml(objects, properties, schema)
 }
+
+#[cfg(test)]
+mod tests;

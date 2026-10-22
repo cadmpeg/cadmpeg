@@ -4,13 +4,14 @@
 use std::ops::Range;
 
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, Identity, IdentityKey, ProceduralCurveId};
 
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::settings::MillimeterScale;
 use crate::wire::Uuid;
 
-use super::{DecodedGeometry, GeometryError};
+use super::{DecodedCurve, DecodedGeometry, GeometryError};
 
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
@@ -55,7 +56,8 @@ impl Source<'_, '_, '_> {
         path: &str,
         depth: usize,
     ) -> Result<DecodedGeometry, GeometryError> {
-        if !super::is_polycurve(class) && !super::is_line(class) {
+        let leaf = super::is_line(class) || super::is_polyline(class);
+        if !super::is_polycurve(class) && !leaf {
             return super::decode_inner(
                 self.ctx,
                 self.data,
@@ -81,7 +83,7 @@ impl Source<'_, '_, '_> {
                     .map_err(|error| GeometryError::malformed(range.start, error.to_string()))?,
             )
         };
-        let id: Identity = if super::is_line(class) {
+        let id: Identity = if leaf {
             CurveId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
                 key,
@@ -103,17 +105,33 @@ impl Source<'_, '_, '_> {
                     bound: self.source.end(),
                 })?;
         self.ctx.record(id.as_str(), extent, || {
-            Ok(if super::is_line(class) {
-                self.read_line(range)
+            Ok(if leaf {
+                self.read_leaf(class, range)
             } else {
                 self.read(range, path, depth)
             })
         })?
     }
 
-    fn read_line(&self, range: Range<usize>) -> Result<DecodedGeometry, GeometryError> {
+    fn read_leaf(
+        &self,
+        class: Uuid,
+        range: Range<usize>,
+    ) -> Result<DecodedGeometry, GeometryError> {
         let mut reader = BoundedReader::from_view(self.source, range.start, range.end)?;
-        let curve = super::DecodedCurve::line(super::read_line(&mut reader, self.scale, None)?);
+        let curve = if super::is_line(class) {
+            DecodedCurve::line(super::read_line(&mut reader, self.scale, None)?)
+        } else {
+            DecodedCurve::leaf(
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(super::read_polyline(
+                    self.ctx,
+                    &mut reader,
+                    self.scale,
+                    None,
+                )?)),
+                crate::loss::Diagnostics::new(),
+            )
+        };
         reader.skip_remaining()?;
         Ok(DecodedGeometry::Curve { curve })
     }

@@ -34,7 +34,7 @@ pub(super) fn validate<'source>(
             sum.checked_add(1)?.checked_add(
                 container
                     .children()
-                    .filter(|node| crate::persistence::document_strings::selected(*node))
+                    .filter(|node| crate::persistence::document_properties::selected(*node))
                     .count(),
             )
         })
@@ -57,7 +57,7 @@ pub(super) fn validate<'source>(
         for (level, node) in std::iter::once(("freecad.properties", container)).chain(
             container
                 .children()
-                .filter(|node| crate::persistence::document_strings::selected(*node))
+                .filter(|node| crate::persistence::document_properties::selected(*node))
                 .map(|node| ("freecad.property", node)),
         ) {
             let extent = crate::fidelity::relative_xml_extent(document, node.range())?;

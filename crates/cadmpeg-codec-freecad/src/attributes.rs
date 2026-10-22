@@ -331,7 +331,7 @@ pub(crate) fn semantic_text(property: &PropertyRecord) -> Option<String> {
     Some(serde_json::Value::Array(values).to_string())
 }
 
-pub(crate) fn document_string(
+pub(crate) fn document_property(
     property: &PropertyRecord,
 ) -> Result<Option<SourceAttribute>, CodecError> {
     if matches!(property.name.as_str(), "Shape" | "Placement")
@@ -364,11 +364,11 @@ pub(crate) fn transfer(
     transfer_impl(ir, objects, properties, None)
 }
 
-pub(crate) fn transfer_with_document_strings(
+pub(crate) fn transfer_with_document_properties(
     ir: &mut CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-    strings: Option<&crate::persistence::document_strings::RootStrings>,
+    strings: Option<&crate::persistence::document_properties::RootProperties>,
 ) -> Result<Vec<LossNote>, CodecError> {
     if strings.is_none() {
         return transfer(ir, objects, properties);
@@ -380,7 +380,7 @@ fn transfer_impl(
     ir: &mut CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-    strings: Option<&crate::persistence::document_strings::RootStrings>,
+    strings: Option<&crate::persistence::document_properties::RootProperties>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut attributes = Vec::new();
     let mut losses = Vec::new();

@@ -30,7 +30,7 @@ fn property_native_and_neutral_values_exist_before_later_graph_recovery() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (scan, output) = crate::container::scan_for_decode(&ctx, root).unwrap();
     assert_eq!(scan.data["peer.bin"].window(), b"peer");
-    assert_eq!(output.model().attributes.len(), 2);
+    assert_eq!(output.model().attributes.len(), 3);
     let alias = output
         .model()
         .attributes
@@ -59,7 +59,7 @@ fn property_native_and_neutral_values_exist_before_later_graph_recovery() {
         .unwrap()
         .arena_as::<crate::native::PropertyRecord>("properties")
         .unwrap();
-    assert_eq!(staged.len(), 2);
+    assert_eq!(staged.len(), 3);
     let good = staged
         .iter()
         .find(|property| property.id == good_id)
@@ -71,6 +71,23 @@ fn property_native_and_neutral_values_exist_before_later_graph_recovery() {
         .find(|property| property.name == "Bad")
         .unwrap();
     assert_eq!(alias.values()[0].attributes["Value"], "bad");
+    let other = staged
+        .iter()
+        .find(|property| property.name == "Other")
+        .unwrap();
+    assert_eq!(other.type_name, "App::PropertyInteger");
+    assert_eq!(other.values()[0].attributes["value"], "17");
+    let other_attribute = output
+        .model()
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "Other")
+        .unwrap();
+    assert_eq!(other_attribute.values, [AttributeValue::Integer(17)]);
+    assert_eq!(
+        other_attribute.native_ref.as_deref(),
+        Some(other.id.as_str())
+    );
     let (_, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
     let unknowns = native
         .namespace("fcstd")

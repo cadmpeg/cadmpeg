@@ -169,15 +169,7 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
             Err(error) => return Err(error),
         }
         if let Some(suppressed) = feature.suppressed {
-            object.set(
-                "Suppressed",
-                xml::scalar(
-                    "Suppressed",
-                    "App::PropertyBool",
-                    "Bool",
-                    u8::from(suppressed),
-                ),
-            );
+            object.set_boolean("Suppressed", suppressed);
         }
         objects.push(object);
     }
@@ -272,18 +264,10 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
                 object.declaration_attributes.remove("Touched");
             }
             if let Some(label) = &feature.name {
-                object.set("Label", xml::string("Label", label));
+                object.set_text("Label", label);
             }
             if let Some(suppressed) = feature.suppressed {
-                object.set(
-                    "Suppressed",
-                    xml::scalar(
-                        "Suppressed",
-                        "App::PropertyBool",
-                        "Bool",
-                        u8::from(suppressed),
-                    ),
-                );
+                object.set_boolean("Suppressed", suppressed);
             }
         }
     }
@@ -334,6 +318,7 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
                 &xml::element("Part", &[("file", file)]),
             ),
         );
+        object.mark_geometry_written();
         object.properties.remove("CadmpegBodyNames");
         if bodies.iter().any(|body| body.name.is_some()) {
             let values = bodies
@@ -383,6 +368,7 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
                 &xml::element("Part", &[("file", file)]),
             ),
         );
+        object.mark_geometry_written();
         objects.push(object);
     }
     design::sketches(ir, &mut objects, &mut names, &mut losses)?;
@@ -416,7 +402,7 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
                         ),
                     );
                 }
-                object.set("Label", xml::string("Label", label));
+                object.set_text("Label", label);
             }
         }
     }
@@ -447,7 +433,7 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
         &mut native_dispositions,
     )?;
     super::synthesis_graph::close(&mut objects, &mut losses)?;
-    if objects.is_empty()
+    if objects.iter().all(Object::geometry_empty)
         && document_properties.values().all(|property| {
             roxmltree::Document::parse(property).is_ok_and(|xml| {
                 let root = xml.root_element();
@@ -468,7 +454,7 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
     {
         losses.push(
             cadmpeg_ir::codec::write::ExportLossCode::OutputEmpty
-                .note("the emitted FCStd document has no objects or geometry"),
+                .note("the emitted FCStd document has no geometry"),
         );
     }
     let document = xml::document(&objects, &document_properties, schema);

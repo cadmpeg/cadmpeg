@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 
-use super::xml::{self, Object};
+use super::xml::Object;
 use crate::native::{PropertyBody, PropertyRecord};
 
 const FEATURE: &str = "CadmpegFeatureOrdinal";
@@ -15,24 +15,8 @@ const OCCURRENCE: &str = "CadmpegOccurrenceOrdinal";
 const HAS_TAG: &str = "CadmpegHasFeatureSourceTag";
 const TAG: &str = "CadmpegFeatureSourceTag";
 
-fn metadata(object: &mut Object, name: &str, kind: &str, content: &str) {
-    object.set(
-        name,
-        xml::property(name, kind, content).replacen(
-            "<Property ",
-            "<Property group=\"CADIR\" hide=\"1\" ",
-            1,
-        ),
-    );
-}
-
 fn scalar(object: &mut Object, name: &str, value: impl ToString + Copy) {
-    metadata(
-        object,
-        name,
-        "App::PropertyString",
-        &xml::element("String", &[("value", value.to_string())]),
-    );
+    object.set_projection_text(name, &value.to_string());
 }
 
 /// Emit only order and source-tag fields; the native objects hold their content.
@@ -56,15 +40,7 @@ pub(super) fn preserve(
             continue;
         };
         scalar(object, FEATURE, feature.ordinal);
-        metadata(
-            object,
-            HAS_TAG,
-            "App::PropertyBool",
-            &xml::element(
-                "Bool",
-                &[("value", u8::from(feature.source_tag.is_some()).to_string())],
-            ),
-        );
+        object.set_projection_boolean(HAS_TAG, feature.source_tag.is_some());
         object.properties.remove(TAG);
         if let Some(tag) = &feature.source_tag {
             scalar(object, TAG, tag);
@@ -109,16 +85,7 @@ pub(super) fn preserve(
         let Some(object) = objects.iter_mut().find(|object| object.name == owner) else {
             continue;
         };
-        let values = rows
-            .iter()
-            .map(|value| xml::element("String", &[("value", value.clone())]))
-            .collect::<String>();
-        metadata(
-            object,
-            PARAMETERS,
-            "App::PropertyStringList",
-            &format!("<StringList count=\"{}\">{values}</StringList>", rows.len()),
-        );
+        object.set_projection_texts(PARAMETERS, &rows);
     }
     for occurrence in &ir.model.occurrences {
         let Some(object) = names

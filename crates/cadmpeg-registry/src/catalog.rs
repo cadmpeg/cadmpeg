@@ -48,6 +48,17 @@ pub struct InputDescriptor {
     kind: InputKind,
 }
 
+impl From<&'static crate::descriptors::NativeDescriptor> for InputDescriptor {
+    fn from(native: &'static crate::descriptors::NativeDescriptor) -> Self {
+        Self {
+            kind: InputKind::Native {
+                native,
+                codec: (native.decoder)(),
+            },
+        }
+    }
+}
+
 impl InputDescriptor {
     /// Stable format identifier derived from the native codec or neutral
     /// descriptor.
@@ -201,29 +212,24 @@ impl InputCatalog {
         Self {
             descriptors: crate::descriptors::FORMAT_DESCRIPTORS
                 .iter()
-                .map(|descriptor| InputDescriptor {
-                    kind: match &descriptor.kind {
-                        crate::descriptors::FormatKind::Neutral { .. } => {
-                            InputKind::Neutral { descriptor }
-                        }
-                        #[cfg(any(
-                            feature = "fcstd",
-                            feature = "f3d",
-                            feature = "inventor",
-                            feature = "sldprt",
-                            feature = "catia",
-                            feature = "creo",
-                            feature = "nx",
-                            feature = "rhino",
-                            feature = "step",
-                            feature = "iges",
-                            feature = "sat"
-                        ))]
-                        crate::descriptors::FormatKind::Native(native) => InputKind::Native {
-                            native,
-                            codec: (native.decoder)(),
-                        },
+                .map(|descriptor| match &descriptor.kind {
+                    crate::descriptors::FormatKind::Neutral { .. } => InputDescriptor {
+                        kind: InputKind::Neutral { descriptor },
                     },
+                    #[cfg(any(
+                        feature = "fcstd",
+                        feature = "f3d",
+                        feature = "inventor",
+                        feature = "sldprt",
+                        feature = "catia",
+                        feature = "creo",
+                        feature = "nx",
+                        feature = "rhino",
+                        feature = "step",
+                        feature = "iges",
+                        feature = "sat"
+                    ))]
+                    crate::descriptors::FormatKind::Native(native) => InputDescriptor::from(native),
                 })
                 .collect(),
         }
@@ -415,6 +421,32 @@ mod tests {
                 .find(|descriptor| descriptor.format_id() == row.id)
                 .expect("each format row comes from an input descriptor");
             assert_eq!(row.extensions, input.extensions());
+        }
+    }
+
+    #[test]
+    fn builtin_inputs_keep_compiled_identity_and_decoder_capability() {
+        let catalog = InputCatalog::with_builtins();
+        let compiled = crate::descriptors::FORMAT_DESCRIPTORS;
+        assert_eq!(catalog.descriptors().count(), compiled.len());
+        for (input, descriptor) in catalog.descriptors().zip(compiled) {
+            assert_eq!(input.format_id(), descriptor.id());
+            assert_eq!(input.extensions(), descriptor.input_extensions());
+            match crate::forced_input(descriptor.id().as_str())
+                .expect("embedded registry loads")
+                .expect("compiled descriptor resolves")
+            {
+                ForcedInput::Cadir => assert!(input.codec().is_none()),
+                ForcedInput::Codec(native) => {
+                    let rebuilt = super::InputDescriptor::from(native);
+                    assert_eq!(rebuilt.format_id(), input.format_id());
+                    assert_eq!(rebuilt.extensions(), input.extensions());
+                    assert_eq!(
+                        rebuilt.codec().expect("native decoder").id(),
+                        input.codec().expect("registered native decoder").id()
+                    );
+                }
+            }
         }
     }
 

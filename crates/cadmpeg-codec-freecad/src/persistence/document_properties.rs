@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Document-owned strings are born in their actual XML property scopes.
+//! Document-owned values are born in their actual XML property scopes.
 
 use crate::native::{PropertyBody, PropertyRecord};
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -8,23 +8,29 @@ use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, Par
 use std::collections::BTreeMap;
 
 #[derive(Default)]
-pub(crate) struct RootStrings {
+pub(crate) struct RootProperties {
     pub(crate) properties: Vec<PropertyRecord>,
     pub(crate) sources: BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     pub(crate) given_up: bool,
 }
 
 pub(crate) fn selected(node: roxmltree::Node<'_, '_>) -> bool {
-    if !(node.has_tag_name("Property")
-        && node.attribute("type") == Some("App::PropertyString")
-        && !node
+    let tag = match node.attribute("type") {
+        Some("App::PropertyString") => "String",
+        Some("App::PropertyInteger") => "Integer",
+        Some("App::PropertyBool") => "Bool",
+        Some("App::PropertyFloat") => "Float",
+        _ => return false,
+    };
+    if !node.has_tag_name("Property")
+        || node
             .descendants()
             .filter(roxmltree::Node::is_element)
             .any(|value| {
                 value.attributes().any(|attribute| {
                     matches!(attribute.name(), "file" | "File") && !attribute.value().is_empty()
                 })
-            }))
+            })
     {
         return false;
     }
@@ -44,10 +50,14 @@ pub(crate) fn selected(node: roxmltree::Node<'_, '_>) -> bool {
     let Some(value) = elements.next() else {
         return false;
     };
-    if !value.has_tag_name("String")
+    let string = tag == "String";
+    if !value.has_tag_name(tag)
         || elements.next().is_some()
         || value.children().any(|child| child.is_element())
     {
+        return false;
+    }
+    if !string && value.first_child().is_some() {
         return false;
     }
     if let Some(text) = value.first_child().filter(roxmltree::Node::is_text) {
@@ -65,7 +75,7 @@ pub(crate) fn decode<'source>(
     view: View<'source>,
     xml: &roxmltree::Document<'_>,
     output: &mut PartOutput,
-) -> Result<Option<RootStrings>, CodecError> {
+) -> Result<Option<RootProperties>, CodecError> {
     if ctx.container_only() {
         return Ok(None);
     }
@@ -119,7 +129,7 @@ pub(crate) fn decode<'source>(
             if names.windows(2).any(|pair| pair[0].is_some() && pair[0] == pair[1]) {
                 return Err(CodecError::malformed("duplicate document property name"));
             }
-            let mut result = RootStrings::default();
+            let mut result = RootProperties::default();
             for (order, node) in container
                 .children()
                 .filter(|node| node.has_tag_name("Property"))
@@ -153,19 +163,25 @@ pub(crate) fn decode<'source>(
                             if let PropertyBody::Unreadable(detail) = &property.body {
                                 return Err(CodecError::malformed(detail));
                             }
-                            if let Some(attribute) = crate::attributes::document_string(&property)?
+                            if let Some(attribute) = crate::attributes::document_property(&property)?
                             {
                                 stage.insert_model(ctx, attribute)?;
                             } else if !matches!(property.name.as_str(), "Shape" | "Placement") && !crate::property_policy::is_projection_metadata(&property) {
                                 stage.push_loss(ctx, crate::loss::FreecadLossCode::AttributePropertyUnprojected.note(format!("property {} ({}) has no neutral attribute encoding; its admitted typed native values remain held", property.id, property.type_name)))?;
                             }
-                            stage.insert_native(
-                                ctx,
-                                "properties",
-                                crate::native::document_string::DocumentString::new(
-                                    property.clone(),
-                                )?,
-                            )?;
+                            if property.type_name != "App::PropertyString" {
+                                stage.insert_native(
+                                    ctx,
+                                    "properties",
+                                    crate::native::document_scalar::DocumentScalar::new(property.clone())?,
+                                )?;
+                            } else {
+                                stage.insert_native(
+                                    ctx,
+                                    "properties",
+                                    crate::native::document_string::DocumentString::new(property.clone())?,
+                                )?;
+                            }
                             for loss in losses {
                                 stage.push_loss(ctx, loss)?;
                             }
@@ -183,8 +199,8 @@ pub(crate) fn decode<'source>(
             Ok(result)
         },
     )?;
-    Ok(Some(result.unwrap_or(RootStrings {
+    Ok(Some(result.unwrap_or(RootProperties {
         given_up: true,
-        ..RootStrings::default()
+        ..RootProperties::default()
     })))
 }

@@ -297,28 +297,95 @@ pub(crate) fn parse_revisions(bytes: &[u8]) -> Result<RevisionTable, CodecError>
     let count = cursor.count("revision count", 1_000_000)?;
     let mut entries = Vec::new();
     for _ in 0..count {
-        let id = cursor.array("revision id")?;
-        let flags = cursor.u32("revision flags")?;
-        let kind = cursor.u16("revision kind")?;
-        let payload = if kind == u16::MAX {
-            let enabled = cursor.u8("revision payload selector")? != 0;
-            if enabled {
-                RevisionPayload::Short(cursor.array("short revision payload")?)
-            } else {
-                RevisionPayload::Long(cursor.array("long revision payload")?)
-            }
-        } else {
-            RevisionPayload::None
-        };
-        entries.push(RevisionEntry {
-            id,
-            flags,
-            kind,
-            payload,
-        });
+        entries.push(revision_entry(&mut cursor)?);
     }
     cursor.finish()?;
     Ok(RevisionTable { version, entries })
+}
+
+fn revision_entry(cursor: &mut Cursor<'_>) -> Result<RevisionEntry, CodecError> {
+    let id = cursor.array("revision id")?;
+    let flags = cursor.u32("revision flags")?;
+    let kind = cursor.u16("revision kind")?;
+    let payload = if kind == u16::MAX {
+        let enabled = cursor.u8("revision payload selector")? != 0;
+        if enabled {
+            RevisionPayload::Short(cursor.source_array("short revision payload")?)
+        } else {
+            RevisionPayload::Long(cursor.source_array("long revision payload")?)
+        }
+    } else {
+        RevisionPayload::None
+    };
+    Ok(RevisionEntry {
+        id,
+        flags,
+        kind,
+        payload,
+    })
+}
+
+pub(crate) fn parse_revision_source(source: View<'_>) -> Result<RevisionEntry, CodecError> {
+    let mut cursor = Cursor {
+        source,
+        scope: "RSe revision table",
+    };
+    let entry = revision_entry(&mut cursor)?;
+    cursor.finish()?;
+    Ok(entry)
+}
+
+pub(crate) fn frame_revisions<'a>(
+    source: View<'a>,
+    mut record: impl FnMut(u32, View<'a>, View<'a>, Option<View<'a>>) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    let mut cursor = Cursor {
+        source,
+        scope: "RSe revision table",
+    };
+    cursor.u32("version")?;
+    let count = cursor.count("revision count", 1_000_000)?;
+    for ordinal in 0..count {
+        let start = cursor.source.position();
+        crate::reader::take_child(&mut cursor.source, size_of::<[u8; 16]>(), "revision id")?;
+        crate::reader::take_child(&mut cursor.source, size_of::<u32>(), "revision flags")?;
+        let kind_start = cursor.source.position();
+        let kind = cursor.u16("revision kind")?;
+        let kind_source = source
+            .child(kind_start, cursor.source.position())
+            .ok_or_else(|| CodecError::malformed("revision kind leaves its actual stream"))?;
+        let selector_source = if kind == u16::MAX {
+            let selector_start = cursor.source.position();
+            let enabled = cursor.u8("revision payload selector")? != 0;
+            let selector = source
+                .child(selector_start, cursor.source.position())
+                .ok_or_else(|| {
+                    CodecError::malformed("revision selector leaves its actual stream")
+                })?;
+            let (length, field) = if enabled {
+                (size_of::<[u8; 8]>(), "short revision payload")
+            } else {
+                (size_of::<[u8; 16]>(), "long revision payload")
+            };
+            crate::reader::take_child(&mut cursor.source, length, field)?;
+            Some(selector)
+        } else {
+            None
+        };
+        let extent = source
+            .child(start, cursor.source.position())
+            .ok_or_else(|| {
+                CodecError::malformed("revision record extent leaves its actual stream")
+            })?;
+        record(
+            u32::try_from(ordinal)
+                .map_err(|_| CodecError::malformed("Inventor revision ordinal exceeds u32"))?,
+            extent,
+            kind_source,
+            selector_source,
+        )?;
+    }
+    cursor.finish()
 }
 
 struct Cursor<'a> {
@@ -358,6 +425,16 @@ impl<'a> Cursor<'a> {
         self.source
             .array()
             .ok_or_else(|| CodecError::malformed(format_args!("truncated {} {field}", self.scope)))
+    }
+
+    fn source_array<const N: usize>(&mut self, field: &'static str) -> Result<[u8; N], CodecError> {
+        let source = self
+            .source
+            .req_take_child(N)
+            .map_err(|_| CodecError::malformed(format_args!("truncated {} {field}", self.scope)))?;
+        let mut value = [0; N];
+        value.copy_from_slice(source.window());
+        Ok(value)
     }
 
     fn u16_array<const N: usize>(&mut self, field: &'static str) -> Result<[u16; N], CodecError> {

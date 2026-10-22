@@ -207,3 +207,114 @@ fn current_native_brep_without_a_neutral_model_writes_nonempty_fcstd_geometry() 
         .unwrap();
     assert_eq!(reopened.ir().model.bodies.len(), expected);
 }
+
+#[test]
+fn an_emitted_group_without_geometry_is_empty_but_its_late_brep_attachment_is_not() {
+    use cadmpeg_ir::features::{
+        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation,
+    };
+    for attached in [false, true] {
+        let mut ir = if attached {
+            cadmpeg_ir::examples::unit_cube().unwrap()
+        } else {
+            CadIr::empty()
+        };
+        let expected_bodies = ir.model.bodies.len();
+        let outputs = ir
+            .model
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let operation: FeatureOperation = serde_json::from_value(serde_json::json!({
+            "definition":"tree_node", "role":"solid_bodies",
+            "children":{"children":[]}
+        }))
+        .unwrap();
+        ir.model.features.push(Feature {
+            id: FeatureId::mint("test:feature:grouping#0").unwrap(),
+            ordinal: 0,
+            name: Some("Grouping".into()),
+            suppressed: Some(false),
+            needs_recompute: false,
+            dependencies: DistinctMembers::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::new(FeatureDefinition::Operation(operation), outputs),
+            native_ref: None,
+        });
+        let dir = tempdir().unwrap();
+        let input = fixture(dir.path(), "group.cadir.json", &ir);
+        let output = dir.path().join("group.FCStd");
+        let report = dir.path().join("group.json");
+        let mut command = Command::cargo_bin("cadmpeg").unwrap();
+        command.args([
+            "convert",
+            input.to_str().unwrap(),
+            "--to",
+            "fcstd:schema-4",
+            "-o",
+            output.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ]);
+        if attached {
+            command.arg("--reject-empty");
+        }
+        command.assert().success();
+        let report: Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+        assert_eq!(report["export"]["write_path"]["path"], "synthesized");
+        assert_eq!(
+            report["export"]["write_path"]["fidelity"]["status"],
+            "not_provided"
+        );
+        assert_eq!(warnings(&report).len(), usize::from(!attached));
+        let reopened = cadmpeg_codec_freecad::FcstdCodec
+            .decode(
+                &mut Cursor::new(fs::read(output).unwrap()),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(reopened.ir().model.bodies.len(), expected_bodies);
+        let objects = &reopened.ir().native.namespace("fcstd").unwrap().arenas()["objects"];
+        assert_eq!(objects.len(), 1);
+        let properties = &reopened.ir().native.namespace("fcstd").unwrap().arenas()["properties"];
+        let shape = properties
+            .iter()
+            .filter(|property| {
+                property.fields().unwrap().get("name") == Some(&serde_json::json!("Shape"))
+            })
+            .count();
+        assert_eq!(shape, usize::from(attached));
+        assert!(reopened
+            .ir()
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.name.as_deref() == Some("Grouping")));
+        if !attached {
+            assert_no_geometry(reopened.ir());
+            assert_eq!(warnings(&report)[0]["severity"], "warning");
+            let refused = dir.path().join("refused.FCStd");
+            Command::cargo_bin("cadmpeg")
+                .unwrap()
+                .args([
+                    "convert",
+                    input.to_str().unwrap(),
+                    "--to",
+                    "fcstd:schema-4",
+                    "-o",
+                    refused.to_str().unwrap(),
+                    "--reject-empty",
+                ])
+                .assert()
+                .code(1);
+            assert!(!refused.exists());
+        }
+    }
+}

@@ -345,6 +345,9 @@ pub(in crate::writer) fn write(
             ),
         );
     }
+    if kind == "tree_node" {
+        object.mark_grouping_only();
+    }
     Ok(output)
 }
 
