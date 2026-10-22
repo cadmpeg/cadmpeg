@@ -981,6 +981,11 @@ pub(super) fn exact_typed_extrude_prologue(
 /// zero bytes follow the indexed header and the operation fields begin.
 const TYPED_EXTRUDE_OPERATION: usize = 22;
 
+/// The shifted typed-reference prologue stores nine zero bytes, u32 `1` at
+/// offset 20, and two zero bytes before the operation fields at offset 26.
+const SHIFTED_TYPED_EXTRUDE_MARKER: usize = 20;
+const SHIFTED_TYPED_EXTRUDE_OPERATION: usize = 26;
+
 /// The current Extrude prologue in one reference spelling. The typed form
 /// stores the operation fields at offset 22 with no prologue reference, and
 /// its present extent slots are 51-byte typed references.
@@ -1005,12 +1010,21 @@ fn exact_current_extrude_prologue_with(
         return None;
     }
     let direct_offset = if typed {
+        let marker = start.checked_add(SHIFTED_TYPED_EXTRUDE_MARKER)?;
         if bytes.get(start.checked_add(11)?..start.checked_add(TYPED_EXTRUDE_OPERATION)?)?
-            != [0; 11]
+            == [0; 11]
         {
+            start.checked_add(TYPED_EXTRUDE_OPERATION)?
+        } else if bytes.get(start.checked_add(11)?..marker)? == [0; 9]
+            && View::u32_le_at(bytes, marker)? == 1
+            && bytes
+                .get(marker.checked_add(4)?..start.checked_add(SHIFTED_TYPED_EXTRUDE_OPERATION)?)?
+                == [0; 2]
+        {
+            start.checked_add(SHIFTED_TYPED_EXTRUDE_OPERATION)?
+        } else {
             return None;
         }
-        start.checked_add(TYPED_EXTRUDE_OPERATION)?
     } else {
         start.checked_add(28)?
     };

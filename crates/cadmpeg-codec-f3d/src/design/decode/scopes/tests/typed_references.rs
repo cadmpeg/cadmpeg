@@ -150,4 +150,40 @@ fn typed_extrude_prologue_reads_operation_at_22_and_wide_extent_slots() {
         )
         .is_none()
     );
+
+    // The shifted typed form stores u32 1 at offset 20 and moves the
+    // operation fields to offset 26.
+    let mut shifted = bytes[..20].to_vec();
+    shifted.extend_from_slice(&1u32.to_le_bytes());
+    shifted.extend_from_slice(&[0, 0]);
+    shifted.extend_from_slice(&bytes[22..]);
+    let prologue = crate::design::decode::scopes::extrude::exact_typed_extrude_prologue(
+        &shifted,
+        0,
+        reference_count_at + 4,
+        &members,
+    )
+    .expect("shifted typed extrude prologue");
+    let DesignExtrudePrologue::ReferenceAware {
+        operation,
+        operation_offset,
+        extent,
+        ..
+    } = prologue
+    else {
+        panic!("shifted typed prologue is reference-aware");
+    };
+    assert_eq!(operation, DesignExtrudeOperation::Cut);
+    assert_eq!(operation_offset, 26);
+    assert_eq!(extent, DesignExtrudeExtent::OneSidedDistance);
+    shifted[20] = 2;
+    assert!(
+        crate::design::decode::scopes::extrude::exact_typed_extrude_prologue(
+            &shifted,
+            0,
+            reference_count_at + 4,
+            &members
+        )
+        .is_none()
+    );
 }
