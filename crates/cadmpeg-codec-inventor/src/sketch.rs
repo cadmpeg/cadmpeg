@@ -30,6 +30,18 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const EPS_SKETCH_LINE_CARRIER_MATCHES_E10: f64 = 1.0e-10;
 const EPS_SKETCH_PROJECT_PLACEMENT_E10: f64 = 1.0e-10;
+/// Largest distance, in internal centimetres, between an arc end point and the
+/// stored circle. It equals the kernel linear tolerance, so the projected arc
+/// ends meet their point records within the document tolerance.
+const EPS_SKETCH_ARC_END_ON_CIRCLE_CM: f64 = 1.0e-6;
+/// First save version whose midpoint relation ends with a u32 value.
+const MIDPOINT_VALUE_VERSION: u8 = 20;
+/// Entity-flag bits that the curves of profile wire bodies carry. A curve
+/// with another bit set has a construction state this decoder does not
+/// resolve.
+const PROFILE_CURVE_FLAGS: u32 = 0x40 | 0x1000 | 0x4_0000 | 0x8_0000;
+const CIRCLE_STATE_ARC: u8 = 0;
+const CIRCLE_STATE_FULL: u8 = 1;
 
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
 const TRANSFORM_TYPE: [u8; 16] = inventor_id(0x9087_4d18);
@@ -63,6 +75,28 @@ const CIRCLE_CENTER_TYPE: [u8; 16] = [
 ];
 const EQUAL_RADIUS_TYPE: [u8; 16] = [
     0xd0, 0x7d, 0x2c, 0x44, 0xd1, 0x11, 0x89, 0xe6, 0x80, 0x00, 0x6f, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
+const DISTANCE_TYPE: [u8; 16] = [
+    0x58, 0x85, 0x05, 0x11, 0xd2, 0x11, 0xe3, 0x95, 0x60, 0x00, 0x0c, 0xb3, 0x89, 0x32, 0xed, 0xb0,
+];
+const ANGLE_TYPE: [u8; 16] = [
+    0x10, 0x0a, 0x0d, 0x59, 0xd1, 0x11, 0xca, 0xe6, 0x80, 0x00, 0x6f, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
+const MIDPOINT_TYPE: [u8; 16] = sketch_entity_id(0x21e8_70bf);
+const FIX_TYPE: [u8; 16] = [
+    0xb0, 0x7b, 0x17, 0x0f, 0xd1, 0x11, 0x96, 0xe6, 0x80, 0x00, 0x6f, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
+const HORIZONTAL_ALIGNMENT_TYPE: [u8; 16] = [
+    0xc0, 0xa3, 0x55, 0x8f, 0xd1, 0x11, 0x5e, 0xe0, 0x80, 0x00, 0x66, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
+const VERTICAL_ALIGNMENT_TYPE: [u8; 16] = [
+    0x50, 0x52, 0xda, 0x64, 0xd1, 0x11, 0x5e, 0xe0, 0x80, 0x00, 0x66, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
+const COLLINEAR_TYPE: [u8; 16] = [
+    0xe0, 0x7b, 0x9a, 0x5a, 0xd1, 0x11, 0x5d, 0xe0, 0x80, 0x00, 0x66, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
+const SYMMETRIC_TYPE: [u8; 16] = [
+    0x10, 0x7c, 0xdd, 0x0d, 0xd1, 0x11, 0x9c, 0xe6, 0x80, 0x00, 0x6f, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
 ];
 
 const fn sketch_entity_id(time_low: u32) -> [u8; 16] {
@@ -103,7 +137,7 @@ pub(crate) struct PmDcConstraintHeader {
 type PmDcReferenceScalarMap = crate::pmdc::PmDcPairedMap<FiniteReal>;
 type PmDcReferencePairMap = crate::pmdc::PmDcPairedMap<PmDcReference>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcSketchConstraintKind {
     Coincident {
@@ -163,6 +197,47 @@ pub(crate) enum PmDcSketchConstraintKind {
         first: PmDcReference,
         second: PmDcReference,
     },
+    Distance {
+        value: u32,
+        first: PmDcReference,
+        second: PmDcReference,
+        values: [FiniteReal; 6],
+    },
+    Angle {
+        value: u32,
+        first: PmDcReference,
+        second: PmDcReference,
+        values: [FiniteReal; 2],
+        flags: u16,
+    },
+    Midpoint {
+        entity: PmDcReference,
+        point: PmDcReference,
+        /// The trailing value of save version 20 and later.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        value: Option<u32>,
+    },
+    Fix {
+        entity: PmDcReference,
+    },
+    HorizontalAlignment {
+        first: PmDcReference,
+        second: PmDcReference,
+    },
+    VerticalAlignment {
+        first: PmDcReference,
+        second: PmDcReference,
+    },
+    Collinear {
+        first: PmDcReference,
+        second: PmDcReference,
+        state: u16,
+    },
+    Symmetric {
+        first: PmDcReference,
+        second: PmDcReference,
+        axis: PmDcReference,
+    },
 }
 
 pub(crate) struct SketchProjection {
@@ -172,6 +247,9 @@ pub(crate) struct SketchProjection {
     pub(crate) unresolved_sketches: usize,
     pub(crate) unresolved_entities: usize,
     pub(crate) unresolved_constraints: usize,
+    /// Projected curves whose construction state is unresolved; they stay out
+    /// of the sketch profile tables.
+    pub(crate) unresolved_construction: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -555,6 +633,14 @@ enum SketchConstraintTag {
     Diameter,
     CircleCenter,
     EqualRadius,
+    Distance,
+    Angle,
+    Midpoint,
+    Fix,
+    HorizontalAlignment,
+    VerticalAlignment,
+    Collinear,
+    Symmetric,
 }
 
 impl SketchConstraintTag {
@@ -572,6 +658,14 @@ impl SketchConstraintTag {
             DIAMETER_TYPE => Some(Self::Diameter),
             CIRCLE_CENTER_TYPE => Some(Self::CircleCenter),
             EQUAL_RADIUS_TYPE => Some(Self::EqualRadius),
+            DISTANCE_TYPE => Some(Self::Distance),
+            ANGLE_TYPE => Some(Self::Angle),
+            MIDPOINT_TYPE => Some(Self::Midpoint),
+            FIX_TYPE => Some(Self::Fix),
+            HORIZONTAL_ALIGNMENT_TYPE => Some(Self::HorizontalAlignment),
+            VERTICAL_ALIGNMENT_TYPE => Some(Self::VerticalAlignment),
+            COLLINEAR_TYPE => Some(Self::Collinear),
+            SYMMETRIC_TYPE => Some(Self::Symmetric),
             _ => None,
         }
     }
@@ -965,6 +1059,47 @@ fn parse_constraint(
             first: cursor.reference("equal-radius constraint first reference")?,
             second: cursor.reference("equal-radius constraint second reference")?,
         },
+        SketchConstraintTag::Distance => PmDcSketchConstraintKind::Distance {
+            value: cursor.u32("distance dimension value")?,
+            first: cursor.reference("distance dimension first reference")?,
+            second: cursor.reference("distance dimension second reference")?,
+            values: f64_array(&mut cursor, "distance dimension values")?,
+        },
+        SketchConstraintTag::Angle => PmDcSketchConstraintKind::Angle {
+            value: cursor.u32("angle dimension value")?,
+            first: cursor.reference("angle dimension first reference")?,
+            second: cursor.reference("angle dimension second reference")?,
+            values: f64_array(&mut cursor, "angle dimension values")?,
+            flags: cursor.u16("angle dimension flags")?,
+        },
+        SketchConstraintTag::Midpoint => PmDcSketchConstraintKind::Midpoint {
+            entity: cursor.reference("midpoint constraint entity reference")?,
+            point: cursor.reference("midpoint constraint point reference")?,
+            value: (version >= MIDPOINT_VALUE_VERSION)
+                .then(|| cursor.u32("midpoint constraint value"))
+                .transpose()?,
+        },
+        SketchConstraintTag::Fix => PmDcSketchConstraintKind::Fix {
+            entity: cursor.reference("fix constraint entity reference")?,
+        },
+        SketchConstraintTag::HorizontalAlignment => PmDcSketchConstraintKind::HorizontalAlignment {
+            first: cursor.reference("horizontal alignment first reference")?,
+            second: cursor.reference("horizontal alignment second reference")?,
+        },
+        SketchConstraintTag::VerticalAlignment => PmDcSketchConstraintKind::VerticalAlignment {
+            first: cursor.reference("vertical alignment first reference")?,
+            second: cursor.reference("vertical alignment second reference")?,
+        },
+        SketchConstraintTag::Collinear => PmDcSketchConstraintKind::Collinear {
+            first: cursor.reference("collinear constraint first reference")?,
+            second: cursor.reference("collinear constraint second reference")?,
+            state: cursor.u16("collinear constraint state")?,
+        },
+        SketchConstraintTag::Symmetric => PmDcSketchConstraintKind::Symmetric {
+            first: cursor.reference("symmetric constraint first reference")?,
+            second: cursor.reference("symmetric constraint second reference")?,
+            axis: cursor.reference("symmetric constraint axis reference")?,
+        },
     };
     cursor.finish("sketch constraint")?;
     Ok(PmDcSketchConstraintPayload {
@@ -972,6 +1107,17 @@ fn parse_constraint(
         header,
         kind,
     })
+}
+
+fn f64_array<const N: usize>(
+    cursor: &mut Cursor<'_>,
+    field: &str,
+) -> Result<[FiniteReal; N], CodecError> {
+    let mut values = [FiniteReal::ZERO; N];
+    for value in &mut values {
+        *value = cursor.f64(field)?;
+    }
+    Ok(values)
 }
 
 fn distance_constraint_fields(
@@ -1092,7 +1238,6 @@ pub(crate) fn project(
         ctx.charge_entities(1, "project Inventor sketch entity")?;
         projected_entities.push(
             SketchEntity::new(entity_id, sketch_id, geometry)
-                .with_construction(entity.entity_flags & 0x0408_0040 != 0)
                 .with_native_ref(Some(entity.id()))
                 .with_endpoint_refs(entity_endpoint_refs(entity, &raw_entities)),
         );
@@ -1102,6 +1247,19 @@ pub(crate) fn project(
         .iter()
         .filter_map(|entity| entity.native_ref.as_deref().map(|native| (native, entity)))
         .collect::<HashMap<_, _>>();
+    let construction_unresolved = inventory
+        .entities
+        .iter()
+        .filter(|entity| {
+            matches!(
+                entity.kind,
+                PmDcSketchEntityKind::Line { .. }
+                    | PmDcSketchEntityKind::Circle { .. }
+                    | PmDcSketchEntityKind::Ellipse { .. }
+            ) && entity.entity_flags & !PROFILE_CURVE_FLAGS != 0
+        })
+        .map(Located::id)
+        .collect::<HashSet<_>>();
     let mut sketches = Vec::new();
     let mut unresolved_sketches = 0usize;
     for sketch in &inventory.sketches {
@@ -1143,8 +1301,18 @@ pub(crate) fn project(
             unresolved_sketches += 1;
             continue;
         };
+        let profile_entities = referenced_entities
+            .iter()
+            .copied()
+            .filter(|entity| {
+                !entity
+                    .native_ref
+                    .as_deref()
+                    .is_some_and(|native| construction_unresolved.contains(native))
+            })
+            .collect::<Vec<_>>();
         let Ok(profiles) =
-            cadmpeg_ir::sketches::SketchProfiles::try_from(build_profiles(&referenced_entities))
+            cadmpeg_ir::sketches::SketchProfiles::try_from(build_profiles(&profile_entities))
         else {
             unresolved_sketches += 1;
             continue;
@@ -1297,6 +1465,15 @@ pub(crate) fn project(
         previous_constraint_count,
         constraints.len(),
     )?;
+    let unresolved_construction = projected_entities
+        .iter()
+        .filter(|entity| {
+            entity
+                .native_ref
+                .as_deref()
+                .is_some_and(|native| construction_unresolved.contains(native))
+        })
+        .count();
     Ok(SketchProjection {
         sketches,
         entities: projected_entities,
@@ -1304,6 +1481,7 @@ pub(crate) fn project(
         unresolved_sketches,
         unresolved_entities,
         unresolved_constraints,
+        unresolved_construction,
     })
 }
 
@@ -1321,11 +1499,11 @@ fn project_constraint(
         };
     }
 
-    if constraint.header.scalar_map.metadata().is_some()
-        || !constraint.header.scalar_map.entries().is_empty()
-        || constraint.header.reference_map.metadata().is_some()
-        || !constraint.header.reference_map.entries().is_empty()
-    {
+    let maps_are_empty = constraint.header.scalar_map.metadata().is_none()
+        && constraint.header.scalar_map.entries().is_empty()
+        && constraint.header.reference_map.metadata().is_none()
+        && constraint.header.reference_map.entries().is_empty();
+    if !maps_are_empty && !coincident_solver_hint(constraint) {
         return None;
     }
     let resolve = |reference: PmDcReference| {
@@ -1512,6 +1690,129 @@ fn project_constraint(
                 members,
             )
         }
+        PmDcSketchConstraintKind::Distance { first, second, .. } => {
+            let members = [resolve(first)?, resolve(second)?];
+            let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
+            (
+                SketchConstraintDefinitionInput::DistanceLoci {
+                    first: SketchLocus::Entity(members[0].id().clone()),
+                    second: SketchLocus::Entity(members[1].id().clone()),
+                    parameter,
+                },
+                None,
+                members,
+            )
+        }
+        PmDcSketchConstraintKind::Angle {
+            first,
+            second,
+            flags,
+            ..
+        } => {
+            let members = [resolve(first)?, resolve(second)?];
+            let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
+            (
+                SketchConstraintDefinitionInput::Native {
+                    native_kind: cadmpeg_core::text::NonBlankString::new("angle_dimension")?,
+                    native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
+                    // The record's own flags hold the supplement selection.
+                    native_flags: Some(u64::from(flags)),
+                    native_properties: std::collections::BTreeMap::new(),
+                    entities: members.iter().map(|entity| entity.id().clone()).collect(),
+                    parameter: Some(parameter),
+                    operands: vec![
+                        native_operand(constraint, cadmpeg_core::nonblank_literal!("first"), first),
+                        native_operand(
+                            constraint,
+                            cadmpeg_core::nonblank_literal!("second"),
+                            second,
+                        ),
+                    ],
+                },
+                None,
+                members,
+            )
+        }
+        PmDcSketchConstraintKind::Midpoint { entity, point, .. } => {
+            let members = [resolve(point)?, resolve(entity)?];
+            (
+                SketchConstraintDefinitionInput::Midpoint {
+                    point: SketchLocus::Entity(members[0].id().clone()),
+                    entity: members[1].id().clone(),
+                },
+                None,
+                members,
+            )
+        }
+        PmDcSketchConstraintKind::Fix { entity } => {
+            let member = resolve(entity)?;
+            (
+                SketchConstraintDefinitionInput::Fixed {
+                    entity: member.id().clone(),
+                },
+                None,
+                [member, member],
+            )
+        }
+        PmDcSketchConstraintKind::HorizontalAlignment { first, second }
+        | PmDcSketchConstraintKind::VerticalAlignment { first, second } => {
+            let members = [resolve(first)?, resolve(second)?];
+            let axis = if matches!(
+                constraint.kind,
+                PmDcSketchConstraintKind::HorizontalAlignment { .. }
+            ) {
+                cadmpeg_ir::sketches::SketchCoordinateAxis::V
+            } else {
+                cadmpeg_ir::sketches::SketchCoordinateAxis::U
+            };
+            (
+                SketchConstraintDefinitionInput::SameCoordinate {
+                    relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                        SketchLocus::Entity(members[0].id().clone()),
+                        SketchLocus::Entity(members[1].id().clone()),
+                        axis,
+                    )
+                    .ok()?,
+                },
+                None,
+                members,
+            )
+        }
+        PmDcSketchConstraintKind::Collinear {
+            first,
+            second,
+            state,
+        } => {
+            let members = [resolve(first)?, resolve(second)?];
+            (
+                SketchConstraintDefinitionInput::Collinear {
+                    first: members[0].id().clone(),
+                    second: members[1].id().clone(),
+                },
+                Some(u32::from(state)),
+                members,
+            )
+        }
+        PmDcSketchConstraintKind::Symmetric {
+            first,
+            second,
+            axis,
+        } => {
+            let members = [resolve(first)?, resolve(second)?];
+            let axis = resolve(axis)?;
+            if axis.sketch != members[0].sketch {
+                return None;
+            }
+            (
+                SketchConstraintDefinitionInput::Symmetric {
+                    first: SketchLocus::Entity(members[0].id().clone()),
+                    second: SketchLocus::Entity(members[1].id().clone()),
+                    axis: axis.id().clone(),
+                },
+                None,
+                members,
+            )
+        }
     };
     if members[0].sketch != members[1].sketch {
         return None;
@@ -1536,6 +1837,43 @@ fn project_constraint(
         metadata: None,
         native_ref: Some(constraint.id()),
     }))
+}
+
+/// Whether the constraint maps hold only a coincident relation's solver
+/// hint: in each map, at most one entry for each of its two operands, with
+/// null reference values.
+fn coincident_solver_hint(constraint: &PmDcSketchConstraint) -> bool {
+    let PmDcSketchConstraintKind::Coincident { first, second } = constraint.kind else {
+        return false;
+    };
+    let header = &constraint.header;
+    distinct_operand_keys(
+        header.scalar_map.entries().iter().map(|(key, _)| *key),
+        [first, second],
+    ) && header
+        .reference_map
+        .entries()
+        .iter()
+        .all(|(_, value)| value.index() == 0 && !value.qualified())
+        && distinct_operand_keys(
+            header.reference_map.entries().iter().map(|(key, _)| *key),
+            [first, second],
+        )
+}
+
+/// Whether every key names one of the two operands, and no operand twice.
+fn distinct_operand_keys(
+    keys: impl IntoIterator<Item = PmDcReference>,
+    operands: [PmDcReference; 2],
+) -> bool {
+    let mut seen = [false; 2];
+    keys.into_iter().all(|key| {
+        key.index() != 0
+            && operands
+                .iter()
+                .position(|operand| *operand == key)
+                .is_some_and(|slot| !std::mem::replace(&mut seen[slot], true))
+    })
 }
 
 fn resolve_parameter(
@@ -1589,7 +1927,7 @@ fn project_geometry(
             direction,
             ..
         } => {
-            let [start, end] = points.references() else {
+            let [start, end, ..] = points.references() else {
                 return None;
             };
             let start = resolve_point(
@@ -1618,27 +1956,51 @@ fn project_geometry(
                 .ok()?,
             )
         }
-        PmDcSketchEntityKind::Circle { center, radius, .. } => {
-            let center = resolve_point(
-                entity.identity.segment_token.as_str(),
-                center.index(),
-                entities,
-            )?;
-            Some(
-                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+        PmDcSketchEntityKind::Circle {
+            points,
+            center,
+            radius,
+            state,
+            ..
+        } => {
+            let token = entity.identity.segment_token.as_str();
+            let center = resolve_point(token, center.index(), entities)?;
+            let definition = match (curve_ends(points)?, *state) {
+                (CurveEnds::Closed, CIRCLE_STATE_FULL) => SketchGeometryDefinition::Circle {
                     center: neutral_point(center),
                     radius: Length::new(radius.get() * 10.0)?,
-                })
-                .ok()?,
-            )
+                },
+                (CurveEnds::Bounded(start, end), CIRCLE_STATE_ARC) => {
+                    let start = resolve_point(token, start.index(), entities)?;
+                    let end = resolve_point(token, end.index(), entities)?;
+                    let start_angle = arc_end_angle(center, radius.get(), start)?;
+                    let end_angle = arc_end_angle(center, radius.get(), end)?;
+                    let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
+                    if sweep == 0.0 {
+                        return None;
+                    }
+                    SketchGeometryDefinition::Arc {
+                        center: neutral_point(center),
+                        radius: Length::new(radius.get() * 10.0)?,
+                        start_angle: Angle::new(start_angle)?,
+                        end_angle: Angle::new(start_angle + sweep)?,
+                    }
+                }
+                _ => return None,
+            };
+            SketchGeometry::try_from(definition).ok()
         }
         PmDcSketchEntityKind::Ellipse {
+            points,
             center,
             major_direction,
             major_radius,
             minor_radius,
             ..
         } => {
+            if curve_ends(points)? != CurveEnds::Closed {
+                return None;
+            }
             let center = resolve_point(
                 entity.identity.segment_token.as_str(),
                 center.index(),
@@ -1752,6 +2114,36 @@ fn resolve_point(
     Some(position)
 }
 
+/// The first two members of a curve's point list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CurveEnds {
+    /// Two null references: the curve is closed.
+    Closed,
+    /// The start and end point references of a bounded curve.
+    Bounded(PmDcReference, PmDcReference),
+}
+
+fn curve_ends(points: &PmDcReferenceList) -> Option<CurveEnds> {
+    let [start, end, ..] = points.references() else {
+        return None;
+    };
+    let null = |reference: &PmDcReference| reference.index() == 0 && !reference.qualified();
+    match (null(start), null(end)) {
+        (true, true) => Some(CurveEnds::Closed),
+        (false, false) if start.index() != 0 && end.index() != 0 => {
+            Some(CurveEnds::Bounded(*start, *end))
+        }
+        _ => None,
+    }
+}
+
+/// The polar angle of an arc end about the arc center, when the end lies on the circle.
+fn arc_end_angle(center: [FiniteReal; 2], radius: f64, end: [FiniteReal; 2]) -> Option<f64> {
+    let du = end[0].get() - center[0].get();
+    let dv = end[1].get() - center[1].get();
+    ((du.hypot(dv) - radius).abs() <= EPS_SKETCH_ARC_END_ON_CIRCLE_CM).then(|| dv.atan2(du))
+}
+
 fn neutral_point(value: [FiniteReal; 2]) -> Point2 {
     Point2::new(value[0].get() * 10.0, value[1].get() * 10.0)
 }
@@ -1760,11 +2152,16 @@ fn entity_endpoint_refs(
     entity: &PmDcSketchEntity,
     entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
 ) -> Vec<String> {
-    let PmDcSketchEntityKind::Line { points, .. } = &entity.kind else {
-        return Vec::new();
+    let ends = match &entity.kind {
+        PmDcSketchEntityKind::Line { points, .. } => points.references().get(..2).unwrap_or(&[]),
+        PmDcSketchEntityKind::Circle { points, .. } => match curve_ends(points) {
+            Some(CurveEnds::Bounded(..)) => &points.references()[..2],
+            _ => return Vec::new(),
+        },
+        _ => return Vec::new(),
     };
     let mut endpoint_refs = Vec::new();
-    for reference in points.references() {
+    for reference in ends {
         if let Some(value) = reference.index().checked_sub(1).and_then(|ordinal| {
             entities
                 .get(&(entity.identity.segment_token.as_str(), ordinal))
@@ -1859,7 +2256,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
         .filter(|entity| {
             matches!(
                 *entity.geometry.definition(),
-                SketchGeometryDefinition::Line { .. }
+                SketchGeometryDefinition::Line { .. } | SketchGeometryDefinition::Arc { .. }
             )
         })
         .filter(|entity| entity.endpoint_refs.len() == 2)
@@ -1922,10 +2319,20 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
                 reversed,
             });
         }
+        // Two lines between the same two points bound no area; an arc with
+        // one other curve does.
+        let encloses = loop_uses.len() >= 3
+            || (loop_uses.len() == 2
+                && component.iter().any(|index| {
+                    matches!(
+                        *lines[*index].geometry.definition(),
+                        SketchGeometryDefinition::Arc { .. }
+                    )
+                }));
         for index in component {
             visited.insert(index);
         }
-        if loop_uses.len() >= 3 && point == start_point {
+        if encloses && point == start_point {
             profiles.push(loop_uses);
         }
     }
@@ -2017,11 +2424,11 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 #[cfg(test)]
 mod tests {
     use super::{
-        inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
-        project, PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcSketchPayload,
-        PmDcTransformPayload, SketchConstraintTag, SketchEntityTag, SketchInventory,
-        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, POINT_TYPE, SKETCH_TYPE,
-        TRANSFORM_TYPE,
+        distinct_operand_keys, inventory, parse_constraint, parse_direction, parse_entity,
+        parse_sketch, parse_transform, project, PmDcSketchConstraintKind, PmDcSketchEntityKind,
+        PmDcSketchEntityPayload, PmDcSketchPayload, PmDcTransformPayload, SketchConstraintTag,
+        SketchEntityTag, SketchInventory, CIRCLE_TYPE, COINCIDENT_TYPE, DIRECTION_TYPE,
+        HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE, SKETCH_TYPE, TRANSFORM_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcReference, PmDcReferenceList};
@@ -2501,9 +2908,9 @@ mod tests {
         bytes
     }
 
-    fn line_bytes(index: u32, sketch: u32, points: [u32; 2]) -> Vec<u8> {
+    fn line_bytes(index: u32, sketch: u32, points: &[u32]) -> Vec<u8> {
         let mut bytes = entity_prefix(index, sketch, 0);
-        bytes.extend(list(2, &points));
+        bytes.extend(list(2, points));
         bytes.extend(list(2, &[]));
         bytes.extend_from_slice(&0.0f64.to_le_bytes());
         bytes.extend_from_slice(&0.0f64.to_le_bytes());
@@ -2544,7 +2951,7 @@ mod tests {
             } if position.map(FiniteReal::get) == [1.25, -2.5]
         ));
 
-        let line = line_bytes(2, 3, [4, 5]);
+        let line = line_bytes(2, 3, &[4, 5]);
         let parsed = parse(&line, |_, source| {
             parse_entity(SketchEntityTag::Line, source, 22).expect("line")
         });
@@ -2647,6 +3054,31 @@ mod tests {
     }
 
     #[test]
+    fn a_midpoint_relation_ends_with_a_value_from_save_version_20() {
+        let mut bytes = constraint_header(9, 0);
+        bytes.extend_from_slice(&(0x8000_0000u32 | 6).to_le_bytes());
+        bytes.extend_from_slice(&(0x8000_0000u32 | 4).to_le_bytes());
+        let parsed = parse(&bytes, |_, source| {
+            parse_constraint(SketchConstraintTag::Midpoint, source, 19).expect("version 19")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchConstraintKind::Midpoint { value: None, .. }
+        ));
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        for version in [20, 21] {
+            let parsed = parse(&bytes, |_, source| {
+                parse_constraint(SketchConstraintTag::Midpoint, source, version)
+                    .expect("version 20 or later")
+            });
+            assert!(matches!(
+                parsed.kind,
+                PmDcSketchConstraintKind::Midpoint { value: Some(7), .. }
+            ));
+        }
+    }
+
+    #[test]
     fn parses_generated_legacy_constraint_header_without_maps() {
         let mut bytes = legacy_constraint_header(9, 0);
         bytes.extend_from_slice(&4u32.to_le_bytes());
@@ -2662,6 +3094,66 @@ mod tests {
             PmDcSketchConstraintKind::Coincident { first, second }
                 if first.index() == 4 && second.index() == 5
         ));
+    }
+
+    #[test]
+    fn parses_generated_relation_and_dimension_records() {
+        let references = |values: &[u32]| {
+            values
+                .iter()
+                .flat_map(|value| (0x8000_0000 | value).to_le_bytes())
+                .collect::<Vec<_>>()
+        };
+        let reals = |values: &[f64]| {
+            values
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<_>>()
+        };
+        let mut distance = 0u32.to_le_bytes().to_vec();
+        distance.extend(references(&[4, 5]));
+        distance.extend(reals(&[0.0, 0.0, f64::MAX, 0.0, f64::MAX, 0.0]));
+        let mut angle = 0u32.to_le_bytes().to_vec();
+        angle.extend(references(&[6, 7]));
+        angle.extend(reals(&[0.5, 1.5]));
+        angle.extend_from_slice(&0x0au16.to_le_bytes());
+        let mut collinear = references(&[6, 7]);
+        collinear.extend_from_slice(&0u16.to_le_bytes());
+        let mut midpoint = references(&[6, 4]);
+        midpoint.extend_from_slice(&0u32.to_le_bytes());
+        for (tag, parameter, tail, expected) in [
+            (SketchConstraintTag::Distance, 3, distance, "distance"),
+            (SketchConstraintTag::Angle, 3, angle, "angle"),
+            (SketchConstraintTag::Midpoint, 0, midpoint, "midpoint"),
+            (SketchConstraintTag::Fix, 0, references(&[4]), "fix"),
+            (
+                SketchConstraintTag::HorizontalAlignment,
+                0,
+                references(&[4, 5]),
+                "horizontal_alignment",
+            ),
+            (
+                SketchConstraintTag::VerticalAlignment,
+                0,
+                references(&[4, 5]),
+                "vertical_alignment",
+            ),
+            (SketchConstraintTag::Collinear, 0, collinear, "collinear"),
+            (
+                SketchConstraintTag::Symmetric,
+                0,
+                references(&[4, 5, 6]),
+                "symmetric",
+            ),
+        ] {
+            let mut bytes = constraint_header(9, parameter);
+            bytes.extend(tail);
+            let parsed = parse(&bytes, |_, source| {
+                parse_constraint(tag, source, 22).expect(expected)
+            });
+            let form = serde_json::to_value(parsed.kind).expect("constraint kind")["form"].clone();
+            assert_eq!(form, expected);
+        }
     }
 
     #[test]
@@ -2763,7 +3255,7 @@ mod tests {
                 &line_bytes(
                     u32::try_from(index).expect("fixture value fits u32") + 7,
                     3,
-                    endpoints,
+                    &endpoints,
                 ),
                 |_, source| parse_entity(SketchEntityTag::Line, source, 22).expect("line"),
             );
@@ -2823,6 +3315,32 @@ mod tests {
     }
 
     #[test]
+    fn a_curve_with_an_unknown_flag_bit_stays_out_of_the_profile_table() {
+        let (mut inventory, _) = closed_square_inventory();
+        let line = inventory
+            .entities
+            .iter()
+            .position(|entity| matches!(entity.kind, PmDcSketchEntityKind::Line { .. }))
+            .expect("square side");
+        let mut payload = PmDcSketchEntityPayload::clone(&inventory.entities[line]);
+        payload.entity_flags = 0x8000;
+        let identity = inventory.entities[line].identity.clone();
+        inventory.entities[line] = Located::new(
+            payload,
+            identity.type_id.clone(),
+            identity.segment_token.clone(),
+            identity.record_ordinal,
+        );
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        let projected = project(&ctx, &inventory, &[]).expect("sketch projection");
+        assert_eq!(projected.unresolved_construction, 1);
+        assert_eq!(projected.entities.len(), 8);
+        assert!(projected.sketches[0].profiles.is_empty());
+    }
+
+    #[test]
     fn projects_generated_closed_square_and_resolved_plane() {
         let (mut inventory, sketch) = closed_square_inventory();
         let arena = DecodeArena::new();
@@ -2844,7 +3362,8 @@ mod tests {
         mapped_constraint.extend_from_slice(&0x3000u16.to_le_bytes());
         mapped_constraint.extend_from_slice(&1u32.to_le_bytes());
         mapped_constraint.extend_from_slice(&[0; 8]);
-        mapped_constraint.extend_from_slice(&4u32.to_le_bytes());
+        // The scalar-map key is not an operand, so the map is not a solver hint.
+        mapped_constraint.extend_from_slice(&6u32.to_le_bytes());
         mapped_constraint.extend_from_slice(&0.5f64.to_le_bytes());
         mapped_constraint.extend(list(6, &[]));
         mapped_constraint.extend_from_slice(&0u32.to_le_bytes());
@@ -2876,6 +3395,194 @@ mod tests {
         assert_eq!(incomplete.unresolved_constraints, 1);
         assert!(incomplete.sketches.is_empty());
         assert!(incomplete.entities.is_empty());
+    }
+
+    fn circle_bytes(index: u32, sketch: u32, points: [u32; 2], center: u32, state: u8) -> Vec<u8> {
+        let mut bytes = entity_prefix(index, sketch, 0);
+        bytes.extend(list(2, &points));
+        bytes.extend(list(2, &[]));
+        bytes.extend_from_slice(&center.to_le_bytes());
+        bytes.extend_from_slice(&1.0f64.to_le_bytes());
+        bytes.push(state);
+        bytes
+    }
+
+    /// A unit half disc: an arc from (1, 0) counterclockwise to (-1, 0) about
+    /// the origin, closed by a line back to (1, 0). The line's point list also
+    /// names the origin, which lies on the line.
+    fn half_disc_inventory() -> SketchInventory {
+        let (mut inventory, mut sketch) = closed_square_inventory();
+        let (marker, metadata, _) = sketch.entities.clone().into_parts();
+        let references = [4, 5, 6, 7, 8, 9]
+            .map(|index| PmDcReference::new(index, false).expect("test reference index fits"));
+        sketch.entities = PmDcReferenceList::new(marker, metadata, references.to_vec())
+            .expect("half-disc entity list");
+        inventory.sketches[0] = Located::new(
+            sketch,
+            crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            2,
+        );
+        let point = |index, position| {
+            parse(&point_bytes(index, 3, position), |_, source| {
+                parse_entity(SketchEntityTag::Point, source, 22).expect("point")
+            })
+        };
+        let mut line = parse(&line_bytes(6, 3, &[6, 5, 4]), |_, source| {
+            parse_entity(SketchEntityTag::Line, source, 22).expect("line")
+        });
+        let PmDcSketchEntityKind::Line {
+            origin, direction, ..
+        } = &mut line.kind
+        else {
+            unreachable!("generated line")
+        };
+        *origin = [real(-1.0), real(0.0)];
+        *direction = [real(2.0), real(0.0)];
+        let arc = parse(&circle_bytes(7, 3, [5, 6], 4, 0), |_, source| {
+            parse_entity(SketchEntityTag::Circle, source, 22).expect("arc")
+        });
+        inventory.entities = [
+            (point(3, [0.0, 0.0]), POINT_TYPE),
+            (point(4, [1.0, 0.0]), POINT_TYPE),
+            (point(5, [-1.0, 0.0]), POINT_TYPE),
+            (line, LINE_TYPE),
+            (arc, CIRCLE_TYPE),
+        ]
+        .into_iter()
+        .zip(3..)
+        .map(|((value, type_id), ordinal)| {
+            Located::new(
+                value,
+                crate::record_identity::RecordTypeId::from_bytes(type_id),
+                cadmpeg_ir::identity_key!("segment"),
+                ordinal,
+            )
+        })
+        .collect();
+        // The origin is the midpoint of the closing line.
+        let mut midpoint = constraint_header(8, 0);
+        midpoint.extend_from_slice(&(0x8000_0000u32 | 7).to_le_bytes());
+        midpoint.extend_from_slice(&(0x8000_0000u32 | 4).to_le_bytes());
+        midpoint.extend_from_slice(&0u32.to_le_bytes());
+        let midpoint = parse(&midpoint, |_, source| {
+            parse_constraint(SketchConstraintTag::Midpoint, source, 22).expect("midpoint")
+        });
+        inventory.constraints = vec![Located::new(
+            midpoint,
+            crate::record_identity::RecordTypeId::from_bytes(MIDPOINT_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            8,
+        )];
+        inventory
+    }
+
+    #[test]
+    fn projects_a_bounded_circle_record_as_a_counterclockwise_arc_in_a_profile() {
+        let inventory = half_disc_inventory();
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        let projected = project(&ctx, &inventory, &[]).expect("sketch projection");
+        assert_eq!(projected.unresolved_sketches, 0);
+        assert_eq!(projected.unresolved_entities, 0);
+        let arc = projected
+            .entities
+            .iter()
+            .find_map(|entity| match *entity.geometry.definition() {
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {
+                    radius,
+                    start_angle,
+                    end_angle,
+                    ..
+                } => Some((radius.get(), start_angle.get(), end_angle.get())),
+                _ => None,
+            })
+            .expect("projected arc");
+        assert_eq!(arc, (10.0, 0.0, std::f64::consts::PI));
+        assert!(matches!(
+            projected
+                .constraints
+                .iter()
+                .map(|constraint| constraint.definition.kind())
+                .collect::<Vec<_>>()[..],
+            [cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Midpoint { .. }]
+        ));
+        assert_eq!(projected.sketches[0].profiles.len(), 1);
+        assert_eq!(projected.sketches[0].profiles[0].len(), 2);
+    }
+
+    #[test]
+    fn a_solver_hint_map_names_each_operand_at_most_once() {
+        let reference = |index| PmDcReference::new(index, true).expect("test reference");
+        let operands = [reference(7), reference(4)];
+        assert!(distinct_operand_keys([], operands));
+        assert!(distinct_operand_keys([reference(7)], operands));
+        assert!(distinct_operand_keys(
+            [reference(4), reference(7)],
+            operands
+        ));
+        assert!(!distinct_operand_keys(
+            [reference(7), reference(7)],
+            operands
+        ));
+        assert!(!distinct_operand_keys([reference(9)], operands));
+        assert!(!distinct_operand_keys(
+            [PmDcReference::new(0, false).expect("null reference")],
+            operands
+        ));
+    }
+
+    #[test]
+    fn a_coincident_relation_with_a_solver_hint_projects() {
+        let (mut inventory, mut sketch) = closed_square_inventory();
+        // Point 4 lies at the start of line 7; the maps hold the hint keyed
+        // by the line.
+        let mut hinted = content(11);
+        hinted.extend_from_slice(&(-1i32).to_le_bytes());
+        hinted.extend_from_slice(&0u32.to_le_bytes());
+        let map_prefix = |bytes: &mut Vec<u8>| {
+            bytes.extend_from_slice(&6u16.to_le_bytes());
+            bytes.extend_from_slice(&0x3000u16.to_le_bytes());
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&[0; 8]);
+            bytes.extend_from_slice(&8u32.to_le_bytes());
+        };
+        map_prefix(&mut hinted);
+        hinted.extend_from_slice(&0.0f64.to_le_bytes());
+        map_prefix(&mut hinted);
+        hinted.extend_from_slice(&0u32.to_le_bytes());
+        hinted.extend_from_slice(&0u32.to_le_bytes());
+        hinted.extend_from_slice(&8u32.to_le_bytes());
+        hinted.extend_from_slice(&4u32.to_le_bytes());
+        let hinted = parse(&hinted, |_, source| {
+            parse_constraint(SketchConstraintTag::Coincident, source, 22).expect("coincident")
+        });
+        assert_eq!(hinted.header.scalar_map.entries().len(), 1);
+        assert_eq!(hinted.header.reference_map.entries().len(), 1);
+        inventory.constraints.push(Located::new(
+            hinted,
+            crate::record_identity::RecordTypeId::from_bytes(COINCIDENT_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            11,
+        ));
+        let (marker, metadata, mut references) = sketch.entities.clone().into_parts();
+        references.push(PmDcReference::new(12, false).expect("test reference index fits 31 bits"));
+        sketch.entities =
+            PmDcReferenceList::new(marker, metadata, references).expect("extended entity list");
+        inventory.sketches[0] = Located::new(
+            sketch,
+            crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            2,
+        );
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        let projected = project(&ctx, &inventory, &[]).expect("sketch projection");
+        assert_eq!(projected.unresolved_sketches, 0);
+        assert_eq!(projected.unresolved_constraints, 0);
+        assert_eq!(projected.constraints.len(), 1);
     }
 
     /// The closed square with a horizontal constraint on its first line, the
