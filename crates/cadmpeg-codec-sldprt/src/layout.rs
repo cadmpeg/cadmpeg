@@ -2524,3 +2524,19 @@ pub(crate) mod parasolid_nurbs_curve_short {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 25;
 }
+
+/// Byte offsets for the `parasolid_construction_prefix` record.
+///
+/// Spec §2. Record length 8 B.
+///
+/// ```text
+/// Relative to the end of the schema token. Zero user-field width and a first BODY define this supported construction-stream prefix.
+/// ```
+pub(crate) mod parasolid_construction_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 8;
+    /// Stated value of `user_field_width` (`u32`). Spec §2.
+    pub(crate) const USER_FIELD_WIDTH_VALUE: u32 = 0x0000_0000;
+    /// Stated value of `first_node_type` (`u16`). Spec §2.
+    pub(crate) const FIRST_NODE_TYPE_VALUE: u16 = 0x000c;
+}

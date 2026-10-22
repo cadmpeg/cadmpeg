@@ -10955,3 +10955,36 @@ offset = 23
 type = "u16"
 source = "spec"
 anchor = "knot pointer at `+23`"
+
+[[record]]
+name = "parasolid_construction_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs"
+kind = "byte"
+section = "2"
+anchor = "A BODY-leading schema-13006 construction stream has an eight-byte prefix"
+size = 8
+endianness = "big"
+note = "Relative to the end of the schema token. Zero user-field width and a first BODY define this supported construction-stream prefix."
+
+[[record.field]]
+name = "maximum_node_type"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "u16 BE maximum node type at `+0`"
+
+[[record.field]]
+name = "user_field_width"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "u32 BE zero user-field width at `+2`"
+value = 0
+
+[[record.field]]
+name = "first_node_type"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "u16 BE BODY type `12` at `+6`"
+value = 12

@@ -2792,6 +2792,21 @@ Parsed by:
 | 21 | 2 | `multiplicities` | `u16` | big | spec | multiplicity pointer at `+21` |
 | 23 | 2 | `knots` | `u16` | big | spec | knot pointer at `+23` |
 
+## `parasolid_construction_prefix`
+
+Spec §2 · layout: byte offsets · size: 8 B
+
+Relative to the end of the schema token. Zero user-field width and a first BODY define this supported construction-stream prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/parasolid/control_vertices.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `maximum_node_type` | `u16` | big | spec | u16 BE maximum node type at `+0` |
+| 2 | 4 | `user_field_width` | `u32` | big | spec | u32 BE zero user-field width at `+2` · value `0` |
+| 6 | 2 | `first_node_type` | `u16` | big | spec | u16 BE BODY type `12` at `+6` · value `12` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

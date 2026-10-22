@@ -268,3 +268,45 @@ fn duplicated_selector_names_with_different_types_abstain() {
         assert!(decode(&edited).is_none());
     }
 }
+
+#[test]
+fn another_wire_body_with_a_complete_curve_path_abstains() {
+    let bytes = stream(&points());
+    let body = stream_header(&bytes).unwrap().unwrap().body_offset + 6;
+    let c = record(&bytes, 134);
+    let n = record(&bytes, 136);
+    let v = record(&bytes, 45);
+    for kind in [2_u8, 3] {
+        let mut edited = bytes.clone();
+        let mut extra_body = vec![0, 12];
+        let mut body_payload = bytes[body + 3..c].to_vec();
+        body_payload[..2].copy_from_slice(&4_u16.to_be_bytes());
+        body_payload[43] = kind;
+        body_payload[49..51].copy_from_slice(&65_u16.to_be_bytes());
+        extra_body.extend(body_payload);
+        let mut extra_curve = bytes[c..c + 24].to_vec();
+        extra_curve.remove(2);
+        extra_curve[2..4].copy_from_slice(&65_u16.to_be_bytes());
+        extra_curve[2 + 8..2 + 10].copy_from_slice(&4_u16.to_be_bytes());
+        extra_curve[2 + 17..2 + 19].copy_from_slice(&66_u16.to_be_bytes());
+        let mut extra_nurbs = bytes[n..n + 28].to_vec();
+        extra_nurbs.remove(2);
+        extra_nurbs[2..4].copy_from_slice(&66_u16.to_be_bytes());
+        extra_nurbs[2 + 19..2 + 21].copy_from_slice(&67_u16.to_be_bytes());
+        let mut extra_vertices = bytes[v..v + 9 + points().len() * 24].to_vec();
+        extra_vertices.remove(2);
+        extra_vertices[6..8].copy_from_slice(&67_u16.to_be_bytes());
+        append(&mut edited, &extra_body);
+        append(&mut edited, &extra_curve);
+        append(&mut edited, &extra_nurbs);
+        append(&mut edited, &extra_vertices);
+        if kind == 2 {
+            assert!(decode(&edited).is_none());
+        } else {
+            assert_eq!(
+                decode(&edited).expect("one eligible wire body"),
+                points().map(|p| Point3::new(p[0], p[1], p[2]))
+            );
+        }
+    }
+}

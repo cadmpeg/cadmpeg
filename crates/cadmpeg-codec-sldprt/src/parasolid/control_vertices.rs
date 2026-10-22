@@ -8,6 +8,7 @@ use cadmpeg_ir::math::Point3;
 use super::StreamHeader;
 use crate::layout::{
     bspline_array_header as array_header, parasolid_b_curve_short as curve_header,
+    parasolid_construction_prefix as construction_prefix,
     parasolid_nurbs_curve_short as nurbs_header,
 };
 
@@ -147,13 +148,22 @@ impl<'a> Cursor<'a> {
     }
 }
 
-fn body_boundary(bytes: &[u8], header: &StreamHeader) -> Option<(u32, usize, u16)> {
+struct BodySchema<'a> {
+    fields: [Field<'a>; 255],
+    len: usize,
+}
+
+fn body_schema<'a>(bytes: &'a [u8], header: &StreamHeader) -> Option<(BodySchema<'a>, usize, u16)> {
+    bytes.get(header.body_offset..header.body_offset.checked_add(construction_prefix::LEN)?)?;
     let mut cursor = Cursor {
         bytes,
         at: header.body_offset,
     };
     let max_type = cursor.short()?;
-    (max_type >= 136 && cursor.int()? == 0 && cursor.short()? == 12).then_some(())?;
+    (max_type >= 136
+        && cursor.int()? == construction_prefix::USER_FIELD_WIDTH_VALUE
+        && cursor.short()? == construction_prefix::FIRST_NODE_TYPE_VALUE)
+        .then_some(())?;
     let count = cursor.byte()?;
     let mut fields = [Field::new("", Kind::Byte); 255];
     let len;
@@ -194,10 +204,20 @@ fn body_boundary(bytes: &[u8], header: &StreamHeader) -> Option<(u32, usize, u16
         }
         (out == len && base == BASE_BODY.len()).then_some(())?;
     }
+    Some((BodySchema { fields, len }, cursor.at, max_type))
+}
+
+fn body_values(
+    bytes: &[u8],
+    at: usize,
+    schema: &BodySchema<'_>,
+    max_type: u16,
+) -> Option<(u8, u32, usize)> {
+    let mut cursor = Cursor { bytes, at };
     (cursor.reference()? > 1).then_some(())?;
-    let mut kind = None;
-    let mut boundary = None;
-    for field in &fields[..len] {
+    let (mut kind, mut boundary, mut highest, mut state, mut nominal, mut size, mut linear) =
+        (None, None, None, None, None, None, None);
+    for field in &schema.fields[..schema.len] {
         match field.name {
             "body_type" => {
                 if kind.is_some() || !matches!(field.kind, Kind::Byte) {
@@ -211,12 +231,76 @@ fn body_boundary(bytes: &[u8], header: &StreamHeader) -> Option<(u32, usize, u16
                 }
                 boundary = Some(cursor.reference()?);
             }
+            "highest_node_id" => {
+                if highest.is_some() || !matches!(field.kind, Kind::Int) {
+                    return None;
+                }
+                highest = Some(cursor.int()?);
+            }
+            "state" => {
+                if state.is_some() || !matches!(field.kind, Kind::Byte) {
+                    return None;
+                }
+                state = Some(cursor.byte()?);
+            }
+            "nom_geom_state" => {
+                if nominal.is_some() || !matches!(field.kind, Kind::Byte) {
+                    return None;
+                }
+                nominal = Some(cursor.byte()?);
+            }
+            "res_size" => {
+                if size.is_some() || !matches!(field.kind, Kind::Double) {
+                    return None;
+                }
+                size = Some(cursor.double()?);
+            }
+            "res_linear" => {
+                if linear.is_some() || !matches!(field.kind, Kind::Double) {
+                    return None;
+                }
+                linear = Some(cursor.double()?);
+            }
             _ => cursor.skip(field.kind)?,
         }
     }
-    (kind == Some(2)).then_some(())?;
-    let boundary = boundary?;
-    (boundary > 1).then_some((boundary, cursor.at, max_type))
+    let kind = kind?;
+    if kind == 2
+        && (highest? == 0
+            || state? != 1
+            || nominal? != 1
+            || size? <= 0.0
+            || linear? <= 0.0
+            || linear? >= size?)
+    {
+        return None;
+    }
+    let end = cursor.at;
+    let next = cursor.short()?;
+    (next > 0 && next <= max_type).then_some((kind, boundary?, end))
+}
+
+fn body_boundary(
+    bytes: &[u8],
+    header: &StreamHeader,
+    work: &WorkBudget,
+) -> Option<(u32, usize, u16)> {
+    let (schema, at, max_type) = body_schema(bytes, header)?;
+    let (kind, boundary, end) = body_values(bytes, at, &schema, max_type)?;
+    (kind == 2 && boundary > 1).then_some(())?;
+    work.charge_by(bytes.len()).then_some(())?;
+    for at in end..bytes.len().checked_sub(2)? {
+        if View::u16_be_at(bytes, at) != Some(12) {
+            continue;
+        }
+        work.charge_by(schema.len).then_some(())?;
+        if let Some((2, other_boundary, _)) = body_values(bytes, at + 2, &schema, max_type) {
+            if other_boundary > 1 {
+                return None;
+            }
+        }
+    }
+    Some((boundary, end, max_type))
 }
 
 #[derive(Clone, Copy)]
@@ -355,12 +439,12 @@ pub(crate) fn control_vertices(
     if !header.schema.value().as_bytes().ends_with(b"_13006") {
         return Ok(None);
     }
-    let Some((mut head, start, max_type)) = body_boundary(bytes, header) else {
-        return Ok(None);
-    };
     let work = WorkBudget::new(bytes.len().checked_mul(16).ok_or_else(|| {
         CodecError::Malformed("SLDPRT construction scan length overflows".into())
     })?);
+    let Some((mut head, start, max_type)) = body_boundary(bytes, header, &work) else {
+        return Ok(None);
+    };
     let mut seen = std::collections::HashSet::new();
     let mut selected = None;
     while head != 1 {
