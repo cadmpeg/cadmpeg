@@ -7473,6 +7473,7 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
     let mut visibility_ordinals = HashSet::new();
+    let mut ordinals_by_component = BTreeMap::<(&str, Option<u64>), Vec<(u64, u32)>>::new();
     // Sketch Geometry member ordinals count within a component: the one whose
     // entity cluster, starting at its root entity, holds the sketch entity.
     let mut component_roots = HashMap::<&str, Vec<u64>>::new();
@@ -7516,6 +7517,13 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                     visibility.stream_ordinal.get(),
                 ))
             {
+                ordinals_by_component
+                    .entry((native_stream, component))
+                    .or_default()
+                    .push((
+                        placement.entity_id.suffix(),
+                        visibility.stream_ordinal.get(),
+                    ));
                 visibility_offsets.insert((native_stream, visibility.visible_offset()))
             } else {
                 false
@@ -7547,20 +7555,13 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             );
         }
     }
-    let mut visibility_ordinal_ranges = BTreeMap::<(&str, Option<u64>), (usize, u32)>::new();
-    for (stream, component, ordinal) in visibility_ordinals {
-        let (count, maximum) = visibility_ordinal_ranges
-            .entry((stream, component))
-            .or_default();
-        *count += 1;
-        *maximum = (*maximum).max(ordinal);
-    }
-    for ((stream, _), (count, maximum)) in visibility_ordinal_ranges {
-        if usize::try_from(maximum).ok() != Some(count) {
+    for ((stream, _), mut ordinals) in ordinals_by_component {
+        ordinals.sort_unstable();
+        if ordinals.windows(2).any(|pair| pair[0].1 >= pair[1].1) {
             push_constant_finding(
                 findings,
                 Check::NativeLinks,
-                "Fusion Design sketch Geometry member ordinals are not contiguous",
+                "Fusion Design sketch Geometry member ordinals do not increase with sketch entity order",
                 Some(stream.to_owned()),
             );
         }
