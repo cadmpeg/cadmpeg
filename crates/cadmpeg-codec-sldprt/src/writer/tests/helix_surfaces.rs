@@ -495,8 +495,6 @@ fn semantic_writer_round_trips_native_axis_helix() {
 
 #[test]
 fn semantic_writer_synthesizes_embedded_helix_geometry_edits() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-    use cadmpeg_ir::report::export::WritePath;
     use cadmpeg_ir::{
         features::{FeatureOperation, ParameterValue},
         scalar::Length,
@@ -555,105 +553,7 @@ fn semantic_writer_synthesizes_embedded_helix_geometry_edits() {
     edited
         .set_parameter_expression(&parameter, value.literal_expression(), Some(value))
         .unwrap();
-    // E1 permits retained layout when its decoded content agrees with a
-    // source-free write. An opaque carrier cannot supply an authoring law.
-    let synthesis = SldprtCodec
-        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
-        .unwrap();
-    let synthesis_report = synthesis.report().clone();
-    let mut synthesized_bytes = Vec::new();
-    synthesis.write_to(&mut synthesized_bytes).unwrap();
-    let source_free = SldprtCodec
-        .decode(
-            &mut Cursor::new(synthesized_bytes),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    for source_available in [true, false] {
-        let mut fidelity = decoded.source_fidelity().clone();
-        if !source_available {
-            crate::test_support::make_source_image_unavailable(&mut fidelity);
-        }
-        let plan = SldprtCodec
-            .plan(
-                EncodeInput::new(&edited, Some(&fidelity)),
-                TargetRequest::Inherit,
-            )
-            .unwrap();
-        if source_available {
-            assert!(matches!(
-                plan.report().write_path(),
-                WritePath::Patched { .. }
-            ));
-        } else {
-            assert!(matches!(
-                plan.report().write_path(),
-                WritePath::Synthesized { .. }
-            ));
-            // The public cause field describes a declined patch or an
-            // unrepresented class. Missing image is its dedicated loss.
-            assert_eq!(plan.report().synthesis_cause(), None);
-            let missing_image = crate::loss::SldprtLossCode::SourcePreservedImageUnavailable
-                .note("")
-                .code;
-            assert!(plan
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.code == missing_image));
-        }
-        assert!(!plan.report().losses.is_empty());
-        let mut bytes = Vec::new();
-        plan.write_to(&mut bytes).unwrap();
-        let written = SldprtCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
-        cadmpeg_test_support::contract::assert_written_arenas_agree(
-            &synthesis_report,
-            written.ir(),
-            source_free.ir(),
-        );
-        assert_eq!(written.ir().model.bodies.len(), edited.model.bodies.len());
-        assert_eq!(written.ir().model.faces.len(), edited.model.faces.len());
-        assert_eq!(
-            written.ir().model.parameters.len(),
-            edited.model.parameters.len()
-        );
-        assert!(matches!(
-            written.ir().model.features[0].definition().operation(),
-            FeatureOperation::Native { .. }
-        ));
-        assert!(written.ir().model.features[0].needs_recompute);
-        for expected in &edited.model.parameters {
-            let actual = written
-                .ir()
-                .model
-                .parameters
-                .iter()
-                .find(|actual| actual.name == expected.name)
-                .unwrap();
-            assert_eq!(actual.value, expected.value);
-            if let Some(value) = expected.value.as_ref().filter(|value| {
-                expected.expression == value.literal_expression()
-                    && expected.expression.literal_value_as(value).as_ref() == Some(*value)
-            }) {
-                assert_eq!(
-                    actual.expression.literal_value_as(value).as_ref(),
-                    Some(value)
-                );
-            } else {
-                assert_eq!(actual.expression, expected.expression);
-            }
-        }
-        let native = sldprt_native(written.ir());
-        assert_eq!(
-            crate::history::parameters::source_parameter_value(
-                &native.feature_histories[0].features[0],
-                "D3",
-            ),
-            Some(ParameterValue::Length(Length::new(9000.0).unwrap())),
-        );
-    }
+    crate::test_support::assert_synthesis_fallback(&edited, decoded.source_fidelity());
 }
 
 #[test]
