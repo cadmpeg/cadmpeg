@@ -20,11 +20,15 @@ use cadmpeg_ir::math::Point2;
 /// torus.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NativeChart {
-    /// Native lengths along `u_dir` and along `normal × u_dir`; `reverse_v`
-    /// negates the second coordinate.
+    /// Native coordinates along `u_dir` and along `normal × u_dir`, each in
+    /// units of the stored reference-vector length; `reverse_v` negates the
+    /// second coordinate.
     Plane {
         /// The surface v-sense slot.
         reverse_v: bool,
+        /// Positive native length of one coordinate unit: the length of the
+        /// stored reference vector.
+        scale: f64,
     },
     /// Generator coordinate first and azimuth about the native axis from the
     /// major axis second.
@@ -58,9 +62,9 @@ impl NativeChart {
     #[must_use]
     pub fn frame_point(self, native: Point2) -> Point2 {
         match self {
-            Self::Plane { reverse_v } => Point2::new(
-                native.u * LEN_TO_MM,
-                native.v * sense_sign(reverse_v) * LEN_TO_MM,
+            Self::Plane { reverse_v, scale } => Point2::new(
+                native.u * scale * LEN_TO_MM,
+                native.v * sense_sign(reverse_v) * scale * LEN_TO_MM,
             ),
             Self::Cone { axial_scale } => Point2::new(native.v, native.u * axial_scale),
             Self::LatitudeFirst { reverse_v } => {
@@ -73,15 +77,32 @@ impl NativeChart {
     #[must_use]
     pub fn native_point(self, frame: Point2) -> Point2 {
         match self {
-            Self::Plane { reverse_v } => Point2::new(
-                frame.u / LEN_TO_MM,
-                frame.v * sense_sign(reverse_v) / LEN_TO_MM,
+            Self::Plane { reverse_v, scale } => Point2::new(
+                frame.u / (scale * LEN_TO_MM),
+                frame.v * sense_sign(reverse_v) / (scale * LEN_TO_MM),
             ),
             Self::Cone { axial_scale } => Point2::new(frame.v / axial_scale, frame.u),
             Self::LatitudeFirst { reverse_v } => {
                 Point2::new(frame.v, frame.u * sense_sign(reverse_v))
             }
         }
+    }
+}
+
+/// The native chart of a standalone `plane` record: its v-sense and stored
+/// reference-vector length. Absent for another record, or for a plane whose
+/// fields do not parse.
+#[must_use]
+pub fn plane_record_chart(head: &str, tokens: &[Token]) -> Option<NativeChart> {
+    if head != "plane" {
+        return None;
+    }
+    match SupportChart::of_surface_record(head, tokens)? {
+        SupportChart::Native {
+            chart: chart @ NativeChart::Plane { .. },
+            ..
+        } => Some(chart),
+        _ => None,
     }
 }
 
@@ -114,10 +135,17 @@ pub(crate) enum FrameMap {
     /// A decoded cone axis opposite the native axis negates both frame
     /// coordinates.
     Negated,
-    /// A decoded torus major radius opposite the native one maps the
-    /// longitude `u` and latitude `v` to `(u + pi, pi - v)`, which reaches
-    /// the same point with the same tube-outward normal.
-    OppositeMajor,
+    /// A torus whose decoded radii differ in sign from the radii of its
+    /// native chart.
+    Torus {
+        /// The decoded major radius is opposite the native one. The longitude
+        /// `u` and latitude `v` map to `(u + pi, pi - v)`, which reaches the
+        /// same point with the same tube-outward normal.
+        opposite_major: bool,
+        /// The decoded minor radius is negative. The native chart uses its
+        /// magnitude, so the latitude moves by `pi`.
+        opposite_minor: bool,
+    },
 }
 
 impl FrameMap {
@@ -125,10 +153,19 @@ impl FrameMap {
         match self {
             Self::Frame => frame,
             Self::Negated => Point2::new(-frame.u, -frame.v),
-            Self::OppositeMajor => Point2::new(
-                frame.u + std::f64::consts::PI,
-                std::f64::consts::PI - frame.v,
-            ),
+            Self::Torus {
+                opposite_major,
+                opposite_minor,
+            } => {
+                let (mut u, mut v) = (frame.u, frame.v);
+                if opposite_major {
+                    (u, v) = (u + std::f64::consts::PI, std::f64::consts::PI - v);
+                }
+                if opposite_minor {
+                    v += std::f64::consts::PI;
+                }
+                Point2::new(u, v)
+            }
         }
     }
 }
@@ -146,12 +183,14 @@ pub(crate) enum SupportChart {
 }
 
 impl SupportChart {
-    /// The chart of a plane with v-sense slot `reverse_v`.
-    pub(crate) fn plane(reverse_v: bool) -> Self {
-        Self::Native {
-            chart: NativeChart::Plane { reverse_v },
+    /// The chart of a plane with v-sense slot `reverse_v` and stored
+    /// reference-vector length `scale`. A zero or non-finite length defines no
+    /// chart.
+    pub(crate) fn plane(reverse_v: bool, scale: f64) -> Option<Self> {
+        (scale.is_finite() && scale > 0.0).then_some(Self::Native {
+            chart: NativeChart::Plane { reverse_v, scale },
             map: FrameMap::Frame,
-        }
+        })
     }
 
     /// The chart of a sphere with v-sense slot `reverse_v`.
@@ -162,15 +201,19 @@ impl SupportChart {
         }
     }
 
-    /// The chart of a torus with stored major radius `major` and v-sense slot
-    /// `reverse_v`. A negative major radius places each tube center on the
-    /// far side of the axis; the torus decodes with its magnitude, the same
-    /// tube circle.
-    pub(crate) fn torus(major: f64, reverse_v: bool) -> Self {
+    /// The chart of a torus with stored major radius `major`, minor radius
+    /// `minor`, and v-sense slot `reverse_v`. A negative major radius places
+    /// each tube center on the far side of the axis; the torus decodes with
+    /// its magnitude, the same tube circle. The native chart uses the
+    /// magnitude of the minor radius, and the torus decodes with its sign.
+    pub(crate) fn torus(major: f64, minor: f64, reverse_v: bool) -> Self {
         Self::Native {
             chart: NativeChart::LatitudeFirst { reverse_v },
-            map: if major < 0.0 {
-                FrameMap::OppositeMajor
+            map: if major < 0.0 || minor < 0.0 {
+                FrameMap::Torus {
+                    opposite_major: major < 0.0,
+                    opposite_minor: minor < 0.0,
+                }
             } else {
                 FrameMap::Frame
             },

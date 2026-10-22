@@ -478,8 +478,12 @@ not create fabricated parameter identities.
 
 Spreadsheet sheets are equation-tree nodes. Every persisted used cell becomes an ordered design
 parameter whose identity includes its sheet and address. Address and alias remain separate;
-content, display unit, alignment, style, colors, and spans are retained independently. Plain numeric
-content supplies a dimensionless evaluated value, while formula content remains an expression.
+content, display unit, alignment, style, colors, and spans are retained independently. A cell's
+content states its own value when it is a `'`-quoted string, or a number with an optional length
+unit (`nm`, `um`, `mm`, `cm`, `dm`, `m`, `km`, `in`, `"`, `ft`, `'`, `thou`, `mil`, `yd`) or angle
+unit (`deg`, `°`, `rad`), written directly or as the whole `=` formula: a number alone is
+dimensionless, a length becomes millimetres and an angle radians. Other formula content remains an
+expression without a value. Content without a leading `=` is a literal and references nothing.
 Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet and feature
 parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
 match their declared framing. Parameter ordinals use stable dependency order and persisted cell
@@ -671,7 +675,9 @@ the body natively instead of selecting a source-order value. A valid tip identif
 member as the active result. Suppressed, active,
 frozen, invalid, touched, mapping, support, and visibility properties remain individually named
 state rather than being collapsed into one enabled flag. Validation rejects duplicate members,
-inconsistent parentage, missing members, and an active tip outside the body's ordered membership.
+inconsistent parentage, missing members, and an active tip outside the body's ordered membership. A body displays its result through its own `Shape`; the bodies transferred from its members'
+shapes, and from any shape property other than `Shape` (such as a feature's `AddSubShape` tool
+shape), are intermediate and carry `visible: false` unless a GUI view provider states otherwise.
 
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a

@@ -188,11 +188,11 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 
 ### DE-03. Additional sketch geometry and relations
 
-**Question.** What does the planar-sketch `count_value` count, what locus semantics do nonempty constraint maps encode, and which PmDc records define circular arcs, splines, offset curves, projected geometry, text, pattern relations, and branched profile regions?
+**Question.** What does the planar-sketch `count_value` count, what locus semantics do nonempty constraint maps other than the coincident solver hint encode, and which PmDc records define elliptical arcs, splines, offset curves, projected geometry, text, and pattern relations, which `entity_flags` bit marks construction geometry, what the midpoint relation's trailing `value:u32` encodes, what the regular-polygon record's `value:u32` and the polygon relation's two trailing u32 values encode, and which angle-dimension `flags` value selects the supplement of the line angle?
 
-**Known.** The `count_value` is the u32 field between sketch state and the type-8 reference array. Point, bounded-line, circle, and ellipse entities form closed planar sketch graphs. Coincident, parallel, perpendicular, tangent, horizontal, vertical, circle-center, equal-radius, radius, diameter, horizontal-distance, and vertical-distance relations with empty constraint maps have exact operands.
+**Known.** The `count_value` is the u32 field between sketch state and the type-8 reference array. Point, bounded-line, circle, circular-arc, and closed-ellipse entities form closed planar sketch graphs. An ellipse record with two leading point references is bounded. Profile wire bodies use curves whose `entity_flags` hold bits `0x40`, `0x1000`, `0x40000`, and `0x80000`, so these bits do not mark construction geometry. Bits `0x8000` and `0x200000` occur only on curves that no profile wire uses. Coincident, parallel, perpendicular, tangent, horizontal, vertical, circle-center, equal-radius, midpoint, fix, horizontal-alignment, vertical-alignment, collinear, symmetric, polygon, radius, diameter, distance, angle, horizontal-distance, and vertical-distance relations with empty constraint maps have exact operands. The midpoint value is 0 in every record examined.
 
-**Need.** The count requires an exact referent before validation uses it. Nonempty constraint maps require exact locus semantics before neutral transfer. Each additional entity and relation requires its complete solved geometry, ordered operands, parameter role, and profile-boundary semantics.
+**Need.** The count requires an exact referent before validation uses it. Nonempty constraint maps other than the coincident solver hint require exact locus semantics before neutral transfer. The polygon record value and the polygon relation values require exact referents before a polygon transfers as more than its edges and relations. Each additional entity and relation requires its complete solved geometry, ordered operands, parameter role, and profile-boundary semantics.
 
 ### DE-04. Parameter tables without a model owner
 
@@ -209,6 +209,14 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 **Known.** Value 3 references the root's parameter table and value 9 is null or repeats it. Value 12 is 1 in document model roots and 7 in flat-pattern model roots. The member list and the name map contain every parameter of the table and also other records. The suffix is retained by length.
 
 **Need.** The model graph, the flat-pattern definition operands, and the table membership rule must be exact before the flat-pattern model can transfer more than its parameter scope.
+
+### DE-06. Profile selections outside the whole-loop form
+
+**Question.** What do these profile selections select: a selection whose entity link is an entity-style link; a wire edge whose naming attribute has another integer layout; a wire edge whose associative identifier names no curve of the consumed sketch; a wire whose edges do not form one closed ring; and one ring selected twice in one boundary patch?
+
+**Known.** A selection whose wire body edges each run along a whole curve or a part of a curve of the consumed sketch is one closed ring of that sketch. Some wire bodies name associative identifiers that the consumed sketch gives to points, or to no entity, and their edges do not lie on the current sketch curves. Some naming attributes store three integers after the five leading fields.
+
+**Need.** Each form requires its exact sketch curves or region rule before the extrusion profile can transfer.
 
 ## 5. Adjacent envelopes
 

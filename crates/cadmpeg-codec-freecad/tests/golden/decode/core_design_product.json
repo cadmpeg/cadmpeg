@@ -4173,6 +4173,10 @@
           "owner": "fcstd:design:feature#Parameters",
           "properties": {
             "address": "A1"
+          },
+          "value": {
+            "kind": "string",
+            "value": "Length"
           }
         },
         {
@@ -4184,6 +4188,10 @@
           "owner": "fcstd:design:feature#Parameters",
           "properties": {
             "address": "A2"
+          },
+          "value": {
+            "kind": "string",
+            "value": "Width"
           }
         },
         {
@@ -4196,6 +4204,10 @@
           "properties": {
             "address": "B1",
             "alias": "ProductLength"
+          },
+          "value": {
+            "kind": "length",
+            "value": 30.0
           }
         },
         {
@@ -4207,6 +4219,10 @@
           "owner": "fcstd:design:feature#Parameters",
           "properties": {
             "address": "B2"
+          },
+          "value": {
+            "kind": "length",
+            "value": 20.0
           }
         },
         {

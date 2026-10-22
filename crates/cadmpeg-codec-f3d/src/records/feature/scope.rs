@@ -2141,6 +2141,26 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
     }
 }
 
+/// Reference-table entry width of a scope draft: 11 for plain references or
+/// 51 for typed references. The last entry's target is followed by the rest
+/// of its reference, the u32 history-state identity, and the kind length.
+fn reference_table_stride(draft: &DesignParameterScopeDraft) -> Option<usize> {
+    let last = draft.reference_members.offsets().next_back()?;
+    let count = u64_from_index(draft.reference_members.len());
+    [11, crate::bytes::TYPED_LOCAL_REFERENCE_LEN]
+        .into_iter()
+        .find(|stride| {
+            let stride = u64_from_index(*stride);
+            last.checked_add(stride + 7) == Some(draft.kind_offset)
+                && draft
+                    .reference_count_offset
+                    .checked_add(5)
+                    .zip(count.checked_sub(1).and_then(|n| n.checked_mul(stride)))
+                    .and_then(|(first, span)| first.checked_add(span))
+                    == Some(*last)
+        })
+}
+
 impl DesignParameterScope {
     pub(crate) fn try_new(
         draft: DesignParameterScopeDraft,
@@ -2168,19 +2188,32 @@ impl DesignParameterScope {
             .checked_sub(draft.feature_ordinal_offset)
             .and_then(|length| usize::try_from(length).ok())
             .ok_or_else(|| fail("feature_ordinal_offset"))?;
-        if !crate::design::decode::scopes::parameter_scope::parameter_scope_tail_length_is_valid(
-            kind, tail,
-        ) {
+        // The reference-table stride shows the reference spelling: 11-byte
+        // plain references or 51-byte typed references.
+        // A table that fits neither width falls through to the plain checks.
+        let stride = reference_table_stride(&draft).unwrap_or(11);
+        let typed = stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
+        let tail_valid = if typed {
+            tail == crate::layout::typed_reference_parameter_scope_tail::LEN
+        } else {
+            crate::design::decode::scopes::parameter_scope::parameter_scope_tail_length_is_valid(
+                kind, tail,
+            )
+        };
+        if !tail_valid {
             return Err(fail("feature_ordinal_offset/kind"));
         }
         match draft.previous_history_state_id_offset {
             None if draft.previous_history_state_id.is_none() => {}
             Some(offset) => {
-                let relative =
+                let relative = if typed {
+                    Some(crate::layout::typed_reference_parameter_scope_tail::PREVIOUS_HISTORY_STATE_ID)
+                } else {
                     crate::design::decode::scopes::parameter_scope::parameter_scope_previous_history_offset(
                         kind, tail,
                     )
-                    .ok_or_else(|| fail("previous_history_state_id_offset"))?;
+                }
+                .ok_or_else(|| fail("previous_history_state_id_offset"))?;
                 // A scope that commits no state of its own can still record
                 // the state it follows.
                 if draft
@@ -2217,7 +2250,7 @@ impl DesignParameterScope {
                 return Err(fail("reference_member_offsets"));
             }
             expected = expected
-                .checked_add(11)
+                .checked_add(u64_from_index(stride))
                 .ok_or_else(|| fail("reference_member_offsets"))?;
         }
         if draft.reference_members.offsets().count() != draft.reference_members.len()
@@ -2225,7 +2258,7 @@ impl DesignParameterScope {
                 .reference_members
                 .offsets()
                 .next_back()
-                .and_then(|offset| offset.checked_add(18))
+                .and_then(|offset| offset.checked_add(u64_from_index(stride) + 7))
                 != Some(draft.kind_offset)
         {
             return Err(fail("reference_member_offsets/kind_offset"));

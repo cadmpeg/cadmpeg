@@ -441,6 +441,33 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         );
     }
 
+    // The component's definition record ends with its name after the UUID;
+    // a name that does not end the record is not the component's.
+    for (record_end, expected) in [(true, Some("Base0")), (false, None)] {
+        let mut named = vec![0xaa, 0xbb];
+        binding(&mut named, 17, 2, CONTEXT_UUID);
+        let name_at = named.len();
+        named.extend_from_slice(&5_u32.to_le_bytes());
+        for code_unit in "Base0".encode_utf16() {
+            named.extend_from_slice(&code_unit.to_le_bytes());
+        }
+        named.extend_from_slice(&[0, 0]);
+        if record_end {
+            named.extend_from_slice(&3_u32.to_le_bytes());
+            named.extend_from_slice(b"262");
+            named.extend_from_slice(&18_u32.to_le_bytes());
+        } else {
+            named.extend_from_slice(&[7; 11]);
+        }
+        let decoded = with_scan(&archive(&named), decode_component_naming_spaces)
+            .expect("named component naming space");
+        let [space] = decoded.as_slice() else {
+            panic!("expected one component naming space");
+        };
+        assert_eq!(space.name.as_deref(), expected);
+        assert_eq!(space.name_offset, expected.map(|_| u64_from_index(name_at)));
+    }
+
     let mut overlapping_reference = vec![1];
     binding(
         &mut overlapping_reference,

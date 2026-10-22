@@ -97,6 +97,9 @@ pub(crate) struct SketchCurveSelectionResolution<'a> {
     pub(crate) groups: &'a [DesignConstructionOperandGroup],
     /// Nested entity-selection operands.
     pub(crate) operands: &'a [DesignEntitySelectionOperand],
+    /// Typed-reference profile selections listing Sketch curve loops.
+    pub(crate) profile_curves:
+        &'a [crate::records::topology::entity_selection::DesignProfileCurveSelection],
     /// Projected Sketch placement carriers.
     pub(crate) placements: &'a [DesignSketchPlacement],
     /// Persistent Sketch curve identities.
@@ -114,6 +117,7 @@ pub(crate) struct SketchCurveSelectionResolution<'a> {
 #[derive(Clone, Copy)]
 struct EntitySelectionPathResolution<'a> {
     operands: &'a [DesignEntitySelectionOperand],
+    profile_curves: &'a [crate::records::topology::entity_selection::DesignProfileCurveSelection],
     placements: &'a [DesignSketchPlacement],
     curve_identities: &'a [SketchCurveIdentity],
     sketches: &'a [cadmpeg_ir::sketches::Sketch],
@@ -126,6 +130,7 @@ impl<'a> SketchCurveSelectionResolution<'a> {
     fn path_resolution(&self) -> EntitySelectionPathResolution<'a> {
         EntitySelectionPathResolution {
             operands: self.operands,
+            profile_curves: self.profile_curves,
             placements: self.placements,
             curve_identities: self.curve_identities,
             sketches: self.sketches,
@@ -2227,6 +2232,7 @@ impl<'a> SketchProfileResolution<'a> {
     fn path_resolution(&self) -> EntitySelectionPathResolution<'a> {
         EntitySelectionPathResolution {
             operands: self.entity_selection_operands,
+            profile_curves: &[],
             placements: self.placements,
             curve_identities: self.curve_identities,
             sketches: self.sketches,
@@ -2235,6 +2241,116 @@ impl<'a> SketchProfileResolution<'a> {
             spatial_sketch_entities: self.spatial_sketch_entities,
         }
     }
+}
+
+/// Resolve a group whose members are typed-reference profile selections.
+///
+/// Every member has exactly one selection. All selections name one Sketch
+/// scope through their chain record; exactly one Sketch placement carries
+/// that scope, and its entity suffix equals every selection's owner text.
+/// Every listed curve then resolves to exactly one curve identity of that
+/// Sketch. Any other outcome keeps the selection native.
+fn resolve_profile_curve_path(
+    group: &DesignConstructionOperandGroup,
+    stream: &str,
+    resolution: &EntitySelectionPathResolution<'_>,
+) -> Option<cadmpeg_ir::features::PathRef> {
+    use cadmpeg_ir::features::PathRef;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    macro_rules! available {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return None,
+            }
+        };
+    }
+    let mut sketch_scope = None;
+    let mut owner_text = None;
+    let mut selections = Vec::new();
+    for (ordinal, record_index) in group
+        .members()
+        .iter()
+        .map(|member| member.value)
+        .enumerate()
+    {
+        let ordinal = available!(u32::try_from(ordinal).ok());
+        let mut matches = resolution.profile_curves.iter().filter(|selection| {
+            native_stream(&selection.id) == Some(stream)
+                && selection.scope_record_index == group.scope_record_index
+                && selection.group_record_index == group.record_index
+                && selection.group_member_ordinal == ordinal
+                && selection.record_index == record_index
+        });
+        let selection = available!(matches.next());
+        if matches.next().is_some()
+            || sketch_scope.is_some_and(|scope| scope != selection.sketch_scope_record_index)
+            || owner_text.is_some_and(|text: &str| text != selection.owner_text)
+        {
+            return None;
+        }
+        sketch_scope = Some(selection.sketch_scope_record_index);
+        owner_text = Some(selection.owner_text.as_str());
+        selections.push(selection);
+    }
+    let sketch_scope = available!(sketch_scope);
+    let mut matching_placements = resolution.placements.iter().filter(|placement| {
+        native_stream(&placement.id) == Some(stream)
+            && placement.scope_record_index == Some(sketch_scope)
+    });
+    let placement = available!(matching_placements.next());
+    if matching_placements.next().is_some()
+        || owner_text != Some(placement.entity_id.suffix().to_string().as_str())
+    {
+        return None;
+    }
+    let owner_reference = available!(u32::try_from(placement.entity_id.suffix()).ok());
+    let sketch = crate::ids::neutral_sketch_id(placement);
+    if !resolution
+        .sketches
+        .iter()
+        .any(|candidate| candidate.id == sketch)
+    {
+        return None;
+    }
+    let mut seen = HashSet::new();
+    let mut curves = Vec::new();
+    for entry in selections
+        .iter()
+        .flat_map(|selection| selection.loop_lists.iter().flatten().flatten())
+    {
+        let mut matches = resolution.curve_identities.iter().filter(|curve| {
+            native_stream(&curve.id) == Some(stream)
+                && curve.owner_reference == Some(owner_reference)
+                && curve.primary_id.get() == entry.primary_id
+                && (entry.secondary_id == 0 || curve.secondary_id == entry.secondary_id)
+        });
+        let curve = available!(matches.next());
+        if matches.next().is_some() {
+            return None;
+        }
+        let identity = (curve.primary_id.get(), curve.secondary_id);
+        if !seen.insert(identity) {
+            return None;
+        }
+        curves.push(crate::ids::neutral_sketch_curve_id(
+            &sketch, identity.0, identity.1,
+        ));
+    }
+    if curves.iter().any(|curve| {
+        !resolution.sketch_entities.iter().any(|entity| {
+            entity.sketch == sketch
+                && entity.id() == curve
+                && !matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
+        })
+    }) {
+        return None;
+    }
+    PathRef::sketch_curves(sketch, curves).ok()
 }
 
 /// Resolve one complete ordered entity-selection group to a neutral Sketch
@@ -2261,6 +2377,13 @@ fn resolve_entity_selection_path(
         return None;
     }
     let stream = available!(native_stream(&group.id));
+    if resolution.profile_curves.iter().any(|selection| {
+        native_stream(&selection.id) == Some(stream)
+            && selection.scope_record_index == group.scope_record_index
+            && selection.group_record_index == group.record_index
+    }) {
+        return resolve_profile_curve_path(group, stream, resolution);
+    }
     let mut selected_identities = Vec::new();
     let mut member_records = HashSet::new();
     let mut primary_identity = None;

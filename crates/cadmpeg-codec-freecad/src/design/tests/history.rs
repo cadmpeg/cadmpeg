@@ -1003,3 +1003,135 @@ fn encodes_feature_names_into_neutral_identity_keys() {
     assert_valid_document(result.ir());
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
+
+#[test]
+fn only_a_body_and_free_features_display_their_shapes() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="PartDesign::Body" name="Body" id="1"/>
+ <Object type="Sketcher::SketchObject" name="Sketch" id="2"/>
+ <Object type="PartDesign::Pad" name="Pad" id="3"/>
+ <Object type="Part::Feature" name="Free" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Body"><Properties Count="3">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Sketch"/><Link value="Pad"/></LinkList></Property>
+  <Property name="Tip" type="App::PropertyLink"><Link value="Pad"/></Property>
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Body.Shape.brp"/></Property>
+ </Properties></Object>
+ <Object name="Sketch"><Properties Count="1">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Sketch.Shape.brp"/></Property>
+ </Properties></Object>
+ <Object name="Pad"><Properties Count="2">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Pad.Shape.brp"/></Property>
+  <Property name="AddSubShape" type="Part::PropertyPartShape"><Part file="Pad.AddSubShape.brp"/></Property>
+ </Properties></Object>
+ <Object name="Free"><Properties Count="1">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Free.Shape.brp"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 1
+Ve 0.001 0 0 0 0 0 1001000 *
++1 0 *";
+    let names = [
+        "Body.Shape.brp",
+        "Sketch.Shape.brp",
+        "Pad.Shape.brp",
+        "Pad.AddSubShape.brp",
+        "Free.Shape.brp",
+    ];
+    let mut entries = vec![("Document.xml", document.as_bytes())];
+    entries.extend(names.iter().map(|name| (*name, &brep[..])));
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive_entries(&entries)),
+            &DecodeOptions::default(),
+        )
+        .expect("body shapes");
+    let visible = |name: &str| {
+        result
+            .ir()
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.id.as_str().contains(&format!(":{name}:")))
+            .unwrap_or_else(|| panic!("{name} body"))
+            .visible
+    };
+    assert_eq!(visible("Body.Shape.brp"), None);
+    assert_eq!(visible("Free.Shape.brp"), None);
+    for hidden in ["Sketch.Shape.brp", "Pad.Shape.brp", "Pad.AddSubShape.brp"] {
+        assert_eq!(visible(hidden), Some(false), "{hidden}");
+    }
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn spreadsheet_cells_state_quantities_and_literal_text_names_nothing() {
+    use cadmpeg_ir::features::ParameterValue;
+
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Spreadsheet::Sheet" name="Params" id="1"/></Objects>
+<ObjectData Count="1">
+ <Object name="Params"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="5" xlink="1">
+  <Cell address="A1" content="'plate_w"/>
+  <Cell address="B1" content="=20 mm" alias="plate_w"/>
+  <Cell address="B2" content="=2in" alias="inch"/>
+  <Cell address="B3" content="=90 deg" alias="turn"/>
+  <Cell address="B4" content="=plate_w / 2" alias="half"/>
+ </Cells></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("spreadsheet");
+    let cell = |name: &str| {
+        result
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap_or_else(|| panic!("{name} cell"))
+    };
+    assert_eq!(
+        cell("A1").value,
+        Some(ParameterValue::String("plate_w".into()))
+    );
+    assert!(cell("A1").dependencies.is_empty());
+    assert_eq!(
+        cell("plate_w").value,
+        Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(20.0).unwrap()
+        ))
+    );
+    assert_eq!(
+        cell("inch").value,
+        Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(50.8).unwrap()
+        ))
+    );
+    assert_eq!(
+        cell("turn").value,
+        Some(ParameterValue::Angle(
+            cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap()
+        ))
+    );
+    // A computed cell keeps its reference and states no value of its own.
+    assert_eq!(cell("half").value, None);
+    assert_eq!(
+        cell("half").dependencies.iter().collect::<Vec<_>>(),
+        [&cell("plate_w").id]
+    );
+    assert_valid_document(result.ir());
+}

@@ -101,14 +101,16 @@
           "kind": "solid",
           "regions": [
             "fcstd:model:region#Draft:Shape:Draft.Shape.brp:34"
-          ]
+          ],
+          "visible": false
         },
         {
           "id": "fcstd:model:body#DraftBase:Shape:DraftBase.Shape.brp:34",
           "kind": "solid",
           "regions": [
             "fcstd:model:region#DraftBase:Shape:DraftBase.Shape.brp:34"
-          ]
+          ],
+          "visible": false
         },
         {
           "id": "fcstd:model:body#DraftBody:Shape:DraftBody.Shape.brp:34",
@@ -136,21 +138,24 @@
           "kind": "general",
           "regions": [
             "fcstd:model:region#Hole:AddSubShape:Hole.AddSubShape.brp:21%408893b334789793ee"
-          ]
+          ],
+          "visible": false
         },
         {
           "id": "fcstd:model:body#Hole:Shape:Hole.Shape.brp:53",
           "kind": "general",
           "regions": [
             "fcstd:model:region#Hole:Shape:Hole.Shape.brp:52"
-          ]
+          ],
+          "visible": false
         },
         {
           "id": "fcstd:model:body#HoleBase:Shape:HoleBase.Shape.brp:34",
           "kind": "solid",
           "regions": [
             "fcstd:model:region#HoleBase:Shape:HoleBase.Shape.brp:34"
-          ]
+          ],
+          "visible": false
         },
         {
           "id": "fcstd:model:body#HoleBody:Shape:HoleBody.Shape.brp:53",
@@ -184,14 +189,16 @@
               1.0,
               10.0
             ]
-          ]
+          ],
+          "visible": false
         },
         {
           "id": "fcstd:model:body#LinearPattern:Shape:LinearPattern.Shape.brp:35",
           "kind": "general",
           "regions": [
             "fcstd:model:region#LinearPattern:Shape:LinearPattern.Shape.brp:34"
-          ]
+          ],
+          "visible": false
         },
         {
           "id": "fcstd:model:body#Loft:Shape:Loft.Shape.brp:13",
@@ -247,14 +254,16 @@
           "kind": "solid",
           "regions": [
             "fcstd:model:region#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:34"
-          ]
+          ],
+          "visible": false
         },
         {
           "id": "fcstd:model:body#PatternBase:Shape:PatternBase.Shape.brp:34",
           "kind": "solid",
           "regions": [
             "fcstd:model:region#PatternBase:Shape:PatternBase.Shape.brp:34"
-          ]
+          ],
+          "visible": false
         },
         {
           "id": "fcstd:model:body#PatternBody:Shape:PatternBody.Shape.brp:34",

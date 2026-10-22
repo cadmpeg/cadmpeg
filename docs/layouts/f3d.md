@@ -3269,6 +3269,185 @@ Unstated regions:
 - `0..20` (20 B): The indexed header and the preceding Revolve envelope are outside this field run.
 - `40..50` (10 B): The marked reference stores the u32 angle-owner record index followed by six zero bytes.
 
+## `typed_reference_parameter_scope_tail`
+
+Spec §3.1 · layout: byte offsets · size: 196 B
+
+Offsets are relative to the u32 feature ordinal that begins the fixed scope tail after the LP-UTF16 kind.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `ordinal` | `u32` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 4 | 15 | `zero_run_15` | `bytes[15]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 19 | 51 | `first_reference` | `bytes[51]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 70 | 4 | `previous_history_state_id` | `u32` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 74 | 4 | `lane` | `u32` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 78 | 8 | `scalar` | `f64` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 86 | 4 | `repeated_lane` | `u32` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 90 | 51 | `second_reference` | `bytes[51]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 141 | 2 | `second_zero_run_2` | `bytes[2]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 143 | 51 | `third_reference` | `bytes[51]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 194 | 2 | `third_zero_run_2` | `bytes[2]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+
+## `typed_reference_extrude_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Offsets are relative to the Extrude primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | A typed-reference Extrude scope stores eleven zero bytes after its indexed header |
+| 22 | 4 | `operation` | `u32` | little | spec | A typed-reference Extrude scope stores eleven zero bytes after its indexed header |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `shifted_typed_reference_extrude_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Offsets are relative to the Extrude primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The shifted typed-reference form instead stores nine zero bytes, u32 `1` at offset 20 |
+| 20 | 4 | `marker` | `u32` | little | spec | The shifted typed-reference form instead stores nine zero bytes, u32 `1` at offset 20 |
+| 24 | 2 | `zero_run_2` | `bytes[2]` | little | spec | The shifted typed-reference form instead stores nine zero bytes, u32 `1` at offset 20 |
+| 26 | 4 | `operation` | `u32` | little | spec | The shifted typed-reference form instead stores nine zero bytes, u32 `1` at offset 20 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `typed_reference_extrude_selection_group_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 76 B
+
+Offsets are relative to the selection-group primary indexed header; 51-byte typed member references follow the count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | A typed-reference Extrude selection group stores ten zero bytes after its indexed header |
+| 21 | 51 | `scope_reference` | `bytes[51]` | little | spec | A typed-reference Extrude selection group stores ten zero bytes after its indexed header |
+| 72 | 4 | `member_count` | `u32` | little | spec | A typed-reference Extrude selection group stores ten zero bytes after its indexed header |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `typed_reference_profile_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 76 B
+
+Offsets are relative to the selection primary indexed header; the LP-UTF16 asset GUID and owner text follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | A typed-reference profile selection is a construction-operand group member |
+| 21 | 51 | `identity_reference` | `bytes[51]` | little | spec | A typed-reference profile selection is a construction-operand group member |
+| 72 | 4 | `constant_one` | `u32` | little | spec | A typed-reference profile selection is a construction-operand group member |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `typed_reference_profile_chain_record`
+
+Spec §3.1 · layout: byte offsets · size: 82 B
+
+Offsets are relative to the chain record indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 14 | `zero_run_14` | `bytes[14]` | little | spec | The chain record at the selection's record index plus one stores fourteen zero bytes |
+| 25 | 6 | `chain_marker` | `bytes[6]` | little | spec | The chain record at the selection's record index plus one stores fourteen zero bytes |
+| 31 | 51 | `sketch_scope_reference` | `bytes[51]` | little | spec | The chain record at the selection's record index plus one stores fourteen zero bytes |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `typed_reference_profile_identity_record`
+
+Spec §3.1 · layout: byte offsets · size: 76 B
+
+Offsets are relative to the identity record indexed header; the two counted loop lists begin at offset 72.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The identity record at the record index plus three stores ten zero bytes |
+| 21 | 51 | `selection_reference` | `bytes[51]` | little | spec | The identity record at the record index plus three stores ten zero bytes |
+| 72 | 4 | `first_loop_count` | `u32` | little | spec | The identity record at the record index plus three stores ten zero bytes |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `typed_reference_companion_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 98 B
+
+Offsets are relative to the companion indexed header; the companion-owned payload follows the prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 20 | `zero_run_20` | `bytes[20]` | little | spec | A typed-reference companion prefix, written by the container generation |
+| 31 | 51 | `owner_reference` | `bytes[51]` | little | spec | A typed-reference companion prefix, written by the container generation |
+| 82 | 8 | `timestamp_micros` | `u64` | little | spec | A typed-reference companion prefix, written by the container generation |
+| 90 | 8 | `zero_run_8` | `bytes[8]` | little | spec | A typed-reference companion prefix, written by the container generation |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `base_feature_typed_reference_zero_body`
+
+Spec §3.1 · layout: byte offsets · size: 83 B
+
+Offsets are relative to the Base Feature primary indexed header; zero bytes follow the reference up to the null GUID length field.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/base_feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32 |
+| 20 | 1 | `zero_body_marker` | `u8` | little | spec | The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32 |
+| 21 | 11 | `zero_run_11` | `bytes[11]` | little | spec | The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32 |
+| 32 | 1 | `shared_metadata_marker` | `u8` | little | spec | The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32 |
+| 33 | 8 | `shared_metadata_record` | `u64` | little | spec | The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32 |
+| 41 | 42 | `shared_metadata_field` | `bytes[42]` | little | spec | The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
 ## `current_extrude_operation_fields`
 
 Spec §3.1 · layout: byte offsets · size: 42 B
@@ -5100,6 +5279,27 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_frames.rs` — The run starts at scope offset 526.
 
+## `assembly_wide_scope`
+
+Spec §Assembly operands · layout: byte offsets · size: not stated
+
+This size-less byte record describes the frame-sense prefix of the 945-byte scope. Offsets are relative to the scope's primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The 945-byte `Assemble` scope uses the wide operand-frame form |
+| 20 | 1 | `wide_marker` | `u8` | little | spec | `u8 1` at offset 20 |
+| 21 | 4 | `zero_run_21` | `bytes[4]` | little | spec | four zero bytes, the frame-sense byte at offset 25 |
+| 25 | 1 | `frame_sense` | `u8` | little | spec | the frame-sense byte at offset 25 |
+| 26 | 11 | `zero_run_26` | `bytes[11]` | little | spec | zero bytes at offsets 26 through 36 |
+
+Unstated regions:
+
+- `11..20` (9 B): Bytes 11 through 19 precede the wide marker and are not read for the frame sense.
+
 ## `assembly_compact_wide_scope`
 
 Spec §Assembly operands · layout: byte offsets · size: not stated
@@ -5113,7 +5313,7 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The 806-, 850- and 861-byte `Assemble` scopes use the compact wide |
 | 11 | 10 | `zero_run_11` | `bytes[10]` | little | spec | Bytes 11 through 20 are zero |
-| 21 | 1 | `operand_flag` | `u8` | little | spec | byte 21 is `0` or `1` |
+| 21 | 1 | `operand_flag` | `u8` | little | spec | byte 21 is the frame-sense byte |
 | 22 | 10 | `zero_run_22` | `bytes[10]` | little | spec | bytes 22 through 31 are zero |
 | 32 | 11 | `first_operand_reference` | `bytes[11]` | little | spec | the operand references are at offsets 32 and 254 |
 | 43 | 7 | `first_reference_zero_run` | `bytes[7]` | little | spec | seven zero bytes follow each reference |

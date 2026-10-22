@@ -310,6 +310,7 @@ pub(crate) fn project_assembly_joints(
     let mut undecoded_motions = std::collections::BTreeSet::new();
     let mut undecoded_motion_count = 0_usize;
     let mut paired_joints = 0_usize;
+    let mut sensed_joints = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -328,6 +329,12 @@ pub(crate) fn project_assembly_joints(
                 if paired {
                     paired_joints += 1;
                 }
+                if scope
+                    .assembly_alignment()
+                    .is_some_and(|alignment| alignment.frame_sense.is_some())
+                {
+                    sensed_joints += 1;
+                }
                 if let Some(reason) = undecoded {
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
@@ -343,6 +350,11 @@ pub(crate) fn project_assembly_joints(
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
         losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
             "{undecoded_motion_count} Design assembly joint(s) were projected as fixed: their motion does not map to a joint kind ({reasons})."
+        )));
+    }
+    if sensed_joints != 0 {
+        losses.push(F3dLossCode::AssemblyJointFrameSenseUnprojected.note(format!(
+            "{sensed_joints} projected Design assembly joint(s) state whether their operand frames mate aligned or opposed; the neutral joint does not carry that sense, which is retained natively."
         )));
     }
     if paired_joints != 0 {
@@ -1074,6 +1086,27 @@ mod tests {
                 .map(|loss| loss.code.clone())
                 .collect::<Vec<_>>(),
             [crate::loss::F3dLossCode::AssemblyOperandPathPairsNative.kind()]
+        );
+
+        // A stored frame sense keeps the joint and says it with a loss.
+        let mut sensed = scopes(true, false);
+        sensed[0]
+            .try_edit(|draft| {
+                if let DesignScopePayload::Assemble(Some(alignment)) = &mut draft.payload {
+                    alignment.frame_sense =
+                        Some(crate::records::feature::assembly::DesignJointFrameSense::Opposed);
+                }
+            })
+            .unwrap();
+        let projection = super::project_assembly_joints(&sensed, &[], &inserts, &[]);
+        assert_eq!(projection.joints.len(), 1);
+        assert_eq!(
+            projection
+                .losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            [crate::loss::F3dLossCode::AssemblyJointFrameSenseUnprojected.kind()]
         );
 
         // The class tag alone admits no external path and no untyped arity.

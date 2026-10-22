@@ -5973,11 +5973,13 @@ fn native_support_pcurve_for_range(
 ) -> Result<PcurveNurbs, CodecError> {
     let native = native_pcurve_geometry(pcurve, range)?;
     // The chart of the native support fields `native_embedded_surface` writes:
-    // the neutral frame, forward senses, and `u_scale` equal to the radius.
+    // the neutral frame with a unit plane reference vector, forward senses,
+    // and `u_scale` equal to the radius.
     let chart = match geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-            Some(NativeChart::Plane { reverse_v: false })
-        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => Some(NativeChart::Plane {
+            reverse_v: false,
+            scale: 1.0,
+        }),
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             NativeChart::cone(1.0, cylinder_surface.radius().get() / LEN_TO_MM, false)
         }
@@ -5996,9 +5998,23 @@ fn native_support_pcurve_for_range(
             "intcurve support has an invalid cone axial parameter scale".into(),
         )
     })?;
+    // The native torus chart uses the magnitude of the minor radius, and
+    // `native_embedded_surface` writes the signed radius, so a negative minor
+    // radius moves the neutral latitude back by pi.
+    let latitude_shift = match geometry {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+            if torus_surface.minor_radius().get() < 0.0 =>
+        {
+            std::f64::consts::PI
+        }
+        _ => 0.0,
+    };
     let mut poles = native.pole_rows().to_raw();
     poles.edit_points(|point| {
-        *point = chart.native_point(*point);
+        *point = chart.native_point(cadmpeg_ir::math::Point2::new(
+            point.u,
+            point.v - latitude_shift,
+        ));
         Ok(())
     })?;
     PcurveNurbs::new(
@@ -6121,6 +6137,12 @@ mod pcurve_chart_tests {
                 )),
                 neutral.map(|p| Point2::new(p.v, p.u)),
             ),
+            (
+                solved(SolvedSurfaceGeometry::Torus(
+                    TorusSurface::try_new(origin, axis, reference, 12.0, -3.0).unwrap(),
+                )),
+                neutral.map(|p| Point2::new(p.v - std::f64::consts::PI, p.u)),
+            ),
         ];
         for half_angle in [0.5_f64, -0.5] {
             cases.push((
@@ -6148,6 +6170,24 @@ pub(in crate::writer) fn pcurve_support_geometry<'a>(
     model: &'a Model,
     pcurve_id: &PcurveId,
 ) -> Result<&'a SurfaceGeometry, CodecError> {
+    let surface_id = pcurve_support_surface(model, pcurve_id)?;
+    model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == *surface_id)
+        .map(|surface| &surface.geometry)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "F3D pcurve {pcurve_id} references missing support {surface_id}"
+            ))
+        })
+}
+
+/// The surface of the faces that use a pcurve.
+pub(in crate::writer) fn pcurve_support_surface<'a>(
+    model: &'a Model,
+    pcurve_id: &PcurveId,
+) -> Result<&'a SurfaceId, CodecError> {
     fn surface_for_loop<'a>(
         model: &'a Model,
         loop_: &cadmpeg_ir::topology::Loop,
@@ -6203,21 +6243,11 @@ pub(in crate::writer) fn pcurve_support_geometry<'a>(
             record_surface(&mut surface_id, surface, pcurve_id)?;
         }
     }
-    let surface_id = surface_id.ok_or_else(|| {
+    surface_id.ok_or_else(|| {
         CodecError::malformed(format_args!(
             "F3D pcurve {pcurve_id} is not used by a coedge or pole vertex"
         ))
-    })?;
-    model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == *surface_id)
-        .map(|surface| &surface.geometry)
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D pcurve {pcurve_id} references missing support {surface_id}"
-            ))
-        })
+    })
 }
 
 fn native_intcurve_support_context(

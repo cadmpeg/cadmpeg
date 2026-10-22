@@ -736,6 +736,29 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
         0
     )
     .is_none());
+
+    // Class tags are dynamic: a frame of the parameter-owner type is admitted
+    // under any class tag, and keeps the shape requirements.
+    let evaluated = crate::records::identity::Located {
+        value: 1.0,
+        offset: 700,
+    };
+    let typed = super::parse_admitted_legacy_parameter_owner_68(
+        &legacy_parameter_owner_68_frame("318"),
+        evaluated,
+        0,
+        true,
+    )
+    .and_then(|parsed| parsed.into_record("Design/BulkStream.dat", 0))
+    .expect("owner-typed legacy frame");
+    assert_eq!(typed.class_tag().as_str(), "318");
+    assert!(
+        super::parse_admitted_legacy_parameter_owner_68(&malformed, evaluated, 0, true).is_none()
+    );
+    let wire = serde_json::to_value(&typed).unwrap();
+    assert!(
+        serde_json::from_value::<crate::records::parameters::DesignParameterOwner>(wire).is_ok()
+    );
 }
 
 #[test]
@@ -1176,7 +1199,8 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         22,
         21,
         std::num::NonZeroU64::new(1).unwrap(),
-        50,
+        // The timestamp sits 42 bytes into the plain companion prefix.
+        52,
     );
     let recipe = |record_index, byte_offset| ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{record_index}"),
@@ -1598,4 +1622,31 @@ fn discriminated_parameter_with_the_00_01_11_tail_has_discriminator_6() {
     // The 00 01 11 tail belongs to discriminator 6 only.
     frame[22..30].copy_from_slice(&0u64.to_le_bytes());
     assert!(parse_design_parameter_record(&frame).is_none());
+}
+
+#[test]
+fn typed_companion_prefix_moves_the_timestamp_after_the_wide_owner_reference() {
+    let mut frame = Vec::new();
+    frame.extend_from_slice(&3u32.to_le_bytes());
+    frame.extend_from_slice(b"408");
+    frame.extend_from_slice(&538u32.to_le_bytes());
+    frame.extend_from_slice(&[0; 20]);
+    typed_reference(&mut frame, 536, TYPED_OWNER_TYPE);
+    frame.extend_from_slice(&1_500_000_000_000_000u64.to_le_bytes());
+    frame.extend_from_slice(&[0; 8]);
+    assert_eq!(frame.len(), 98);
+    frame.extend_from_slice(&[7; 12]);
+    let parsed = parse_parameter_companion(&frame).expect("typed companion");
+    assert_eq!(parsed.record_index, 538);
+    assert_eq!(parsed.owner_record_index, 536);
+    assert_eq!(parsed.timestamp_micros.get(), 1_500_000_000_000_000);
+    let record = parsed
+        .into_record("Design/BulkStream.dat", 1000)
+        .expect("typed companion record");
+    assert_eq!(record.timestamp_micros_offset(), 1082);
+    assert_eq!(record.payload_byte_offset(), Some(1098));
+
+    // A nonzero byte in the zero run after the timestamp is not a prefix.
+    frame[95] = 1;
+    assert!(parse_parameter_companion(&frame).is_none());
 }

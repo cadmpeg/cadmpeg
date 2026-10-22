@@ -5162,8 +5162,40 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             };
             let along_count = parameter_kind_count("AlongDistance");
             let against_count = parameter_kind_count("AgainstDistance");
-            let profile_offset_count = parameter_kind_count("ProfileOffset");
-            let side_one_offset_count = parameter_kind_count("Side1Offset");
+            let fixed_lanes = scope.fixed_extrude_parameters();
+            // A fixed lane is usually also the parameter owner of its source
+            // kind; it adds a carrier only when it is not.
+            let lane_count = |source_kind: &str,
+                              lane: Option<
+                &records::feature::fixed_parameters::DesignFixedExtrudeScalar,
+            >| {
+                let lane_is_owner = lane.is_some_and(|lane| {
+                    native.design_parameter_owners.iter().any(|owner| {
+                        design_stream(owner.id()) == native_stream
+                            && owner.scope_record_index() == scope.record_index
+                            && owner.record_index() == lane.record_index
+                            && parameters_by_index
+                                .get(&(native_stream, owner.parameter_record_index()))
+                                .is_some_and(|parameter| parameter.source_kind() == source_kind)
+                    })
+                });
+                parameter_kind_count(source_kind) + usize::from(lane.is_some() && !lane_is_owner)
+            };
+            let profile_offset_count = lane_count(
+                "ProfileOffset",
+                fixed_lanes.and_then(|fixed| fixed.profile_offset.as_ref()),
+            );
+            let side_one_offset_count = lane_count(
+                "Side1Offset",
+                fixed_lanes.and_then(|fixed| fixed.side_one_offset.as_ref()),
+            );
+            // A to-face Extrude's fixed lanes carry only its termination
+            // offset and taper.
+            let fixed_lanes_are_to_face_lanes = fixed_lanes.is_none_or(|fixed| {
+                fixed.along_distance.is_none()
+                    && fixed.against_distance.is_none()
+                    && fixed.side_two_taper_angle.is_none()
+            });
             let omitted_zero_side_one_offset =
                 crate::design::face_resolve::extrude_omits_zero_side_one_offset(
                     scope,
@@ -5220,7 +5252,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 }
                 records::feature::extrude::DesignExtrudeExtent::OneSidedToFace => {
                     along_count == 0
-                        && !has_fixed_extrude_parameters
+                        && fixed_lanes_are_to_face_lanes
                         && against_count == 0
                         && if target_shape_group_count == 1 {
                             side_one_offset_is_absent
@@ -7441,6 +7473,7 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
     let mut visibility_ordinals = HashSet::new();
+    let mut ordinals_by_component = BTreeMap::<(&str, Option<u64>), Vec<(u64, u32)>>::new();
     // Sketch Geometry member ordinals count within a component: the one whose
     // entity cluster, starting at its root entity, holds the sketch entity.
     let mut component_roots = HashMap::<&str, Vec<u64>>::new();
@@ -7484,6 +7517,13 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                     visibility.stream_ordinal.get(),
                 ))
             {
+                ordinals_by_component
+                    .entry((native_stream, component))
+                    .or_default()
+                    .push((
+                        placement.entity_id.suffix(),
+                        visibility.stream_ordinal.get(),
+                    ));
                 visibility_offsets.insert((native_stream, visibility.visible_offset()))
             } else {
                 false
@@ -7515,20 +7555,13 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             );
         }
     }
-    let mut visibility_ordinal_ranges = BTreeMap::<(&str, Option<u64>), (usize, u32)>::new();
-    for (stream, component, ordinal) in visibility_ordinals {
-        let (count, maximum) = visibility_ordinal_ranges
-            .entry((stream, component))
-            .or_default();
-        *count += 1;
-        *maximum = (*maximum).max(ordinal);
-    }
-    for ((stream, _), (count, maximum)) in visibility_ordinal_ranges {
-        if usize::try_from(maximum).ok() != Some(count) {
+    for ((stream, _), mut ordinals) in ordinals_by_component {
+        ordinals.sort_unstable();
+        if ordinals.windows(2).any(|pair| pair[0].1 >= pair[1].1) {
             push_constant_finding(
                 findings,
                 Check::NativeLinks,
-                "Fusion Design sketch Geometry member ordinals are not contiguous",
+                "Fusion Design sketch Geometry member ordinals do not increase with sketch entity order",
                 Some(stream.to_owned()),
             );
         }
@@ -7621,17 +7654,20 @@ fn validate_parameter_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>)
         let unique_index = companion_indices.insert((native_stream, companion.record_index()));
         let unique_owner = companion_owners.insert((native_stream, companion.owner_record_index()));
         let owner = owners_by_index.get(&(native_stream, companion.owner_record_index()));
-        let valid = companion
-            .byte_offset()
-            .checked_add(42)
-            .is_some_and(|expected_offset| companion.timestamp_micros_offset() == expected_offset)
-            && payload.is_none_or(|payload| {
-                companion
-                    .byte_offset()
-                    .checked_add(58)
-                    .is_some_and(|expected_offset| payload.byte_offset() == expected_offset)
-            })
-            && (payload.is_none() || payload_end.is_some())
+        // The timestamp follows a plain (offset 42) or typed (offset 82)
+        // owner reference.
+        let valid = [42, 82].into_iter().any(|relative| {
+            companion
+                .byte_offset()
+                .checked_add(relative)
+                .is_some_and(|expected_offset| {
+                    companion.timestamp_micros_offset() == expected_offset
+                })
+        }) && payload.is_none_or(|payload| {
+            companion
+                .payload_byte_offset()
+                .is_some_and(|expected_offset| payload.byte_offset() == expected_offset)
+        }) && (payload.is_none() || payload_end.is_some())
             && payload
                 .map_or(
                     &[][..],
@@ -7818,8 +7854,7 @@ fn validate_dimension_locus_pairs<'a>(
         let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
             companion
-                .byte_offset()
-                .checked_add(58)
+                .payload_byte_offset()
                 .is_some_and(|expected_offset| pair.byte_offset() >= expected_offset)
                 && !native.design_parameter_owners.iter().any(|owner| {
                     design_stream(owner.id()) == native_stream
@@ -7884,13 +7919,11 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .get(&(native_stream, record_index))
                 .is_some_and(|companion| {
                     companion
-                        .byte_offset()
-                        .checked_add(58)
+                        .payload_byte_offset()
                         .is_some_and(|expected_offset| frame.byte_offset() >= expected_offset)
                         && companion.payload().is_some_and(|payload| {
                             companion
-                                .byte_offset()
-                                .checked_add(58)
+                                .payload_byte_offset()
                                 .and_then(|offset| offset.checked_add(payload.byte_length()))
                                 .is_some_and(|expected_offset| {
                                     frame.paired_byte_offset() < expected_offset
@@ -8079,8 +8112,7 @@ fn validate_dimension_locus_groups<'a>(
         let companion = companions_by_index.get(&(native_stream, group.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
             companion
-                .byte_offset()
-                .checked_add(58)
+                .payload_byte_offset()
                 .is_some_and(|expected_offset| group.byte_offset >= expected_offset)
                 && !native.design_parameter_owners.iter().any(|owner| {
                     design_stream(owner.id()) == native_stream
@@ -8210,8 +8242,7 @@ fn validate_dimension_null_locus_pairs<'a>(
         let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
             companion
-                .byte_offset()
-                .checked_add(58)
+                .payload_byte_offset()
                 .is_some_and(|expected_offset| pair.byte_offset() >= expected_offset)
                 && !native.design_parameter_owners.iter().any(|owner| {
                     design_stream(owner.id()) == native_stream

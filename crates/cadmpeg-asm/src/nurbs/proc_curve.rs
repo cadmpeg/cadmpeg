@@ -2826,8 +2826,10 @@ pub(crate) fn analytic_support(
     match kind {
         "plane" => {
             let normal = normalized(cur.take_vector3()?)?;
-            let u_axis = normalized(cur.take_vector3()?)?;
-            let chart = SupportChart::plane(cur.take_bool()?);
+            let reference = cur.take_vector3()?;
+            let u_axis = normalized(reference)?;
+            let scale = reference[0].hypot(reference[1]).hypot(reference[2]);
+            let chart = SupportChart::plane(cur.take_bool()?, scale)?;
             let (origin, frame) = admitted_placement(point, normal, u_axis)?;
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
@@ -2892,7 +2894,7 @@ pub(crate) fn analytic_support(
             let major_radius = cur.take_f64()? * LEN_TO_MM;
             let minor_radius = cur.take_f64()? * LEN_TO_MM;
             let ref_direction = normalized(cur.take_vector3()?)?;
-            let chart = SupportChart::torus(major_radius, cur.take_bool()?);
+            let chart = SupportChart::torus(major_radius, minor_radius, cur.take_bool()?);
             let (center, frame) = admitted_placement(point, axis, ref_direction)?;
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(TorusSurface::new(

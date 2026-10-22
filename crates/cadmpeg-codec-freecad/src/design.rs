@@ -829,6 +829,63 @@ fn direct_spreadsheet_value<'a, 'input: 'a>(
         })
 }
 
+/// The value a spreadsheet cell states by itself: a `'`-quoted string, or a
+/// number with an optional length or angle unit, written directly or as the
+/// whole `=` expression. A cell computed from other cells or functions has no
+/// stated value.
+const MILLIMETRES_PER_NANOMETRE: f64 = 1.0e-6;
+const MILLIMETRES_PER_MICROMETRE: f64 = 1.0e-3;
+
+fn spreadsheet_cell_value(content: &str) -> Option<ParameterValue> {
+    let (expression, text) = match content.strip_prefix('=') {
+        Some(text) => (true, text),
+        None => (false, content),
+    };
+    if !expression {
+        if let Some(text) = text.strip_prefix('\'') {
+            return Some(ParameterValue::String(text.to_owned()));
+        }
+    }
+    let text = text.trim();
+    let number_end = text
+        .find(|character: char| !(character.is_ascii_digit() || "+-.eE".contains(character)))
+        .unwrap_or(text.len());
+    let number = text[..number_end]
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())?;
+    let unit = text[number_end..].trim();
+    // Millimetres per length unit and radians per angle unit.
+    let length = match unit {
+        "nm" => Some(MILLIMETRES_PER_NANOMETRE),
+        "um" | "µm" => Some(MILLIMETRES_PER_MICROMETRE),
+        "mm" => Some(1.0),
+        "cm" => Some(10.0),
+        "dm" => Some(100.0),
+        "m" => Some(1000.0),
+        "km" => Some(1.0e6),
+        "in" | "\"" => Some(25.4),
+        "ft" | "'" => Some(304.8),
+        "thou" | "mil" => Some(0.0254),
+        "yd" => Some(914.4),
+        _ => None,
+    };
+    let angle = match unit {
+        "deg" | "°" => Some(std::f64::consts::PI / 180.0),
+        "rad" => Some(1.0),
+        _ => None,
+    };
+    if unit.is_empty() {
+        cadmpeg_ir::scalar::FiniteReal::new(number).map(ParameterValue::Real)
+    } else if let Some(scale) = length {
+        Length::new(number * scale).map(ParameterValue::Length)
+    } else if let Some(scale) = angle {
+        cadmpeg_ir::scalar::Angle::new(number * scale).map(ParameterValue::Angle)
+    } else {
+        None
+    }
+}
+
 fn append_spreadsheet(
     ctx: &DecodeContext<'_>,
     parameters: &mut Vec<DesignParameter>,
@@ -938,15 +995,7 @@ fn append_spreadsheet(
             name: name.to_owned(),
             expression: content.to_owned(),
             display: None,
-            value: (!content.starts_with('='))
-                .then(|| {
-                    content
-                        .parse::<f64>()
-                        .ok()
-                        .and_then(cadmpeg_ir::scalar::FiniteReal::new)
-                        .map(ParameterValue::Real)
-                })
-                .flatten(),
+            value: spreadsheet_cell_value(content),
             dependencies: DistinctMembers::default(),
             properties: retained,
             pmi: None,
@@ -2532,7 +2581,14 @@ fn bind_parameter_dependencies(
     }
     for parameter in parameters.iter_mut() {
         let mut dependencies = BTreeSet::new();
-        for identifier in expression_identifiers(&parameter.expression) {
+        // A spreadsheet cell without a leading `=` is a literal and names nothing.
+        let literal_cell = parameter.properties.contains_key("address")
+            && parameter
+                .native_ref
+                .as_deref()
+                .is_some_and(|native| native.ends_with(":cells"))
+            && !parameter.expression.starts_with('=');
+        for identifier in expression_identifiers(&parameter.expression).filter(|_| !literal_cell) {
             let dependency = if let Some(qualified) = qualified.get(identifier) {
                 Some(qualified)
             } else if let Some(owner) = parameter.owner.as_ref() {
@@ -8087,6 +8143,49 @@ fn is_fillet(kind: &str) -> bool {
 fn is_chamfer(kind: &str) -> bool {
     matches!(kind, "Part::Chamfer" | "PartDesign::Chamfer")
 }
+/// Mark the bodies a document keeps only as intermediate shapes as not
+/// displayed: a feature's tool shape (any shape property other than `Shape`)
+/// and the shape of every member of a `PartDesign::Body`. A body shows its
+/// `Tip` result through its own `Shape`. Stored GUI visibility, applied later, wins.
+pub(crate) fn hide_intermediate_bodies(
+    ir: &mut cadmpeg_ir::CadIr,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    payloads: &[ShapePayloadRecord],
+) {
+    let mut members = std::collections::HashSet::new();
+    for object in objects.iter().filter(|object| is_body(&object.type_name)) {
+        let owned = properties
+            .iter()
+            .filter(|property| property.owner == *object.id())
+            .collect::<Vec<_>>();
+        if let Some(group) = body_membership_property(&owned) {
+            members.extend(
+                group
+                    .links()
+                    .iter()
+                    .filter_map(|link| link.as_ref()?.object())
+                    .map(str::to_owned),
+            );
+        }
+    }
+    let hidden = payloads.iter().filter_map(|payload| {
+        let property = properties
+            .iter()
+            .find(|property| property.id == payload.property)?;
+        (property.name != "Shape" || members.contains(&property.owner))
+            .then_some(payload.id.as_str())
+    });
+    let hidden = crate::gui::select_shape_bodies(ir, hidden)
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+    for body in &mut ir.model.bodies {
+        if hidden.contains(&body.id) {
+            body.visible = Some(false);
+        }
+    }
+}
+
 fn is_body(kind: &str) -> bool {
     kind == "PartDesign::Body"
 }

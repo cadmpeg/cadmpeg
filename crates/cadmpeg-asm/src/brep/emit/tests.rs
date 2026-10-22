@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    emit_carrier_curve, emit_coedges, emit_edges, emit_faces, emit_vertices, into_support_sides,
-    CoedgeDecodeInputs, CurveSenseRefs,
+    clamp_to_knot_domain, emit_carrier_curve, emit_coedges, emit_edges, emit_faces, emit_vertices,
+    into_support_sides, CoedgeDecodeInputs, CurveSenseRefs,
 };
 use crate::brep::records::{FaceSidedness, TolerantCoedgeExtension};
 use crate::brep::{AsmBrep, Carriers, Reachable};
@@ -1216,4 +1216,40 @@ fn unknown_carrier_source_copy_refuses_retained_limit_before_emission() {
     )
     .expect("emit the passthrough unknown record");
     assert_eq!(out.unknowns.len(), 1);
+}
+
+#[test]
+fn a_tolerant_coedge_interval_off_its_knot_domain_by_noise_names_the_domain_end() {
+    let lower = 0.995_674_133_300_779;
+    let upper = 1.0;
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![lower, lower, upper, upper],
+        vec![
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .unwrap();
+    let interval =
+        |start: f64, end: f64| cadmpeg_ir::topology::ParameterInterval::new([start, end]).unwrap();
+    // Ends outside the domain by less than the knot-relative tolerance.
+    let noisy = interval(0.995_674_133_300_731_2, upper + 2.0e-13);
+    assert_eq!(
+        clamp_to_knot_domain(noisy, &curve).endpoints(),
+        [lower, upper]
+    );
+    // Ends inside the domain and ends farther out stay as stored.
+    let inside = interval(0.996, 0.999);
+    assert_eq!(
+        clamp_to_knot_domain(inside, &curve).endpoints(),
+        [0.996, 0.999]
+    );
+    let outside = interval(0.99, 1.001);
+    assert_eq!(
+        clamp_to_knot_domain(outside, &curve).endpoints(),
+        [0.99, 1.001]
+    );
 }
