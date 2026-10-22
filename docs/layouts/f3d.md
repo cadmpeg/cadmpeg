@@ -5306,6 +5306,23 @@ Unstated regions:
 
 - `11..22` (11 B): Eleven zero bytes follow the indexed header.
 
+## `construction_operand_compact_relative_placement`
+
+Spec §3.1 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the indexed header. The boolean is retained independently of the fixed compact marker.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A compact relative-placement carrier is a 24-byte indexed record |
+| 21 | 1 | `compact_marker` | `u8` | little | spec | byte `01`, one boolean, and byte `00` · value `1` |
+| 22 | 1 | `value` | `u8` | little | spec | byte `01`, one boolean, and byte `00` |
+| 23 | 1 | `trailer` | `u8` | little | spec | byte `01`, one boolean, and byte `00` · value `0` |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes follow the indexed header.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

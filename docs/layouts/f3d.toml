@@ -17778,3 +17778,46 @@ offset = 150
 type = "bytes[2]"
 source = "spec"
 anchor = "and bytes `01 00`"
+
+[[record]]
+name = "construction_operand_compact_relative_placement"
+kind = "byte"
+section = "3.1"
+anchor = "A compact relative-placement carrier is a 24-byte indexed record"
+size = 24
+note = "Offsets are relative to the indexed header. The boolean is retained independently of the fixed compact marker."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A compact relative-placement carrier is a 24-byte indexed record"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes follow the indexed header."
+
+[[record.field]]
+name = "compact_marker"
+offset = 21
+type = "u8"
+value = 1
+source = "spec"
+anchor = "byte `01`, one boolean, and byte `00`"
+
+[[record.field]]
+name = "value"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "byte `01`, one boolean, and byte `00`"
+
+[[record.field]]
+name = "trailer"
+offset = 23
+type = "u8"
+value = 0
+source = "spec"
+anchor = "byte `01`, one boolean, and byte `00`"
