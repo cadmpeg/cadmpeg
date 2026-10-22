@@ -1397,7 +1397,7 @@ u8       resizeType                      v >= 12
 u32 count, count × ref  values
 ```
 
-In version 14, a non-null `extraOffset` names a version-0 scalar-parameter record of type `D91D429C-1BB5-4640-B49F-69AF14F463E9`. This direct reference is independent of the trailing `values` list. It can occur with a nonempty or empty `values` list and does not replace a list member.
+In version 14, a non-null `extraOffset` names a version-0 scalar-parameter owner of type `D91D429C-1BB5-4640-B49F-69AF14F463E9`. The owner references a parameter of type `7A6A3D31-BE74-4E19-9115-20642944C2E4` whose source kind is `ExtraOffset`. The parameter retains its authored length unit and expression. This direct owner reference is independent of the trailing `values` list. It can occur with a nonempty or empty `values` list and does not replace a list member.
 
 The unmarked version-4 form stores its matrix at primary-record offset 48, immediately after the three axis-state bytes. It has no identity marker. The marked form stores the identity marker before the matrix. The base level follows the class members. `matrix3d` is the row-major 4×4 local-to-model transform with the translation in column 3 and the bottom row `(0, 0, 0, 1)`; the origin is in centimetres. The leading identity byte is the member's presence marker read the other way round: `1` states that the transform is the identity and stores no matrix, so the two forms of one class version differ by exactly the matrix's 128 bytes. `alignUpDirection` is a unit vector or zero. `resizeType` is one byte wide; reading it as a u32 desynchronizes the `values` list that follows it. WorkPlane records of the same class are not sketch placements.
 
