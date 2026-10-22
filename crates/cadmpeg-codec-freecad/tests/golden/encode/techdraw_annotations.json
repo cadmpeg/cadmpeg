@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 7196,
-      "payload_sha256": "e29a96b70d4e98e488e27a9b781eeabd84684fe274a0b2aff038139e0452dd3f"
+      "payload_len": 8200,
+      "payload_sha256": "439363aa3ac23fc793ba4458c62d69ba9d81fcf1da99a9e97c6e8faa3013283e"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -24,7 +24,7 @@
         "appearances": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 71,
+        "attributes": 51,
         "bodies": 1,
         "coedges": 24,
         "configurations": 0,
@@ -135,37 +135,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#0:UnitSystem:property (UnitSystem) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "attribute fcstd:model:attribute#CorpusMetadata:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Model:AttacherEngine:property (AttacherEngine) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Page:ExpressionEngine:property target has no emitted object",
         "severity": "warning"
       },
       {
@@ -225,26 +195,6 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Template:EditableTexts:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Template:ExpressionEngine:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "attribute fcstd:model:attribute#Template:Height:property target has no emitted object",
         "severity": "warning"
       },
@@ -285,16 +235,6 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#Template:PageResult:property (PageResult) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "attribute fcstd:model:attribute#Template:Template:property target has no emitted object",
         "severity": "warning"
       },
@@ -325,16 +265,6 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#View:CenterLines:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "attribute fcstd:model:attribute#View:CoarseView:property target has no emitted object",
         "severity": "warning"
       },
@@ -345,47 +275,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#View:CosmeticEdges:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#View:CosmeticVertexes:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#View:ExpressionEngine:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "attribute fcstd:model:attribute#View:Focus:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#View:GeomFormats:property target has no emitted object",
         "severity": "warning"
       },
       {
@@ -530,16 +420,6 @@
       },
       {
         "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#View:XSource:property target has no emitted object",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "metadata.native-property-not-transferred",
           "kind": "metadata_not_transferred",
           "namespace": "fcstd",
@@ -635,7 +515,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 119 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 117 native record(s) from `fcstd.properties`",
         "severity": "info"
       }
     ],
@@ -731,24 +611,26 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "regenerated",
-                "fcstd:native:property#0:Meta": "regenerated",
+                "fcstd:native:property#0:Material": "written",
+                "fcstd:native:property#0:Meta": "written",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "regenerated",
+                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:UnitSystem": "written",
                 "fcstd:native:property#0:UseHasher": "regenerated",
-                "fcstd:native:property#CorpusMetadata:InertValue": "regenerated",
+                "fcstd:native:property#CorpusMetadata:InertValue": "written",
                 "fcstd:native:property#CorpusMetadata:Label": "regenerated",
                 "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
                 "fcstd:native:property#CorpusMetadata:License": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Proxy": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Proxy": "written",
                 "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
                 "fcstd:native:property#CorpusMetadata:Visibility": "regenerated",
+                "fcstd:native:property#Model:AttacherEngine": "written",
                 "fcstd:native:property#Model:AttacherType": "regenerated",
                 "fcstd:native:property#Model:AttachmentOffset": "regenerated",
-                "fcstd:native:property#Model:AttachmentSupport": "regenerated",
+                "fcstd:native:property#Model:AttachmentSupport": "written",
                 "fcstd:native:property#Model:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Model:Height": "regenerated",
                 "fcstd:native:property#Model:Label": "regenerated",
@@ -759,7 +641,7 @@
                 "fcstd:native:property#Model:MapReversed": "regenerated",
                 "fcstd:native:property#Model:Placement": "regenerated",
                 "fcstd:native:property#Model:Shape": "regenerated",
-                "fcstd:native:property#Model:ShapeMaterial": "regenerated",
+                "fcstd:native:property#Model:ShapeMaterial": "written",
                 "fcstd:native:property#Model:Visibility": "regenerated",
                 "fcstd:native:property#Model:Width": "regenerated",
                 "fcstd:native:property#Model:_ElementMapVersion": "written"

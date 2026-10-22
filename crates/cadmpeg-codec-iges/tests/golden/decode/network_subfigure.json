@@ -529,6 +529,9 @@
       "attributes": {
         "native_file_name": "part.igs",
         "native_units": "MM",
+        "parameter_delimiter": ",",
+        "record_delimiter": ";",
+        "representation": "fixed-ascii",
         "sender_product": "product"
       },
       "identity": {
@@ -612,13 +615,10 @@
   "source_fidelity": {
     "annotations": {},
     "metadata": {
-      "document_local_sha256": "353387b828416e552d1fba7ac89c38712443e1512cead93b2d7687dae5fd1c74",
+      "document_local_sha256": "2b7e89f4e02abd50c839ac43de0349f0ef0666725a57124e60671b790068263a",
       "iges.card_layout": "[[1,0,80,1],[2,81,80,1],[3,162,80,1],[4,243,80,1],[5,324,80,1],[6,405,80,1],[7,486,80,1],[8,567,80,1],[9,648,80,1],[10,729,80,1]]",
       "iges.entity_layout": "[[1,1,1],[3,2,1]]",
-      "iges.parameter_delimiter": ",",
-      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":20},{\"start\":21,\"end\":22},{\"start\":23,\"end\":24},{\"start\":25,\"end\":26},{\"start\":27,\"end\":28}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":14},{\"start\":15,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":22},{\"start\":23,\"end\":24},{\"start\":25,\"end\":26},{\"start\":27,\"end\":28},{\"start\":29,\"end\":30}]]]",
-      "iges.record_delimiter": ";",
-      "iges.representation": "fixed-ascii"
+      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":20},{\"start\":21,\"end\":22},{\"start\":23,\"end\":24},{\"start\":25,\"end\":26},{\"start\":27,\"end\":28}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":14},{\"start\":15,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":22},{\"start\":23,\"end\":24},{\"start\":25,\"end\":26},{\"start\":27,\"end\":28},{\"start\":29,\"end\":30}]]]"
     },
     "retained_records": {
       "iges:file:source-image#0": {

@@ -129,16 +129,6 @@
       },
       {
         "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES attribute iges:application:attribute#D3:0:0 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "export.no-exportable-solids",
           "kind": "no_exportable_solids",
           "namespace": "iges",

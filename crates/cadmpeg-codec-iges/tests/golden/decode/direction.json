@@ -218,6 +218,9 @@
       "attributes": {
         "native_file_name": "part.igs",
         "native_units": "MM",
+        "parameter_delimiter": ",",
+        "record_delimiter": ";",
+        "representation": "fixed-ascii",
         "sender_product": "product"
       },
       "identity": {
@@ -308,13 +311,10 @@
   "source_fidelity": {
     "annotations": {},
     "metadata": {
-      "document_local_sha256": "d147c470431bbe05f6dc6ef4540738860e0543d65e553a6d761aa1387195562c",
+      "document_local_sha256": "5f1fb3a0cb55e279c268c20ec68b58aa2da24b0986555f1700c7546d38c64bd4",
       "iges.card_layout": "[[1,0,80,1],[2,81,80,1],[3,162,80,1],[4,243,80,1],[5,324,80,1],[6,405,80,1],[7,486,80,1]]",
       "iges.entity_layout": "[[1,1,1]]",
-      "iges.parameter_delimiter": ",",
-      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":8},{\"start\":9,\"end\":10}]]]",
-      "iges.record_delimiter": ";",
-      "iges.representation": "fixed-ascii"
+      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":8},{\"start\":9,\"end\":10}]]]"
     },
     "retained_records": {
       "iges:file:source-image#0": {

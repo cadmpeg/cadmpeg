@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 12471,
-      "payload_sha256": "b4389090c52092871e19b82992462d75d5d140f99ede57498b4d2a6a4df08119"
+      "payload_len": 13149,
+      "payload_sha256": "d78980ed52416542fc45ec59d0a0b8651815450d63ba9cd8a79d949f5eff9848"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -24,7 +24,7 @@
         "appearances": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 68,
+        "attributes": 46,
         "bodies": 0,
         "coedges": 0,
         "configurations": 0,
@@ -130,6 +130,16 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "native property fcstd:native:property#ExtensionPayload:Payload has no independently writable typed payload",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "native property fcstd:native:property#Mesh:Mesh has no independently writable typed payload",
         "severity": "info"
       },
@@ -145,13 +155,33 @@
       },
       {
         "code": {
-          "code": "attribute.not-transferred",
+          "code": "metadata.native-property-not-transferred",
           "kind": "metadata_not_transferred",
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#0:UnitSystem:property (UnitSystem) has no FreeCAD property encoding",
-        "severity": "warning"
+        "message": "native property fcstd:native:property#TemperatureConstraint:Normals has no independently writable typed payload",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "native property fcstd:native:property#TemperatureConstraint:Points has no independently writable typed payload",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "metadata.native-property-not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "native property fcstd:native:property#Toolpath:Path has no independently writable typed payload",
+        "severity": "info"
       },
       {
         "code": {
@@ -171,16 +201,6 @@
           "scope": "namespaced"
         },
         "message": "attribute fcstd:model:attribute#ExtensionPayload:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#ExtensionPayload:Payload:property (Payload) has no FreeCAD property encoding",
         "severity": "warning"
       },
       {
@@ -230,37 +250,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#TemperatureConstraint:Normals:property (Normals) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#TemperatureConstraint:Points:property (Points) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "attribute fcstd:model:attribute#Toolpath:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Toolpath:Path:property (Path) has no FreeCAD property encoding",
         "severity": "warning"
       },
       {
@@ -311,7 +301,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 16 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 15 native record(s) from `fcstd.properties`",
         "severity": "info"
       }
     ],
@@ -414,30 +404,31 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "regenerated",
-                "fcstd:native:property#0:Meta": "regenerated",
+                "fcstd:native:property#0:Material": "written",
+                "fcstd:native:property#0:Meta": "written",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "regenerated",
+                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:UnitSystem": "written",
                 "fcstd:native:property#0:UseHasher": "regenerated",
-                "fcstd:native:property#CorpusMetadata:InertValue": "regenerated",
+                "fcstd:native:property#CorpusMetadata:InertValue": "written",
                 "fcstd:native:property#CorpusMetadata:Label": "regenerated",
                 "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
                 "fcstd:native:property#CorpusMetadata:License": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Proxy": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Proxy": "written",
                 "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
                 "fcstd:native:property#CorpusMetadata:Visibility": "regenerated",
                 "fcstd:native:property#ExtensionPayload:Domain": "regenerated",
                 "fcstd:native:property#ExtensionPayload:Label": "regenerated",
                 "fcstd:native:property#ExtensionPayload:Label2": "regenerated",
-                "fcstd:native:property#ExtensionPayload:Proxy": "regenerated",
-                "fcstd:native:property#ExtensionPayload:SerializedState": "regenerated",
+                "fcstd:native:property#ExtensionPayload:Proxy": "written",
+                "fcstd:native:property#ExtensionPayload:SerializedState": "written",
                 "fcstd:native:property#ExtensionPayload:Visibility": "regenerated",
                 "fcstd:native:property#FemAnalysis:Label": "regenerated",
                 "fcstd:native:property#FemAnalysis:Label2": "regenerated",
-                "fcstd:native:property#FemAnalysis:Uid": "regenerated",
+                "fcstd:native:property#FemAnalysis:Uid": "written",
                 "fcstd:native:property#FemAnalysis:Visibility": "regenerated",
                 "fcstd:native:property#FemAnalysis:_GroupTouched": "written",
                 "fcstd:native:property#Mesh:Label": "regenerated",
@@ -450,14 +441,14 @@
                 "fcstd:native:property#PointCloud:Placement": "regenerated",
                 "fcstd:native:property#PointCloud:Visibility": "regenerated",
                 "fcstd:native:property#PointCloud:_ElementMapVersion": "written",
-                "fcstd:native:property#TemperatureConstraint:AmplitudeValues": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:AmplitudeValues": "written",
                 "fcstd:native:property#TemperatureConstraint:CFlux": "regenerated",
                 "fcstd:native:property#TemperatureConstraint:ConstraintType": "regenerated",
                 "fcstd:native:property#TemperatureConstraint:EnableAmplitude": "regenerated",
                 "fcstd:native:property#TemperatureConstraint:Label": "regenerated",
                 "fcstd:native:property#TemperatureConstraint:Label2": "regenerated",
                 "fcstd:native:property#TemperatureConstraint:NormalDirection": "regenerated",
-                "fcstd:native:property#TemperatureConstraint:References": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:References": "written",
                 "fcstd:native:property#TemperatureConstraint:Scale": "regenerated",
                 "fcstd:native:property#TemperatureConstraint:Suppressed": "regenerated",
                 "fcstd:native:property#TemperatureConstraint:Temperature": "regenerated",

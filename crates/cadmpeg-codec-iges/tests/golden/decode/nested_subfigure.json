@@ -21,15 +21,7 @@
           ]
         }
       ],
-      "bodies": [
-        {
-          "id": "iges:model:body#D3:D1",
-          "kind": "wire",
-          "regions": [
-            "iges:model:region#D3:D1"
-          ]
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "configurations": [],
       "curves": [
@@ -60,20 +52,7 @@
         }
       ],
       "drawings": [],
-      "edges": [
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D1",
-            "param_range": [
-              0.0,
-              1.0
-            ]
-          },
-          "end": "iges:model:vertex#D3:D1:1",
-          "id": "iges:model:edge#D3:D1",
-          "start": "iges:model:vertex#D3:D1:0"
-        }
-      ],
+      "edges": [],
       "faces": [],
       "features": [],
       "loops": [],
@@ -147,24 +126,7 @@
       "parameters": [],
       "pcurves": [],
       "pmi": [],
-      "points": [
-        {
-          "id": "iges:model:point#D3:D1:0",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D3:D1:1",
-          "position": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        }
-      ],
+      "points": [],
       "presentation_documents": [],
       "presentation_layers": [
         {
@@ -182,9 +144,6 @@
       "procedural_surfaces": [],
       "product_definitions": [
         {
-          "bodies": [
-            "iges:model:body#D3:D1"
-          ],
           "id": "iges:model:product#D3",
           "kind": "part",
           "label": "CHILD",
@@ -197,28 +156,9 @@
           "native_ref": "iges:product:subfigure-definition#D7"
         }
       ],
-      "regions": [
-        {
-          "body": "iges:model:body#D3:D1",
-          "id": "iges:model:region#D3:D1",
-          "shells": [
-            "iges:model:shell#D3:D1"
-          ]
-        }
-      ],
+      "regions": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "iges:model:shell#D3:D1",
-          "members": [
-            {
-              "id": "iges:model:edge#D3:D1",
-              "kind": "wire_edge"
-            }
-          ],
-          "region": "iges:model:region#D3:D1"
-        }
-      ],
+      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -228,16 +168,7 @@
       "subds": [],
       "surfaces": [],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "iges:model:vertex#D3:D1:0",
-          "point": "iges:model:point#D3:D1:0"
-        },
-        {
-          "id": "iges:model:vertex#D3:D1:1",
-          "point": "iges:model:point#D3:D1:1"
-        }
-      ],
+      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -1043,6 +974,9 @@
       "attributes": {
         "native_file_name": "part.igs",
         "native_units": "MM",
+        "parameter_delimiter": ",",
+        "record_delimiter": ";",
+        "representation": "fixed-ascii",
         "sender_product": "product"
       },
       "identity": {
@@ -1085,7 +1019,18 @@
         }
       }
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "projection.native-only",
+          "kind": "metadata_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "iges:product:occurrence#9/5/D1 member iges:entity:directory#1: product membership of carrier iges:model:curve#D1 has no neutral body owner",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "entities=5",
       "entity.110.form.0=1",
@@ -1151,13 +1096,10 @@
   "source_fidelity": {
     "annotations": {},
     "metadata": {
-      "document_local_sha256": "43c4b5d65b85bf09b4862ff7ca63772d66c37d56b839496700e020a4db46bc81",
+      "document_local_sha256": "2d75f025bf7ddeca98cff30cceb2b9d0e6d6f9c974d409e2c875252abd6f1c0e",
       "iges.card_layout": "[[1,0,80,1],[2,81,80,1],[3,162,80,1],[4,243,80,1],[5,324,80,1],[6,405,80,1],[7,486,80,1],[8,567,80,1],[9,648,80,1],[10,729,80,1],[11,810,80,1],[12,891,80,1],[13,972,80,1],[14,1053,80,1],[15,1134,80,1],[16,1215,80,1],[17,1296,80,1],[18,1377,80,1],[19,1458,80,1]]",
       "iges.entity_layout": "[[1,1,1],[3,2,1],[5,3,1],[7,4,1],[9,5,1]]",
-      "iges.parameter_delimiter": ",",
-      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":17}]],[5,{\"start\":3,\"end\":4},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":15}]],[7,{\"start\":4,\"end\":5},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":14},{\"start\":15,\"end\":16},{\"start\":17,\"end\":18}]],[9,{\"start\":5,\"end\":6},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":8},{\"start\":9,\"end\":11},{\"start\":12,\"end\":14},{\"start\":15,\"end\":16}]]]",
-      "iges.record_delimiter": ";",
-      "iges.representation": "fixed-ascii"
+      "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":17}]],[5,{\"start\":3,\"end\":4},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":15}]],[7,{\"start\":4,\"end\":5},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":14},{\"start\":15,\"end\":16},{\"start\":17,\"end\":18}]],[9,{\"start\":5,\"end\":6},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":8},{\"start\":9,\"end\":11},{\"start\":12,\"end\":14},{\"start\":15,\"end\":16}]]]"
     },
     "retained_records": {
       "iges:file:source-image#0": {

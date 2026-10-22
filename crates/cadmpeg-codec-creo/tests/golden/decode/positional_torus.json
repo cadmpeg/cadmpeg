@@ -82,8 +82,10 @@
       "creo": {
         "surface_parameters": [
           {
-            "body": "288d071bd2656f6c18943f027016befc0012204713cc46313d70a3d70a3e4713cc2e13cc4630bd70a3d70a3e21b1480ae3c2ff2d59c70ff1418d06dc208a4ddb18e510288d06dc208a4ddbc2ff2d59c70ff118e44630bd70a3d70a3e182e11cc0e",
-            "body_offset": 122,
+            "body": {
+              "byte_len": 97,
+              "sha256": "609c0e89f76e6626e4f18b6b8e00943a4bde07256881200bf32735e5420cb572"
+            },
             "boundary": "compound_close",
             "cone_half_angle_override": null,
             "extrusion_direction": null,
@@ -91,43 +93,59 @@
             "opaque_spans": [
               {
                 "length": 1,
-                "offset": 0,
-                "raw": "28"
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "32ebb1abcc1c601ceb9c4e3c4faba0caa5b85bb98c4f1e6612c40faa528a91c9"
+                }
               },
               {
                 "length": 11,
-                "offset": 8,
-                "raw": "18943f027016befc001220"
+                "raw": {
+                  "byte_len": 11,
+                  "sha256": "f64bee9bb3388b0579dfcabda773f591e597735fbaaff96ef6ca8eea59207687"
+                }
               },
               {
                 "length": 1,
-                "offset": 44,
-                "raw": "21"
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "bb7208bc9b5d7c04f1236a82a0093a5e33f40423d5ba8d4266f7092c3ba43b62"
+                }
               },
               {
                 "length": 2,
-                "offset": 52,
-                "raw": "59c7"
+                "raw": {
+                  "byte_len": 2,
+                  "sha256": "0a100982d19bc9a239bdc31c59aad59b86cd5853447264856673d968158fc572"
+                }
               },
               {
                 "length": 1,
-                "offset": 55,
-                "raw": "f1"
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "d4f09e5c5af99a24c7e304ca7997d26cb00901697de08a49be0d46ab5839b614"
+                }
               },
               {
                 "length": 5,
-                "offset": 63,
-                "raw": "db18e51028"
+                "raw": {
+                  "byte_len": 5,
+                  "sha256": "6be61c8b53ee6315ce297792c88cd4262238da2661a5c67cba7d7dae5f400519"
+                }
               },
               {
                 "length": 2,
-                "offset": 75,
-                "raw": "c2ff"
+                "raw": {
+                  "byte_len": 2,
+                  "sha256": "ce6ff44d134dc5f1b6fa23aac8447411d25b1a92fc68f205ffe04c69da87459e"
+                }
               },
               {
                 "length": 7,
-                "offset": 85,
-                "raw": "30bd70a3d70a3e"
+                "raw": {
+                  "byte_len": 7,
+                  "sha256": "4bc9db13890d128bf505f6c56801f1e385316422eb8387c2f392769494279d4f"
+                }
               }
             ],
             "positional_cone_frame": null,
@@ -152,128 +170,147 @@
               ]
             },
             "replayed_torus_minor_radius": null,
-            "row_offset": 116,
             "scalar_frames": [
               {
-                "offset": 1,
                 "slots": [
                   {
                     "length": 7,
-                    "offset": 1,
-                    "raw": "8d071bd2656f6c",
+                    "raw": {
+                      "byte_len": 7,
+                      "sha256": "7ed72b21de34a287fecf1a54b26c4f2c10080c8d67a7d882ebedeb1d93b1af63"
+                    },
                     "value": 0.00004407630756705222
                   }
                 ]
               },
               {
-                "offset": 19,
                 "slots": [
                   {
                     "length": 3,
-                    "offset": 19,
-                    "raw": "4713cc",
+                    "raw": {
+                      "byte_len": 3,
+                      "sha256": "d6861511e58515b656cd14976b2a34ed206b5f8ea044f25c2ee1cf0d2f8580ad"
+                    },
                     "value": -4.949999999999999
                   },
                   {
                     "length": 8,
-                    "offset": 22,
-                    "raw": "46313d70a3d70a3e",
+                    "raw": {
+                      "byte_len": 8,
+                      "sha256": "65e580f0be2ff5dad3fabe31df9efa0ac460df9b9e5423c433a61978f2f70690"
+                    },
                     "value": 17.240000000000002
                   },
                   {
                     "length": 3,
-                    "offset": 30,
-                    "raw": "4713cc",
+                    "raw": {
+                      "byte_len": 3,
+                      "sha256": "d6861511e58515b656cd14976b2a34ed206b5f8ea044f25c2ee1cf0d2f8580ad"
+                    },
                     "value": -4.949999999999999
                   },
                   {
                     "length": 3,
-                    "offset": 33,
-                    "raw": "2e13cc",
+                    "raw": {
+                      "byte_len": 3,
+                      "sha256": "37fac59e1433f7614684080c612881f33832963446aef3e11c4706833776c456"
+                    },
                     "value": 4.949999999999999
                   },
                   {
                     "length": 8,
-                    "offset": 36,
-                    "raw": "4630bd70a3d70a3e",
+                    "raw": {
+                      "byte_len": 8,
+                      "sha256": "9f1a0c9d2ade08b465ec0506047296359022e376955ea5f363c281766ae3b323"
+                    },
                     "value": 16.740000000000002
                   }
                 ]
               },
               {
-                "offset": 45,
                 "slots": [
                   {
                     "length": 7,
-                    "offset": 45,
-                    "raw": "b1480ae3c2ff2d",
+                    "raw": {
+                      "byte_len": 7,
+                      "sha256": "6b3ec36047674133d69f882fc6b1749e34aa5374abebc00a8d87f2c9718b1f96"
+                    },
                     "value": -0.0007337200277048039
                   }
                 ]
               },
               {
-                "offset": 54,
                 "slots": [
                   {
                     "length": 1,
-                    "offset": 54,
-                    "raw": "0f",
+                    "raw": {
+                      "byte_len": 1,
+                      "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                    },
                     "value": 0.0
                   }
                 ]
               },
               {
-                "offset": 56,
                 "slots": [
                   {
                     "length": 7,
-                    "offset": 56,
-                    "raw": "418d06dc208a4d",
+                    "raw": {
+                      "byte_len": 7,
+                      "sha256": "2f06e2c0cb75279bffa51d4ddf447b71205ab5f984024cbd8a0cb64c2db90cf0"
+                    },
                     "value": 0.014173240416573751
                   }
                 ]
               },
               {
-                "offset": 68,
                 "slots": [
                   {
                     "length": 7,
-                    "offset": 68,
-                    "raw": "8d06dc208a4ddb",
+                    "raw": {
+                      "byte_len": 7,
+                      "sha256": "cd0df69b3939071aa613803a583dc2e9c888648067d0121393f6fddf6b354b65"
+                    },
                     "value": 0.00004360174469913124
                   }
                 ]
               },
               {
-                "offset": 77,
                 "slots": [
                   {
                     "length": 8,
-                    "offset": 77,
-                    "raw": "2d59c70ff118e446",
+                    "raw": {
+                      "byte_len": 8,
+                      "sha256": "d10026fc6900637a1232d7ff5f1f41c7892d0b95949ab8338f6cbc20c95d161f"
+                    },
                     "value": -103.11034800940351
                   }
                 ]
               },
               {
-                "offset": 92,
                 "slots": [
                   {
                     "length": 1,
-                    "offset": 92,
-                    "raw": "18",
+                    "raw": {
+                      "byte_len": 1,
+                      "sha256": "452ba1ddef80246c48be7690193c76c1d61185906be9401014fe14f1be64b74f"
+                    },
                     "value": 0.0
                   },
                   {
                     "length": 3,
-                    "offset": 93,
-                    "raw": "2e11cc",
+                    "raw": {
+                      "byte_len": 3,
+                      "sha256": "d04fd0a293f1f2601e17a6cb8d4a54c135cc6055708516bb629e1d693e3a8284"
+                    },
                     "value": 4.449999999999999
                   },
                   {
                     "length": 1,
-                    "offset": 96,
-                    "raw": "0e",
+                    "raw": {
+                      "byte_len": 1,
+                      "sha256": "4d7b3ef7300acf70c892d8327db8272f54434adbc61a4e130a563cb59a0d0f47"
+                    },
                     "value": -0.5
                   }
                 ]
@@ -282,86 +319,114 @@
             "slots": [
               {
                 "length": 7,
-                "offset": 1,
-                "raw": "8d071bd2656f6c",
+                "raw": {
+                  "byte_len": 7,
+                  "sha256": "7ed72b21de34a287fecf1a54b26c4f2c10080c8d67a7d882ebedeb1d93b1af63"
+                },
                 "value": 0.00004407630756705222
               },
               {
                 "length": 3,
-                "offset": 19,
-                "raw": "4713cc",
+                "raw": {
+                  "byte_len": 3,
+                  "sha256": "d6861511e58515b656cd14976b2a34ed206b5f8ea044f25c2ee1cf0d2f8580ad"
+                },
                 "value": -4.949999999999999
               },
               {
                 "length": 8,
-                "offset": 22,
-                "raw": "46313d70a3d70a3e",
+                "raw": {
+                  "byte_len": 8,
+                  "sha256": "65e580f0be2ff5dad3fabe31df9efa0ac460df9b9e5423c433a61978f2f70690"
+                },
                 "value": 17.240000000000002
               },
               {
                 "length": 3,
-                "offset": 30,
-                "raw": "4713cc",
+                "raw": {
+                  "byte_len": 3,
+                  "sha256": "d6861511e58515b656cd14976b2a34ed206b5f8ea044f25c2ee1cf0d2f8580ad"
+                },
                 "value": -4.949999999999999
               },
               {
                 "length": 3,
-                "offset": 33,
-                "raw": "2e13cc",
+                "raw": {
+                  "byte_len": 3,
+                  "sha256": "37fac59e1433f7614684080c612881f33832963446aef3e11c4706833776c456"
+                },
                 "value": 4.949999999999999
               },
               {
                 "length": 8,
-                "offset": 36,
-                "raw": "4630bd70a3d70a3e",
+                "raw": {
+                  "byte_len": 8,
+                  "sha256": "9f1a0c9d2ade08b465ec0506047296359022e376955ea5f363c281766ae3b323"
+                },
                 "value": 16.740000000000002
               },
               {
                 "length": 7,
-                "offset": 45,
-                "raw": "b1480ae3c2ff2d",
+                "raw": {
+                  "byte_len": 7,
+                  "sha256": "6b3ec36047674133d69f882fc6b1749e34aa5374abebc00a8d87f2c9718b1f96"
+                },
                 "value": -0.0007337200277048039
               },
               {
                 "length": 1,
-                "offset": 54,
-                "raw": "0f",
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
+                },
                 "value": 0.0
               },
               {
                 "length": 7,
-                "offset": 56,
-                "raw": "418d06dc208a4d",
+                "raw": {
+                  "byte_len": 7,
+                  "sha256": "2f06e2c0cb75279bffa51d4ddf447b71205ab5f984024cbd8a0cb64c2db90cf0"
+                },
                 "value": 0.014173240416573751
               },
               {
                 "length": 7,
-                "offset": 68,
-                "raw": "8d06dc208a4ddb",
+                "raw": {
+                  "byte_len": 7,
+                  "sha256": "cd0df69b3939071aa613803a583dc2e9c888648067d0121393f6fddf6b354b65"
+                },
                 "value": 0.00004360174469913124
               },
               {
                 "length": 8,
-                "offset": 77,
-                "raw": "2d59c70ff118e446",
+                "raw": {
+                  "byte_len": 8,
+                  "sha256": "d10026fc6900637a1232d7ff5f1f41c7892d0b95949ab8338f6cbc20c95d161f"
+                },
                 "value": -103.11034800940351
               },
               {
                 "length": 1,
-                "offset": 92,
-                "raw": "18",
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "452ba1ddef80246c48be7690193c76c1d61185906be9401014fe14f1be64b74f"
+                },
                 "value": 0.0
               },
               {
                 "length": 3,
-                "offset": 93,
-                "raw": "2e11cc",
+                "raw": {
+                  "byte_len": 3,
+                  "sha256": "d04fd0a293f1f2601e17a6cb8d4a54c135cc6055708516bb629e1d693e3a8284"
+                },
                 "value": 4.449999999999999
               },
               {
                 "length": 1,
-                "offset": 96,
-                "raw": "0e",
+                "raw": {
+                  "byte_len": 1,
+                  "sha256": "4d7b3ef7300acf70c892d8327db8272f54434adbc61a4e130a563cb59a0d0f47"
+                },
                 "value": -0.5
               }
             ],
@@ -372,24 +437,29 @@
             "surface_type_byte": 38,
             "tabulated_cylinder_frame": null,
             "terminal_scalar_frame": {
-              "offset": 92,
               "slots": [
                 {
                   "length": 1,
-                  "offset": 92,
-                  "raw": "18",
+                  "raw": {
+                    "byte_len": 1,
+                    "sha256": "452ba1ddef80246c48be7690193c76c1d61185906be9401014fe14f1be64b74f"
+                  },
                   "value": 0.0
                 },
                 {
                   "length": 3,
-                  "offset": 93,
-                  "raw": "2e11cc",
+                  "raw": {
+                    "byte_len": 3,
+                    "sha256": "d04fd0a293f1f2601e17a6cb8d4a54c135cc6055708516bb629e1d693e3a8284"
+                  },
                   "value": 4.449999999999999
                 },
                 {
                   "length": 1,
-                  "offset": 96,
-                  "raw": "0e",
+                  "raw": {
+                    "byte_len": 1,
+                    "sha256": "4d7b3ef7300acf70c892d8327db8272f54434adbc61a4e130a563cb59a0d0f47"
+                  },
                   "value": -0.5
                 }
               ]
@@ -397,7 +467,6 @@
             "torus_outline_frame": null,
             "torus_radius_overrides": null,
             "type26_five_coordinate_envelope": {
-              "offset": 19,
               "values": [
                 -4.949999999999999,
                 17.240000000000002,
@@ -415,7 +484,6 @@
             "feature_id": 4,
             "id": "creo:visibgeom:surface_row#7",
             "next_surface": 0,
-            "offset": 116,
             "reversed": false,
             "source_section": "VisibGeom",
             "surface_family": "torus_or_sphere",
@@ -443,7 +511,6 @@
         "file_size": "220",
         "section.0.length": "144",
         "section.0.name": "VisibGeom",
-        "section.0.offset": "76",
         "section.0.raw_name": "VisibGeom",
         "section.0.role": "psb-geometry",
         "section_count": "1",
@@ -989,6 +1056,61 @@
         }
       }
     },
+    "metadata": {
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.body_offset": "122",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[0].offset": "0",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[1].offset": "8",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[2].offset": "44",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[3].offset": "52",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[4].offset": "55",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[5].offset": "63",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[6].offset": "75",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[7].offset": "85",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.row_offset": "116",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].offset": "1",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[0].offset": "1",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].offset": "19",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].slots[0].offset": "19",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].slots[1].offset": "22",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].slots[2].offset": "30",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].slots[3].offset": "33",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[1].slots[4].offset": "36",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[2].offset": "45",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[2].slots[0].offset": "45",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[3].offset": "54",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[3].slots[0].offset": "54",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[4].offset": "56",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[4].slots[0].offset": "56",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[5].offset": "68",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[5].slots[0].offset": "68",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[6].offset": "77",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[6].slots[0].offset": "77",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[7].offset": "92",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[7].slots[0].offset": "92",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[7].slots[1].offset": "93",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[7].slots[2].offset": "96",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[0].offset": "1",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[10].offset": "77",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[11].offset": "92",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[12].offset": "93",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[13].offset": "96",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[1].offset": "19",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[2].offset": "22",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[3].offset": "30",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[4].offset": "33",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[5].offset": "36",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[6].offset": "45",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[7].offset": "54",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[8].offset": "56",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[9].offset": "68",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.offset": "92",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[0].offset": "92",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[1].offset": "93",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[2].offset": "96",
+      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.type26_five_coordinate_envelope.offset": "19",
+      "native.creo.surface_rows.creo:visibgeom:surface_row#7.offset": "116",
+      "source.section.0.offset": "76"
+    },
     "retained_records": {
       "creo:VisibGeom:section#76": {
         "bytes": {
@@ -998,6 +1120,102 @@
         "offset": 76,
         "stream": "creo:VisibGeom",
         "untyped": []
+      },
+      "creo:source:evidence#02a3d2f285bc7796e8ad16ed3acfd343c392176423170ba7e53891b2ac2750c6": {
+        "bytes": {
+          "byte_len": 1,
+          "retention": "digest",
+          "sha256": "bb7208bc9b5d7c04f1236a82a0093a5e33f40423d5ba8d4266f7092c3ba43b62"
+        },
+        "offset": 0,
+        "stream": "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[2].raw",
+        "untyped": [
+          "model"
+        ]
+      },
+      "creo:source:evidence#5256a3941488a4db87a7d074ae73c79dbe6cd69e9c1616f1c337c8899ef499a6": {
+        "bytes": {
+          "byte_len": 2,
+          "retention": "digest",
+          "sha256": "0a100982d19bc9a239bdc31c59aad59b86cd5853447264856673d968158fc572"
+        },
+        "offset": 0,
+        "stream": "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[3].raw",
+        "untyped": [
+          "model"
+        ]
+      },
+      "creo:source:evidence#6d1c81d87573f3a98f8456a6603ac3c509841628abac4340f6fd3bed41e11d83": {
+        "bytes": {
+          "byte_len": 2,
+          "retention": "digest",
+          "sha256": "ce6ff44d134dc5f1b6fa23aac8447411d25b1a92fc68f205ffe04c69da87459e"
+        },
+        "offset": 0,
+        "stream": "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[6].raw",
+        "untyped": [
+          "model"
+        ]
+      },
+      "creo:source:evidence#e395ffe7b228d892f5c9bd27b29baaf59ed59fabd3fb74a5df55e2490eeab9c0": {
+        "bytes": {
+          "byte_len": 1,
+          "retention": "digest",
+          "sha256": "d4f09e5c5af99a24c7e304ca7997d26cb00901697de08a49be0d46ab5839b614"
+        },
+        "offset": 0,
+        "stream": "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[4].raw",
+        "untyped": [
+          "model"
+        ]
+      },
+      "creo:source:evidence#e85034c3324fe87af915c5d5012c6888b87d22ee1f1afa4bbd9c354b17f454b0": {
+        "bytes": {
+          "byte_len": 1,
+          "retention": "digest",
+          "sha256": "32ebb1abcc1c601ceb9c4e3c4faba0caa5b85bb98c4f1e6612c40faa528a91c9"
+        },
+        "offset": 0,
+        "stream": "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[0].raw",
+        "untyped": [
+          "model"
+        ]
+      },
+      "creo:source:evidence#f91862f22c85e78ed9a8e0db0f612f9c51d4c458d65f7f357592da4a6f06eabc": {
+        "bytes": {
+          "byte_len": 11,
+          "retention": "digest",
+          "sha256": "f64bee9bb3388b0579dfcabda773f591e597735fbaaff96ef6ca8eea59207687"
+        },
+        "offset": 0,
+        "stream": "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[1].raw",
+        "untyped": [
+          "model"
+        ]
+      },
+      "creo:source:evidence#fc888dd50e8920dfeb4b08a6fad541442e8eac8b45becd9d1dbb9361ebc23dea": {
+        "bytes": {
+          "byte_len": 7,
+          "retention": "digest",
+          "sha256": "4bc9db13890d128bf505f6c56801f1e385316422eb8387c2f392769494279d4f"
+        },
+        "offset": 0,
+        "stream": "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[7].raw",
+        "untyped": [
+          "model"
+        ]
+      },
+      "creo:source:evidence#fdad4c2d1f8d5182aa0b592a99819f1ee36a391169258214d632eef4691ee90b": {
+        "bytes": {
+          "byte_len": 5,
+          "retention": "digest",
+          "sha256": "6be61c8b53ee6315ce297792c88cd4262238da2661a5c67cba7d7dae5f400519"
+        },
+        "offset": 0,
+        "stream": "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.opaque_spans[5].raw",
+        "untyped": [
+          "model"
+        ]
       },
       "creo:source:image#whole": {
         "bytes": {

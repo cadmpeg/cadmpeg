@@ -137,32 +137,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#0:Material:property",
-          "name": "Material",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#0:Material"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#0:Meta:property",
-          "name": "Meta",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#0:Meta"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#0:ShowHidden:property",
           "name": "ShowHidden",
           "target": {
@@ -189,32 +163,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#0:Uid:property",
-          "name": "Uid",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "00000000-0000-0000-0000-000000000001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#0:UnitSystem:property",
-          "name": "UnitSystem",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 0
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#0:UseHasher:property",
           "name": "UseHasher",
           "target": {
@@ -231,10 +179,8 @@
           "id": "fcstd:model:attribute#Body:AllowCompound:property",
           "name": "AllowCompound",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Body"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Body",
+            "kind": "feature"
           },
           "values": [
             {
@@ -247,10 +193,8 @@
           "id": "fcstd:model:attribute#Body:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Body"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Body",
+            "kind": "feature"
           },
           "values": [
             {
@@ -263,10 +207,8 @@
           "id": "fcstd:model:attribute#Body:Origin:property",
           "name": "Origin",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Body"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Body",
+            "kind": "feature"
           },
           "values": [
             {
@@ -276,66 +218,16 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Body:ShapeMaterial:property",
-          "name": "ShapeMaterial",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Body"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Body:ShapeMaterial"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Body:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Body"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Body",
+            "kind": "feature"
           },
           "values": [
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#CorpusMetadata:ExpressionEngine"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:InertValue:property",
-          "name": "InertValue",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#CorpusMetadata:InertValue"
             }
           ]
         },
@@ -388,22 +280,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#CorpusMetadata:Proxy:property",
-          "name": "Proxy",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#CorpusMetadata:Proxy"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
           "name": "Purpose",
           "target": {
@@ -436,29 +312,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Fillet:AddSubShape:property",
-          "name": "AddSubShape",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Fillet"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Fillet:AddSubShape"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Fillet:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Fillet"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Fillet",
+            "kind": "feature"
           },
           "values": [
             {
@@ -468,29 +326,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Fillet:ShapeMaterial:property",
-          "name": "ShapeMaterial",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Fillet"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Fillet:ShapeMaterial"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Fillet:SupportTransform:property",
           "name": "SupportTransform",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Fillet"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Fillet",
+            "kind": "feature"
           },
           "values": [
             {
@@ -500,50 +340,16 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Fillet:SuppressedShape:property",
-          "name": "SuppressedShape",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Fillet"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Fillet:SuppressedShape"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Fillet:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Fillet"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Fillet",
+            "kind": "feature"
           },
           "values": [
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin001:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Origin001:ExpressionEngine"
             }
           ]
         },
@@ -608,22 +414,6 @@
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Origin:ExpressionEngine"
             }
           ]
         },
@@ -716,29 +506,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Pad:AddSubShape:property",
-          "name": "AddSubShape",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pad"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Pad:AddSubShape"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Pad:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pad"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Pad",
+            "kind": "feature"
           },
           "values": [
             {
@@ -748,45 +520,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Pad:ShapeMaterial:property",
-          "name": "ShapeMaterial",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pad"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Pad:ShapeMaterial"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Pad:SuppressedShape:property",
-          "name": "SuppressedShape",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pad"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Pad:SuppressedShape"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Pad:Type2:property",
           "name": "Type2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pad"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Pad",
+            "kind": "feature"
           },
           "values": [
             {
@@ -796,45 +534,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Pad:UpToShape2:property",
-          "name": "UpToShape2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pad"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Pad:UpToShape2"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Pad:UpToShape:property",
-          "name": "UpToShape",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pad"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Pad:UpToShape"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Pad:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pad"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Pad",
+            "kind": "feature"
           },
           "values": [
             {
@@ -847,10 +551,8 @@
           "id": "fcstd:model:attribute#PadSketch:ArcFitTolerance:property",
           "name": "ArcFitTolerance",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PadSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -860,29 +562,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#PadSketch:AttacherEngine:property",
-          "name": "AttacherEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 0
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#PadSketch:AttacherType:property",
           "name": "AttacherType",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PadSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -892,61 +576,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#PadSketch:AttachmentSupport:property",
-          "name": "AttachmentSupport",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#PadSketch:AttachmentSupport"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#PadSketch:Exports:property",
-          "name": "Exports",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#PadSketch:Exports"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#PadSketch:ExternalTypes:property",
-          "name": "ExternalTypes",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#PadSketch:ExternalTypes"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#PadSketch:FullyConstrained:property",
           "name": "FullyConstrained",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PadSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -956,29 +590,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#PadSketch:InternalShape:property",
-          "name": "InternalShape",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#PadSketch:InternalShape"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#PadSketch:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PadSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -991,10 +607,8 @@
           "id": "fcstd:model:attribute#PadSketch:MakeInternals:property",
           "name": "MakeInternals",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PadSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1007,10 +621,8 @@
           "id": "fcstd:model:attribute#PadSketch:MapPathParameter:property",
           "name": "MapPathParameter",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PadSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1023,10 +635,8 @@
           "id": "fcstd:model:attribute#PadSketch:MapReversed:property",
           "name": "MapReversed",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PadSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1036,29 +646,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#PadSketch:ShapeMaterial:property",
-          "name": "ShapeMaterial",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#PadSketch:ShapeMaterial"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#PadSketch:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PadSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1071,10 +663,8 @@
           "id": "fcstd:model:attribute#PadSketch:_ExternalGeoVersion:property",
           "name": "_ExternalGeoVersion",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PadSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PadSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1084,29 +674,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Pocket:AddSubShape:property",
-          "name": "AddSubShape",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pocket"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Pocket:AddSubShape"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Pocket:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pocket"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Pocket",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1116,45 +688,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Pocket:ShapeMaterial:property",
-          "name": "ShapeMaterial",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pocket"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Pocket:ShapeMaterial"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Pocket:SuppressedShape:property",
-          "name": "SuppressedShape",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pocket"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Pocket:SuppressedShape"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Pocket:Type2:property",
           "name": "Type2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pocket"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Pocket",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1164,45 +702,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Pocket:UpToShape2:property",
-          "name": "UpToShape2",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pocket"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Pocket:UpToShape2"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Pocket:UpToShape:property",
-          "name": "UpToShape",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pocket"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Pocket:UpToShape"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Pocket:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Pocket"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Pocket",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1215,10 +719,8 @@
           "id": "fcstd:model:attribute#PocketSketch:ArcFitTolerance:property",
           "name": "ArcFitTolerance",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PocketSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1228,29 +730,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#PocketSketch:AttacherEngine:property",
-          "name": "AttacherEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 0
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#PocketSketch:AttacherType:property",
           "name": "AttacherType",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PocketSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1260,61 +744,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#PocketSketch:AttachmentSupport:property",
-          "name": "AttachmentSupport",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#PocketSketch:AttachmentSupport"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#PocketSketch:Exports:property",
-          "name": "Exports",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#PocketSketch:Exports"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#PocketSketch:ExternalTypes:property",
-          "name": "ExternalTypes",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#PocketSketch:ExternalTypes"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#PocketSketch:FullyConstrained:property",
           "name": "FullyConstrained",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PocketSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1324,29 +758,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#PocketSketch:InternalShape:property",
-          "name": "InternalShape",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#PocketSketch:InternalShape"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#PocketSketch:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PocketSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1359,10 +775,8 @@
           "id": "fcstd:model:attribute#PocketSketch:MakeInternals:property",
           "name": "MakeInternals",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PocketSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1375,10 +789,8 @@
           "id": "fcstd:model:attribute#PocketSketch:MapPathParameter:property",
           "name": "MapPathParameter",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PocketSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1391,10 +803,8 @@
           "id": "fcstd:model:attribute#PocketSketch:MapReversed:property",
           "name": "MapReversed",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PocketSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1404,29 +814,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#PocketSketch:ShapeMaterial:property",
-          "name": "ShapeMaterial",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#PocketSketch:ShapeMaterial"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#PocketSketch:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PocketSketch",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1439,31 +831,13 @@
           "id": "fcstd:model:attribute#PocketSketch:_ExternalGeoVersion:property",
           "name": "_ExternalGeoVersion",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#PocketSketch"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#PocketSketch",
+            "kind": "feature"
           },
           "values": [
             {
               "kind": "integer",
               "value": 1
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#XY_Plane:ExpressionEngine"
             }
           ]
         },
@@ -1532,22 +906,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#XZ_Plane:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#XZ_Plane:ExpressionEngine"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#XZ_Plane:Label2:property",
           "name": "Label2",
           "target": {
@@ -1608,22 +966,6 @@
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#X_Axis:ExpressionEngine"
             }
           ]
         },
@@ -1692,22 +1034,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#YZ_Plane:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#YZ_Plane:ExpressionEngine"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#YZ_Plane:Label2:property",
           "name": "Label2",
           "target": {
@@ -1772,22 +1098,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Y_Axis:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Y_Axis:ExpressionEngine"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Y_Axis:Label2:property",
           "name": "Label2",
           "target": {
@@ -1848,22 +1158,6 @@
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Z_Axis:ExpressionEngine"
             }
           ]
         },
@@ -13347,7 +12641,418 @@
         }
       }
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Body:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:InertValue (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Fillet:AddSubShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Fillet:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Fillet:SuppressedShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Origin001:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Origin:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pad:AddSubShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pad:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pad:SuppressedShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pad:UpToShape (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pad:UpToShape2 (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PadSketch:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PadSketch:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PadSketch:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PadSketch:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PadSketch:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PadSketch:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pocket:AddSubShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pocket:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pocket:SuppressedShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pocket:UpToShape (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Pocket:UpToShape2 (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PocketSketch:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PocketSketch:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PocketSketch:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PocketSketch:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PocketSketch:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PocketSketch:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#XY_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#XZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#X_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#YZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Y_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Z_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",

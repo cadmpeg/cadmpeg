@@ -207,7 +207,10 @@
       "model": true
     },
     "source": {
-      "attributes": {},
+      "attributes": {
+        "archive_version": "60",
+        "container_kind": "3dm-chunks"
+      },
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -330,10 +333,6 @@
     "metadata": {
       "rhino.history_layout": "[]",
       "rhino.object_layout": "[{\"start\":177,\"end\":986}]",
-      "rhino.source.archive_version": "60",
-      "rhino.source.container_kind": "3dm-chunks",
-      "rhino.source.millimeters_per_unit": "1",
-      "rhino.source.unit_code": "2",
       "rhino.table_layout": "[[268435476,[]],[268435477,[[536903729,105,153]]],[268435475,[[536903792,177,986]]]]"
     },
     "retained_records": {

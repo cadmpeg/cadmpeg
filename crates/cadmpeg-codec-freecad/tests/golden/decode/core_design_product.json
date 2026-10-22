@@ -137,32 +137,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#0:Material:property",
-          "name": "Material",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#0:Material"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#0:Meta:property",
-          "name": "Meta",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#0:Meta"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#0:ShowHidden:property",
           "name": "ShowHidden",
           "target": {
@@ -189,32 +163,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#0:Uid:property",
-          "name": "Uid",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "00000000-0000-0000-0000-000000000001"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#0:UnitSystem:property",
-          "name": "UnitSystem",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 0
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#0:UseHasher:property",
           "name": "UseHasher",
           "target": {
@@ -228,29 +176,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Box:AttacherEngine:property",
-          "name": "AttacherEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Box"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 0
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Box:AttacherType:property",
           "name": "AttacherType",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Box"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Box",
+            "kind": "feature"
           },
           "values": [
             {
@@ -260,29 +190,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Box:AttachmentSupport:property",
-          "name": "AttachmentSupport",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Box"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Box:AttachmentSupport"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Box:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Box"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Box",
+            "kind": "feature"
           },
           "values": [
             {
@@ -295,10 +207,8 @@
           "id": "fcstd:model:attribute#Box:MapPathParameter:property",
           "name": "MapPathParameter",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Box"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Box",
+            "kind": "feature"
           },
           "values": [
             {
@@ -311,10 +221,8 @@
           "id": "fcstd:model:attribute#Box:MapReversed:property",
           "name": "MapReversed",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Box"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Box",
+            "kind": "feature"
           },
           "values": [
             {
@@ -324,66 +232,16 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Box:ShapeMaterial:property",
-          "name": "ShapeMaterial",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Box"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Box:ShapeMaterial"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Box:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Box"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Box",
+            "kind": "feature"
           },
           "values": [
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#CorpusMetadata:ExpressionEngine"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#CorpusMetadata:InertValue:property",
-          "name": "InertValue",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#CorpusMetadata:InertValue"
             }
           ]
         },
@@ -436,22 +294,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#CorpusMetadata:Proxy:property",
-          "name": "Proxy",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#CorpusMetadata"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#CorpusMetadata:Proxy"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
           "name": "Purpose",
           "target": {
@@ -487,10 +329,8 @@
           "id": "fcstd:model:attribute#Cut:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cut"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Cut",
+            "kind": "feature"
           },
           "values": [
             {
@@ -500,29 +340,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Cut:ShapeMaterial:property",
-          "name": "ShapeMaterial",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cut"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Cut:ShapeMaterial"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Cut:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cut"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Cut",
+            "kind": "feature"
           },
           "values": [
             {
@@ -532,29 +354,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Cylinder:AttacherEngine:property",
-          "name": "AttacherEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cylinder"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 0
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Cylinder:AttacherType:property",
           "name": "AttacherType",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cylinder"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Cylinder",
+            "kind": "feature"
           },
           "values": [
             {
@@ -564,29 +368,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Cylinder:AttachmentSupport:property",
-          "name": "AttachmentSupport",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cylinder"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Cylinder:AttachmentSupport"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Cylinder:FirstAngle:property",
           "name": "FirstAngle",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cylinder"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Cylinder",
+            "kind": "feature"
           },
           "values": [
             {
@@ -599,10 +385,8 @@
           "id": "fcstd:model:attribute#Cylinder:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cylinder"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Cylinder",
+            "kind": "feature"
           },
           "values": [
             {
@@ -615,10 +399,8 @@
           "id": "fcstd:model:attribute#Cylinder:MapPathParameter:property",
           "name": "MapPathParameter",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cylinder"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Cylinder",
+            "kind": "feature"
           },
           "values": [
             {
@@ -631,10 +413,8 @@
           "id": "fcstd:model:attribute#Cylinder:MapReversed:property",
           "name": "MapReversed",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cylinder"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Cylinder",
+            "kind": "feature"
           },
           "values": [
             {
@@ -647,10 +427,8 @@
           "id": "fcstd:model:attribute#Cylinder:SecondAngle:property",
           "name": "SecondAngle",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cylinder"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Cylinder",
+            "kind": "feature"
           },
           "values": [
             {
@@ -660,29 +438,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Cylinder:ShapeMaterial:property",
-          "name": "ShapeMaterial",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cylinder"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Cylinder:ShapeMaterial"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Cylinder:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Cylinder"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Cylinder",
+            "kind": "feature"
           },
           "values": [
             {
@@ -695,10 +455,8 @@
           "id": "fcstd:model:attribute#DesignedFeature:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#DesignedFeature"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#DesignedFeature",
+            "kind": "feature"
           },
           "values": [
             {
@@ -708,45 +466,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#DesignedFeature:ShapeMaterial:property",
-          "name": "ShapeMaterial",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#DesignedFeature"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#DesignedFeature:ShapeMaterial"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#DesignedFeature:SuppressedShape:property",
-          "name": "SuppressedShape",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#DesignedFeature"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#DesignedFeature:SuppressedShape"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#DesignedFeature:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#DesignedFeature"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#DesignedFeature",
+            "kind": "feature"
           },
           "values": [
             {
@@ -756,29 +480,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Occurrence:ColoredElements:property",
-          "name": "ColoredElements",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Occurrence:ColoredElements"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Occurrence:ElementCount:property",
           "name": "ElementCount",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
@@ -788,29 +494,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Occurrence:ElementList:property",
-          "name": "ElementList",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Occurrence:ElementList"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Occurrence:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
@@ -823,10 +511,8 @@
           "id": "fcstd:model:attribute#Occurrence:LinkClaimChild:property",
           "name": "LinkClaimChild",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
@@ -839,10 +525,8 @@
           "id": "fcstd:model:attribute#Occurrence:LinkCopyOnChange:property",
           "name": "LinkCopyOnChange",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
@@ -852,45 +536,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Occurrence:LinkCopyOnChangeGroup:property",
-          "name": "LinkCopyOnChangeGroup",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Occurrence:LinkCopyOnChangeGroup"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Occurrence:LinkCopyOnChangeSource:property",
-          "name": "LinkCopyOnChangeSource",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Occurrence:LinkCopyOnChangeSource"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Occurrence:LinkCopyOnChangeTouched:property",
           "name": "LinkCopyOnChangeTouched",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
@@ -903,10 +553,8 @@
           "id": "fcstd:model:attribute#Occurrence:LinkExecute:property",
           "name": "LinkExecute",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
@@ -916,29 +564,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Occurrence:LinkPlacement:property",
-          "name": "LinkPlacement",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Occurrence:LinkPlacement"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Occurrence:LinkTransform:property",
           "name": "LinkTransform",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
@@ -951,10 +581,8 @@
           "id": "fcstd:model:attribute#Occurrence:LinkedObject:property",
           "name": "LinkedObject",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
@@ -964,29 +592,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Occurrence:PlacementList:property",
-          "name": "PlacementList",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Occurrence:PlacementList"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Occurrence:Scale:property",
           "name": "Scale",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
@@ -996,29 +606,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Occurrence:ScaleList:property",
-          "name": "ScaleList",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Occurrence:ScaleList"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Occurrence:ScaleVector:property",
           "name": "ScaleVector",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
@@ -1035,10 +627,8 @@
           "id": "fcstd:model:attribute#Occurrence:ShowElement:property",
           "name": "ShowElement",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
@@ -1051,10 +641,8 @@
           "id": "fcstd:model:attribute#Occurrence:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
@@ -1064,50 +652,16 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Occurrence:VisibilityList:property",
-          "name": "VisibilityList",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Occurrence:VisibilityList"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Occurrence:_LinkOwner:property",
           "name": "_LinkOwner",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Occurrence"
-            },
-            "kind": "source"
+            "id": "fcstd:model:occurrence#Occurrence:instance",
+            "kind": "occurrence"
           },
           "values": [
             {
               "kind": "integer",
               "value": 1
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin001:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin001"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Origin001:ExpressionEngine"
             }
           ]
         },
@@ -1172,22 +726,6 @@
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Origin:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Origin"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Origin:ExpressionEngine"
             }
           ]
         },
@@ -1283,10 +821,8 @@
           "id": "fcstd:model:attribute#Parameters:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Parameters"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Parameters",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1299,10 +835,8 @@
           "id": "fcstd:model:attribute#Parameters:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Parameters"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Parameters",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1312,61 +846,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Parameters:columnWidths:property",
-          "name": "columnWidths",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Parameters"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Parameters:columnWidths"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Parameters:rowHeights:property",
-          "name": "rowHeights",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Parameters"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Parameters:rowHeights"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Product:Color:property",
-          "name": "Color",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Product"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 4294967040
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Product:Id:property",
           "name": "Id",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Product"
-            },
-            "kind": "source"
+            "id": "fcstd:model:product_definition#Product:definition",
+            "kind": "product_definition"
           },
           "values": [
             {
@@ -1379,10 +863,8 @@
           "id": "fcstd:model:attribute#Product:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Product"
-            },
-            "kind": "source"
+            "id": "fcstd:model:product_definition#Product:definition",
+            "kind": "product_definition"
           },
           "values": [
             {
@@ -1395,10 +877,8 @@
           "id": "fcstd:model:attribute#Product:License:property",
           "name": "License",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Product"
-            },
-            "kind": "source"
+            "id": "fcstd:model:product_definition#Product:definition",
+            "kind": "product_definition"
           },
           "values": [
             {
@@ -1411,10 +891,8 @@
           "id": "fcstd:model:attribute#Product:LicenseURL:property",
           "name": "LicenseURL",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Product"
-            },
-            "kind": "source"
+            "id": "fcstd:model:product_definition#Product:definition",
+            "kind": "product_definition"
           },
           "values": [
             {
@@ -1424,45 +902,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Product:Material:property",
-          "name": "Material",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Product"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Product:Material"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Product:Meta:property",
-          "name": "Meta",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Product"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Product:Meta"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Product:Origin:property",
           "name": "Origin",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Product"
-            },
-            "kind": "source"
+            "id": "fcstd:model:product_definition#Product:definition",
+            "kind": "product_definition"
           },
           "values": [
             {
@@ -1472,29 +916,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Product:Uid:property",
-          "name": "Uid",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Product"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "00000000-0000-0000-0000-000000000002"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Product:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Product"
-            },
-            "kind": "source"
+            "id": "fcstd:model:product_definition#Product:definition",
+            "kind": "product_definition"
           },
           "values": [
             {
@@ -1507,10 +933,8 @@
           "id": "fcstd:model:attribute#Profile:ArcFitTolerance:property",
           "name": "ArcFitTolerance",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Profile",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1520,29 +944,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Profile:AttacherEngine:property",
-          "name": "AttacherEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 0
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Profile:AttacherType:property",
           "name": "AttacherType",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Profile",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1552,61 +958,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Profile:AttachmentSupport:property",
-          "name": "AttachmentSupport",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Profile:AttachmentSupport"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Profile:Exports:property",
-          "name": "Exports",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Profile:Exports"
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Profile:ExternalTypes:property",
-          "name": "ExternalTypes",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Profile:ExternalTypes"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Profile:FullyConstrained:property",
           "name": "FullyConstrained",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Profile",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1616,29 +972,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Profile:InternalShape:property",
-          "name": "InternalShape",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Profile:InternalShape"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Profile:Label2:property",
           "name": "Label2",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Profile",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1651,10 +989,8 @@
           "id": "fcstd:model:attribute#Profile:MakeInternals:property",
           "name": "MakeInternals",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Profile",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1667,10 +1003,8 @@
           "id": "fcstd:model:attribute#Profile:MapPathParameter:property",
           "name": "MapPathParameter",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Profile",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1683,10 +1017,8 @@
           "id": "fcstd:model:attribute#Profile:MapReversed:property",
           "name": "MapReversed",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Profile",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1696,29 +1028,11 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Profile:ShapeMaterial:property",
-          "name": "ShapeMaterial",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Profile:ShapeMaterial"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Profile:Visibility:property",
           "name": "Visibility",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Profile",
+            "kind": "feature"
           },
           "values": [
             {
@@ -1731,31 +1045,13 @@
           "id": "fcstd:model:attribute#Profile:_ExternalGeoVersion:property",
           "name": "_ExternalGeoVersion",
           "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Profile"
-            },
-            "kind": "source"
+            "id": "fcstd:design:feature#Profile",
+            "kind": "feature"
           },
           "values": [
             {
               "kind": "integer",
               "value": 1
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#XY_Plane:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XY_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#XY_Plane:ExpressionEngine"
             }
           ]
         },
@@ -1824,22 +1120,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#XZ_Plane:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#XZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#XZ_Plane:ExpressionEngine"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#XZ_Plane:Label2:property",
           "name": "Label2",
           "target": {
@@ -1900,22 +1180,6 @@
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#X_Axis:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#X_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#X_Axis:ExpressionEngine"
             }
           ]
         },
@@ -1984,22 +1248,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#YZ_Plane:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#YZ_Plane"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#YZ_Plane:ExpressionEngine"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#YZ_Plane:Label2:property",
           "name": "Label2",
           "target": {
@@ -2064,22 +1312,6 @@
           ]
         },
         {
-          "id": "fcstd:model:attribute#Y_Axis:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Y_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Y_Axis:ExpressionEngine"
-            }
-          ]
-        },
-        {
           "id": "fcstd:model:attribute#Y_Axis:Label2:property",
           "name": "Label2",
           "target": {
@@ -2140,22 +1372,6 @@
             {
               "kind": "boolean",
               "value": true
-            }
-          ]
-        },
-        {
-          "id": "fcstd:model:attribute#Z_Axis:ExpressionEngine:property",
-          "name": "ExpressionEngine",
-          "target": {
-            "id": {
-              "source_id": "fcstd:native:object#Z_Axis"
-            },
-            "kind": "source"
-          },
-          "values": [
-            {
-              "kind": "reference",
-              "value": "fcstd:native:property#Z_Axis:ExpressionEngine"
             }
           ]
         },
@@ -11340,7 +10556,448 @@
         }
       }
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Box:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Box:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Box:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:InertValue (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Cut:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Cylinder:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Cylinder:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Cylinder:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#DesignedFeature:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#DesignedFeature:SuppressedShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Occurrence:ColoredElements (App::PropertyLinkSubHidden) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Occurrence:ElementList (App::PropertyLinkList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Occurrence:LinkCopyOnChangeGroup (App::PropertyLink) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Occurrence:LinkCopyOnChangeSource (App::PropertyXLink) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Occurrence:LinkPlacement (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Occurrence:PlacementList (App::PropertyPlacementList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Occurrence:ScaleList (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Occurrence:VisibilityList (App::PropertyBoolList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Origin001:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Origin:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Parameters:columnWidths (Spreadsheet::PropertyColumnWidths) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Parameters:rowHeights (Spreadsheet::PropertyRowHeights) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Product:Color (App::PropertyColor) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Product:Material (App::PropertyLink) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Product:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Product:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Profile:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Profile:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Profile:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Profile:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Profile:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Profile:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#XY_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#XZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#X_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#YZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Y_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Z_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",

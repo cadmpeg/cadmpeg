@@ -82,14 +82,15 @@
             "feature_id": 3,
             "id": "creo:mdlstatus:feature_state#3:0",
             "identifier_keyword": "id",
-            "offset": 144,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 144,
             "state_ordinal": 0,
             "stored_name": "Round id 3",
-            "stored_name_bytes": "526f756e642069642033",
+            "stored_name_bytes": {
+              "byte_len": 10,
+              "sha256": "ecc999b9c7f4587afb47f9966bbbe1aadb32f817a836d34dc6e267f2a52624af"
+            },
             "stored_name_prefix": null
           },
           {
@@ -99,14 +100,15 @@
             "feature_id": 4,
             "id": "creo:mdlstatus:feature_state#4:0",
             "identifier_keyword": "id",
-            "offset": 155,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 155,
             "state_ordinal": 0,
             "stored_name": "Datum Plane id 4",
-            "stored_name_bytes": "446174756d20506c616e652069642034",
+            "stored_name_bytes": {
+              "byte_len": 16,
+              "sha256": "073472a3d3df0ee9b69918a14825017b5be58ba9cad9acaa88fda4de6e4c678f"
+            },
             "stored_name_prefix": null
           }
         ],
@@ -128,12 +130,10 @@
         "file_size": "172",
         "section.0.length": "57",
         "section.0.name": "ActDatums",
-        "section.0.offset": "76",
         "section.0.raw_name": "ActDatums",
         "section.0.role": "psb-geometry",
         "section.1.length": "39",
         "section.1.name": "MdlStatus",
-        "section.1.offset": "133",
         "section.1.raw_name": "MdlStatus",
         "section.1.role": "metadata",
         "section_count": "2",
@@ -673,6 +673,14 @@
           "tag": "feature_operation_name"
         }
       }
+    },
+    "metadata": {
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#3:0.offset": "144",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#3:0.state_offset": "144",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#4:0.offset": "155",
+      "native.creo.feature_operation_states.creo:mdlstatus:feature_state#4:0.state_offset": "155",
+      "source.section.0.offset": "76",
+      "source.section.1.offset": "133"
     },
     "retained_records": {
       "creo:ActDatums:section#76": {

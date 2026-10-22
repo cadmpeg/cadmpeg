@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 137463,
-      "payload_sha256": "dba6d29dc9aa48af5d6ab5b1ead6d0803e4a1e9e96107372b3ffdc8030d85699"
+      "payload_len": 139235,
+      "payload_sha256": "6e1e6c31dac80045137bbc4069b0abdbc235a52598747193f98f2065e5a357eb"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -179,7 +179,7 @@
         "appearances": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 337,
+        "attributes": 230,
         "bodies": 33,
         "coedges": 531,
         "configurations": 0,
@@ -204,7 +204,7 @@
         "native.fcstd.shape_payloads": 43,
         "native.fcstd.string_tables": 1,
         "occurrences": 0,
-        "parameters": 29,
+        "parameters": 27,
         "pcurves": 409,
         "pmi": 0,
         "points": 191,
@@ -289,16 +289,6 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#0:UnitSystem:property (UnitSystem) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "attribute fcstd:model:attribute#ChamferBase:Label:property conflicts with operation property Label",
         "severity": "warning"
       },
@@ -319,76 +309,6 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#DatumAxis:AttacherEngine:property (AttacherEngine) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#DatumCoordinateSystem:AttacherEngine:property (AttacherEngine) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#DatumPlane:AttacherEngine:property (AttacherEngine) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#DatumPoint:AttacherEngine:property (AttacherEngine) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Draft:AddSubShape:property (AddSubShape) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Draft:SuppressedShape:property (SuppressedShape) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#DraftBase:SuppressedShape:property (SuppressedShape) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "attribute fcstd:model:attribute#DressupBase:Label:property conflicts with operation property Label",
         "severity": "warning"
       },
@@ -400,66 +320,6 @@
           "scope": "namespaced"
         },
         "message": "attribute fcstd:model:attribute#ExtrusionProfile:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Hole:AddSubShape:property (AddSubShape) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Hole:SuppressedShape:property (SuppressedShape) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#HoleBase:SuppressedShape:property (SuppressedShape) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#HoleProfile:AttacherEngine:property (AttacherEngine) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#HoleProfile:InternalShape:property (InternalShape) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#LinearPattern:SuppressedShape:property (SuppressedShape) has no FreeCAD property encoding",
         "severity": "warning"
       },
       {
@@ -559,56 +419,6 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#PatternBase:AddSubShape:property (AddSubShape) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PatternBase:AttacherEngine:property (AttacherEngine) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#PatternBase:SuppressedShape:property (SuppressedShape) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#RevolutionProfile:AttacherEngine:property (AttacherEngine) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#RevolutionProfile:InternalShape:property (InternalShape) has no FreeCAD property encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "attribute fcstd:model:attribute#SweepSection:Label:property conflicts with operation property Label",
         "severity": "warning"
       },
@@ -630,16 +440,6 @@
           "scope": "namespaced"
         },
         "message": "attribute fcstd:model:attribute#SymmetricExtrusion:LengthFwd:property conflicts with operation property LengthFwd",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Thickness:Faces:property conflicts with operation property Faces",
         "severity": "warning"
       },
       {
@@ -929,7 +729,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 143 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 135 native record(s) from `fcstd.properties`",
         "severity": "info"
       },
       {
@@ -1296,31 +1096,33 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "regenerated",
-                "fcstd:native:property#0:Meta": "regenerated",
+                "fcstd:native:property#0:Material": "written",
+                "fcstd:native:property#0:Meta": "written",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "regenerated",
+                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:UnitSystem": "written",
                 "fcstd:native:property#0:UseHasher": "regenerated",
                 "fcstd:native:property#ChamferBase:Label": "regenerated",
                 "fcstd:native:property#ChamferBase:Label2": "regenerated",
                 "fcstd:native:property#ChamferBase:Placement": "regenerated",
                 "fcstd:native:property#ChamferBase:Shape": "regenerated",
-                "fcstd:native:property#ChamferBase:ShapeMaterial": "regenerated",
+                "fcstd:native:property#ChamferBase:ShapeMaterial": "written",
                 "fcstd:native:property#ChamferBase:Visibility": "regenerated",
                 "fcstd:native:property#ChamferBase:_ElementMapVersion": "written",
-                "fcstd:native:property#CorpusMetadata:InertValue": "regenerated",
+                "fcstd:native:property#CorpusMetadata:InertValue": "written",
                 "fcstd:native:property#CorpusMetadata:Label": "regenerated",
                 "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
                 "fcstd:native:property#CorpusMetadata:License": "regenerated",
-                "fcstd:native:property#CorpusMetadata:Proxy": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Proxy": "written",
                 "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
                 "fcstd:native:property#CorpusMetadata:Visibility": "regenerated",
+                "fcstd:native:property#DatumAxis:AttacherEngine": "written",
                 "fcstd:native:property#DatumAxis:AttacherType": "regenerated",
                 "fcstd:native:property#DatumAxis:AttachmentOffset": "regenerated",
-                "fcstd:native:property#DatumAxis:AttachmentSupport": "regenerated",
+                "fcstd:native:property#DatumAxis:AttachmentSupport": "written",
                 "fcstd:native:property#DatumAxis:ExpressionEngine": "regenerated",
                 "fcstd:native:property#DatumAxis:Label": "regenerated",
                 "fcstd:native:property#DatumAxis:Label2": "regenerated",
@@ -1330,12 +1132,13 @@
                 "fcstd:native:property#DatumAxis:MapReversed": "regenerated",
                 "fcstd:native:property#DatumAxis:Placement": "regenerated",
                 "fcstd:native:property#DatumAxis:ResizeMode": "regenerated",
-                "fcstd:native:property#DatumAxis:ShapeMaterial": "regenerated",
+                "fcstd:native:property#DatumAxis:ShapeMaterial": "written",
                 "fcstd:native:property#DatumAxis:Visibility": "regenerated",
                 "fcstd:native:property#DatumAxis:_ElementMapVersion": "written",
+                "fcstd:native:property#DatumCoordinateSystem:AttacherEngine": "written",
                 "fcstd:native:property#DatumCoordinateSystem:AttacherType": "regenerated",
                 "fcstd:native:property#DatumCoordinateSystem:AttachmentOffset": "regenerated",
-                "fcstd:native:property#DatumCoordinateSystem:AttachmentSupport": "regenerated",
+                "fcstd:native:property#DatumCoordinateSystem:AttachmentSupport": "written",
                 "fcstd:native:property#DatumCoordinateSystem:Label": "regenerated",
                 "fcstd:native:property#DatumCoordinateSystem:Label2": "regenerated",
                 "fcstd:native:property#DatumCoordinateSystem:MapMode": "regenerated",
@@ -1343,12 +1146,13 @@
                 "fcstd:native:property#DatumCoordinateSystem:MapReversed": "regenerated",
                 "fcstd:native:property#DatumCoordinateSystem:Placement": "regenerated",
                 "fcstd:native:property#DatumCoordinateSystem:Shape": "regenerated",
-                "fcstd:native:property#DatumCoordinateSystem:ShapeMaterial": "regenerated",
+                "fcstd:native:property#DatumCoordinateSystem:ShapeMaterial": "written",
                 "fcstd:native:property#DatumCoordinateSystem:Visibility": "regenerated",
                 "fcstd:native:property#DatumCoordinateSystem:_ElementMapVersion": "written",
+                "fcstd:native:property#DatumPlane:AttacherEngine": "written",
                 "fcstd:native:property#DatumPlane:AttacherType": "regenerated",
                 "fcstd:native:property#DatumPlane:AttachmentOffset": "regenerated",
-                "fcstd:native:property#DatumPlane:AttachmentSupport": "regenerated",
+                "fcstd:native:property#DatumPlane:AttachmentSupport": "written",
                 "fcstd:native:property#DatumPlane:ExpressionEngine": "regenerated",
                 "fcstd:native:property#DatumPlane:Label": "regenerated",
                 "fcstd:native:property#DatumPlane:Label2": "regenerated",
@@ -1359,13 +1163,14 @@
                 "fcstd:native:property#DatumPlane:Placement": "regenerated",
                 "fcstd:native:property#DatumPlane:ResizeMode": "regenerated",
                 "fcstd:native:property#DatumPlane:Shape": "regenerated",
-                "fcstd:native:property#DatumPlane:ShapeMaterial": "regenerated",
+                "fcstd:native:property#DatumPlane:ShapeMaterial": "written",
                 "fcstd:native:property#DatumPlane:Visibility": "regenerated",
                 "fcstd:native:property#DatumPlane:Width": "regenerated",
                 "fcstd:native:property#DatumPlane:_ElementMapVersion": "written",
+                "fcstd:native:property#DatumPoint:AttacherEngine": "written",
                 "fcstd:native:property#DatumPoint:AttacherType": "regenerated",
                 "fcstd:native:property#DatumPoint:AttachmentOffset": "regenerated",
-                "fcstd:native:property#DatumPoint:AttachmentSupport": "regenerated",
+                "fcstd:native:property#DatumPoint:AttachmentSupport": "written",
                 "fcstd:native:property#DatumPoint:Label": "regenerated",
                 "fcstd:native:property#DatumPoint:Label2": "regenerated",
                 "fcstd:native:property#DatumPoint:MapMode": "regenerated",
@@ -1373,7 +1178,7 @@
                 "fcstd:native:property#DatumPoint:MapReversed": "regenerated",
                 "fcstd:native:property#DatumPoint:Placement": "regenerated",
                 "fcstd:native:property#DatumPoint:Shape": "regenerated",
-                "fcstd:native:property#DatumPoint:ShapeMaterial": "regenerated",
+                "fcstd:native:property#DatumPoint:ShapeMaterial": "written",
                 "fcstd:native:property#DatumPoint:Visibility": "regenerated",
                 "fcstd:native:property#DatumPoint:_ElementMapVersion": "written",
                 "fcstd:native:property#Draft:Angle": "regenerated",
@@ -1385,7 +1190,7 @@
                 "fcstd:native:property#Draft:Refine": "regenerated",
                 "fcstd:native:property#Draft:Reversed": "regenerated",
                 "fcstd:native:property#Draft:Shape": "regenerated",
-                "fcstd:native:property#Draft:ShapeMaterial": "regenerated",
+                "fcstd:native:property#Draft:ShapeMaterial": "written",
                 "fcstd:native:property#Draft:SupportTransform": "regenerated",
                 "fcstd:native:property#Draft:Suppressed": "regenerated",
                 "fcstd:native:property#Draft:Visibility": "regenerated",
@@ -1394,7 +1199,7 @@
                 "fcstd:native:property#DraftBase:Label": "regenerated",
                 "fcstd:native:property#DraftBase:Label2": "regenerated",
                 "fcstd:native:property#DraftBase:Shape": "regenerated",
-                "fcstd:native:property#DraftBase:ShapeMaterial": "regenerated",
+                "fcstd:native:property#DraftBase:ShapeMaterial": "written",
                 "fcstd:native:property#DraftBase:Suppressed": "regenerated",
                 "fcstd:native:property#DraftBase:Visibility": "regenerated",
                 "fcstd:native:property#DraftBase:_Body": "written",
@@ -1404,7 +1209,7 @@
                 "fcstd:native:property#DraftBody:Label": "regenerated",
                 "fcstd:native:property#DraftBody:Label2": "regenerated",
                 "fcstd:native:property#DraftBody:Shape": "regenerated",
-                "fcstd:native:property#DraftBody:ShapeMaterial": "regenerated",
+                "fcstd:native:property#DraftBody:ShapeMaterial": "written",
                 "fcstd:native:property#DraftBody:Tip": "regenerated",
                 "fcstd:native:property#DraftBody:Visibility": "regenerated",
                 "fcstd:native:property#DraftBody:_ElementMapVersion": "written",
@@ -1413,13 +1218,13 @@
                 "fcstd:native:property#DressupBase:Label2": "regenerated",
                 "fcstd:native:property#DressupBase:Placement": "regenerated",
                 "fcstd:native:property#DressupBase:Shape": "regenerated",
-                "fcstd:native:property#DressupBase:ShapeMaterial": "regenerated",
+                "fcstd:native:property#DressupBase:ShapeMaterial": "written",
                 "fcstd:native:property#DressupBase:Visibility": "regenerated",
                 "fcstd:native:property#DressupBase:_ElementMapVersion": "written",
                 "fcstd:native:property#ExtrusionProfile:Label": "regenerated",
                 "fcstd:native:property#ExtrusionProfile:Label2": "regenerated",
                 "fcstd:native:property#ExtrusionProfile:Placement": "regenerated",
-                "fcstd:native:property#ExtrusionProfile:ShapeMaterial": "regenerated",
+                "fcstd:native:property#ExtrusionProfile:ShapeMaterial": "written",
                 "fcstd:native:property#ExtrusionProfile:Visibility": "regenerated",
                 "fcstd:native:property#ExtrusionProfile:_ElementMapVersion": "written",
                 "fcstd:native:property#Hole:AllowMultiFace": "regenerated",
@@ -1442,22 +1247,22 @@
                 "fcstd:native:property#Hole:Profile": "regenerated",
                 "fcstd:native:property#Hole:Refine": "regenerated",
                 "fcstd:native:property#Hole:Shape": "regenerated",
-                "fcstd:native:property#Hole:ShapeMaterial": "regenerated",
+                "fcstd:native:property#Hole:ShapeMaterial": "written",
                 "fcstd:native:property#Hole:Suppressed": "regenerated",
                 "fcstd:native:property#Hole:Tapered": "regenerated",
                 "fcstd:native:property#Hole:TaperedAngle": "regenerated",
                 "fcstd:native:property#Hole:ThreadDepth": "regenerated",
                 "fcstd:native:property#Hole:ThreadDiameter": "regenerated",
                 "fcstd:native:property#Hole:ThreadType": "regenerated",
-                "fcstd:native:property#Hole:UpToShape": "regenerated",
-                "fcstd:native:property#Hole:UpToShape2": "regenerated",
+                "fcstd:native:property#Hole:UpToShape": "written",
+                "fcstd:native:property#Hole:UpToShape2": "written",
                 "fcstd:native:property#Hole:Visibility": "regenerated",
                 "fcstd:native:property#Hole:_Body": "written",
                 "fcstd:native:property#Hole:_ElementMapVersion": "written",
                 "fcstd:native:property#HoleBase:Label": "regenerated",
                 "fcstd:native:property#HoleBase:Label2": "regenerated",
                 "fcstd:native:property#HoleBase:Shape": "regenerated",
-                "fcstd:native:property#HoleBase:ShapeMaterial": "regenerated",
+                "fcstd:native:property#HoleBase:ShapeMaterial": "written",
                 "fcstd:native:property#HoleBase:Suppressed": "regenerated",
                 "fcstd:native:property#HoleBase:Visibility": "regenerated",
                 "fcstd:native:property#HoleBase:_Body": "written",
@@ -1467,18 +1272,19 @@
                 "fcstd:native:property#HoleBody:Label": "regenerated",
                 "fcstd:native:property#HoleBody:Label2": "regenerated",
                 "fcstd:native:property#HoleBody:Shape": "regenerated",
-                "fcstd:native:property#HoleBody:ShapeMaterial": "regenerated",
+                "fcstd:native:property#HoleBody:ShapeMaterial": "written",
                 "fcstd:native:property#HoleBody:Tip": "regenerated",
                 "fcstd:native:property#HoleBody:Visibility": "regenerated",
                 "fcstd:native:property#HoleBody:_ElementMapVersion": "written",
                 "fcstd:native:property#HoleBody:_GroupTouched": "written",
                 "fcstd:native:property#HoleProfile:ArcFitTolerance": "regenerated",
+                "fcstd:native:property#HoleProfile:AttacherEngine": "written",
                 "fcstd:native:property#HoleProfile:AttacherType": "regenerated",
                 "fcstd:native:property#HoleProfile:AttachmentOffset": "regenerated",
-                "fcstd:native:property#HoleProfile:AttachmentSupport": "regenerated",
+                "fcstd:native:property#HoleProfile:AttachmentSupport": "written",
                 "fcstd:native:property#HoleProfile:Constraints": "regenerated",
-                "fcstd:native:property#HoleProfile:Exports": "regenerated",
-                "fcstd:native:property#HoleProfile:ExternalTypes": "regenerated",
+                "fcstd:native:property#HoleProfile:Exports": "written",
+                "fcstd:native:property#HoleProfile:ExternalTypes": "written",
                 "fcstd:native:property#HoleProfile:FullyConstrained": "regenerated",
                 "fcstd:native:property#HoleProfile:Geometry": "regenerated",
                 "fcstd:native:property#HoleProfile:Label": "regenerated",
@@ -1489,12 +1295,12 @@
                 "fcstd:native:property#HoleProfile:MapReversed": "regenerated",
                 "fcstd:native:property#HoleProfile:Placement": "regenerated",
                 "fcstd:native:property#HoleProfile:Shape": "regenerated",
-                "fcstd:native:property#HoleProfile:ShapeMaterial": "regenerated",
+                "fcstd:native:property#HoleProfile:ShapeMaterial": "written",
                 "fcstd:native:property#HoleProfile:Visibility": "regenerated",
                 "fcstd:native:property#HoleProfile:_ElementMapVersion": "written",
                 "fcstd:native:property#HoleProfile:_ExternalGeoVersion": "regenerated",
                 "fcstd:native:property#LinearPattern:Direction": "regenerated",
-                "fcstd:native:property#LinearPattern:Direction2": "regenerated",
+                "fcstd:native:property#LinearPattern:Direction2": "written",
                 "fcstd:native:property#LinearPattern:ExpressionEngine": "regenerated",
                 "fcstd:native:property#LinearPattern:Label": "regenerated",
                 "fcstd:native:property#LinearPattern:Label2": "regenerated",
@@ -1509,7 +1315,7 @@
                 "fcstd:native:property#LinearPattern:Refine": "regenerated",
                 "fcstd:native:property#LinearPattern:Reversed2": "regenerated",
                 "fcstd:native:property#LinearPattern:Shape": "regenerated",
-                "fcstd:native:property#LinearPattern:ShapeMaterial": "regenerated",
+                "fcstd:native:property#LinearPattern:ShapeMaterial": "written",
                 "fcstd:native:property#LinearPattern:Suppressed": "regenerated",
                 "fcstd:native:property#LinearPattern:TransformMode": "regenerated",
                 "fcstd:native:property#LinearPattern:Visibility": "regenerated",
@@ -1524,20 +1330,20 @@
                 "fcstd:native:property#Loft:Ruled": "regenerated",
                 "fcstd:native:property#Loft:Sections": "regenerated",
                 "fcstd:native:property#Loft:Shape": "regenerated",
-                "fcstd:native:property#Loft:ShapeMaterial": "regenerated",
+                "fcstd:native:property#Loft:ShapeMaterial": "written",
                 "fcstd:native:property#Loft:Solid": "regenerated",
                 "fcstd:native:property#Loft:Visibility": "regenerated",
                 "fcstd:native:property#Loft:_ElementMapVersion": "written",
                 "fcstd:native:property#LoftSectionA:Label": "regenerated",
                 "fcstd:native:property#LoftSectionA:Label2": "regenerated",
                 "fcstd:native:property#LoftSectionA:Placement": "regenerated",
-                "fcstd:native:property#LoftSectionA:ShapeMaterial": "regenerated",
+                "fcstd:native:property#LoftSectionA:ShapeMaterial": "written",
                 "fcstd:native:property#LoftSectionA:Visibility": "regenerated",
                 "fcstd:native:property#LoftSectionA:_ElementMapVersion": "written",
                 "fcstd:native:property#LoftSectionB:Label": "regenerated",
                 "fcstd:native:property#LoftSectionB:Label2": "regenerated",
                 "fcstd:native:property#LoftSectionB:Placement": "regenerated",
-                "fcstd:native:property#LoftSectionB:ShapeMaterial": "regenerated",
+                "fcstd:native:property#LoftSectionB:ShapeMaterial": "written",
                 "fcstd:native:property#LoftSectionB:Visibility": "regenerated",
                 "fcstd:native:property#LoftSectionB:_ElementMapVersion": "written",
                 "fcstd:native:property#Mirror:Base": "regenerated",
@@ -1545,7 +1351,7 @@
                 "fcstd:native:property#Mirror:Label2": "regenerated",
                 "fcstd:native:property#Mirror:Normal": "regenerated",
                 "fcstd:native:property#Mirror:Shape": "regenerated",
-                "fcstd:native:property#Mirror:ShapeMaterial": "regenerated",
+                "fcstd:native:property#Mirror:ShapeMaterial": "written",
                 "fcstd:native:property#Mirror:Source": "regenerated",
                 "fcstd:native:property#Mirror:Visibility": "regenerated",
                 "fcstd:native:property#Mirror:_ElementMapVersion": "written",
@@ -1553,7 +1359,7 @@
                 "fcstd:native:property#MirrorBase:Label2": "regenerated",
                 "fcstd:native:property#MirrorBase:Placement": "regenerated",
                 "fcstd:native:property#MirrorBase:Shape": "regenerated",
-                "fcstd:native:property#MirrorBase:ShapeMaterial": "regenerated",
+                "fcstd:native:property#MirrorBase:ShapeMaterial": "written",
                 "fcstd:native:property#MirrorBase:Visibility": "regenerated",
                 "fcstd:native:property#MirrorBase:_ElementMapVersion": "written",
                 "fcstd:native:property#Origin001:Label": "regenerated",
@@ -1596,24 +1402,25 @@
                 "fcstd:native:property#Origin:_ElementMapVersion": "written",
                 "fcstd:native:property#Origin:_GroupTouched": "written",
                 "fcstd:native:property#PartChamfer:Base": "regenerated",
-                "fcstd:native:property#PartChamfer:EdgeLinks": "regenerated",
+                "fcstd:native:property#PartChamfer:EdgeLinks": "written",
                 "fcstd:native:property#PartChamfer:Label": "regenerated",
                 "fcstd:native:property#PartChamfer:Label2": "regenerated",
                 "fcstd:native:property#PartChamfer:Shape": "regenerated",
-                "fcstd:native:property#PartChamfer:ShapeMaterial": "regenerated",
+                "fcstd:native:property#PartChamfer:ShapeMaterial": "written",
                 "fcstd:native:property#PartChamfer:Visibility": "regenerated",
                 "fcstd:native:property#PartChamfer:_ElementMapVersion": "written",
                 "fcstd:native:property#PartFillet:Base": "regenerated",
-                "fcstd:native:property#PartFillet:EdgeLinks": "regenerated",
+                "fcstd:native:property#PartFillet:EdgeLinks": "written",
                 "fcstd:native:property#PartFillet:Label": "regenerated",
                 "fcstd:native:property#PartFillet:Label2": "regenerated",
                 "fcstd:native:property#PartFillet:Shape": "regenerated",
-                "fcstd:native:property#PartFillet:ShapeMaterial": "regenerated",
+                "fcstd:native:property#PartFillet:ShapeMaterial": "written",
                 "fcstd:native:property#PartFillet:Visibility": "regenerated",
                 "fcstd:native:property#PartFillet:_ElementMapVersion": "written",
+                "fcstd:native:property#PatternBase:AttacherEngine": "written",
                 "fcstd:native:property#PatternBase:AttacherType": "regenerated",
                 "fcstd:native:property#PatternBase:AttachmentOffset": "regenerated",
-                "fcstd:native:property#PatternBase:AttachmentSupport": "regenerated",
+                "fcstd:native:property#PatternBase:AttachmentSupport": "written",
                 "fcstd:native:property#PatternBase:ExpressionEngine": "regenerated",
                 "fcstd:native:property#PatternBase:Height": "regenerated",
                 "fcstd:native:property#PatternBase:Label": "regenerated",
@@ -1625,7 +1432,7 @@
                 "fcstd:native:property#PatternBase:Placement": "regenerated",
                 "fcstd:native:property#PatternBase:Refine": "regenerated",
                 "fcstd:native:property#PatternBase:Shape": "regenerated",
-                "fcstd:native:property#PatternBase:ShapeMaterial": "regenerated",
+                "fcstd:native:property#PatternBase:ShapeMaterial": "written",
                 "fcstd:native:property#PatternBase:Suppressed": "regenerated",
                 "fcstd:native:property#PatternBase:Visibility": "regenerated",
                 "fcstd:native:property#PatternBase:Width": "regenerated",
@@ -1636,7 +1443,7 @@
                 "fcstd:native:property#PatternBody:Label": "regenerated",
                 "fcstd:native:property#PatternBody:Label2": "regenerated",
                 "fcstd:native:property#PatternBody:Shape": "regenerated",
-                "fcstd:native:property#PatternBody:ShapeMaterial": "regenerated",
+                "fcstd:native:property#PatternBody:ShapeMaterial": "written",
                 "fcstd:native:property#PatternBody:Tip": "regenerated",
                 "fcstd:native:property#PatternBody:Visibility": "regenerated",
                 "fcstd:native:property#PatternBody:_ElementMapVersion": "written",
@@ -1648,18 +1455,19 @@
                 "fcstd:native:property#Revolution:Label": "regenerated",
                 "fcstd:native:property#Revolution:Label2": "regenerated",
                 "fcstd:native:property#Revolution:Shape": "regenerated",
-                "fcstd:native:property#Revolution:ShapeMaterial": "regenerated",
+                "fcstd:native:property#Revolution:ShapeMaterial": "written",
                 "fcstd:native:property#Revolution:Solid": "regenerated",
                 "fcstd:native:property#Revolution:Symmetric": "regenerated",
                 "fcstd:native:property#Revolution:Visibility": "regenerated",
                 "fcstd:native:property#Revolution:_ElementMapVersion": "written",
                 "fcstd:native:property#RevolutionProfile:ArcFitTolerance": "regenerated",
+                "fcstd:native:property#RevolutionProfile:AttacherEngine": "written",
                 "fcstd:native:property#RevolutionProfile:AttacherType": "regenerated",
                 "fcstd:native:property#RevolutionProfile:AttachmentOffset": "regenerated",
-                "fcstd:native:property#RevolutionProfile:AttachmentSupport": "regenerated",
+                "fcstd:native:property#RevolutionProfile:AttachmentSupport": "written",
                 "fcstd:native:property#RevolutionProfile:Constraints": "regenerated",
-                "fcstd:native:property#RevolutionProfile:Exports": "regenerated",
-                "fcstd:native:property#RevolutionProfile:ExternalTypes": "regenerated",
+                "fcstd:native:property#RevolutionProfile:Exports": "written",
+                "fcstd:native:property#RevolutionProfile:ExternalTypes": "written",
                 "fcstd:native:property#RevolutionProfile:FullyConstrained": "regenerated",
                 "fcstd:native:property#RevolutionProfile:Geometry": "regenerated",
                 "fcstd:native:property#RevolutionProfile:Label": "regenerated",
@@ -1670,7 +1478,7 @@
                 "fcstd:native:property#RevolutionProfile:MapReversed": "regenerated",
                 "fcstd:native:property#RevolutionProfile:Placement": "regenerated",
                 "fcstd:native:property#RevolutionProfile:Shape": "regenerated",
-                "fcstd:native:property#RevolutionProfile:ShapeMaterial": "regenerated",
+                "fcstd:native:property#RevolutionProfile:ShapeMaterial": "written",
                 "fcstd:native:property#RevolutionProfile:Visibility": "regenerated",
                 "fcstd:native:property#RevolutionProfile:_ElementMapVersion": "written",
                 "fcstd:native:property#RevolutionProfile:_ExternalGeoVersion": "regenerated",
@@ -1680,7 +1488,7 @@
                 "fcstd:native:property#Sweep:Linearize": "regenerated",
                 "fcstd:native:property#Sweep:Sections": "regenerated",
                 "fcstd:native:property#Sweep:Shape": "regenerated",
-                "fcstd:native:property#Sweep:ShapeMaterial": "regenerated",
+                "fcstd:native:property#Sweep:ShapeMaterial": "written",
                 "fcstd:native:property#Sweep:Solid": "regenerated",
                 "fcstd:native:property#Sweep:Spine": "regenerated",
                 "fcstd:native:property#Sweep:Transition": "regenerated",
@@ -1689,13 +1497,13 @@
                 "fcstd:native:property#SweepSection:Label": "regenerated",
                 "fcstd:native:property#SweepSection:Label2": "regenerated",
                 "fcstd:native:property#SweepSection:Placement": "regenerated",
-                "fcstd:native:property#SweepSection:ShapeMaterial": "regenerated",
+                "fcstd:native:property#SweepSection:ShapeMaterial": "written",
                 "fcstd:native:property#SweepSection:Visibility": "regenerated",
                 "fcstd:native:property#SweepSection:_ElementMapVersion": "written",
                 "fcstd:native:property#SweepSpine:Label": "regenerated",
                 "fcstd:native:property#SweepSpine:Label2": "regenerated",
                 "fcstd:native:property#SweepSpine:Placement": "regenerated",
-                "fcstd:native:property#SweepSpine:ShapeMaterial": "regenerated",
+                "fcstd:native:property#SweepSpine:ShapeMaterial": "written",
                 "fcstd:native:property#SweepSpine:Visibility": "regenerated",
                 "fcstd:native:property#SweepSpine:_ElementMapVersion": "written",
                 "fcstd:native:property#SymmetricExtrusion:Base": "regenerated",
@@ -1708,14 +1516,14 @@
                 "fcstd:native:property#SymmetricExtrusion:LengthFwd": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:LengthRev": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:Shape": "regenerated",
-                "fcstd:native:property#SymmetricExtrusion:ShapeMaterial": "regenerated",
+                "fcstd:native:property#SymmetricExtrusion:ShapeMaterial": "written",
                 "fcstd:native:property#SymmetricExtrusion:Solid": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:Symmetric": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:TaperAngle": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:Visibility": "regenerated",
                 "fcstd:native:property#SymmetricExtrusion:_ElementMapVersion": "written",
                 "fcstd:native:property#Thickness:ExpressionEngine": "regenerated",
-                "fcstd:native:property#Thickness:Faces": "regenerated",
+                "fcstd:native:property#Thickness:Faces": "written",
                 "fcstd:native:property#Thickness:Intersection": "regenerated",
                 "fcstd:native:property#Thickness:Join": "regenerated",
                 "fcstd:native:property#Thickness:Label": "regenerated",
@@ -1723,7 +1531,7 @@
                 "fcstd:native:property#Thickness:Mode": "regenerated",
                 "fcstd:native:property#Thickness:SelfIntersection": "regenerated",
                 "fcstd:native:property#Thickness:Shape": "regenerated",
-                "fcstd:native:property#Thickness:ShapeMaterial": "regenerated",
+                "fcstd:native:property#Thickness:ShapeMaterial": "written",
                 "fcstd:native:property#Thickness:Value": "regenerated",
                 "fcstd:native:property#Thickness:Visibility": "regenerated",
                 "fcstd:native:property#Thickness:_ElementMapVersion": "written",
@@ -1731,7 +1539,7 @@
                 "fcstd:native:property#ThicknessBase:Label2": "regenerated",
                 "fcstd:native:property#ThicknessBase:Placement": "regenerated",
                 "fcstd:native:property#ThicknessBase:Shape": "regenerated",
-                "fcstd:native:property#ThicknessBase:ShapeMaterial": "regenerated",
+                "fcstd:native:property#ThicknessBase:ShapeMaterial": "written",
                 "fcstd:native:property#ThicknessBase:Visibility": "regenerated",
                 "fcstd:native:property#ThicknessBase:_ElementMapVersion": "written",
                 "fcstd:native:property#XY_Plane001:Label": "regenerated",
