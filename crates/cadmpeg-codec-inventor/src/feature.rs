@@ -364,10 +364,16 @@ struct PmDcFeatureLabelPayloadWire {
     index: u32,
     participants: PmDcReferenceList,
     name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name_units"
+    )]
     name_units: Option<Vec<u16>>,
     class_id: String,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_name_units, Vec<u16>, "name_units");
 
 impl TryFrom<PmDcFeatureLabelPayloadWire> for PmDcFeatureLabelPayload {
     type Error = String;
