@@ -954,12 +954,10 @@ count mismatch or failed old-form index validation discards the list. The
 serialized record count is not the admitted list count when a nonpositive
 corner count is skipped.
 
-CADIR decision: neutral tessellation carries the mesh faces and their derived
-triangles but has no n-gon grouping field. A valid legacy list therefore
-contributes its admitted record count to the existing
-`mesh.ngon-grouping-dropped` loss; it does not alter the face triangles. An
-invalid or malformed list contributes no grouping count and leaves the mesh
-admissible.
+CADIR decision: each admitted legacy record supplies the face indices of one
+n-gon, without its `-1` suffix, to the triangle grouping of section 14. It
+does not alter the face triangles. An invalid or malformed list contributes no
+grouping and leaves the mesh admissible.
 
 When this item is attached to an `ON_Mesh` nested in a Brep render or analysis
 side, failure is local to the userdata item. A valid nested mesh class-data
@@ -1880,7 +1878,16 @@ present when their gates are met, and later bytes remain within the containing
 |   255 | unset              |
 
 Unit system `none` retains native coordinates at scale 1.0 and supplies no
-millimetre binding. Unit system `unset` supplies no coordinate scale.
+millimetre binding. Unit system `unset` supplies no coordinate scale. When the
+source reader finds no units record, it keeps the default settings, whose unit
+system is millimeters.
+
+CADIR object geometry and the annotation, grid, and render settings records
+of a document with unit system `none` or `unset` use the model coordinates at
+scale 1.0. The document then carries one
+`geometry.document-length-unit-undeclared` loss, which states that these
+lengths are not physical millimetres. A V1 archive without a units record uses
+millimeters.
 
 Unit values 23, 24, and 25 scale one stored unit to
 `149597870000000`, `9460730472580800000`, and `30856775800000000000`
@@ -1899,6 +1906,9 @@ f64 absolute tolerance
 f64 relative tolerance
 f64 angle tolerance
 ```
+
+V1 unit values 1 through 10 have the meanings of the table above. Every other
+V1 unit value, including 0, is unit system `none`.
 
 V1 geometry is a flat sequence. The object reader dispatches these direct
 record typecodes:
@@ -1921,7 +1931,29 @@ record typecodes:
 
 The five annotation and three pre-class NURBS records are complete bounded
 records. They are not split into legacy geometry children. A direct typecode
-outside this dispatch is skipped as one complete chunk. The containing direct
+outside this dispatch is skipped as one complete chunk.
+
+These V1 flat typecodes carry document, table, or presentation state. They
+carry no geometry:
+
+| Record | Typecode | Content |
+| --- | ---: | --- |
+| `TCODE_ANNOTATION_SETTINGS` | `0x00200001` | annotation settings |
+| `TCODE_LAYER` | `0x00400010` | one V1 layer with name, color, and state children |
+| `TCODE_RENDERMESHPARAMS` | `0x00400020` | render-mesh parameters |
+| `TCODE_CURRENTLAYER` | `0x80400025` | short chunk; current layer |
+| `TCODE_RH_SPOTLIGHT` | `0x00800001` | one spotlight with optional attribute data |
+| `TCODE_NAMED_CPLANE` | `0x02000004` | one named construction plane |
+| `TCODE_NAMED_VIEW` | `0x02000005` | one named view |
+| `TCODE_VIEWPORT` | `0x02000006` | one viewport |
+| `TCODE_NOTES` | `0x0200000f` | document notes |
+| `TCODE_SUMMARY` | `0x02000013` | revision history; CRC16 |
+| `TCODE_BITMAPPREVIEW` | `0x02000014` | preview image |
+
+The spotlight body starts with an origin point, X and Y axis vectors, and
+radius, height, and hotspot doubles. The light location is
+`origin + height × (X × Y)` and its direction is `−(X × Y)`, scaled by height
+when height is positive. The containing direct
 chunk is the recovery boundary when a dispatched payload is malformed; a
 partial child is not promoted to a typed record.
 
@@ -2944,9 +2976,16 @@ reader accepts major 1 and normalizes a dimension other than 2 or 3 to 3.
 Invalid dimensions are normalized to 3 by the payload rule. Radius and both
 intervals must be valid.
 
-A full circle uses the analytic representation when its angle and curve domain
-are `[0, 2π]` and the x-axis norm differs from one by less than `1e-10`.
-Otherwise the transfer uses the rational quadratic representation.
+`ON_ArcCurve` maps its curve domain linearly onto its angle interval: the
+parameter `t` in `[t0, t1]` evaluates the circle at angle
+`a0 + (t − t0)(a1 − a0)/(t1 − t0)`.
+
+A full circle uses the analytic representation when its angle interval and
+curve domain each span `2π`, each starts on a whole multiple of `2π`, and the
+x-axis norm differs from one by less than `1e-10`. The analytic parameter
+then equals the source parameter modulo `2π`. A Brep edge on such a carrier
+keeps its proxy interval shifted by whole turns so that the interval starts in
+`[0, 2π)`. Otherwise the transfer uses the rational quadratic representation.
 
 ### 12.5 Polyline curve
 
@@ -3015,16 +3054,22 @@ CADIR emits one compound procedural-curve record for the polycurve and one
 neutral carrier curve for each child. Child geometry is converted to
 millimetres; child and polycurve parameters, the reserved values, and the
 reserved bounds are not converted. The parent retains the source object
-record. A bounded child gap is represented by the midpoint join repair and
-emits its geometry warning; a malformed child or parameter array does not
-enter the typed compound record.
+record. Each child carrier keeps its own source endpoints, so a gap between
+adjacent children remains a gap between their carriers. A malformed child or
+parameter array does not enter the typed compound record.
 
 Conversion of a polycurve to one NURBS curve first maps each segment to its
 polycurve parameter interval. Each segment is endpoint-clamped. Segments of
-lower degree are elevated to the maximum segment degree. At each join, the last
-control point of the accumulated curve and the first control point of the next
-segment move to their midpoint. The first control point of the next segment is
-then omitted. The appended knots are translated by the difference between the
+lower degree are elevated to the maximum segment degree. At each join, the end
+of the accumulated curve and the start of the next segment must coincide under
+the `ON_PointsAreCoincident` rule: every coordinate pair differs by at most
+`ON_ZERO_TOLERANCE` (`2^-32`) or by at most `ON_RELATIVE_TOLERANCE` (`2^-42`)
+times the sum of their magnitudes. Otherwise the polycurve has no single NURBS
+conversion, and an owner that needs one (an extrusion profile, a surface
+profile, a nonuniformly placed instance curve, or a Brep C2 trim curve) does
+not admit that curve. The accumulated curve keeps its end control point. When
+the two endpoint weights are equal, the first control point of the next
+segment is omitted. The appended knots are translated by the difference between the
 accumulated end parameter and the next segment start parameter. The internal
 join has `degree` equal knots. The result has this identity:
 
@@ -3398,8 +3443,26 @@ Indices are little-endian unsigned values. A triangle is `[v0,v1,v2,v2]`; a
 quad is `[v0,v1,v2,v3]`. Neutral triangulation splits a quad along its shorter
 geometric diagonal; equal diagonals select `0-2`. A repeated quad vertex is
 removed before triangulation.
-Quad topology is not preserved in the neutral tessellation: every four-vertex
-face is transferred as two triangles, and the transfer is derived.
+Every four-vertex face is transferred as two consecutive triangles, and the
+transfer is derived. When the mesh has a four-vertex face or a grouped n-gon,
+the tessellation carries a triangle-group partition:
+
+| Group source ID | Triangles |
+| --- | --- |
+| `ngon:<record>` | the triangles of every face that n-gon record `<record>` lists |
+| `face:<index>` | the one or two triangles of face `<index>`, which no grouped n-gon lists |
+
+`<record>` is the zero-based n-gon record index and `<index>` is the
+zero-based face index. A face with fewer than three distinct vertices has no
+triangle and no group. The n-gon records group faces only when every listed
+face index is less than the face count and no face is listed twice; otherwise
+no n-gon is grouped and the mesh reports `mesh.ngon-grouping-dropped`. The
+n-gon boundary vertex list is the outer boundary of its faces and is not
+stored. A mesh whose faces are all triangles and that groups no n-gon carries
+no triangle groups.
+
+A `face:` group of two triangles `[a,b,c]` and `[a,c,d]`, or `[a,b,d]` and
+`[b,c,d]`, is the quad `[a,b,c,d]`.
 
 Major 1 follows the face array with raw counted arrays:
 
@@ -3442,10 +3505,10 @@ values whose casts equal the float vertex channel; rejected userdata leaves
 the float channel authoritative.
 
 Mesh objects in every archive band can carry the class-userdata item in
-section 7.2.4 when it remains attached. Its admitted record count reports
-source n-gon grouping; the mesh face table remains the neutral tessellation
-input. When both this item and the inline major-3 n-gon chunk are present, the
-inline count is authoritative for the neutral grouping loss.
+section 7.2.4 when it remains attached. Its admitted records supply the n-gon
+face lists of the triangle grouping; the mesh face table remains the neutral
+tessellation input. When both this item and a nonempty inline major-3 n-gon
+chunk are present, the inline records are authoritative.
 
 A top-level mesh object written from a runtime SubD in an archive below 60 can
 also carry the section 7.2.6 proxy item. Its parent-array counts and raw-array
@@ -3732,9 +3795,8 @@ byte per face; nonzero is followed by a polymorphic object which must be an
 count and exact f64-to-f32 cast checks apply to that nested mesh. These are
 cache channels and do not alter Brep topology.
 Any archive band can carry the `ON_V4V5_MeshNgonUserData` item from section
-7.2.4 on the nested mesh when it remains attached. Its admitted grouping count
-contributes the same neutral `mesh.ngon-grouping-dropped` loss; it does not
-alter Brep topology.
+7.2.4 on the nested mesh when it remains attached. Its admitted records group
+the nested mesh triangles in the same way; they do not alter Brep topology.
 Failure of that userdata item after a nested mesh class-data payload has been
 admitted is local to the item. The nested mesh remains a typed tessellation,
 the Brep side remains present, and no n-gon grouping is admitted. CADIR retains
@@ -4741,9 +4803,12 @@ minor >= 7: u8 double-vertices-present, optional double-vertex chunk
 minor >= 8: ON_BoundingBox vertex bounds
 ```
 
-The three minor-5 values are tri-state bytes: zero means unset, one means
-false, and two means true. Other values are invalid. They are not ordinary
-booleans.
+The three minor-5 values are cached topology states, not ordinary booleans.
+For manifold and oriented, zero means unset, one means true, and two means
+false. For solid, zero means unset, one means solid with outward face normals,
+two means solid with inward face normals, and three means not solid. A value
+above that range is an unset cache: the reader recomputes the state from the
+faces.
 
 The mapping tag is an anonymous major-1 chunk. Minor 1 adds the mapping type:
 

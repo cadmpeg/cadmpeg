@@ -1678,9 +1678,9 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             mesh.id
         )));
     }
-    if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
+    if !mesh.texture_assignments().is_empty() {
         return Err(CodecError::NotImplemented(format!(
-            "mesh {} uses triangle groups or texture assignments not yet writable",
+            "mesh {} uses texture assignments not yet writable",
             mesh.id
         )));
     }
@@ -2317,11 +2317,12 @@ fn mesh_payload(
         })?)
         .to_le_bytes(),
     );
+    let faces = mesh_faces(mesh).faces;
     payload.extend(
-        (i32::try_from(mesh.triangles().len()).map_err(|_| {
+        (i32::try_from(faces.len()).map_err(|_| {
             native_count_limit(
                 2_147_483_647,
-                cadmpeg_core::decode::u64_from_index(mesh.triangles().len()),
+                cadmpeg_core::decode::u64_from_index(faces.len()),
             )
         })?)
         .to_le_bytes(),
@@ -2351,8 +2352,8 @@ fn mesh_payload(
         })?)
         .to_le_bytes(),
     );
-    for triangle in mesh.triangles() {
-        for index in [triangle[0], triangle[1], triangle[2], triangle[2]] {
+    for face in &faces {
+        for index in *face {
             match width {
                 FaceIndexWidth::One => payload.push(u8::try_from(index).map_err(|_| {
                     CodecError::Malformed("mesh face index exceeds chosen width".into())
@@ -2448,6 +2449,71 @@ fn mesh_payload(
         body: payload,
         direct,
     })
+}
+
+/// Native mesh faces for one tessellation and the count of multi-triangle
+/// groups that no single native face represents.
+pub(crate) struct MeshFaces {
+    pub(crate) faces: Vec<[u32; 4]>,
+    pub(crate) flattened_groups: usize,
+}
+
+/// Writes each two-triangle `face:` group that splits one quad as that quad
+/// and every other triangle as a triangle face, in triangle order.
+pub(crate) fn mesh_faces(mesh: &cadmpeg_ir::tessellation::Tessellation) -> MeshFaces {
+    let triangles = mesh.triangles();
+    let mut quads = std::collections::BTreeMap::new();
+    let mut flattened_groups = 0;
+    for group in mesh.triangle_groups() {
+        let quad = match (group.source_id.as_deref(), group.triangles.as_slice()) {
+            (Some(source), [first, second])
+                if source.starts_with("face:") && second.checked_sub(*first) == Some(1) =>
+            {
+                usize::try_from(*first)
+                    .ok()
+                    .and_then(|first| {
+                        Some((first, triangles.get(first)?, triangles.get(first + 1)?))
+                    })
+                    .and_then(|(first, left, right)| Some((first, split_quad(*left, *right)?)))
+            }
+            _ => None,
+        };
+        match quad {
+            Some((first, quad)) => {
+                quads.insert(first, quad);
+            }
+            None if group.triangles.len() > 1 => flattened_groups += 1,
+            None => {}
+        }
+    }
+    let mut faces = Vec::with_capacity(triangles.len());
+    let mut index = 0;
+    while let Some(triangle) = triangles.get(index) {
+        if let Some(quad) = quads.get(&index) {
+            faces.push(*quad);
+            index += 2;
+        } else {
+            faces.push([triangle[0], triangle[1], triangle[2], triangle[2]]);
+            index += 1;
+        }
+    }
+    MeshFaces {
+        faces,
+        flattened_groups,
+    }
+}
+
+/// Recovers the quad `[a, b, c, d]` that the decoder splits into
+/// `[a, b, c] + [a, c, d]` or `[a, b, d] + [b, c, d]`.
+fn split_quad(left: [u32; 3], right: [u32; 3]) -> Option<[u32; 4]> {
+    let [a, b, third] = left;
+    if right[0] == a && right[1] == third {
+        Some([a, b, third, right[2]])
+    } else if right[0] == b && right[2] == third {
+        Some([a, b, right[1], third])
+    } else {
+        None
+    }
 }
 
 fn mesh_mapping_tag() -> Result<Vec<u8>, CodecError> {

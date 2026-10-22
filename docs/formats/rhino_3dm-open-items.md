@@ -504,27 +504,6 @@ must fail under the current disputed rule before that rule is changed.
 they do not close the selection questions because none supplies the competing
 candidate or boundary value that makes the arbitration observable.
 
-### PC-01. Polycurve endpoints moved to an invented midpoint
-
-**Question.** What neutral geometry can transfer from an `ON_PolyCurve` whose
-adjacent child endpoints do not agree?
-
-**Known.** `rhino_3dm.md` §12.6 states that the source validity rule rejects a
-gap between adjacent children. The same section defines a CADIR midpoint
-repair. `crates/cadmpeg-codec-rhino/src/curves.rs:912-931` computes the midpoint
-of every unequal adjacent endpoint pair, replaces the last control point of the
-preceding segment and the first control point of the next segment with that
-midpoint, and reports the distance moved. The joined neutral NURBS therefore
-contains neither source endpoint at that join.
-
-**Conflict.** The source object is invalid because it does not define one
-continuous join. The decoder creates a continuous curve by changing both
-source geometries and admits the result as the neutral carrier.
-
-**Need.** The answer keeps the ordered child carriers and their endpoint gap
-without claiming one continuous curve, or defines an explicit repaired
-geometry whose invented join and displacement remain queryable on that curve.
-The ordinary neutral carrier must not present the midpoint as source geometry.
 
 ### WR-01. Unspecified loop role selected from neutral list order
 
@@ -597,45 +576,22 @@ findings. If an integrity loss is recoverable enough for a successful check,
 its severity and strict consequence must say so instead of placing an ignored
 error in a successful report.
 
-### AR-01. Non-canonical arc NURBS form misses its arc parameterization
-
-**Question.** Which neutral carrier reproduces `ON_ArcCurve` evaluation at an
-arbitrary parameter when the arc is not a full circle on `[0, 2π]`?
-
-**Known.** `ON_ArcCurve::Evaluate` maps its domain linearly onto the arc
-angle. `curves.rs` `read_arc` keeps a neutral circle only for a full circle
-whose angle and domain are both `[0, 2π]`, and otherwise emits a rational
-quadratic NURBS whose knots span the native domain. The rational quadratic
-form is not linear in angle, so a point at an interior parameter differs from
-the arc point at the same parameter. A Brep edge whose proxy domain is a
-proper sub-interval of such an arc then misses its vertex: in the
-`flevodam_example.3dm` web file two edges on `[-2π, 0]` arcs miss by up to
-1260.79 model units, and the Brep topology falls back with
-`topology.brep-fallback`.
-
-**Need.** A carrier or parameter map that reproduces `ON_ArcCurve`
-evaluation for every domain and angle interval, applied to object curves,
-Brep C3 curves, and Brep C2 curves.
-
 ### OF-01. Built-in object families remain opaque
 
 **Question.** Which current built-in Rhino object classes must have a typed
 geometry or annotation transfer?
 
-**Known.** `decode.rs:789-843` dispatches classes through the current family
-predicates, while `decode.rs:2404-2415` groups every object that remains in the
-retained state under `object.family-not-transferred`. Current built-in records
-that reach that state include the legacy `TL_Brep` alias and ordinary `ON_Point`, `ON_LineCurve`, and `ON_ArcCurve` records. The V1 path
-also retains flat geometry typecodes `0x80400025`, `0x02000014`, `0x02000013`,
-`0x00400020`, `0x00200001`, `0x0200000f`, `0x00400010`, and `0x00800001`
-without neutral geometry. Some nonempty documents consequently produce no
-neutral geometry.
+**Known.** `decode.rs` dispatches classes through the current family
+predicates and groups every object that remains in the retained state under
+`object.family-not-transferred`. Current built-in records that reach that
+state include `TL_Brep` alias records that are members of an unexpanded
+instance definition. In `v2_Camera.3dm` the 54 old-polycurve
+(`EF638317-154B-11d4-8000-0010830122F0`) records decode, but each curve
+candidate reaches `object.framing-undecodable`.
 
-**Need.** Inventory each listed UUID and V1 typecode against its source class,
-then distinguish an unsupported dispatch from a failed supported decode and
-add the missing typed reader or repair the failing reader. Ordinary point,
-line, arc, and Brep aliases must reach their owning geometry decoder and leave
-the retained state for every valid versioned payload.
+**Need.** Add typed transfers for the listed annotation and instance classes,
+route the `TL_Brep` alias to the Brep decoder, and scope candidate admission
+so that findings on committed entities outside the candidate do not reject it.
 
 ### AN-01. Annotation RTF text has no plain-text fragment
 
@@ -652,24 +608,6 @@ text fragment.
 **Need.** The `ON_RtfParser` group, destination, control-word, `\uN`, and
 `\'hh` rules that produce the run text, so that the plain text comes from the
 same parse.
-
-### MS-01. Mesh face topology is reduced during decode
-
-**Question.** How can Rhino quadrilateral and n-gon face identity survive in
-neutral tessellation?
-
-**Known.** `decode.rs:3220-3260` always emits triangles with an empty
-`triangle_groups` array. It reports every quad through
-`mesh.quad-topology-triangulated` and every n-gon through
-`mesh.ngon-grouping-dropped`. A mesh with many quads produces one loss per
-mesh and no machine-readable relation from the emitted triangles back to the
-serialized face. Section 14 currently documents this reduction as the chosen
-transfer.
-
-**Need.** Preserve source face grouping for both quads and n-gons, including
-the selected quad diagonal, or add a neutral mesh-face carrier that keeps the
-original face topology. The loss report alone cannot reconstruct which
-triangles belonged to one source face.
 
 ### CT-01. Hatch fill and detail views have no neutral carrier
 
@@ -724,3 +662,45 @@ memory. This performance is not acceptable for an interactive check.
 affected references, or batch candidates and validate once before commit.
 Add a scaling benchmark that varies accumulated entity count and object count,
 with a regression ceiling for a document of this size and topology density.
+
+### UN-01. Unit-dependent records without a physical unit binding
+
+**Question.** Which CADIR length scale applies to a document without a
+physical unit binding, for every record family?
+
+**Known.** Object geometry and the annotation, grid, and render settings
+records use the model coordinates at scale 1.0 and the document carries one
+`geometry.document-length-unit-undeclared` loss. Named views, construction
+planes, viewport lists, lights, linetypes, hatch patterns, dimension styles,
+and annotation text still return their complete source records under
+`presentation.record-dropped` or `annotation.record-dropped` when the unit
+system is `none` or `unset`. A V2 or later archive without a units record is
+classified as `unset`.
+
+**Conflict.** `ON_3dmUnitsAndTolerances::Read` and the default
+`ON_3dmSettings` select millimeters when no units record is present. The
+codec reports such a document as having no usable unit system.
+
+**Need.** Apply the model-unit scale and the single document loss to the
+remaining presentation and annotation records, and bind a missing units
+record to the default millimetre system.
+
+### AR-01. Non-canonical arc NURBS form misses its arc parameterization
+
+**Question.** Which neutral carrier reproduces `ON_ArcCurve` evaluation at an
+arbitrary parameter when the arc is not a full circle whose angle and domain
+start on whole turns?
+
+**Known.** `ON_ArcCurve::Evaluate` maps its domain linearly onto the arc
+angle. `curves.rs` `read_arc` keeps a neutral circle for a full circle whose
+angle interval and domain each span `2π` and start on whole turns, and Brep
+edges on that carrier wrap their proxy interval into the first turn. Every
+other arc becomes a rational quadratic NURBS whose knots span the native
+domain. The rational quadratic form is not linear in angle, so a point at an
+interior parameter differs from the arc point at the same parameter. A Brep
+edge whose proxy domain is a proper sub-interval of such an arc then misses
+its vertex.
+
+**Need.** A carrier or parameter map that reproduces `ON_ArcCurve`
+evaluation for partial arcs and for full circles with a phase offset, applied
+to object curves, Brep C3 curves, and Brep C2 curves.

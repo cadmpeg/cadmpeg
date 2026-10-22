@@ -18,7 +18,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteBinary32;
-use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
+use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel, TessellationTriangleGroup};
 use sha1::{Digest, Sha1};
 
 use crate::chunks::{
@@ -162,9 +162,9 @@ pub(crate) struct DecodedMesh {
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Whether source coordinates were converted to millimeters.
     pub(crate) scaled: bool,
-    /// Number of stored n-gon group records not represented in the IR.
-    pub(crate) ngon_count: usize,
-    /// Number of stored quadrilateral faces converted to neutral triangles.
+    /// Number of stored n-gon records whose face grouping is not represented.
+    pub(crate) dropped_ngons: usize,
+    /// Number of stored quadrilateral faces split into two neutral triangles.
     pub(crate) quad_count: usize,
     /// Native mesh arrays used to validate an attached `SubD` proxy.
     pub(crate) proxy_fingerprint: Option<MeshProxyFingerprint>,
@@ -215,6 +215,11 @@ struct MeshChannels {
     warnings: Diagnostics,
     losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
+
+/// The serialized topology caches after the mapping tag: manifold and
+/// oriented are 0 unset, 1 true, 2 false; solid is 0 unset, 1 outward, 2
+/// inward, 3 not solid.
+const MESH_TOPOLOGY_CACHE_FLAGS: [(&str, u8); 3] = [("manifold", 2), ("oriented", 2), ("solid", 3)];
 
 /// Returns whether a UUID is `ON_Mesh`.
 pub(crate) fn supported_class(uuid: Uuid) -> bool {
@@ -298,7 +303,8 @@ pub(crate) fn decode(
         }
     }
     let faces = read_faces(&mut reader, vertex_count, face_count)?;
-    let mut ngon_count = 0;
+    let mut ngons = Vec::new();
+    let mut unusable_ngons = 0;
     if major == 1 {
         read_raw_channels(
             expand.ctx(),
@@ -346,17 +352,17 @@ pub(crate) fn decode(
     if post_2006_fields {
         read_mapping_tag(&mut reader, archive, &mut decoded.warnings)?;
         if minor >= 5 {
-            for _ in 0..3 {
+            for (label, maximum) in MESH_TOPOLOGY_CACHE_FLAGS {
                 let value = reader.u8()?;
-                if value > 2 {
-                    decoded
-                        .warnings
-                        .push("invalid mesh tri-state flag retained".to_string());
+                if value > maximum {
+                    decoded.warnings.push(format_args!(
+                        "mesh {label} cache value {value} is outside 0..={maximum}; retained as unset"
+                    ));
                 }
             }
         }
         if minor >= 6 && reader.bool_with_writer_version(writer_version)? {
-            ngon_count = read_ngons(
+            ngons = read_ngons(
                 &mut reader,
                 archive,
                 vertex_count,
@@ -417,7 +423,7 @@ pub(crate) fn decode(
             }
         }
     }
-    if ngon_count == 0 {
+    if ngons.is_empty() {
         if let Some(extra) = userdata
             .iter()
             .filter_map(UserdataDescriptor::known)
@@ -429,7 +435,11 @@ pub(crate) fn decode(
             })
         {
             match read_v4v5_ngon_userdata(data, extra, archive, vertex_count, face_count) {
-                Ok(Some(count)) => ngon_count = count,
+                Ok(Some(V4V5Ngons {
+                    records,
+                    indices_valid: true,
+                })) => ngons = records,
+                Ok(Some(V4V5Ngons { records, .. })) => unusable_ngons = records.len(),
                 Ok(None) => decoded.warnings.push(format_args!(
                     "V4/V5 mesh n-gon userdata at offset {} was rejected; grouping omitted",
                     extra.range.start
@@ -539,7 +549,11 @@ pub(crate) fn decode(
         }
     }
     let quad_count = quad_face_count(&faces);
-    let triangles = triangulate_faces(&faces, &vertices, FinitePoint3::get)?;
+    let FaceTriangles {
+        triangles,
+        groups,
+        dropped_ngons,
+    } = triangulate_faces(&faces, &vertices, FinitePoint3::get, &ngons)?;
     let id = id.into_tessellation_id()?;
     Ok(DecodedMesh {
         tessellation: Tessellation::from_parts(
@@ -553,11 +567,13 @@ pub(crate) fn decode(
             decoded.channels,
         )
         .map_err(|err| error(reader.position(), err.to_string()))?
+        .with_triangle_groups(groups)
+        .map_err(|err| error(reader.position(), err.to_string()))?
         .with_source_object(association),
         warnings: decoded.warnings,
         losses: decoded.losses,
         scaled: scale != MillimeterScale::IDENTITY,
-        ngon_count,
+        dropped_ngons: dropped_ngons + unusable_ngons,
         quad_count,
         proxy_fingerprint,
     })
@@ -697,52 +713,127 @@ fn read_faces(
     Ok(result)
 }
 
+/// Neutral triangles for serialized mesh faces and the partition of those
+/// triangles by source face or n-gon.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FaceTriangles {
+    pub(crate) triangles: Vec<[u32; 3]>,
+    /// Empty when every face is one triangle and no n-gon is grouped.
+    pub(crate) groups: Vec<TessellationTriangleGroup>,
+    /// N-gon records that could not group their faces.
+    pub(crate) dropped_ngons: usize,
+}
+
+/// Triangulates mesh faces. A quad splits along its shorter diagonal. When a
+/// quad or an n-gon is present, each n-gon becomes one group of the triangles
+/// of its faces (`ngon:<record>`) and each other face becomes one group of its
+/// own triangles (`face:<index>`). The n-gon lists group faces only when every
+/// listed face exists and no face is listed twice.
 pub(crate) fn triangulate_faces<P: Copy>(
     faces: &[[u32; 4]],
     vertices: &[P],
     point: impl Fn(P) -> Point3,
-) -> Result<Vec<[u32; 3]>, GeometryError> {
+    ngons: &[Vec<u32>],
+) -> Result<FaceTriangles, GeometryError> {
+    let vertex = |index: u32| -> Result<Point3, GeometryError> {
+        let index = usize::try_from(index).map_err(|_| {
+            GeometryError::unpositioned("mesh count or index exceeds address space")
+        })?;
+        vertices
+            .get(index)
+            .copied()
+            .map(&point)
+            .ok_or_else(|| GeometryError::unpositioned("mesh face index out of range"))
+    };
     let mut triangles = Vec::new();
+    let mut face_ranges = Vec::new();
+    let mut has_quad = false;
     for face in faces {
-        if unique_face_vertices(face) == 3 {
-            let mut unique = [0_u32; 3];
-            let mut count = 0;
-            for index in face {
-                if !unique[..count].contains(index) {
-                    unique[count] = *index;
-                    count += 1;
+        let start = triangles.len();
+        match unique_face_vertices(face) {
+            3 => {
+                let mut unique = [0_u32; 3];
+                let mut count = 0;
+                for index in face {
+                    if !unique[..count].contains(index) {
+                        unique[count] = *index;
+                        count += 1;
+                    }
+                }
+                triangles.push([unique[0], unique[1], unique[2]]);
+            }
+            4 => {
+                has_quad = true;
+                let diagonal_02 = vertex(face[0])?.distance(vertex(face[2])?);
+                let diagonal_13 = vertex(face[1])?.distance(vertex(face[3])?);
+                if diagonal_02 <= diagonal_13 {
+                    triangles.extend([[face[0], face[1], face[2]], [face[0], face[2], face[3]]]);
+                } else {
+                    triangles.extend([[face[0], face[1], face[3]], [face[1], face[2], face[3]]]);
                 }
             }
-            triangles.push([unique[0], unique[1], unique[2]]);
-        } else if unique_face_vertices(face) == 4 {
-            let diagonal_02 = point(
-                vertices[usize::try_from(face[0]).map_err(|_| {
-                    GeometryError::unpositioned("mesh count or index exceeds address space")
-                })?],
-            )
-            .distance(point(
-                vertices[usize::try_from(face[2]).map_err(|_| {
-                    GeometryError::unpositioned("mesh count or index exceeds address space")
-                })?],
-            ));
-            let diagonal_13 = point(
-                vertices[usize::try_from(face[1]).map_err(|_| {
-                    GeometryError::unpositioned("mesh count or index exceeds address space")
-                })?],
-            )
-            .distance(point(
-                vertices[usize::try_from(face[3]).map_err(|_| {
-                    GeometryError::unpositioned("mesh count or index exceeds address space")
-                })?],
-            ));
-            if diagonal_02 <= diagonal_13 {
-                triangles.extend([[face[0], face[1], face[2]], [face[0], face[2], face[3]]]);
-            } else {
-                triangles.extend([[face[0], face[1], face[3]], [face[1], face[2], face[3]]]);
+            _ => {}
+        }
+        face_ranges.push(start..triangles.len());
+    }
+    let mut owner = std::iter::repeat_with(|| None)
+        .take(faces.len())
+        .collect::<Vec<Option<usize>>>();
+    let mut dropped_ngons = 0;
+    'ngons: for (record, ngon) in ngons.iter().enumerate() {
+        for face in ngon {
+            let slot = usize::try_from(*face)
+                .ok()
+                .and_then(|face| owner.get_mut(face));
+            match slot {
+                Some(slot @ None) => *slot = Some(record),
+                _ => {
+                    owner.fill(None);
+                    dropped_ngons = ngons.len();
+                    break 'ngons;
+                }
             }
         }
     }
-    Ok(triangles)
+    let grouped_ngons = ngons.len() - dropped_ngons;
+    let mut groups = Vec::new();
+    if has_quad || grouped_ngons != 0 {
+        let mut ngon_members = std::iter::repeat_with(Vec::new)
+            .take(ngons.len())
+            .collect::<Vec<Vec<u32>>>();
+        for (face, range) in face_ranges.iter().enumerate() {
+            let ordinals = range
+                .clone()
+                .map(|ordinal| {
+                    u32::try_from(ordinal)
+                        .map_err(|_| GeometryError::unpositioned("mesh triangle count exceeds u32"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            match owner[face] {
+                Some(record) => ngon_members[record].extend(ordinals),
+                None if !ordinals.is_empty() => groups.push(TessellationTriangleGroup {
+                    source_id: Some(format!("face:{face}")),
+                    triangles: ordinals,
+                }),
+                None => {}
+            }
+        }
+        for (record, mut members) in ngon_members.into_iter().enumerate() {
+            if members.is_empty() {
+                continue;
+            }
+            members.sort_unstable();
+            groups.push(TessellationTriangleGroup {
+                source_id: Some(format!("ngon:{record}")),
+                triangles: members,
+            });
+        }
+    }
+    Ok(FaceTriangles {
+        triangles,
+        groups,
+        dropped_ngons,
+    })
 }
 
 fn quad_face_count(faces: &[[u32; 4]]) -> usize {
@@ -1127,7 +1218,7 @@ fn read_ngons(
     vertices: usize,
     faces: usize,
     warnings: &mut Diagnostics,
-) -> Result<usize, GeometryError> {
+) -> Result<Vec<Vec<u32>>, GeometryError> {
     let chunk = chunk_at(
         reader.backing_bytes(),
         reader.position(),
@@ -1147,24 +1238,28 @@ fn read_ngons(
         ));
     }
     let count = checked_u32(&mut child, 1 << 20)?;
-
+    let mut records = Vec::new();
     for _ in 0..count {
+        let mut record = Vec::new();
         let boundary = checked_u32(&mut child, vertices)?;
-        if boundary == 0 {
-            continue;
+        if boundary != 0 {
+            let face_count = checked_u32(&mut child, faces)?;
+            for _ in 0..boundary {
+                checked_u32(&mut child, vertices)?;
+            }
+            for _ in 0..face_count {
+                record.push(mesh_index(checked_u32(&mut child, faces)?)?);
+            }
         }
-        let face_count = checked_u32(&mut child, faces)?;
-
-        for _ in 0..boundary {
-            checked_u32(&mut child, vertices)?;
-        }
-        for _ in 0..face_count {
-            checked_u32(&mut child, faces)?;
-        }
+        records.push(record);
     }
     child.skip_remaining()?;
     reader.skip(chunk.next_offset() - reader.position())?;
-    Ok(count)
+    Ok(records)
+}
+
+fn mesh_index(value: usize) -> Result<u32, GeometryError> {
+    u32::try_from(value).map_err(|_| GeometryError::unpositioned("mesh index exceeds u32"))
 }
 
 fn read_mapping_tag(
@@ -1369,7 +1464,7 @@ fn read_v4v5_ngon_userdata(
     archive: ArchiveVersion,
     vertex_count: usize,
     face_count: usize,
-) -> Result<Option<usize>, GeometryError> {
+) -> Result<Option<V4V5Ngons>, GeometryError> {
     let chunk = chunk_at(
         data,
         extra.payload_range.start,
@@ -1401,7 +1496,10 @@ fn read_v4v5_ngon_userdata(
     let raw_count = reader.i32()?;
     if raw_count <= 0 {
         reader.skip_remaining()?;
-        return Ok(Some(0));
+        return Ok(Some(V4V5Ngons {
+            records: Vec::new(),
+            indices_valid: true,
+        }));
     }
     let count = usize::try_from(raw_count)
         .ok()
@@ -1412,7 +1510,7 @@ fn read_v4v5_ngon_userdata(
         .map_err(|_| error(reader.position(), "mesh face count exceeds i32"))?;
     let mesh_vertex_count = i32::try_from(vertex_count)
         .map_err(|_| error(reader.position(), "mesh vertex count exceeds i32"))?;
-    let mut record_count = 0;
+    let mut records = Vec::new();
     let mut valid_indices = true;
     for _ in 0..count {
         let raw_corner_count = reader.i32()?;
@@ -1434,15 +1532,22 @@ fn read_v4v5_ngon_userdata(
             valid_indices &= vertex >= 0 && vertex < mesh_vertex_count;
         }
         let mut unused_faces = false;
+        let mut record = Vec::new();
         for _ in 0..corner_count {
             let face = reader.i32()?;
             if face == -1 {
                 unused_faces = true;
-            } else if unused_faces || face < 0 || face >= mesh_face_count {
+                continue;
+            }
+            if unused_faces || face >= mesh_face_count {
                 valid_indices = false;
             }
+            match u32::try_from(face) {
+                Ok(face) => record.push(face),
+                Err(_) => valid_indices = false,
+            }
         }
-        record_count += 1;
+        records.push(record);
     }
     let stored_face_count = if minor >= 1 { reader.i32()? } else { 0 };
     let stored_vertex_count = if minor >= 1 { reader.i32()? } else { 0 };
@@ -1456,7 +1561,18 @@ fn read_v4v5_ngon_userdata(
     if !valid {
         return Ok(None);
     }
-    Ok(Some(record_count))
+    Ok(Some(V4V5Ngons {
+        records,
+        indices_valid: valid_indices,
+    }))
+}
+
+/// Admitted V4/V5 n-gon records. A list admitted by its stored mesh counts
+/// can still name faces outside the mesh; it then groups no faces.
+#[derive(Debug, PartialEq, Eq)]
+struct V4V5Ngons {
+    records: Vec<Vec<u32>>,
+    indices_valid: bool,
 }
 
 fn consume_optional_chunk(
@@ -1631,8 +1747,9 @@ mod tests {
             Point3::new(0.0, 1.0e200, 0.0),
         ];
         assert_eq!(
-            super::triangulate_faces(&[[0, 1, 2, 3]], &vertices, |point| point)
-                .expect("one quad triangulates"),
+            super::triangulate_faces(&[[0, 1, 2, 3]], &vertices, |point| point, &[])
+                .expect("one quad triangulates")
+                .triangles,
             vec![[0, 1, 3], [1, 2, 3]]
         );
     }
@@ -1647,9 +1764,9 @@ mod tests {
     use super::{
         consume_optional_chunk, decode, parse_f32_points, parse_mesh_correspondence_userdata,
         quad_face_count, read_buffer, read_faces, read_mapping_tag, read_ngons,
-        read_v4v5_ngon_userdata, synchronization_ok, triangulate_faces, MeshBudget, MeshBufferSpec,
-        MeshDecodeOptions, MeshExpand, MAX_BUFFER_OUTPUT, OPENNURBS4, V4V5_MESH_NGON_USERDATA,
-        V5_MESH_DOUBLE_VERTICES,
+        read_v4v5_ngon_userdata, synchronization_ok, triangulate_faces, DecodedMesh, MeshBudget,
+        MeshBufferSpec, MeshDecodeOptions, MeshExpand, MAX_BUFFER_OUTPUT, OPENNURBS4,
+        V4V5_MESH_NGON_USERDATA, V5_MESH_DOUBLE_VERTICES,
     };
     use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
     use crate::curves::GeometryError;
@@ -1976,6 +2093,70 @@ mod tests {
         }));
     }
 
+    fn ngon_groups(decoded: &DecodedMesh) -> usize {
+        decoded
+            .tessellation
+            .triangle_groups()
+            .iter()
+            .filter(|group| {
+                group
+                    .source_id
+                    .as_deref()
+                    .is_some_and(|id| id.starts_with("ngon:"))
+            })
+            .count()
+    }
+
+    fn minor_five_mesh_with_topology_caches(caches: [u8; 3]) -> DecodedMesh {
+        let mut bytes = compressed_mesh();
+        bytes[0] = 0x35;
+        bytes.extend(0_i32.to_le_bytes());
+        bytes.extend([0_u8; 16]);
+        bytes.extend(0_u32.to_le_bytes());
+        let mut mapping = 1_i32.to_le_bytes().to_vec();
+        mapping.extend(0_i32.to_le_bytes());
+        mapping.extend([0_u8; 16]);
+        mapping.extend(0_i32.to_le_bytes());
+        for _ in 0..16 {
+            mapping.extend(0.0_f64.to_le_bytes());
+        }
+        bytes.extend(chunk(&mapping));
+        bytes.extend(caches);
+        with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: Some(200_606_010),
+                    association: None,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#topology-caches",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
+                    userdata: &[],
+                },
+                &mut MeshBudget::new(),
+            )
+        })
+        .expect("minor-5 mesh")
+    }
+
+    #[test]
+    fn mesh_topology_caches_admit_the_not_solid_state() {
+        let decoded = minor_five_mesh_with_topology_caches([2, 2, 3]);
+        assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
+        let decoded = minor_five_mesh_with_topology_caches([3, 0, 4]);
+        let messages = decoded.warnings.messages().collect::<Vec<_>>();
+        assert_eq!(messages.len(), 2, "{messages:?}");
+        assert!(messages[0].contains("manifold cache value 3"));
+        assert!(messages[1].contains("solid cache value 4"));
+    }
+
     #[test]
     fn v5_double_userdata_restores_exact_vertices_without_crc_admission() {
         let delta = 2_f64.powi(-25);
@@ -2082,7 +2263,7 @@ mod tests {
             )
         })
         .expect("legacy n-gon userdata mesh");
-        assert_eq!(decoded.ngon_count, 1);
+        assert_eq!(ngon_groups(&decoded), 1);
         assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
     }
 
@@ -2093,7 +2274,10 @@ mod tests {
         let extra = descriptor.known().expect("known n-gon userdata");
         assert_eq!(
             read_v4v5_ngon_userdata(&bytes, extra, ArchiveVersion::V5, 3, 1).expect("one n-gon"),
-            Some(1)
+            Some(super::V4V5Ngons {
+                records: vec![vec![0]],
+                indices_valid: true,
+            })
         );
     }
 
@@ -2132,7 +2316,7 @@ mod tests {
             )
         })
         .expect("later-band legacy n-gon userdata mesh");
-        assert_eq!(decoded.ngon_count, 1);
+        assert_eq!(ngon_groups(&decoded), 1);
     }
 
     #[test]
@@ -2170,7 +2354,7 @@ mod tests {
             )
         })
         .expect("old legacy n-gon userdata mesh");
-        assert_eq!(decoded.ngon_count, 1);
+        assert_eq!(ngon_groups(&decoded), 1);
     }
 
     #[test]
@@ -2208,7 +2392,7 @@ mod tests {
             )
         })
         .expect("float mesh survives invalid legacy n-gon userdata");
-        assert_eq!(decoded.ngon_count, 0);
+        assert_eq!(ngon_groups(&decoded), 0);
         assert!(decoded
             .warnings
             .iter()
@@ -2250,7 +2434,7 @@ mod tests {
             )
         })
         .expect("float mesh survives invalid old legacy n-gon userdata");
-        assert_eq!(decoded.ngon_count, 0);
+        assert_eq!(ngon_groups(&decoded), 0);
         assert!(decoded
             .warnings
             .iter()
@@ -2294,7 +2478,7 @@ mod tests {
             )
         })
         .expect("float mesh survives corrupt legacy n-gon userdata");
-        assert_eq!(decoded.ngon_count, 0);
+        assert_eq!(ngon_groups(&decoded), 0);
         assert!(decoded
             .warnings
             .iter()
@@ -2877,11 +3061,46 @@ mod tests {
             Point3::new(1.0, 1.0, 0.0),
         ];
         assert_eq!(
-            triangulate_faces(&[[0, 1, 2, 3], [0, 1, 2, 2]], &vertices, |point| point)
-                .expect("quad and triangle triangulate"),
+            triangulate_faces(&[[0, 1, 2, 3], [0, 1, 2, 2]], &vertices, |point| point, &[])
+                .expect("quad and triangle triangulate")
+                .triangles,
             vec![[0, 1, 3], [1, 2, 3], [0, 1, 2]]
         );
         assert_eq!(quad_face_count(&[[0, 1, 2, 3], [0, 1, 2, 2]]), 1);
+    }
+
+    #[test]
+    fn quad_and_ngon_faces_partition_their_triangles() {
+        let vertices = vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(2.0, 2.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+        ];
+        let faces = [[0, 1, 2, 3], [0, 1, 2, 2], [0, 0, 1, 1]];
+        let group = |source: &str, triangles: Vec<u32>| super::TessellationTriangleGroup {
+            source_id: Some(source.to_owned()),
+            triangles,
+        };
+        let triangulate = |ngons: &[Vec<u32>]| {
+            triangulate_faces(&faces, &vertices, |point| point, ngons).expect("triangulate")
+        };
+        let plain = triangulate(&[]);
+        assert_eq!(
+            plain.groups,
+            vec![group("face:0", vec![0, 1]), group("face:1", vec![2])]
+        );
+        let grouped = triangulate(&[vec![1, 0]]);
+        assert_eq!(grouped.groups, vec![group("ngon:0", vec![0, 1, 2])]);
+        assert_eq!(grouped.dropped_ngons, 0);
+        for invalid in [vec![vec![0, 0]], vec![vec![0], vec![0]], vec![vec![3]]] {
+            let dropped = triangulate(&invalid);
+            assert_eq!(dropped.groups, plain.groups);
+            assert_eq!(dropped.dropped_ngons, invalid.len());
+        }
+        let triangles_only = triangulate_faces(&[[0, 1, 2, 2]], &vertices, |point| point, &[])
+            .expect("one triangle");
+        assert!(triangles_only.groups.is_empty());
     }
 
     #[test]
