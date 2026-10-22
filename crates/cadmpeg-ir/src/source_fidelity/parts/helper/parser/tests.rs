@@ -237,3 +237,44 @@ fn parser_handoff_cannot_bypass_the_typed_dependency_visitor_budget() {
         Err(CodecError::ResourceLimit(_))
     ));
 }
+
+/// Retained bytes charged to run one child part, given up or decoded, at the
+/// root output or inside a parser scope.
+fn child_part_cost(scoped: bool, give_up: bool) -> u64 {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"ABCD", &arena, &DecodePolicy::default()).expect("root");
+    let child = root.child(0, 2).expect("member");
+    let before = ctx.retained_bytes_available();
+    let mut output = ParserPartOutput::new(CodecFormat::Fcstd);
+    let run = |parent: &mut ParserPartOutput| {
+        ctx.decode_parser_part(parent, child, spec("zip.entry", child), || {
+            if give_up {
+                Err(CodecError::malformed("unreadable member"))
+            } else {
+                Ok(())
+            }
+        })
+        .map(|_| ())
+    };
+    if scoped {
+        ctx.decode_parser_scope(&mut output, root, spec("zip.archive", root), run)
+            .expect("scope")
+            .expect("scope decoded");
+    } else {
+        run(&mut output).expect("child part");
+    }
+    let charged = before - ctx.retained_bytes_available();
+    drop(output);
+    charged
+}
+
+#[test]
+fn a_child_given_up_inside_a_parser_scope_is_charged_once_at_the_root() {
+    let at_root = child_part_cost(false, true) - child_part_cost(false, false);
+    assert!(at_root > 0);
+    assert_eq!(
+        child_part_cost(true, true) - child_part_cost(true, false),
+        at_root
+    );
+}
