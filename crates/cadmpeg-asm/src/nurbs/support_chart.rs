@@ -89,6 +89,23 @@ impl NativeChart {
     }
 }
 
+/// The native chart of a standalone `plane` record: its v-sense and stored
+/// reference-vector length. Absent for another record, or for a plane whose
+/// fields do not parse.
+#[must_use]
+pub fn plane_record_chart(head: &str, tokens: &[Token]) -> Option<NativeChart> {
+    if head != "plane" {
+        return None;
+    }
+    match SupportChart::of_surface_record(head, tokens)? {
+        SupportChart::Native {
+            chart: chart @ NativeChart::Plane { .. },
+            ..
+        } => Some(chart),
+        _ => None,
+    }
+}
+
 fn sense_sign(reversed: bool) -> f64 {
     if reversed {
         -1.0
