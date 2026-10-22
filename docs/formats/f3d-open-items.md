@@ -305,6 +305,14 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** Cylindrical, pin-slot, planar, and ball joints combine freedoms. A joint with only one limit needs the flag that enables it.
 
+### DR-83. Attributed occurrence members
+
+**Question.** What do the two bytes before the occurrence ordinal and the marked record reference after the occurrence key of an attributed local component occurrence store?
+
+**Known.** `f3d.md` §3.1 "An attributed local component occurrence" gives the frame. The two bytes are `00 00` in most frames and `01 00` in one. The reference names a different record in each frame, in increasing order.
+
+**Need.** The two bytes can be a grounding or visibility state of the occurrence.
+
 ### XR-01. `neutronData` with a different GUID
 
 **Question.** What does `neutronData` mean when its GUID is different from the `neutronRole` GUID?

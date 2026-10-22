@@ -260,10 +260,9 @@ fn negative_cone_face_pcurve_is_written_in_reversed_chart() {
     .expect("write cone pcurve");
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains("PCURVE("));
-    assert!(text.contains("CURVE_REPLICA("));
-    assert!(text.contains("CARTESIAN_TRANSFORMATION_OPERATOR_2D("));
-    assert!(text.contains("DIRECTION('',(-1.,0.))"));
-    assert!(text.contains("DIRECTION('',(0.,-1.))"));
+    // The half-turn of the chart is applied to the pcurve itself.
+    assert!(!text.contains("CURVE_REPLICA("));
+    assert!(!text.contains("CARTESIAN_TRANSFORMATION_OPERATOR_2D("));
     assert!(!report
         .losses
         .iter()

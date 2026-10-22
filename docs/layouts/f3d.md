@@ -1541,7 +1541,7 @@ Parsed by:
 
 Spec §Assembly operands · layout: byte offsets · size: 26 B
 
-Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, and offset 358 in the 633-, 732-, and 744-byte forms.
+Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 526 in the 850-byte form.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
@@ -1562,6 +1562,9 @@ Cross-checked against code:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The 633-byte compact assembly form uses the two tabulated scope-relative locator-reference offsets.
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The 732-byte compact assembly form uses the two tabulated scope-relative locator-reference offsets.
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The class-430/262 744-byte Assemble form uses the compact locator-reference offsets.
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The 945-byte wide Assemble form stores its locator references after the count at offset 537.
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The 806- and 861-byte compact wide Assemble forms store their locator references after the count at offset 530.
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The 850-byte compact wide Assemble form stores its locator references after the count at offset 526.
 
 ## `assembly_as_built_421_scope`
 
@@ -5194,6 +5197,27 @@ Spec §3.1 · layout: byte offsets · size: 109 B
 | 86 | 11 | `third_companion` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
 | 97 | 11 | `closing_self_reference` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
 | 108 | 1 | `zero_tail` | `u8` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+
+## `assembly_compact_wide_scope`
+
+Spec §Assembly operands · layout: byte offsets · size: not stated
+
+This size-less byte record describes the fixed operand prefix of the 806-, 850- and 861-byte scopes. Offsets are relative to the scope's primary indexed header; an LP-UTF16 GUID follows each transform.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_frames.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The 806-, 850- and 861-byte `Assemble` scopes use the compact wide |
+| 11 | 21 | `zero_run_21` | `bytes[21]` | little | spec | Bytes 11 through 31 are zero |
+| 32 | 11 | `first_operand_reference` | `bytes[11]` | little | spec | the operand references are at offsets 32 and 254 |
+| 43 | 7 | `first_reference_zero_run` | `bytes[7]` | little | spec | seven zero bytes follow each reference |
+| 50 | 128 | `first_operand_transform` | `f64[16]` | little | spec | row-major transforms start at offsets 50 and 272 |
+| 178 | 76 | `first_operand_guid` | `bytes[76]` | little | spec | an LP-UTF16 GUID follows each transform |
+| 254 | 11 | `second_operand_reference` | `bytes[11]` | little | spec | the operand references are at offsets 32 and 254 |
+| 265 | 7 | `second_reference_zero_run` | `bytes[7]` | little | spec | seven zero bytes follow each reference |
+| 272 | 128 | `second_operand_transform` | `f64[16]` | little | spec | row-major transforms start at offsets 50 and 272 |
 
 ## Not tabulated
 

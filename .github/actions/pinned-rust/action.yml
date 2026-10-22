@@ -32,3 +32,10 @@ runs:
       with:
         toolchain: ${{ steps.toolchain.outputs.channel }}
         components: ${{ steps.toolchain.outputs.components }}
+    - name: Remove other toolchains
+      # rust-cache hashes every installed toolchain into its key; the runner
+      # image's own stable toolchain would change the key with each image.
+      shell: bash
+      env:
+        PINNED: ${{ steps.toolchain.outputs.channel }}
+      run: rustup toolchain list --quiet | awk '{print $1}' | { grep -v "^${PINNED}-" || true; } | xargs -r -n1 rustup toolchain uninstall

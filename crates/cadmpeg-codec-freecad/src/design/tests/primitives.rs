@@ -976,7 +976,7 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
     assert!(matches!(
         feature("Box"),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive {
-            solid, op: cadmpeg_ir::features::BooleanOp::NewBody }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Box {
+            solid, placement: None, op: cadmpeg_ir::features::BooleanOp::NewBody }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Box {
                 length: actual_length,
                 width: actual_width,
                 height: actual_height,
@@ -985,7 +985,7 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
     assert!(matches!(
         feature("AddCylinder"),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive {
-            solid, op: cadmpeg_ir::features::BooleanOp::Join }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cylinder {
+            solid, placement: None, op: cadmpeg_ir::features::BooleanOp::Join }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cylinder {
                 angle,
                 ..
             } if (angle.get() - std::f64::consts::PI).abs() < 1.0e-12)
@@ -993,7 +993,7 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
     assert!(matches!(
         feature("CutCone"),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive {
-            solid, op: cadmpeg_ir::features::BooleanOp::Cut }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cone { .. })
+            solid, placement: None, op: cadmpeg_ir::features::BooleanOp::Cut }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cone { .. })
     ));
     assert!(result.report().losses.is_empty());
     let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
@@ -1685,13 +1685,13 @@ fn transfers_remaining_partdesign_analytic_primitives() {
             .definition()
     };
     assert!(
-        matches!(definition("Ellipsoid"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Ellipsoid { x_radius, y_radius, z_radius, .. } if x_radius.get() == 5.0 && y_radius.get() == 5.0 && z_radius.get() == 3.0))
+        matches!(definition("Ellipsoid"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, placement: None, op: cadmpeg_ir::features::BooleanOp::Join }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Ellipsoid { x_radius, y_radius, z_radius, .. } if x_radius.get() == 5.0 && y_radius.get() == 5.0 && z_radius.get() == 3.0))
     );
     assert!(
-        matches!(definition("Prism"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Cut }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Prism { sides: 7, circumradius, height } if circumradius.get() == 4.0 && height.get() == 9.0))
+        matches!(definition("Prism"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, placement: None, op: cadmpeg_ir::features::BooleanOp::Cut }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Prism { sides: 7, circumradius, height } if circumradius.get() == 4.0 && height.get() == 9.0))
     );
     assert!(
-        matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Wedge { xmin, ymax, .. } if xmin.get() == -2.0 && ymax.get() == 6.0))
+        matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, placement: None, op: cadmpeg_ir::features::BooleanOp::Join }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Wedge { xmin, ymax, .. } if xmin.get() == -2.0 && ymax.get() == 6.0))
     );
     assert!(result.report().losses.is_empty());
 }

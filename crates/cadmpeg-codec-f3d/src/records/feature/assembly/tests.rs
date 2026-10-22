@@ -806,18 +806,6 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
         "wrapper_byte_offset": 200, "path_reference_offset": 211
     }))
     .unwrap();
-    let guids = |offsets: &[u64]| {
-        offsets
-            .iter()
-            .map(|offset| crate::records::identity::Located {
-                value: "11111111-1111-4111-8111-111111111111"
-                    .to_owned()
-                    .try_into()
-                    .unwrap(),
-                offset: *offset,
-            })
-            .collect()
-    };
     for tag in ["294", "299", "307", "329", "330", "386", "390"] {
         for count in [0, 1, 3, 4, 8] {
             let offsets: Vec<_> = (0..count).map(|index| 500 + index * 80).collect();
@@ -1160,4 +1148,16 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
     }
     drop(identities);
     ctx.finish_session().unwrap();
+}
+
+fn guids<T: TryFrom<String, Error = String>>(
+    offsets: &[u64],
+) -> Vec<crate::records::identity::Located<T>> {
+    offsets
+        .iter()
+        .map(|offset| crate::records::identity::Located {
+            value: T::try_from("11111111-1111-4111-8111-111111111111".to_owned()).unwrap(),
+            offset: *offset,
+        })
+        .collect()
 }
