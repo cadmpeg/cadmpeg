@@ -2,7 +2,8 @@
 //! Resolve current neutral attribute references or out-of-scope typed values.
 
 use super::{
-    string_field, AttributeTarget, AttributeValue, BTreeMap, NativeRecord, SourceAttribute,
+    string_field, AttributeTarget, AttributeValue, BTreeMap, LinkedAttributes, NativeRecord,
+    SourceAttribute,
 };
 use serde_json::Value;
 
@@ -111,77 +112,79 @@ impl Fields<'_> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum Family {
+    Property,
+    Definition,
+    Instance,
+}
+
+fn field_name(
+    native: &Value,
+    attribute: &SourceAttribute,
+    family: Family,
+) -> Result<String, String> {
+    let prefix = match family {
+        Family::Property => {
+            let kind = native
+                .get("property_kind")
+                .and_then(Value::as_str)
+                .ok_or("property has no typed kind")?;
+            if matches!(kind, "generic_data" | "name") {
+                return Ok(String::new());
+            }
+            format!("iges.property.{kind}.")
+        }
+        Family::Definition => "iges.attribute_table.default.".into(),
+        Family::Instance => "iges.attribute_table.value.".into(),
+    };
+    let field = attribute.name.strip_prefix(&prefix).ok_or_else(|| {
+        format!(
+            "attribute {} has no field in its linked native grammar",
+            attribute.id
+        )
+    })?;
+    let mut value = native;
+    for part in field.split('.') {
+        value = match value {
+            Value::Array(values) => part
+                .parse::<usize>()
+                .ok()
+                .and_then(|index| values.get(index)),
+            Value::Object(values) => values.get(part),
+            _ => None,
+        }
+        .ok_or_else(|| format!("attribute {} names an absent native field", attribute.id))?;
+    }
+    Ok(field.to_owned())
+}
+
 pub(super) fn groups<'a>(
     record: &NativeRecord,
-    attributes: &BTreeMap<&str, &'a SourceAttribute>,
-    held: bool,
+    attributes: &LinkedAttributes<'a>,
+    family: Family,
 ) -> Result<Vec<Fields<'a>>, String> {
-    let Some(links) = record.field("neutral_values") else {
-        if held {
-            return Err("the held neutral model supplies no projection of this property".into());
-        }
-        let native = Value::Object(record.fields().map_err(|error| error.to_string())?);
-        let owners: Vec<_> = record
-            .field("owners")
-            .and_then(|owners| owners.as_array().cloned())
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|owner| {
-                owner.as_str().map(|source_id| AttributeTarget::Source {
-                    source_id: source_id.to_owned(),
-                })
-            })
-            .collect();
-        return Ok(if owners.is_empty() {
-            vec![Fields {
-                owner: None,
-                values: BTreeMap::new(),
-                native: Some(native),
-            }]
-        } else {
-            owners
-                .into_iter()
-                .map(|owner| Fields {
-                    owner: Some(owner),
-                    values: BTreeMap::new(),
-                    native: Some(native.clone()),
-                })
-                .collect()
-        });
-    };
-    let links = links
-        .as_object()
-        .ok_or("property neutral reference map is malformed")?;
-    let mut groups = BTreeMap::<AttributeTarget, BTreeMap<String, &SourceAttribute>>::new();
-    for (field, references) in links {
-        for reference in references
-            .as_array()
-            .ok_or("property reference list is malformed")?
-        {
-            let id = reference
-                .as_str()
-                .ok_or("property reference is not an identity")?;
-            let attribute = *attributes
-                .get(id)
-                .ok_or_else(|| format!("current neutral attribute {id} does not resolve"))?;
-            if groups
-                .entry(attribute.target.clone())
-                .or_default()
-                .insert(field.clone(), attribute)
-                .is_some()
-            {
-                return Err(format!(
-                    "property field {field} has multiple values for the same current owner"
-                ));
-            }
-        }
-    }
-    if groups.is_empty() {
+    let native = Value::Object(record.fields().map_err(|error| error.to_string())?);
+    let Some(linked) = attributes.get(record.id()) else {
         return Ok(vec![Fields {
             owner: None,
             values: BTreeMap::new(),
-            native: None,
+            native: Some(native),
         }]);
+    };
+    let mut groups = BTreeMap::<AttributeTarget, BTreeMap<String, &SourceAttribute>>::new();
+    for attribute in linked {
+        let field = field_name(&native, attribute, family)?;
+        if groups
+            .entry(attribute.target.clone())
+            .or_default()
+            .insert(field.clone(), attribute)
+            .is_some()
+        {
+            return Err(format!(
+                "property field {field} has multiple values for the same current owner"
+            ));
+        }
     }
     Ok(groups
         .into_iter()

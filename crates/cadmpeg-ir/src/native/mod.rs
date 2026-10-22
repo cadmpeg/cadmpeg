@@ -17,6 +17,7 @@ pub mod catalogue;
 mod compare;
 mod copy;
 mod provenance;
+pub(crate) mod prune;
 mod replay;
 pub(crate) mod view;
 

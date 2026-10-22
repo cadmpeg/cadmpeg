@@ -170,6 +170,18 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }
     }
 
+    /// Bound the next real record parse without copying or changing offsets.
+    pub(crate) fn limit_input(&mut self, end: usize) -> Option<&'a [u8]> {
+        let original = self.input;
+        self.input = original.get(..end)?;
+        Some(original)
+    }
+
+    /// Restore the same source after one independently framed record callback.
+    pub(crate) fn restore_input(&mut self, input: &'a [u8]) {
+        self.input = input;
+    }
+
     pub(crate) fn set_literal_admission(&mut self, admission: LiteralAdmission) {
         self.literal_admission = admission;
     }

@@ -14,7 +14,6 @@ fn decoded_json_wire_distinguishes_absence_from_held_null() {
         attributes: std::collections::BTreeMap::new(),
         decoded_json: None,
         text: None,
-        raw_xml: String::new(),
     };
     let mut wire = serde_json::to_value(value).unwrap();
     assert!(wire.get("decoded_json").is_none());
@@ -172,20 +171,38 @@ fn string_table_admission_requires_distinct_backward_references() {
         let result = serde_json::from_value::<super::StringTableRecord>(wire.clone());
         assert_eq!(result.is_ok(), valid);
         if let Ok(record) = result {
-            // §2.4: raw record text accompanies the typed table in fidelity.
+            // Compare source-only fields through the owning table layout.
             let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-            for (ordinal, entry) in wire["entries"].as_array().unwrap().iter().enumerate() {
-                let id = native_child_id("string-table-entry", &record.id(), &ordinal.to_string());
-                crate::fidelity::retain(
-                    &mut fidelity,
-                    &id,
-                    "synthetic-string-table",
-                    0,
-                    entry["raw"].as_str().unwrap().as_bytes(),
-                    cadmpeg_ir::ArenaClasses::new(),
-                )
-                .unwrap();
+            let entries = wire["entries"].as_array().unwrap();
+            let bytes = entries
+                .iter()
+                .flat_map(|entry| entry["raw"].as_str().unwrap().as_bytes().iter().copied())
+                .collect::<Vec<_>>();
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &bytes,
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .unwrap();
+            ctx.record(&record.id(), root, || Ok(())).unwrap();
+            let (id, mut layout) = cadmpeg_ir::source_fidelity::RecordLayout::from_capture(
+                ctx.take_record_captures().unwrap().pop().unwrap(),
+            );
+            let mut start = 0;
+            for (ordinal, entry) in entries.iter().enumerate() {
+                let end = start + entry["raw"].as_str().unwrap().len();
+                layout
+                    .insert_payload(
+                        format!("entries.{ordinal}.raw"),
+                        cadmpeg_ir::native::bytes::NativeBytes::from(
+                            root.child(start, end).unwrap().window().to_vec(),
+                        ),
+                    )
+                    .unwrap();
+                start = end;
             }
+            fidelity.insert_record_layout(id, layout).unwrap();
             let mut restored = serde_json::to_value(&record).unwrap();
             for (ordinal, entry) in restored["entries"]
                 .as_array_mut()
@@ -194,9 +211,10 @@ fn string_table_admission_requires_distinct_backward_references() {
                 .enumerate()
             {
                 assert!(entry.get("raw").is_none());
-                let id = native_child_id("string-table-entry", &record.id(), &ordinal.to_string());
                 entry["raw"] = serde_json::json!(std::str::from_utf8(
-                    crate::test_support::source_fidelity::bytes(&fidelity, &id)
+                    fidelity.record_layout()[&record.id()].payloads()
+                        [&format!("entries.{ordinal}.raw")]
+                        .as_ref()
                 )
                 .unwrap());
             }
@@ -922,3 +940,5 @@ impl super::EntryRecord {
         self.data = bytes.into();
     }
 }
+
+mod provenance;

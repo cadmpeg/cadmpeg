@@ -227,13 +227,116 @@ pub(crate) fn mark_unreadable(
     Ok(())
 }
 
-pub(crate) fn xml_layout_payload(
+pub(crate) struct ValueSourceRanges {
+    id: String,
+    record: Range<usize>,
+    values: Vec<Range<usize>>,
+}
+
+pub(crate) fn value_sources<'a>(
+    xml: &roxmltree::Document<'_>,
+    owners: impl Iterator<
+        Item = (
+            &'a str,
+            &'a crate::native::RetainedXml,
+            &'a [crate::native::ValueRecord],
+        ),
+    >,
+) -> Result<Vec<ValueSourceRanges>, CodecError> {
+    let mut by_start = BTreeMap::new();
+    for (id, source, values) in owners.filter(|(_, _, values)| !values.is_empty()) {
+        let start = usize::try_from(source.start())
+            .map_err(|_| CodecError::malformed("value owner start exceeds memory"))?;
+        let end = usize::try_from(source.end())
+            .map_err(|_| CodecError::malformed("value owner end exceeds memory"))?;
+        if by_start.insert(start, (id, end, values)).is_some() {
+            return Err(CodecError::malformed(
+                "duplicate XML value owner source start",
+            ));
+        }
+    }
+    let mut output = Vec::new();
+    for node in xml.descendants().filter(roxmltree::Node::is_element) {
+        let Some((id, end, values)) = by_start.remove(&node.range().start) else {
+            continue;
+        };
+        if end != node.range().end {
+            return Err(CodecError::malformed(
+                "XML value owner range differs from its parsed element",
+            ));
+        }
+        let mut ranges = Vec::new();
+        for (order, value) in node
+            .descendants()
+            .filter(|value| value.is_element() && *value != node)
+            .enumerate()
+        {
+            if !values.get(order).is_some_and(|record| {
+                record.order == order && record.tag == value.tag_name().name()
+            }) {
+                return Err(CodecError::malformed(
+                    "XML value ranges differ from admitted typed values",
+                ));
+            }
+            ranges.push(value.range());
+        }
+        if ranges.len() != values.len() {
+            return Err(CodecError::malformed(
+                "XML value range count differs from admitted typed values",
+            ));
+        }
+        output.push(ValueSourceRanges {
+            id: id.to_owned(),
+            record: node.range(),
+            values: ranges,
+        });
+    }
+    if !by_start.is_empty() {
+        return Err(CodecError::malformed(
+            "XML value owner has no original source element",
+        ));
+    }
+    Ok(output)
+}
+
+pub(crate) fn value_layout_payloads(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
-    id: &str,
-    range: Range<usize>,
-    payloads: &mut BTreeMap<String, NativeBytes>,
+    ranges: &ValueSourceRanges,
+    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
 ) -> Result<(), CodecError> {
+    let extent = relative_xml_extent(source, ranges.record.clone())?;
+    let fields = ctx.record(&ranges.id, extent, || {
+        let mut fields = BTreeMap::new();
+        for (order, range) in ranges.values.iter().enumerate() {
+            if range.start < ranges.record.start || range.end > ranges.record.end {
+                return Err(CodecError::malformed("XML value escapes its owning record"));
+            }
+            let value = relative_xml_extent(source, range.clone())?;
+            ctx.retain_bytes(
+                cadmpeg_core::decode::u64_from_index(value.window().len()),
+                "retain FCStd value layout payload",
+            )?;
+            let mut bytes = ctx.alloc_filled(
+                value.window().len(),
+                0_u8,
+                "retain FCStd value layout payload",
+            )?;
+            bytes.copy_from_slice(value.window());
+            fields.insert(format!("values.{order}.raw_xml"), NativeBytes::from(bytes));
+        }
+        Ok(fields)
+    })?;
+    if payloads.insert(ranges.id.clone(), fields).is_some() {
+        return Err(CodecError::malformed("duplicate XML value layout identity"));
+    }
+    Ok(())
+}
+
+pub(crate) fn relative_xml_extent(
+    source: View<'_>,
+    range: Range<usize>,
+) -> Result<View<'_>, CodecError> {
     if range.start >= range.end || range.end > source.window().len() {
         return Err(CodecError::malformed(
             "XML record range escapes its source entry",
@@ -247,9 +350,19 @@ pub(crate) fn xml_layout_payload(
         .start()
         .checked_add(range.end)
         .ok_or_else(|| CodecError::malformed("XML record end overflows"))?;
-    let extent = source
+    source
         .child(start, end)
-        .ok_or_else(|| CodecError::malformed("XML record range escapes its source entry"))?;
+        .ok_or_else(|| CodecError::malformed("XML record range escapes its source entry"))
+}
+
+pub(crate) fn xml_layout_payload(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    id: &str,
+    range: Range<usize>,
+    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
+) -> Result<(), CodecError> {
+    let extent = relative_xml_extent(source, range)?;
     let bytes = ctx.record(id, extent, || {
         ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(extent.window().len()),
@@ -263,7 +376,10 @@ pub(crate) fn xml_layout_payload(
         bytes.copy_from_slice(extent.window());
         Ok(NativeBytes::from(bytes))
     })?;
-    if payloads.insert(id.to_owned(), bytes).is_some() {
+    if payloads
+        .insert(id.to_owned(), BTreeMap::from([("raw_xml".into(), bytes)]))
+        .is_some()
+    {
         return Err(CodecError::malformed(
             "duplicate XML layout payload identity",
         ));
@@ -274,12 +390,14 @@ pub(crate) fn xml_layout_payload(
 pub(crate) fn install_layouts(
     ctx: &DecodeContext<'_>,
     fidelity: &mut SourceFidelity,
-    mut payloads: BTreeMap<String, NativeBytes>,
+    mut payloads: BTreeMap<String, BTreeMap<String, NativeBytes>>,
 ) -> Result<(), CodecError> {
     for capture in ctx.take_record_captures()? {
         let (id, mut layout) = RecordLayout::from_capture(capture);
-        if let Some(bytes) = payloads.remove(&id) {
-            layout.insert_payload("raw_xml".into(), bytes)?;
+        if let Some(fields) = payloads.remove(&id) {
+            for (field, bytes) in fields {
+                layout.insert_payload(field, bytes)?;
+            }
         }
         fidelity.insert_record_layout(id, layout)?;
     }

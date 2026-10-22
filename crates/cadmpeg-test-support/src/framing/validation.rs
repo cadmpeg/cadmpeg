@@ -4,10 +4,10 @@
 use std::collections::BTreeMap;
 use std::ops::Range;
 
-use cadmpeg_core::decode::{index_from_u64, DecodeContext, SourceOrigin, SourceStream, View};
+use cadmpeg_core::decode::{DecodeContext, SourceOrigin, SourceStream, View, index_from_u64};
 use cadmpeg_ir::source_fidelity::parts::PartFraming;
 
-use super::types::subtract_ranges;
+use super::types::{same_extent, subtract_ranges};
 use super::{FrameParent, FramedPart, PartParent, PartTable};
 
 impl PartTable<'_> {
@@ -53,26 +53,62 @@ impl PartTable<'_> {
                 return Err("frame parent must precede its child".into());
             }
             let enclosing = &frames[parent];
-            match frame.parent() {
-                FrameParent::Part(_) => {
-                    if !rule
-                        .parents()
-                        .contains(&PartParent::Level(enclosing.level()))
-                    {
-                        return Err(format!("undeclared parent for {}", frame.level().as_str()));
-                    }
+            if let Some(proof) = frame.xml_containment() {
+                if !matches!(frame.parent(), FrameParent::Part(_))
+                    || !same_extent(&proof.parent, enclosing.capture())
+                {
+                    return Err(
+                        "physical frame parent is not the immediate source XML parent".into(),
+                    );
                 }
-                FrameParent::Host(_) => {
-                    if !rule.parents().contains(&PartParent::File)
-                        || !mentions_level(
-                            self.rule(enclosing.level())?.end_rule(),
-                            frame.level().as_str(),
-                        )
-                    {
-                        return Err("shared root has no declared embedding rule".into());
-                    }
+                if proof.owner >= index
+                    || !rule.parents().contains(&PartParent::Level(
+                        frames
+                            .get(proof.owner)
+                            .ok_or("missing XML declared owner")?
+                            .level(),
+                    ))
+                {
+                    return Err("XML declared owner has an undeclared level".into());
                 }
-                FrameParent::File => unreachable!(),
+                let mut ancestor = parent;
+                loop {
+                    if ancestor == proof.owner {
+                        break;
+                    }
+                    let next = match frames[ancestor].parent() {
+                        FrameParent::Part(next) | FrameParent::Host(next) if next < ancestor => {
+                            next
+                        }
+                        _ => return Err("XML declared owner is not a physical ancestor".into()),
+                    };
+                    ancestor = next;
+                }
+            } else {
+                match frame.parent() {
+                    FrameParent::Part(_) => {
+                        if !rule
+                            .parents()
+                            .contains(&PartParent::Level(enclosing.level()))
+                        {
+                            return Err(format!(
+                                "undeclared parent for {}",
+                                frame.level().as_str()
+                            ));
+                        }
+                    }
+                    FrameParent::Host(_) => {
+                        if !rule.parents().contains(&PartParent::File)
+                            || !mentions_level(
+                                self.rule(enclosing.level())?.end_rule(),
+                                frame.level().as_str(),
+                            )
+                        {
+                            return Err("shared root has no declared embedding rule".into());
+                        }
+                    }
+                    FrameParent::File => unreachable!(),
+                }
             }
             let mapped = project_extent(
                 actual.stream(),
@@ -138,7 +174,7 @@ impl PartTable<'_> {
         let parent = match frame.parent() {
             FrameParent::Part(parent) | FrameParent::Host(parent) => &frames[parent],
             FrameParent::File => {
-                return Err("sequential file child requires an enclosing file extent".into())
+                return Err("sequential file child requires an enclosing file extent".into());
             }
         };
         let streams = ctx.source_streams().map_err(|e| e.to_string())?;

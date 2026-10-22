@@ -19,7 +19,10 @@ mod helper;
 mod levels;
 mod rescope;
 
-pub use helper::{DecodeParts, PartOutput};
+pub use helper::{
+    DecodeParts, DeferredRecordPruning, FinalizedPartOutput, ParserPartOutput,
+    PartDependencyPruning, PartFinalization, PartOutput,
+};
 pub use rescope::PartIdentityMap;
 
 /// The way Appendix C locates a part's next independently readable sibling.

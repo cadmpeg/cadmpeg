@@ -260,6 +260,7 @@ fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
 }
 
 struct Synthesis {
+    written_native: BTreeSet<String>,
     regenerated_native: BTreeSet<String>,
     coverage: ArenaDispositions,
     bytes: Vec<u8>,
@@ -508,6 +509,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         coverage.bodies = ArenaDisposition::Reported;
     }
     Ok(Synthesis {
+        written_native: attribute_export.written,
         regenerated_native: attribute_export.regenerated,
         coverage,
         bytes: encode_file(
@@ -5133,11 +5135,12 @@ fn represented_name_properties(
     Some(product_sources)
 }
 
-/// Declare regenerated native content separately from records with no encoding.
+/// Declare emitted typed native content separately from records with no encoding.
 fn synthesized_native_dispositions(
     ir: &CadIr,
     losses: &[LossNote],
     regenerated: &BTreeSet<String>,
+    written: &BTreeSet<String>,
 ) -> cadmpeg_ir::codec::write::NativeDispositions {
     use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
     let mut dispositions = NativeDispositions::for_namespace(
@@ -5168,6 +5171,8 @@ fn synthesized_native_dispositions(
         for record in records {
             if regenerated.contains(record.id()) {
                 dispositions.set_record("iges", arena, record.id(), NativeDisposition::Regenerated);
+            } else if written.contains(record.id()) {
+                dispositions.set_record("iges", arena, record.id(), NativeDisposition::Written);
             }
         }
     }

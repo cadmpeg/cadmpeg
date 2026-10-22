@@ -14,7 +14,6 @@ fn enumeration_projects_selected_index_and_preserves_native_choices() {
         attributes: BTreeMap::from([("value".into(), scalar.into())]),
         decoded_json: None,
         text: None,
-        raw_xml: String::new(),
     };
     let mut records = vec![
         value("Integer", None, "1"),

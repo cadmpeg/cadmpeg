@@ -136,3 +136,5 @@ fn marker_looking_text_in_hollerith_is_never_interpreted_as_a_reference() {
         .expect("literal Hollerith text does not create unresolved references");
     assert_eq!(entities[0].parameter_body, b"4,4Hname,1,3,4H@R0@;");
 }
+
+mod linkage;

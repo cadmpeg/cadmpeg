@@ -2121,9 +2121,6 @@ pub(crate) struct ValueRecord {
     pub(crate) decoded_json: Option<DecodedJsonValue>,
     /// Direct text content.
     pub(crate) text: Option<String>,
-    /// Exact value-element XML.
-    #[serde(skip)]
-    pub(crate) raw_xml: String,
 }
 
 impl Serialize for ValueRecord {
@@ -2941,7 +2938,4 @@ pub(crate) struct StringTableEntry {
     pub(crate) components: Vec<i64>,
     /// Exact payload following the numeric header.
     pub(crate) payload: String,
-    /// Exact serialized record without its line terminator.
-    #[serde(skip)]
-    pub(crate) raw: String,
 }

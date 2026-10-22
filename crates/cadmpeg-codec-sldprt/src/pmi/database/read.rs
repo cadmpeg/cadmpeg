@@ -7,13 +7,13 @@ use std::collections::BTreeSet;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-pub(crate) struct MapImage {
+pub(crate) struct MapImage<'a> {
     pub(crate) key: String,
-    pub(crate) value: Vec<u8>,
+    pub(crate) encoded: View<'a>,
     spans: Vec<(usize, usize, usize)>,
 }
 
-impl MapImage {
+impl MapImage<'_> {
     pub(crate) fn source_offset(&self, logical: u64) -> u64 {
         usize::try_from(logical)
             .ok()
@@ -27,10 +27,11 @@ impl MapImage {
     }
 }
 
-pub(in crate::pmi) fn images(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Option<Vec<MapImage>>, CodecError> {
+pub(in crate::pmi) fn images<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'_>,
+) -> Result<Option<Vec<MapImage<'a>>>, CodecError> {
+    let payload = source.window();
     if !payload.starts_with(b"unqlite") || View::u32_be_at(payload, 7) != Some(0xdb7c_2712) {
         return Ok(None);
     }
@@ -48,7 +49,7 @@ pub(in crate::pmi) fn images(
     }
     let reader = Reader {
         ctx,
-        payload,
+        source,
         page_size,
         remaining: Cell::new(payload.len()),
     };
@@ -105,22 +106,37 @@ pub(in crate::pmi) fn images(
 
 struct Reader<'a, 'context> {
     ctx: &'a DecodeContext<'context>,
-    payload: &'a [u8],
+    source: View<'a>,
     page_size: usize,
     remaining: Cell<usize>,
 }
 
-impl Reader<'_, '_> {
+impl<'context> Reader<'_, 'context> {
     fn page(&self, number: u64) -> Result<&[u8], CodecError> {
         let start = usize::try_from(number)
             .ok()
             .and_then(|number| number.checked_mul(self.page_size))
             .ok_or_else(malformed)?;
         let end = start.checked_add(self.page_size).ok_or_else(malformed)?;
-        self.payload.get(start..end).ok_or_else(malformed)
+        self.source.window().get(start..end).ok_or_else(malformed)
     }
 
-    fn cell(&self, number: u64, page: &[u8], cell: usize) -> Result<MapImage, CodecError> {
+    fn source_child(&self, offset: usize, len: usize) -> Result<View<'_>, CodecError> {
+        let start = self
+            .source
+            .start()
+            .checked_add(offset)
+            .ok_or_else(malformed)?;
+        let end = start.checked_add(len).ok_or_else(malformed)?;
+        self.source.child(start, end).ok_or_else(malformed)
+    }
+
+    fn cell(
+        &self,
+        number: u64,
+        page: &[u8],
+        cell: usize,
+    ) -> Result<MapImage<'context>, CodecError> {
         let key_len = View::u32_be_at(page, cell + 4)
             .and_then(|value| usize::try_from(value).ok())
             .ok_or_else(malformed)?;
@@ -138,6 +154,7 @@ impl Reader<'_, '_> {
             .ctx
             .alloc_filled(size, 0u8, "reconstruct UnQLite record")?;
         let mut spans = Vec::new();
+        let mut pieces = Vec::new();
         if overflow == 0 {
             let start = cell + 26;
             let end = start.checked_add(size).ok_or_else(malformed)?;
@@ -147,6 +164,7 @@ impl Reader<'_, '_> {
                 .and_then(|number| number.checked_mul(self.page_size))
                 .and_then(|start_of_page| start_of_page.checked_add(start))
                 .ok_or_else(malformed)?;
+            pieces.push(self.source_child(source, size)?);
             if value_len != 0 {
                 spans.push((0, value_len, source + key_len));
             }
@@ -163,6 +181,12 @@ impl Reader<'_, '_> {
                 let start = if first { 18 } else { 8 };
                 let count = (size - position).min(self.page_size - start);
                 bytes[position..position + count].copy_from_slice(&page[start..start + count]);
+                let piece_start = usize::try_from(next)
+                    .ok()
+                    .and_then(|number| number.checked_mul(self.page_size))
+                    .and_then(|page_start| page_start.checked_add(start))
+                    .ok_or_else(malformed)?;
+                pieces.push(self.source_child(piece_start, count)?);
                 let value_start = position.max(key_len);
                 let value_end = (position + count).max(key_len);
                 if value_start < value_end {
@@ -183,11 +207,33 @@ impl Reader<'_, '_> {
         let key = std::str::from_utf8(&bytes[..key_len])
             .map_err(|_| malformed())?
             .to_owned();
-        let value = bytes.split_off(key_len);
-        Ok(MapImage { key, value, spans })
+        let header_start = usize::try_from(number)
+            .ok()
+            .and_then(|number| number.checked_mul(self.page_size))
+            .and_then(|page_start| page_start.checked_add(cell))
+            .ok_or_else(malformed)?;
+        let owner = self
+            .ctx
+            .capture_part_extent(self.source_child(header_start, 26)?)?;
+        let stream = format!(
+            "sldprt-pmi-cell:{}:{}:{}:{}",
+            owner.stream().len(),
+            owner.stream(),
+            owner.offset(),
+            owner.byte_len()
+        );
+        let encoded = self.ctx.concat_named_views(&pieces, &stream)?;
+        Ok(MapImage {
+            key,
+            encoded,
+            spans,
+        })
     }
 }
 
 fn malformed() -> CodecError {
     CodecError::malformed("malformed UnQLite hash database record or page graph")
 }
+
+#[cfg(test)]
+mod tests;

@@ -1011,3 +1011,5 @@ fn nx_neutral_active_configuration_requires_the_exact_attribute_join() {
 mod material_and_external_records;
 
 mod expression_graph;
+
+mod provenance;

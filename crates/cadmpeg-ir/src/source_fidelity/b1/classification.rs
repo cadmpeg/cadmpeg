@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Classes of unconsumed spans from typed record ownership.
 
+use serde::{Deserialize, Serialize};
 use std::ops::Range;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -9,6 +10,7 @@ use cadmpeg_core::CodecError;
 use crate::document::{ArenaClass, ArenaClasses};
 use crate::{CadIr, SourceFidelity};
 
+use super::provenance::NativeOwnerResolver;
 use super::{normalize, StreamPartition};
 
 const CLASSIFY: &str = "classify unconsumed source spans";
@@ -16,10 +18,58 @@ const MODEL: u8 = 1;
 const DESIGN: u8 = 2;
 
 /// An unconsumed span classified from the document's typed owners.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "ClassifiedSpanWire"))]
+#[serde(try_from = "ClassifiedSpanWire", into = "ClassifiedSpanWire")]
 pub struct ClassifiedSpan {
     range: Range<u64>,
     mask: u8,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct ClassifiedSpanWire {
+    /// Byte offset in the named source stream.
+    offset: u64,
+    /// Positive length of this maximal unconsumed span.
+    byte_len: u64,
+    /// Arena classes derived from typed source owners.
+    classes: ArenaClasses,
+}
+
+impl TryFrom<ClassifiedSpanWire> for ClassifiedSpan {
+    type Error = String;
+    fn try_from(wire: ClassifiedSpanWire) -> Result<Self, Self::Error> {
+        let end = wire
+            .offset
+            .checked_add(wire.byte_len)
+            .filter(|_| wire.byte_len != 0 && !wire.classes.is_empty())
+            .ok_or_else(|| {
+                "B1 span requires a positive finite extent and owner classes".to_owned()
+            })?;
+        let mask = wire.classes.iter().fold(0, |mask, class| {
+            mask | match class {
+                ArenaClass::Model => MODEL,
+                ArenaClass::Design => DESIGN,
+            }
+        });
+        Ok(Self {
+            range: wire.offset..end,
+            mask,
+        })
+    }
+}
+
+impl From<ClassifiedSpan> for ClassifiedSpanWire {
+    fn from(span: ClassifiedSpan) -> Self {
+        Self {
+            offset: span.range.start,
+            byte_len: span.range.end - span.range.start,
+            classes: span.classes(),
+        }
+    }
 }
 
 impl ClassifiedSpan {
@@ -69,10 +119,20 @@ pub struct ClassificationIndex<'ir> {
 }
 
 impl<'ir> ClassificationIndex<'ir> {
-    /// Index actual neutral links and direct native owners once per document.
+    /// Index neutral links and reserved unknown stubs without a codec resolver.
+    /// Other native rows require [`Self::new_with_owner_resolver`].
     pub fn new(ctx: &DecodeContext<'_>, ir: &'ir CadIr) -> Result<Self, CodecError> {
+        Self::new_with_owner_resolver(ctx, ir, &super::provenance::NoNativeOwners)
+    }
+
+    /// Index owners resolved by the source codec's complete typed native registry.
+    pub fn new_with_owner_resolver(
+        ctx: &DecodeContext<'_>,
+        ir: &'ir CadIr,
+        resolver: &dyn NativeOwnerResolver,
+    ) -> Result<Self, CodecError> {
         let classes = class_facts(ctx, ir)?;
-        let natives = native_facts(ctx, ir, &classes)?;
+        let natives = native_facts(ctx, ir, &classes, resolver)?;
         Ok(Self { classes, natives })
     }
 
@@ -245,6 +305,7 @@ fn native_facts<'ir>(
     ctx: &DecodeContext<'_>,
     ir: &'ir CadIr,
     classes: &[ClassFact<'_>],
+    resolver: &dyn NativeOwnerResolver,
 ) -> Result<Vec<NativeFact<'ir>>, CodecError> {
     let count = ir
         .native
@@ -264,7 +325,7 @@ fn native_facts<'ir>(
             links: 0,
         },
     )?;
-    ir.visit_native_provenance(ctx, &mut |record| {
+    ir.visit_native_provenance_with_owner_resolver(ctx, resolver, &mut |record| {
         let owners = class_mask(classes, record.id())
             | record.owner().map_or(0, |owner| class_mask(classes, owner));
         let links = record

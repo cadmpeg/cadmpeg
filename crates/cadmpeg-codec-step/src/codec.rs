@@ -124,7 +124,7 @@ impl CodecBackend for StepCodec {
         if self.detect_impl(ctx, root)? == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        reader::decode(bytes, ctx, reader::Packaging::Bare)
+        reader::parts::decode(root, ctx, reader::Packaging::Bare)
     }
 }
 

@@ -87,7 +87,7 @@ rewrite_enum!(DatumPlaneReference, []; {
     Feature { feature },
     Face { face },
     ResolvedPlane { frame },
-});
+}; reference_leaf true; string_references {  });
 
 rewrite_enum!(DatumPointConstruction, []; {
     CircleCenter { edge },
@@ -99,7 +99,7 @@ rewrite_enum!(DatumPointConstruction, []; {
     DistanceOnEdge { edge, fraction },
 });
 
-rewrite_record!(DistinctMembers<T>, [T]; (field0));
+rewrite_record!(DistinctMembers<T>, [T]; (field0); allow_list_pruning);
 
 rewrite_enum!(DraftAnchor, []; {
     NeutralPlane { plane, pull },

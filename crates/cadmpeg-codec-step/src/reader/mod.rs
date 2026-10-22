@@ -30,6 +30,7 @@ pub(crate) mod geometry;
 mod groups;
 mod index;
 mod ownership;
+pub(crate) mod parts;
 pub(crate) mod pmi;
 pub(crate) mod presentation;
 pub(crate) mod product;
@@ -304,6 +305,7 @@ struct OpaqueSourceRecord {
 }
 
 /// Decode a complete clear-text exchange structure.
+#[cfg(test)]
 pub(crate) fn decode(
     input: &[u8],
     ctx: &DecodeContext<'_>,
@@ -619,7 +621,12 @@ fn decode_exchange_mode(
         )?
     };
     if matches!(mode, DecodeMode::Decode(_)) {
-        let omitted_spans = exchange.omitted_spans().to_vec();
+        let omitted_spans = exchange
+            .omitted_spans()
+            .iter()
+            .filter(|span| !exchange.shared_part_home(span.start))
+            .cloned()
+            .collect::<Vec<_>>();
         let signature_spans = exchange.release_source_graph();
         let mut opaque = Vec::new();
         let mut untyped_ids = Vec::new();

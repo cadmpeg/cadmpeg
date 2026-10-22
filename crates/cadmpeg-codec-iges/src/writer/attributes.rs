@@ -9,11 +9,76 @@ use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) type Targets = BTreeMap<String, Vec<usize>>;
+type LinkedAttributes<'a> = BTreeMap<&'a str, Vec<&'a SourceAttribute>>;
 
 pub(super) struct AttributeExport {
+    pub(super) written: BTreeSet<String>,
     pub(super) regenerated: BTreeSet<String>,
     pub(super) preserved: BTreeSet<String>,
     pub(super) losses: Vec<LossNote>,
+}
+
+impl AttributeExport {
+    fn emitted(&mut self, id: &str, unchanged: bool) {
+        if unchanged {
+            self.written.insert(id.to_owned());
+        } else {
+            self.regenerated.insert(id.to_owned());
+        }
+    }
+}
+
+fn native_encoding_matches(
+    record: &NativeRecord,
+    family: fields::Family,
+    current: &Entity,
+    encode: impl Fn(&fields::Fields<'_>) -> Result<Entity, String>,
+    owners_match: impl Fn(&fields::Fields<'_>) -> bool,
+) -> bool {
+    let Ok(groups) = fields::groups(record, &LinkedAttributes::new(), family) else {
+        return false;
+    };
+    let [native] = groups.as_slice() else {
+        return false;
+    };
+    owners_match(native)
+        && encode(native).is_ok_and(|native| {
+            native.type_code == current.type_code
+                && native.form == current.form
+                && native.structure == current.structure
+                && native.parameter_body == current.parameter_body
+        })
+}
+
+fn owners(
+    ir: &CadIr,
+    record: &NativeRecord,
+    fields: &fields::Fields<'_>,
+    targets: &Targets,
+) -> Option<Vec<usize>> {
+    if fields.has_native_values() {
+        let mut owners = Vec::new();
+        if let Some(native) = fields.native_value("owners") {
+            for owner in native.as_array()? {
+                let indices = targets.get(owner.as_str()?)?.as_slice();
+                if indices.is_empty() {
+                    return None;
+                }
+                owners.extend_from_slice(indices);
+            }
+        }
+        Some(owners)
+    } else if fields.is_self_owned(record) {
+        Some(Vec::new())
+    } else {
+        fields
+            .owner
+            .as_ref()
+            .and_then(|target| target_id(ir, target))
+            .and_then(|id| targets.get(id))
+            .cloned()
+            .filter(|owners| !owners.is_empty())
+    }
 }
 
 fn target_id<'a>(ir: &CadIr, target: &'a AttributeTarget) -> Option<&'a str> {
@@ -264,21 +329,21 @@ pub(super) fn append(
 ) -> AttributeExport {
     let mut targets = targets(ir, entities);
     let mut result = AttributeExport {
+        written: BTreeSet::new(),
         regenerated: BTreeSet::new(),
         preserved: BTreeSet::new(),
         losses: Vec::new(),
     };
     labels::apply(ir, entities, &targets, &mut result);
     let namespace = ir.native.namespace("iges");
-    let attributes: BTreeMap<_, _> = ir
-        .model
-        .attributes
-        .iter()
-        .map(|attribute| (attribute.id.as_str(), attribute))
-        .collect();
+    let mut attributes = LinkedAttributes::new();
+    for attribute in &ir.model.attributes {
+        if let Some(native_ref) = attribute.native_ref.as_deref() {
+            attributes.entry(native_ref).or_default().push(attribute);
+        }
+    }
     if let Some(namespace) = namespace {
         tables::append(
-            ir,
             namespace,
             &attributes,
             entities,
@@ -287,22 +352,12 @@ pub(super) fn append(
             &mut result,
         );
         for record in namespace.arenas().get("properties").into_iter().flatten() {
-            match fields::groups(record, &attributes, ir.scope.model) {
+            match fields::groups(record, &attributes, fields::Family::Property) {
                 Ok(groups) => {
                     let mut complete = true;
+                    let mut unchanged = groups.len() == 1;
                     for fields in groups {
-                        let owners = if fields.is_self_owned(record) {
-                            Vec::new()
-                        } else {
-                            fields
-                                .owner
-                                .as_ref()
-                                .and_then(|target| target_id(ir, target))
-                                .and_then(|id| targets.get(id))
-                                .cloned()
-                                .unwrap_or_default()
-                        };
-                        if owners.is_empty() && !fields.is_self_owned(record) {
+                        let Some(owners) = owners(ir, record, &fields, &targets) else {
                             omitted(
                                 &mut result.losses,
                                 record.id(),
@@ -310,9 +365,21 @@ pub(super) fn append(
                             );
                             complete = false;
                             continue;
-                        }
-                        let encoded = properties::encode(record, &fields, &targets)
-                            .and_then(|entity| append_owned(entities, entity, &owners, version));
+                        };
+                        let encoded =
+                            properties::encode(record, &fields, &targets).and_then(|entity| {
+                                unchanged &= native_encoding_matches(
+                                    record,
+                                    fields::Family::Property,
+                                    &entity,
+                                    |native| properties::encode(record, native, &targets),
+                                    |native| {
+                                        self::owners(ir, record, native, &targets).as_ref()
+                                            == Some(&owners)
+                                    },
+                                );
+                                append_owned(entities, entity, &owners, version)
+                            });
                         match encoded {
                             Ok(index) => {
                                 result.preserved.extend(fields.attribute_ids());
@@ -331,7 +398,7 @@ pub(super) fn append(
                         }
                     }
                     if complete {
-                        result.regenerated.insert(record.id().to_owned());
+                        result.emitted(record.id(), unchanged);
                     }
                 }
                 Err(reason) => omitted(&mut result.losses, record.id(), reason),
@@ -344,17 +411,18 @@ pub(super) fn append(
             .flatten()
         {
             if let Some(source) = string_field(record, "source_entity") {
-                if namespace
+                if let Some(property) = namespace
                     .arenas()
                     .get("properties")
                     .into_iter()
                     .flatten()
-                    .any(|property| {
+                    .find(|property| {
                         string_field(property, "source_entity").as_ref() == Some(&source)
-                            && result.regenerated.contains(property.id())
+                            && (result.written.contains(property.id())
+                                || result.regenerated.contains(property.id()))
                     })
                 {
-                    result.regenerated.insert(record.id().to_owned());
+                    result.emitted(record.id(), result.written.contains(property.id()));
                 }
             }
         }

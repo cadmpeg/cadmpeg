@@ -24,7 +24,6 @@ fn drawing_direction_vector_refuses_nonfinite_components() {
         attributes,
         decoded_json: None,
         text: None,
-        raw_xml: String::new(),
     };
     assert_eq!(
         super::vector_value(&value(attributes.clone())),

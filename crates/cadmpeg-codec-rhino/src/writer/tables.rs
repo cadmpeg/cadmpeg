@@ -8,7 +8,7 @@ use super::{
     wire_index, CadIr, CodecError, LossNote, RhinoLossCode, LAYER_CLASS, TCODE_ENDOFTABLE,
     TCODE_LAYER_RECORD,
 };
-use cadmpeg_ir::presentation::PresentationItem;
+use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use serde_json::{Map, Value};
 
 pub(super) mod annotations;
@@ -126,16 +126,13 @@ fn component(
     anonymous(1, 0, &fields)
 }
 
-fn own_layer(ir: &CadIr, id: &str) -> Option<Map<String, Value>> {
-    ir.native
-        .namespace("rhino")?
-        .arenas()
-        .get("layers")?
+fn own_layer(ir: &CadIr, layer: &PresentationLayer) -> Option<Map<String, Value>> {
+    let id = layer.native_ref.as_deref()?;
+    records(ir, "layers")
         .iter()
-        .find_map(|record| {
-            let fields = record.fields().ok()?;
-            (fields.get("neutral_ref").and_then(Value::as_str) == Some(id)).then_some(fields)
-        })
+        .find(|record| record.id() == id)?
+        .fields()
+        .ok()
 }
 
 fn integer(fields: Option<&Map<String, Value>>, name: &str, default: i32) -> i32 {
@@ -173,7 +170,7 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
     }
     let mut records = Vec::new();
     for (index, layer) in ir.model.presentation_layers.iter().enumerate() {
-        let native = own_layer(ir, layer.id.as_str());
+        let native = own_layer(ir, layer);
         let fields = native.as_ref();
         let mut payload = vec![0x16];
         payload.extend(0_i32.to_le_bytes());
@@ -286,3 +283,6 @@ pub(super) fn native_layer_complete(record: &cadmpeg_ir::NativeRecord) -> bool {
                     .is_none_or(|value| value.as_array().is_some_and(Vec::is_empty))
             })
 }
+
+#[cfg(test)]
+mod tests;

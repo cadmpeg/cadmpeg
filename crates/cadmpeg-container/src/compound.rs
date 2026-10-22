@@ -552,7 +552,17 @@ impl<'a> CompoundSnapshot<'a> {
             for &sector in &chain.rest {
                 views.push(sector_view(sector)?);
             }
-            ctx.concat_views(&views)?
+            let source = ctx.capture_part_extent(self.root)?;
+            let name = format!(
+                "cfb:{}:{}:{}:{}:{}:{}",
+                source.stream().len(),
+                source.stream(),
+                source.offset(),
+                source.byte_len(),
+                entry.id().directory_id(),
+                entry.path()
+            );
+            ctx.concat_named_views(&views, &name)?
         };
         let logical_end = opened
             .start()
@@ -1896,6 +1906,7 @@ fn malformed<T>(message: impl Into<String>) -> Result<T, CodecError> {
 
 #[cfg(test)]
 mod tests {
+    mod provenance;
     use std::cmp::Ordering;
     use std::io::{self, Read};
 

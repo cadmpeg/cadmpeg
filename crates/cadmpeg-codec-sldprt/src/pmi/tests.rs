@@ -28,13 +28,13 @@ fn parse_payload(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Vec<PmiDimension> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         payload,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("PMI test input fits service policy");
-    super::parse_payload(&ctx, payload, losses).expect("PMI test input fits service policy")
+    super::parse_payload(&ctx, root, losses).expect("PMI test input fits service policy")
 }
 
 fn write_with_regenerated_pmi(
@@ -89,10 +89,11 @@ fn pmi_limit_refusal(
 ) -> cadmpeg_core::decode::ResourceLimit {
     let payload = pmi_semantic_payload();
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("PMI test input fits the root limit");
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("PMI test input fits the root limit");
     let mut losses = Vec::new();
-    let error = super::parse_payload(&ctx, &payload, &mut losses)
+    let error = super::parse_payload(&ctx, root, &mut losses)
         .expect_err("PMI parser must refuse the selected limit");
     assert!(
         losses.is_empty(),

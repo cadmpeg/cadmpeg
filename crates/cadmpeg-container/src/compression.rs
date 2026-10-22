@@ -34,6 +34,32 @@ pub fn inflate_zlib_member_owned(
     Ok((writer.finalize_owned()?, consumed))
 }
 
+/// Inflates one zlib member with its exact compressed source provenance.
+/// The derived stream name identifies the canonical parent and consumed extent.
+pub fn inflate_zlib_member_tracked<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'_>,
+    spec: ExpandSpec,
+) -> Result<(View<'a>, usize), CodecError> {
+    let (writer, consumed) = inflate_zlib_writer(ctx, source, spec)?;
+    let end = source
+        .start()
+        .checked_add(consumed)
+        .ok_or_else(|| CodecError::malformed("zlib compressed source extent overflows"))?;
+    let member = source
+        .child(source.start(), end)
+        .ok_or_else(|| CodecError::malformed("zlib compressed source extent escapes its input"))?;
+    let capture = ctx.capture_part_extent(member)?;
+    let name = format!(
+        "zlib:{}:{}:{}:{}",
+        capture.stream().len(),
+        capture.stream(),
+        capture.offset(),
+        capture.byte_len()
+    );
+    Ok((writer.finalize_from(member, &name)?, consumed))
+}
+
 fn inflate_zlib_writer<'ctx, 'a>(
     ctx: &'ctx DecodeContext<'a>,
     source: View<'_>,
@@ -270,6 +296,7 @@ mod tests {
         inflate_zlib_member, inflate_zlib_member_owned,
     };
 
+    mod provenance;
     mod zstd;
 
     #[test]

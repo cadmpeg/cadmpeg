@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::{DecodeArena, DecodeDepth, DecodePolicy, ResourceDimension};
 use serde_json::{json, Value};
 
+use super::super::provenance::NativeOwnership;
 use super::*;
 use crate::ids::{Identity, UnknownId};
 use crate::native::NativeRecord;
@@ -60,6 +61,35 @@ fn native(ir: &mut CadIr, id: &str, fields: Value) {
         .push(record);
 }
 
+struct FixtureOwners;
+impl NativeOwnerResolver for FixtureOwners {
+    fn visit_owners(
+        &self,
+        _: &DecodeContext<'_>,
+        ir: &CadIr,
+        visitor: &mut dyn FnMut(NativeOwnership) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        for namespace in ir.native.0.values() {
+            for (arena, records) in namespace.arenas() {
+                if arena == "unknowns" {
+                    continue;
+                }
+                for record in records {
+                    let owner = serde_json::from_value::<Option<Identity>>(
+                        record.field("owner").unwrap_or(Value::Null),
+                    )
+                    .expect("typed fixture owner");
+                    visitor(NativeOwnership::new(
+                        Identity::new(record.id()).expect("fixture identity"),
+                        owner,
+                    ))?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 fn classify(ir: &CadIr, fidelity: &SourceFidelity, b1: Range<u64>) -> Vec<ClassifiedSpan> {
     let arena = DecodeArena::new();
     let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), DecodeDepth::Full);
@@ -77,7 +107,9 @@ fn classify(ir: &CadIr, fidelity: &SourceFidelity, b1: Range<u64>) -> Vec<Classi
         &[],
     )
     .expect("valid source partition");
-    let output = classify_partition(&ctx, ir, fidelity, "file", &partition)
+    let output = ClassificationIndex::new_with_owner_resolver(&ctx, ir, &FixtureOwners)
+        .expect("complete typed fixture ownership")
+        .classify_partition(&ctx, fidelity, "file", &partition)
         .expect("valid owner classification");
     assert_eq!(output.len(), 1);
     assert_eq!(output[0].range(), b1);
@@ -108,6 +140,7 @@ fn innermost_owner_excludes_outer_classes_but_adds_its_direct_native_owner() {
     let child = "test:source:record#child";
     native(&mut ir, child, json!({"owner":NATIVE_DESIGN}));
     native(&mut ir, NATIVE_DESIGN, json!({"owner":NATIVE_MODEL}));
+    native(&mut ir, NATIVE_MODEL, json!({"owner":null}));
     let mut fidelity = SourceFidelity::default();
     layout(&mut fidelity, NATIVE_MODEL, 0, 12);
     layout(&mut fidelity, child, 3, 8);

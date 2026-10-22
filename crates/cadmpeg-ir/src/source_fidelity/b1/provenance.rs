@@ -8,6 +8,49 @@ use crate::document::{ArenaClass, ArenaClasses, CadIr};
 use crate::ids::Identity;
 use crate::schema::{EntityKind, EntitySchema};
 
+mod owners;
+
+/// One codec-resolved semantic owner, bound to an existing native record.
+#[derive(Debug, Clone)]
+pub struct NativeOwnership {
+    record: Identity,
+    owner: Option<Identity>,
+}
+
+impl NativeOwnership {
+    /// Declare the result of resolving one codec-owned typed record.
+    pub fn new(record: Identity, owner: Option<Identity>) -> Self {
+        Self { record, owner }
+    }
+}
+
+/// Resolves ownership through codec-owned typed native arena registries.
+///
+/// Emit exactly one result for each non-unknown native record, including records
+/// without an owner. The shared visitor validates coverage and identity targets.
+pub trait NativeOwnerResolver {
+    /// Visit semantic owners from the current document, without supplying classes.
+    fn visit_owners(
+        &self,
+        ctx: &DecodeContext<'_>,
+        ir: &CadIr,
+        visitor: &mut dyn FnMut(NativeOwnership) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError>;
+}
+
+pub(super) struct NoNativeOwners;
+
+impl NativeOwnerResolver for NoNativeOwners {
+    fn visit_owners(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _ir: &CadIr,
+        _visitor: &mut dyn FnMut(NativeOwnership) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        Ok(())
+    }
+}
+
 /// A neutral record's typed native link and registered arena class.
 #[derive(Debug, Clone, Copy)]
 pub struct NeutralProvenance<'a> {
@@ -59,7 +102,7 @@ impl<'a> NativeProvenance<'a> {
     pub fn arena(&self) -> &'a str {
         self.arena
     }
-    /// Direct owner named by the native record's owner field.
+    /// Direct semantic owner resolved by the owning codec's typed schema.
     pub fn owner(&self) -> Option<&str> {
         self.owner.as_ref().map(Identity::as_str)
     }
@@ -100,12 +143,25 @@ impl CadIr {
         Ok(())
     }
 
-    /// Visits every native namespace and arena without copying record fields.
+    /// Visits reserved typed unknown stubs without a codec owner resolver.
+    /// Other native rows require [`Self::visit_native_provenance_with_owner_resolver`].
     pub fn visit_native_provenance<'ir>(
         &'ir self,
         ctx: &DecodeContext<'_>,
         visitor: &mut dyn FnMut(NativeProvenance<'ir>) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
+        self.visit_native_provenance_with_owner_resolver(ctx, &NoNativeOwners, visitor)
+    }
+
+    /// Visits native ownership resolved by each codec's typed arena registry.
+    /// Every non-unknown native row requires an explicit resolution.
+    pub fn visit_native_provenance_with_owner_resolver<'ir>(
+        &'ir self,
+        ctx: &DecodeContext<'_>,
+        resolver: &dyn NativeOwnerResolver,
+        visitor: &mut dyn FnMut(NativeProvenance<'ir>) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        let mut owners = owners::resolve(ctx, self, resolver)?;
         for (namespace, records) in &self.native.0 {
             for (arena, records) in records.arenas() {
                 for record in records {
@@ -118,7 +174,10 @@ impl CadIr {
                         id: record.id(),
                         namespace,
                         arena,
-                        owner: record.provenance_owner()?,
+                        owner: owners
+                            .binary_search_by(|owner| owner.record.as_str().cmp(record.id()))
+                            .ok()
+                            .and_then(|index| owners[index].owner.take()),
                         unknown_links,
                     })?;
                 }

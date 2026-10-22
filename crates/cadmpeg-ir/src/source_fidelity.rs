@@ -383,13 +383,15 @@ pub struct SourceFidelity {
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
     /// Every reached independently framed decode part.
     parts: BTreeMap<UnknownId, parts::PartRecord>,
+    /// Owner-derived maximal B1 spans for finalized source streams.
+    b1_spans: BTreeMap<String, b1::finalization::ClassifiedStream>,
 }
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SourceFidelityWire {
-    /// Union of the retained records' untyped content classes.
+    /// Union of B1 span classes and retained records' untyped content classes.
     #[serde(default)]
     unrepresented: crate::document::ArenaClasses,
     /// Sparse source locations and conversion exactness.
@@ -407,6 +409,9 @@ struct SourceFidelityWire {
     /// Every reached independently framed decode part.
     #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     parts: BTreeMap<UnknownId, parts::PartRecord>,
+    /// Owner-derived maximal B1 spans for finalized source streams.
+    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    b1_spans: BTreeMap<String, b1::finalization::ClassifiedStream>,
 }
 
 impl TryFrom<SourceFidelityWire> for SourceFidelity {
@@ -419,12 +424,16 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
             record_layout: wire.record_layout,
             retained_records: wire.retained_records,
             parts: wire.parts,
+            b1_spans: wire.b1_spans,
         };
         parts::validate_tree(&value.parts)?;
+        if value.b1_spans.keys().any(String::is_empty) {
+            return Err("B1 coverage requires a named source stream".into());
+        }
         let derived = value.unrepresented();
         if wire.unrepresented != derived {
             return Err(format!(
-                "unrepresented classes ({}) differ from retained records' untyped union ({derived})",
+                "unrepresented classes ({}) differ from the B1/retained untyped union ({derived})",
                 wire.unrepresented,
             ));
         }
@@ -449,6 +458,8 @@ impl Serialize for SourceFidelity {
             /// Every reached independently framed decode part.
             #[serde(skip_serializing_if = "BTreeMap::is_empty")]
             parts: &'a BTreeMap<UnknownId, parts::PartRecord>,
+            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+            b1_spans: &'a BTreeMap<String, b1::finalization::ClassifiedStream>,
         }
         Wire {
             unrepresented: self.unrepresented(),
@@ -457,6 +468,7 @@ impl Serialize for SourceFidelity {
             record_layout: &self.record_layout,
             retained_records: &self.retained_records,
             parts: &self.parts,
+            b1_spans: &self.b1_spans,
         }
         .serialize(serializer)
     }
@@ -471,6 +483,7 @@ impl SourceFidelity {
             record_layout: BTreeMap::new(),
             retained_records: std::collections::BTreeMap::new(),
             parts: BTreeMap::new(),
+            b1_spans: BTreeMap::new(),
         }
     }
 
@@ -483,6 +496,7 @@ impl SourceFidelity {
         BTreeMap<String, String>,
         BTreeMap<String, RecordLayout>,
         BTreeMap<UnknownId, parts::PartRecord>,
+        BTreeMap<String, b1::finalization::ClassifiedStream>,
     ) {
         (
             self.annotations,
@@ -490,16 +504,23 @@ impl SourceFidelity {
             self.metadata,
             self.record_layout,
             self.parts,
+            self.b1_spans,
         )
     }
 
     /// Classes whose source content survives in no typed document record.
     ///
-    /// This is derived from the retained records rather than set independently.
+    /// This is the union of finalized B1 span classes and retained source classes.
     pub fn unrepresented(&self) -> crate::document::ArenaClasses {
         self.retained_records
             .values()
             .flat_map(|record| record.untyped().iter().copied())
+            .chain(
+                self.b1_spans
+                    .values()
+                    .flat_map(|stream| stream.spans())
+                    .flat_map(|span| span.classes()),
+            )
             .collect()
     }
 
@@ -519,6 +540,13 @@ impl SourceFidelity {
     /// Append source metadata after checking all tables for identity collisions.
     /// Failure leaves this source metadata unchanged.
     pub fn append(&mut self, mut other: Self) -> Result<(), cadmpeg_core::CodecError> {
+        for stream in other.b1_spans.keys() {
+            if self.b1_spans.contains_key(stream) {
+                return Err(CodecError::malformed(format_args!(
+                    "duplicate B1 source stream {stream}"
+                )));
+            }
+        }
         for id in other.parts.keys() {
             if self.parts.contains_key(id) {
                 return Err(CodecError::malformed(format_args!(
@@ -552,7 +580,13 @@ impl SourceFidelity {
         self.metadata.append(&mut other.metadata);
         self.record_layout.append(&mut other.record_layout);
         self.parts.append(&mut other.parts);
+        self.b1_spans.append(&mut other.b1_spans);
         Ok(())
+    }
+
+    /// Borrow exact source coverage without permitting arbitrary class assignment.
+    pub fn b1_spans(&self) -> &BTreeMap<String, b1::finalization::ClassifiedStream> {
+        &self.b1_spans
     }
 
     /// Read every reached part without changing its delivery state or source extent.

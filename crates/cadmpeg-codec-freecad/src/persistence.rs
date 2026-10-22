@@ -53,6 +53,7 @@ pub(crate) struct Graph {
     /// Dynamic extensions.
     pub(crate) extensions: Vec<ExtensionRecord>,
     pub(crate) extension_sources: Vec<(String, std::ops::Range<usize>)>,
+    pub(crate) value_sources: Vec<crate::fidelity::ValueSourceRanges>,
     /// Document and object properties.
     pub(crate) properties: Vec<PropertyRecord>,
     /// Diagnostics for source-only persistence metadata.
@@ -450,10 +451,17 @@ pub(crate) fn parse_document(
         }
     }
 
+    let value_sources = crate::fidelity::value_sources(
+        xml,
+        properties
+            .iter()
+            .map(|property| (property.id.as_str(), &property.xml, property.values())),
+    )?;
     Ok(Graph {
         objects,
         extensions,
         extension_sources,
+        value_sources,
         properties,
         losses,
     })
@@ -607,7 +615,6 @@ fn parse_properties(
                     .collect(),
                 decoded_json: decode_python_json(value).map(Into::into),
                 text: value.text().map(str::to_owned),
-                raw_xml: text[value.range()].to_owned(),
             });
         }
         let mut side_entries = Vec::new();

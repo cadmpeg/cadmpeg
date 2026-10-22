@@ -34,7 +34,6 @@ fn typed_gui_values_supply_content_instead_of_retained_xml() {
             attributes: BTreeMap::from([("value".into(), "0".into())]),
             decoded_json: None,
             text: None,
-            raw_xml: "<Bool value=\"contradicting-retained-blob\"/>".into(),
         }],
         side_entries: Vec::new(),
         xml: RetainedXml::from_source(
@@ -43,6 +42,10 @@ fn typed_gui_values_supply_content_instead_of_retained_xml() {
         )
         .expect("span"),
     };
+    let _fidelity = crate::test_support::source_fidelity::value_layout_fixture(
+        &record.id,
+        &["<Bool value=\"contradicting-retained-blob\"/>"],
+    );
     let rendered = native_property(&record)
         .expect("typed property")
         .expect("inline");
@@ -178,24 +181,30 @@ fn camera_pose_overrides_settings_while_other_settings_remain_held() {
 #[test]
 fn view_fields_win_over_duplicate_native_property_values_and_deletions() {
     let mut ir = CadIr::empty();
-    let record = |name: &str, value: &str| GuiPropertyRecord {
-        id: format!("fcstd:native:gui-property#{name}"),
-        owner: "provider".into(),
-        name: name.into(),
-        type_name: "App::PropertyBool".into(),
-        status: None,
-        order: 0,
-        values: vec![ValueRecord {
+    let record = |name: &str, value: &str| {
+        let record = GuiPropertyRecord {
+            id: format!("fcstd:native:gui-property#{name}"),
+            owner: "provider".into(),
+            name: name.into(),
+            type_name: "App::PropertyBool".into(),
+            status: None,
             order: 0,
-            parent: None,
-            tag: "Bool".into(),
-            attributes: BTreeMap::from([("value".into(), value.into())]),
-            decoded_json: None,
-            text: None,
-            raw_xml: "<Bool value=\"contradicting-retained-blob\"/>".into(),
-        }],
-        side_entries: Vec::new(),
-        xml: RetainedXml::from_source("<Property/>", 0).expect("span"),
+            values: vec![ValueRecord {
+                order: 0,
+                parent: None,
+                tag: "Bool".into(),
+                attributes: BTreeMap::from([("value".into(), value.into())]),
+                decoded_json: None,
+                text: None,
+            }],
+            side_entries: Vec::new(),
+            xml: RetainedXml::from_source("<Property/>", 0).expect("span"),
+        };
+        let _fidelity = crate::test_support::source_fidelity::value_layout_fixture(
+            &record.id,
+            &["<Bool value=\"contradicting-retained-blob\"/>"],
+        );
+        record
     };
     let mut provider = Provider::new("Shape".into());
     for property in [record("Visibility", "0"), record("DeletedSetting", "1")] {

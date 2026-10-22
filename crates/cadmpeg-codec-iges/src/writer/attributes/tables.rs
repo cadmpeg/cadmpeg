@@ -2,9 +2,9 @@
 //! Exact Type 322/422 schema and row reconstruction from canonical attributes.
 
 use super::{
-    append_owned, entity, fields, fields::Fields, hollerith, omitted, reference_marker,
-    string_field, typed_value, AttributeExport, AttributeValue, BTreeMap, BTreeSet, CadIr, Entity,
-    EntityStatus, NativeRecord, SourceAttribute, Targets,
+    append_owned, entity, fields, fields::Fields, hollerith, native_encoding_matches, omitted,
+    reference_marker, string_field, typed_value, AttributeExport, AttributeValue, BTreeMap,
+    BTreeSet, Entity, EntityStatus, LinkedAttributes, NativeRecord, Targets,
 };
 use cadmpeg_ir::native::NativeNamespace;
 use serde_json::Value;
@@ -246,9 +246,8 @@ fn instance(
 }
 
 pub(super) fn append(
-    ir: &CadIr,
     namespace: &NativeNamespace,
-    attributes: &BTreeMap<&str, &SourceAttribute>,
+    attributes: &LinkedAttributes<'_>,
     entities: &mut Vec<Entity>,
     targets: &mut Targets,
     version: crate::IgesVersion,
@@ -261,18 +260,26 @@ pub(super) fn append(
         .into_iter()
         .flatten()
     {
-        let encoded = fields::groups(record, attributes, ir.scope.model).and_then(|groups| {
-            let [fields] = groups.as_slice() else {
-                return Err("attribute defaults have incompatible current owners".into());
-            };
-            let entity = definition(record, fields, targets)?;
-            let index = append_owned(entities, entity, &[], version)?;
-            Ok((index, fields.attribute_ids().collect::<Vec<_>>()))
-        });
+        let encoded =
+            fields::groups(record, attributes, fields::Family::Definition).and_then(|groups| {
+                let [fields] = groups.as_slice() else {
+                    return Err("attribute defaults have incompatible current owners".into());
+                };
+                let entity = definition(record, fields, targets)?;
+                let unchanged = native_encoding_matches(
+                    record,
+                    fields::Family::Definition,
+                    &entity,
+                    |native| definition(record, native, targets),
+                    |native| fields.is_self_owned(record) && native.is_self_owned(record),
+                );
+                let index = append_owned(entities, entity, &[], version)?;
+                Ok((index, fields.attribute_ids().collect::<Vec<_>>(), unchanged))
+            });
         match encoded {
-            Ok((index, preserved)) => {
+            Ok((index, preserved, unchanged)) => {
                 definitions.insert(record.id().to_owned(), (record, index));
-                result.regenerated.insert(record.id().to_owned());
+                result.emitted(record.id(), unchanged);
                 result.preserved.extend(preserved);
                 targets
                     .entry(record.id().to_owned())
@@ -291,22 +298,30 @@ pub(super) fn append(
         .into_iter()
         .flatten()
     {
-        let encoded = fields::groups(record, attributes, ir.scope.model).and_then(|groups| {
-            let [fields] = groups.as_slice() else {
-                return Err("attribute rows have incompatible current owners".into());
-            };
-            let definition_id =
-                string_field(record, "definition").ok_or("attribute row definition is absent")?;
-            let (definition, index) = definitions
-                .get(&definition_id)
-                .ok_or("attribute row definition is not emitted")?;
-            let entity = instance(record, definition, *index, fields, targets)?;
-            let index = append_owned(entities, entity, &[], version)?;
-            Ok((index, fields.attribute_ids().collect::<Vec<_>>()))
-        });
+        let encoded =
+            fields::groups(record, attributes, fields::Family::Instance).and_then(|groups| {
+                let [fields] = groups.as_slice() else {
+                    return Err("attribute rows have incompatible current owners".into());
+                };
+                let definition_id = string_field(record, "definition")
+                    .ok_or("attribute row definition is absent")?;
+                let (definition, index) = definitions
+                    .get(&definition_id)
+                    .ok_or("attribute row definition is not emitted")?;
+                let entity = instance(record, definition, *index, fields, targets)?;
+                let unchanged = native_encoding_matches(
+                    record,
+                    fields::Family::Instance,
+                    &entity,
+                    |native| instance(record, definition, *index, native, targets),
+                    |native| fields.is_self_owned(record) && native.is_self_owned(record),
+                );
+                let index = append_owned(entities, entity, &[], version)?;
+                Ok((index, fields.attribute_ids().collect::<Vec<_>>(), unchanged))
+            });
         match encoded {
-            Ok((index, preserved)) => {
-                result.regenerated.insert(record.id().to_owned());
+            Ok((index, preserved, unchanged)) => {
+                result.emitted(record.id(), unchanged);
                 result.preserved.extend(preserved);
                 targets
                     .entry(record.id().to_owned())
