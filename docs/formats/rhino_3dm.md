@@ -1903,6 +1903,9 @@ f64 relative tolerance
 f64 angle tolerance
 ```
 
+V1 unit values 1 through 10 have the meanings of the table above. Every other
+V1 unit value, including 0, is unit system `none`.
+
 V1 geometry is a flat sequence. The object reader dispatches these direct
 record typecodes:
 

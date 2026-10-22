@@ -2628,14 +2628,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 )));
             }
             let unit = reader.i32().map_err(|error| malformed(&error))?;
-            binding = if unit == 0 {
-                crate::settings::UnitBinding::Native
-            } else {
-                crate::settings::StandardUnit::from_value(unit)
+            binding = match unit {
+                1..=10 => crate::settings::StandardUnit::from_value(unit)
                     .map(|unit| crate::settings::UnitBinding::Millimeters(unit.into()))
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!("unsupported V1 unit system {unit}"))
-                    })?
+                    })?,
+                _ => crate::settings::UnitBinding::Native,
             };
             scale = binding.model_scale();
             let linear = reader.f64().map_err(|error| malformed(&error))? * scale.value();
@@ -3193,9 +3192,15 @@ mod tests {
 
     #[test]
     fn v1_unit_system_none_keeps_model_units_and_reports_the_undeclared_unit() {
+        for unit in [0_i32, 11, -1] {
+            v1_unit_without_physical_scale(unit);
+        }
+    }
+
+    fn v1_unit_without_physical_scale(unit: i32) {
         let mut units = Vec::new();
         units.extend(1_i32.to_le_bytes());
-        units.extend(0_i32.to_le_bytes());
+        units.extend(unit.to_le_bytes());
         units.extend(0.01_f64.to_le_bytes());
         units.extend(0.02_f64.to_le_bytes());
         units.extend(0.03_f64.to_le_bytes());
