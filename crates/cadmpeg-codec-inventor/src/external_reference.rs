@@ -329,6 +329,9 @@ fn parse_stream_grammar<'a>(
     };
     cursor.u32("header state 0")?;
     cursor.u16("header state 1")?;
+    if schema == 15 {
+        cursor.u32("header state 1 extension")?;
+    }
     let invariant = cursor.u16("header invariant")?;
     if invariant != 1 {
         return Err(CodecError::malformed(format_args!(
@@ -344,7 +347,7 @@ fn parse_stream_grammar<'a>(
     let lod_count = cursor.count32("LOD count", 65_536)?;
     let (model_states, levels_of_detail) = if schema == 15 {
         (
-            parse_model_states(ctx, source, &mut cursor, lod_count)?,
+            parse_model_states(ctx, source, &mut cursor, lod_count, section_versions[2])?,
             Vec::new(),
         )
     } else {
@@ -637,7 +640,7 @@ fn parse_occurrence_export(
     save_year: u16,
 ) -> Result<(), CodecError> {
     cursor.take(10, "occurrence export state")?;
-    if save_year >= 2015 {
+    if (2015..2025).contains(&save_year) {
         cursor.u8("occurrence export padding")?;
     }
     let count = cursor.peek_u32("occurrence export count")?;
@@ -671,6 +674,10 @@ fn parse_occurrence_export(
         }
     } else {
         cursor.u32("occurrence export empty state")?;
+    }
+    if save_year >= 2025 {
+        cursor.u8("occurrence export padding")?;
+        cursor.u32("occurrence export trailer")?;
     }
     Ok(())
 }
@@ -732,7 +739,7 @@ fn parse_occurrence_value(
             ));
         }
         0x02 | 0x11 | 0x12 | 0x13 | 0x15 | 0x16 | 0x17 | 0x18 | 0x1c | 0x1f | 0x20 | 0x22
-        | 0x23 | 0x24 | 0x25 | 0x2a | 0x2b | 0x2c | 0x2d => {
+        | 0x23 | 0x24 | 0x25 | 0x2a | 0x2b | 0x2c | 0x2d | 0x2e => {
             cursor.take(16, "occurrence property id")?;
         }
         _ => {
@@ -791,7 +798,18 @@ fn parse_model_states<'a>(
     source: View<'a>,
     cursor: &mut Cursor<'_>,
     count: usize,
+    header_section_version: u16,
 ) -> Result<Vec<UfrxModelState<'a>>, CodecError> {
+    let suffix_len = match header_section_version {
+        0..=16 => 77,
+        17 => {
+            return Err(CodecError::NotImplemented(
+                "UFRxDoc model-state suffix for header section version 17 is not implemented"
+                    .into(),
+            ))
+        }
+        _ => 81,
+    };
     let mut states = Vec::new();
     for _ in 0..count {
         let prefix = cursor.u8("model-state prefix")?;
@@ -814,7 +832,7 @@ fn parse_model_states<'a>(
             });
         }
         let suffix_start = cursor.position();
-        cursor.take(77, "model-state suffix")?;
+        cursor.take(suffix_len, "model-state suffix")?;
         let suffix = source
             .child(
                 source.start() + suffix_start,
@@ -1537,6 +1555,9 @@ mod tests {
         }
         push_u32(&mut bytes, 3);
         push_u16(&mut bytes, 0);
+        if schema == 15 {
+            push_u32(&mut bytes, 0);
+        }
         let invariant_offset = bytes.len();
         push_u16(&mut bytes, 1);
         push_u32(&mut bytes, 1);
