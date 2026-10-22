@@ -316,7 +316,7 @@ Constraint types `944d8790`, `954d8790`, `964d8790`, `974d8790`, `984d8790`, and
 
 Types `00c0ac00d1115fe0800066b1e13554c7` and `40ff8336d1115fe0800066b1e13554c7` encode horizontal and vertical distance dimensions. Each stores two entity references, a replacement parameter reference, and four u32 values after the constraint header. Type `00b71b67d11168e0800066b1e13554c7` encodes a radius dimension and stores one u32 state, an entity reference, and four u32 values. Type `e096df74d11169e0800066b1e13554c7` encodes a diameter dimension and stores an auxiliary reference, an entity reference, and four u32 values. The constraint-header parameter drives radius and diameter. The replacement parameter drives horizontal and vertical distance.
 
-Type `008c10e1d11102e680006db1e13554c7` binds a circular entity to its center-point entity. Type `d07d2c44d11189e680006fb1e13554c7` gives two circular entities equal radii. Each stores its two ordered entity references after the constraint header.
+Type `008c10e1d11102e680006db1e13554c7` binds a circular entity to its center-point entity. Type `d07d2c44d11189e680006fb1e13554c7` gives two circular entities equal radii. Type `e0c281c6d11110e680006eb1e13554c7` gives two lines equal lengths. Each stores its two ordered entity references after the constraint header.
 
 Type `58850511d211e39560000cb38932edb0` encodes a distance dimension. After the constraint header it stores `value:u32`, two entity references, and six f64 values. The constraint-header parameter drives the Euclidean distance between the two entities: between two points, from a point to a line's carrier, or between two parallel line carriers.
 

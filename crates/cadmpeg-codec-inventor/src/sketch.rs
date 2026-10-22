@@ -76,6 +76,9 @@ const CIRCLE_CENTER_TYPE: [u8; 16] = [
 const EQUAL_RADIUS_TYPE: [u8; 16] = [
     0xd0, 0x7d, 0x2c, 0x44, 0xd1, 0x11, 0x89, 0xe6, 0x80, 0x00, 0x6f, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
 ];
+const EQUAL_LENGTH_TYPE: [u8; 16] = [
+    0xe0, 0xc2, 0x81, 0xc6, 0xd1, 0x11, 0x10, 0xe6, 0x80, 0x00, 0x6e, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
+];
 const POLYGON_TYPE: [u8; 16] = [
     0x38, 0x48, 0x53, 0x52, 0x9f, 0x44, 0x52, 0x55, 0xe1, 0xe1, 0xda, 0xb4, 0x10, 0xeb, 0x06, 0xc4,
 ];
@@ -200,6 +203,10 @@ pub(crate) enum PmDcSketchConstraintKind {
         center: PmDcReference,
     },
     EqualRadius {
+        first: PmDcReference,
+        second: PmDcReference,
+    },
+    EqualLength {
         first: PmDcReference,
         second: PmDcReference,
     },
@@ -652,6 +659,7 @@ enum SketchConstraintTag {
     Diameter,
     CircleCenter,
     EqualRadius,
+    EqualLength,
     Distance,
     Angle,
     Midpoint,
@@ -678,6 +686,7 @@ impl SketchConstraintTag {
             DIAMETER_TYPE => Some(Self::Diameter),
             CIRCLE_CENTER_TYPE => Some(Self::CircleCenter),
             EQUAL_RADIUS_TYPE => Some(Self::EqualRadius),
+            EQUAL_LENGTH_TYPE => Some(Self::EqualLength),
             DISTANCE_TYPE => Some(Self::Distance),
             ANGLE_TYPE => Some(Self::Angle),
             MIDPOINT_TYPE => Some(Self::Midpoint),
@@ -1083,6 +1092,10 @@ fn parse_constraint(
         SketchConstraintTag::EqualRadius => PmDcSketchConstraintKind::EqualRadius {
             first: cursor.reference("equal-radius constraint first reference")?,
             second: cursor.reference("equal-radius constraint second reference")?,
+        },
+        SketchConstraintTag::EqualLength => PmDcSketchConstraintKind::EqualLength {
+            first: cursor.reference("equal-length constraint first reference")?,
+            second: cursor.reference("equal-length constraint second reference")?,
         },
         SketchConstraintTag::Distance => PmDcSketchConstraintKind::Distance {
             value: cursor.u32("distance dimension value")?,
@@ -1714,7 +1727,8 @@ fn project_constraint(
                 members,
             )
         }
-        PmDcSketchConstraintKind::EqualRadius { first, second } => {
+        PmDcSketchConstraintKind::EqualRadius { first, second }
+        | PmDcSketchConstraintKind::EqualLength { first, second } => {
             let members = [resolve(first)?, resolve(second)?];
             (
                 SketchConstraintDefinitionInput::Equal {
@@ -3300,6 +3314,7 @@ mod tests {
         for type_id in [
             SketchConstraintTag::CircleCenter,
             SketchConstraintTag::EqualRadius,
+            SketchConstraintTag::EqualLength,
         ] {
             let mut bytes = constraint_header(14, 0);
             bytes.extend_from_slice(&4u32.to_le_bytes());
