@@ -8,7 +8,9 @@
 //! compensation, so equal inputs give equal bits.
 
 use crate::failure::Measure;
-use crate::tolerance::{QUADRATURE_ACCEPTANCE_RELATIVE, QUADRATURE_RELATIVE_TARGET};
+use crate::tolerance::{
+    INNER_QUADRATURE_RELATIVE_TARGET, QUADRATURE_ACCEPTANCE_RELATIVE, QUADRATURE_RELATIVE_TARGET,
+};
 
 /// Kronrod abscissae of QUADPACK `qk15`, as the nearest doubles; the last is
 /// the centre.
@@ -65,6 +67,26 @@ const MAX_QUADRATURE_INTERVALS: usize = 1 << 12;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Target<const N: usize> {
     pub(crate) scale: [f64; N],
+    /// The estimate goal relative to `max(|value|, scale)`.
+    pub(crate) relative: f64,
+}
+
+impl<const N: usize> Target<N> {
+    /// An outer integral's target.
+    pub(crate) const fn outer(scale: [f64; N]) -> Self {
+        Self {
+            scale,
+            relative: QUADRATURE_RELATIVE_TARGET,
+        }
+    }
+
+    /// A generic inner integral's target.
+    pub(crate) const fn inner(scale: [f64; N]) -> Self {
+        Self {
+            scale,
+            relative: INNER_QUADRATURE_RELATIVE_TARGET,
+        }
+    }
 }
 
 /// The result of one integral.
@@ -165,9 +187,8 @@ pub(crate) fn integrate<const N: usize>(
             std::array::from_fn(|k| compensated(panels.iter().map(|panel| panel.value[k])));
         let error: [f64; N] =
             std::array::from_fn(|k| panels.iter().map(|panel| panel.error[k]).sum());
-        let goal: [f64; N] = std::array::from_fn(|k| {
-            QUADRATURE_RELATIVE_TARGET * value[k].abs().max(target.scale[k])
-        });
+        let goal: [f64; N] =
+            std::array::from_fn(|k| target.relative * value[k].abs().max(target.scale[k]));
         let met = (0..N).all(|k| error[k] <= goal[k]);
         if met || panels.len() >= MAX_QUADRATURE_INTERVALS {
             return Ok(finish(&panels, target, sign));
@@ -232,7 +253,7 @@ mod tests {
     }
 
     fn one(scale: f64) -> Target<1> {
-        Target { scale: [scale] }
+        Target::outer([scale])
     }
 
     #[test]
@@ -317,7 +338,7 @@ mod tests {
             0.0,
             2.0,
             &[0.5],
-            Target { scale: [1.0; 2] },
+            Target::outer([1.0; 2]),
         )
         .unwrap();
         let second = integrate(
@@ -326,7 +347,7 @@ mod tests {
             0.0,
             2.0,
             &[0.5],
-            Target { scale: [1.0; 2] },
+            Target::outer([1.0; 2]),
         )
         .unwrap();
         assert_eq!(first, second);
@@ -339,15 +360,8 @@ mod tests {
             evaluations.push(x);
             Ok([x * x, (5.0 * x).sin()])
         };
-        let integral = integrate(
-            &mut free(),
-            &mut f,
-            0.0,
-            1.0,
-            &[],
-            Target { scale: [1.0; 2] },
-        )
-        .unwrap();
+        let integral =
+            integrate(&mut free(), &mut f, 0.0, 1.0, &[], Target::outer([1.0; 2])).unwrap();
         assert!((integral.value[0] - 1.0 / 3.0).abs() < 1.0e-14);
         let exact = (1.0 - 5.0_f64.cos()) / 5.0;
         assert!((integral.value[1] - exact).abs() <= integral.error[1] + 1.0e-14);

@@ -7,9 +7,12 @@
 //! each other. Each loop is then oriented by its role, outer
 //! counterclockwise and holes clockwise, so the region lies on the left of
 //! every loop. Cylinders and cones follow the periodic rules of
-//! [`periodic`].
+//! [`periodic`], NURBS carriers the finite-domain rules of [`finite`].
 
+mod finite;
 mod periodic;
+
+pub(crate) use finite::FiniteContext;
 
 use std::cmp::Ordering;
 
@@ -70,7 +73,7 @@ pub(crate) fn loop_shape(
     }
     let mut aabb: Option<Aabb> = None;
     for point in &points {
-        let surface = chart.partials(point[0], point[1]).point;
+        let surface = chart.partials(eval, point[0], point[1])?.point;
         match aabb.as_mut() {
             Some(aabb) => aabb.include(surface),
             None => aabb = Some(Aabb::of_point(surface)),
@@ -159,6 +162,9 @@ pub(crate) struct Region {
     pub(crate) classification: Classification,
     /// The cone apex, when it is a member of the region.
     pub(crate) apex: Option<Point3>,
+    /// The factor, 0 or 1, of the whole domain's area in the region's area:
+    /// 1 when the region reaches the domain's natural edges.
+    pub(crate) exterior: f64,
 }
 
 /// The ring loops of a face, or the first loop failure.
@@ -187,16 +193,27 @@ fn invalid(message: &str) -> MeasureFailure {
 /// the allowance in units of `v`.
 pub(crate) fn classify(
     face: &Face,
-    chart: &Chart,
+    chart: &Chart<'_>,
     resolved: &ResolvedFace<'_>,
     shapes: &[Option<LoopShape>],
     v_tolerance: f64,
+    context: FiniteContext,
 ) -> Measure<Region> {
+    if context.implicit_outer
+        && matches!(chart, Chart::Plane(_) | Chart::Cylinder(_) | Chart::Cone(_))
+    {
+        return Err(MeasureFailure::unavailable(
+            UnavailableReason::BoundaryUnboundedFace,
+            Some(face.id.as_str()),
+            "the face's outer boundary is the natural boundary of an unbounded support",
+        ));
+    }
     match chart {
         Chart::Plane(_) => planar(face, resolved, shapes),
         Chart::Cylinder(_) | Chart::Cone(_) => {
             periodic::classify(face, chart, resolved, shapes, v_tolerance)
         }
+        Chart::Nurbs(_) => finite::classify(face, chart, resolved, shapes, context),
         Chart::Sphere(_) | Chart::Torus(_) => Err(MeasureFailure::unavailable(
             UnavailableReason::RegionDomainUnsupported,
             Some(face.id.as_str()),
@@ -301,6 +318,7 @@ fn planar(
         base,
         classification: classification(face, resolved, *outer),
         apex: None,
+        exterior: 0.0,
     })
 }
 

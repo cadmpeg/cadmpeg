@@ -117,6 +117,11 @@ pub(crate) struct ItemBudget<'pass> {
 }
 
 impl ItemBudget<'_> {
+    /// The item's work slice, for an evaluator that charges it directly.
+    pub(crate) const fn slice(&self) -> &WorkBudget {
+        &self.work
+    }
+
     /// Charge `units` of work, or report the item's slice exhausted.
     pub(crate) fn charge(&self, units: usize) -> Measure<()> {
         if self.work.charge_by(units) {

@@ -25,7 +25,10 @@ pub(crate) enum Source<'ir> {
     /// A 3D curve interval inverted onto the carrier.
     Curve(Rc<CurveChart<'ir>>),
     /// A pcurve use mapped through the carrier.
-    Pcurve { span: Span<'ir>, chart: Chart },
+    Pcurve {
+        span: Span<'ir>,
+        chart: Rc<Chart<'ir>>,
+    },
     /// A straight parameter segment whose image is one model point.
     Segment {
         from: [f64; 2],
@@ -98,7 +101,7 @@ impl<'ir> Piece<'ir> {
     /// A pcurve use on `chart`, traversed from `span.t0` to `span.t1`.
     pub(crate) fn pcurve(
         span: Span<'ir>,
-        chart: &Chart,
+        chart: &Chart<'ir>,
         use_: CoedgeUse<'ir>,
         off_surface: f64,
     ) -> Self {
@@ -106,7 +109,7 @@ impl<'ir> Piece<'ir> {
             coedge: Some(use_.coedge),
             source: Source::Pcurve {
                 span,
-                chart: *chart,
+                chart: Rc::new(*chart),
             },
             t0: span.t0,
             t1: span.t1,
@@ -147,7 +150,7 @@ impl<'ir> Piece<'ir> {
     /// enough that consecutive samples differ by less than a quarter period.
     pub(crate) fn inverted(
         eval: &Eval<'_, '_>,
-        chart: &Chart,
+        chart: &Chart<'_>,
         curve: Rc<CurveChart<'ir>>,
         [t0, t1]: [f64; 2],
         use_: CoedgeUse<'ir>,
@@ -158,11 +161,19 @@ impl<'ir> Piece<'ir> {
         let (reference, off_surface) = loop {
             let mut raw_samples: Vec<(f64, [f64; 2], bool)> = Vec::with_capacity(count + 1);
             let mut off_surface: f64 = 0.0;
+            let mut seed: Option<[f64; 2]> = None;
             for index in 0..=count {
                 let t = interpolate(t0, t1, index, count);
                 let point = curve.point(eval, t)?;
-                let raw = chart.invert(point);
-                let distance = chart.partials(raw[0], raw[1]).point.distance(point);
+                let Some(raw) = chart.invert(eval, point, seed, alpha)? else {
+                    return Err(MeasureFailure::unavailable(
+                        UnavailableReason::BoundaryInversionFailed,
+                        None,
+                        "a boundary point does not invert onto the surface",
+                    ));
+                };
+                seed = Some(raw);
+                let distance = chart.partials(eval, raw[0], raw[1])?.point.distance(point);
                 if distance.is_nan() || distance > alpha {
                     return Err(MeasureFailure::unavailable(
                         UnavailableReason::BoundaryInversionFailed,
@@ -238,18 +249,39 @@ impl<'ir> Piece<'ir> {
 
     /// The lifted parameters of a curve point at `t`, and whether the point
     /// is singular. At a singular point `u` is the reference lift.
-    fn lifted(&self, chart: &Chart, t: f64, point: Point3) -> ([f64; 2], bool) {
-        let raw = chart.invert(point);
+    fn lifted(
+        &self,
+        eval: &Eval<'_, '_>,
+        chart: &Chart<'_>,
+        t: f64,
+        point: Point3,
+    ) -> Measure<([f64; 2], bool)> {
         let reference = self.reference_at(t);
-        if chart.singular_at(point, self.alpha) {
+        let seed = match chart.domain() {
+            Some(domain) => std::array::from_fn(|axis| match self.periods[axis] {
+                Some(period) => {
+                    domain[axis][0] + (reference[axis] - domain[axis][0]).rem_euclid(period)
+                }
+                None => reference[axis],
+            }),
+            None => reference,
+        };
+        let Some(raw) = chart.invert(eval, point, Some(seed), self.alpha)? else {
+            return Err(MeasureFailure::unavailable(
+                UnavailableReason::BoundaryInversionFailed,
+                None,
+                "a boundary point does not invert onto the surface",
+            ));
+        };
+        Ok(if chart.singular_at(point, self.alpha) {
             ([reference[0], raw[1]], true)
         } else {
             (nearest(self.periods, raw, reference), false)
-        }
+        })
     }
 
     /// The piece at parameter `t`.
-    pub(crate) fn sample(&self, eval: &Eval<'_, '_>, chart: &Chart, t: f64) -> Measure<Sample> {
+    pub(crate) fn sample(&self, eval: &Eval<'_, '_>, chart: &Chart<'_>, t: f64) -> Measure<Sample> {
         match &self.source {
             Source::Segment { from, to, .. } => Ok(Sample {
                 uv: self.segment_uv(*from, *to, t),
@@ -265,8 +297,8 @@ impl<'ir> Piece<'ir> {
             Source::Curve(curve) => {
                 let point = curve.point(eval, t)?;
                 let tangent = curve.tangent(eval, t)?;
-                let (lifted, singular) = self.lifted(chart, t, point);
-                let partials = chart.partials(lifted[0], lifted[1]);
+                let (lifted, singular) = self.lifted(eval, chart, t, point)?;
+                let partials = chart.partials(eval, lifted[0], lifted[1])?;
                 let duv = if singular {
                     singular_velocity(partials.dv, tangent)?
                 } else {
@@ -288,7 +320,7 @@ impl<'ir> Piece<'ir> {
     }
 
     /// The lifted parameters at `t`, without the parameter velocity.
-    pub(crate) fn uv(&self, eval: &Eval<'_, '_>, chart: &Chart, t: f64) -> Measure<[f64; 2]> {
+    pub(crate) fn uv(&self, eval: &Eval<'_, '_>, chart: &Chart<'_>, t: f64) -> Measure<[f64; 2]> {
         match &self.source {
             Source::Segment { from, to, .. } => Ok(self.segment_uv(*from, *to, t)),
             Source::Pcurve { span, .. } => {
@@ -297,17 +329,17 @@ impl<'ir> Piece<'ir> {
             }
             Source::Curve(curve) => {
                 let point = curve.point(eval, t)?;
-                let (lifted, _) = self.lifted(chart, t, point);
+                let (lifted, _) = self.lifted(eval, chart, t, point)?;
                 Ok([lifted[0] + self.shift[0], lifted[1] + self.shift[1]])
             }
         }
     }
 
-    pub(crate) fn start_uv(&self, eval: &Eval<'_, '_>, chart: &Chart) -> Measure<[f64; 2]> {
+    pub(crate) fn start_uv(&self, eval: &Eval<'_, '_>, chart: &Chart<'_>) -> Measure<[f64; 2]> {
         self.uv(eval, chart, self.t0)
     }
 
-    pub(crate) fn end_uv(&self, eval: &Eval<'_, '_>, chart: &Chart) -> Measure<[f64; 2]> {
+    pub(crate) fn end_uv(&self, eval: &Eval<'_, '_>, chart: &Chart<'_>) -> Measure<[f64; 2]> {
         self.uv(eval, chart, self.t1)
     }
 
@@ -326,7 +358,7 @@ impl<'ir> Piece<'ir> {
             Source::Curve(curve) => curve.point(eval, t),
             Source::Pcurve { span, chart } => {
                 let uv = span.uv(eval, t)?;
-                Ok(chart.partials(uv[0], uv[1]).point)
+                Ok(chart.partials(eval, uv[0], uv[1])?.point)
             }
         }
     }
@@ -350,7 +382,7 @@ impl<'ir> Piece<'ir> {
     pub(crate) fn polyline(
         &self,
         eval: &Eval<'_, '_>,
-        chart: &Chart,
+        chart: &Chart<'_>,
         deviation: f64,
     ) -> Measure<Vec<[f64; 2]>> {
         if self.synthesized() {

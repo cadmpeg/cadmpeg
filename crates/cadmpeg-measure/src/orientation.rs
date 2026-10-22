@@ -10,14 +10,29 @@
 
 use cadmpeg_ir::topology::{Face, Sense};
 
+use crate::canonical::surface::Chart;
+
 use crate::region::Region;
 use crate::report::{Classification, FaceOrientation, NormalReading, RegionRule};
 
-/// The oriented normal a face's sense states.
-pub(crate) fn declared_normal(face: &Face) -> NormalReading {
-    match face.sense {
-        Sense::Forward => NormalReading::Surface,
-        Sense::Reversed => NormalReading::Reversed,
+/// The oriented normal a face's sense states, reversed once more on a NURBS
+/// carrier whose oriented normal is opposite `S_u × S_v`.
+pub(crate) fn declared_normal(face: &Face, chart: Option<&Chart<'_>>) -> NormalReading {
+    let reversed = matches!(face.sense, Sense::Reversed)
+        != matches!(chart, Some(Chart::Nurbs(nurbs)) if nurbs.surface.normal_reversed());
+    if reversed {
+        NormalReading::Reversed
+    } else {
+        NormalReading::Surface
+    }
+}
+
+/// The opposite reading of a surface or reversed normal.
+pub(crate) const fn opposite(reading: NormalReading) -> NormalReading {
+    match reading {
+        NormalReading::Surface => NormalReading::Reversed,
+        NormalReading::Reversed => NormalReading::Surface,
+        other => other,
     }
 }
 
@@ -52,11 +67,10 @@ pub(crate) fn loop_normal(region: &Region, directed: &[bool]) -> NormalReading {
 
 /// The orientation facts of a face whose region is `region`.
 pub(crate) fn face_orientation(
-    face: &Face,
+    declared: NormalReading,
     region: Option<&Region>,
     directed: &[bool],
 ) -> FaceOrientation {
-    let declared = declared_normal(face);
     let Some(region) = region else {
         return FaceOrientation {
             declared_normal: declared,

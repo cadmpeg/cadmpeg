@@ -101,31 +101,68 @@ pub(crate) fn axial_range(
     Ok(range)
 }
 
-/// The lifted `u`-range of one piece.
-fn piece_u_range(
+/// The lifted range of parameter `axis` (0 for `u`, 1 for `v`) along one
+/// piece.
+fn piece_range(
     eval: &Eval<'_, '_>,
-    chart: &Chart,
+    chart: &Chart<'_>,
     piece: &Piece<'_>,
+    axis: usize,
 ) -> Measure<([f64; 2], f64)> {
     if piece.synthesized() {
-        let start = piece.uv(eval, chart, piece.t0)?[0];
-        let end = piece.uv(eval, chart, piece.t1)?[0];
+        let start = piece.uv(eval, chart, piece.t0)?[axis];
+        let end = piece.uv(eval, chart, piece.t1)?[axis];
         return Ok(([start.min(end), start.max(end)], 0.0));
     }
     let mut charge = |units| eval.charge(units);
     let mut f = |t: f64| -> Measure<(f64, f64)> {
         let sample = piece.sample(eval, chart, t)?;
-        Ok((sample.uv[0], sample.duv[0]))
+        Ok((sample.uv[axis], sample.duv[axis]))
     };
     let found = extrema(&mut charge, &mut f, piece.t0, piece.t1, &piece.breaks())?;
     Ok(([found.min, found.max], found.error))
+}
+
+/// The parameter ranges of a face on a NURBS carrier: the domain when the
+/// region reaches the domain's natural edges, else the range of the
+/// boundary pieces.
+pub(crate) fn parameter_ranges(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    resolved: &ResolvedFace<'_>,
+    region: &Region,
+) -> Measure<[AxialRange; 2]> {
+    if let (Some(domain), true) = (chart.domain(), region.exterior != 0.0) {
+        return Ok(domain.map(|[min, max]| AxialRange {
+            min,
+            max,
+            numeric_error: 0.0,
+        }));
+    }
+    let mut ranges = [0, 1].map(|_| AxialRange {
+        min: f64::INFINITY,
+        max: f64::NEG_INFINITY,
+        numeric_error: 0.0,
+    });
+    for resolution in &resolved.loops {
+        let resolved_loop = resolution.outcome.as_ref().map_err(Clone::clone)?;
+        for piece in &resolved_loop.pieces {
+            for (axis, range) in ranges.iter_mut().enumerate() {
+                let ([low, high], error) = piece_range(eval, chart, piece, axis)?;
+                range.min = range.min.min(low);
+                range.max = range.max.max(high);
+                range.numeric_error = range.numeric_error.max(error);
+            }
+        }
+    }
+    Ok(ranges)
 }
 
 /// The angular sweep: the measure of the union, on the circle, of every
 /// piece's lifted `u`-range. `tolerance` is the angular allowance.
 pub(crate) fn angular_sweep(
     eval: &Eval<'_, '_>,
-    chart: &Chart,
+    chart: &Chart<'_>,
     resolved: &ResolvedFace<'_>,
     tolerance: f64,
 ) -> Measure<AngularSweep> {
@@ -139,7 +176,7 @@ pub(crate) fn angular_sweep(
             wraps = true;
         }
         for piece in &resolved_loop.pieces {
-            let (range, error) = piece_u_range(eval, chart, piece)?;
+            let (range, error) = piece_range(eval, chart, piece, 0)?;
             ranges.push(range);
             numeric_error = numeric_error.max(error);
         }

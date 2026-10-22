@@ -210,6 +210,37 @@ cone apex has a synthesized segment along the apex. When the loop has one
 such segment and the segment can close the loop without a full turn, the
 segment takes that length and the loop is contractible.
 
+On a NURBS carrier's finite parameter domain:
+
+| Loops | Region |
+| --- | --- |
+| No ring loop | `whole_surface`: the face covers the whole domain. |
+| A curve-bounded construction with an implicit outer boundary | `domain_exterior`: the domain is the outer boundary and every loop is a hole. On an unbounded support the face is `boundary.unbounded-face`. |
+| `FaceLoops::Classified` | `nesting` by the planar rule in the parameter plane. |
+| `FaceLoops::Unspecified` | `declared_orientation`: the region lies on the left of every loop, after each loop is reversed when the declared normal is reversed. The region reaches the domain's natural edges when a point just left of a loop has a total winding number of zero. |
+
+Loops on a periodic NURBS domain are `region.domain-unsupported`.
+
+### Readings
+
+A `declared_orientation` face has two readings: the `declared` region and
+its `complement` in the domain. When one reading has zero area within its
+error, the other is the face's region whatever the orientation: the witness
+`empty_reading` confirms the declared reading, or puts the face in conflict
+with the complement's values. Otherwise the area is measured under
+`reading: declared` with the `complement` as a candidate, and the face has
+the caveat `orientation.unconfirmed`. When both readings give one value
+within error, the value has no reading and no candidate.
+
+### Procedural carriers
+
+A curve-bounded construction takes the canonical kind and chart of its
+support. An exact construction is measured on its solved cache. Another
+construction is measured on its solved cache when the cache states its fit
+tolerance, which enters the model uncertainty; its kind stays
+`procedural`. Every other procedural carrier is
+`carrier.procedural-unevaluated`.
+
 ## Extents
 
 `axial_range` is the range of `(P − axis_point) · axis_direction` over a
@@ -231,7 +262,14 @@ A face box is the box of the boundary pieces joined with the carrier's
 interior critical points that lie in the region. A plane or a cylinder has no
 interior critical point, and its box has the method `boundary_extremum`. On a
 cone the apex is the only one, and the box has the method `critical_points`.
-`bbox.boundary` is the box of the boundary pieces alone.
+On a NURBS carrier the box is the box of the placed control net,
+`conservative` with the method `control_hull`; a weight that is not
+positive makes it `bbox.nonpositive-weights`. `bbox.boundary` is the box of
+the boundary pieces alone.
+
+`u_range` and `v_range` of a NURBS face are the parameter ranges of its
+boundary pieces, or the domain when the region reaches the domain's natural
+edges.
 
 ## Orientation
 

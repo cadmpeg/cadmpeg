@@ -220,7 +220,7 @@ fn pcurve_trace(
                 "the coedge's face surface does not resolve",
             )
         })?;
-    let carrier = Carrier::resolve(surface, ends.placement)?;
+    let carrier = Carrier::resolve_in(owners, surface, ends.placement)?;
     let chart = carrier.chart()?;
     let (start, end) = match coedge.sense {
         cadmpeg_ir::topology::Sense::Forward => (ends.start, ends.end),
@@ -241,7 +241,7 @@ fn pcurve_trace(
     let velocity = |span: &Span<'_>, t: f64| -> Measure<(Point3, Vector3)> {
         let uv = span.uv(eval, t)?;
         let duv = span.duv(eval, t)?;
-        let partials = chart.partials(uv[0], uv[1]);
+        let partials = chart.partials(eval, uv[0], uv[1])?;
         Ok((
             partials.point,
             combine(&[(duv[0], partials.du), (duv[1], partials.dv)]),
@@ -261,7 +261,7 @@ fn pcurve_trace(
             span.t0.min(span.t1),
             span.t0.max(span.t1),
             &span.breaks(),
-            Target { scale: [scale] },
+            Target::outer([scale]),
         )?;
         if !integral.converged {
             return Err(MeasureFailure::unavailable(

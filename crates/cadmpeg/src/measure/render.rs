@@ -553,6 +553,29 @@ fn parameters_text(out: &mut impl Write, parameters: &CarrierParameters) -> io::
             line(out, "center", &point_text(center))?;
             line(out, "form", &name(form))
         }
+        CarrierParameters::Nurbs {
+            u_degree,
+            v_degree,
+            u_poles,
+            v_poles,
+            rational,
+            u_periodic,
+            v_periodic,
+            ..
+        } => line(
+            out,
+            "nurbs",
+            &format!(
+                "degree {u_degree}×{v_degree}, {u_poles}×{v_poles} poles, {}, {}",
+                if *rational { "rational" } else { "polynomial" },
+                match (u_periodic, v_periodic) {
+                    (false, false) => "not periodic",
+                    (true, false) => "periodic in u",
+                    (false, true) => "periodic in v",
+                    (true, true) => "periodic in u and v",
+                }
+            ),
+        ),
         CarrierParameters::None {} => Ok(()),
     }
 }
@@ -628,6 +651,12 @@ fn face_text(out: &mut impl Write, face: &FaceMeasures) -> io::Result<()> {
     }
     if let Some(radius) = measures.radius_range() {
         line(out, "radius range", &range_text(radius, "mm"))?;
+    }
+    if let Some(range) = measures.u_range() {
+        line(out, "u range", &range_text(range, ""))?;
+    }
+    if let Some(range) = measures.v_range() {
+        line(out, "v range", &range_text(range, ""))?;
     }
     if let Some(region) = measures.region() {
         line(out, "region", &name(region))?;

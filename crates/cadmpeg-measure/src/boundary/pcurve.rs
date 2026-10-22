@@ -30,7 +30,7 @@ use crate::quadrature::gauss_kronrod_nodes;
 use crate::reason::UnavailableReason;
 
 /// Newton steps of one pcurve endpoint recovery from one seed.
-const MAX_PCURVE_RECOVERY_STEPS: usize = 64;
+const MAX_PCURVE_RECOVERY_STEPS: usize = 32;
 
 /// One pcurve use on its interval, in traversal order.
 #[derive(Debug, Clone, Copy)]
@@ -88,7 +88,7 @@ fn breaks(geometry: &PcurveGeometry) -> Vec<f64> {
 /// What the resolution of one coedge's pcurve uses reads.
 pub(crate) struct UseFrame<'a, 'ir> {
     pub(crate) owners: &'a Owners<'ir>,
-    pub(crate) chart: &'a Chart,
+    pub(crate) chart: &'a Chart<'ir>,
     pub(crate) alpha: f64,
     /// The model points the coedge starts and ends at, in traversal order.
     pub(crate) start: Point3,
@@ -164,15 +164,15 @@ impl<'ir> UseFrame<'_, 'ir> {
     }
 
     /// The model point of a pcurve point.
-    fn map(&self, uv: [f64; 2]) -> Point3 {
-        self.chart.partials(uv[0], uv[1]).point
+    fn map(&self, eval: &Eval<'_, '_>, uv: [f64; 2]) -> Measure<Point3> {
+        Ok(self.chart.partials(eval, uv[0], uv[1])?.point)
     }
 
     /// The model-space velocity of the mapped pcurve at `t`.
     fn mapped_velocity(&self, eval: &Eval<'_, '_>, span: &Span<'_>, t: f64) -> Measure<Vector3> {
         let uv = span.uv(eval, t)?;
         let duv = span.duv(eval, t)?;
-        let partials = self.chart.partials(uv[0], uv[1]);
+        let partials = self.chart.partials(eval, uv[0], uv[1])?;
         Ok(combine(&[(duv[0], partials.du), (duv[1], partials.dv)]))
     }
 
@@ -312,7 +312,9 @@ impl<'ir> UseFrame<'_, 'ir> {
         else {
             return Ok(None);
         };
-        let (a, b) = (self.map(a), self.map(b));
+        let (Some(a), Some(b)) = (soft(self.map(eval, a))?, soft(self.map(eval, b))?) else {
+            return Ok(None);
+        };
         let near = |p: Point3, q: Point3| p.distance(q) <= self.alpha;
         let forward = near(a, self.start) && near(b, self.end);
         let backward = near(b, self.start) && near(a, self.end);
@@ -335,7 +337,7 @@ impl<'ir> UseFrame<'_, 'ir> {
     ) -> Measure<Candidate> {
         let midpoint = |candidate: &Candidate| -> Measure<Point3> {
             let [a, b] = candidate.range;
-            Ok(self.map(span(candidate.range).uv(eval, a.midpoint(b))?))
+            self.map(eval, span(candidate.range).uv(eval, a.midpoint(b))?)
         };
         let reference = midpoint(&chosen)?;
         let mut differs = false;
@@ -428,7 +430,9 @@ impl<'ir> UseFrame<'_, 'ir> {
                 let Some(uv) = soft(template.uv(eval, t))? else {
                     break;
                 };
-                let point = self.map(uv);
+                let Some(point) = soft(self.map(eval, uv))? else {
+                    break;
+                };
                 let gap = target.vector_from(point);
                 if gap.norm() <= self.alpha {
                     return Ok(Some(t));
@@ -528,10 +532,13 @@ impl<'ir> UseFrame<'_, 'ir> {
             else {
                 return Ok(false);
             };
-            if self.map(a).distance(previous) > self.alpha {
+            let (Some(a), Some(b)) = (soft(self.map(eval, a))?, soft(self.map(eval, b))?) else {
+                return Ok(false);
+            };
+            if a.distance(previous) > self.alpha {
                 return Ok(false);
             }
-            previous = self.map(b);
+            previous = b;
         }
         Ok(previous.distance(self.end) <= self.alpha)
     }
@@ -573,7 +580,7 @@ impl<'ir> UseFrame<'_, 'ir> {
         let mut previous = c0;
         let mut farthest: f64 = 0.0;
         for (position, (index, t)) in nodes.iter().enumerate() {
-            let point = self.map(spans[*index].uv(eval, *t)?);
+            let point = self.map(eval, spans[*index].uv(eval, *t)?)?;
             let Some(found) = curve.parameter(eval, point, previous, delta)? else {
                 return Err(mismatch("the pcurve image leaves the edge's 3D curve"));
             };

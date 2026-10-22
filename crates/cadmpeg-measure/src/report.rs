@@ -339,6 +339,30 @@ pub enum CarrierParameters {
         /// Ring, horn or spindle.
         form: TorusForm,
     },
+    /// A NURBS carrier: descriptive facts, not quantities. A NURBS carrier
+    /// has no radius.
+    Nurbs {
+        /// Degree in `u`.
+        u_degree: u32,
+        /// Degree in `v`.
+        v_degree: u32,
+        /// Pole count in `u`.
+        u_poles: usize,
+        /// Pole count in `v`.
+        v_poles: usize,
+        /// Whether the poles carry weights.
+        rational: bool,
+        /// Whether the carrier is periodic in `u`.
+        u_periodic: bool,
+        /// Whether the carrier is periodic in `v`.
+        v_periodic: bool,
+        /// The `u` knot domain.
+        u_domain: [f64; 2],
+        /// The `v` knot domain.
+        v_domain: [f64; 2],
+        /// Whether the oriented normal is opposite `S_u × S_v`.
+        normal_reversed: bool,
+    },
     /// A carrier with no kind-specific parameters in this build.
     None {},
 }
@@ -421,6 +445,15 @@ pub struct Witness {
     pub(crate) entity: String,
     pub(crate) agrees: bool,
 }
+
+accessors!(Witness {
+    /// What decided the face's reading.
+    kind: WitnessKind;
+    /// The deciding edge, shell or face.
+    entity: String;
+    /// Whether the witness agrees with the declared orientation.
+    agrees: bool;
+});
 
 /// The kind of a witness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -1051,7 +1084,7 @@ impl CarrierParameters {
                 visitor.visit(center);
                 visitor.visit(axis_direction);
             }
-            Self::None {} => {}
+            Self::Nurbs { .. } | Self::None {} => {}
         }
     }
 }

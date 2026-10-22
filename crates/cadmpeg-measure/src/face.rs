@@ -8,23 +8,24 @@ use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::topology::Face;
 
-use crate::area::nesting_area;
+mod readings;
+
 use crate::boundary::{FaceFrame, LoopKind, ResolvedFace, ResolvedLoop};
 use crate::canonical::placement::Placement;
 use crate::canonical::surface::Chart;
 use crate::canonical::{Carrier, Sources};
 use crate::context::Eval;
 use crate::edges::EdgeGeometry;
-use crate::extent::{angular_sweep, axial_range};
+use crate::extent::{angular_sweep, axial_range, parameter_ranges};
 use crate::failure::{settle, Measure, Missing, Outcome};
 use crate::geom::Aabb;
-use crate::orientation::face_orientation;
+use crate::orientation::{declared_normal, face_orientation, opposite};
 use crate::owners::Owners;
 use crate::reason::{CaveatCode, UnavailableReason};
-use crate::region::{classify, loop_shape, winding, LoopShape, Region};
+use crate::region::{classify, loop_shape, winding, FiniteContext, LoopShape, Region};
 use crate::report::{
     CarrierMeasures, CarrierParameters, Caveat, CoedgeMeasures, FaceMeasures, FaceOrientation,
-    FaceQuantities, ListedOrder, LoopMeasures, LoopRole, StatusTally,
+    FaceQuantities, ListedOrder, LoopMeasures, LoopRole, StatusTally, Witness, WitnessKind,
 };
 use crate::select::SurfaceKind;
 use crate::tolerance::{allowance, model_tolerance};
@@ -32,6 +33,7 @@ use crate::value::{
     measured, BoundaryBox, BoxKind, BoxValue, Errors, Method, Point, Quantity, Range, Scalar,
     Sweep, Unit,
 };
+use readings::{face_area, AreaInput, Verdict};
 
 /// Everything measured about one face.
 pub(crate) struct FaceResult {
@@ -95,9 +97,9 @@ impl<'ir> FaceInput<'_, 'ir> {
 
         let carrier = match (&self.placement, owners.surface(face.surface.as_str())) {
             (Err(missing), _) => Err(missing.clone()),
-            (Ok(placement), Some(surface)) => {
-                settle(Carrier::resolve(surface, *placement).map_err(|failure| failure.at(id)))?
-            }
+            (Ok(placement), Some(surface)) => settle(
+                Carrier::resolve_in(owners, surface, *placement).map_err(|failure| failure.at(id)),
+            )?,
             (Ok(_), None) => Err(Missing {
                 reason: UnavailableReason::CarrierUnresolved,
                 entity: Some(face.surface.as_str().to_owned()),
@@ -129,7 +131,7 @@ impl<'ir> FaceInput<'_, 'ir> {
             },
         };
 
-        let chart: Outcome<Chart> = match &carrier {
+        let chart: Outcome<Chart<'ir>> = match &carrier {
             Ok(carrier) => settle(carrier.chart().copied())?,
             Err(missing) => Err(missing.clone()),
         };
@@ -139,9 +141,14 @@ impl<'ir> FaceInput<'_, 'ir> {
             }
             (Err(missing), _) | (_, Err(missing)) => Err(missing.clone()),
         };
+        let declared = declared_normal(face, chart.as_ref().ok());
         let region: Outcome<Region> = match (&chart, &boundary) {
             (Ok(chart), Ok(boundary)) => {
                 let v_tolerance = chart.axis().map_or(alpha, |axis| alpha / axis.h);
+                let context = FiniteContext {
+                    implicit_outer: carrier.as_ref().is_ok_and(|carrier| carrier.implicit_outer),
+                    declared,
+                };
                 settle(
                     classify(
                         face,
@@ -149,6 +156,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                         &boundary.resolved,
                         &boundary.shapes,
                         v_tolerance,
+                        context,
                     )
                     .map_err(|failure| failure.at(id)),
                 )?
@@ -166,7 +174,23 @@ impl<'ir> FaceInput<'_, 'ir> {
                 }
             }
         }
-        let tau_b = tau.max(max_gap).max(off_surface);
+        let fit = carrier.as_ref().map_or(0.0, |carrier| carrier.fit);
+        let tau_b = tau.max(fit).max(max_gap).max(off_surface);
+        let hull = match &chart {
+            Ok(Chart::Nurbs(nurbs)) => Some(nurbs.control_hull()),
+            _ => None,
+        };
+        let scale = match (&hull, &boundary) {
+            (Some(Ok(hull)), _) => hull.diagonal(),
+            (_, Ok(boundary)) => boundary
+                .shapes
+                .iter()
+                .flatten()
+                .map(|shape| shape.diagonal)
+                .fold(0.0, f64::max),
+            _ => 0.0,
+        };
+        let scale = if scale > 0.0 { scale } else { alpha };
 
         let lengths = self.lengths(face, &coedges);
         let placement_term = |dimension: u8, value: f64| match &self.placement {
@@ -174,7 +198,7 @@ impl<'ir> FaceInput<'_, 'ir> {
             Err(_) => 0.0,
         };
 
-        let area = match (&chart, &boundary, &region) {
+        let (area, verdict) = match (&chart, &boundary, &region) {
             (Ok(chart), Ok(boundary), Ok(region)) => {
                 let resolved: Vec<Option<&ResolvedLoop<'_>>> = boundary
                     .resolved
@@ -182,25 +206,24 @@ impl<'ir> FaceInput<'_, 'ir> {
                     .iter()
                     .map(|resolution| resolution.outcome.as_ref().ok())
                     .collect();
-                match settle(
-                    nesting_area(chart, region, &boundary.shapes, &resolved)
-                        .map_err(|failure| failure.at(id)),
-                )? {
-                    Ok(area) => measured(
-                        Scalar::new(area.value),
-                        Unit::SquareMillimeter,
-                        Method::BoundaryQuadrature,
-                        Errors::new(
-                            area.numeric_error,
-                            lengths.boundary * tau_b + placement_term(2, area.value),
-                        ),
-                        id,
-                    ),
-                    Err(missing) => missing.quantity(),
+                let area_placement = |value: f64| placement_term(2, value);
+                let input = AreaInput {
+                    id,
+                    chart,
+                    region,
+                    shapes: &boundary.shapes,
+                    resolved: &resolved,
+                    scale,
+                    boundary_model: lengths.boundary * tau_b,
+                    placement: &area_placement,
+                };
+                match settle(face_area(eval, &input).map_err(|failure| failure.at(id)))? {
+                    Ok(face_area) => (face_area.area, face_area.verdict),
+                    Err(missing) => (missing.quantity(), Verdict::Settled),
                 }
             }
             (Err(missing), _, _) | (_, Err(missing), _) | (_, _, Err(missing)) => {
-                missing.quantity()
+                (missing.quantity(), Verdict::Settled)
             }
         };
 
@@ -225,6 +248,48 @@ impl<'ir> FaceInput<'_, 'ir> {
                     method: Method::CriticalPoints,
                 },
             ),
+            (Ok(Chart::Nurbs(_)), Ok(_)) => match hull {
+                Some(Ok(hull)) => {
+                    let (boundary_box, _) = self.boundary_box(
+                        face,
+                        &coedges,
+                        &boundary,
+                        BoxBasis {
+                            tau_b,
+                            member: None,
+                            method: Method::BoundaryExtremum,
+                        },
+                    );
+                    let boundary_aabb = boundary_box.measured().map(|measured| {
+                        let value = measured.value();
+                        let mut aabb = Aabb::of_point(value.min.get());
+                        aabb.include(value.max.get());
+                        aabb
+                    });
+                    (
+                        measured(
+                            box_value(hull, BoxKind::Conservative, boundary_aabb),
+                            Unit::Millimeter,
+                            Method::ControlHull,
+                            Errors::new(0.0, tau_b),
+                            id,
+                        ),
+                        Some(hull),
+                    )
+                }
+                Some(Err(reason)) => (
+                    unavailable(reason, id, "the control net bounds no box"),
+                    None,
+                ),
+                None => (
+                    unavailable(
+                        UnavailableReason::BboxInteriorUnbounded,
+                        id,
+                        "the carrier has no control net",
+                    ),
+                    None,
+                ),
+            },
             (Ok(_), Ok(_)) => (
                 unavailable(
                     UnavailableReason::RegionDomainUnsupported,
@@ -250,8 +315,27 @@ impl<'ir> FaceInput<'_, 'ir> {
                 .collect(),
             Err(_) => Vec::new(),
         };
-        let orientation: FaceOrientation = face_orientation(face, region.as_ref().ok(), &directed);
+        let mut orientation: FaceOrientation =
+            face_orientation(declared, region.as_ref().ok(), &directed);
         let mut caveats = Vec::new();
+        match verdict {
+            Verdict::Settled => {}
+            Verdict::Confirmed | Verdict::Conflict => {
+                let agrees = verdict == Verdict::Confirmed;
+                orientation.witness = Some(Witness {
+                    kind: WitnessKind::EmptyReading,
+                    entity: id.to_owned(),
+                    agrees,
+                });
+                orientation.consistent = Some(agrees);
+                orientation.loop_normal = if agrees { declared } else { opposite(declared) };
+            }
+            Verdict::Unconfirmed => caveats.push(Caveat::new(
+                CaveatCode::OrientationUnconfirmed,
+                Some(id),
+                "the face's region rests on its declared orientation and no witness confirms it",
+            )),
+        }
         let loops = self.loops(face, &boundary, region.as_ref().ok(), &mut caveats);
         caveats.sort();
 
@@ -305,8 +389,8 @@ impl<'ir> FaceInput<'_, 'ir> {
             angular_sweep: extents.angular_sweep,
             latitude_range: extents.latitude_range,
             radius_range: extents.radius_range,
-            u_range: None,
-            v_range: None,
+            u_range: extents.u_range,
+            v_range: extents.v_range,
             region: region.as_ref().ok().map(|region| region.rule),
             loops,
         };
@@ -338,7 +422,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         &self,
         eval: &Eval<'_, '_>,
         face: &'ir Face,
-        chart: &Chart,
+        chart: &Chart<'ir>,
         placement: Placement,
         alpha: f64,
     ) -> Measure<Boundary<'ir>> {
@@ -580,7 +664,7 @@ struct BoxBasis {
 /// What the extents of a face read.
 struct ExtentInput<'a, 'ir> {
     id: &'a str,
-    chart: &'a Outcome<Chart>,
+    chart: &'a Outcome<Chart<'ir>>,
     boundary: &'a Outcome<Boundary<'ir>>,
     region: &'a Outcome<Region>,
     tau_b: f64,
@@ -605,6 +689,8 @@ struct Extents {
     angular_sweep: Option<Quantity<Sweep>>,
     latitude_range: Option<Quantity<Range>>,
     radius_range: Option<Quantity<Range>>,
+    u_range: Option<Quantity<Range>>,
+    v_range: Option<Quantity<Range>>,
 }
 
 /// The extents that apply to the face's carrier kind: measured, or
@@ -624,6 +710,36 @@ fn extent_quantities(
     let mut extents = Extents::default();
     match chart {
         Chart::Plane(_) => {}
+        Chart::Nurbs(_) => match upstream {
+            Ok((boundary, region)) => {
+                match settle(
+                    parameter_ranges(eval, chart, &boundary.resolved, region)
+                        .map_err(|failure| failure.at(id)),
+                )? {
+                    Ok(ranges) => {
+                        let [u, v] = ranges.map(|range| {
+                            measured(
+                                Range::new(range.min, range.max),
+                                Unit::One,
+                                Method::BoundaryExtremum,
+                                Errors::new(range.numeric_error, 0.0),
+                                id,
+                            )
+                        });
+                        extents.u_range = Some(u);
+                        extents.v_range = Some(v);
+                    }
+                    Err(missing) => {
+                        extents.u_range = Some(missing.quantity());
+                        extents.v_range = Some(missing.quantity());
+                    }
+                }
+            }
+            Err(missing) => {
+                extents.u_range = Some(missing.quantity());
+                extents.v_range = Some(missing.quantity());
+            }
+        },
         Chart::Sphere(_) => {
             let missing = match &upstream {
                 Err(missing) => missing.clone(),

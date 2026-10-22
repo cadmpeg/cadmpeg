@@ -3,6 +3,7 @@
 //! body placement composed, the canonical kind, and the reported parameters.
 
 pub(crate) mod curve;
+mod domain;
 pub(crate) mod placement;
 pub(crate) mod surface;
 
@@ -20,7 +21,7 @@ use crate::value::{
     measured, Errors, Method, Point, Quantity, Scalar, SourceExactness, SourceField, Unit,
 };
 use placement::Placement;
-use surface::{Chart, ConeChart, CylinderChart, PlaneChart, SphereChart, TorusChart};
+use surface::{Chart, ConeChart, CylinderChart, NurbsChart, PlaneChart, SphereChart, TorusChart};
 
 /// How the source established one field of one entity.
 pub(crate) fn exactness(
@@ -89,10 +90,10 @@ impl Sources<'_> {
     }
 }
 
-/// The analytic chart of a carrier, or why it has none.
+/// The chart of a carrier, or why it has none.
 #[derive(Debug, Clone)]
-pub(crate) enum Shape {
-    Analytic(Chart),
+pub(crate) enum Shape<'ir> {
+    Charted(Box<Chart<'ir>>),
     Unsupported {
         reason: UnavailableReason,
         message: String,
@@ -102,13 +103,21 @@ pub(crate) enum Shape {
 /// A face's carrier in model space.
 #[derive(Debug, Clone)]
 pub(crate) struct Carrier<'ir> {
+    /// The surface whose geometry the chart and parameters read.
     pub(crate) surface: &'ir Surface,
+    /// The surface the face names.
+    pub(crate) face_surface: &'ir Surface,
+    /// Whether the support's natural outer boundary is the face's outer
+    /// boundary (a curve-bounded construction).
+    pub(crate) implicit_outer: bool,
+    /// The deviation of a solved cache from its construction, in mm.
+    pub(crate) fit: f64,
     pub(crate) kind: SurfaceKind,
     pub(crate) chain: Vec<String>,
     pub(crate) placement: Placement,
     pub(crate) depth: usize,
     pub(crate) leaf: Option<&'ir SolvedSurfaceGeometry>,
-    pub(crate) shape: Shape,
+    pub(crate) shape: Shape<'ir>,
 }
 
 fn leaf_kind(geometry: &SolvedSurfaceGeometry) -> (SurfaceKind, &'static str) {
@@ -131,6 +140,9 @@ impl<'ir> Carrier<'ir> {
         match &surface.geometry {
             SurfaceGeometry::Procedural { .. } => Ok(Self {
                 surface,
+                face_surface: surface,
+                implicit_outer: false,
+                fit: 0.0,
                 kind: SurfaceKind::Procedural,
                 chain: vec!["procedural".to_owned()],
                 placement: body,
@@ -141,7 +153,18 @@ impl<'ir> Carrier<'ir> {
                     message: "procedural carriers are not measured in this build".to_owned(),
                 },
             }),
-            SurfaceGeometry::Solved(geometry) => {
+            SurfaceGeometry::Solved(geometry) => Self::resolve_geometry(surface, geometry, body),
+        }
+    }
+
+    /// The carrier of `geometry`, stored on `surface`, placed by `body`.
+    pub(crate) fn resolve_geometry(
+        surface: &'ir Surface,
+        geometry: &'ir SolvedSurfaceGeometry,
+        body: Placement,
+    ) -> Measure<Self> {
+        {
+            {
                 let mut chain = Vec::new();
                 let mut placement = Placement::identity();
                 let mut depth = 0;
@@ -158,6 +181,9 @@ impl<'ir> Carrier<'ir> {
                 let shape = analytic_chart(current, placement);
                 Ok(Self {
                     surface,
+                    face_surface: surface,
+                    implicit_outer: false,
+                    fit: 0.0,
                     kind,
                     chain,
                     placement,
@@ -174,10 +200,10 @@ impl<'ir> Carrier<'ir> {
         self.surface.id.as_str()
     }
 
-    /// The analytic chart, or why the carrier has none.
-    pub(crate) fn chart(&self) -> Measure<&Chart> {
+    /// The chart, or why the carrier has none.
+    pub(crate) fn chart(&self) -> Measure<&Chart<'ir>> {
         match &self.shape {
-            Shape::Analytic(chart) => Ok(chart),
+            Shape::Charted(chart) => Ok(chart),
             Shape::Unsupported { reason, message } => Err(MeasureFailure::unavailable(
                 *reason,
                 Some(self.id()),
@@ -196,7 +222,7 @@ impl<'ir> Carrier<'ir> {
                 .then_some(self.placement.reflection),
         };
         CarrierMeasures {
-            surface: self.id().to_owned(),
+            surface: self.face_surface.id.as_str().to_owned(),
             kind: self.kind,
             chain: self.chain.clone(),
             analytic: self.kind.analytic(),
@@ -218,18 +244,21 @@ impl<'ir> Carrier<'ir> {
     }
 }
 
-/// The analytic chart of a leaf under a composed placement.
-fn analytic_chart(geometry: &SolvedSurfaceGeometry, placement: Placement) -> Shape {
+/// The chart of a leaf under a composed placement.
+fn analytic_chart(geometry: &SolvedSurfaceGeometry, placement: Placement) -> Shape<'_> {
     let unsupported = |reason, message: &str| Shape::Unsupported {
         reason,
         message: message.to_owned(),
     };
     match geometry {
-        SolvedSurfaceGeometry::Nurbs(_) => {
-            return unsupported(
-                UnavailableReason::RegionDomainUnsupported,
-                "NURBS faces are not measured in this build",
-            )
+        SolvedSurfaceGeometry::Nurbs(nurbs) => {
+            return match NurbsChart::new(nurbs, placement) {
+                Some(chart) => Shape::Charted(Box::new(Chart::Nurbs(chart))),
+                None => unsupported(
+                    UnavailableReason::CarrierUnknown,
+                    "the NURBS carrier has an empty knot domain",
+                ),
+            }
         }
         SolvedSurfaceGeometry::Polygonal(_) => {
             return unsupported(
@@ -259,7 +288,7 @@ fn analytic_chart(geometry: &SolvedSurfaceGeometry, placement: Placement) -> Sha
             placement.rotate(axis),
         )
     };
-    Shape::Analytic(match geometry {
+    Shape::Charted(Box::new(match geometry {
         SolvedSurfaceGeometry::Plane(plane) => {
             let (eu, ev, _) = frame(
                 *plane.frame().axis().as_raw(),
@@ -338,7 +367,7 @@ fn analytic_chart(geometry: &SolvedSurfaceGeometry, placement: Placement) -> Sha
                 "the carrier has no analytic chart",
             )
         }
-    })
+    }))
 }
 
 /// Builds parameter values with their method and provenance.
@@ -465,9 +494,9 @@ impl Parameters<'_> {
         }
     }
 
-    fn of(&self, leaf: &SolvedSurfaceGeometry, shape: &Shape) -> CarrierParameters {
+    fn of(&self, leaf: &SolvedSurfaceGeometry, shape: &Shape<'_>) -> CarrierParameters {
         let chart = match shape {
-            Shape::Analytic(chart) => Some(chart),
+            Shape::Charted(chart) => Some(&**chart),
             Shape::Unsupported { .. } => None,
         };
         match (leaf, chart) {
@@ -569,12 +598,16 @@ impl Parameters<'_> {
                 let stored = sphere.radius().get();
                 let radius = self.length("radius", stored.abs(), stored > 0.0);
                 let diameter = self.diameter("radius", &radius);
-                let partials = Chart::Sphere(*chart).partials(0.0, 0.0);
-                let outward = partials
-                    .du
-                    .cross(partials.dv)
-                    .dot(partials.point.vector_from(chart.center))
-                    > 0.0;
+                let outward =
+                    Chart::Sphere(*chart)
+                        .closed_partials(0.0, 0.0)
+                        .is_some_and(|partials| {
+                            partials
+                                .du
+                                .cross(partials.dv)
+                                .dot(partials.point.vector_from(chart.center))
+                                > 0.0
+                        });
                 CarrierParameters::Sphere {
                     radius,
                     diameter,
@@ -584,6 +617,20 @@ impl Parameters<'_> {
                     } else {
                         NormalDirection::Inward
                     },
+                }
+            }
+            (SolvedSurfaceGeometry::Nurbs(nurbs), Some(Chart::Nurbs(chart))) => {
+                CarrierParameters::Nurbs {
+                    u_degree: nurbs.u_degree(),
+                    v_degree: nurbs.v_degree(),
+                    u_poles: nurbs.u_count(),
+                    v_poles: nurbs.v_count(),
+                    rational: nurbs.pole_weights().is_some(),
+                    u_periodic: nurbs.u_periodic(),
+                    v_periodic: nurbs.v_periodic(),
+                    u_domain: chart.domain[0],
+                    v_domain: chart.domain[1],
+                    normal_reversed: nurbs.normal_reversed(),
                 }
             }
             (SolvedSurfaceGeometry::Torus(torus), Some(Chart::Torus(chart))) => {

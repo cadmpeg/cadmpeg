@@ -16,6 +16,14 @@ pub(crate) const QUADRATURE_ACCEPTANCE_RELATIVE: f64 = 1.0e-6;
 /// Root refinement width relative to the searched interval.
 pub(crate) const EXTREMUM_PARAMETER_RESOLUTION: f64 = 1.0e-12;
 
+/// Generic inner area integral target relative to the inner integral's
+/// own magnitude.
+pub(crate) const INNER_QUADRATURE_RELATIVE_TARGET: f64 = 1.0e-12;
+
+/// Newton refinement of an inverted surface point stops when its step is
+/// below this fraction of the domain span.
+pub(crate) const INVERSION_PARAMETER_RESOLUTION: f64 = 1.0e-12;
+
 /// Gram-matrix test for similarity and rigid placements. An admitted unit
 /// frame deviates from orthonormal by up to about `2e-9` per Gram entry, so
 /// this admits a composition of up to four admitted frames.

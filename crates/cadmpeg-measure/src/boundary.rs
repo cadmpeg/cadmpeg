@@ -72,6 +72,17 @@ pub(crate) struct ResolvedLoop<'ir> {
 /// its inverted image reports.
 type ThreeD<'ir> = (Rc<CurveChart<'ir>>, [f64; 2], UvSource);
 
+/// Two consecutive boundary points and their parameters.
+#[derive(Clone, Copy)]
+struct Join {
+    from_point: Point3,
+    to_point: Point3,
+    from: [f64; 2],
+    to: [f64; 2],
+    /// The model distance between the points.
+    gap: f64,
+}
+
 /// The pieces of one coedge.
 enum CoedgePieces<'ir> {
     /// Pieces in traversal order; `directed` is false when the direction of
@@ -90,7 +101,7 @@ pub(crate) struct FaceFrame<'a, 'ir> {
     pub(crate) owners: &'a Owners<'ir>,
     pub(crate) edges: &'a HashMap<&'ir str, EdgeGeometry<'ir>>,
     pub(crate) face: &'ir Face,
-    pub(crate) chart: &'a Chart,
+    pub(crate) chart: &'a Chart<'ir>,
     pub(crate) body: Placement,
     pub(crate) alpha: f64,
 }
@@ -310,9 +321,14 @@ impl<'ir> FaceFrame<'_, 'ir> {
                     let end = previous.end_point(eval)?;
                     let gap = end.distance(start);
                     max_gap = max_gap.max(gap);
-                    if let Some(junction) =
-                        self.junction(end, start, from, to, gap, pending_pole.take())?
-                    {
+                    let join = Join {
+                        from_point: end,
+                        to_point: start,
+                        from,
+                        to,
+                        gap,
+                    };
+                    if let Some(junction) = self.junction(eval, join, pending_pole.take())? {
                         pieces.push(junction);
                     }
                 } else if let Some(pole) = pending_pole.take() {
@@ -358,7 +374,14 @@ impl<'ir> FaceFrame<'_, 'ir> {
             }
         }
         let closing_pole = pending_pole.or(leading_pole);
-        match self.junction(end_point, start_point, end, target, gap, closing_pole) {
+        let join = Join {
+            from_point: end_point,
+            to_point: start_point,
+            from: end,
+            to: target,
+            gap,
+        };
+        match self.junction(eval, join, closing_pole) {
             Ok(Some(closing)) => pieces.push(closing),
             Ok(None) => {}
             Err(MeasureFailure::Unavailable { .. }) => {
@@ -388,13 +411,17 @@ impl<'ir> FaceFrame<'_, 'ir> {
     /// is no jump.
     fn junction(
         &self,
-        from_point: Point3,
-        to_point: Point3,
-        from: [f64; 2],
-        to: [f64; 2],
-        gap: f64,
+        eval: &Eval<'_, '_>,
+        join: Join,
         pole: Option<&'ir Coedge>,
     ) -> Measure<Option<Piece<'ir>>> {
+        let Join {
+            from_point,
+            to_point,
+            from,
+            to,
+            gap,
+        } = join;
         if gap > self.alpha {
             return Err(MeasureFailure::unavailable(
                 UnavailableReason::BoundaryNotClosed,
@@ -404,14 +431,14 @@ impl<'ir> FaceFrame<'_, 'ir> {
         }
         if let Some(pole) = pole {
             if from != to {
-                self.check_segment(from_point, to_point, from, to)?;
+                self.check_segment(eval, from_point, to_point, from, to)?;
             }
             return Ok(Some(Piece::pole(pole, from, to, from_point)));
         }
         if from == to {
             return Ok(None);
         }
-        self.check_segment(from_point, to_point, from, to)?;
+        self.check_segment(eval, from_point, to_point, from, to)?;
         let singular = self.chart.singular_at(from_point, self.alpha)
             && self.chart.singular_at(to_point, self.alpha);
         Ok(Some(Piece::segment(from, to, from_point, singular)))
@@ -421,13 +448,14 @@ impl<'ir> FaceFrame<'_, 'ir> {
     /// map within the allowance of both.
     fn check_segment(
         &self,
+        eval: &Eval<'_, '_>,
         from_point: Point3,
         to_point: Point3,
         from: [f64; 2],
         to: [f64; 2],
     ) -> Measure<()> {
         let middle = [from[0].midpoint(to[0]), from[1].midpoint(to[1])];
-        let reached = self.chart.partials(middle[0], middle[1]).point;
+        let reached = self.chart.partials(eval, middle[0], middle[1])?.point;
         if reached.distance(from_point) > self.alpha || reached.distance(to_point) > self.alpha {
             return Err(MeasureFailure::unavailable(
                 UnavailableReason::BoundaryNotClosed,

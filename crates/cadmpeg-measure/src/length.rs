@@ -54,7 +54,7 @@ pub(crate) fn curve_length(
                 start.min(end),
                 start.max(end),
                 &chart.breaks(),
-                Target { scale: [scale] },
+                Target::outer([scale]),
             )?;
             if !integral.converged {
                 return Err(MeasureFailure::unavailable(

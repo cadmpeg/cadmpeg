@@ -334,6 +334,7 @@ pub(super) fn classify(
         base,
         classification,
         apex,
+        exterior: 0.0,
     })
 }
 

@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_ir::geometry::pcurve::Pcurve;
-use cadmpeg_ir::geometry::{Curve, Surface};
+use cadmpeg_ir::geometry::{Curve, ProceduralSurface, Surface};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use cadmpeg_ir::CadIr;
@@ -24,6 +24,7 @@ pub(crate) struct Owners<'ir> {
     surfaces: HashMap<&'ir str, &'ir Surface>,
     curves: HashMap<&'ir str, &'ir Curve>,
     pcurves: HashMap<&'ir str, &'ir Pcurve>,
+    procedural_surfaces: HashMap<&'ir str, &'ir ProceduralSurface>,
     /// Coedges of each edge, in coedge arena order.
     edge_coedges: HashMap<&'ir str, Vec<&'ir Coedge>>,
     /// Edges of each body, sorted.
@@ -55,6 +56,7 @@ impl<'ir> Owners<'ir> {
             surfaces: by_id(&model.surfaces, |item| item.id.as_str()),
             curves: by_id(&model.curves, |item| item.id.as_str()),
             pcurves: by_id(&model.pcurves, |item| item.id.as_str()),
+            procedural_surfaces: by_id(&model.procedural_surfaces, |item| item.id.as_str()),
             edge_coedges: HashMap::new(),
             body_edges: BTreeMap::new(),
             body_vertices: BTreeMap::new(),
@@ -171,6 +173,10 @@ impl<'ir> Owners<'ir> {
 
     pub(crate) fn pcurve(&self, id: &str) -> Option<&'ir Pcurve> {
         self.pcurves.get(id).copied()
+    }
+
+    pub(crate) fn procedural_surface(&self, id: &str) -> Option<&'ir ProceduralSurface> {
+        self.procedural_surfaces.get(id).copied()
     }
 
     /// The body-local position of a vertex.

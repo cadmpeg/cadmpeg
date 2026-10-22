@@ -5,6 +5,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, LineCurve, PlaneSurface,
 };
+use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, WeightedPole3};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, DirectedParameterRange, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -15,6 +16,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::NonZeroReal;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing,
     PcurveUse, Point, Region, Sense, Shell, Vertex,
@@ -398,6 +400,48 @@ impl Builder {
         self.surface(SolvedSurfaceGeometry::Cone(
             ConeSurface::try_new(origin, axis, reference, radius, 1.0, half_angle).expect("cone"),
         ))
+    }
+
+    /// A NURBS surface from its two axes `(degree, knots)` and its pole
+    /// rows `rows[i][j] = (pole, weight)`; all weights 1 make it polynomial.
+    pub(crate) fn nurbs(
+        &mut self,
+        u: (u32, Vec<f64>),
+        v: (u32, Vec<f64>),
+        rows: &[Vec<([f64; 3], f64)>],
+    ) -> SurfaceId {
+        let point = |[x, y, z]: [f64; 3]| Point3::new(x, y, z);
+        let rational = rows.iter().flatten().any(|(_, weight)| *weight != 1.0);
+        let poles = if rational {
+            NurbsPoleGrid::Rational {
+                rows: rows
+                    .iter()
+                    .map(|row| {
+                        row.iter()
+                            .map(|(pole, weight)| WeightedPole3 {
+                                point: point(*pole),
+                                weight: NonZeroReal::new(*weight).expect("weight"),
+                            })
+                            .collect()
+                    })
+                    .collect(),
+            }
+        } else {
+            NurbsPoleGrid::Polynomial {
+                rows: rows
+                    .iter()
+                    .map(|row| row.iter().map(|(pole, _)| point(*pole)).collect())
+                    .collect(),
+            }
+        };
+        let surface = NurbsSurface::new(
+            NurbsSurfaceAxis::new(u.0, u.1, false),
+            NurbsSurfaceAxis::new(v.0, v.1, false),
+            poles,
+            false,
+        )
+        .expect("NURBS surface");
+        self.surface(SolvedSurfaceGeometry::Nurbs(surface))
     }
 
     /// A plane surface.

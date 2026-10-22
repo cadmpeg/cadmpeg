@@ -130,6 +130,26 @@ impl<T> Measured<T> {
         self.provenance = provenance;
         self
     }
+
+    /// The value as a candidate under `reading`.
+    pub(crate) fn into_candidate(self, reading: Reading) -> Candidate<T> {
+        Candidate {
+            reading,
+            value: self.value,
+            unit: self.unit,
+            method: self.method,
+            numeric_error: self.numeric_error,
+            model_uncertainty: self.model_uncertainty,
+        }
+    }
+
+    /// The value measured under `reading`, with the other readings as
+    /// candidates.
+    pub(crate) fn under_reading(mut self, reading: Reading, candidates: Vec<Candidate<T>>) -> Self {
+        self.reading = Some(reading);
+        self.candidates = candidates;
+        self
+    }
 }
 
 /// An unavailable value. `category` is set by the constructors: the reason's
