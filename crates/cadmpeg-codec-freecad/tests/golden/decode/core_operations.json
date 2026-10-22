@@ -20539,9 +20539,9 @@
               },
               "definition": "hole",
               "direction": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
+                "x": -0.0,
+                "y": -0.0,
+                "z": -1.0
               },
               "extent": {
                 "kind": "blind",
