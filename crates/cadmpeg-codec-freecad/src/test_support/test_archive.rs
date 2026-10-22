@@ -113,3 +113,13 @@ pub(crate) fn streaming_archive_with_options(
     zip.write_all(document.as_bytes()).expect("write entry");
     zip.finish().expect("finish ZIP").into_inner()
 }
+
+/// Authored optional-member source with one independent broken DEFLATE stream.
+pub(crate) fn broken_optional_member_archive() -> Vec<u8> {
+    use cadmpeg_test_support::zip_fixture::{self, RawEntry};
+    zip_fixture::archive(&[
+        RawEntry::stored("Document.xml", b"<Document SchemaVersion='4' FileVersion='1'><Objects Count='0'/><ObjectData Count='0'/></Document>"),
+        RawEntry::compressed("broken.bin", zip_fixture::DEFLATE, b"\x07", b"not decoded"),
+        RawEntry::stored("peer.bin", b"peer source"),
+    ])
+}

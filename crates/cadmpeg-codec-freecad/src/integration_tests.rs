@@ -4,6 +4,7 @@
 
 mod content_scope;
 mod metadata_recovery;
+mod source_parts;
 
 use super::FcstdCodec;
 use crate::test_support::test_archive::{

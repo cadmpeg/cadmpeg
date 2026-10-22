@@ -1125,3 +1125,5 @@ pub(crate) fn table(
     let ctx = DecodeContext::new(&arena, &DecodePolicy::desktop(), DecodeDepth::Full);
     super::table(&ctx, typecode, records)
 }
+
+mod retained_bytes;

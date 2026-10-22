@@ -231,6 +231,16 @@ pub trait DecodeParts {
         spec: PartSpec,
         decode: impl FnOnce() -> Result<T, CodecError>,
     ) -> Result<Option<T>, CodecError>;
+
+    /// Run nested syntax parts within their genuine parent transaction.
+    /// The callback can stage only parser parts, not semantic records.
+    fn decode_parser_scope<T>(
+        &self,
+        output: &mut ParserPartOutput,
+        extent: View<'_>,
+        spec: PartSpec,
+        decode: impl FnOnce(&mut ParserPartOutput) -> Result<T, CodecError>,
+    ) -> Result<Option<T>, CodecError>;
 }
 
 impl DecodeParts for DecodeContext<'_> {
@@ -241,7 +251,22 @@ impl DecodeParts for DecodeContext<'_> {
         spec: PartSpec,
         decode: impl FnOnce() -> Result<T, CodecError>,
     ) -> Result<Option<T>, CodecError> {
-        self.decode_part(&mut output.0, extent, spec, |_stage| decode())
+        self.decode_parser_scope(output, extent, spec, |_stage| decode())
+    }
+
+    fn decode_parser_scope<T>(
+        &self,
+        output: &mut ParserPartOutput,
+        extent: View<'_>,
+        spec: PartSpec,
+        decode: impl FnOnce(&mut ParserPartOutput) -> Result<T, CodecError>,
+    ) -> Result<Option<T>, CodecError> {
+        self.decode_part(&mut output.0, extent, spec, |stage| {
+            let mut parser = ParserPartOutput(PartOutput::new(stage.codec));
+            let result = decode(&mut parser);
+            *stage = parser.0;
+            result
+        })
     }
 
     fn decode_part<T>(

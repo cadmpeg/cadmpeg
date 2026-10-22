@@ -1,8 +1,57 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{exact_assembly_operand_path, exact_assembly_operand_path_envelope};
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+
+// These adapters give each unchanged byte fixture its actual source session.
+fn exact_assembly_operand_path(
+    bytes: &[u8],
+    start: usize,
+    record_index: u32,
+    limit: usize,
+    link: DesignAssemblyOperandPathLink,
+    type_guid: Option<&str>,
+) -> Result<
+    Option<crate::records::feature::assembly::DesignAssemblyOperandPath>,
+    cadmpeg_core::CodecError,
+> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    super::exact_assembly_operand_path(source, start, record_index, limit, link, type_guid)
+        .map(|parsed| parsed.map(|path| path.content))
+}
+
+fn exact_assembly_operand_path_envelope(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    types: &super::StreamTypes<'_>,
+    locator_record_index: u32,
+    locator_reference_offset: u64,
+    locator_at: usize,
+) -> Result<
+    Option<crate::records::feature::assembly::DesignAssemblyOperandPath>,
+    cadmpeg_core::CodecError,
+> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    super::exact_assembly_operand_path_envelope(
+        source,
+        scope,
+        types,
+        locator_record_index,
+        locator_reference_offset,
+        locator_at,
+    )
+    .map(|parsed| parsed.map(|path| path.content))
+}
 
 const GUID: &str = "11111111-1111-1111-1111-111111111111";
 
@@ -298,3 +347,5 @@ fn typed_path_reads_its_occurrence_identity_pairs() {
             .is_none()
     );
 }
+
+mod source_layout;

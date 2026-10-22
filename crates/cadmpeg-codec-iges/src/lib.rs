@@ -179,15 +179,15 @@ impl CodecBackend for IgesCodec {
             .ok_or_else(|| CodecError::WrongFormat("unrecognized IGES representation".into()))?;
         match representation {
             representation::Representation::FixedAscii => {
-                reader::decode(root.window(), root.window(), representation, ctx)
+                reader::decode(root.window(), root, representation, ctx)
             }
             representation::Representation::CompressedAscii => {
                 let normalized = compressed::normalize(root.window())?;
-                reader::decode(&normalized, root.window(), representation, ctx)
+                reader::decode(&normalized, root, representation, ctx)
             }
             representation::Representation::Binary => {
                 let normalized = binary::normalize(root.window())?;
-                reader::decode(&normalized, root.window(), representation, ctx)
+                reader::decode(&normalized, root, representation, ctx)
             }
         }
     }

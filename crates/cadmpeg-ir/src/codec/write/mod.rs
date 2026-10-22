@@ -32,6 +32,7 @@ mod loss;
 pub mod target;
 
 pub use crate::validate::ValidatedFinding;
+pub use cadmpeg_core::encode::{EncodeBuffer, EncodeSession};
 use carried::{EntityLocation, FindingLocator};
 pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
 pub use error::{CapacityField, EncodeError};

@@ -13,6 +13,8 @@ use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::fmt;
 
+pub(crate) mod parts;
+
 /// The stored directory fields shared by Binary and Compressed ASCII.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]

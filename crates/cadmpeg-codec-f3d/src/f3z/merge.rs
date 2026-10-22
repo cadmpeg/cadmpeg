@@ -26,7 +26,10 @@ pub(super) fn merge_archive(
     model_root: String,
     ir: &mut cadmpeg_ir::CadIr,
     report: &mut cadmpeg_ir::codec::DecodeBody,
-    fidelity: &mut cadmpeg_ir::SourceFidelity,
+    (fidelity, pending_layouts): (
+        &mut cadmpeg_ir::SourceFidelity,
+        &mut Vec<crate::decode::source_layout::PendingLayouts>,
+    ),
 ) -> Result<usize, CodecError> {
     let table = xref_table_from_ir(ctx, ir)?;
 
@@ -38,7 +41,7 @@ pub(super) fn merge_archive(
         stack,
         untyped: cadmpeg_ir::ArenaClasses::default(),
     };
-    let merged = session.merge(ir, report, fidelity, &table)?;
+    let merged = session.merge(ir, report, fidelity, pending_layouts, &table)?;
     if !session.untyped.is_empty() {
         fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, session.untyped)?;
     }
@@ -129,6 +132,7 @@ impl MergeSession<'_, '_> {
         parent_ir: &mut cadmpeg_ir::CadIr,
         parent_report: &mut cadmpeg_ir::codec::DecodeBody,
         parent_fidelity: &mut cadmpeg_ir::SourceFidelity,
+        parent_layouts: &mut Vec<crate::decode::source_layout::PendingLayouts>,
         table: &XrefTable,
     ) -> Result<usize, CodecError> {
         let mut merged = 0usize;
@@ -176,7 +180,7 @@ impl MergeSession<'_, '_> {
             };
             let ctx = self.ctx;
             let _depth = ctx.enter_nested("f3z member reference")?;
-            let component = match crate::decode::decode_archive_member(
+            let (component, mut component_layouts) = match crate::decode::decode_archive_member(
                 self.ctx,
                 member_scan,
                 &self.archive.layers,
@@ -206,6 +210,7 @@ impl MergeSession<'_, '_> {
                 &mut component_ir,
                 &mut component_report,
                 &mut component_fidelity,
+                &mut component_layouts,
                 &child_table,
             )?;
             self.stack.pop();
@@ -240,7 +245,14 @@ impl MergeSession<'_, '_> {
                 &occurrence,
                 &part_ids,
             )?;
+            let prefix = occurrence_stream_prefix(&occurrence)?;
+            for pending in &mut component_layouts {
+                pending.rescope(self.ctx, prefix.as_str(), |id| {
+                    rescope(id, &occurrence, &part_ids)
+                })?;
+            }
             parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence, part_ids)?)?;
+            crate::decode::source_layout::append(self.ctx, parent_layouts, component_layouts)?;
             merged += descendants + 1;
             if component_report.transfer.geometry_transferred {
                 parent_report.transfer.geometry_transferred = true;
@@ -721,6 +733,7 @@ mod tests {
     mod fidelity;
     mod occurrence;
     mod parts;
+    mod pending_layouts;
 
     #[test]
     fn occurrence_translation_overflow_is_rejected() {

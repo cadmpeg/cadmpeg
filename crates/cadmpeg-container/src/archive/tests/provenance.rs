@@ -246,3 +246,138 @@ fn failed_member_checksums_do_not_register_validated_member_streams() {
         assert!(ctx.take_record_captures().unwrap().is_empty());
     }
 }
+
+#[test]
+fn stored_and_deflated_nonzero_archive_windows_keep_exact_source_coordinates() {
+    for (member, expected, compressed) in [
+        ("stored.bin", b"stored".as_slice(), false),
+        ("deflated.bin", b"deflated payload".as_slice(), true),
+    ] {
+        let zip = archive_bytes();
+        let mut bytes = b"outside-prefix".to_vec();
+        let start = bytes.len();
+        bytes.extend_from_slice(&zip);
+        let end = bytes.len();
+        bytes.extend_from_slice(b"outside-suffix");
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+        let enclosing = root.child(2, bytes.len() - 2).unwrap();
+        let source = enclosing.child(start, end).unwrap();
+        assert_ne!(source.start(), 0);
+        let archive = ArchiveSnapshot::new(&ctx, source).unwrap();
+        let relative = archive.entry(member).unwrap().stored_range().unwrap();
+        let payload = ByteRange {
+            start: cadmpeg_core::decode::u64_from_index(start) + relative.start,
+            end: cadmpeg_core::decode::u64_from_index(start) + relative.end,
+        };
+        let view = archive.open(&ctx, member).unwrap();
+        assert_eq!(view.window(), expected);
+        let name = ctx.capture_part_extent(view).unwrap().stream().to_owned();
+        let streams = ctx.source_streams().unwrap();
+        let origin = streams
+            .iter()
+            .find(|stream| stream.name() == name)
+            .unwrap()
+            .origin();
+        if compressed {
+            assert!(matches!(origin, SourceOrigin::Expanded { parent, extent }
+                if parent == "file" && *extent == payload));
+        } else {
+            assert!(matches!(origin, SourceOrigin::Alias { parent, extent }
+                if parent == "file" && *extent == payload));
+        }
+        ctx.record("payload", view, || {
+            assert_eq!(view.read_at(1, 2), Some(&expected[1..3]));
+            Ok(())
+        })
+        .unwrap();
+        let source_read = if compressed {
+            payload.start..payload.end
+        } else {
+            payload.start + 1..payload.start + 3
+        };
+        let captures = ctx.take_record_captures().unwrap();
+        assert_eq!(captures.len(), 1);
+        assert_eq!(
+            captures[0].reads(),
+            &BTreeMap::from([("file".into(), vec![source_read]), (name, vec![1..3]),])
+        );
+    }
+}
+
+#[test]
+fn nested_nonzero_archive_windows_project_reads_through_the_real_stored_host() {
+    for compressed in [false, true] {
+        let expected = b"nested payload";
+        let encoded = deflate(expected);
+        let entry = if compressed {
+            RawEntry::compressed("payload", zip_fixture::DEFLATE, &encoded, expected)
+        } else {
+            RawEntry::stored("payload", expected)
+        };
+        let inner = zip_fixture::archive(&[entry]);
+        let mut host = b"host-prefix".to_vec();
+        let inner_start = host.len();
+        host.extend_from_slice(&inner);
+        let inner_end = host.len();
+        host.extend_from_slice(b"host-suffix");
+        let bytes = zip_fixture::archive(&[RawEntry::stored("host", &host)]);
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+        let outer = ArchiveSnapshot::new(&ctx, root).unwrap();
+        let outer_payload = outer.entry("host").unwrap().stored_range().unwrap();
+        let host_view = outer.open(&ctx, "host").unwrap();
+        let host_name = ctx
+            .capture_part_extent(host_view)
+            .unwrap()
+            .stream()
+            .to_owned();
+        let source = host_view.child(inner_start, inner_end).unwrap();
+        assert_ne!(source.start(), 0);
+        let nested = ArchiveSnapshot::new(&ctx, source).unwrap();
+        let relative = nested.entry("payload").unwrap().stored_range().unwrap();
+        let payload = ByteRange {
+            start: cadmpeg_core::decode::u64_from_index(inner_start) + relative.start,
+            end: cadmpeg_core::decode::u64_from_index(inner_start) + relative.end,
+        };
+        let view = nested.open(&ctx, "payload").unwrap();
+        assert_eq!(view.window(), expected);
+        let name = ctx.capture_part_extent(view).unwrap().stream().to_owned();
+        let streams = ctx.source_streams().unwrap();
+        let origin = streams
+            .iter()
+            .find(|stream| stream.name() == name)
+            .unwrap()
+            .origin();
+        if compressed {
+            assert!(matches!(origin, SourceOrigin::Expanded { parent, extent }
+                if parent == &host_name && *extent == payload));
+        } else {
+            assert!(matches!(origin, SourceOrigin::Alias { parent, extent }
+                if parent == &host_name && *extent == payload));
+        }
+        ctx.record("nested-payload", view, || {
+            assert_eq!(view.read_at(1, 2), Some(&expected[1..3]));
+            Ok(())
+        })
+        .unwrap();
+        let host_read = if compressed {
+            payload.start..payload.end
+        } else {
+            payload.start + 1..payload.start + 3
+        };
+        let file_read = outer_payload.start + host_read.start..outer_payload.start + host_read.end;
+        let captures = ctx.take_record_captures().unwrap();
+        assert_eq!(captures.len(), 1);
+        assert_eq!(
+            captures[0].reads(),
+            &BTreeMap::from([
+                ("file".into(), vec![file_read]),
+                (host_name, vec![host_read]),
+                (name, vec![1..3]),
+            ])
+        );
+    }
+}

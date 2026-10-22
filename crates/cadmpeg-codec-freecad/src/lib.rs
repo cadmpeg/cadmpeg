@@ -779,7 +779,7 @@ impl CodecBackend for FcstdCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        let mut scan = container::scan(ctx, root)?;
+        let (mut scan, parts) = container::scan_for_decode(ctx, root)?;
         let mut admitted_entities = 0_u64;
         let mut attributes = container::source_attributes(&scan)?;
         let thumbnail = scan
@@ -1331,6 +1331,7 @@ impl CodecBackend for FcstdCodec {
         losses.extend(scan.losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
         losses.extend(dialect_losses);
+        container::parts::append(ctx, parts, &mut ir, &mut source_fidelity, &mut losses)?;
         losses.extend(loss::payloads::decode_losses(
             ctx,
             &ir,

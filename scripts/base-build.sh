@@ -34,11 +34,11 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 if [[ -e "$base_source" ]]; then
-  if [[ "$(git -C "$base_source" rev-parse --show-toplevel)" != "$base_source" ]]; then
+  if [[ ! "$(git -C "$base_source" rev-parse --show-toplevel)" -ef "$base_source" ]]; then
     echo "base source path is not its own worktree: $base_source" >&2
     exit 1
   fi
-  if [[ "$(git -C "$base_source" rev-parse --path-format=absolute --git-common-dir)" != "$(git -C "$base_repo" rev-parse --path-format=absolute --git-common-dir)" ]]; then
+  if [[ ! "$(git -C "$base_source" rev-parse --path-format=absolute --git-common-dir)" -ef "$(git -C "$base_repo" rev-parse --path-format=absolute --git-common-dir)" ]]; then
     echo "base source belongs to a different repository: $base_source" >&2
     exit 1
   fi

@@ -170,3 +170,5 @@ fn typed_error_wrapping_is_not_a_manufactured_resource_finding_and_catches_are_n
         "a lexical catch does not prove synthesis-only error consumption"
     );
 }
+
+mod precision;

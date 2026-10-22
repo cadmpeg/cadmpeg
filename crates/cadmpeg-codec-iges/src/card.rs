@@ -5,7 +5,7 @@ use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use crate::error::malformed;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::report::loss::LossNote;
@@ -110,6 +110,7 @@ struct UnframedLine {
 #[derive(Debug, Clone)]
 pub(crate) struct CardScan<'a> {
     source: &'a [u8],
+    source_view: Option<View<'a>>,
     pub(crate) lines: Vec<ScannedLine>,
     pub(crate) recoveries: FramingRecoveries,
 }
@@ -614,9 +615,20 @@ pub(crate) fn scan(source: &[u8]) -> Result<CardScan<'_>, CodecError> {
     terminate_counts(&lines, &mut recoveries)?;
     Ok(CardScan {
         source,
+        source_view: None,
         lines,
         recoveries,
     })
+}
+
+pub(crate) fn scan_source<'a>(
+    source: View<'a>,
+    ctx: &DecodeContext<'_>,
+) -> Result<CardScan<'a>, CodecError> {
+    ctx.capture_part_extent(source)?;
+    let mut scan = scan(source.window())?;
+    scan.source_view = Some(source);
+    Ok(scan)
 }
 
 struct EndingSummary([usize; 4]);
@@ -729,7 +741,10 @@ pub(crate) fn summarize(
     ))
 }
 
-impl CardScan<'_> {
+impl<'a> CardScan<'a> {
+    pub(crate) fn source_view(&self) -> Option<View<'a>> {
+        self.source_view
+    }
     pub(crate) fn section(&self, section: Section) -> impl Iterator<Item = (u32, &PhysicalLine)> {
         self.lines.iter().filter_map(move |line| match line {
             ScannedLine::Card {

@@ -91,3 +91,29 @@ fn unresolved_target_retains_catalog_and_requested_token() {
     assert_eq!(actual.format(), "cadir");
     assert!(actual.available().is_empty());
 }
+
+#[test]
+fn actual_encode_buffer_limit_becomes_the_same_typed_encode_error() {
+    use crate::codec::write::EncodeSession;
+    let mut limits = cadmpeg_core::decode::ResourceLimits::service();
+    limits.max_retained_bytes = 3;
+    let session = EncodeSession::new(limits);
+    let mut buffer = session.buffer();
+    buffer
+        .append(b"tri", "retain first record")
+        .expect("exact caller limit");
+    let original = buffer
+        .append(b"x", "retain next record")
+        .expect_err("real encoded bytes exceed the caller limit");
+    assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(original.reason, ResourceFailure::BudgetExceeded);
+    assert_eq!(
+        (original.limit, original.used, original.additional),
+        (3, 3, 1)
+    );
+    let EncodeError::ResourceLimit(actual) = EncodeError::from(original) else {
+        panic!("actual encode session failure must retain its typed resource evidence")
+    };
+    assert_eq!(actual, original);
+    assert_eq!(buffer.as_bytes(), b"tri");
+}
