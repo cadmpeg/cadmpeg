@@ -89,6 +89,7 @@ fn damage_entry(bytes: &mut [u8], name: &str, defect: Defect) {
     let central = usize::try_from(entry.central_start).unwrap();
     let local = usize::try_from(entry.header_start).unwrap();
     let payload = usize::try_from(entry.data_start.expect("readable frame")).unwrap();
+    drop(ctx);
     match defect {
         Defect::Crc => bytes[payload] ^= 1,
         Defect::Encryption => {
