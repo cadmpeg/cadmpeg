@@ -1126,26 +1126,28 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
             continue;
         };
-        let Some(family) =
-            crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())
-        else {
+        let definition = feature.evaluation.definition();
+        if crate::feature::FeatureFamily::from_definition(definition).is_none() {
             continue;
-        };
-        let expected_classes = family.class_ids();
-        let output_slot = family.output_slot();
-        if labels
+        }
+        // The label class selects the record layout; the neutral operation
+        // must be the one that layout projects.
+        let Some(family) = labels
             .get(&(
                 raw_feature.identity.segment_token.as_str(),
                 raw_feature.identity.record_ordinal,
             ))
-            .is_none_or(|label| !expected_classes.contains(&label.class_id()))
-        {
+            .and_then(|label| crate::feature::FeatureFamily::from_class_id(label.class_id()))
+            .filter(|family| family.admits_definition(definition))
+        else {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral feature family does not match its PmDc label".into(),
                 Some(feature.id.as_str().to_owned()),
             ));
-        }
+            continue;
+        };
+        let output_slot = family.output_slot();
         let expected_collection = raw_feature
             .properties
             .references()
@@ -1182,6 +1184,22 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
             continue;
         };
+        if matches!(collection.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
+            // A plate result is its one surface-body record.
+            if result
+                .bodies()
+                .iter()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                .ne([collection.id().as_str()])
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor feature result body does not match its PmDc surface body".into(),
+                    Some(result.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         let PmDcFeaturePropertyKind::References {
             family: crate::feature::PmDcFeatureReferenceFamily::ObjectCollection,
             items,
