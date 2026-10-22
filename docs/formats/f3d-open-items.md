@@ -366,6 +366,14 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** The two bytes can be a grounding or visibility state of the occurrence.
 
+### DR-84. Occurrence identity pairs of a typed path
+
+**Question.** What do the occurrence identity pairs after a typed occurrence path's identity GUIDs name?
+
+**Known.** `f3d.md` "Assembly operands" gives the pair list. In one assembly, the paths of four of its six joints carry the same single pair: a decimal occurrence key and an occurrence GUID that name two different local occurrences. The paths of the other two joints, and a path continuation, carry no pairs. The pair is not the joint's own operand pair.
+
+**Need.** A writer must know when to emit a pair and which occurrences it names.
+
 ### XR-01. `neutronData` with a different GUID
 
 **Question.** What does `neutronData` mean when its GUID is different from the `neutronRole` GUID?

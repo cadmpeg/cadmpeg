@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact assembly operand frames, including as-built frames.
 
+use crate::layout::assembly_compact_wide_limit_owner_run as limit_run;
 use crate::layout::assembly_compact_wide_scope as compact_wide;
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{u64_from_index, View};
 
 use super::legacy_operand_paths::exact_legacy_class_388_scope;
 use super::shared_frames::marked_record_reference;
@@ -141,11 +142,31 @@ pub(super) fn exact_assembly_operand_frames(
         frame_variant,
         crate::design::assembly::AssemblyOperandFrameVariant::CompactWide
     ) {
-        if bytes
-            .get(start + compact_wide::ZERO_RUN_21..start + compact_wide::FIRST_OPERAND_REFERENCE)?
-            != [0; compact_wide::FIRST_OPERAND_REFERENCE - compact_wide::ZERO_RUN_21]
+        if bytes.get(start + compact_wide::ZERO_RUN_11..start + compact_wide::OPERAND_FLAG)?
+            != [0; compact_wide::OPERAND_FLAG - compact_wide::ZERO_RUN_11]
+            || !matches!(bytes.get(start + compact_wide::OPERAND_FLAG), Some(0 | 1))
+            || bytes.get(
+                start + compact_wide::ZERO_RUN_22..start + compact_wide::FIRST_OPERAND_REFERENCE,
+            )? != [0; compact_wide::FIRST_OPERAND_REFERENCE - compact_wide::ZERO_RUN_22]
             || bytes.get(start + 43..start + 50)? != [0; 7]
             || bytes.get(start + 265..start + 272)? != [0; 7]
+        {
+            return None;
+        }
+        // The limit-owner run: the 850-byte scope names its two limit owners,
+        // owner-local ordinals 4 and 5, and the other forms store count 0.
+        let limit_owners = if scope.frame_length() == 850 { 2 } else { 0 };
+        let run = start + 526;
+        let stride =
+            limit_run::SECOND_LIMIT_OWNER_REFERENCE - limit_run::FIRST_LIMIT_OWNER_REFERENCE;
+        if usize::try_from(View::u32_le_at(bytes, run + limit_run::LIMIT_OWNER_COUNT)?).ok()?
+            != limit_owners
+            || (0..limit_owners).any(|ordinal| {
+                marked_record_reference(
+                    bytes,
+                    run + limit_run::FIRST_LIMIT_OWNER_REFERENCE + stride * ordinal,
+                ) != scope.reference_members().values().nth(4 + ordinal).copied()
+            })
         {
             return None;
         }

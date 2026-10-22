@@ -639,17 +639,26 @@ fn writer_round_trips_every_exact_step_pcurve_family(
         )
         .expect("write exact pcurve");
         let output_text = String::from_utf8(output).expect("STEP output is UTF-8");
-        if matches!(&geometry, PcurveGeometry::Transformed(_)) {
-            assert!(output_text.contains("CURVE_REPLICA"));
-            assert!(output_text.contains("CARTESIAN_TRANSFORMATION_OPERATOR_2D"));
-        }
+        // A placed line is written as the line it places.
+        let expected = if matches!(&geometry, PcurveGeometry::Transformed(_)) {
+            assert!(!output_text.contains("CURVE_REPLICA"));
+            PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    Point2::new(6.0, 22.0),
+                    Point2::new(-8.0, 6.0),
+                )
+                .unwrap(),
+            )
+        } else {
+            geometry.clone()
+        };
         let decoded = StepCodec::default()
             .decode(
                 &mut Cursor::new(output_text.into_bytes()),
                 &DecodeOptions::default(),
             )
             .expect("decode exact pcurve");
-        assert_eq!(decoded.ir().model.pcurves[0].geometry, geometry);
+        assert_eq!(decoded.ir().model.pcurves[0].geometry, expected);
         assert_eq!(decoded.ir().model.bodies.len(), 1);
         assert!(decoded
             .report()
