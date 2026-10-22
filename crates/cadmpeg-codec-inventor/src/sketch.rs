@@ -1594,7 +1594,7 @@ fn project_geometry(
             direction,
             ..
         } => {
-            let [start, end] = points.references() else {
+            let [start, end, ..] = points.references() else {
                 return None;
             };
             let start = resolve_point(
@@ -1820,7 +1820,7 @@ fn entity_endpoint_refs(
     entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
 ) -> Vec<String> {
     let ends = match &entity.kind {
-        PmDcSketchEntityKind::Line { points, .. } => points.references(),
+        PmDcSketchEntityKind::Line { points, .. } => points.references().get(..2).unwrap_or(&[]),
         PmDcSketchEntityKind::Circle { points, .. } => match curve_ends(points) {
             Some(CurveEnds::Bounded(..)) => &points.references()[..2],
             _ => return Vec::new(),
@@ -2575,9 +2575,9 @@ mod tests {
         bytes
     }
 
-    fn line_bytes(index: u32, sketch: u32, points: [u32; 2]) -> Vec<u8> {
+    fn line_bytes(index: u32, sketch: u32, points: &[u32]) -> Vec<u8> {
         let mut bytes = entity_prefix(index, sketch, 0);
-        bytes.extend(list(2, &points));
+        bytes.extend(list(2, points));
         bytes.extend(list(2, &[]));
         bytes.extend_from_slice(&0.0f64.to_le_bytes());
         bytes.extend_from_slice(&0.0f64.to_le_bytes());
@@ -2618,7 +2618,7 @@ mod tests {
             } if position.map(FiniteReal::get) == [1.25, -2.5]
         ));
 
-        let line = line_bytes(2, 3, [4, 5]);
+        let line = line_bytes(2, 3, &[4, 5]);
         let parsed = parse(&line, |_, source| {
             parse_entity(SketchEntityTag::Line, source, 22).expect("line")
         });
@@ -2837,7 +2837,7 @@ mod tests {
                 &line_bytes(
                     u32::try_from(index).expect("fixture value fits u32") + 7,
                     3,
-                    endpoints,
+                    &endpoints,
                 ),
                 |_, source| parse_entity(SketchEntityTag::Line, source, 22).expect("line"),
             );
@@ -2963,7 +2963,8 @@ mod tests {
     }
 
     /// A unit half disc: an arc from (1, 0) counterclockwise to (-1, 0) about
-    /// the origin, closed by a line back to (1, 0).
+    /// the origin, closed by a line back to (1, 0). The line's point list also
+    /// names the origin, which lies on the line.
     fn half_disc_inventory() -> SketchInventory {
         let (mut inventory, mut sketch) = closed_square_inventory();
         let (marker, metadata, _) = sketch.entities.clone().into_parts();
@@ -2982,7 +2983,7 @@ mod tests {
                 parse_entity(SketchEntityTag::Point, source, 22).expect("point")
             })
         };
-        let mut line = parse(&line_bytes(6, 3, [6, 5]), |_, source| {
+        let mut line = parse(&line_bytes(6, 3, &[6, 5, 4]), |_, source| {
             parse_entity(SketchEntityTag::Line, source, 22).expect("line")
         });
         let PmDcSketchEntityKind::Line {
