@@ -10,6 +10,7 @@ use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::CadIr;
 
+use crate::aggregate::BoxUnion;
 use crate::body::BodyInput;
 use crate::budget::{PassAllowance, WorkProfile};
 use crate::canonical::placement::Placement;
@@ -17,7 +18,7 @@ use crate::canonical::surface::Chart;
 use crate::canonical::Carrier;
 use crate::context::Eval;
 use crate::edges::{measure_edge, EdgeGeometry};
-use crate::face::{box_value, FaceInput, FaceResult, Verdict};
+use crate::face::{FaceInput, FaceResult, Verdict};
 use crate::failure::{settle, Outcome};
 use crate::geom::Aabb;
 use crate::owners::Owners;
@@ -27,7 +28,7 @@ use crate::report::{
     Histogram, ListedOrder, MeasureReport, NormalReading, ReportTolerances, WorkReport,
 };
 use crate::select::Selection;
-use crate::value::{measured, BoxKind, Errors, Method, Quantity, Scalar, Unavailable, Unit};
+use crate::value::{measured, Errors, Method, Quantity, Scalar, Unavailable, Unit};
 use crate::witness::WitnessInput;
 
 /// The document a measurement pass reads.
@@ -636,47 +637,9 @@ fn total(
 }
 
 fn union_box(bodies: &[BodyMeasures]) -> Quantity<crate::value::BoxValue> {
-    let mut aabb: Option<Aabb> = None;
-    let mut kind = BoxKind::Tight;
-    let mut errors = Errors::ZERO;
+    let mut union = BoxUnion::new();
     for body in bodies {
-        match &body.bbox {
-            Quantity::Measured(measured) => {
-                let value = measured.value();
-                let other = Aabb {
-                    min: [value.min.get().x, value.min.get().y, value.min.get().z],
-                    max: [value.max.get().x, value.max.get().y, value.max.get().z],
-                };
-                aabb = Some(aabb.map_or(other, |aabb| aabb.union(other)));
-                if value.kind == BoxKind::Conservative {
-                    kind = BoxKind::Conservative;
-                }
-                errors = Errors::new(
-                    errors.numeric.max(measured.numeric_error().get()),
-                    errors.model.max(measured.model_uncertainty().get()),
-                );
-            }
-            Quantity::Unavailable(unavailable) => {
-                return Quantity::Unavailable(Unavailable::aggregate(
-                    unavailable.category(),
-                    &body.body,
-                    format!("member {} box is unavailable", body.body),
-                ));
-            }
-        }
+        union.add(&body.body, &body.bbox);
     }
-    match aabb {
-        Some(aabb) => measured(
-            box_value(aabb, kind, None),
-            Unit::Millimeter,
-            Method::Sum,
-            errors,
-            "document",
-        ),
-        None => Quantity::missing(
-            crate::reason::UnavailableReason::BoundaryUnboundedFace,
-            None,
-            "the document has no bounded body",
-        ),
-    }
+    union.finish(None, "the document has no bounded body")
 }

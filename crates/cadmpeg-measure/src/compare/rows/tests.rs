@@ -145,3 +145,31 @@ fn a_tight_box_inside_a_conservative_box_is_contained() {
     assert_eq!(rows[0].difference(), Some(0.5));
     assert_eq!(rows[0].agrees(), Some(false));
 }
+
+#[test]
+fn two_boxes_without_a_lower_bound_are_not_compared() {
+    let hull = bbox([0.0; 3], [10.0; 3], BoxKind::Conservative, None);
+    let moved = bbox([100.0; 3], [110.0; 3], BoxKind::Conservative, None);
+    let mut rows = Vec::new();
+    bbox_rows([&hull, &moved], &CONTEXT, &mut rows);
+    let [row] = rows.as_slice() else {
+        panic!("one row");
+    };
+    assert_eq!(row.rule(), Rule::NotCompared);
+    assert_eq!(row.agrees(), None);
+    assert_eq!(row.cause(), Some(CompareCause::NoLowerBound));
+    assert_eq!(row.a(), Some(&Operand::Text("conservative".to_owned())));
+}
+
+#[test]
+fn a_tight_box_is_its_own_lower_bound_against_a_conservative_box() {
+    let mut boundary = Aabb::of_point(Point3::new(0.0, 0.0, 0.0));
+    boundary.include(Point3::new(1.0, 1.0, 1.0));
+    let tight = bbox([0.0; 3], [2.0; 3], BoxKind::Tight, Some(boundary));
+    let hull = bbox([-1.0; 3], [1.5; 3], BoxKind::Conservative, None);
+    let mut rows = Vec::new();
+    bbox_rows([&tight, &hull], &CONTEXT, &mut rows);
+    assert_eq!(rows[0].rule(), Rule::Containment);
+    assert_eq!(rows[0].difference(), Some(0.5));
+    assert_eq!(rows[0].agrees(), Some(false));
+}

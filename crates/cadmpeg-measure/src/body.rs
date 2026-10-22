@@ -12,9 +12,9 @@ use cadmpeg_ir::topology::{Body, Sense, Shell};
 use crate::canonical::placement::Placement;
 use volume::{Member, VolumeInput};
 
+use crate::aggregate::BoxUnion;
 use crate::edges::EdgeGeometry;
-use crate::face::{box_value, FaceResult, Verdict};
-use crate::geom::Aabb;
+use crate::face::{FaceResult, Verdict};
 use crate::owners::Owners;
 use crate::reason::CaveatCode;
 use crate::report::{
@@ -235,85 +235,35 @@ impl<'a> BodyInput<'a, '_> {
         row
     }
 
-    /// The union of the face boxes, else of the edge boxes, else of the
-    /// vertex points.
+    /// The union of the face boxes, else of the edge boxes.
     fn bbox(&self, id: &str, faces: &[&str], edges: &[&str]) -> Quantity<BoxValue> {
-        let mut aabb: Option<Aabb> = None;
-        let mut errors = Errors::ZERO;
-        let mut kind = BoxKind::Tight;
-        let mut include = |other: Aabb| {
-            aabb = Some(aabb.map_or(other, |aabb| aabb.union(other)));
-        };
-        if !faces.is_empty() {
-            for face in faces {
-                let Some(result) = self.faces.get(face) else {
-                    continue;
-                };
-                match (&result.row.measures.bbox, result.aabb) {
-                    (Quantity::Measured(measured), Some(face_box)) => {
-                        include(face_box);
-                        if measured.value().kind == BoxKind::Conservative {
-                            kind = BoxKind::Conservative;
-                        }
-                        errors = Errors::new(
-                            errors.numeric.max(measured.numeric_error().get()),
-                            errors.model.max(measured.model_uncertainty().get()),
-                        );
-                    }
-                    (Quantity::Unavailable(unavailable), _) => {
-                        return Quantity::Unavailable(Unavailable::aggregate(
-                            unavailable.category(),
-                            face,
-                            format!(
-                                "member {face} box is unavailable: {}",
-                                unavailable.reason().code()
-                            ),
-                        ));
-                    }
-                    (Quantity::Measured(_), None) => {}
-                }
-            }
-        } else if !edges.is_empty() {
+        let mut union = BoxUnion::new();
+        if faces.is_empty() {
             for edge in edges {
                 let Some(geometry) = self.edges.get(edge) else {
                     continue;
                 };
                 match &geometry.bbox {
-                    Ok(curve_box) => {
-                        include(curve_box.aabb);
-                        errors = Errors::new(
-                            errors.numeric.max(curve_box.numeric_error),
-                            errors.model.max(geometry.tau),
-                        );
-                    }
+                    Ok(curve_box) => union.include(
+                        curve_box.aabb,
+                        BoxKind::Tight,
+                        Some(curve_box.aabb),
+                        Errors::new(curve_box.numeric_error, geometry.tau),
+                    ),
                     Err(missing) => {
                         let unavailable: Unavailable<BoxValue> = missing.unavailable();
-                        return Quantity::Unavailable(Unavailable::aggregate(
-                            unavailable.category(),
-                            edge,
-                            format!(
-                                "member {edge} box is unavailable: {}",
-                                missing.reason.code()
-                            ),
-                        ));
+                        union.miss(edge, &unavailable);
                     }
                 }
             }
+        } else {
+            for face in faces {
+                if let Some(result) = self.faces.get(face) {
+                    union.add(face, &result.row.measures.bbox);
+                }
+            }
         }
-        let Some(aabb) = aabb else {
-            return Quantity::missing(
-                crate::reason::UnavailableReason::BoundaryUnboundedFace,
-                Some(id),
-                "the body has no bounded member",
-            );
-        };
-        measured(
-            box_value(aabb, kind, None),
-            Unit::Millimeter,
-            Method::Sum,
-            errors,
-            id,
-        )
+        union.finish(Some(id), "the body has no bounded member")
     }
 
     /// The body's faces with their shell positions in region order.

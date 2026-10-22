@@ -11,6 +11,7 @@
 use cadmpeg_ir::topology::BodyKind;
 
 use super::{Operand, PlacementClass, Placements, Row, Rule};
+use crate::aggregate::{corners, lower_bound};
 use crate::reason::{Category, CompareCause};
 use crate::report::{BodyMeasures, Histogram, MeasureReport};
 use crate::value::{
@@ -304,21 +305,10 @@ fn same_reading<'a, T>(a: &'a Measured<T>, b: &'a Measured<T>) -> (&'a T, &'a T,
     main
 }
 
-/// The lower-bound box of a measured box: its boundary box, or the box
-/// itself when it is tight.
-fn lower_bound(value: &BoxValue) -> Option<([f64; 3], [f64; 3])> {
-    let corners = |low: cadmpeg_ir::math::Point3, high: cadmpeg_ir::math::Point3| {
-        ([low.x, low.y, low.z], [high.x, high.y, high.z])
-    };
-    match (&value.boundary, value.kind) {
-        (Some(boundary), _) => Some(corners(boundary.min.get(), boundary.max.get())),
-        (None, BoxKind::Tight) => Some(corners(value.min.get(), value.max.get())),
-        (None, BoxKind::Conservative) => None,
-    }
-}
-
 /// The rows of two boxes: equal corners when both are tight, else
-/// containment of each side's lower bound in the other side's box.
+/// containment of each side's lower bound in the other side's box. When
+/// neither side has a lower bound, containment tests nothing and the row is
+/// not compared.
 fn bbox_rows(pair: [&Quantity<BoxValue>; 2], context: &Context, rows: &mut Vec<Row>) {
     let quantum = Quantum {
         name: "bbox",
@@ -334,30 +324,38 @@ fn bbox_rows(pair: [&Quantity<BoxValue>; 2], context: &Context, rows: &mut Vec<R
         equal_rows(quantum, [a.value(), b.value()], errors, context, rows);
         return;
     }
-    let outer = |value: &BoxValue| {
-        let (low, high) = (value.min.get(), value.max.get());
-        ([low.x, low.y, low.z], [high.x, high.y, high.z])
-    };
+    let kinds = [a.value().kind, b.value().kind].map(|kind| box_kind_name(kind).to_owned());
+    let [kind_a, kind_b] = kinds;
+    let lower = [lower_bound(a.value()), lower_bound(b.value())];
+    if lower.iter().all(Option::is_none) {
+        let mut row = not_compared("bbox", Some(Unit::Millimeter), CompareCause::NoLowerBound);
+        row.a = Some(Operand::Text(kind_a));
+        row.b = Some(Operand::Text(kind_b));
+        rows.push(row);
+        return;
+    }
     let mut violation: f64 = 0.0;
     let mut magnitude: f64 = 0.0;
-    for (inner, other) in [(a.value(), b.value()), (b.value(), a.value())] {
-        let Some((inner_low, inner_high)) = lower_bound(inner) else {
+    for (inner, other) in [(lower[0], b.value()), (lower[1], a.value())] {
+        let Some(inner) = inner else {
             continue;
         };
-        let (low, high) = outer(other);
+        let outer = corners(other);
         for axis in 0..3 {
             violation = violation
-                .max(low[axis] - inner_low[axis])
-                .max(inner_high[axis] - high[axis]);
-            magnitude = magnitude.max(low[axis].abs()).max(high[axis].abs());
+                .max(outer.min[axis] - inner.min[axis])
+                .max(inner.max[axis] - outer.max[axis]);
+            magnitude = magnitude
+                .max(outer.min[axis].abs())
+                .max(outer.max[axis].abs());
         }
     }
     let tolerance = context.tolerance(1, [magnitude, 0.0], errors);
     rows.push(Row {
         quantity: "bbox".to_owned(),
         unit: Some(Unit::Millimeter),
-        a: Some(Operand::Text(box_kind_name(a.value().kind).to_owned())),
-        b: Some(Operand::Text(box_kind_name(b.value().kind).to_owned())),
+        a: Some(Operand::Text(kind_a)),
+        b: Some(Operand::Text(kind_b)),
         difference: Some(violation),
         tolerance: Some(tolerance),
         rule: Rule::Containment,

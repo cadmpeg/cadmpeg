@@ -22,7 +22,7 @@ A measured value has these members, in this order:
 | --- | --- |
 | `status` | `"measured"`. |
 | `value` | A finite number, or `{x, y, z}` for a point or a direction. A range or a box has `min` and `max` in its place. |
-| shape members | `angular_sweep`: `full` and `intervals`. `bbox`: `kind` (`tight` or `conservative`) and `boundary`, the box of the boundary pieces. |
+| shape members | `angular_sweep`: `full` and `intervals`. `bbox`: `kind` (`tight` or `conservative`) and `boundary`, a lower bound of the tight box: the box of the boundary pieces of a face, the box of the lower bounds of the members of a union (see Boxes). |
 | `unit` | `mm`, `mm2`, `mm3`, `rad` or `1`. The unit of the value and of both error terms. |
 | `method` | How the value was obtained (below). |
 | `numeric_error` | A non-negative a-posteriori estimate of the computation error. It is zero for `source` and `closed_form`. It is not a certified bound. |
@@ -153,6 +153,7 @@ one of its rows is not compared. Cause codes follow the reason discipline.
 | `compare.ambiguous-class` | Bodies whose compatibility is not transitive. |
 | `compare.unmeasured-body` | A body with no comparable quantity. |
 | `compare.nothing-compared` | No numeric or signature row is compared. |
+| `compare.no-lower-bound` | Neither box of a `containment` row has a lower bound. |
 
 ## Rings
 
@@ -362,6 +363,13 @@ On a NURBS carrier the box is the box of the placed control net,
 positive makes it `bbox.nonpositive-weights`. `bbox.boundary` is the box of
 the boundary pieces alone.
 
+A body box is the union of its face boxes, or of its edge boxes for a body
+with no faces. A document box is the union of its body boxes. A union is
+`tight` only when every member box is `tight`. A `conservative` union has
+`bbox.boundary`, a lower bound of its tight box: the union of the `tight`
+member boxes and of the `boundary` boxes of the `conservative` members. It
+is absent when no member has a lower bound.
+
 `u_range` and `v_range` of a NURBS face are the parameter ranges of its
 boundary pieces, or the domain when the region reaches the domain's natural
 edges.
@@ -475,9 +483,12 @@ and matches bodies by their measured geometry, not by their IDs.
   (`volume.face_sense`, `volume.loop_winding`); without such candidates the
   reason codes compare `exact` when both categories are `input` or
   `undefined`, and the row is not compared otherwise. Two `tight` boxes
-  compare their corners `equal`; otherwise each side's boundary box must lie
+  compare their corners `equal`. Otherwise each side's lower bound must lie
   in the other side's box widened by `t` (`containment`, with the largest
-  violation as the difference). `closed` compares `exact`;
+  violation as the difference). The lower bound of a `tight` box is the box,
+  and of a `conservative` box its `boundary`. When neither side has a lower
+  bound, the row is not compared (`compare.no-lower-bound`). `closed`
+  compares `exact`;
   `orientation.consistent` compares `exact` when it is not `null` on both
   sides.
 - Signature. Two bodies with no measured numeric quantity, whose

@@ -354,16 +354,19 @@ pub enum CompareCause {
     UnmeasuredBody,
     /// No numeric or signature row was compared.
     NothingCompared,
+    /// Neither box of a containment row has a lower bound.
+    NoLowerBound,
 }
 
 impl CompareCause {
     /// Every cause, in declaration order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::OccurrencePlacement,
         Self::Unavailable,
         Self::AmbiguousClass,
         Self::UnmeasuredBody,
         Self::NothingCompared,
+        Self::NoLowerBound,
     ];
 
     /// The pinned `family.detail` string.
@@ -375,6 +378,7 @@ impl CompareCause {
             Self::AmbiguousClass => "compare.ambiguous-class",
             Self::UnmeasuredBody => "compare.unmeasured-body",
             Self::NothingCompared => "compare.nothing-compared",
+            Self::NoLowerBound => "compare.no-lower-bound",
         }
     }
 }
@@ -495,6 +499,7 @@ mod tests {
             "compare.ambiguous-class",
             "compare.unmeasured-body",
             "compare.nothing-compared",
+            "compare.no-lower-bound",
         ];
         for (cause, text) in CompareCause::ALL.into_iter().zip(expected) {
             assert_eq!(cause.code(), text);

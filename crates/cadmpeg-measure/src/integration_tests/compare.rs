@@ -12,6 +12,7 @@ use crate::compare::{compare, CompareOptions, Comparison, Operand, Rule, Verdict
 use crate::reason::CompareCause;
 use crate::select::Selection;
 use crate::test_support::{measure, Builder};
+use crate::value::BoxKind;
 
 fn cube() -> CadIr {
     cadmpeg_ir::examples::unit_cube().expect("fixture")
@@ -214,4 +215,66 @@ fn occurrences_that_place_bodies_keep_the_verdict_inconclusive() {
         occurrences.b(),
         Some(&Operand::Text("occurrences".to_owned()))
     );
+}
+
+/// The bilinear NURBS patch `(x, y) = (2u, v)` on `[0, 1]²` at `z = 0`,
+/// bounded by its four domain edges: a 2 × 1 rectangle whose box is the
+/// conservative control hull.
+fn nurbs_rectangle(transform: Option<Transform>) -> CadIr {
+    let mut builder = Builder::new();
+    let surface = builder.nurbs(
+        (1, vec![0.0, 0.0, 1.0, 1.0]),
+        (1, vec![0.0, 0.0, 1.0, 1.0]),
+        &[
+            vec![([0.0, 0.0, 0.0], 1.0), ([0.0, 1.0, 0.0], 1.0)],
+            vec![([2.0, 0.0, 0.0], 1.0), ([2.0, 1.0, 0.0], 1.0)],
+        ],
+    );
+    let corners = [[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]];
+    let vertices: Vec<_> = corners
+        .iter()
+        .map(|[x, y]| builder.vertex([*x, *y, 0.0]))
+        .collect();
+    let ring: Vec<_> = (0..4)
+        .map(|index| {
+            (
+                builder.line(&vertices[index], &vertices[(index + 1) % 4]),
+                Sense::Forward,
+            )
+        })
+        .collect();
+    builder.face(&surface, Sense::Forward, &[ring], false);
+    let mut ir = builder.finish(BodyKind::Sheet);
+    ir.model.bodies[0].transform = transform;
+    ir
+}
+
+#[test]
+fn a_nurbs_body_turned_about_its_centroid_disagrees_by_its_box() {
+    let plain = nurbs_rectangle(None);
+    let turn = Transform::affine([
+        [0.0, -1.0, 0.0, 1.5],
+        [1.0, 0.0, 0.0, -0.5],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("finite rotation");
+    let turned = nurbs_rectangle(Some(turn));
+    let result = comparison(&plain, &turned);
+    assert_eq!(result.verdict(), Verdict::Disagree);
+    let report = measure(&plain, &Selection::default());
+    let bbox = report.bodies()[0].bbox().measured().expect("body box");
+    assert_eq!(bbox.value().kind, BoxKind::Conservative);
+    assert!(bbox.value().boundary.is_some());
+    assert_eq!(result.unmatched_a().len(), 1);
+    assert_eq!(result.unmatched_b().len(), 1);
+    let row = result
+        .document()
+        .iter()
+        .find(|row| row.quantity() == "bbox")
+        .expect("document box row");
+    assert_eq!(row.rule(), Rule::Containment);
+    assert_eq!(row.agrees(), Some(false));
+    let violation = row.difference().expect("violation");
+    assert!((violation - 0.5).abs() <= 1.0e-9, "{violation}");
+    assert_eq!(comparison(&plain, &plain).verdict(), Verdict::Agree);
 }

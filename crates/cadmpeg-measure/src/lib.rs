@@ -29,6 +29,7 @@
 //! ctx.finish_session().expect("session");
 //! ```
 
+mod aggregate;
 mod area;
 mod body;
 mod boundary;
