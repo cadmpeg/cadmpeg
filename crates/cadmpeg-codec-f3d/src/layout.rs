@@ -4938,6 +4938,22 @@ pub(crate) mod assembly_wide_operand_path_locator {
     pub(crate) const TRANSFORM: usize = 68;
 }
 
+/// Byte offsets for the `assembly_compact_wide_limit_owner_run` record.
+///
+/// Spec §Assembly operands.
+///
+/// ```text
+/// This size-less byte record starts at scope offset 526 in the 806-, 850- and 861-byte compact wide Assemble scopes. Offsets are relative to the count. The count is 0 in the 806- and 861-byte scopes, which store no references; the 850-byte scope stores count 2 and both references.
+/// ```
+pub(crate) mod assembly_compact_wide_limit_owner_run {
+    /// Offset of `limit_owner_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const LIMIT_OWNER_COUNT: usize = 0;
+    /// Offset of `first_limit_owner_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_LIMIT_OWNER_REFERENCE: usize = 4;
+    /// Offset of `second_limit_owner_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_LIMIT_OWNER_REFERENCE: usize = 15;
+}
+
 /// Byte offsets for the `assembly_compact_wide_scope` record.
 ///
 /// Spec §Assembly operands.

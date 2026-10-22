@@ -16745,6 +16745,40 @@ source = "spec"
 anchor = "a row-major rigid 4×4 transform at offset\n68"
 
 [[record]]
+name = "assembly_compact_wide_limit_owner_run"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_frames.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A u32 limit-owner count at offset 526"
+note = "This size-less byte record starts at scope offset 526 in the 806-, 850- and 861-byte compact wide Assemble scopes. Offsets are relative to the count. The count is 0 in the 806- and 861-byte scopes, which store no references; the 850-byte scope stores count 2 and both references."
+
+[[record.field]]
+name = "limit_owner_count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "A u32 limit-owner count at offset 526"
+
+[[record.field]]
+name = "first_limit_owner_reference"
+offset = 4
+type = "bytes[11]"
+source = "spec"
+anchor = "two limit owners, owner-local ordinals 4 and 5, at offsets 530 and 541"
+
+[[record.field]]
+name = "second_limit_owner_reference"
+offset = 15
+type = "bytes[11]"
+source = "spec"
+anchor = "two limit owners, owner-local ordinals 4 and 5, at offsets 530 and 541"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_frames.rs"
+contains = "let run = start + 526;"
+note = "The run starts at scope offset 526."
+
+[[record]]
 name = "assembly_compact_wide_scope"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_frames.rs"
 kind = "byte"

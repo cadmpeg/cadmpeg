@@ -5040,6 +5040,25 @@ Parsed by:
 | 67 | 1 | `identity_flag` | `u8` | little | spec | an identity flag byte at offset 67 |
 | 68 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid 4×4 transform at offset 68 |
 
+## `assembly_compact_wide_limit_owner_run`
+
+Spec §Assembly operands · layout: byte offsets · size: not stated
+
+This size-less byte record starts at scope offset 526 in the 806-, 850- and 861-byte compact wide Assemble scopes. Offsets are relative to the count. The count is 0 in the 806- and 861-byte scopes, which store no references; the 850-byte scope stores count 2 and both references.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_frames.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `limit_owner_count` | `u32` | little | spec | A u32 limit-owner count at offset 526 |
+| 4 | 11 | `first_limit_owner_reference` | `bytes[11]` | little | spec | two limit owners, owner-local ordinals 4 and 5, at offsets 530 and 541 |
+| 15 | 11 | `second_limit_owner_reference` | `bytes[11]` | little | spec | two limit owners, owner-local ordinals 4 and 5, at offsets 530 and 541 |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_frames.rs` — The run starts at scope offset 526.
+
 ## `assembly_compact_wide_scope`
 
 Spec §Assembly operands · layout: byte offsets · size: not stated

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact assembly operand frames, including as-built frames.
 
+use crate::layout::assembly_compact_wide_limit_owner_run as limit_run;
 use crate::layout::assembly_compact_wide_scope as compact_wide;
 use cadmpeg_core::decode::{u64_from_index, View};
 
@@ -155,10 +156,16 @@ pub(super) fn exact_assembly_operand_frames(
         // The limit-owner run: the 850-byte scope names its two limit owners,
         // owner-local ordinals 4 and 5, and the other forms store count 0.
         let limit_owners = if scope.frame_length() == 850 { 2 } else { 0 };
-        if usize::try_from(View::u32_le_at(bytes, start + 526)?).ok()? != limit_owners
+        let run = start + 526;
+        let stride =
+            limit_run::SECOND_LIMIT_OWNER_REFERENCE - limit_run::FIRST_LIMIT_OWNER_REFERENCE;
+        if usize::try_from(View::u32_le_at(bytes, run + limit_run::LIMIT_OWNER_COUNT)?).ok()?
+            != limit_owners
             || (0..limit_owners).any(|ordinal| {
-                marked_record_reference(bytes, start + 530 + 11 * ordinal)
-                    != scope.reference_members().values().nth(4 + ordinal).copied()
+                marked_record_reference(
+                    bytes,
+                    run + limit_run::FIRST_LIMIT_OWNER_REFERENCE + stride * ordinal,
+                ) != scope.reference_members().values().nth(4 + ordinal).copied()
             })
         {
             return None;
