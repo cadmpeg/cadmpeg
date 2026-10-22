@@ -40,8 +40,6 @@ pub(crate) enum FreecadLossCode {
     ExportArenaNotTransferred,
     /// A neutral construction has no writable `FreeCAD` operation.
     ExportFeatureNotTransferred,
-    /// An assembly joint has no writable `FreeCAD` joint family.
-    ExportJointNotTransferred,
     /// A neutral body has an unsupported exact carrier.
     ExportGeometryNotTransferred,
     /// An appearance member has no exact `FreeCAD` GUI encoding.
@@ -113,7 +111,6 @@ impl FreecadLossCode {
         Self::SourceDesignPayloadUnrepresented,
         Self::ExportArenaNotTransferred,
         Self::ExportFeatureNotTransferred,
-        Self::ExportJointNotTransferred,
         Self::ExportGeometryNotTransferred,
         Self::ExportAppearanceNotTransferred,
         Self::ExportPresentationNotTransferred,
@@ -156,7 +153,6 @@ impl FreecadLossCode {
             Self::SourceDesignPayloadUnrepresented => "source.design-payload-unrepresented",
             Self::ExportArenaNotTransferred => "arena.not-transferred",
             Self::ExportFeatureNotTransferred => "feature.not-transferred",
-            Self::ExportJointNotTransferred => "joint.not-transferred",
             Self::ExportGeometryNotTransferred => "geometry.not-transferred",
             Self::ExportAppearanceNotTransferred => "appearance.not-transferred",
             Self::ExportPresentationNotTransferred => "presentation.not-transferred",
@@ -200,9 +196,9 @@ impl FreecadLossCode {
             Self::ExpressionReferenceUnresolved
             | Self::AttributePropertyUnprojected
             | Self::ExportAttributeNotTransferred => Severity::Warning,
-            Self::ExportFeatureNotTransferred
-            | Self::ExportJointNotTransferred
-            | Self::ExportGeometryNotTransferred => Severity::Error,
+            Self::ExportFeatureNotTransferred | Self::ExportGeometryNotTransferred => {
+                Severity::Error
+            }
             Self::ExportNativePropertyNotTransferred => Severity::Info,
             Self::SourceModelPayloadUnrepresented
             | Self::SourceDesignPayloadUnrepresented
@@ -246,9 +242,7 @@ impl FreecadLossCode {
                 LossTaxonomy::RecordNotTyped
             }
             Self::ExportArenaNotTransferred => LossTaxonomy::MetadataNotTransferred,
-            Self::ExportFeatureNotTransferred | Self::ExportJointNotTransferred => {
-                LossTaxonomy::ParametricRecordOmitted
-            }
+            Self::ExportFeatureNotTransferred => LossTaxonomy::ParametricRecordOmitted,
             Self::ExportAppearanceNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::ExportPresentationNotTransferred => LossTaxonomy::MetadataNotTransferred,
             Self::ExportProceduralReduced => LossTaxonomy::ProceduralReduced,
@@ -368,10 +362,6 @@ const SOURCE_RECORD_COVERAGE: &[(FreecadLossCode, SourceRecordCoverage)] = &[
     ),
     (
         FreecadLossCode::ExportFeatureNotTransferred,
-        SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::ExportJointNotTransferred,
         SourceRecordCoverage::Writer,
     ),
     (
@@ -615,7 +605,6 @@ mod tests {
                 "source.design-payload-unrepresented",
                 "arena.not-transferred",
                 "feature.not-transferred",
-                "joint.not-transferred",
                 "geometry.not-transferred",
                 "appearance.not-transferred",
                 "presentation.not-transferred",
