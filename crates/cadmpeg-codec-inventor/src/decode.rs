@@ -68,10 +68,13 @@ fn decode_container<'a>(
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty();
+    // Design projection derives only design-class records (features,
+    // sketches, parameters) and the native records behind them, so a geometry
+    // request stops before it.
     let delivered = if ctx.container_only() {
         DecodeDepth::Container
     } else {
-        DecodeDepth::Full
+        ctx.depth()
     };
     let unresolved = if delivered == DecodeDepth::Full {
         project_design(
