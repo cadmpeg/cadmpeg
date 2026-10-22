@@ -908,7 +908,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let mut patch_group = group(100, 0, vec![200]);
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[])).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -947,6 +947,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 std::slice::from_ref(&patch_group),
                 &[],
                 &[],
+                &[],
             )
         })
         .unwrap();
@@ -979,7 +980,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     second_patch_group.operand_role =
         DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, &[patch_group.clone(), second_patch_group.clone()], &[], &[])).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, &[patch_group.clone(), second_patch_group.clone()], &[], &[], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -1032,6 +1033,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             &[patch_group.clone(), second_patch_group],
             &[],
             &identities,
+            &[],
         )
     })
     .unwrap()
@@ -1065,7 +1067,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     }
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[])).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -1089,6 +1091,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 decode_ctx,
                 &patch_scope,
                 std::slice::from_ref(&patch_group),
+                &[],
                 &[],
                 &[],
             )
@@ -1120,6 +1123,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 std::slice::from_ref(&patch_group),
                 &[],
                 &[],
+                &[],
             )
         })
         .unwrap(),
@@ -1141,6 +1145,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             decode_ctx,
             &patch_scope,
             std::slice::from_ref(&patch_group),
+            &[],
             &[],
             &[],
         )
@@ -1175,6 +1180,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             decode_ctx,
             &patch_scope,
             std::slice::from_ref(&patch_group),
+            &[],
             &[],
             &[],
         )

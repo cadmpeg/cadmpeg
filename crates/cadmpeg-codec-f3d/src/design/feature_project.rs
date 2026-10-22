@@ -608,6 +608,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         body_bindings,
         component_naming_spaces,
         histories,
+        face_boundaries,
         ..
     } = inputs;
 
@@ -772,6 +773,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     construction_groups,
                     edge_operands,
                     edge_identity_operands,
+                    face_boundaries,
                 )?
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
@@ -5822,6 +5824,7 @@ fn resolved_surface_patch_path(
     scope: &DesignParameterScope,
     recipe: SurfacePatchRecipe,
     ctx: &DecodeContext<'_>,
+    face_boundaries: &[crate::records::topology::historical_context::AsmFaceBoundary],
 ) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
     use cadmpeg_ir::features::PathRef;
 
@@ -5833,6 +5836,7 @@ fn resolved_surface_patch_path(
                 all_groups,
                 operands,
                 identity_operands,
+                face_boundaries,
                 scope.previous_history_state_id(),
                 &crate::ids::neutral_feature_id(scope),
                 ctx,
@@ -6499,6 +6503,7 @@ fn project_surface_patch(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
+    face_boundaries: &[crate::records::topology::historical_context::AsmFaceBoundary],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, FeatureOperation, SurfaceBoundary,
@@ -6578,6 +6583,7 @@ fn project_surface_patch(
                     scope,
                     SurfacePatchRecipe::Grouped,
                     ctx,
+                    face_boundaries,
                 )?),
                 support_faces: FaceSelection::Faces(Vec::new()),
                 continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
@@ -6697,6 +6703,7 @@ fn project_surface_patch(
             scope,
             SurfacePatchRecipe::Direct,
             ctx,
+            face_boundaries,
         )?
     };
     Ok(Some(FeatureDefinition::Operation(

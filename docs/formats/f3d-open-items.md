@@ -114,23 +114,6 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Need.** Controlled saves must vary side and result choice independently while holding the sketch, regions, thickness, and rule fixed. Complete carrier, settings, and profile programs must be compared, with exact result topology confirming each intended change. Until the selected region, thickness, material side, and result choice are independently resolved, retain the operation as native sheet-metal Base Face data.
 
-### DR-68. Grouped `SurfacePatch` recipe-reference precedence
-
-**Question.** Which field selects the edge reference for each member of a
-grouped `SurfacePatch` boundary when more than one recipe reference has a
-nonempty exact edge-candidate set?
-
-**Known.** Each recipe reference retains its selector, token, Design references,
-source order, and complete exact and alternate candidate sets. Source order does
-not establish that an earlier reference overrides a later reference. The
-decoder projects a grouped member only when all of its nonempty exact reference
-sets contain the same sole edge and the complete group maps to distinct edges.
-An ambiguous or contradictory exact reference retains the native group and does
-not fall through to generic edge reconstruction.
-
-**Need.** We must decode the reference role or selector relation that binds one
-edge to each group member and rejects contradictory references.
-
 ### DR-69. Single-member edge-treatment identity
 
 **Question.** Which serialized operand identity binds the sole edge member of a
