@@ -191,26 +191,30 @@ an unplaced definition has no occurrence and remains a retained object.
 definition-level usage of one definition by another, or a typed record that
 keeps both relationships with the unrepresentable part marked.
 
-### PF-01. Rhino decode repeatedly validates the full accumulated model
+### PF-01. Refused Rhino candidates validate the full accumulated model
 
-**Question.** What validation work may one object commit perform as the Rhino
-model grows?
+**Question.** What validation work may one refused object candidate perform as
+the Rhino model grows?
 
-**Known.** `decode.rs:595-666` calls `admit_with_annotations` for individual
-candidate commits. `validate/admit.rs:81-90` implements admission by running
-full neutral validation and filtering its findings afterward. The decoder
-repeats this full-document walk for successive candidates, and `cadmpeg check`
-runs full validation again after decode. On one 26,176,187-byte archive with
-69 object records and 27 decoded objects, full check takes 8.36 seconds,
-including 8.31 seconds of user CPU time, and reaches about 125 MiB resident
-memory. Container-only check takes about 0.02 seconds; checking the emitted
-49 MiB CADIR alone takes about 4.7 seconds and reaches about 186 MiB resident
-memory. This performance is not acceptable for an interactive check.
+**Known.** An accepted closed candidate is admitted from its local probe in
+`cadmpeg-ir` `draft.rs` `try_admit_append`, and an appended-model edit
+reindexes only the edited suffix of the committed identity cache, so instance
+expansion no longer rehashes the document per placed member. A candidate whose
+local probe reports an error still runs combined validation over the complete
+document in `admit_annotation_delta`. The local report cannot decide the
+refusal alone, because document-wide invariants such as dense semantic
+annotation order fail on an isolated candidate. A document with many refused
+candidates is therefore quadratic: `TransportPlaning.3dm` (41,038,996 bytes)
+exceeds 120 seconds, and `nine_pieces.3dm` (16,668,846 bytes, 13,057 object
+records) takes about 100 seconds. Each source record whose link list grows
+with each placement is also revalidated completely by
+`NativeUnknownAdmission::check`.
 
-**Need.** Make candidate admission proportional to the staged delta and its
-affected references, or batch candidates and validate once before commit.
-Add a scaling benchmark that varies accumulated entity count and object count,
-with a regression ceiling for a document of this size and topology density.
+**Need.** Split candidate-local checks from document-wide checks, so that a
+refusal validates the candidate locally and the document-wide invariants
+incrementally, or batch refused candidates. Revalidate only the links a source
+record adds. Add a scaling benchmark that varies the refused-candidate count,
+with a regression ceiling.
 
 ### UN-01. Unit-dependent records without a physical unit binding
 
