@@ -42,7 +42,7 @@ fn part_tree_uses_the_new_stream_address_and_preserves_covering_ancestry() {
     assert_eq!(fidelity.parts().len(), 2);
     assert!(fidelity.parts().contains_key(parent));
     assert_eq!(fidelity.parts()[parent].stream(), "f3d:xref/a/member");
-    assert_eq!(fidelity.parts()[parent].state(), &PartState::GivenUp);
+    assert_eq!(fidelity.parts()[parent].state(), &PartState::GivenUp {});
     assert_eq!(
         fidelity.parts()[child].parent().map(|id| id.as_str()),
         Some(parent)

@@ -61,7 +61,7 @@ fn real_record_callback_keeps_later_typed_parameters_and_one_exact_failed_statem
     );
     let node = &fidelity.parts()[&stub.id];
     assert_eq!(node.level().as_str(), "step.simple_entity_instance");
-    assert_eq!(node.state(), &PartState::GivenUp);
+    assert_eq!(node.state(), &PartState::GivenUp {});
     assert_eq!(node.offset(), u64::try_from(start).expect("source offset"));
     assert_eq!(
         node.byte_len(),
@@ -71,7 +71,7 @@ fn real_record_callback_keeps_later_typed_parameters_and_one_exact_failed_statem
         fidelity
             .parts()
             .values()
-            .filter(|node| node.state() == &PartState::Decoded)
+            .filter(|node| node.state() == &PartState::Decoded {})
             .count(),
         2
     );

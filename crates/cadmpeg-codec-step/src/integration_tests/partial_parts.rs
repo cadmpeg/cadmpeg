@@ -40,7 +40,7 @@ fn bounded_simple_entity_failure_uses_shared_home_and_preserves_later_neutral_ge
         .collect::<Vec<_>>();
     assert_eq!(homes.len(), 1);
     let stub = homes[0];
-    assert_eq!(fidelity.parts()[&stub.id].state(), &PartState::GivenUp);
+    assert_eq!(fidelity.parts()[&stub.id].state(), &PartState::GivenUp {});
     assert!(fidelity.record_layout().contains_key(stub.id.as_str()));
     assert!(!unknowns
         .iter()
