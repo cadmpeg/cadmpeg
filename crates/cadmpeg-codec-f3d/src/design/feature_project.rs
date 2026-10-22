@@ -5985,49 +5985,6 @@ fn loft_path_from_edge_selection(
     }
 }
 
-fn project_pattern_group_seed(
-    scope: &DesignParameterScope,
-    groups: &[DesignConstructionOperandGroup],
-    face_operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::patterns::PatternSeed> {
-    use cadmpeg_ir::features::patterns::PatternSeed;
-    if let Some(stream) = native_stream(&scope.id) {
-        let mut matching_groups = groups.iter().filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-                && matches!(
-                    group.role(),
-                    DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-                )
-                && !group.members().is_empty()
-        });
-        let first = matching_groups.next();
-        let second = matching_groups.next();
-        match (first, second) {
-            (Some(group), None) => Some(if group.role() == DesignOperandRole::BODIES_A {
-                PatternSeed::Faces(
-                    match resolved_historical_face_group(
-                        scope,
-                        scope.previous_history_state_id(),
-                        group,
-                        face_operands,
-                    ) {
-                        Some(selection) => selection,
-                        None => cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
-                    },
-                )
-            } else {
-                PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
-                    group.id.clone(),
-                ))
-            }),
-            _ => None,
-        }
-    } else {
-        None
-    }
-}
-
 fn project_rectangular_pattern_scalars(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
@@ -6086,7 +6043,41 @@ fn project_rectangular_pattern_scalars(
                 .ok()?,
             )),
         });
-    let group_seed = project_pattern_group_seed(scope, groups, face_operands);
+    let group_seed = if let Some(stream) = native_stream(&scope.id) {
+        let mut matching_groups = groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && matches!(
+                    group.role(),
+                    DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+                )
+                && !group.members().is_empty()
+        });
+        let first = matching_groups.next();
+        let second = matching_groups.next();
+        match (first, second) {
+            (Some(group), None) => Some(if group.role() == DesignOperandRole::BODIES_A {
+                PatternSeed::Faces(
+                    match resolved_historical_face_group(
+                        scope,
+                        scope.previous_history_state_id(),
+                        group,
+                        face_operands,
+                    ) {
+                        Some(selection) => selection,
+                        None => cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
+                    },
+                )
+            } else {
+                PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
+                    group.id.clone(),
+                ))
+            }),
+            _ => None,
+        }
+    } else {
+        None
+    };
     let mut seeds = Vec::new();
     if let Some(seed) = component_seed.or(group_seed) {
         seeds.push(seed);
