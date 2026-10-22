@@ -1514,7 +1514,7 @@ The class pair is part of the admission key because the same frame lengths
 occur in other scope families.
 
 The 945-byte `Assemble` scope uses the wide operand-frame form. It stores
-`u8 1` at offset 20, four zero bytes, a byte `0` or `1` at offset 25, and zero
+`u8 1` at offset 20, four zero bytes, the frame-sense byte at offset 25, and zero
 bytes at offsets 26 through 36. Its operand references are at offsets 37 and
 259. Seven zero bytes follow each reference, rigid row-major transforms start
 at offsets 55 and 277, and an LP-UTF16 GUID follows each transform. Its four
@@ -1524,7 +1524,7 @@ operand-path-locator count is at offset 537 and the two marked locator
 references are at offsets 541 and 552.
 
 The 806-, 850- and 861-byte `Assemble` scopes use the compact wide
-operand-frame form. Bytes 11 through 20 are zero, byte 21 is `0` or `1`,
+operand-frame form. Bytes 11 through 20 are zero, byte 21 is the frame-sense byte,
 bytes 22 through 31 are zero, the operand references are
 at offsets 32 and 254, seven zero bytes follow each reference, rigid
 row-major transforms start at offsets 50 and 272, and an LP-UTF16 GUID follows
@@ -1537,6 +1537,8 @@ six owners are the first six entries of the reference table. The two
 operand-path locators are wide operand-path locators; their marked references
 are at offsets 534 and 545 in the 806- and 861-byte scopes and at offsets 556
 and 567 in the 850-byte scope, after the count 2.
+
+A frame-sense byte of `1` mates the two operand frames with their z axes opposed (`z₁ = −z₀`); `0` mates them aligned (`z₁ = z₀`). With sense `0`, the first operand's model frame is the second operand's model frame turned by the alignment angle about its z axis. An operand frame that names an occurrence path is in the space of the path's innermost occurrence.
 
 A wide operand-path locator is the locator of the 945-, 806-, 850- and 861-byte `Assemble` scopes.
 Its record type GUID is `2E3AC990-483D-4A55-8662-C064B976A957`. Its eleven-byte

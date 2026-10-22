@@ -328,9 +328,25 @@ pub(super) fn exact_assembly_alignment_with_types(
         } else {
             None
         };
+        // The wide forms store how the operand frames mate: 1 opposed, 0
+        // aligned.
+        let sense_at = match generation.operand_frame_variant() {
+            Some(crate::design::assembly::AssemblyOperandFrameVariant::Wide) => Some(25),
+            Some(crate::design::assembly::AssemblyOperandFrameVariant::CompactWide) => {
+                Some(crate::layout::assembly_compact_wide_scope::OPERAND_FLAG)
+            }
+            _ => None,
+        };
+        let frame_sense = sense_at
+            .and_then(|at| usize::try_from(scope.byte_offset()).ok()?.checked_add(at))
+            .and_then(|at| match bytes.get(at) {
+                Some(1) => Some(assembly::DesignJointFrameSense::Opposed),
+                Some(0) => Some(assembly::DesignJointFrameSense::Aligned),
+                _ => None,
+            });
         DesignAssemblyAlignment::try_new(angle, offset, owners, form)
             .ok()
-            .map(Ok)
+            .map(|alignment| Ok(alignment.with_frame_sense(frame_sense)))
     })()
     .transpose()
 }

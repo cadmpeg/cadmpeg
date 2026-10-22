@@ -17333,7 +17333,7 @@ name = "operand_flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "byte 21 is `0` or `1`"
+anchor = "byte 21 is the frame-sense byte"
 
 [[record.field]]
 name = "zero_run_22"
