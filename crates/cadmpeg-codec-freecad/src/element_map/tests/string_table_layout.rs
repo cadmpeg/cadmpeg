@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::element_map::SourceLayouts;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy, SourceOrigin};
 use std::collections::BTreeMap;
 
@@ -23,8 +24,11 @@ fn inline_entities_unicode_cdata_and_nested_elements_use_a_real_expanded_stream(
     let entries = BTreeMap::new();
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
     let mut pending = BTreeMap::new();
+    let property_ranges = BTreeMap::new();
+    let reader =
+        crate::property_reader::PropertyReader::source(&ctx, root, &property_ranges).unwrap();
     let (tables, maps) = super::super::parse(
-        &ctx,
+        &reader,
         &document,
         Some(0),
         &[],
@@ -121,8 +125,12 @@ fn side_entry_raw_ranges_use_the_registered_member_view_and_preserve_multiline_p
     let entries = BTreeMap::from([("table.txt".into(), side_view)]);
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
     let mut pending = BTreeMap::new();
+    let property_ranges = BTreeMap::new();
+    let reader =
+        crate::property_reader::PropertyReader::source(&ctx, document_view, &property_ranges)
+            .unwrap();
     let (tables, _) = super::super::parse(
-        &ctx,
+        &reader,
         &document,
         Some(1),
         &[],
@@ -169,15 +177,18 @@ fn raw_ranges_keep_the_original_trimmed_field_semantics_without_changing_payload
 fn detached_inline_source_cannot_manufacture_a_logical_record_extent() {
     let xml = "<Document><StringHasher count='1'>1.c value</StringHasher></Document>";
     let arena = DecodeArena::new();
-    let (ctx, _) =
+    let (ctx, root) =
         DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service()).unwrap();
     let document = roxmltree::Document::parse(xml).unwrap();
     let entries = BTreeMap::new();
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
     let before = fidelity.clone();
     let mut pending = BTreeMap::new();
+    let property_ranges = BTreeMap::new();
+    let reader =
+        crate::property_reader::PropertyReader::source(&ctx, root, &property_ranges).unwrap();
     assert!(super::super::parse(
-        &ctx,
+        &reader,
         &document,
         Some(0),
         &[],

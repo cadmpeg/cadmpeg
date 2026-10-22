@@ -84,6 +84,26 @@ impl PartTable<'_> {
                     };
                     ancestor = next;
                 }
+            } else if let Some(proof) = frame.zip_containment() {
+                if frame.level().as_str() != "zip.digital_signature"
+                    || enclosing.level().as_str() != "zip.central_directory"
+                    || !matches!(frame.parent(), FrameParent::Part(_))
+                    || !same_extent(&proof.parent, enclosing.capture())
+                    || proof.owner >= index
+                {
+                    return Err("ZIP signature has no matching physical directory parent".into());
+                }
+                let owner = frames
+                    .get(proof.owner)
+                    .ok_or("missing ZIP declared owner")?;
+                if owner.level().as_str() != "zip.archive"
+                    || !rule.parents().contains(&PartParent::Level(owner.level()))
+                    || enclosing.parent() != FrameParent::Part(proof.owner)
+                {
+                    return Err(
+                        "ZIP signature declared owner is not its actual archive ancestor".into(),
+                    );
+                }
             } else {
                 match frame.parent() {
                     FrameParent::Part(_) => {

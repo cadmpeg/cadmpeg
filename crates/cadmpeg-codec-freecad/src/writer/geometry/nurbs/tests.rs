@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact inverse coverage for cyclic OCCT knot and pole representations.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodePolicy;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::math::Point3;
@@ -9,7 +9,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use std::fmt::Write as _;
 
 use crate::brep::{Tables, TextCurve, TextSurface};
-use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
+use crate::native::{PropertyBody, PropertyFamily, PropertyRecord};
 
 struct Carriers {
     curves: Vec<TextCurve>,
@@ -18,23 +18,24 @@ struct Carriers {
 
 fn read(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) -> Carriers {
     let text = format!("CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves {curve_count}\n{curves}\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces {surface_count}\n{surfaces}\nTriangulations 0\nTShapes 0\n*");
-    let property = PropertyRecord {
-        id: crate::native::native_id("property", "Shape:Shape"),
-        owner: crate::native::native_id("object", "Shape"),
-        name: "Shape".into(),
-        type_name: "Part::PropertyPartShape".into(),
-        family: PropertyFamily::Geometry,
-        status: None,
-        body: PropertyBody::Persisted {
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["Shape.brp".into()],
-            dynamic: None,
+    let property = crate::test_support::source_fidelity::PropertyFixture::new(
+        PropertyRecord {
+            id: crate::native::native_id("property", "Shape:Shape"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Shape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: PropertyFamily::Geometry,
+            status: None,
+            body: PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["Shape.brp".into()],
+                dynamic: None,
+            },
+            order: 0,
         },
-        order: 0,
-        xml: RetainedXml::from_text(r#"<Property><Part file="Shape.brp"/></Property>"#.into(), 0)
-            .expect("valid XML"),
-    };
+        r#"<Property><Part file="Shape.brp"/></Property>"#,
+    );
     let entry = crate::test_support::entry_record(
         crate::native::native_id("entry", "Shape.brp"),
         "Shape.brp".into(),
@@ -42,11 +43,13 @@ fn read(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) 
         vec![property.id.clone()],
         text.into_bytes(),
     );
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("bounded root");
-    let payloads =
-        crate::brep::parse_payloads(&ctx, &[property], &[entry]).expect("OCCT shape tables");
+    let payloads = crate::test_support::source_fidelity::with_property_reader(
+        &[],
+        &[&property],
+        &DecodePolicy::default(),
+        |ctx| crate::brep::parse_payloads(ctx, &[property.property.clone()], &[entry]),
+    )
+    .expect("OCCT shape tables");
     let tables = Tables::from_payload(&payloads[0]).expect("text tables");
     Carriers {
         curves: tables.curves.to_vec(),

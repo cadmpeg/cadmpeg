@@ -374,21 +374,25 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
         dependency_allow_partial: None,
         order: 0,
     };
-    let properties = ["First", "Second"].map(|name| crate::native::PropertyRecord {
-        id: format!("fcstd:native:property#Owner:{name}"),
-        owner: object.id().clone(),
-        name: name.into(),
-        type_name: "App::PropertyFileIncluded".into(),
-        family: crate::native::PropertyFamily::File,
-        status: None,
-        body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["shared.bin".into()],
-            dynamic: None,
-        },
-        order: 0,
-        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML"),
+    let properties = ["First", "Second"].map(|name| {
+        let property = crate::native::PropertyRecord {
+            id: format!("fcstd:native:property#Owner:{name}"),
+            owner: object.id().clone(),
+            name: name.into(),
+            type_name: "App::PropertyFileIncluded".into(),
+            family: crate::native::PropertyFamily::File,
+            status: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["shared.bin".into()],
+                dynamic: None,
+            },
+            order: 0,
+        };
+        let _fidelity =
+            crate::test_support::source_fidelity::xml_layout_fixture(&property.id, "<Property/>");
+        property
     });
     let entry = crate::test_support::entry_record(
         "fcstd:native:entry#shared.bin".into(),

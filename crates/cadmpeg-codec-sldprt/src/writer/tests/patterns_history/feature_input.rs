@@ -495,6 +495,7 @@ fn semantic_writer_rewrites_feature_input_name_values() {
     assert_eq!(
         crate::resolved_features::scalars::named_scalars(&payload, &lane.id, &written)
             .unwrap()
+            .records
             .len(),
         scalars
     );

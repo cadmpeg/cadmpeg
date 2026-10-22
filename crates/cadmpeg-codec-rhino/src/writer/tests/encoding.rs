@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::writer::{
-    archive_body_len, archive_final_size, brep_loop_type, brep_trim_type, native_i32_count,
-    object_attributes_payload, utf16, wire_index,
+    archive_body_len, archive_final_size, brep_loop_type, brep_trim_type, native_i32_count, utf16,
+    wire_index,
 };
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
@@ -305,4 +305,15 @@ fn nonempty_layer_per_viewport_settings_are_reported_and_geometry_written() {
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("written archive decodes");
     assert_eq!(written.ir().model.points.len(), 1);
+}
+
+fn object_attributes_payload(
+    ir: &CadIr,
+    identity: &str,
+    name: Option<&str>,
+    color: Option<Color>,
+    visible: Option<bool>,
+) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+    let materials = crate::writer::tables::materials::MaterialPlan::new(ir)?;
+    crate::writer::object_attributes_payload(ir, identity, name, color, visible, &materials)
 }

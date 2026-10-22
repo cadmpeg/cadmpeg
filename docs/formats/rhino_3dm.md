@@ -2926,9 +2926,14 @@ typed admission requires finite distinct endpoints, a finite strictly
 increasing domain, and dimension 2 or 3. A source-writable equal-domain line
 is retained as a native object record when it fails that CADIR gate.
 
-CADIR transfers a line as a degree-one NURBS curve with control points
-`from`, `to` and knots `[t0,t0,t1,t1]`. Endpoint coordinates are converted to
-millimetres; domain parameters and `dimension` are not converted.
+Endpoint coordinates are converted to millimetres; domain parameters and
+`dimension` are not converted. For a 3D curve record, the endpoint derivative
+is `(to-from)/(t1-t0)`. If that derivative is an admitted unit direction and
+`origin = from - t0*direction` is finite and reproduces both endpoints, CADIR
+transfers an analytic line and stores `[t0,t1]` as its parameter range. Other
+parameterizations transfer as a degree-one NURBS curve with control points
+`from`, `to` and knots `[t0,t0,t1,t1]`. Parameter-space C2 curves use this NURBS
+representation.
 
 ### 12.4 Arc curve
 

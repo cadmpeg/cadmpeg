@@ -2,7 +2,7 @@
 //! Neutral GUI document state and typed native-only descendants.
 
 use crate::loss::FreecadLossCode;
-use crate::native::{GuiDocumentRecord, PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
+use crate::native::{GuiDocumentRecord, GuiStateRecord};
 use crate::writer::xml;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -39,30 +39,8 @@ fn state(
     })
 }
 
-fn descendants(values: &[crate::native::ValueRecord]) -> Result<String, CodecError> {
-    let property = PropertyRecord {
-        id: "synthesized-gui-state".into(),
-        owner: "gui-document".into(),
-        name: "state".into(),
-        type_name: "App::PropertyString".into(),
-        family: PropertyFamily::String,
-        status: None,
-        body: PropertyBody::Persisted {
-            values: values.to_owned(),
-            links: Vec::new(),
-            side_entries: Vec::new(),
-            dynamic: None,
-        },
-        order: 0,
-        xml: RetainedXml::from_source("<state/>", 0)?,
-    };
-    Ok(xml::native(&property)?
-        .and_then(|value| {
-            value
-                .split_once('>')
-                .map(|(_, content)| content.trim_end_matches("</Property>").to_owned())
-        })
-        .unwrap_or_default())
+fn descendants(state: &GuiStateRecord) -> Result<String, CodecError> {
+    xml::gui_state_content(state)
 }
 
 fn camera_settings(camera: &cadmpeg_ir::presentation::CameraState) -> String {
@@ -157,7 +135,7 @@ pub(super) fn write(
             }
             let content = original
                 .filter(|original| original.kind == tag)
-                .map(|original| descendants(&original.values))
+                .map(|original| descendants(original))
                 .transpose()?
                 .unwrap_or_default();
             states.push_str(&state(tag, &attributes, &content)?);
@@ -182,7 +160,7 @@ pub(super) fn write(
                 states.push_str(&state(
                     &value.kind,
                     &value.attributes,
-                    &descendants(&value.values)?,
+                    &descendants(value)?,
                 )?);
             }
         }

@@ -340,102 +340,11 @@ impl ByteSpan {
     }
 }
 
-/// Exact XML text paired with its nonempty source interval.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "RetainedXmlWire")]
-pub(crate) struct RetainedXml {
-    // Transient scan fields. NativeRecord serializes only the evidence below.
-    text: String,
-    span: ByteSpan,
-    length: u64,
-    sha256: String,
-}
-
-impl RetainedXml {
-    fn try_new(text: String, start: u64, end: u64) -> Result<Self, String> {
-        let span = ByteSpan::try_new(start, end)?;
-        if end - start != cadmpeg_core::decode::u64_from_index(text.len()) {
-            return Err("raw_xml length disagrees with byte_start and byte_end".to_owned());
-        }
-        let sha256 = sha256_hex(text.as_bytes());
-        Ok(Self {
-            text,
-            span,
-            length: end - start,
-            sha256,
-        })
-    }
-    pub(crate) fn from_text(text: String, start: u64) -> Result<Self, String> {
-        let end = start
-            .checked_add(cadmpeg_core::decode::u64_from_index(text.len()))
-            .ok_or("raw_xml byte_end overflow")?;
-        Self::try_new(text, start, end)
-    }
-    pub(crate) fn from_source(text: &str, start: u64) -> Result<Self, CodecError> {
-        Self::from_text(text.to_owned(), start).map_err(CodecError::Malformed)
-    }
-    pub(crate) fn text(&self) -> &str {
-        &self.text
-    }
-    pub(crate) fn start(&self) -> u64 {
-        self.span.start()
-    }
-    pub(crate) fn end(&self) -> u64 {
-        self.span.end()
-    }
-    pub(crate) fn length(&self) -> u64 {
-        self.length
-    }
-    pub(crate) fn sha256(&self) -> &str {
-        &self.sha256
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RetainedXmlWire {
-    length: u64,
-    sha256: String,
-}
-
 fn valid_sha256(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-impl TryFrom<RetainedXmlWire> for RetainedXml {
-    type Error = String;
-    fn try_from(wire: RetainedXmlWire) -> Result<Self, Self::Error> {
-        if wire.length == 0 || !valid_sha256(&wire.sha256) {
-            return Err("XML evidence needs positive length and lowercase sha256".into());
-        }
-        Ok(Self {
-            text: String::new(),
-            span: ByteSpan {
-                start: 0,
-                end: wire.length,
-            },
-            length: wire.length,
-            sha256: wire.sha256,
-        })
-    }
-}
-
-#[derive(Serialize)]
-struct RetainedXmlOut<'a> {
-    length: u64,
-    sha256: &'a str,
-}
-
-impl Serialize for RetainedXml {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        RetainedXmlOut {
-            length: self.length,
-            sha256: &self.sha256,
-        }
-        .serialize(serializer)
-    }
 }
 
 /// Document-level GUI state outside application-object view providers.
@@ -454,6 +363,7 @@ pub(crate) struct GuiDocumentRecord {
 
 /// One ordered document-level GUI state element.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct GuiStateRecord {
     /// Stable state identity.
     pub(crate) id: String,
@@ -468,10 +378,14 @@ pub(crate) struct GuiStateRecord {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct GuiStateRecordWire {
     order: usize,
-    #[serde(flatten)]
-    state: GuiStateRecord,
+    id: String,
+    kind: String,
+    attributes: BTreeMap<String, String>,
+    values: Vec<ValueRecord>,
+    side_entries: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -533,7 +447,13 @@ impl TryFrom<GuiDocumentRecordWire> for GuiDocumentRecord {
                 if wire.order != order {
                     return Err("GUI state order disagrees with its states position".to_owned());
                 }
-                Ok(wire.state)
+                Ok(GuiStateRecord {
+                    id: wire.id,
+                    kind: wire.kind,
+                    attributes: wire.attributes,
+                    values: wire.values,
+                    side_entries: wire.side_entries,
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
@@ -1419,6 +1339,7 @@ pub(crate) struct GuiViewProviderRecord {
 
 /// One persisted property owned by a GUI view provider.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct GuiPropertyRecord {
     /// Stable native identity.
     pub(crate) id: String,
@@ -1814,6 +1735,7 @@ impl ObjectRecord {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ObjectRecordWire {
     id: String,
     name: String,
@@ -2186,8 +2108,6 @@ pub(crate) struct PropertyRecord {
     pub(crate) body: PropertyBody,
     /// Source-order index within the owner.
     pub(crate) order: usize,
-    /// Retained XML and its byte span.
-    pub(crate) xml: RetainedXml,
 }
 
 /// More than one property matches a selection.
@@ -2299,6 +2219,7 @@ impl PropertyRecord {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PropertyRecordWire {
     id: String,
     owner: String,
@@ -2313,8 +2234,6 @@ struct PropertyRecordWire {
     values: Vec<ValueRecord>,
     links: Vec<Option<LinkTarget>>,
     side_entries: Vec<String>,
-    #[serde(flatten)]
-    evidence: RetainedXml,
 }
 
 #[derive(Serialize)]
@@ -2333,8 +2252,6 @@ struct PropertyRecordOut<'a> {
     values: &'a [ValueRecord],
     links: &'a [Option<LinkTarget>],
     side_entries: &'a [String],
-    #[serde(flatten)]
-    evidence: &'a RetainedXml,
 }
 
 impl Serialize for PropertyRecord {
@@ -2355,7 +2272,6 @@ impl Serialize for PropertyRecord {
             values: self.values(),
             links: self.links(),
             side_entries: self.side_entries(),
-            evidence: &self.xml,
         }
         .serialize(serializer)
     }
@@ -2415,7 +2331,6 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
             status: wire.status,
             body,
             order: wire.order,
-            xml: wire.evidence,
         })
     }
 }

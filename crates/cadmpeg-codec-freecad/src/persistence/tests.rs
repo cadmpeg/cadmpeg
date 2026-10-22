@@ -786,11 +786,12 @@ fn property_value_xml_above_the_copy_bound_is_unreadable_with_a_loss() {
     let xml = roxmltree::Document::parse(&document).expect("XML");
     let mut properties = Vec::new();
     let mut losses = Vec::new();
+    let mut property_sources = std::collections::BTreeMap::new();
     super::parse_properties(
-        &document,
         xml.root_element(),
         "owner",
         &mut properties,
+        &mut property_sources,
         &mut losses,
     )
     .expect("a value copy above the bound skips the values");
@@ -800,7 +801,7 @@ fn property_value_xml_above_the_copy_bound_is_unreadable_with_a_loss() {
             if detail.contains("value copy bound")
     ));
     assert_eq!(
-        properties[0].xml.text(),
+        &document[property_sources[&properties[0].id].record_range()],
         &document[xml
             .root_element()
             .first_element_child()

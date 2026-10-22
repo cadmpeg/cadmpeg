@@ -6,6 +6,8 @@ use super::{
     crc_chunk_with_direct, records, unit_color_channel, wire_index, CadIr, CodecError, Map, Value,
 };
 use cadmpeg_ir::appearance::Appearance;
+mod plan;
+pub(in crate::writer) use plan::MaterialPlan;
 
 const MATERIAL_CLASS: [u8; 16] = [
     0xbc, 0xdb, 0xb5, 0x60, 0x60, 0xe6, 0xd3, 0x11, 0xbf, 0xe4, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
@@ -34,9 +36,14 @@ fn encode_material(
     index: i32,
     appearance: Option<&Appearance>,
     fields: Option<&Map<String, Value>>,
+    authored_uuid: Option<[u8; 16]>,
 ) -> Result<Vec<u8>, CodecError> {
     let nil = Value::String("00000000-0000-0000-0000-000000000000".to_owned());
-    let source_uuid = fields.and_then(|fields| fields.get("source_uuid"));
+    let authored =
+        authored_uuid.map(|uuid| Value::String(crate::wire::Uuid::from_wire(uuid).to_string()));
+    let source_uuid = authored
+        .as_ref()
+        .or_else(|| fields.and_then(|fields| fields.get("source_uuid")));
     let source_uuid = if appearance.is_none() && source_uuid.is_some_and(Value::is_null) {
         Some(&nil)
     } else {
@@ -168,73 +175,7 @@ fn encode_material(
     )
 }
 
-pub(in crate::writer) fn materials(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
-    let mut output = Vec::new();
-    for (index, appearance) in ir.model.appearances.iter().enumerate() {
-        let native = own_material(ir, appearance)
-            .map(cadmpeg_ir::NativeRecord::fields)
-            .transpose()?;
-        output.push(encode_material(
-            appearance.id.as_str(),
-            wire_index(index)?,
-            Some(appearance),
-            native.as_ref(),
-        )?);
-    }
-    for record in records(ir, "materials") {
-        if ir
-            .model
-            .appearances
-            .iter()
-            .any(|appearance| appearance.native_ref.as_deref() == Some(record.id()))
-            || !native_complete(record)
-        {
-            continue;
-        }
-        let fields = record.fields()?;
-        output.push(encode_material(
-            record.id(),
-            wire_index(output.len())?,
-            None,
-            Some(&fields),
-        )?);
-    }
-    Ok(output)
-}
-
-pub(in crate::writer) fn native_index(ir: &CadIr, id: &str) -> Result<Option<i32>, CodecError> {
-    if let Some(index) = ir
-        .model
-        .appearances
-        .iter()
-        .position(|appearance| appearance.native_ref.as_deref() == Some(id))
-    {
-        return wire_index(index).map(Some);
-    }
-    let unlinked = records(ir, "materials").iter().filter(|record| {
-        native_complete(record)
-            && !ir
-                .model
-                .appearances
-                .iter()
-                .any(|appearance| appearance.native_ref.as_deref() == Some(record.id()))
-    });
-    for (index, record) in ir
-        .model
-        .appearances
-        .iter()
-        .map(|_| None)
-        .chain(unlinked.map(Some))
-        .enumerate()
-    {
-        if record.is_some_and(|record| record.id() == id) {
-            return wire_index(index).map(Some);
-        }
-    }
-    Ok(None)
-}
-
-pub(in crate::writer) fn material_index(ir: &CadIr, identity: &str) -> Option<i32> {
+fn bound_appearance<'a>(ir: &'a CadIr, identity: &str) -> Option<&'a Appearance> {
     let binding = ir.model.appearance_bindings.iter().find(|binding| {
         use cadmpeg_ir::appearance::AppearanceTarget;
         let target = match &binding.target {
@@ -258,8 +199,7 @@ pub(in crate::writer) fn material_index(ir: &CadIr, identity: &str) -> Option<i3
     ir.model
         .appearances
         .iter()
-        .position(|appearance| appearance.id == binding.appearance)
-        .and_then(|index| i32::try_from(index).ok())
+        .find(|appearance| appearance.id == binding.appearance)
 }
 
 pub(in crate::writer) fn native_complete(record: &cadmpeg_ir::NativeRecord) -> bool {

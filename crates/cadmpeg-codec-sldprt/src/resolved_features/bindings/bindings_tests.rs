@@ -473,7 +473,6 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             id: "identity".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(150),
             type_prefix: [0xc2, 0x83, 0xfb, 0x08].into(),
             feature_source_id: 224_u32.try_into().unwrap(),
             local_identity: 2,
@@ -941,6 +940,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         std::slice::from_ref(&history),
         &HashSet::default(),
         &mut lane,
+        &crate::resolved_features::body_sources::BodySources::default(),
     )
     .unwrap();
     assert_eq!(
@@ -969,6 +969,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         std::slice::from_ref(&ambiguous_history),
         &HashSet::default(),
         &mut ambiguous,
+        &crate::resolved_features::body_sources::BodySources::default(),
     )
     .unwrap();
     assert!(ambiguous

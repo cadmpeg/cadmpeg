@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 
-use super::layout::{add, signature, size, u16_at, u32_at, Directory};
+use super::layout::{add, signature, size, u16_at, u32_at, u64_at, Directory};
 use super::{child, push, FrameParent, FramedPart, ZipEntry};
 
 pub(super) fn member<'a>(
@@ -25,9 +25,12 @@ pub(super) fn member<'a>(
     let compressed = u32_at(bytes, add(at, 20)?)?;
     let uncompressed = u32_at(bytes, add(at, 24)?)?;
     let local_offset = u32_at(bytes, add(at, 42)?)?;
-    if compressed == u32::MAX || uncompressed == u32::MAX || local_offset == u32::MAX {
-        return Err("ZIP64 member requires ZIP64 framing".into());
-    }
+    let fields = super::zip64::mask((uncompressed, compressed, local_offset));
+    let (uncompressed, compressed, local_offset) = super::zip64::resolve(
+        bytes,
+        extra_start..extra_end,
+        (uncompressed, compressed, local_offset),
+    )?;
     if u16_at(bytes, add(at, 34)?)? != 0 {
         return Err("multi-disk ZIP member is outside this framer".into());
     }
@@ -58,6 +61,7 @@ pub(super) fn member<'a>(
         "zip.central_extra_field",
         central_header,
         extra_start..extra_end,
+        fields,
     )?;
     let local = usize::try_from(i128::from(local_offset) + directory.shift)
         .map_err(|_| "ZIP local-header offset is outside the archive")?;
@@ -91,14 +95,20 @@ pub(super) fn member<'a>(
                 .collect(),
         ),
     )?;
-    extras(
+    let local_zip64 = extras(
         ctx,
         source,
         out,
         "zip.local_extra_field",
         local_header,
         local_extra..payload_start,
+        0b11,
     )?;
+    let local_sentinel =
+        u32_at(bytes, add(local, 18)?)? == u32::MAX || u32_at(bytes, add(local, 22)?)? == u32::MAX;
+    if local_sentinel && !local_zip64 {
+        return Err("local ZIP64 sentinel has no actual extra field".into());
+    }
     let entry = push(
         ctx,
         source,
@@ -116,7 +126,12 @@ pub(super) fn member<'a>(
             archive,
             payload_end,
             directory.start,
-            (u32_at(bytes, add(at, 16)?)?, compressed, uncompressed),
+            (
+                u32_at(bytes, add(at, 16)?)?,
+                compressed,
+                uncompressed,
+                fields & 0b11 != 0 || local_zip64,
+            ),
         )?)
     } else {
         None
@@ -145,7 +160,9 @@ fn extras<'a>(
     level: &str,
     parent: usize,
     extent: std::ops::Range<usize>,
-) -> Result<(), String> {
+    fields: u8,
+) -> Result<bool, String> {
+    let actual = super::zip64::field(source.window(), extent.clone())?;
     let mut at = extent.start;
     while at < extent.end {
         let end = add(
@@ -155,6 +172,18 @@ fn extras<'a>(
         if end > extent.end {
             return Err("ZIP extra field exceeds its declared extra block".into());
         }
+        let framing_end = if u16_at(source.window(), at)? == 1 {
+            let width = usize::try_from(fields.count_ones())
+                .map_err(|_| "ZIP64 scalar count exceeds usize")?
+                .checked_mul(8)
+                .ok_or("ZIP64 scalar widths overflow")?;
+            add(add(at, 4)?, width)?
+        } else {
+            add(at, 4)?
+        };
+        if framing_end > end {
+            return Err("cut-short ZIP64 extra scalar fields".into());
+        }
         push(
             ctx,
             source,
@@ -162,11 +191,11 @@ fn extras<'a>(
             level,
             FrameParent::Part(parent),
             at..end,
-            (vec![at..add(at, 4)?], vec![at..add(at, 2)?]),
+            (vec![at..framing_end], vec![at..add(at, 2)?]),
         )?;
         at = end;
     }
-    Ok(())
+    Ok(actual.is_some())
 }
 
 fn descriptor<'a>(
@@ -176,7 +205,7 @@ fn descriptor<'a>(
     parent: usize,
     start: usize,
     limit: usize,
-    (crc, compressed, uncompressed): (u32, u32, u32),
+    (crc, compressed, uncompressed, wide): (u32, u64, u64, bool),
 ) -> Result<usize, String> {
     let bytes = source.window();
     let mut selected = None;
@@ -185,20 +214,30 @@ fn descriptor<'a>(
             continue;
         }
         let crc_at = add(start, prefix)?;
-        let end = add(crc_at, 12)?;
-        if end > limit
-            || u32_at(bytes, crc_at)? != crc
-            || u32_at(bytes, add(crc_at, 4)?)? != compressed
-            || u32_at(bytes, add(crc_at, 8)?)? != uncompressed
-        {
+        let end = add(crc_at, if wide { 20 } else { 12 })?;
+        if end > limit || u32_at(bytes, crc_at)? != crc {
+            continue;
+        }
+        let (actual_compressed, actual_uncompressed) = if wide {
+            (
+                u64_at(bytes, add(crc_at, 4)?)?,
+                u64_at(bytes, add(crc_at, 12)?)?,
+            )
+        } else {
+            (
+                u64::from(u32_at(bytes, add(crc_at, 4)?)?),
+                u64::from(u32_at(bytes, add(crc_at, 8)?)?),
+            )
+        };
+        if actual_compressed != compressed || actual_uncompressed != uncompressed {
             continue;
         }
         if selected.replace((prefix, crc_at, end)).is_some() {
-            return Err("ambiguous ZIP32 descriptor size".into());
+            return Err("ambiguous ZIP descriptor size".into());
         }
     }
     let (prefix, crc_at, end) =
-        selected.ok_or("ZIP32 descriptor does not match its central declaration")?;
+        selected.ok_or("ZIP descriptor does not match its central declaration")?;
     let framing = if prefix == 0 {
         vec![add(crc_at, 4)?..end]
     } else {

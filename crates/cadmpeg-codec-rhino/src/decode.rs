@@ -4734,6 +4734,7 @@ fn stage_curve_tree_indexed(
         unknown,
     } = *context;
     let _nested = ctx.enter_nested("Rhino Brep curve tree")?;
+    let parameter_range = curve.parameter_range();
     let (geometry, definition) = match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
         crate::curves::DecodedCurve::Compound {
@@ -4771,6 +4772,7 @@ fn stage_curve_tree_indexed(
             )
         }
     };
+    let (geometry, parameter_range) = crate::curves::project_curve_leaf(geometry, parameter_range);
     let key = IdentityKey::try_new(key.to_owned())
         .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     let id = {
@@ -4788,7 +4790,7 @@ fn stage_curve_tree_indexed(
         ))
     }?;
     staged.draft.model_mut().curves.push(Curve {
-        parameter_range: None,
+        parameter_range,
         id: id.clone(),
         geometry,
         source_object: Some(association.identity.clone()),
@@ -5313,6 +5315,7 @@ fn commit_curve_tree_indexed(
     source: CurveCommitSource<'_>,
 ) -> Result<cadmpeg_ir::ids::CurveId, CandidateError> {
     let _nested = ctx.enter_nested("Rhino committed curve tree")?;
+    let parameter_range = curve.parameter_range();
     let (geometry, definition) = match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
         crate::curves::DecodedCurve::Compound {
@@ -5357,6 +5360,7 @@ fn commit_curve_tree_indexed(
             )
         }
     };
+    let (geometry, parameter_range) = crate::curves::project_curve_leaf(geometry, parameter_range);
     let key = IdentityKey::try_new(source.key.to_owned()).map_err(|error| error.to_string())?;
 
     let curve_key = if source.path == "root" {
@@ -5373,7 +5377,7 @@ fn commit_curve_tree_indexed(
         ))
     }?;
     ir.model.curves.push(Curve {
-        parameter_range: None,
+        parameter_range,
         id: id.clone(),
         geometry,
         source_object: Some(source.association.identity.clone()),
@@ -5463,6 +5467,7 @@ fn transform_decoded_curve(
         crate::curves::DecodedCurve::Leaf {
             geometry,
             warnings: _,
+            ..
         } => {
             let source = std::mem::replace(
                 geometry,

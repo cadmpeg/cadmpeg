@@ -31,7 +31,7 @@ fn named_scalar_identity_decodes_record_fields() {
     assert_eq!(names.len(), 1);
 
     assert_eq!(
-        named_scalars(&payload, "lane", &names).unwrap(),
+        named_scalars(&payload, "lane", &names).unwrap().records,
         vec![crate::records::FeatureInputScalar {
             sequence: 0,
             id: "sldprt:feature-input:scalar#lane:32".into(),
@@ -69,7 +69,7 @@ fn scalar_trailer_is_relative_to_variable_length_name() {
         payload[trailer + relative + 4..trailer + relative + 8].fill(0xff);
     }
     let names = decoded_names(&payload);
-    let scalars = named_scalars(&payload, "lane", &names).unwrap();
+    let scalars = named_scalars(&payload, "lane", &names).unwrap().records;
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -101,7 +101,7 @@ fn compact_scalar_header_ends_at_the_value() {
     payload[trailer + 47..trailer + 51].fill(0xff);
 
     let names = decoded_names(&payload);
-    let scalars = named_scalars(&payload, "lane", &names).unwrap();
+    let scalars = named_scalars(&payload, "lane", &names).unwrap().records;
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -143,7 +143,7 @@ fn value_only_scalar_header_ends_at_the_value() {
     payload[trailer + 3..trailer + 7].copy_from_slice(&132u32.to_le_bytes());
 
     let names = decoded_names(&payload);
-    let scalars = named_scalars(&payload, "lane", &names).unwrap();
+    let scalars = named_scalars(&payload, "lane", &names).unwrap().records;
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -173,7 +173,7 @@ fn legacy_scalar_layout_carries_shifted_role_and_operand() {
     payload[trailer + 40..trailer + 44].fill(0xff);
 
     let names = decoded_names(&payload);
-    let scalars = named_scalars(&payload, "lane", &names).unwrap();
+    let scalars = named_scalars(&payload, "lane", &names).unwrap().records;
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -216,7 +216,7 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
     }
 
     let names = decoded_names(&payload);
-    let scalars = named_scalars(&payload, "lane", &names).unwrap();
+    let scalars = named_scalars(&payload, "lane", &names).unwrap().records;
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };

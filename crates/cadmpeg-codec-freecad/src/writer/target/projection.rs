@@ -14,14 +14,12 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         return decline("there is no typed FreeCAD graph");
     };
     let objects = namespace.arena_as::<native::ObjectRecord>("objects")?;
-    let mut properties = namespace.arena_as::<native::PropertyRecord>("properties")?;
-    // Parsers that operate on XML receive a temporary serialization of CURRENT
-    // typed values. Their native evidence fields never become a content source.
-    for property in &mut properties {
-        let Some(xml) = super::super::xml::native(property)? else {
+    let properties = namespace.arena_as::<native::PropertyRecord>("properties")?;
+    let property_reader = crate::property_reader::PropertyReader::typed(ctx);
+    for property in &properties {
+        if super::super::xml::native(property)?.is_none() {
             return decline("the typed property has no independent projection");
-        };
-        property.xml = native::RetainedXml::from_source(&xml, 0)?;
+        }
     }
     let payloads = namespace.arena_as::<brep::ShapePayloadRecord>("shape_payloads")?;
     let products = namespace.arena_as::<native::ProductNodeRecord>("product_nodes")?;
@@ -60,7 +58,7 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
     crate::element_map::bind_topology(&mut maps, &occurrences);
     if ir.scope.design {
         crate::design::transfer(
-            ctx,
+            &property_reader,
             &mut projected,
             &objects,
             &properties,
@@ -70,7 +68,7 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         )?;
     }
     let (definitions, occurrences) = crate::product::transfer_neutral(
-        ctx,
+        &property_reader,
         &products,
         &joints,
         &objects,
@@ -82,9 +80,14 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
     projected.model.occurrences = occurrences;
     projected.model.assembly_joints =
         crate::joint::transfer_neutral(&joints, &projected.model.occurrences)?;
-    crate::drawing::transfer_neutral(ctx, &mut projected.model, &drawings, &properties)?;
+    crate::drawing::transfer_neutral(
+        &property_reader,
+        &mut projected.model,
+        &drawings,
+        &properties,
+    )?;
     crate::annotation::transfer_neutral(
-        ctx,
+        &property_reader,
         &mut projected.model,
         &annotations,
         &properties,

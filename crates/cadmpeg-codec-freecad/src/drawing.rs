@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
@@ -16,7 +15,7 @@ use crate::native::{
 };
 
 pub(crate) fn transfer(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<DrawingRecord>, CodecError> {
@@ -106,7 +105,7 @@ pub(crate) fn transfer(
 }
 
 pub(crate) fn transfer_neutral(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     model: &mut Model,
     records: &[DrawingRecord],
     properties: &[PropertyRecord],
@@ -324,7 +323,7 @@ fn registered_drawing_kind(runtime_type: &str) -> Option<DrawingKind> {
 }
 
 fn scalar_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<FiniteReal>, CodecError> {
@@ -346,7 +345,7 @@ fn scalar_property(
 }
 
 fn vector_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<FiniteVector<3>>, CodecError> {
@@ -478,7 +477,7 @@ fn typed_property<'a>(
 }
 
 fn drawing_parameters(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<BTreeMap<String, String>, CodecError> {
     const NAMES: &[&str] = &[
@@ -523,7 +522,7 @@ fn drawing_parameters(
 }
 
 fn validate_drawing_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     name: &str,
     property: &PropertyRecord,
 ) -> Result<(), CodecError> {
@@ -592,7 +591,7 @@ fn ensure_unique_property_names(properties: &[&PropertyRecord]) -> Result<(), Co
 }
 
 fn root_value<'a>(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &'a PropertyRecord,
     name: &str,
 ) -> Result<Option<&'a ValueRecord>, CodecError> {
@@ -606,8 +605,9 @@ fn root_value<'a>(
         "LockPosition" | "Perspective" => ("Bool", &[]),
         _ => return Ok(None),
     };
+    let property_xml = ctx.property_xml(property)?;
     let xml = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;

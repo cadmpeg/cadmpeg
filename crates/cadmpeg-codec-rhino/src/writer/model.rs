@@ -106,6 +106,11 @@ pub(super) struct WritableObjectCurve<'a> {
 }
 
 enum ObjectCurveGeometry<'a> {
+    Line {
+        from: [f64; 3],
+        to: [f64; 3],
+        domain: [f64; 2],
+    },
     Circle(&'a cadmpeg_ir::geometry::analytic::CircleCurve),
     Nurbs(&'a NurbsCurve),
 }
@@ -114,27 +119,43 @@ impl<'a> WritableObjectCurve<'a> {
     /// Admits a free curve with writable attributes and geometry.
     pub(super) fn try_new(curve: &'a cadmpeg_ir::geometry::Curve) -> Result<Self, CodecError> {
         let geometry = match curve.geometry.solved() {
+            Some(SolvedCurveGeometry::Line(line)) => curve.parameter_range.and_then(|range| {
+                let origin = line.origin().get();
+                let direction = *line.direction().as_raw();
+                let from = origin.translated(direction, range.lower());
+                let to = origin.translated(direction, range.upper());
+                (from != to).then_some(ObjectCurveGeometry::Line {
+                    from: [from.x, from.y, from.z],
+                    to: [to.x, to.y, to.z],
+                    domain: range.endpoints(),
+                })
+            }),
             Some(SolvedCurveGeometry::Circle(circle)) => {
                 check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
-                ObjectCurveGeometry::Circle(circle)
+                Some(ObjectCurveGeometry::Circle(circle))
             }
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
-                ObjectCurveGeometry::Nurbs(nurbs)
+                Some(ObjectCurveGeometry::Nurbs(nurbs))
             }
-            _ => {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "Rhino writer cannot represent curve {} as a native object",
-                    curve.id.as_str()
-                )));
-            }
-        };
+            _ => None,
+        }
+        .ok_or_else(|| {
+            CodecError::UnsupportedContent(format!(
+                "Rhino writer cannot represent curve {} as a native object",
+                curve.id.as_str()
+            ))
+        })?;
         Ok(Self { geometry })
     }
 
     /// Encodes the admitted curve as a native class payload.
     pub(super) fn payload(&self) -> Result<([u8; 16], Vec<u8>), CodecError> {
         Ok(match self.geometry {
+            ObjectCurveGeometry::Line { from, to, domain } => (
+                super::LINE_CLASS,
+                super::bounded_line_payload(from, to, domain, 3)?,
+            ),
             ObjectCurveGeometry::Circle(circle) => {
                 let center = circle.center().get();
                 let axis = circle.frame().axis().as_raw();

@@ -33,7 +33,8 @@ pub(crate) fn expected_lanes<'a>(
             &lane.native_payload,
             &lane.id,
             &lane.names,
-        )?;
+        )?
+        .records;
         rebuild_scalar_relations(lane, scalars)?;
     }
     Ok(expected_lane_pairs_impl(
@@ -124,6 +125,6 @@ fn rebuild_scalar_relations(
         &[],
     )?;
     lane.references =
-        crate::resolved_features::markers::reference_cells(&lane.scalars, &lane.classes)?;
+        crate::resolved_features::markers::reference_cells(&lane.scalars, &lane.classes)?.records;
     Ok(())
 }

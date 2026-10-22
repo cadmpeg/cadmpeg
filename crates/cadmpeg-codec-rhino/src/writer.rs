@@ -133,6 +133,8 @@ fn is_support(source: Option<&cadmpeg_ir::SourceObjectAssociation>) -> bool {
         .is_some_and(|source| source.geometry_role == Some(cadmpeg_ir::SourceGeometryRole::Support))
 }
 
+use tables::materials::MaterialPlan;
+
 struct WriteOutcome {
     losses: Vec<LossNote>,
     objects: usize,
@@ -163,6 +165,7 @@ fn write_seekable(
         ir,
         version,
         &plan.written_bodies,
+        &plan.materials,
         output,
     )?);
     let table_start = output.stream_position()?;
@@ -194,6 +197,7 @@ fn write_seekable(
             &payload,
             point.id.as_str(),
             display,
+            &plan.materials,
         )?)?;
     }
     for (id, payload) in &plan.curves {
@@ -209,7 +213,13 @@ fn write_seekable(
             curve.source_object.as_ref(),
         );
         ctx.charge_entities(1, "write Rhino object record")?;
-        output.write_all(&curve_object_record(ir, payload, id, display)?)?;
+        output.write_all(&curve_object_record(
+            ir,
+            payload,
+            id,
+            display,
+            &plan.materials,
+        )?)?;
     }
     for (id, (class, payload)) in &plan.surfaces {
         let surface = ir
@@ -225,7 +235,13 @@ fn write_seekable(
         );
         ctx.charge_entities(1, "write Rhino object record")?;
         output.write_all(&attributed_object_record(
-            ir, 8, *class, payload, id, display,
+            ir,
+            8,
+            *class,
+            payload,
+            id,
+            display,
+            &plan.materials,
         )?)?;
     }
     for mesh in &plan.meshes {
@@ -241,16 +257,17 @@ fn write_seekable(
             &payload,
             mesh.id.as_str(),
             display,
+            &plan.materials,
         )?)?;
     }
 
-    let (references, occurrence_losses) = tables::products::references(ir)?;
+    let (references, occurrence_losses) = tables::products::references(ir, &plan.materials)?;
     plan.losses.extend(occurrence_losses);
     for record in &references {
         ctx.charge_entities(1, "write Rhino object record")?;
         output.write_all(record)?;
     }
-    let (annotations, annotation_losses) = tables::annotations::records(ir)?;
+    let (annotations, annotation_losses) = tables::annotations::records(ir, &plan.materials)?;
     plan.losses.extend(annotation_losses);
     for record in &annotations {
         ctx.charge_entities(1, "write Rhino object record")?;
@@ -292,6 +309,7 @@ fn write_archive_prefix(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     written_bodies: &std::collections::BTreeSet<String>,
+    materials: &MaterialPlan,
     output: &mut dyn WriteSeek,
 ) -> Result<Vec<LossNote>, CodecError> {
     output.write_all(&header(version))?;
@@ -307,7 +325,12 @@ fn write_archive_prefix(
         ir.tolerances.linear.get(),
         ir.tolerances.angular.get(),
     )?];
-    settings.extend(tables::document::settings(ir)?);
+    let mut setting_losses = Vec::new();
+    settings.extend(tables::document::settings(
+        ir,
+        materials,
+        &mut setting_losses,
+    )?);
     let views = tables::views::settings(ir)?;
     settings.extend(views.settings);
     output.write_all(&table(ctx, TCODE_SETTINGS_TABLE, &settings)?)?;
@@ -329,7 +352,7 @@ fn write_archive_prefix(
             TCODE_FONT_TABLE => tables::fonts::styles(ir)?,
             TCODE_HATCH_PATTERN_TABLE => tables::hatches::patterns(ir)?,
             TCODE_INSTANCE_DEFINITION_TABLE => tables::products::definitions(ir, written_bodies)?,
-            TCODE_MATERIAL_TABLE => tables::materials::materials(ir)?,
+            TCODE_MATERIAL_TABLE => materials.encode(ir)?,
             TCODE_GROUP_TABLE => tables::native::groups(ir)?,
             TCODE_LINETYPE_TABLE => tables::native::linetypes(ir)?,
             _ => Vec::new(),
@@ -340,6 +363,7 @@ fn write_archive_prefix(
         }
     }
     let mut losses = documents.losses;
+    losses.extend(setting_losses);
     losses.extend(views.losses);
     Ok(losses)
 }
@@ -363,6 +387,7 @@ struct WritePlan<'a> {
     brep_count: usize,
     written_bodies: std::collections::BTreeSet<String>,
     topology_points: std::collections::BTreeSet<String>,
+    materials: MaterialPlan,
 }
 
 fn content_limitation(error: &CodecError) -> bool {
@@ -380,7 +405,9 @@ fn prepare_write<'a>(
         ));
     }
     let model = &ir.model;
+    let materials = MaterialPlan::new(ir)?;
     let mut losses = attributes::name_losses(ir);
+    losses.extend(materials.losses().iter().cloned());
     native_i32_count(
         model.points.len(),
         "point arena exceeds native counts".into(),
@@ -563,7 +590,7 @@ fn prepare_write<'a>(
             }
             Err(error) => return Err(error),
         }
-        brep_count += loose::write(ctx, &baked, &mut brep_records, &mut losses)?;
+        brep_count += loose::write(ctx, &baked, &mut brep_records, &mut losses, &materials)?;
         if baked.model.faces.is_empty() {
             continue;
         }
@@ -634,6 +661,7 @@ fn prepare_write<'a>(
             body.name.as_deref(),
             body.color,
             body.visible,
+            &materials,
         )?)?;
     }
     Ok(WritePlan {
@@ -645,6 +673,7 @@ fn prepare_write<'a>(
         brep_count,
         written_bodies,
         topology_points,
+        materials,
     })
 }
 
@@ -2244,6 +2273,7 @@ fn attributed_object_record(
     payload: &[u8],
     identity: &str,
     display: presentation::Display<'_>,
+    materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
     framed_object_record(
         object_type,
@@ -2256,6 +2286,7 @@ fn attributed_object_record(
             display.name,
             display.color,
             display.visible,
+            materials,
         )?),
     )
 }
@@ -2265,6 +2296,7 @@ fn curve_object_record(
     payload: &compounds::CurvePayload,
     identity: &str,
     display: presentation::Display<'_>,
+    materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
     framed_object_record(
         4,
@@ -2277,6 +2309,7 @@ fn curve_object_record(
             display.name,
             display.color,
             display.visible,
+            materials,
         )?),
     )
 }
@@ -2286,6 +2319,7 @@ fn mesh_object_record(
     payload: &MeshPayload,
     identity: &str,
     display: presentation::Display<'_>,
+    materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
     framed_object_record(
         0x20,
@@ -2298,6 +2332,7 @@ fn mesh_object_record(
             display.name,
             display.color,
             display.visible,
+            materials,
         )?),
     )
 }
@@ -2309,6 +2344,7 @@ fn brep_object_record(
     name: Option<&str>,
     color: Option<cadmpeg_ir::topology::Color>,
     visible: Option<bool>,
+    materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
     framed_object_record(
         0x10,
@@ -2316,7 +2352,7 @@ fn brep_object_record(
         &payload.body,
         Some(&payload.direct),
         Some(object_attributes_payload(
-            ir, identity, name, color, visible,
+            ir, identity, name, color, visible, materials,
         )?),
     )
 }
@@ -2391,9 +2427,10 @@ fn object_attributes_payload(
     name: Option<&str>,
     color: Option<cadmpeg_ir::topology::Color>,
     visible: Option<bool>,
+    materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
     let uuid = neutral_object_uuid(identity);
-    let material = tables::materials::material_index(ir, identity);
+    let material = materials.material_index(ir, identity);
     // Rhino can state an object display colour independently of its material.
     // Keep that channel absent when the effective colour comes from material.
     let direct_color = ir

@@ -58,9 +58,25 @@ pub(super) fn finalize(
         relation_instances,
         edge_selections,
         surface_selections,
-        generated_surface_identities,
-        references
     );
+    for record in &lane.references {
+        let position = source_pointers
+            .get(&record.id)
+            .and_then(|fields| fields.get("offset"))
+            .ok_or_else(|| {
+                CodecError::malformed("reference cell lacks its source-layout pointer")
+            })?;
+        positions.insert(*position);
+    }
+    for record in &lane.generated_surface_identities {
+        let position = source_pointers
+            .get(&record.id)
+            .and_then(|fields| fields.get("offset"))
+            .ok_or_else(|| {
+                CodecError::malformed("generated surface identity lacks its source-layout pointer")
+            })?;
+        positions.insert(*position);
+    }
     for record in &lane.relation_bindings {
         let position = source_pointers
             .get(&record.id)
@@ -109,9 +125,25 @@ pub(super) fn finalize(
         relation_instances,
         edge_selections,
         surface_selections,
-        generated_surface_identities,
-        references
     );
+    for record in &mut lane.references {
+        if let Some(rank) = source_pointers
+            .get(&record.id)
+            .and_then(|fields| fields.get("offset"))
+            .and_then(|position| ranks.get(position))
+        {
+            record.sequence = *rank;
+        }
+    }
+    for record in &mut lane.generated_surface_identities {
+        if let Some(rank) = source_pointers
+            .get(&record.id)
+            .and_then(|fields| fields.get("offset"))
+            .and_then(|position| ranks.get(position))
+        {
+            record.sequence = *rank;
+        }
+    }
     for record in &mut lane.relation_bindings {
         if let Some(rank) = source_pointers
             .get(&record.id)

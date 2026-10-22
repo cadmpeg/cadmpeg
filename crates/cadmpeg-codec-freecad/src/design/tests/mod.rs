@@ -23,22 +23,27 @@ fn singular_reference_link_keeps_one_selector_and_rejects_two() {
             subelements,
         })
         .expect("valid link");
-        crate::native::PropertyRecord {
-            id: "reference".into(),
-            owner: "owner".into(),
-            name: "ReferenceAxis".into(),
-            type_name: "App::PropertyLinkSub".into(),
-            family: crate::native::PropertyFamily::Unknown,
-            status: None,
-            body: crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
-                links: vec![link],
-                side_entries: Vec::new(),
-                dynamic: None,
-            },
-            order: 0,
-            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
-                .expect("valid XML span"),
+        {
+            let property = crate::native::PropertyRecord {
+                id: "reference".into(),
+                owner: "owner".into(),
+                name: "ReferenceAxis".into(),
+                type_name: "App::PropertyLinkSub".into(),
+                family: crate::native::PropertyFamily::Unknown,
+                status: None,
+                body: crate::native::PropertyBody::Persisted {
+                    values: Vec::new(),
+                    links: vec![link],
+                    side_entries: Vec::new(),
+                    dynamic: None,
+                },
+                order: 0,
+            };
+            let _source = crate::test_support::source_fidelity::xml_layout_fixture(
+                &property.id,
+                &("<Property/>"),
+            );
+            property
         }
     };
     let one = property(vec!["Edge1".into()]);
@@ -52,17 +57,22 @@ fn singular_reference_link_keeps_one_selector_and_rejects_two() {
 
 #[test]
 fn sketch_placement_runtime_type_error_is_malformed() {
-    let property = crate::native::PropertyRecord {
-        id: "placement-property".into(),
-        owner: "sketch".into(),
-        name: "Placement".into(),
-        type_name: "App::PropertyString".into(),
-        family: crate::native::PropertyFamily::Unknown,
-        status: None,
-        body: crate::native::PropertyBody::Transient,
-        order: 0,
-        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
-            .expect("valid XML span"),
+    let property = {
+        let property = crate::native::PropertyRecord {
+            id: "placement-property".into(),
+            owner: "sketch".into(),
+            name: "Placement".into(),
+            type_name: "App::PropertyString".into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            body: crate::native::PropertyBody::Transient,
+            order: 0,
+        };
+        let _source = crate::test_support::source_fidelity::xml_layout_fixture(
+            &property.id,
+            &("<Property/>"),
+        );
+        property
     };
     let expected = "sketch Placement placement carrier has runtime type App::PropertyString";
     assert!(matches!(super::validate_sketch_placement(&[&property]),

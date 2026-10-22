@@ -90,8 +90,9 @@ fn duplicate_property_is_malformed() {
         status: None,
         body: super::PropertyBody::Transient,
         order: 0,
-        xml: super::RetainedXml::from_text("<Property/>".into(), 0).expect("valid XML span"),
     };
+    let _fidelity =
+        crate::test_support::source_fidelity::xml_layout_fixture(&property.id, "<Property/>");
     let error = super::sole_named_property("product", &[&property, &property], &property.name)
         .expect_err("duplicate property");
     assert_eq!(
@@ -371,7 +372,15 @@ fn ledger_spans_reject_empty_and_reversed_wire_intervals() {
 
 #[test]
 fn gui_state_order_is_derived_from_collection_position() {
-    let state = serde_json::json!({"id":"camera", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[], "length":4, "sha256":cadmpeg_ir::hash::sha256_hex(b"<A/>")});
+    let mut state = serde_json::json!({"id":"camera", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[], "length":4, "sha256":cadmpeg_ir::hash::sha256_hex(b"<A/>")});
+    assert!(
+        serde_json::from_value::<super::GuiDocumentRecord>(serde_json::json!({
+            "id":"gui", "schema_version":null, "attributes":{}, "states":[state.clone()]
+        }))
+        .is_err()
+    );
+    state.as_object_mut().unwrap().remove("length");
+    state.as_object_mut().unwrap().remove("sha256");
     let mut wire = serde_json::json!({"id":"gui", "schema_version":null, "attributes":{}, "states":[state.clone(),state]});
     assert!(
         serde_json::from_value::<super::GuiDocumentRecord>(wire.clone())
@@ -474,21 +483,26 @@ fn gui_provider_object_rejects_empty_wire_identity() {
 }
 
 #[test]
-fn retained_xml_records_validate_evidence_without_source_spans() {
+fn native_records_reject_retired_physical_xml_evidence_fields() {
     let bases = [
         serde_json::json!({"id":"state", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[]}),
         serde_json::json!({"id":"property", "owner":"provider", "name":"Color", "type_name":"App::PropertyColor", "order":0, "values":[], "side_entries":[]}),
         serde_json::json!({"id":"fcstd:native:object#A", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
         serde_json::json!({"id":"property", "owner":"object", "name":"Label", "type_name":"App::PropertyString", "family":"scalar", "transient":false, "order":0, "values":[], "links":[], "side_entries":[]}),
     ];
-    let remaining_property_owner = bases[3].clone();
     let hash = cadmpeg_ir::hash::sha256_hex(b"<A/>");
     for (kind, base) in bases.into_iter().enumerate() {
-        for (length, digest, valid) in [
-            (4, hash.as_str(), true),
-            (0, hash.as_str(), false),
-            (4, "short", false),
-        ] {
+        let admit = |wire: serde_json::Value| match kind {
+            0 => serde_json::from_value::<super::GuiDocumentRecord>(serde_json::json!({
+                "id":"gui", "schema_version":null, "attributes":{}, "states":[wire]
+            }))
+            .map(|_| ()),
+            1 => serde_json::from_value::<super::GuiPropertyRecord>(wire).map(|_| ()),
+            2 => serde_json::from_value::<super::ObjectRecord>(wire).map(|_| ()),
+            _ => serde_json::from_value::<super::PropertyRecord>(wire).map(|_| ()),
+        };
+        assert!(admit(base.clone()).is_ok(), "semantic base kind={kind}");
+        for (length, digest) in [(4, hash.as_str()), (0, hash.as_str()), (4, "short")] {
             let mut wire = base.clone();
             let evidence = serde_json::json!({"length":length,"sha256":digest});
             if kind == 2 {
@@ -498,38 +512,13 @@ fn retained_xml_records_validate_evidence_without_source_spans() {
                     .unwrap()
                     .extend(evidence.as_object().unwrap().clone());
             }
-            let admitted = match kind {
-                0 | 1 => {
-                    // #212 removes GUI state/property XML wrappers. Exercise their
-                    // unchanged evidence cases through a remaining native owner.
-                    let mut owner = remaining_property_owner.clone();
-                    owner["length"] = wire["length"].clone();
-                    owner["sha256"] = wire["sha256"].clone();
-                    serde_json::from_value::<super::PropertyRecord>(owner).map(|_| ())
-                }
-                2 => serde_json::from_value::<super::ObjectRecord>(wire).map(|_| ()),
-                _ => serde_json::from_value::<super::PropertyRecord>(wire).map(|_| ()),
-            };
-            assert_eq!(
-                admitted.is_ok(),
-                valid,
-                "kind={kind}, evidence={length}/{digest}: {admitted:?}"
+            let admitted = admit(wire);
+            assert!(
+                admitted.is_err(),
+                "retired physical fields: kind={kind}, evidence={length}/{digest}"
             );
         }
     }
-    for (start, end, valid) in [
-        (10, 14, true),
-        (10, 10, false),
-        (10, 9, false),
-        (10, 15, false),
-    ] {
-        assert_eq!(
-            super::RetainedXml::try_new("<A/>".into(), start, end).is_ok(),
-            valid
-        );
-    }
-    assert!(super::RetainedXml::from_text(String::new(), 0).is_err());
-    assert!(super::RetainedXml::from_text("<A/>".into(), u64::MAX).is_err());
 }
 
 #[test]
@@ -758,7 +747,7 @@ fn a_drawing_record_writes_page_views_and_a_non_page_without_them() {
 
 #[test]
 fn an_object_record_writes_xml_evidence_and_its_absence() {
-    let wire = serde_json::json!({
+    let mut wire = serde_json::json!({
         "id": "fcstd:native:object#A", "name": "A", "type_name": "App::Feature",
         "persistent_id": 7, "view_type": "Gui::ViewProviderFeature",
         "attributes": {"Touched": "1"},
@@ -766,6 +755,8 @@ fn an_object_record_writes_xml_evidence_and_its_absence() {
         "dependency_allow_partial": 2, "order": 0,
         "data_evidence": {"length":4,"sha256":cadmpeg_ir::hash::sha256_hex(b"<A/>")}
     });
+    assert!(serde_json::from_value::<super::ObjectRecord>(wire.clone()).is_err());
+    wire.as_object_mut().unwrap().remove("data_evidence");
     let record = serde_json::from_value::<super::ObjectRecord>(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(record).unwrap(), wire);
 
@@ -773,14 +764,16 @@ fn an_object_record_writes_xml_evidence_and_its_absence() {
     bare["persistent_id"] = serde_json::Value::Null;
     bare["view_type"] = serde_json::Value::Null;
     bare["dependency_allow_partial"] = serde_json::Value::Null;
-    bare["data_evidence"] = serde_json::Value::Null;
+    let mut legacy_bare = bare.clone();
+    legacy_bare["data_evidence"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<super::ObjectRecord>(legacy_bare).is_err());
     let record = serde_json::from_value::<super::ObjectRecord>(bare.clone()).unwrap();
     assert_eq!(serde_json::to_value(record).unwrap(), bare);
 }
 
 #[test]
 fn a_property_record_writes_its_payload_and_a_transient_declaration_without_one() {
-    let wire = serde_json::json!({
+    let mut wire = serde_json::json!({
         "id": "property", "owner": "object", "name": "Label",
         "type_name": "App::PropertyString", "family": "string", "status": 1,
         "transient": false,
@@ -793,6 +786,9 @@ fn a_property_record_writes_its_payload_and_a_transient_declaration_without_one(
         "side_entries": ["Body.brp"],
         "length": 4, "sha256": cadmpeg_ir::hash::sha256_hex(b"<A/>")
     });
+    assert!(serde_json::from_value::<super::PropertyRecord>(wire.clone()).is_err());
+    wire.as_object_mut().unwrap().remove("length");
+    wire.as_object_mut().unwrap().remove("sha256");
     let record = serde_json::from_value::<super::PropertyRecord>(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(record).unwrap(), wire);
 

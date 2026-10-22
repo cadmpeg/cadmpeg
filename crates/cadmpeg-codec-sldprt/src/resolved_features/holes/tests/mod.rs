@@ -119,7 +119,6 @@ fn lane() -> FeatureInputLane {
         parent: "lane".into(),
         ordinal,
         sequence: ordinal,
-        offset: Some(u64::from(ordinal)),
         type_prefix: [0xc3, 0x80, 0xc5, 0].into(),
         feature_source_id: 7_u32.try_into().unwrap(),
         local_identity: 2,

@@ -51,6 +51,8 @@ pub(crate) struct Graph {
     /// Declared objects.
     pub(crate) objects: Vec<ObjectRecord>,
     pub(crate) object_sources: Vec<(String, std::ops::Range<usize>)>,
+    pub(crate) property_sources:
+        std::collections::BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     /// Dynamic extensions.
     pub(crate) extensions: Vec<ExtensionRecord>,
     pub(crate) extension_sources: Vec<(String, std::ops::Range<usize>)>,
@@ -126,7 +128,6 @@ pub(crate) fn parse_document(
     xml: &roxmltree::Document<'_>,
     schema: Vocabulary,
 ) -> Result<Graph, CodecError> {
-    let text = xml.input_text();
     let root = xml.root_element();
     let mut losses = Vec::new();
     // Schema 2 is its own element vocabulary. Every other declared schema, and
@@ -300,6 +301,7 @@ pub(crate) fn parse_document(
     }
 
     let mut properties = Vec::new();
+    let mut property_sources = std::collections::BTreeMap::new();
     let mut extensions = Vec::new();
     let mut extension_sources = Vec::new();
     let document_property_nodes = root
@@ -310,10 +312,10 @@ pub(crate) fn parse_document(
         [] => {}
         [document_properties] => {
             parse_properties(
-                text,
                 *document_properties,
                 &crate::native::native_id("document", "0"),
                 &mut properties,
+                &mut property_sources,
                 &mut losses,
             )?;
         }
@@ -401,7 +403,13 @@ pub(crate) fn parse_document(
             }
         }
         if let Some(container) = property_container {
-            parse_properties(text, container, object.id(), &mut properties, &mut losses)?;
+            parse_properties(
+                container,
+                object.id(),
+                &mut properties,
+                &mut property_sources,
+                &mut losses,
+            )?;
         }
         if let Some(extensions_node) = extension_container {
             for extension in extensions_node
@@ -420,7 +428,13 @@ pub(crate) fn parse_document(
                     .children()
                     .filter(|node| node.has_tag_name("Properties"))
                 {
-                    parse_properties(text, container, extension_id, &mut properties, &mut losses)?;
+                    parse_properties(
+                        container,
+                        extension_id,
+                        &mut properties,
+                        &mut property_sources,
+                        &mut losses,
+                    )?;
                 }
             }
         }
@@ -448,15 +462,15 @@ pub(crate) fn parse_document(
         }
     }
 
-    let value_sources = crate::fidelity::value_sources(
-        xml,
-        properties
-            .iter()
-            .map(|property| (property.id.as_str(), &property.xml, property.values())),
-    )?;
+    let value_sources = property_sources
+        .values()
+        .filter(|source| source.has_values())
+        .cloned()
+        .collect();
     Ok(Graph {
         objects,
         object_sources,
+        property_sources,
         extensions,
         extension_sources,
         value_sources,
@@ -484,10 +498,10 @@ fn check_count(
 }
 
 fn parse_properties(
-    text: &str,
     container: roxmltree::Node<'_, '_>,
     owner: &str,
     output: &mut Vec<PropertyRecord>,
+    property_sources: &mut std::collections::BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let property_nodes = container
@@ -525,7 +539,7 @@ fn parse_properties(
         let name = retained_attr(node, "name")?;
         let type_name = retained_attr(node, "type")?;
 
-        output.push(PropertyRecord {
+        let property = PropertyRecord {
             id: crate::native::native_child_id("property", owner, &name),
             owner: owner.to_owned(),
             name,
@@ -536,11 +550,12 @@ fn parse_properties(
                 .and_then(|value| value.parse().ok()),
             body: crate::native::PropertyBody::Transient,
             order,
-            xml: crate::native::RetainedXml::from_source(
-                &text[node.range()],
-                cadmpeg_core::decode::u64_from_index(node.range().start),
-            )?,
-        });
+        };
+        property_sources.insert(
+            property.id.clone(),
+            crate::fidelity::property_source(node, &property)?,
+        );
+        output.push(property);
     }
     for (order, node) in property_nodes.into_iter().enumerate() {
         let name = retained_attr(node, "name")?;
@@ -627,7 +642,7 @@ fn parse_properties(
                 }
             }
         }
-        output.push(PropertyRecord {
+        let property = PropertyRecord {
             id: crate::native::native_child_id("property", owner, &name),
             owner: owner.to_owned(),
             name,
@@ -653,11 +668,12 @@ fn parse_properties(
                 }
             },
             order,
-            xml: crate::native::RetainedXml::from_source(
-                &text[node.range()],
-                cadmpeg_core::decode::u64_from_index(node.range().start),
-            )?,
-        });
+        };
+        property_sources.insert(
+            property.id.clone(),
+            crate::fidelity::property_source(node, &property)?,
+        );
+        output.push(property);
     }
     Ok(())
 }

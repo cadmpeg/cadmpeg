@@ -1181,31 +1181,43 @@ pub(crate) fn relation_bindings(
     Ok(bindings)
 }
 
+pub(crate) struct ParsedReferences {
+    pub(crate) records: Vec<FeatureInputReference>,
+    pub(super) positions: BTreeMap<String, u64>,
+}
+
 pub(crate) fn reference_cells(
     scalars: &[FeatureInputScalar],
     classes: &[FeatureInputClass],
-) -> Result<Vec<FeatureInputReference>, CodecError> {
+) -> Result<ParsedReferences, CodecError> {
     let mut cells = Vec::new();
     for scalar in scalars {
         for operand in &scalar.operands {
             let id = operand.reference_ref.clone();
             let parent = scalar.parent.clone();
             let feature_ref = scalar.feature_ref.clone();
-            cells.push(FeatureInputReference {
-                id,
-                parent,
-                feature_ref,
-                ordinal: 0,
-                sequence: 0,
-                offset: operand.offset,
-                kind: operand.kind,
-                class_ref: None,
-                object_index: operand.entity_index,
-            });
+            cells.push((
+                operand.offset,
+                FeatureInputReference {
+                    id,
+                    parent,
+                    feature_ref,
+                    ordinal: 0,
+                    sequence: 0,
+                    kind: operand.kind,
+                    class_ref: None,
+                    object_index: operand.entity_index,
+                },
+            ));
         }
     }
-    cells.sort_by_key(|left| left.offset);
-    cells.dedup_by_key(|cell| cell.offset);
+    cells.sort_by_key(|(position, _)| *position);
+    cells.dedup_by_key(|(position, _)| *position);
+    let positions = cells
+        .iter()
+        .filter_map(|(position, cell)| Some((cell.id.clone(), (*position)?)))
+        .collect::<BTreeMap<_, _>>();
+    let mut cells = cells.into_iter().map(|(_, cell)| cell).collect::<Vec<_>>();
     for (ordinal, cell) in cells.iter_mut().enumerate() {
         cell.ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed("SLDPRT reference cell ordinal overflows u32"))?;
@@ -1221,7 +1233,10 @@ pub(crate) fn reference_cells(
     }
     let mut declarations = HashMap::<FeatureInputOperandKind, Vec<&FeatureInputClass>>::new();
     for cell in &cells {
-        let Some(class_offset) = cell.offset.and_then(|offset| offset.checked_add(12)) else {
+        let Some(class_offset) = positions
+            .get(&cell.id)
+            .and_then(|offset| offset.checked_add(12))
+        else {
             continue;
         };
         if let Some(declared) = classes_at.get(&(cell.parent.as_str(), class_offset)) {
@@ -1242,7 +1257,10 @@ pub(crate) fn reference_cells(
             cell.class_ref = Some(class.id.clone());
         }
     }
-    Ok(cells)
+    Ok(ParsedReferences {
+        records: cells,
+        positions,
+    })
 }
 
 pub(crate) fn marker_local_id_offset(payload: &[u8], offset: usize) -> Option<usize> {

@@ -461,7 +461,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     ensure_version_support(&graph.entities, version)?;
     append_name_properties(&mut graph.entities, &graph.presentations)?;
     resolve_entity_references(&mut graph.entities)?;
-    if graph.entities.is_empty() {
+    if !graph.entities.iter().any(Entity::is_geometry) {
         graph.losses.push(
             IgesLossCode::NoExportableSolids
                 .note("the document holds no geometry that IGES can encode"),
@@ -7719,6 +7719,39 @@ struct Entity {
 }
 
 impl Entity {
+    fn is_geometry(&self) -> bool {
+        matches!(
+            self.type_code,
+            100 | 102
+                | 104
+                | 106
+                | 108
+                | 110
+                | 116
+                | 120
+                | 122
+                | 123
+                | 125
+                | 126
+                | 128
+                | 141
+                | 142
+                | 143
+                | 144
+                | 186
+                | 190
+                | 192
+                | 194
+                | 196
+                | 198
+                | 502
+                | 504
+                | 508
+                | 510
+                | 514
+        )
+    }
+
     fn parameter_text(&self) -> Vec<u8> {
         let mut text = format!("{},", self.type_code).into_bytes();
         text.extend_from_slice(&self.parameter_body);

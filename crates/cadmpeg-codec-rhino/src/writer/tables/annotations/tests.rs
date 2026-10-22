@@ -27,7 +27,11 @@ fn edited_neutral_text_and_position_regenerate_the_annotation_object() {
         assets: Vec::new(),
         native_ref: native_id.to_owned(),
     });
-    let (objects, losses) = records(&ir).expect("source-free annotation");
+    let (objects, losses) = records(
+        &ir,
+        &super::super::materials::MaterialPlan::new(&ir).expect("material plan"),
+    )
+    .expect("source-free annotation");
     assert!(losses.is_empty());
     let archive = crate::test_support::test_dump::minimal_document(
         "80",

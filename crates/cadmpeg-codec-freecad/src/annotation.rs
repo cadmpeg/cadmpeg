@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::semantic_annotations::{
@@ -17,7 +16,7 @@ use crate::native::{
 };
 
 pub(crate) fn transfer(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<SemanticAnnotationRecord>, CodecError> {
@@ -39,8 +38,20 @@ pub(crate) fn transfer(
                 .map_or(&[][..], Vec::as_slice);
             let mut owned = Vec::new();
             owned.extend_from_slice(source);
+            let mut source_order = BTreeMap::new();
+            for property in &owned {
+                if let Some(range) = ctx.source_range(property)? {
+                    source_order.insert(property.id.as_str(), (range.start, range.end));
+                }
+            }
             owned.sort_by(|left, right| {
-                (left.xml.start(), left.xml.end()).cmp(&(right.xml.start(), right.xml.end()))
+                match (
+                    source_order.get(left.id.as_str()),
+                    source_order.get(right.id.as_str()),
+                ) {
+                    (Some(left), Some(right)) => left.cmp(right),
+                    _ => (left.order, &left.id).cmp(&(right.order, &right.id)),
+                }
             });
             let mut references = BTreeMap::new();
             let mut parameters = BTreeMap::new();
@@ -101,7 +112,7 @@ pub(crate) fn transfer(
 }
 
 pub(crate) fn transfer_neutral(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     model: &mut Model,
     records: &[SemanticAnnotationRecord],
     properties: &[PropertyRecord],
@@ -371,7 +382,7 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
 }
 
 fn annotation_position(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     carrier: PositionCarrier,
 ) -> Result<Option<cadmpeg_ir::units::FiniteVector<3>>, CodecError> {
@@ -413,7 +424,7 @@ fn annotation_position(
 }
 
 fn optional_scalar_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     type_names: &[&str],
@@ -435,7 +446,7 @@ fn optional_scalar_property(
 }
 
 fn optional_vector_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     type_names: &[&str],
@@ -468,7 +479,7 @@ fn optional_vector_property(
 }
 
 fn string_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     type_name: &str,
@@ -508,7 +519,7 @@ fn typed_property<'a>(
 }
 
 fn validate_text_carriers(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     schema: &AnnotationSchema,
 ) -> Result<(), CodecError> {
@@ -522,13 +533,14 @@ fn validate_text_carriers(
 }
 
 fn direct_value_attributes(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
     expected_tag: &str,
     allowed_attributes: &[&str],
 ) -> Result<BTreeMap<String, String>, CodecError> {
+    let property_xml = ctx.property_xml(property)?;
     let document = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;
@@ -574,7 +586,7 @@ fn direct_value_attributes(
 }
 
 fn strict_text_values(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
     expected_type: &str,
 ) -> Result<Vec<String>, CodecError> {
@@ -601,8 +613,9 @@ fn strict_text_values(
         }
         return Ok(values);
     }
+    let property_xml = ctx.property_xml(property)?;
     let document = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;

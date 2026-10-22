@@ -197,8 +197,14 @@ fn python_and_nested_value_xml_move_to_their_real_property_layouts() {
     for property in [&proxy, &names] {
         let layout = &fidelity.record_layout()[&property.id];
         assert_eq!(layout.stream(), "Document.xml");
-        assert_eq!(layout.offset(), property.xml.start());
-        assert_eq!(layout.byte_len(), property.xml.end() - property.xml.start());
+        assert_eq!(
+            layout.offset(),
+            u64::try_from(graph.property_sources[&property.id].record_range().start).unwrap()
+        );
+        assert_eq!(
+            layout.byte_len(),
+            u64::try_from(graph.property_sources[&property.id].record_range().len()).unwrap()
+        );
         assert!(layout.reads().is_empty());
         assert_eq!(layout.payloads().len(), property.values().len());
         let wire = serde_json::to_value(property).unwrap();
@@ -292,18 +298,17 @@ fn value_ranges_cannot_bind_to_a_different_source_element_or_value_order() {
         decoded_json: None,
         text: None,
     };
-    let span = crate::native::RetainedXml::from_source(xml, 0).unwrap();
-    assert!(super::value_sources(
-        &document,
-        std::iter::once(("test:property#A", &span, std::slice::from_ref(&value)))
+    assert!(super::value_source_from_node(
+        "test:property#A",
+        document.root_element(),
+        std::slice::from_ref(&value)
     )
     .is_err());
-    let shifted = crate::native::RetainedXml::from_source(xml, 1).unwrap();
-    assert!(super::value_sources(
-        &document,
-        std::iter::once(("test:property#A", &shifted, std::slice::from_ref(&value)))
-    )
-    .is_err());
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service()).unwrap();
+    ctx.capture_part_extent(root).unwrap();
+    assert!(super::relative_xml_extent(root, 1..xml.len() + 1).is_err());
 }
 
 #[test]
@@ -389,7 +394,9 @@ fn gui_state_xml_and_offsets_leave_native_records_without_losing_empty_or_nested
         Vec::new(),
         xml.as_bytes().to_vec(),
     );
-    let ledger = crate::container::logical_ledger(&[entry], &[], &graph, &[], &[], &[]).unwrap();
+    let ledger =
+        crate::container::logical_ledger(&[entry], &[], &BTreeMap::new(), &graph, &[], &[], &[])
+            .unwrap();
     for (state, raw) in graph.documents[0].states.iter().zip(expected) {
         let span = ledger.iter().find(|span| matches!(&span.classification, crate::native::LogicalClassification::Typed { owner } if owner == &state.id)).unwrap();
         assert_eq!(
@@ -561,7 +568,9 @@ fn gui_property_wrappers_move_to_real_layouts_with_nested_values_empty_payload_a
         Vec::new(),
         xml.as_bytes().to_vec(),
     );
-    let ledger = crate::container::logical_ledger(&[entry], &[], &graph, &[], &[], &[]).unwrap();
+    let ledger =
+        crate::container::logical_ledger(&[entry], &[], &BTreeMap::new(), &graph, &[], &[], &[])
+            .unwrap();
     for (property, raw) in graph.properties.iter().zip(expected) {
         let span = ledger.iter().find(|span| matches!(&span.classification, crate::native::LogicalClassification::NamedOpaque { owner } if owner == &property.id)).unwrap();
         assert_eq!(
@@ -806,4 +815,92 @@ fn complete_typed_gui_properties_keep_exact_layouts_and_real_side_entry_views() 
         b"<StringList count='0'/>"
     );
     assert!(fidelity.retained_records().is_empty());
+}
+
+#[test]
+fn complete_property_xml_and_positions_live_only_on_the_original_record_layouts() {
+    let xml = "<Document SchemaVersion='4'><Objects Count='1'><Object name='A' type='App::Feature'/></Objects><ObjectData Count='1'><Object name='A'><Properties Count='2' TransientCount='1'><_Property name='Preview' type='App::PropertyString' status='152'/><Property name='Label' type='App::PropertyString'><String value='a &amp; Ω'/></Property><Property name='Empty' type='App::PropertyString'><String value=''/></Property></Properties></Object></ObjectData></Document>";
+    let mut bytes = b"prefix!".to_vec();
+    bytes.extend_from_slice(xml.as_bytes());
+    bytes.extend_from_slice(b"suffix!");
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let view = ctx
+        .register_named_slice(
+            root,
+            cadmpeg_core::decode::ByteRange {
+                start: 7,
+                end: 7 + u64::try_from(xml.len()).unwrap(),
+            },
+            "Document.xml",
+        )
+        .unwrap();
+    let tree = roxmltree::Document::parse(std::str::from_utf8(view.window()).unwrap()).unwrap();
+    let graph =
+        crate::persistence::parse_document(&tree, crate::persistence::Vocabulary::Objects).unwrap();
+    assert_eq!(graph.properties.len(), 3);
+    assert_eq!(graph.property_sources.len(), 3);
+    assert!(graph.losses.is_empty());
+    let reader =
+        crate::property_reader::PropertyReader::source(&ctx, view, &graph.property_sources)
+            .unwrap();
+    let mut payloads = BTreeMap::new();
+    let mut pointers = BTreeMap::new();
+    for property in &graph.properties {
+        let source = &graph.property_sources[&property.id];
+        let range = source.record_range();
+        assert_eq!(reader.property_xml(property).unwrap().as_ref(), &xml[range]);
+        super::property_layout_payloads(&ctx, view, source, &mut payloads, &mut pointers).unwrap();
+    }
+    let mut fidelity = SourceFidelity::default();
+    install_layouts(&ctx, &mut fidelity, payloads, pointers).unwrap();
+    assert!(fidelity.retained_records().is_empty());
+    assert_eq!(fidelity.record_layout().len(), 3);
+    for property in &graph.properties {
+        let range = graph.property_sources[&property.id].record_range();
+        let layout = &fidelity.record_layout()[&property.id];
+        assert_eq!(layout.stream(), "Document.xml");
+        assert_eq!(layout.offset(), u64::try_from(range.start).unwrap());
+        assert_eq!(layout.byte_len(), u64::try_from(range.len()).unwrap());
+        assert_eq!(
+            layout.pointers()["byte_start"],
+            u64::try_from(range.start).unwrap()
+        );
+        assert_eq!(
+            layout.pointers()["byte_end"],
+            u64::try_from(range.end).unwrap()
+        );
+        assert_eq!(
+            layout.payloads()["raw_xml"].as_ref(),
+            &xml.as_bytes()[range]
+        );
+        assert_eq!(layout.payloads().len(), property.values().len() + 1);
+        assert!(layout.reads().is_empty());
+        let native = serde_json::to_value(property).unwrap();
+        for field in [
+            "xml",
+            "raw_xml",
+            "length",
+            "sha256",
+            "byte_start",
+            "byte_end",
+        ] {
+            assert!(native.get(field).is_none(), "{field}");
+        }
+        assert_eq!(
+            serde_json::from_value::<crate::native::PropertyRecord>(native).unwrap(),
+            *property
+        );
+    }
+    assert_eq!(
+        graph
+            .properties
+            .iter()
+            .find(|property| property.name == "Label")
+            .unwrap()
+            .values()[0]
+            .attributes["value"],
+        "a & Ω"
+    );
 }

@@ -1054,7 +1054,7 @@ fn order_surface_candidates(candidates: &mut Vec<(usize, Vec<FeatureInputCompone
     }
 }
 
-type GeneratedIdentityCache = Option<Vec<crate::records::FeatureInputGeneratedSurfaceIdentity>>;
+type GeneratedIdentityCache = Option<ParsedGeneratedSurfaces>;
 
 fn operation_surface_selection_candidates(
     ctx: &DecodeContext<'_>,
@@ -1112,10 +1112,19 @@ fn operation_surface_selection_candidates(
             return Ok(Vec::new());
         };
         if generated_identities.is_none() {
-            *generated_identities = Some(generated_surface_identities(lane)?);
+            *generated_identities = Some(generated_surface_identities(
+                &lane.id,
+                &lane.classes,
+                &lane.native_payload,
+            )?);
         }
         let mut candidates = Vec::new();
-        for identity in generated_identities.iter().flatten() {
+        for (parsed, identity) in generated_identities.iter().flat_map(|parsed| {
+            parsed
+                .records
+                .iter()
+                .map(move |identity| (parsed, identity))
+        }) {
             let (Some(first), Some(last)) =
                 (identity.components.first(), identity.components.last())
             else {
@@ -1127,13 +1136,10 @@ fn operation_surface_selection_candidates(
             {
                 continue;
             }
-            let Some(offset) = identity
-                .offset
-                .and_then(|offset| usize::try_from(offset).ok())
-            else {
+            let Some(frame) = parsed.frames.get(&identity.id) else {
                 continue;
             };
-            candidates.push((offset, identity.components.clone()));
+            candidates.push((frame.extent.start, identity.components.clone()));
         }
         return Ok(candidates);
     }
@@ -2314,20 +2320,38 @@ fn inline_surface_components_at(
     payload: &[u8],
     offset: usize,
 ) -> Option<impl Iterator<Item = Option<FeatureInputComponentPathEntry>> + '_> {
-    let prefix: [u8; 4] = payload.get(offset..offset + 4)?.try_into().ok()?;
+    inline_surface_components_with_read(offset, move |start, len| {
+        payload.get(start..start.checked_add(len)?)
+    })
+}
+
+pub(super) fn inline_surface_source_components_at<'a>(
+    source: View<'a>,
+    offset: usize,
+) -> Option<impl Iterator<Item = Option<FeatureInputComponentPathEntry>> + 'a> {
+    inline_surface_components_with_read(offset, move |start, len| {
+        source.read_at(source.start().checked_add(start)?, len)
+    })
+}
+
+fn inline_surface_components_with_read<'a>(
+    offset: usize,
+    read: impl Fn(usize, usize) -> Option<&'a [u8]> + Copy + 'a,
+) -> Option<impl Iterator<Item = Option<FeatureInputComponentPathEntry>> + 'a> {
+    let prefix: [u8; 4] = read(offset, 4)?.try_into().ok()?;
     let family = View::u16_le_at(&prefix, 0)?;
     let variant = View::u16_le_at(&prefix, 2)?;
     if !is_class_token(family) || variant == 0 {
         return None;
     }
     let signature_at = move |offset: usize| -> Option<[u8; 12]> {
-        let signature: [u8; 12] = payload.get(offset..offset + 12)?.try_into().ok()?;
+        let signature: [u8; 12] = read(offset, 12)?.try_into().ok()?;
         let source = View::u32_le_at(&signature, 4)?;
         let identity = View::u32_le_at(&signature, 8)?;
         (signature[..4] == prefix && source != 0 && identity != 0).then_some(signature)
     };
     let instance_before = move |offset: usize| -> Option<u16> {
-        let bytes = payload.get(offset.checked_sub(4)?..offset)?;
+        let bytes = read(offset.checked_sub(4)?, 4)?;
         let instance = View::u16_le_at(bytes, 0)?;
         (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
@@ -2339,7 +2363,7 @@ fn inline_surface_components_at(
         }
         let node = (|| {
             let signature = signature_at(cursor)?;
-            let tail: [u8; 4] = payload.get(cursor + 12..cursor + 16)?.try_into().ok()?;
+            let tail: [u8; 4] = read(cursor + 12, 4)?.try_into().ok()?;
             let instance = View::u16_le_at(&tail, 0)?;
             let continues = is_class_token(instance)
                 && tail[2..] == [0, 0]
@@ -2383,12 +2407,28 @@ fn inline_surface_reference_at(
 /// Decode persistent surface identities declared by `*SurfIdRep_c` classes.
 /// Operation-specific consumers separately project the identities that also
 /// carry input selections, including projected split-line target faces.
+pub(crate) struct ParsedGeneratedSurfaces {
+    pub(crate) records: Vec<crate::records::FeatureInputGeneratedSurfaceIdentity>,
+    /// Parser-local frames; never part of native content or its wire format.
+    pub(super) frames: std::collections::BTreeMap<String, GeneratedSurfaceFrame>,
+}
+
+pub(super) struct GeneratedSurfaceFrame {
+    pub(super) extent: Range<usize>,
+    // A reserved source in a later path node does not replace this producer.
+    pub(super) identity_at: usize,
+}
+
 pub(crate) fn generated_surface_identities(
-    lane: &FeatureInputLane,
-) -> Result<Vec<crate::records::FeatureInputGeneratedSurfaceIdentity>, CodecError> {
+    parent: &str,
+    classes: &[crate::records::FeatureInputClass],
+    payload: &[u8],
+) -> Result<ParsedGeneratedSurfaces, CodecError> {
     struct SurfaceIdentityFields {
         offset: u64,
         input_index: usize,
+        end: usize,
+        identity_at: usize,
         type_prefix: [u8; 4],
         feature_source_id: FeatureSourceId,
         local_identity: u32,
@@ -2402,12 +2442,12 @@ pub(crate) fn generated_surface_identities(
         (signature[..4] == prefix && identity != 0).then_some(source)
     };
     let instance_before = |offset: usize| -> Option<u16> {
-        let bytes = lane.native_payload.get(offset.checked_sub(4)?..offset)?;
+        let bytes = payload.get(offset.checked_sub(4)?..offset)?;
         let instance = View::u16_le_at(bytes, 0)?;
         (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
     let mut prefixes = HashSet::new();
-    for class in &lane.classes {
+    for class in classes {
         if !class.name.ends_with("SurfIdRep_c") {
             continue;
         }
@@ -2416,14 +2456,10 @@ pub(crate) fn generated_surface_identities(
                 .offset
                 .and_then(|offset| usize::try_from(offset).ok())?
                 .checked_add(6 + class.name.len())?;
-            if lane.native_payload.get(body..body + 2)? != [0, 0] {
+            if payload.get(body..body + 2)? != [0, 0] {
                 return None;
             }
-            let prefix: [u8; 4] = lane
-                .native_payload
-                .get(body + 2..body + 6)?
-                .try_into()
-                .ok()?;
+            let prefix: [u8; 4] = payload.get(body + 2..body + 6)?.try_into().ok()?;
             let family = View::u16_le_at(&prefix, 0)?;
             let variant = View::u16_le_at(&prefix, 2)?;
             (is_class_token(family) && variant != 0).then_some(prefix)
@@ -2436,12 +2472,14 @@ pub(crate) fn generated_surface_identities(
 
     let mut result = Vec::<SurfaceIdentityFields>::new();
     let mut identities_by_hash = HashMap::<u64, Vec<usize>>::new();
-    let Some(last) = lane.native_payload.len().checked_sub(16) else {
-        return Ok(Vec::new());
+    let Some(last) = payload.len().checked_sub(16) else {
+        return Ok(ParsedGeneratedSurfaces {
+            records: Vec::new(),
+            frames: std::collections::BTreeMap::new(),
+        });
     };
     for terminal in 0..=last {
-        let Some(window) = lane
-            .native_payload
+        let Some(window) = payload
             .get(terminal..terminal + 16)
             .and_then(<[u8]>::first_chunk::<16>)
         else {
@@ -2459,8 +2497,7 @@ pub(crate) fn generated_surface_identities(
         let possible_instance = cadmpeg_core::bytes::assemble_u16_le([t0, t1]);
         if is_class_token(possible_instance)
             && tail[2..] == [0, 0]
-            && lane
-                .native_payload
+            && payload
                 .get(terminal + 16..)
                 .and_then(|bytes| signature_prefix(bytes, prefix))
                 .is_some()
@@ -2475,8 +2512,7 @@ pub(crate) fn generated_surface_identities(
             let Some(previous) = offset.checked_sub(16) else {
                 break;
             };
-            if lane
-                .native_payload
+            if payload
                 .get(previous..)
                 .and_then(|bytes| signature_prefix(bytes, prefix))
                 .is_none()
@@ -2485,7 +2521,7 @@ pub(crate) fn generated_surface_identities(
             }
             offset = previous;
         }
-        let Some(components) = inline_surface_components_at(&lane.native_payload, offset)
+        let Some(components) = inline_surface_components_at(payload, offset)
             .and_then(Iterator::collect::<Option<Vec<_>>>)
         else {
             continue;
@@ -2515,6 +2551,12 @@ pub(crate) fn generated_surface_identities(
         result.push(SurfaceIdentityFields {
             offset: u64_from_index(offset),
             input_index,
+            end: components
+                .len()
+                .checked_mul(16)
+                .and_then(|len| offset.checked_add(len))
+                .ok_or_else(|| CodecError::malformed("generated surface path length overflow"))?,
+            identity_at: terminal,
             type_prefix: prefix,
             feature_source_id,
             local_identity,
@@ -2524,11 +2566,9 @@ pub(crate) fn generated_surface_identities(
     result.sort_unstable_by(|left, right| {
         (left.offset, left.input_index).cmp(&(right.offset, right.input_index))
     });
-    let lane_key = lane
-        .id
-        .rsplit_once('#')
-        .map_or(lane.id.as_str(), |(_, key)| key);
+    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     let mut identities = Vec::new();
+    let mut frames = std::collections::BTreeMap::new();
     for (ordinal, fields) in result.into_iter().enumerate() {
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed(SELECTION_ORDINAL_OVERFLOW))?;
@@ -2536,20 +2576,32 @@ pub(crate) fn generated_surface_identities(
             "sldprt:feature-input:generated-surface#{lane_key}:{}",
             fields.offset
         );
-        let parent = lane.id.clone();
+        let start = usize::try_from(fields.offset).map_err(|_| {
+            CodecError::malformed("generated surface source position exceeds usize")
+        })?;
+        frames.insert(
+            id.clone(),
+            GeneratedSurfaceFrame {
+                extent: start..fields.end,
+                identity_at: fields.identity_at,
+            },
+        );
+        let parent = parent.to_owned();
         identities.push(crate::records::FeatureInputGeneratedSurfaceIdentity {
             id,
             parent,
             ordinal,
             sequence: ordinal,
-            offset: Some(fields.offset),
             type_prefix: fields.type_prefix.into(),
             feature_source_id: fields.feature_source_id,
             local_identity: fields.local_identity,
             components: fields.components,
         });
     }
-    Ok(identities)
+    Ok(ParsedGeneratedSurfaces {
+        records: identities,
+        frames,
+    })
 }
 
 fn compact_edge_selection_vector(

@@ -40,7 +40,11 @@ fn absent_occurrence_placement_omits_only_that_reference_with_a_named_loss() {
             native_ref: None,
         });
     }
-    let (references, losses) = super::references(&ir).unwrap();
+    let (references, losses) = super::references(
+        &ir,
+        &super::super::materials::MaterialPlan::new(&ir).expect("material plan"),
+    )
+    .unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("test:model:occurrence#unknown"));
@@ -119,7 +123,11 @@ fn unknown_ancestor_cascades_without_changing_known_local_reference_frames() {
     let children = super::children(&ir, &graph, &ir.model.product_definitions[0]);
     assert_eq!(children.len(), 1);
     assert_eq!(children[0].id, ir.model.occurrences[4].id);
-    let (references, losses) = super::references(&ir).unwrap();
+    let (references, losses) = super::references(
+        &ir,
+        &super::super::materials::MaterialPlan::new(&ir).expect("material plan"),
+    )
+    .unwrap();
     assert_eq!(references.len(), 2);
     assert_eq!(losses.len(), 3);
     let definitions = super::definitions(&ir, &Default::default()).unwrap();

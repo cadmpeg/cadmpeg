@@ -7,7 +7,7 @@ use super::{
     validate_external_geo_prefix, validate_sketch_carrier, EXTERNAL_GEO_AXIS_COUNT,
 };
 use crate::native::{ObjectRecord, PropertyRecord};
-use cadmpeg_core::{decode::DecodeContext, CodecError};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     report::loss::LossNote,
     sketches::{SketchEntity, SketchEntityId, SketchId},
@@ -21,7 +21,7 @@ pub(super) struct CachedSketchGeometry {
 }
 
 pub(super) fn project(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     object: &ObjectRecord,
     id: &SketchId,
     external_geometry: &PropertyRecord,
@@ -36,8 +36,9 @@ pub(super) fn project(
             external_geometry.id, external_geometry.type_name
         )));
     }
+    let property_xml = ctx.property_xml(external_geometry)?;
     let xml = ctx
-        .parse_xml(external_geometry.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;

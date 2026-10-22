@@ -1400,7 +1400,9 @@ fn generated_surface_identities_are_producer_outputs() {
         sketch_entities: Vec::new(),
     };
 
-    let identities = generated_surface_identities(&lane).unwrap();
+    let identities = generated_surface_identities(&lane.id, &lane.classes, &lane.native_payload)
+        .unwrap()
+        .records;
 
     assert_eq!(identities.len(), 2, "{identities:#?}");
     assert!(identities.iter().all(|identity| {

@@ -357,3 +357,7 @@ fn edit_boundary_compression_encryption_and_source_provenance_are_enforced() {
         });
     });
 }
+
+mod zip64;
+
+mod signature;

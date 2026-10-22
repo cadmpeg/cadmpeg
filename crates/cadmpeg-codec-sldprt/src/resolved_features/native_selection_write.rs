@@ -831,7 +831,6 @@ mod tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
-            offset: Some(500),
             type_prefix: [0xc3, 0x80, 0xc5, 0].into(),
             feature_source_id: 89u32.try_into().expect("producer"),
             local_identity: 0x85b5,
@@ -851,8 +850,13 @@ mod tests {
         );
         lane.classes[0].offset = Some(0);
         lane.native_payload = bytes.into();
-        let output = super::super::selections::generated_surface_identities(&lane)
-            .expect("re-read identity");
+        let output = super::super::selections::generated_surface_identities(
+            &lane.id,
+            &lane.classes,
+            &lane.native_payload,
+        )
+        .expect("re-read identity")
+        .records;
         assert_eq!(output.len(), 1);
         assert_eq!(output[0].components, record.components);
         assert_eq!(output[0].feature_source_id, record.feature_source_id);

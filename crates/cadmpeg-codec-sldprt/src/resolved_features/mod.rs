@@ -113,6 +113,10 @@ mod relation_records;
 
 mod relation_layout;
 
+mod generated_surface_layout;
+
+mod reference_layout;
+
 pub(crate) mod feature_sources;
 
 pub(crate) mod scalars;

@@ -116,10 +116,17 @@ pub(crate) fn bind_pattern_inputs(
     };
 
     for lane in lanes {
-        let discovered_identities;
-        let generated_identities = if lane.generated_surface_identities.is_empty() {
-            discovered_identities = generated_surface_identities(lane)?;
-            &discovered_identities
+        let discovered_identities = if lane.generated_surface_identities.is_empty() {
+            Some(generated_surface_identities(
+                &lane.id,
+                &lane.classes,
+                &lane.native_payload,
+            )?)
+        } else {
+            None
+        };
+        let generated_identities = if let Some(parsed) = &discovered_identities {
+            &parsed.records
         } else {
             &lane.generated_surface_identities
         };
@@ -282,10 +289,37 @@ pub(crate) fn bind_pattern_inputs(
                         let seed_candidates = generated_identities
                             .iter()
                             .filter(|identity| {
-                                identity
-                                    .offset
-                                    .and_then(|offset| usize::try_from(offset).ok())
-                                    .is_some_and(|offset| (start..end).contains(&offset))
+                                if lane.generated_surface_identities.is_empty() {
+                                    discovered_identities
+                                        .as_ref()
+                                        .and_then(|parsed| parsed.frames.get(&identity.id))
+                                        .is_some_and(|frame| {
+                                            (start..end).contains(&frame.extent.start)
+                                        })
+                                } else {
+                                    // Admitted native records share one lane-wide
+                                    // source_order rank with names. Initial parser
+                                    // ordinals use the source-frame branch above.
+                                    let Some(owner) = names.of(feature) else {
+                                        return false;
+                                    };
+                                    let mut following = starts
+                                        .iter()
+                                        .skip(start_index + 1)
+                                        .map(|(_, feature)| *feature);
+                                    let mut next = following.next();
+                                    if next.is_some_and(|feature| {
+                                        feature.input_class.as_deref()
+                                            == Some("moDerivedCosmeticThread_c")
+                                    }) {
+                                        next = following.next();
+                                    }
+                                    let until = next
+                                        .and_then(|feature| names.of(feature))
+                                        .map(|name| name.sequence);
+                                    owner.sequence <= identity.sequence
+                                        && until.is_none_or(|end| identity.sequence < end)
+                                }
                             })
                             .filter(|identity| {
                                 identity.components.first().is_some_and(|component| {
@@ -1111,6 +1145,7 @@ pub(crate) fn bind_scalar_operands(
     let metadata_ids = history_metadata_ids(histories);
     let features_by_id = crate::records::HistoryFeatures::new(histories);
     for lane in lanes {
+        super::reference_layout::capture(ctx, lane, sources)?;
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
             entity.links = None;
@@ -1131,7 +1166,8 @@ pub(crate) fn bind_scalar_operands(
                 entity.feature_ref = Some(feature_id.to_owned());
             }
             for reference in lane.references.iter_mut().filter(|reference| {
-                reference.offset > start && end.is_none_or(|end| reference.offset < end)
+                sources.pointer(&reference.id) > start
+                    && end.is_none_or(|end| sources.pointer(&reference.id) < end)
             }) {
                 reference.feature_ref = Some(feature_id.to_owned());
             }
@@ -1143,7 +1179,7 @@ pub(crate) fn bind_scalar_operands(
                 scalar.feature_ref = Some(feature_id.to_owned());
             }
         }
-        bind_detached_legacy_sketch_objects(ctx, histories, &represented_sketches, lane)?;
+        bind_detached_legacy_sketch_objects(ctx, histories, &represented_sketches, lane, sources)?;
         for pair in starts.windows(2) {
             let [(_, parent_id), (child_start, child_id)] = pair else {
                 continue;
@@ -1276,8 +1312,10 @@ pub(crate) fn finalize_lane_bindings(
     lane.relation_instances = relation_instances(histories, lane)?;
     lane.edge_selections = compact_edge_selections(ctx, histories, lane)?;
     lane.surface_selections = compact_surface_selections(ctx, histories, lane)?;
-    lane.generated_surface_identities = generated_surface_identities(lane)?;
+    lane.generated_surface_identities =
+        generated_surface_identities(&lane.id, &lane.classes, &lane.native_payload)?.records;
     super::relation_layout::capture(ctx, lane, sources)?;
+    super::generated_surface_layout::capture(ctx, lane, sources)?;
     source_order::finalize(histories, lane, sources.pointers())?;
     Ok(())
 }
@@ -1354,7 +1392,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
         .iter_mut()
         .filter(|lane| is_supplemental_config_lane(lane))
     {
-        bind_detached_legacy_sketch_objects(ctx, histories, &represented, lane)?;
+        bind_detached_legacy_sketch_objects(ctx, histories, &represented, lane, sources)?;
         finalize_lane_bindings(ctx, histories, lane, sources)?;
     }
     Ok(())
@@ -1365,6 +1403,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     histories: &[crate::records::FeatureHistory],
     represented: &HashSet<String>,
     lane: &mut FeatureInputLane,
+    sources: &super::body_sources::BodySources<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OBJECT_GAP: u64 = 4096;
 
@@ -1377,7 +1416,8 @@ pub(super) fn bind_detached_legacy_sketch_objects(
         .find(|class| class.name == "moFeatureDimHandle_c")
         .and_then(|class| class.offset)
         .unwrap_or_else(|| u64_from_index(lane.native_payload.len()));
-    let relation_bindings = bind_detached_spatial_relation_objects(histories, represented, lane);
+    let relation_bindings =
+        bind_detached_spatial_relation_objects(histories, represented, lane, sources);
     let markers = lane
         .sketch_entities
         .iter()
@@ -1431,8 +1471,8 @@ pub(super) fn bind_detached_legacy_sketch_objects(
             entity.feature_ref = Some(owner.id.clone());
         }
         for reference in lane.references.iter_mut().filter(|reference| {
-            reference
-                .offset
+            sources
+                .pointer(&reference.id)
                 .is_some_and(|position| position >= start && position < end)
         }) {
             reference.feature_ref = Some(owner.id.clone());
@@ -1485,6 +1525,7 @@ fn bind_detached_spatial_relation_objects(
     histories: &[crate::records::FeatureHistory],
     represented: &HashSet<String>,
     lane: &mut FeatureInputLane,
+    sources: &super::body_sources::BodySources<'_>,
 ) -> Vec<(u64, u64, String)> {
     let ranges = spatial_relation_manager_ranges(lane);
     if ranges.is_empty() {
@@ -1595,8 +1636,12 @@ fn bind_detached_spatial_relation_objects(
             entity.feature_ref = Some(owner.to_owned());
         }
         for reference in lane.references.iter_mut().filter(|reference| {
-            reference.offset.is_some_and(|position| position > *start)
-                && reference.offset.is_some_and(|position| position < *end)
+            sources
+                .pointer(&reference.id)
+                .is_some_and(|position| position > *start)
+                && sources
+                    .pointer(&reference.id)
+                    .is_some_and(|position| position < *end)
         }) {
             reference.feature_ref = Some(owner.to_owned());
         }
