@@ -2965,9 +2965,16 @@ reader accepts major 1 and normalizes a dimension other than 2 or 3 to 3.
 Invalid dimensions are normalized to 3 by the payload rule. Radius and both
 intervals must be valid.
 
-A full circle uses the analytic representation when its angle and curve domain
-are `[0, 2π]` and the x-axis norm differs from one by less than `1e-10`.
-Otherwise the transfer uses the rational quadratic representation.
+`ON_ArcCurve` maps its curve domain linearly onto its angle interval: the
+parameter `t` in `[t0, t1]` evaluates the circle at angle
+`a0 + (t − t0)(a1 − a0)/(t1 − t0)`.
+
+A full circle uses the analytic representation when its angle interval and
+curve domain each span `2π`, each starts on a whole multiple of `2π`, and the
+x-axis norm differs from one by less than `1e-10`. The analytic parameter
+then equals the source parameter modulo `2π`. A Brep edge on such a carrier
+keeps its proxy interval shifted by whole turns so that the interval starts in
+`[0, 2π)`. Otherwise the transfer uses the rational quadratic representation.
 
 ### 12.5 Polyline curve
 

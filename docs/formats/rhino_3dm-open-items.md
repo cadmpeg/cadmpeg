@@ -910,3 +910,23 @@ codec reports such a document as having no usable unit system.
 **Need.** Apply the model-unit scale and the single document loss to the
 remaining presentation and annotation records, and bind a missing units
 record to the default millimetre system.
+
+### AR-01. Non-canonical arc NURBS form misses its arc parameterization
+
+**Question.** Which neutral carrier reproduces `ON_ArcCurve` evaluation at an
+arbitrary parameter when the arc is not a full circle whose angle and domain
+start on whole turns?
+
+**Known.** `ON_ArcCurve::Evaluate` maps its domain linearly onto the arc
+angle. `curves.rs` `read_arc` keeps a neutral circle for a full circle whose
+angle interval and domain each span `2π` and start on whole turns, and Brep
+edges on that carrier wrap their proxy interval into the first turn. Every
+other arc becomes a rational quadratic NURBS whose knots span the native
+domain. The rational quadratic form is not linear in angle, so a point at an
+interior parameter differs from the arc point at the same parameter. A Brep
+edge whose proxy domain is a proper sub-interval of such an arc then misses
+its vertex.
+
+**Need.** A carrier or parameter map that reproduces `ON_ArcCurve`
+evaluation for partial arcs and for full circles with a phase offset, applied
+to object curves, Brep C3 curves, and Brep C2 curves.
