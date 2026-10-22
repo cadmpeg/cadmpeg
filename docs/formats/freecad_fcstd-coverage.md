@@ -66,3 +66,13 @@ with distinct location-table indices retain their native records but omit the ne
 This conservative case includes compound-location aliases: neutral projection does not yet compare
 the native datum/power chains. The affected coedge retains its edge incidence but has no neutral
 pcurve. The loss has blocking severity.
+
+## Product metadata projection
+
+Neutral part-number selection uses the runtime, not the validity or nonemptiness of competing
+carriers. `App::Part`, `Assembly::AssemblyObject`, and `Assembly::AssemblyLink` select `Id`; an
+absent, empty, or invalid `Id` leaves the neutral field unset. Their custom `PartNumber` string
+remains a named BOM property. Other product runtimes project a valid nonempty `PartNumber` string
+by the CADIR metadata convention; a same-named `Id` has no neutral part-number meaning. All native
+properties remain independently retained. This convention does not prescribe a FreeCAD BOM
+workbench's choice of columns.

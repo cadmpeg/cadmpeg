@@ -87,44 +87,4 @@ as a FreeCAD invariant or represent the complete multi-selector mapping.
 
 ## 10. Attachment and assembly
 
-### AA-01. Product part-number carrier semantics
-
-**Question.** How do `PartNumber` and the built-in `Id` property contribute to product identity and BOM
-part number for each supported FreeCAD product runtime?
-
-**Known.** Both names can occur on part and assembly objects, and the native graph retains them as
-separate typed properties. An empty value is distinct from an absent carrier. The document does not
-persist a separate field that declares one carrier to be the neutral CADIR part number.
-
-**Need.** Define the FreeCAD application semantics of both properties by runtime type, including
-inheritance, overrides, empty values, generated assembly objects, and user-added properties. Then
-define the neutral mapping without using carrier validity as an implicit precedence rule.
-
-**Conflict.** The current projection gives a nonempty `PartNumber` precedence and otherwise uses `Id`
-for selected part runtimes. This is a CADIR-selected metadata policy rather than a decoded format
-discriminator.
-
-**Note.** Preserve both native properties regardless of the neutral mapping. Product identity and BOM
-display policy are separate concepts.
-
-### AA-02. Link-array cardinality without `ElementCount`
-
-**Question.** What occurrence count does FreeCAD restore when an array link has no `ElementCount`
-property but contains one or more array-valued carriers?
-
-**Known.** A present `ElementCount` supplies an explicit count. Placement, scale, visibility, and
-element-object arrays each carry their own lengths, and inconsistent nonempty lengths are invalid.
-Scalar link state remains distinct from per-element array state.
-
-**Need.** Define the producer and restore semantics for absent, zero, and positive `ElementCount`,
-including which array carrier can establish cardinality and whether absence denotes a scalar link,
-legacy array encoding, or a default property value.
-
-**Conflict.** The current projection infers an absent count from the longest populated array and uses a
-minimum count of one. The maximum-array rule is decoder recovery policy unless it matches FreeCAD's
-restore semantics.
-
-**Note.** Keep count restoration separate from validation that all populated arrays have a consistent
-length.
-
 ## 11. Persistent graph admission

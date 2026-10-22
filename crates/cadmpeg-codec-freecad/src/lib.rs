@@ -1062,7 +1062,8 @@ impl CodecBackend for FcstdCodec {
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            let link_occurrences = product::link_occurrence_count(&product_nodes)?;
+            let link_occurrences =
+                product::link_occurrence_count(&product_nodes, &graph.properties)?;
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count())
                     .checked_add(link_occurrences)

@@ -528,22 +528,24 @@ distinct parent container. Overlapping parent containers are refused instead of 
 order. Product record identities are unique by object identity; duplicate records are invalid.
 
 Product metadata uses exact `App::PropertyString` properties. Each selected property has exactly one
-direct `String` value with a required `value` attribute and no nested element. `Label`, `Description`,
-and `PartNumber` supply the corresponding product-definition fields. `Label2`, `StockCode`, `Vendor`,
-and `Manufacturer` supply named BOM properties. `Label` may carry the additional `restore` attribute;
-it does not replace the `value` attribute. `Id` on the part runtimes is the built-in item
-part-number carrier. CADIR decision: `PartNumber` takes precedence; when that carrier is absent or
-invalid, `Id` supplies the part number for a part runtime. An `Id` carrier on another product runtime
-is native-only. An empty `PartNumber` or `Id` value leaves the neutral part-number field unset. A
-wrong runtime type, wrong root tag, missing or extra direct value, nested value, or missing `value`
-leaves the selected neutral field unset and retains the property natively. Duplicate property names
-within one owner are malformed.
+direct `String` value with a required `value` attribute and no nested element. `Label` may carry the
+additional `restore` attribute; it does not replace the `value` attribute. `App::Part`,
+`Assembly::AssemblyObject`, and `Assembly::AssemblyLink` carry the built-in `Id` string for the item's
+part number. The assembly runtimes inherit this property with the same empty-string default. Their
+own `Id` value belongs to that object; a linked assembly does not replace it with the target's `Id`.
+`PartNumber` is a distinct, user-defined property. Its presence or contents do not override `Id`, and
+an empty or absent `Id` does not select `PartNumber`. Other product runtimes have no built-in part
+number semantics for a same-named `Id` property. Product object identity, user-visible labels, and BOM
+column selection are distinct from the part-number value. Both properties retain their own type and
+value, including empty strings. A wrong runtime type, wrong root tag, missing or extra direct value,
+nested value, or missing `value` retains the property natively. Duplicate property names within one
+owner are malformed.
 
 Named product carriers use the producer runtime type and value grammar. `Group` and `ElementList`
 are `App::PropertyLinkList` properties with one `LinkList` root; its `count` equals the number of
 ordered `Link` children. `LinkedObject` and `LinkCopyOnChangeSource` are `App::PropertyXLink`
 properties with one `XLink` target. `LinkCopyOnChangeGroup` is an `App::PropertyLink` with one
-`Link` target. `LinkTransform`, `LinkClaimChild`, and `LinkCopyOnChangeTouched` are
+`Link` target. `ShowElement`, `LinkTransform`, `LinkClaimChild`, and `LinkCopyOnChangeTouched` are
 `App::PropertyBool` properties with one `Bool` value. `ElementCount` is an
 `App::PropertyIntegerConstraint` with one `Integer` value. `Scale` is an `App::PropertyFloat`
 with one `Float` value, and `ScaleVector` is an `App::PropertyVector` with one `PropertyVector`
@@ -601,17 +603,30 @@ type is `App::PropertyEnumeration`; a same-named property of another runtime typ
 and does not alter occurrence semantics. Copy-on-change is typed as disabled, enabled, owned,
 tracking, or an explicit future native policy, with its source, ownership group, and touched state
 resolved independently.
-All array-valued fields must either be absent or match `ElementCount`.
-A present zero `ElementCount` requires every array-valued field to be empty. The link retains its
-single scalar occurrence. An absent `ElementCount` permits one scalar link occurrence or infers a
-nonzero count from the populated array-valued fields.
+`ShowElement` selects expanded element objects or a collapsed array. Its default is true. With
+`ShowElement=true`, restoration sets the count to the length of `ElementList`, including zero. This
+rule applies to absent, zero, and positive persisted `ElementCount` values. The ordered element
+objects supply their own placements and scale vectors; parent `PlacementList` and `ScaleList`
+carriers are inactive. With `ShowElement=false`, `ElementCount` supplies the count and defaults to
+zero when absent. `ElementList`, `PlacementList`, `ScaleList`, and `VisibilityList` do not establish
+this count. Zero denotes a scalar link, not an array of one element. Scalar links do not apply
+per-element placement or scale carriers.
+
+The count and array-valued carriers persist independently. Their lengths need not agree. For a
+collapsed array, element `i` uses `PlacementList[i]` and `ScaleList[i]` when each is present. An absent
+placement is the identity relative to the scalar link placement; an absent scale is `(1, 1, 1)`.
+Entries beyond the active count do not create occurrences. Inactive carriers remain document data.
+Visibility bits do not determine array cardinality. A missing visibility bit means visible; a scalar
+link does not apply the per-element visibility list. Element objects belong to their containing
+link and do not create independent root occurrences. For an active array, the transform order is
+scalar placement, scalar scale, element placement, and element scale. Nonuniform scalar scale does
+not commute with element rotation or translation.
 
 The native namespace extends occurrences with ordered link-array element placements and
 scale vectors. Each side entry begins with a little-endian element count followed by either all
 single-precision or all double-precision components; exact entry length selects the precision.
 Placement records carry position plus quaternion, while scale records carry three components.
-Zero quaternions, non-finite values, malformed lengths, and non-empty list counts that disagree with
-`ElementCount` are invalid.
+Zero quaternions, non-finite values, and malformed side-entry lengths are invalid.
 
 The native namespace holds ordered assembly-joint records. Grounded constraints retain their
 object and grounding frame. Other joints retain the persisted enumeration family, two connector

@@ -16,6 +16,7 @@ use std::collections::HashSet;
 use std::io::Cursor;
 
 mod graph_diagnostic_tests;
+mod restoration;
 
 #[test]
 fn local_copy_on_change_target_maps_to_its_definition() {
@@ -66,8 +67,8 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
   <Property name="LinkCopyOnChangeGroup" type="App::PropertyLink"><Link value="Assembly"/></Property>
   <Property name="LinkCopyOnChangeTouched" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
- <Object name="ElementA"><Properties Count="0"/></Object>
- <Object name="ElementB"><Properties Count="0"/></Object>
+ <Object name="ElementA"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="ElementB"><Properties Count="2"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="2" valueY="2" valueZ="2"/></Property></Properties></Object>
  <Object name="Outer"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Assembly"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="100" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
 </ObjectData></Document>"#;
     let mut placements = 2_u32.to_le_bytes().to_vec();
@@ -162,33 +163,33 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(assembly_occurrence.transform.rows()[0][3], 10.0);
     assert_eq!(link_occurrences.len(), 2);
     assert_eq!(link_occurrences[0].ordinal, 0);
-    assert_eq!(link_occurrences[0].transform.rows()[0][3], 5.0);
-    assert_eq!(link_occurrences[1].transform.rows()[0][3], 8.0);
+    assert_eq!(link_occurrences[0].transform.rows()[0][3], 6.0);
+    assert_eq!(link_occurrences[1].transform.rows()[0][3], 12.0);
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
         .expect("valid assembly graph");
     assert_eq!(
         assembly::resolved_transform(&graph, &link_occurrences[0].id)
             .unwrap()
             .rows()[0][3],
-        115.0
+        116.0
     );
     assert_eq!(
         assembly::resolved_transform(&graph, &link_occurrences[1].id)
             .unwrap()
             .rows()[0][3],
-        118.0
+        122.0
     );
     assert_eq!(
         link_occurrences[0]
             .scale
             .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [2.0, 3.0, 4.0]
+        [1.0, 1.0, 1.0]
     );
     assert_eq!(
         link_occurrences[1]
             .scale
             .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [4.0, 6.0, 8.0]
+        [2.0, 2.0, 2.0]
     );
     let first_link = link_occurrences[0].link.as_ref().expect("App::Link state");
     assert_eq!(first_link.linked_subelements(), ["Face1"]);
@@ -234,7 +235,7 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
 }
 
 #[test]
-fn projects_direct_string_metadata_and_part_number_precedence() {
+fn projects_direct_string_metadata_and_runtime_part_number() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">
  <Object type="App::Part" name="Explicit" id="1"/>
@@ -280,8 +281,15 @@ fn projects_direct_string_metadata_and_part_number_precedence() {
         explicit.description.as_deref(),
         Some("Explicit description")
     );
-    assert_eq!(explicit.part_number.as_deref(), Some("PART-42"));
-    assert_eq!(explicit.bom_properties.len(), 4);
+    assert_eq!(explicit.part_number.as_deref(), Some("ID-42"));
+    assert_eq!(explicit.bom_properties.len(), 5);
+    assert_eq!(
+        explicit
+            .bom_properties
+            .get("PartNumber")
+            .map(String::as_str),
+        Some("PART-42")
+    );
     assert_eq!(
         explicit.bom_properties.get("Label2").map(String::as_str),
         Some("BOM description")
@@ -895,8 +903,9 @@ fn stated_link_array(element_count: &str) -> String {
     format!(
         r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
-<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="2">
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="3">
 <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="ShowElement" type="App::PropertyBool"><Bool value="false"/></Property>
 <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="{element_count}"/></Property>
 </Properties></Object></ObjectData></Document>"#
     )
@@ -966,7 +975,7 @@ fn link_array_element_count_above_the_named_limit_is_malformed() {
 }
 
 #[test]
-fn rejects_populated_link_arrays_when_element_count_is_zero() {
+fn retains_populated_link_arrays_when_element_count_is_zero() {
     let decode = |array_property: &str, entry: Option<(&str, Vec<u8>)>| {
         let document = format!(
             r#"<Document SchemaVersion="4" FileVersion="1">
@@ -1014,11 +1023,9 @@ fn rejects_populated_link_arrays_when_element_count_is_zero() {
     ];
 
     for (array_property, entry) in cases {
-        assert!(matches!(
-            decode(array_property, entry),
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message)))
-                if message.contains("inconsistent link-array counts")
-        ));
+        let decoded = decode(array_property, entry).expect("restore independent link carriers");
+        assert_eq!(decoded.ir().model.occurrences.len(), 1);
+        assert_valid_document(decoded.ir());
     }
 
     let zero = decode(
@@ -1447,10 +1454,6 @@ fn real_lists_read_both_precisions_within_nonzero_view_bounds() {
 
 #[test]
 fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
-    // A present zero `ElementCount` requires every array-valued field to be
-    // empty and the link retains its single scalar occurrence. The cardinality
-    // the node carries states that directly: it is `Scalar`, distinct from an
-    // array of one element, and no arithmetic turns the stated zero into a one.
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
 <ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="2">
@@ -1484,9 +1487,14 @@ fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
             std::num::NonZeroU64::MIN
         ))
     );
-    assert_eq!(super::occurrence_count(occurrence).expect("count").get(), 1);
+    assert_eq!(
+        super::occurrence_count(occurrence, native::LinkArrayCardinality::Scalar)
+            .expect("count")
+            .get(),
+        1
+    );
 
-    // A stated zero with a populated carrier is an inconsistent link array.
+    // Expanded element objects restore the count independently of the stated zero.
     let populated = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3"><Object type="Part::Feature" name="Prototype"/><Object type="Part::Feature" name="ElementA"/><Object type="App::Link" name="Occurrence"/></Objects>
 <ObjectData Count="3"><Object name="Prototype"><Properties Count="0"/></Object><Object name="ElementA"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="3">
@@ -1494,16 +1502,20 @@ fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
 <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
 <Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="ElementA"/></LinkList></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let error = FcstdCodec
+    let decoded = FcstdCodec
         .decode(
             &mut Cursor::new(archive(populated)),
             &DecodeOptions::default(),
         )
-        .expect_err("inconsistent link-array counts");
-    assert!(
-        error.to_string().contains("inconsistent link-array counts"),
-        "{error}"
-    );
+        .expect("expanded elements restore their cardinality");
+    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    assert!(decoded.ir().model.occurrences[0]
+        .link
+        .as_ref()
+        .unwrap()
+        .element_component()
+        .is_some());
+    assert_valid_document(decoded.ir());
 }
 
 #[test]
@@ -1530,7 +1542,7 @@ fn malformed_copy_on_change_integer_is_rejected_at_source_admission() {
 }
 
 #[test]
-fn visibility_cardinality_is_rejected_when_element_count_is_absent() {
+fn unequal_stale_arrays_do_not_establish_missing_element_count() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
 <ObjectData Count="2">
@@ -1549,7 +1561,7 @@ fn visibility_cardinality_is_rejected_when_element_count_is_absent() {
                 .flat_map(f64::to_le_bytes),
         );
     }
-    let error = FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[
                 ("Document.xml", document.as_bytes()),
@@ -1557,15 +1569,17 @@ fn visibility_cardinality_is_rejected_when_element_count_is_absent() {
             ])),
             &DecodeOptions::default(),
         )
-        .expect_err("product decode rejects inconsistent visibility cardinality");
-    assert!(
-        error.to_string().contains("inconsistent link-array counts"),
-        "{error}"
+        .expect("inactive array carriers remain native");
+    assert_eq!(result.ir().model.occurrences.len(), 1);
+    assert_eq!(
+        result.ir().model.occurrences[0].transform,
+        cadmpeg_ir::transform::Transform::identity()
     );
+    assert_valid_document(result.ir());
 }
 
 #[test]
-fn visibility_cardinality_matches_when_element_count_is_absent() {
+fn equal_stale_arrays_do_not_establish_missing_element_count() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
 <ObjectData Count="2">
@@ -1592,7 +1606,12 @@ fn visibility_cardinality_matches_when_element_count_is_absent() {
             ])),
             &DecodeOptions::default(),
         )
-        .expect("matching populated carriers remain legal without ElementCount");
+        .expect("inactive array carriers remain native without ElementCount");
+    assert_eq!(result.ir().model.occurrences.len(), 1);
+    assert_eq!(
+        result.ir().model.occurrences[0].transform,
+        cadmpeg_ir::transform::Transform::identity()
+    );
     let native = result
         .ir()
         .native
