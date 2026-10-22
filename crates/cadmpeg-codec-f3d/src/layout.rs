@@ -1779,18 +1779,20 @@ pub(crate) mod legacy_loft_body_carrier_class_411 {
 
 /// Byte offsets for the `fixed_pipe_operation_prefix` record.
 ///
-/// Spec §3.1. Record length 31 B.
+/// Spec §3.1. Record length 28 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. The variable scope reference table and operand records follow this fixed prefix.
+/// Offsets are relative to the primary indexed header. The variable reference table follows the fixed prefix.
 /// ```
 pub(crate) mod fixed_pipe_operation_prefix {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `is_hollow` (`u8`). Spec §3.1.
+    pub(crate) const IS_HOLLOW: usize = 21;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const OPERATION: usize = 25;
-    /// Offset of `section_shape` (`u8`). Spec §3.1.
-    pub(crate) const SECTION_SHAPE: usize = 29;
-    /// Offset of `filled` (`u8`). Spec §3.1.
-    pub(crate) const FILLED: usize = 30;
+    pub(crate) const OPERATION: usize = 22;
+    /// Offset of `opaque_post_operation` (`bytes[2]`). Spec §3.1.
+    pub(crate) const OPAQUE_POST_OPERATION: usize = 26;
 }
 
 /// Byte offsets for the `legacy_pipe_operation_prefix` record.
@@ -1798,7 +1800,7 @@ pub(crate) mod fixed_pipe_operation_prefix {
 /// Spec §3.1. Record length 32 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. The legacy scope reference table and variable operand records follow this prefix.
+/// Offsets are relative to the primary indexed header. The variable reference table follows the fixed prefix.
 /// ```
 pub(crate) mod legacy_pipe_operation_prefix {
     /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
@@ -1807,14 +1809,14 @@ pub(crate) mod legacy_pipe_operation_prefix {
     pub(crate) const PREFIX_MARKER: usize = 20;
     /// Stated value of `prefix_marker` (`u8`). Spec §3.1.
     pub(crate) const PREFIX_MARKER_VALUE: u8 = 1;
-    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_5: usize = 21;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 21;
+    /// Offset of `is_hollow` (`u8`). Spec §3.1.
+    pub(crate) const IS_HOLLOW: usize = 25;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OPERATION: usize = 26;
-    /// Offset of `section_shape` (`u8`). Spec §3.1.
-    pub(crate) const SECTION_SHAPE: usize = 30;
-    /// Offset of `filled` (`u8`). Spec §3.1.
-    pub(crate) const FILLED: usize = 31;
+    /// Offset of `opaque_post_operation` (`bytes[2]`). Spec §3.1.
+    pub(crate) const OPAQUE_POST_OPERATION: usize = 30;
 }
 
 /// Byte offsets for the `sketch_profile_region_selection_prefix` record.

@@ -6258,100 +6258,102 @@ anchor = "a marked reference to the owning scope at offset 88"
 name = "fixed_pipe_operation_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "Primary-header offset 25 stores u32 `4`, which selects a new-body result"
-size = 31
-note = "Offsets are relative to the primary indexed header. The variable scope reference table and operand records follow this fixed prefix."
+anchor = "The compact Pipe prefix has"
+size = 28
+note = "Offsets are relative to the primary indexed header. The variable reference table follows the fixed prefix."
 
 [[record.field]]
 name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "the primary indexed header"
+anchor = "eleven-byte indexed header"
 
-[[record.gap]]
+[[record.field]]
+name = "zero_run_10"
 offset = 11
-size = 14
-note = "The fixed Pipe prefix carries no admitted fields between its indexed header and the operation at offset 25."
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes at offsets 11 through 20"
+
+[[record.field]]
+name = "is_hollow"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "the `isHollow` Boolean at offset 21"
 
 [[record.field]]
 name = "operation"
-offset = 25
+offset = 22
 type = "u32"
 source = "spec"
-anchor = "Primary-header offset 25 stores u32 `4`, which selects a new-body result"
+anchor = "the result-operation u32 at offset 22"
 
 [[record.field]]
-name = "section_shape"
-offset = 29
-type = "u8"
+name = "opaque_post_operation"
+offset = 26
+type = "bytes[2]"
 source = "spec"
-anchor = "Offset 29 value `1` selects a circular section"
-
-[[record.field]]
-name = "filled"
-offset = 30
-type = "u8"
-source = "spec"
-anchor = "Offset 30 value `1` selects a filled section"
+anchor = "two opaque bytes at offsets 26 and 27"
 
 [[record]]
 name = "legacy_pipe_operation_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "Class-`405` paired with class-`259`, and class-`475` paired with class-`260`, use a legacy `Pipe` operation prefix"
+anchor = "The legacy Pipe prefix has"
 size = 32
-note = "Offsets are relative to the primary indexed header. The legacy scope reference table and variable operand records follow this prefix."
+note = "Offsets are relative to the primary indexed header. The variable reference table follows the fixed prefix."
 
 [[record.field]]
 name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "primary indexed header"
+anchor = "eleven-byte indexed header"
 
 [[record.field]]
 name = "zero_run_9"
 offset = 11
 type = "bytes[9]"
 source = "spec"
-anchor = "offsets `11` through `19` are zero"
+anchor = "nine zero bytes at offsets 11 through 19"
 
 [[record.field]]
 name = "prefix_marker"
 offset = 20
 type = "u8"
 source = "spec"
-anchor = "offset `20` is u8 `1`"
+anchor = "u8 `1` at offset 20"
 value = 1
 
 [[record.field]]
-name = "zero_run_5"
+name = "zero_run_4"
 offset = 21
-type = "bytes[5]"
+type = "bytes[4]"
 source = "spec"
-anchor = "offsets `21` through `25` are zero"
+anchor = "four zero bytes at offsets 21 through 24"
+
+[[record.field]]
+name = "is_hollow"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "the `isHollow` Boolean at offset 25"
 
 [[record.field]]
 name = "operation"
 offset = 26
 type = "u32"
 source = "spec"
-anchor = "offset `26` is the result-operation u32"
+anchor = "the result-operation u32 at offset 26"
 
 [[record.field]]
-name = "section_shape"
+name = "opaque_post_operation"
 offset = 30
-type = "u8"
+type = "bytes[2]"
 source = "spec"
-anchor = "offset `30` is the section-shape u8"
-
-[[record.field]]
-name = "filled"
-offset = 31
-type = "u8"
-source = "spec"
-anchor = "offset `31` is the filled-section u8"
+anchor = "two opaque bytes at offsets 30 and 31"
 
 [[record]]
 name = "sketch_profile_region_selection_prefix"

@@ -95,13 +95,13 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Need.** A pattern relation must be written back from a neutral model, and these members must carry the values the source would have written. The map keys and values are small integers in the range of record indices, so they may be a per-instance record grouping that a writer must rebuild rather than copy.
 
-### DR-31. Other `Pipe` section and hollow forms
+### DR-31. Editable Pipe section-type carrier
 
-**Question.** Which primary-header values select square, triangular, and hollow `Pipe` sections? How is section size measured for the noncircular shapes, and where is hollow-wall placement encoded?
+**Question.** Which native carrier stores the editable `Pipe` section type?
 
-**Known.** Primary-header offset 29 value `1` selects a circular section. Offset 30 value `1` selects a filled section and value `0` selects a hollow section. For the filled form, scalar ordinal two is the outside diameter and scalar ordinal three is an inactive positive thickness. For the hollow form, scalar ordinal two is the outside diameter and scalar ordinal three is the inward wall thickness, which is less than the outside radius. The settings reference contains a u32 and one finite double. Class-`421`/`257` uses the fixed prefix and four class-`342` 103-byte parameter-owner references at local ordinals zero through three; its legacy reference table has one settings record, one role-`0x0000000500000000` path group, the group's nonempty ordered members, and no other construction group or trailing scope reference. Class-`405`/`259` and class-`475`/`260` legacy `Pipe` prefixes store the result operation, section shape, and filled flag at offsets `26`, `30`, and `31`; the admitted legacy reference form has four owner-local scalar records, one settings record, one role-`0x0000000500000000` path group, its nonempty ordered members, and no other construction group or trailing scope reference.
+**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four scalar roles, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. A section shape can be bound from unique saved topology.
 
-**Need.** We must define the selector values and dimension conventions for square and triangular sections, and the scalar mapping for hollow variants. Comparing otherwise equal square and triangular pipes with hollow placement alternately inside and outside distinguishes section shape, size convention, and wall-placement fields.
+**Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links.
 
 ### DR-61. u64 values in a cross-document `Combine` selector tail
 

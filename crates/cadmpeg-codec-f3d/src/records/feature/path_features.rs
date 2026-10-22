@@ -2,8 +2,8 @@
 //! Path features: revolve, loft, sweep and pipe constructions.
 
 use super::extrude::DesignExtrudeOperation;
-use super::surface_ops::DesignPipeSectionShape;
 use crate::records::identity::Located;
+use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveAngle};
 use serde::{Deserialize, Serialize};
 
@@ -153,14 +153,14 @@ pub(crate) struct DesignPipeConstruction {
     pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation u32.
     pub(crate) operation_offset: u64,
-    /// Section-shape selector byte.
-    pub(crate) section_shape: DesignPipeSectionShape,
-    /// Byte offset of the section-shape selector.
-    pub(crate) section_shape_offset: u64,
-    /// Whether the generated section is filled.
-    pub(crate) filled: bool,
-    /// Byte offset of the filled-section flag.
-    pub(crate) filled_offset: u64,
+    /// Whether the section has an inward hollow wall.
+    pub(crate) is_hollow: bool,
+    /// Byte offset of the hollow Boolean.
+    pub(crate) is_hollow_offset: u64,
+    /// Source bytes following the result operation.
+    pub(crate) opaque_post_operation: NativeBytes<[u8; 2]>,
+    /// Byte offset of the source pair following the result operation.
+    pub(crate) opaque_post_operation_offset: u64,
     /// Four scalar values in path-fraction, reverse-path-fraction,
     /// section-size, and section-thickness order.
     pub(crate) values: [FiniteReal; 4],

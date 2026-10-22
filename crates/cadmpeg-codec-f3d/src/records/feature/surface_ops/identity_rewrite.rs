@@ -2,14 +2,13 @@
 //! Direct identity walks for native record fields.
 
 use super::{
-    DesignPatchContinuity, DesignPipeSectionShape, DesignRuledSurfaceCorner,
-    DesignRuledSurfaceMethod, DesignRuledSurfaceOperation, DesignSurfaceExtendMethod,
-    DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport,
-    DesignSurfacePatchBoundary, DesignSurfaceStitchOperation,
+    DesignPatchContinuity, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
+    DesignRuledSurfaceOperation, DesignSurfaceExtendMethod, DesignSurfaceExtendOperation,
+    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfacePatchBoundary,
+    DesignSurfaceStitchOperation,
 };
 
 rewrite_native_scalar!(DesignPatchContinuity);
-rewrite_native_scalar!(DesignPipeSectionShape);
 rewrite_native_scalar!(DesignRuledSurfaceCorner);
 rewrite_native_scalar!(DesignRuledSurfaceMethod);
 rewrite_native_record!(DesignRuledSurfaceOperation, []; {method, method_offset, corner, corner_offset, alternate_face, alternate_face_offset, angle_owner_record_index, distance_owner_record_index, edge_group_record_indices, auxiliary_record_indices, direction_entity_id});

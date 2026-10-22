@@ -422,44 +422,6 @@ impl DesignPatchContinuity {
     }
 }
 
-/// Pipe generated-section shape selector.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "u8", into = "u8")]
-pub(crate) enum DesignPipeSectionShape {
-    Circular,
-    Unknown(u8),
-}
-
-impl DesignPipeSectionShape {
-    #[must_use]
-    pub(crate) fn from_code(code: u8) -> Self {
-        match code {
-            1 => Self::Circular,
-            code => Self::Unknown(code),
-        }
-    }
-
-    #[must_use]
-    fn code(self) -> u8 {
-        match self {
-            Self::Circular => 1,
-            Self::Unknown(code) => code,
-        }
-    }
-}
-
-impl From<u8> for DesignPipeSectionShape {
-    fn from(code: u8) -> Self {
-        Self::from_code(code)
-    }
-}
-
-impl From<DesignPipeSectionShape> for u8 {
-    fn from(shape: DesignPipeSectionShape) -> Self {
-        shape.code()
-    }
-}
-
 /// Settings a `SurfacePatch` scope carries for one boundary component.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSurfacePatchBoundary {

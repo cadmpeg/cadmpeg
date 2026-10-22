@@ -4772,6 +4772,31 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
     }
 }
 
+fn pipe_operand_roles_are_valid(
+    operation: records::feature::extrude::DesignExtrudeOperation,
+    groups: &[(DesignOperandRole, usize)],
+) -> bool {
+    let expected_bodies =
+        usize::from(operation != records::feature::extrude::DesignExtrudeOperation::NewBody);
+    groups.len() == 1 + expected_bodies
+        && groups.iter().all(|(_, members)| *members > 0)
+        && groups
+            .iter()
+            .filter(|(role, _)| *role == DesignOperandRole::ROLE_0X5)
+            .count()
+            == 1
+        && groups
+            .iter()
+            .filter(|(role, _)| {
+                matches!(
+                    *role,
+                    DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+                )
+            })
+            .count()
+            == expected_bodies
+}
+
 /// Validate path-feature operand roles against the scope construction.
 ///
 /// The role grammar is shared with the fixed Loft projector. Keeping the
@@ -4980,12 +5005,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 crate::records::feature::path_features::DesignPipeConstruction {
                     operation, ..
                 },
-            )) => {
-                *operation == records::feature::extrude::DesignExtrudeOperation::NewBody
-                    && groups.len() == 1
-                    && role_count(DesignOperandRole::ROLE_0X5) == 1
-                    && !groups[0].members().is_empty()
-            }
+            )) => pipe_operand_roles_are_valid(*operation, &group_roles),
             _ => false,
         };
         if !valid {

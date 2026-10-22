@@ -2030,36 +2030,33 @@ Offsets are relative to the primary indexed header. The class-specific owner tai
 
 ## `fixed_pipe_operation_prefix`
 
-Spec §3.1 · layout: byte offsets · size: 31 B
+Spec §3.1 · layout: byte offsets · size: 28 B
 
-Offsets are relative to the primary indexed header. The variable scope reference table and operand records follow this fixed prefix.
+Offsets are relative to the primary indexed header. The variable reference table follows the fixed prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the primary indexed header |
-| 25 | 4 | `operation` | `u32` | little | spec | Primary-header offset 25 stores u32 `4`, which selects a new-body result |
-| 29 | 1 | `section_shape` | `u8` | little | spec | Offset 29 value `1` selects a circular section |
-| 30 | 1 | `filled` | `u8` | little | spec | Offset 30 value `1` selects a filled section |
-
-Unstated regions:
-
-- `11..25` (14 B): The fixed Pipe prefix carries no admitted fields between its indexed header and the operation at offset 25.
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | eleven-byte indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes at offsets 11 through 20 |
+| 21 | 1 | `is_hollow` | `u8` | little | spec | the `isHollow` Boolean at offset 21 |
+| 22 | 4 | `operation` | `u32` | little | spec | the result-operation u32 at offset 22 |
+| 26 | 2 | `opaque_post_operation` | `bytes[2]` | little | spec | two opaque bytes at offsets 26 and 27 |
 
 ## `legacy_pipe_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 32 B
 
-Offsets are relative to the primary indexed header. The legacy scope reference table and variable operand records follow this prefix.
+Offsets are relative to the primary indexed header. The variable reference table follows the fixed prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | primary indexed header |
-| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | offsets `11` through `19` are zero |
-| 20 | 1 | `prefix_marker` | `u8` | little | spec | offset `20` is u8 `1` · value `1` |
-| 21 | 5 | `zero_run_5` | `bytes[5]` | little | spec | offsets `21` through `25` are zero |
-| 26 | 4 | `operation` | `u32` | little | spec | offset `26` is the result-operation u32 |
-| 30 | 1 | `section_shape` | `u8` | little | spec | offset `30` is the section-shape u8 |
-| 31 | 1 | `filled` | `u8` | little | spec | offset `31` is the filled-section u8 |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | eleven-byte indexed header |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 1 | `prefix_marker` | `u8` | little | spec | u8 `1` at offset 20 · value `1` |
+| 21 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes at offsets 21 through 24 |
+| 25 | 1 | `is_hollow` | `u8` | little | spec | the `isHollow` Boolean at offset 25 |
+| 26 | 4 | `operation` | `u32` | little | spec | the result-operation u32 at offset 26 |
+| 30 | 2 | `opaque_post_operation` | `bytes[2]` | little | spec | two opaque bytes at offsets 30 and 31 |
 
 ## `sketch_profile_region_selection_prefix`
 
