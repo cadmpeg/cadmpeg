@@ -1897,9 +1897,8 @@ mod tests {
     use cadmpeg_ir::math::Point3;
 
     fn empty_source_scan() -> Scan<'static> {
-        Scan {
-            source_untyped: std::cell::RefCell::default(),
-            container: Container {
+        Scan::new(
+            Container {
                 data: Vec::new().into(),
                 physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
@@ -1908,8 +1907,8 @@ mod tests {
                 indexed_section_layouts: std::sync::OnceLock::new(),
                 om_section_cache: std::sync::OnceLock::new(),
             },
-            streams: Vec::new(),
-        }
+            Vec::new(),
+        )
     }
 
     fn preview_stream(bytes: Vec<u8>) -> Stream {

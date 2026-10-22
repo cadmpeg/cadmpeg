@@ -38,11 +38,10 @@ fn decoded_unknown_limit_error(
     };
 
     let file = crate::test_support::test_prt::prt_with_named_payloads(&[]);
-    let scan = super::super::Scan {
-        container: crate::container::scan_bytes(file.as_slice()).expect("empty test container"),
-        streams: Vec::new(),
-        source_untyped: std::cell::RefCell::default(),
-    };
+    let scan = super::super::Scan::new(
+        crate::container::scan_bytes(file.as_slice()).expect("empty test container"),
+        Vec::new(),
+    );
     crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
         match super::super::decoded(
             ctx,
@@ -86,11 +85,7 @@ fn bounded_indexed_section_search_reports_a_scan_loss() {
             bounded_entries: vec![0],
         })
         .expect("the cache is empty");
-    let scan = super::super::Scan {
-        source_untyped: std::cell::RefCell::default(),
-        container,
-        streams: Vec::new(),
-    };
+    let scan = super::super::Scan::new(container, Vec::new());
     let mut body = cadmpeg_ir::codec::DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer {
             scope: cadmpeg_ir::ContentScope::full(),

@@ -52,11 +52,10 @@ fn classify(container: &Container<'_>) -> DialectMatch {
 #[test]
 fn extracted_parasolid_schema_emits_a_kernel_layer() {
     let bytes = single_part_prt();
-    let scan = crate::decode::Scan {
-        source_untyped: std::cell::RefCell::default(),
-        container: { crate::container::scan_bytes(bytes.clone()) }.unwrap(),
-        streams: extract_streams(&bytes),
-    };
+    let scan = crate::decode::Scan::new(
+        { crate::container::scan_bytes(bytes.clone()) }.unwrap(),
+        extract_streams(&bytes),
+    );
     let (layers, losses) = classify_layers(&scan).into_report_parts();
     let kernel = layers
         .iter()
@@ -88,11 +87,7 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
         cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_3501171_35102_13006")
             .expect("the fixture text is a schema token"),
     );
-    let scan = crate::decode::Scan {
-        source_untyped: std::cell::RefCell::default(),
-        container: { crate::container::scan_bytes(bytes) }.unwrap(),
-        streams,
-    };
+    let scan = crate::decode::Scan::new({ crate::container::scan_bytes(bytes) }.unwrap(), streams);
     let (layers, losses) = classify_layers(&scan).into_report_parts();
     let kernel = layers
         .iter()
@@ -115,11 +110,7 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     let bytes = single_part_prt();
     let mut streams = extract_streams(&bytes);
     streams.push(streams[0].clone());
-    let scan = crate::decode::Scan {
-        source_untyped: std::cell::RefCell::default(),
-        container: { crate::container::scan_bytes(bytes) }.unwrap(),
-        streams,
-    };
+    let scan = crate::decode::Scan::new({ crate::container::scan_bytes(bytes) }.unwrap(), streams);
 
     let summary = crate::inspect::summarize(&scan).expect("test container summary");
     let (layers, losses) = classify_layers(&scan).into_report_parts();

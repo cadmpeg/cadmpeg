@@ -398,7 +398,7 @@ mod tests {
         }
     }
 
-    /// Source integrity and attachment failures pin Error above their taxonomy floor.
+    /// Only an attachment failure pins a floor above its taxonomy floor.
     #[test]
     fn strict_floor_follows_taxonomy_except_attachment_failure() {
         use cadmpeg_ir::report::loss::StrictConsequence;
