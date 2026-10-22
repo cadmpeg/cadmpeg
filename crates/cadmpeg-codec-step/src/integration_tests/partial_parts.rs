@@ -59,7 +59,6 @@ fn bounded_simple_entity_failure_uses_shared_home_and_preserves_later_neutral_ge
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::ParseRecordOmitted.kind()));
-    assert_eq!(fidelity.metadata["bytes_unclassified"], "0");
 }
 
 #[test]

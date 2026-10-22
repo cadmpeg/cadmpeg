@@ -1,27 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Owned dependency finalization before a part stage releases document fields.
 
-use super::{DeferredRecordPruning, PartDependencyPruning, PartOutput};
+use super::{PartDependencyPruning, PartOutput};
 use crate::document::Model;
 use crate::native::Native;
 use crate::report::loss::LossNote;
 use crate::SourceFidelity;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-
-/// Result of enforcing dependency pruning at the owned output boundary.
-#[derive(Debug)]
-pub enum PartFinalization {
-    /// Every surviving typed reference has a representable dependency result.
-    Ready(FinalizedPartOutput),
-    /// No tuple is released; the unchanged stage can be inspected or retried.
-    Deferred {
-        /// The still-owned stage, including all original records and losses.
-        output: PartOutput,
-        /// Actual typed owners whose list deletion remains unrepresentable.
-        records: Vec<DeferredRecordPruning>,
-    },
-}
 
 /// A dependency-closed stage whose component tuple can be released.
 ///
@@ -46,20 +32,16 @@ impl FinalizedPartOutput {
 impl PartOutput {
     /// Enforce current typed dependency closure before releasing any components.
     ///
-    /// Required records are dropped and variable reference lists are pruned by
-    /// their actual owners. A deferred result retains this complete stage and
-    /// exposes no component tuple. Session/Part resource errors retain their
-    /// actual CodecError; no implementation deferral becomes a fake parse error.
-    pub fn into_parts(mut self, ctx: &DecodeContext<'_>) -> Result<PartFinalization, CodecError> {
-        match self.prune_dependencies(ctx)? {
-            PartDependencyPruning::Complete { .. } => {
-                Ok(PartFinalization::Ready(FinalizedPartOutput(self)))
-            }
-            PartDependencyPruning::Deferred { records } => Ok(PartFinalization::Deferred {
-                output: self,
-                records,
-            }),
-        }
+    /// Required records are dropped, records that cannot be formed without a
+    /// dropped record are dropped with them, and variable reference lists are
+    /// pruned by their actual owners. Session/Part resource errors retain
+    /// their actual CodecError.
+    pub fn into_parts(
+        mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<FinalizedPartOutput, CodecError> {
+        let PartDependencyPruning::Complete { .. } = self.prune_dependencies(ctx)?;
+        Ok(FinalizedPartOutput(self))
     }
 }
 

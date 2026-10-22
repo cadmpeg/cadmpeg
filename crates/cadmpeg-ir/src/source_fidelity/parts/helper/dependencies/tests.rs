@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::ids::Identity;
 use crate::provenance::CodecFormat;
-use crate::schema::rewrite::typed::prune::ReferencePruneEffect;
 use crate::source_fidelity::parts::{
     DecodeParts, PartDependencyPruning, PartLevel, PartOutput, PartSpec,
 };
@@ -170,7 +169,10 @@ fn prior_siblings_and_required_cycles_drop_transitively_but_lists_and_labels_sur
 }
 
 #[test]
-fn fixed_reference_list_returns_typed_deferred_status_and_changes_no_record_or_loss() {
+fn fixed_reference_list_owner_is_not_formed_and_drops_with_its_reference() {
+    // #215 §4.5 rule 1: a record that cannot be formed without a dropped
+    // record is not formed; rule 2 drops it too. Pair #8 holds #3 in a fixed
+    // two-entry list.
     let bytes = b"#3=UNKNOWN(7);";
     let arena = DecodeArena::new();
     let (ctx, root) =
@@ -187,24 +189,71 @@ fn fixed_reference_list_returns_typed_deferred_status_and_changes_no_record_or_l
         )
         .expect("fixed pair");
     failure(&ctx, &mut output, root);
-    let native = output.native().clone();
-    let fidelity = output.fidelity().clone();
-    let losses = output.losses().to_vec();
-    let result = output
-        .prune_dependencies(&ctx)
-        .expect("status, not fake CodecError");
-    let PartDependencyPruning::Deferred { records } = result else {
-        panic!("fixed pair requires representation work");
-    };
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].record, id(8).as_str());
-    assert!(matches!(
-        records[0].effect,
-        ReferencePruneEffect::UnrepresentablePrunedList { .. }
-    ));
-    assert_eq!(output.native(), &native);
-    assert_eq!(output.fidelity(), &fidelity);
-    assert_eq!(output.losses(), losses);
+    let expected = vec![id(3).to_string(), id(8).to_string()];
+    assert_eq!(
+        output.prune_dependencies(&ctx).expect("typed closure"),
+        PartDependencyPruning::Complete {
+            dropped_records: expected.clone()
+        }
+    );
+    let namespace = output.native().namespace("step").expect("namespace");
+    assert!(namespace
+        .arena_as::<Pair>("dependency_pairs")
+        .expect("real registered owner")
+        .is_empty());
+    assert_eq!(output.losses().len(), 1);
+    let dropped = format!(
+        "dropped={}",
+        serde_json::to_string(&expected).expect("sorted actual IDs")
+    );
+    assert!(output.losses()[0].message.ends_with(&dropped));
+    assert_eq!(output.fidelity().retained_records().len(), 1);
+}
+
+#[test]
+fn records_that_need_an_unformed_record_drop_and_lists_lose_only_its_entry() {
+    // #215 §4.5 rules 1-2, applied until nothing changes: #3 gives up, Pair #8
+    // cannot be formed without #3, #9 needs #8, and #10 lists #8.
+    let bytes = b"#3=UNKNOWN(7);";
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).expect("root");
+    let mut output = PartOutput::new(CodecFormat::Step);
+    output
+        .insert_native(
+            &ctx,
+            "dependency_pairs",
+            Pair {
+                id: id(8),
+                references: [id(3), id(5)],
+            },
+        )
+        .expect("fixed pair");
+    for value in [record(9, Some(8), &[]), record(10, None, &[8, 5])] {
+        output
+            .insert_native(&ctx, "dependency_fixture", value)
+            .expect("pair users");
+    }
+    failure(&ctx, &mut output, root);
+    let expected = vec![id(3).to_string(), id(8).to_string(), id(9).to_string()];
+    assert_eq!(
+        output.prune_dependencies(&ctx).expect("typed closure"),
+        PartDependencyPruning::Complete {
+            dropped_records: expected.clone()
+        }
+    );
+    let namespace = output.native().namespace("step").expect("namespace");
+    assert_eq!(
+        namespace
+            .arena_as::<Record>("dependency_fixture")
+            .expect("real registered owner"),
+        [record(10, None, &[5])]
+    );
+    let dropped = format!(
+        "dropped={}",
+        serde_json::to_string(&expected).expect("sorted actual IDs")
+    );
+    assert!(output.losses()[0].message.ends_with(&dropped));
 }
 
 #[test]

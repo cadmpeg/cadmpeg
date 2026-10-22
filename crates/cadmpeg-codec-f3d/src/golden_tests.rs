@@ -1058,3 +1058,18 @@ fn geometry_depth_agrees_with_full_depth() {
         "{summary:?}"
     );
 }
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    let mut inputs: Vec<(String, Vec<u8>)> = fixtures()
+        .into_iter()
+        .map(|(name, _)| {
+            let bytes = read_fixture(name).unwrap_or_else(|message| panic!("{message}"));
+            (name.to_owned(), bytes)
+        })
+        .collect();
+    inputs.extend(damaged::inputs_at(&golden_root()));
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(&F3dCodec, &inputs);
+}

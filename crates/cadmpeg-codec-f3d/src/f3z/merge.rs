@@ -369,10 +369,13 @@ fn rescope_fidelity(
             .metadata
             .insert(format!("{}{}", owner.as_str(), key), value);
     }
-    for (id, layout) in layouts {
-        let id = rescope(&id, occurrence, part_ids).unwrap_or(id);
-        rescoped.insert_record_layout(id, layout.with_stream_prefix(owner.as_str())?)?;
-    }
+    rescoped.prefix_record_layouts(
+        layouts.into_iter().map(|(id, layout)| {
+            let id = rescope(&id, occurrence, part_ids).unwrap_or(id);
+            (id, layout)
+        }),
+        owner.as_str(),
+    )?;
     for (id, record) in records {
         let id_text = match rescope(id.as_str(), occurrence, part_ids) {
             Some(id) => id,

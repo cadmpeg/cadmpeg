@@ -89,14 +89,18 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
     let plan = encoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("planning returns the representable subset and its losses");
-    assert!(
-        plan.report()
-            .losses
-            .iter()
-            .any(|loss| loss.code.local_code() == "native.records-omitted"
-                && loss.message == "the step write omits 1 native record(s) from `f3d.asm_histories`: f3d:test:asm-history#0"),
-        "{:?}",
-        plan.report().losses
+    let omitted = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.local_code() == "native.records-omitted"
+                && loss.message.contains("f3d.asm_histories")
+        })
+        .unwrap_or_else(|| panic!("{:?}", plan.report().losses));
+    assert_eq!(
+        crate::test_support::omitted_record_ids(&omitted.message),
+        ["f3d:test:asm-history#0"]
     );
 }
 

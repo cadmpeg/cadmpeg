@@ -3,7 +3,6 @@
 
 use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-use cadmpeg_ir::source_fidelity::RecordLayout;
 use cadmpeg_ir::{ArenaClass, RetainedBytes, RetainedSourceRecord};
 
 #[test]
@@ -124,9 +123,9 @@ fn automatic_owner_classification_preserves_reads_and_names_the_exact_unread_spa
     })
     .unwrap();
     let mut fidelity = SourceFidelity::default();
-    let (id, layout) =
-        RecordLayout::from_capture(ctx.take_record_captures().unwrap().pop().unwrap());
-    fidelity.insert_record_layout(id, layout).unwrap();
+    fidelity
+        .install_record_captures(&ctx, |_, _| Ok(()))
+        .unwrap();
     fidelity
         .insert_retained_record(
             crate::fidelity::SOURCE_IMAGE.try_into().unwrap(),

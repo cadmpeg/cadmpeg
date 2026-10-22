@@ -2297,12 +2297,17 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        let capture = ctx.take_record_captures().unwrap().pop().unwrap();
-        let (_, mut layout) = cadmpeg_ir::source_fidelity::RecordLayout::from_capture(capture);
-        layout
-            .insert_pointer("display_text_offset".into(), 17)
+        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        fidelity
+            .install_record_captures(&ctx, |_, layout| {
+                layout.insert_pointer("display_text_offset".into(), 17)?;
+                Ok(())
+            })
             .unwrap();
-        assert_eq!(layout.pointers()["display_text_offset"], 17);
+        assert_eq!(
+            fidelity.record_layout()["pmi:test:display#0"].pointers()["display_text_offset"],
+            17
+        );
         let source = Display {
             value: Some("25 mm".into()),
         };

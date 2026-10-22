@@ -103,7 +103,6 @@ fn source_rescoping_and_append_union_unrepresented_classes() {
 fn record_layout_rescoping_preserves_alias_reads_pointers_and_payloads() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::native::bytes::NativeBytes;
-    use cadmpeg_ir::source_fidelity::RecordLayout;
 
     let bytes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     let arena = DecodeArena::new();
@@ -125,14 +124,14 @@ fn record_layout_rescoping_preserves_alias_reads_pointers_and_payloads() {
         Ok(())
     })
     .unwrap();
-    let capture = ctx.take_record_captures().unwrap().pop().unwrap();
-    let (id, mut layout) = RecordLayout::from_capture(capture);
-    layout.insert_pointer("next".into(), 9).unwrap();
-    layout
-        .insert_payload("opaque".into(), NativeBytes::new(vec![0xaa, 0xbb]))
-        .unwrap();
     let mut input = SourceFidelity::default();
-    input.insert_record_layout(id, layout.clone()).unwrap();
+    input
+        .install_record_captures(&ctx, |_, layout| {
+            layout.insert_pointer("next".into(), 9)?;
+            layout.insert_payload("opaque".into(), NativeBytes::new(vec![0xaa, 0xbb]))
+        })
+        .unwrap();
+    let layout = input.record_layout()[ID].clone();
 
     let output = rescope_fidelity(input, "part/occurrence-0", Default::default()).unwrap();
     let scoped = &output.record_layout()["f3d:xref/part/occurrence-0/native:record#one"];

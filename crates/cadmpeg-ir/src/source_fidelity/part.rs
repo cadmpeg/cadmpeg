@@ -4,7 +4,9 @@
 use std::collections::{btree_map::Entry, BTreeMap};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{u64_from_index, RecordCapture, ResourceDimension, ResourceLimit};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeContext, RecordCapture, ResourceDimension, ResourceLimit,
+};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -186,11 +188,46 @@ impl RecordLayout {
     ///
     /// A fixed prefix is injective. Byte coordinates, pointers, and payloads
     /// stay unchanged. Stream-name allocation and length overflow are checked.
-    pub fn with_stream_prefix(mut self, prefix: &str) -> Result<Self, CodecError> {
-        self.stream = prefixed_stream(prefix, &self.stream)?;
+    pub fn with_stream_prefix(self, prefix: &str) -> Result<Self, CodecError> {
+        self.prefix_streams(
+            |stream| prefixed_stream(prefix, stream, u64::MAX, |_| Ok(())),
+            || Ok(()),
+        )
+    }
+
+    pub(super) fn with_stream_prefix_in(
+        self,
+        ctx: &DecodeContext<'_>,
+        prefix: &str,
+    ) -> Result<Self, CodecError> {
+        self.prefix_streams(
+            |stream| {
+                prefixed_stream(
+                    prefix,
+                    stream,
+                    ctx.policy().limits.max_retained_bytes,
+                    |bytes| ctx.retain_bytes(bytes, "prefix record layout stream"),
+                )
+            },
+            || {
+                ctx.retain_bytes(
+                    u64_from_index(size_of::<(String, Vec<Range<u64>>)>()),
+                    "prefix record layout read index",
+                )
+            },
+        )
+    }
+
+    fn prefix_streams(
+        mut self,
+        mut name: impl FnMut(&str) -> Result<String, CodecError>,
+        mut index: impl FnMut() -> Result<(), CodecError>,
+    ) -> Result<Self, CodecError> {
+        self.stream = name(&self.stream)?;
         let mut mapped = BTreeMap::new();
         for (stream, ranges) in self.reads {
-            insert_field(&mut mapped, prefixed_stream(prefix, &stream)?, ranges)?;
+            index()?;
+            insert_field(&mut mapped, name(&stream)?, ranges)?;
         }
         self.reads = mapped;
         Ok(self)
@@ -224,11 +261,16 @@ fn insert_field<T>(
     }
 }
 
-fn prefixed_stream(prefix: &str, stream: &str) -> Result<String, CodecError> {
+fn prefixed_stream(
+    prefix: &str,
+    stream: &str,
+    allocation_limit: u64,
+    admit: impl FnOnce(u64) -> Result<(), CodecError>,
+) -> Result<String, CodecError> {
     let failure = |additional| {
         ResourceLimit::allocation_failed(
             ResourceDimension::RetainedBytes,
-            u64::MAX,
+            allocation_limit,
             additional,
             "prefix record layout stream",
         )
@@ -242,6 +284,7 @@ fn prefixed_stream(prefix: &str, stream: &str) -> Result<String, CodecError> {
             "record layout stream must not be empty",
         ));
     }
+    admit(u64_from_index(length))?;
     let mut name = String::new();
     name.try_reserve_exact(length)
         .map_err(|_| failure(u64_from_index(length)))?;

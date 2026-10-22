@@ -49,6 +49,22 @@ impl PartIdentityMap {
 }
 
 impl SourceFidelity {
+    /// Insert record layouts composed from another source under `prefix`.
+    ///
+    /// The containing stream and every read stream of each layout gain the
+    /// prefix; offsets, reads, pointers and payloads are unchanged. A
+    /// duplicate record id is an error.
+    pub fn prefix_record_layouts(
+        &mut self,
+        layouts: impl IntoIterator<Item = (String, crate::source_fidelity::RecordLayout)>,
+        prefix: &str,
+    ) -> Result<(), CodecError> {
+        for (id, layout) in layouts {
+            self.insert_record_layout(id, layout.with_stream_prefix(prefix)?)?;
+        }
+        Ok(())
+    }
+
     /// Prefix actual source stream names and recompute every part's identity.
     ///
     /// Parent and covering-ancestor references follow the same mapping. The

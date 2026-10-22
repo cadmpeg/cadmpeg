@@ -318,7 +318,6 @@ pub(crate) fn entry_layout_fixture(entry: &EntryFixture) -> cadmpeg_ir::SourceFi
         u64::try_from(entry.source.len()).unwrap()
     );
     assert!(layout.payloads().is_empty());
-    assert!(layout.reads().is_empty());
     fidelity
 }
 

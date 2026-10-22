@@ -146,8 +146,10 @@ impl DecodeContext<'_> {
     /// Comments, CDATA, processing instructions, quotes and declaration subsets
     /// shield apparent tags. Missing delimiters are reported, not guessed.
     /// Returned Views keep source identity; this scan adds no semantic reads.
-    /// Node and result storage use the caller session budget. The strict parser
-    /// remains responsible for XML validity and per-element parse-depth limits.
+    /// Node and result storage use the caller session budget. A framing node is
+    /// not an entity: the decoder charges `max_entities` for the records it
+    /// builds from an element, so the scan charges none. The strict parser remains
+    /// responsible for XML validity and per-element parse-depth limits.
     pub fn scan_xml_elements<'a>(
         &self,
         source: View<'a>,
@@ -170,7 +172,6 @@ impl DecodeContext<'_> {
                     suffix,
                     empty,
                 } => {
-                    self.charge_entities(1, operation)?;
                     reserve(self, &mut scan.elements, operation)?;
                     let name_end = name.1;
                     let name = child(source, name.0, name.1)?;
@@ -297,7 +298,6 @@ fn fault<'a>(
     issue: XmlFramingIssue,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.charge_entities(1, operation)?;
     reserve(ctx, &mut scan.faults, operation)?;
     scan.faults.push(XmlFramingFault { extent, issue });
     Ok(())
