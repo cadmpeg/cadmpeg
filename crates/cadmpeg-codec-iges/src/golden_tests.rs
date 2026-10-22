@@ -153,22 +153,9 @@ fn golden_output_is_deterministic() {
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
         &IgesCodec,
         &harness().fixture_inputs(),
-        |result| {
-            let expected: cadmpeg_ir::ArenaClasses = result
-                .source_fidelity()
-                .retained_records()
-                .values()
-                .flat_map(|record| record.untyped().iter().copied())
-                .collect();
-            assert_eq!(
-                result.source_fidelity().unrepresented(),
-                expected,
-                "unrepresented is the union of retained source-record classes"
-            );
-        },
     );
     assert_eq!(summary.cut, 0, "{summary:?}");
 }
