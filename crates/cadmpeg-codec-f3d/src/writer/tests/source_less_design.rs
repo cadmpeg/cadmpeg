@@ -981,11 +981,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert_eq!(native.sketch_points.len(), 1);
     assert_eq!(native.sketch_points[0].persistent_id(), Some(500));
     assert_eq!(native.sketch_points[0].entity_genesis(), Some(900));
-    assert_eq!(
-        round_trip.source_fidelity().metadata
-            [&format!("{}.coordinate_offset", native.sketch_points[0].id)],
-        "141"
-    );
+    assert_eq!(native.sketch_points[0].coordinate_offset, 141);
     assert_eq!(native.sketch_points[0].owner_reference, Some(277));
     assert_eq!(native.sketch_points[0].depth(), 0.0);
     assert_eq!(
