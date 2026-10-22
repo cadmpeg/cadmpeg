@@ -213,6 +213,8 @@ fn two_component_placements(with_components: bool) -> crate::native::F3dNative {
                         .try_into()
                         .unwrap(),
                     context_uuid_offset: offset + 12,
+                    name: None,
+                    name_offset: None,
                 },
             );
         }
