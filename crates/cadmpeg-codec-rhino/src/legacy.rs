@@ -3128,6 +3128,145 @@ mod tests {
         super::decode_v1(&ctx, data)
     }
 
+    fn line(from: [f64; 3], to: [f64; 3]) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_checked_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                Point3::new(from[0], from[1], from[2]),
+                Point3::new(to[0], to[1], to[2]),
+            ],
+            None,
+            false,
+        )
+        .expect("line NURBS")
+    }
+
+    fn square_face(x0: f64, trims: Vec<super::LegacyTrim>) -> super::LegacyFace {
+        let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_checked_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                vec![
+                    vec![
+                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(x0, 0.0, 0.0))
+                            .expect("finite"),
+                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(x0, 1.0, 0.0))
+                            .expect("finite"),
+                    ],
+                    vec![
+                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(x0 + 1.0, 0.0, 0.0))
+                            .expect("finite"),
+                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(x0 + 1.0, 1.0, 0.0))
+                            .expect("finite"),
+                    ],
+                ],
+                None,
+            ),
+            false,
+        )
+        .expect("bilinear patch");
+        super::LegacyFace {
+            reversed: false,
+            seam_glue: Vec::new(),
+            surface,
+            loops: vec![super::LegacyLoop {
+                role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
+                trims,
+            }],
+        }
+    }
+
+    /// Two unit squares share the edge `x = 1`. The first face's trim on that
+    /// edge stores no edge curve, is reversed against its mate's curve, and is
+    /// the first mated trim, so it is the root of the glued pair. Per
+    /// `ON_Brep::SetVertices` the pair has two distinct vertices and the Brep
+    /// has six vertices.
+    #[test]
+    fn reversed_curveless_root_trim_keeps_distinct_edge_vertices() {
+        let uv = |u: f64, v: f64| [u, v, 0.0];
+        let trim = |mate, reversed, from: [f64; 2], to: [f64; 2], curve| super::LegacyTrim {
+            mate,
+            reversed,
+            tolerance_3d: 0.0,
+            tolerance_2d: 0.0,
+            pcurve: line(uv(from[0], from[1]), uv(to[0], to[1])),
+            curve,
+        };
+        let boundary = |from: [f64; 3], to: [f64; 3], uv_from, uv_to| {
+            trim(
+                super::Mate::None,
+                false,
+                uv_from,
+                uv_to,
+                Some(line(from, to)),
+            )
+        };
+        let left = square_face(
+            0.0,
+            vec![
+                boundary([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0], [1.0, 0.0]),
+                trim(super::Mate::Mated, true, [1.0, 0.0], [1.0, 1.0], None),
+                boundary([1.0, 1.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0], [0.0, 1.0]),
+                boundary([0.0, 1.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0], [0.0, 0.0]),
+            ],
+        );
+        let right = square_face(
+            1.0,
+            vec![
+                boundary([1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 0.0], [1.0, 0.0]),
+                boundary([2.0, 0.0, 0.0], [2.0, 1.0, 0.0], [1.0, 0.0], [1.0, 1.0]),
+                boundary([2.0, 1.0, 0.0], [1.0, 1.0, 0.0], [1.0, 1.0], [0.0, 1.0]),
+                trim(
+                    super::Mate::Mated,
+                    false,
+                    [0.0, 1.0],
+                    [0.0, 0.0],
+                    Some(line([1.0, 1.0, 0.0], [1.0, 0.0, 0.0])),
+                ),
+            ],
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("decode context");
+        let mut ir = CadIr::empty();
+        super::append_legacy_brep(
+            &ctx,
+            &mut ir,
+            super::LegacyBrep {
+                shell_glue: vec![1, 0],
+                faces: vec![left, right],
+            },
+            "pair",
+        )
+        .expect("the glued pair transfers");
+        let model = &ir.model;
+        assert_eq!(model.vertices.len(), 6);
+        assert_eq!(model.edges.len(), 7);
+        let shared = model
+            .coedges
+            .iter()
+            .find(|coedge| coedge.id.as_str().ends_with("face-0-0-1"))
+            .expect("shared coedge");
+        let edge = model
+            .edges
+            .iter()
+            .find(|edge| edge.id == shared.edge)
+            .expect("shared edge");
+        assert_ne!(edge.start, edge.end);
+        let mate = model
+            .coedges
+            .iter()
+            .find(|coedge| coedge.id == shared.radial_next)
+            .expect("mate coedge");
+        assert!(mate.id.as_str().ends_with("face-1-0-3"));
+        assert_ne!(shared.sense, mate.sense);
+    }
+
     fn v1_nurbs_curve_data(
         data: &[u8],
         range: std::ops::Range<usize>,
