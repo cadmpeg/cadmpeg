@@ -29,7 +29,8 @@ fn format_five_point_reference_uses_an_actual_nonrecord_source_offset() {
         record.values[3],
         BinaryValue::Pointer(i64::from(directory[1].offset + 1))
     );
-    let plan = Dependencies::inspect(&sections, &ctx).unwrap();
+    let global = source_global(&sections);
+    let plan = Dependencies::inspect(&sections, &global, &ctx).unwrap();
     assert!(plan
         .require(Address::Directory(directory[0].offset))
         .is_err());
@@ -49,7 +50,8 @@ fn speculative_dependency_reads_add_no_record_credit_and_keep_committed_neighbor
         let mut reader = root;
         assert_eq!(reader.u8(), Some(b'B'));
         let sections = parse_sections(root)?;
-        let _plan = Dependencies::inspect(&sections, &ctx)?;
+        let global = source_global(&sections);
+        let _plan = Dependencies::inspect(&sections, &global, &ctx)?;
         assert_eq!(reader.u8(), Some(0));
         Ok(())
     })
@@ -61,4 +63,13 @@ fn speculative_dependency_reads_add_no_record_credit_and_keep_committed_neighbor
         captures[0].reads(),
         &BTreeMap::from([("file".to_owned(), vec![0..2])])
     );
+}
+
+fn source_global(sections: &crate::binary::BinarySections<'_>) -> crate::global::ResolvedGlobal {
+    let values = crate::binary::read_global(sections.global.window(), sections.lengths)
+        .expect("actual Binary Global values");
+    let text = crate::binary::normalize_global(&values).expect("same Global grammar");
+    crate::global::parse_stream(&text)
+        .expect("actual Global interpretation")
+        .0
 }

@@ -17,3 +17,5 @@ mod swobjects;
 mod targets;
 mod thicken_reference;
 mod transformed_surface;
+
+mod parameter_conflicts;

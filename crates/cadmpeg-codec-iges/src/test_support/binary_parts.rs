@@ -268,3 +268,165 @@ pub(crate) fn directory_admission_fault(fault: DirectoryAdmissionFault, broken: 
     parameters.extend_from_slice(&point_parameters(peer));
     assemble(&prefix, target, &parameters)
 }
+
+pub(crate) fn macro_then_point(broken: bool) -> Vec<u8> {
+    let prefix = directory_record(306, 1);
+    let peer = u32::try_from(prefix.len() + 1).expect("actual peer Directory offset");
+    let mut statements = if broken {
+        text(b"NOTRO,621,X,Y")
+    } else {
+        text(b"MACRO,621,X,Y")
+    };
+    statements.extend_from_slice(&text(b"LET $S=3Ha;b"));
+    statements.extend_from_slice(&text(b"ENDM"));
+    let mut parameters = counted(&[integer(306), pointer(1), statements].concat());
+    let parameter = u32::try_from(parameters.len() + 1).expect("actual peer Parameter offset");
+    parameters.extend_from_slice(&point_parameters(peer));
+    assemble(&prefix, parameter, &parameters)
+}
+
+pub(crate) fn macro_group_then_point(broken: bool) -> Vec<u8> {
+    let macro_directory = directory_record(306, 1);
+    let group_directory_offset =
+        u32::try_from(macro_directory.len() + 1).expect("actual group Directory offset");
+    let mut statements = if broken {
+        text(b"NOTRO,621,X,Y")
+    } else {
+        text(b"MACRO,621,X,Y")
+    };
+    statements.extend_from_slice(&text(b"LET $S=3Ha;b"));
+    statements.extend_from_slice(&text(b"ENDM"));
+    let mut parameters = counted(&[integer(306), pointer(1), statements].concat());
+    let group_parameter = u32::try_from(parameters.len() + 1).expect("group Parameter offset");
+    parameters.extend_from_slice(&counted(
+        &[
+            integer(402),
+            pointer(group_directory_offset),
+            integer(1),
+            pointer(1),
+        ]
+        .concat(),
+    ));
+    let mut group_fields = vec![integer(402), pointer(group_parameter)];
+    group_fields.extend(std::iter::repeat_n(vec![0], 14));
+    group_fields[11] = integer(7);
+    let mut prefix = macro_directory;
+    prefix.extend_from_slice(&counted(&group_fields.concat()));
+    let peer = u32::try_from(prefix.len() + 1).expect("independent point Directory offset");
+    let point_parameter = u32::try_from(parameters.len() + 1).expect("point Parameter offset");
+    parameters.extend_from_slice(&point_parameters(peer));
+    assemble(&prefix, point_parameter, &parameters)
+}
+
+pub(crate) fn discriminator_source_offset_pair(pointer_tagged: bool) -> Vec<u8> {
+    let mut fields = vec![integer(0); 16];
+    fields[0] = if pointer_tagged {
+        pointer(116)
+    } else {
+        integer(116)
+    };
+    fields[1] = pointer(1);
+    for field in &mut fields[2..6] {
+        *field = [vec![2], 0_i64.to_be_bytes().to_vec()].concat();
+    }
+    fields[12] = text(b"RESERVED");
+    fields[14] = text(b"SOURCE1");
+    let prefix = counted(&fields.concat());
+    let peer = u32::try_from(prefix.len() + 1).expect("actual peer offset");
+    assert_eq!(peer, 116);
+    let mut parameters = point_parameters(1);
+    let parameter = u32::try_from(parameters.len() + 1).expect("actual peer Parameter offset");
+    parameters.extend_from_slice(&point_parameters(peer));
+    let mut bytes = assemble(&prefix, parameter, &parameters);
+    bytes[6] = 64;
+    bytes
+}
+
+pub(crate) fn non_null_without_parameter_record() -> Vec<u8> {
+    assemble(&[], 0, &[])
+}
+
+pub(crate) fn macro_and_point_group_then_point(broken: bool, encoded_members: bool) -> Vec<u8> {
+    let macro_directory = directory_record(306, 1);
+    let group_directory_offset =
+        u32::try_from(macro_directory.len() + 1).expect("actual group Directory offset");
+    let mut statements = if broken {
+        text(b"NOTRO,621,X,Y")
+    } else {
+        text(b"MACRO,621,X,Y")
+    };
+    statements.extend_from_slice(&text(b"LET $S=3Ha;b"));
+    statements.extend_from_slice(&text(b"ENDM"));
+    let mut parameters = counted(&[integer(306), pointer(1), statements].concat());
+    let group_parameter = u32::try_from(parameters.len() + 1).expect("group Parameter offset");
+    let mut group_fields = vec![integer(402), pointer(group_parameter)];
+    group_fields.extend(std::iter::repeat_n(vec![0], 14));
+    group_fields[11] = integer(7);
+    let mut prefix = macro_directory;
+    prefix.extend_from_slice(&counted(&group_fields.concat()));
+    let peer = u32::try_from(prefix.len() + 1).expect("independent point Directory offset");
+    let members = if encoded_members {
+        [pointer(1), pointer(peer)].concat()
+    } else {
+        [integer(1), integer(5)].concat()
+    };
+    parameters.extend_from_slice(&counted(
+        &[
+            integer(402),
+            pointer(group_directory_offset),
+            integer(2),
+            members,
+        ]
+        .concat(),
+    ));
+    let point_parameter = u32::try_from(parameters.len() + 1).expect("point Parameter offset");
+    parameters.extend_from_slice(&point_parameters(peer));
+    assemble(&prefix, point_parameter, &parameters)
+}
+
+pub(crate) fn line_with_encoded_coordinate_then_point(broken: bool) -> Vec<u8> {
+    let prefix = directory_record(110, 1);
+    let peer = u32::try_from(prefix.len() + 1).expect("point Directory offset");
+    let reference = if broken { peer + 1 } else { peer };
+    let mut parameters = counted(
+        &[
+            integer(110),
+            pointer(1),
+            pointer(reference),
+            integer(0),
+            integer(0),
+            integer(1),
+            integer(0),
+            integer(0),
+        ]
+        .concat(),
+    );
+    let point_parameter = u32::try_from(parameters.len() + 1).expect("point Parameter offset");
+    parameters.extend_from_slice(&point_parameters(peer));
+    assemble(&prefix, point_parameter, &parameters)
+}
+
+pub(crate) fn plain_line_then_point(start_x: i32, invalid_coordinate_tag: bool) -> Vec<u8> {
+    let prefix = directory_record(110, 1);
+    let peer = u32::try_from(prefix.len() + 1).expect("point Directory offset");
+    let mut start = integer(start_x);
+    if invalid_coordinate_tag {
+        start[0] = 7;
+    }
+    let mut parameters = counted(
+        &[
+            integer(110),
+            pointer(1),
+            start,
+            integer(2),
+            integer(3),
+            integer(4),
+            integer(5),
+            integer(6),
+        ]
+        .concat(),
+    );
+    let point_parameter = u32::try_from(parameters.len() + 1).expect("point Parameter offset");
+    parameters.extend_from_slice(&point_parameters(peer));
+    assemble(&prefix, point_parameter, &parameters)
+}

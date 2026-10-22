@@ -151,37 +151,27 @@ pub(super) fn project(
             }
         }
     }
-    // The neutral attribute owns the decoded property value and name. Keep
-    // property-set identity, source kind and byte evidence in the native arena.
-    let attributes = ir
-        .model
-        .attributes
-        .iter()
-        .map(|attribute| attribute.id.to_string())
-        .collect::<std::collections::BTreeSet<_>>();
-    if let Some(records) = ir
-        .native
-        .namespace_mut("inventor")
-        .arenas_mut()
-        .get_mut("properties")
-    {
-        for record in records {
-            let attribute = format!("{}:attribute", record.id());
-            if attributes.contains(&attribute) {
-                let mut fields = record.fields()?;
-                fields.remove("name");
-                fields.remove("scalar_value");
-                fields.insert(
-                    "neutral_attribute".into(),
-                    serde_json::Value::String(attribute),
-                );
-                *record = cadmpeg_ir::native::NativeRecord::new(
-                    cadmpeg_ir::ids::Identity::try_from(record.id())
-                        .map_err(CodecError::malformed)?,
-                    fields,
-                )?;
-            }
-        }
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(ir.model.entity_count() - before),
+        "admit Inventor neutral document records",
+    )?;
+    Ok(())
+}
+
+/// Project only source properties that survived the shared dependency closure.
+pub(super) fn project_source_properties(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    native: &cadmpeg_ir::native::Native,
+    losses: &mut Vec<LossNote>,
+    untyped: &mut cadmpeg_ir::ArenaClasses,
+) -> Result<(), CodecError> {
+    let Some(namespace) = native.namespace("inventor") else {
+        return Ok(());
+    };
+    let before = ir.model.entity_count();
+    for property in namespace.arena_iter_as_for_decode::<PropertyRecord>(ctx, "properties") {
+        project_properties(ir, std::slice::from_ref(&property?), losses, untyped)?;
     }
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count() - before),
@@ -247,7 +237,7 @@ fn project_properties(
         };
         if let Some(value) = typed {
             ir.model.attributes.push(SourceAttribute {
-                native_ref: None,
+                native_ref: Some(property.id.clone()),
                 id: AttributeId::mint(format!("{}:attribute", property.id))
                     .map_err(CodecError::malformed)?,
                 target: AttributeTarget::Document,

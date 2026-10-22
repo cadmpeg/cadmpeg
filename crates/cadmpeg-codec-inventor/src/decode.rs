@@ -1067,6 +1067,15 @@ fn decode_container<'a>(
             ir.model.assets.extend(part_model.assets);
         }
     }
+    if !ctx.container_only() {
+        document_native_projection::project_source_properties(
+            ctx,
+            &mut ir,
+            &part_native,
+            &mut losses,
+            &mut untyped,
+        )?;
+    }
     for (arena, mut records) in std::mem::take(part_native.namespace_mut("inventor").arenas_mut()) {
         let destination = ir
             .native

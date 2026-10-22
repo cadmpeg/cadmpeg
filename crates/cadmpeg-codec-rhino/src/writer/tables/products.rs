@@ -2,8 +2,9 @@
 //! Local prototypes and relative block placements, authored from neutral products.
 
 use super::{
-    anonymous, attributed_object_record, class_wrapper_with_direct, crc_chunk_with_direct,
-    neutral_object_uuid, records, utf16, wire_index, CadIr, CodecError, Value,
+    anonymous, anonymous_with_children, attributed_object_record, class_wrapper_with_direct,
+    crc_chunk_with_direct, neutral_object_uuid, records, utf16, wire_index, CadIr, CodecError,
+    Value,
 };
 use cadmpeg_ir::products::{
     AssemblyGraph, Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference,
@@ -70,10 +71,11 @@ pub(in crate::writer) fn is_member(ir: &CadIr, identity: &str) -> bool {
 pub(in crate::writer) fn definitions(
     ir: &CadIr,
     written_bodies: &std::collections::BTreeSet<String>,
+    version: crate::RhinoArchiveVersion,
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     let graph = AssemblyGraph::new(&ir.model.occurrences).map_err(CodecError::malformed)?;
     let mut result = Vec::new();
-    for definition in &ir.model.product_definitions {
+    for (ordinal, definition) in ir.model.product_definitions.iter().enumerate() {
         let native = definition
             .native_ref
             .as_deref()
@@ -84,8 +86,6 @@ pub(in crate::writer) fn definitions(
             })
             .map(cadmpeg_ir::NativeRecord::fields)
             .transpose()?;
-        let mut payload = vec![0x16];
-        payload.extend(neutral_object_uuid(definition.id.as_str()));
         let members = definition
             .bodies
             .iter()
@@ -97,6 +97,17 @@ pub(in crate::writer) fn definitions(
                     .map(|occurrence| neutral_object_uuid(occurrence.id.as_str())),
             )
             .collect::<Vec<_>>();
+        if version != crate::RhinoArchiveVersion::V5 {
+            result.push(modern_definition(
+                definition,
+                wire_index(ordinal)?,
+                &members,
+                native.as_ref(),
+            )?);
+            continue;
+        }
+        let mut payload = vec![0x16];
+        payload.extend(neutral_object_uuid(definition.id.as_str()));
         payload.extend(wire_index(members.len())?.to_le_bytes());
         for member in members {
             payload.extend(member);
@@ -141,6 +152,59 @@ pub(in crate::writer) fn definitions(
         )?);
     }
     Ok(result)
+}
+
+fn modern_definition(
+    definition: &ProductDefinition,
+    index: i32,
+    members: &[[u8; 16]],
+    native: Option<&serde_json::Map<String, Value>>,
+) -> Result<Vec<u8>, CodecError> {
+    let mut attributes = 1_i32.to_le_bytes().to_vec();
+    attributes.extend(0_i32.to_le_bytes());
+    attributes.extend([0, 1]);
+    attributes.extend(neutral_object_uuid(definition.id.as_str()));
+    attributes.extend([0, 1]);
+    attributes.extend(index.to_le_bytes());
+    attributes.push(1);
+    attributes.extend(utf16(
+        definition
+            .label
+            .as_deref()
+            .or(definition.source_name.as_deref())
+            .unwrap_or(""),
+    )?);
+    let mut payload = crc_chunk_with_direct(0x4000_8002, &attributes, &attributes)?;
+    let mut children = vec![0..payload.len()];
+    payload.extend(1_u32.to_le_bytes());
+    let mut units = 2_u32.to_le_bytes().to_vec();
+    units.extend(0.001_f64.to_le_bytes());
+    units.extend(utf16("")?);
+    let start = payload.len();
+    payload.extend(anonymous(1, 0, &units)?);
+    children.push(start..payload.len());
+    payload.extend(utf16(definition.description.as_deref().unwrap_or(""))?);
+    for name in ["url", "url_tag"] {
+        payload.extend(utf16(
+            native
+                .and_then(|fields| fields.get(name))
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )?);
+    }
+    unset_bounds(&mut payload);
+    payload.push(1);
+    payload.extend(wire_index(members.len())?.to_le_bytes());
+    for member in members {
+        payload.extend(member);
+    }
+    payload.push(0);
+    let payload = anonymous_with_children(1, 0, &payload, &children)?;
+    crc_chunk_with_direct(
+        0x2000_8076,
+        &class_wrapper_with_direct(DEFINITION_CLASS, &payload, &[])?,
+        &[],
+    )
 }
 
 pub(in crate::writer) fn references(

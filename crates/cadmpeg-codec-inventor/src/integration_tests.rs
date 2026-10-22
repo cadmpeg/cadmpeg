@@ -63,3 +63,5 @@ fn rse_compression_methods_reach_records_and_valid_sphere_geometry() {
         assert!(errors.is_empty(), "{methods:?}: {errors:?}");
     }
 }
+
+mod property_linkage;

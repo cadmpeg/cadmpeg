@@ -291,7 +291,7 @@ pub(crate) fn normalize(
             append(ctx, &mut parameters, parameter)?;
         }
     }
-    let parameters = crate::parameter::compressed::finish(&directory, parameters, &global);
+    let parameters = crate::parameter::finish_admitted(&directory, parameters, &global);
     let directory_count = directory
         .len()
         .checked_mul(2)

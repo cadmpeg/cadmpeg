@@ -16,6 +16,7 @@ use crate::native::SldprtNative;
 
 mod design;
 mod geometry;
+pub(super) mod parameters;
 mod presentation;
 
 /// Why synthesis replaced an eligible retained layout.
@@ -369,6 +370,7 @@ fn prepare_native(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), Code
         .transpose()?;
     let mut native = native.unwrap_or_default();
     native.feature_input_lanes.clear();
+    parameters::omit_unreferenced(&ctx, ir, &mut native, losses)?;
     for record in &mut native.pmi_dimensions {
         if record.item_count.get() > 1 {
             losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(

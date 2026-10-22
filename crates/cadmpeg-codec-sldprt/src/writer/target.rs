@@ -37,6 +37,15 @@ pub(crate) fn plan(
             super::synthesis::SynthesisCause::SourceUnrepresented { classes },
         );
     }
+    if super::synthesis::parameters::has_conflict(input.ir) {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::PatchDeclined {
+                reason: "held parameters conflict with the current operation roles".into(),
+            },
+        );
+    }
     let attempt = write(input, true);
     let (written, bytes) = match attempt {
         Ok(written) => written,

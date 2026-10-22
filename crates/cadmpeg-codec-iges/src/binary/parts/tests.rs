@@ -148,3 +148,9 @@ fn both_declared_binary_integer_formats_preserve_the_same_directory_entity_type(
         .iter()
         .any(|loss| loss.code.local_code() == "record.unreadable"));
 }
+
+mod semantic_handoff;
+
+mod handoff_boundary;
+
+mod plain_line;

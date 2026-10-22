@@ -20,6 +20,10 @@ impl DocumentValue {
                 | "App::PropertyBool"
                 | "App::PropertyFloat"
                 | "App::PropertyFloatConstraint"
+                | "App::PropertyLength"
+                | "App::PropertyAngle"
+                | "App::PropertyDistance"
+                | "App::PropertyQuantity"
                 | "App::PropertyVector"
         ) || !(matches!(&property.body, Some(PropertyBody::Persisted { links, side_entries, .. }) if links.is_empty() && side_entries.is_empty())
             || property.body.is_none())

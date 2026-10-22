@@ -144,24 +144,6 @@ pub(crate) fn validate_native(
             None,
         )]);
     }
-    if let Some(properties) = namespace.arenas().get("properties") {
-        for property in properties {
-            let fields = property.fields()?;
-            if let Some(link) = fields.get("neutral_attribute") {
-                let valid = link.as_str().is_some_and(|id| {
-                    ir.model
-                        .attributes
-                        .iter()
-                        .any(|attribute| attribute.id.as_str() == id)
-                });
-                if !valid || fields.contains_key("scalar_value") || fields.contains_key("name") {
-                    return Ok(vec![finding(Check::NativeLinks,
-                        "Inventor property neutral attribute does not resolve or duplicates its canonical value".into(),
-                        Some(property.id().to_owned()))]);
-                }
-            }
-        }
-    }
     let data = match NativeData::load(ctx, namespace) {
         Ok(data) => data,
         Err(error) => {

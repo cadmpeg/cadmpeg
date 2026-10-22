@@ -13,7 +13,9 @@ use super::{
     BinaryParameter, BinarySections, NormalizedBinary, PrimitiveLengths, SECTION_HEADER_WIDTH,
 };
 
+mod admission;
 mod dependencies;
+mod group;
 
 use dependencies::Dependencies;
 
@@ -25,8 +27,9 @@ pub(crate) fn normalize(
     let mut output = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
     let bytes = normalize_with_records(
         source,
-        |sections| {
-            let dependencies = Dependencies::inspect(sections, ctx)?;
+        ctx,
+        |sections, global| {
+            let dependencies = Dependencies::inspect(sections, global, ctx)?;
             let mut directory = read_directory(source, sections, ctx, &mut output, &dependencies)?;
             let mut directory_by_offset = BTreeMap::new();
             for (index, record) in directory.iter().enumerate() {
@@ -44,6 +47,7 @@ pub(crate) fn normalize(
                 ctx,
                 &mut output,
                 &dependencies,
+                global,
             )?;
             directory.retain(|record| {
                 !u32::try_from(record.parameter_pointer())
@@ -51,7 +55,7 @@ pub(crate) fn normalize(
             });
             Ok((directory, parameters))
         },
-        |bytes, directory| {
+        |bytes, directory, admission| {
             let retained = directory
                 .len()
                 .checked_mul(size_of::<u32>())
@@ -65,6 +69,7 @@ pub(crate) fn normalize(
             Ok(NormalizedBinary {
                 bytes,
                 identities: BinaryIdentities(identities),
+                admission,
             })
         },
     )?;
@@ -164,6 +169,7 @@ fn read_parameters(
     ctx: &DecodeContext<'_>,
     output: &mut ParserPartOutput,
     dependencies: &Dependencies,
+    global: &crate::global::ResolvedGlobal,
 ) -> Result<(Vec<BinaryParameter>, BTreeSet<u32>), CodecError> {
     let payload = sections.parameter;
     let start = payload
@@ -230,7 +236,8 @@ fn read_parameters(
                     extent,
                     spec("iges.binary_parameter_record", framing)?,
                     || {
-                        let record = finish_parameter_record(offset, prefix?, directory_by_offset)?;
+                        let mut record =
+                            finish_parameter_record(offset, prefix?, directory_by_offset)?;
                         let pointer =
                             positive_pointer(record.directory_pointer, "Parameter Directory")?;
                         let index = directory_by_offset
@@ -250,7 +257,37 @@ fn read_parameters(
                             ));
                         }
                         dependencies.parameter(&record, owner)?;
-                        Ok(record)
+                        if !admission::allows_handoff(&record, owner, dependencies) {
+                            return Ok(record);
+                        }
+                        ctx.record(
+                            &format!("iges:entity:directory#{}", owner.source_sequence),
+                            extent,
+                            || {
+                                group::prune_failed_members(
+                                    &mut record,
+                                    owner,
+                                    directory,
+                                    directory_by_offset,
+                                    dependencies,
+                                )?;
+                                let lines = super::parameter_lines(
+                                    &mut record,
+                                    directory,
+                                    directory_by_offset,
+                                )?;
+                                let content = crate::parameter::admitted::parse_lines(
+                                    owner.source_sequence,
+                                    record.entity_type,
+                                    &lines,
+                                    global,
+                                    ctx,
+                                )?;
+                                record.admitted =
+                                    Some(super::AdmittedBinaryParameter { lines, content });
+                                Ok(record)
+                            },
+                        )
                     },
                 )?;
                 match record {

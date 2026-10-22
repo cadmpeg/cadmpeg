@@ -167,7 +167,7 @@ impl CodecBackend for IgesCodec {
                 reader::inspect(ctx, &normalized, representation, root.window().len())
             }
             representation::Representation::Binary => {
-                let normalized = binary::normalize(root)?;
+                let normalized = binary::normalize(root, ctx)?;
                 reader::inspect(ctx, &normalized, representation, root.window().len())
             }
         }
@@ -187,7 +187,7 @@ impl CodecBackend for IgesCodec {
             }
             representation::Representation::Binary => {
                 let (normalized, parts) = binary::parts::normalize(root, ctx)?;
-                reader::decode_binary(&normalized, root, ctx, parts)
+                reader::decode_binary(normalized, root, ctx, parts)
             }
         }
     }

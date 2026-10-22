@@ -23,7 +23,14 @@ pub(crate) fn selected(node: roxmltree::Node<'_, '_>) -> bool {
             "App::PropertyInteger" | "App::PropertyIntegerConstraint" | "App::PropertyPercent",
         ) => "Integer",
         Some("App::PropertyBool") => "Bool",
-        Some("App::PropertyFloat" | "App::PropertyFloatConstraint") => "Float",
+        Some(
+            "App::PropertyFloat"
+            | "App::PropertyFloatConstraint"
+            | "App::PropertyLength"
+            | "App::PropertyAngle"
+            | "App::PropertyDistance"
+            | "App::PropertyQuantity",
+        ) => "Float",
         Some("App::PropertyVector") => "PropertyVector",
         _ => return false,
     };

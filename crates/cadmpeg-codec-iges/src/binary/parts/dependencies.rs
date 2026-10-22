@@ -21,17 +21,22 @@ enum Address {
 
 pub(super) struct Dependencies {
     live: BTreeSet<Address>,
+    failed: BTreeSet<Address>,
+    directory_sources: Vec<u32>,
 }
 
 impl Dependencies {
     pub(super) fn inspect(
         sections: &BinarySections<'_>,
+        global: &crate::global::ResolvedGlobal,
         ctx: &DecodeContext<'_>,
     ) -> Result<Self, CodecError> {
         let transaction = ctx.read_transaction()?;
         let mut graph = BTreeMap::new();
         let mut bad = BTreeSet::new();
         let mut directory_types = BTreeMap::new();
+        let mut directory_sources = Vec::new();
+        let mut discriminator_targets = Vec::new();
         let mut cursor = 0;
         let mut ordinal = 0;
         while cursor < sections.directory.window().len() {
@@ -42,6 +47,15 @@ impl Dependencies {
                 }
                 break;
             };
+            directory_sources.try_reserve(1).map_err(|_| {
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    ctx.policy().limits.max_retained_bytes,
+                    u64_from_index(size_of::<u32>()),
+                    "IGES Binary source sequence index",
+                )
+            })?;
+            directory_sources.push(offset);
             let address = Address::Directory(offset);
             let sequence = source_sequence(ordinal)?;
             ordinal = ordinal
@@ -55,14 +69,41 @@ impl Dependencies {
             match parse_directory_record(offset, sequence, body, sections.lengths) {
                 Ok(record) => {
                     ctx.retain_bytes(
-                        u64_from_index(size_of::<(u32, (i64, i64, bool))>()),
+                        u64_from_index(size_of::<(u32, (i64, i64, bool, u32))>()),
                         "IGES Binary dependency type",
                     )?;
                     let point = record.has_point_parameters();
                     directory_types.insert(
                         offset,
-                        (record.entity_type(), record.parameter_pointer(), point),
+                        (
+                            record.entity_type(),
+                            record.parameter_pointer(),
+                            point,
+                            sequence,
+                        ),
                     );
+                    if let super::super::BinaryValue::Pointer(pointer) =
+                        &record.values[DirectoryFieldSlot::EntityType.slot()]
+                    {
+                        if *pointer != 0 {
+                            if let Ok(target) = u32::try_from(pointer.unsigned_abs()) {
+                                discriminator_targets.try_reserve(1).map_err(|_| {
+                                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                                        ctx.policy().limits.max_retained_bytes,
+                                        u64_from_index(size_of::<(Address, i64, u32, bool)>()),
+                                        "IGES Binary discriminator source index",
+                                    )
+                                })?;
+                                discriminator_targets.push((
+                                    address,
+                                    record.entity_type(),
+                                    target,
+                                    *pointer < 0,
+                                ));
+                            }
+                        }
+                    }
                     if let Err(error) = record
                         .admit_directory_fields()
                         .and_then(|()| collect_directory(&record, ctx, &mut targets))
@@ -108,17 +149,20 @@ impl Dependencies {
                     {
                         append(ctx, &mut targets, Address::Directory(owner))?;
                         let declaration = directory_types.get(&owner);
-                        if !declaration.is_some_and(|(entity_type, pointer, _)| {
+                        if !declaration.is_some_and(|(entity_type, pointer, _, _)| {
                             *entity_type == prefix.entity_type && *pointer == i64::from(offset)
                         }) {
                             insert(ctx, &mut bad, address)?;
                         }
-                        if declaration.is_some_and(|(_, _, point)| *point) {
+                        if declaration.is_some_and(|(_, _, point, _)| *point) {
                             let mut symbol = None;
                             for field in 0..4 {
                                 match prefix.stream.next() {
-                                    Ok(Some(value)) if field == 3 => symbol = Some(value),
-                                    Ok(Some(_)) => {}
+                                    Ok(Some(value)) => {
+                                        if field == 3 {
+                                            symbol = Some(value);
+                                        }
+                                    }
                                     Ok(None) => break,
                                     Err(error) => {
                                         propagate_resource(error)?;
@@ -151,8 +195,36 @@ impl Dependencies {
                     }
                     if !bad.contains(&address) {
                         let syntax = (|| {
-                            while prefix.stream.next()?.is_some() {}
-                            prefix.stream.finish()
+                            let mut macro_values = Vec::new();
+                            while let Some(value) = prefix.stream.next()? {
+                                if prefix.entity_type == 306 {
+                                    macro_values.try_reserve(1).map_err(|_| {
+                                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                                            ctx.policy().limits.max_retained_bytes,
+                                            u64_from_index(size_of::<super::super::BinaryValue>()),
+                                            "IGES Binary Macro dependency syntax",
+                                        )
+                                    })?;
+                                    macro_values.push(value);
+                                }
+                            }
+                            prefix.stream.finish()?;
+                            if prefix.entity_type == 306 {
+                                let text = super::super::parameter_text(306, &macro_values)?;
+                                crate::parameter::macro_parameter_data(
+                                    &text,
+                                    global.parameter_delimiter,
+                                    global.record_delimiter,
+                                )
+                                .map_err(|error| match error {
+                                    crate::parameter::MacroDataError::Error(error) => error,
+                                    crate::parameter::MacroDataError::Defect(defect, _) => {
+                                        malformed(defect.describe())
+                                    }
+                                })?;
+                            }
+                            Ok(())
                         })();
                         if let Err(error) = syntax {
                             propagate_resource(error)?;
@@ -170,6 +242,19 @@ impl Dependencies {
                 .end()
                 .checked_sub(sections.parameter.start())
                 .ok_or_else(|| malformed("Binary dependency cursor underflows"))?;
+        }
+        for (address, entity_type, target, negative) in discriminator_targets {
+            let rendered = directory_types.get(&target).map(|(_, _, _, sequence)| {
+                let value = i64::from(*sequence);
+                if negative {
+                    -value
+                } else {
+                    value
+                }
+            });
+            if rendered != Some(entity_type) {
+                insert(ctx, &mut bad, address)?;
+            }
         }
         let mut reverse: BTreeMap<Address, Vec<Address>> = BTreeMap::new();
         for (owner, targets) in &graph {
@@ -213,10 +298,15 @@ impl Dependencies {
             insert(ctx, &mut live, address)?;
         }
         drop(transaction);
-        Ok(Self { live })
+        Ok(Self {
+            live,
+            failed: bad,
+            directory_sources,
+        })
     }
 
     pub(super) fn directory(&self, record: &BinaryDirectory) -> Result<(), CodecError> {
+        self.require(Address::Directory(record.offset))?;
         if record.parameter_pointer() != 0 {
             self.require(Address::Parameter(positive_pointer(
                 record.parameter_pointer(),
@@ -238,6 +328,7 @@ impl Dependencies {
         record: &BinaryParameter,
         owner: &BinaryDirectory,
     ) -> Result<(), CodecError> {
+        self.require(Address::Parameter(record.offset))?;
         self.require(directory_address(record.directory_pointer)?)?;
         if owner.has_point_parameters() {
             if let Some(value) = record.values.get(3) {
@@ -248,6 +339,34 @@ impl Dependencies {
             }
         }
         Ok(())
+    }
+
+    pub(super) fn member_resolves_or_is_dropped(&self, pointer: i64) -> bool {
+        if pointer == 0 {
+            return true;
+        }
+        let Ok(offset) = u32::try_from(pointer.unsigned_abs()) else {
+            return false;
+        };
+        self.live.contains(&Address::Directory(offset))
+            || (pointer > 0 && self.failed.contains(&Address::Directory(offset)))
+    }
+
+    pub(super) fn failed_member(&self, value: &super::super::BinaryValue) -> bool {
+        let offset = match value {
+            super::super::BinaryValue::Pointer(pointer) => {
+                u32::try_from(*pointer).ok().filter(|pointer| *pointer != 0)
+            }
+            super::super::BinaryValue::Integer(sequence) => u32::try_from(*sequence)
+                .ok()
+                .filter(|sequence| sequence % 2 == 1)
+                .and_then(|sequence| usize::try_from((sequence - 1) / 2).ok())
+                .and_then(|ordinal| self.directory_sources.get(ordinal).copied()),
+            super::super::BinaryValue::Default
+            | super::super::BinaryValue::Real(_)
+            | super::super::BinaryValue::String(_) => None,
+        };
+        offset.is_some_and(|offset| self.failed.contains(&Address::Directory(offset)))
     }
 
     fn require(&self, target: Address) -> Result<(), CodecError> {

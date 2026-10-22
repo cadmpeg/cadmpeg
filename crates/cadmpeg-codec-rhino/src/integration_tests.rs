@@ -36,6 +36,7 @@ mod hatch_userdata;
 mod layer_userdata;
 mod mesh_modifiers_userdata;
 mod mesh_userdata;
+mod native_linkage;
 mod object_attributes_userdata;
 mod scope_and_v1_eof;
 mod settings_userdata;

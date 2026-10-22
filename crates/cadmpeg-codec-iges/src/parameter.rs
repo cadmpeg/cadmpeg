@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::ops::Range;
 
+pub(crate) mod admitted;
 pub(crate) mod compressed;
 pub(crate) mod parts;
 pub(crate) mod source_locator;
@@ -3901,8 +3902,55 @@ fn parse_owned_record_with_tokenizer(
     global: &ResolvedGlobal,
     tokenize_fields: FieldTokenizer,
 ) -> Result<ParameterRecord, OwnedParseFailure> {
-    let entry = owned.entry;
-    let tokenized = if entry.entity_type == 306 {
+    let admitted = parse_admitted(
+        owned.entry.sequence,
+        owned.entry.entity_type,
+        owned_bytes,
+        global,
+        tokenize_fields,
+    )?;
+    let line_start = owned.cards.first().copied().unwrap_or_default();
+    let line_end = match owned.cards.last() {
+        Some(last) => last.checked_add(1).ok_or_else(|| {
+            OwnedParseFailure::Error(CodecError::malformed(
+                "IGES parameter card sequence overflow",
+            ))
+        })?,
+        None => line_start,
+    };
+    Ok(admitted.bind_range(line_start..line_end))
+}
+
+#[derive(Debug)]
+pub(crate) struct AdmittedParameter {
+    directory_sequence: u32,
+    bytes: Vec<u8>,
+    tokens: Vec<Option<Token>>,
+    parameter_end: usize,
+    comment: Vec<u8>,
+}
+
+impl AdmittedParameter {
+    pub(crate) fn bind_range(self, line_range: Range<u32>) -> ParameterRecord {
+        ParameterRecord {
+            directory_sequence: self.directory_sequence,
+            line_range,
+            bytes: self.bytes,
+            tokens: self.tokens,
+            parameter_end: self.parameter_end,
+            comment: self.comment,
+        }
+    }
+}
+
+fn parse_admitted(
+    directory_sequence: u32,
+    entity_type: i64,
+    owned_bytes: OwnedParameterBytes,
+    global: &ResolvedGlobal,
+    tokenize_fields: FieldTokenizer,
+) -> Result<AdmittedParameter, OwnedParseFailure> {
+    let tokenized = if entity_type == 306 {
         tokenize_macro(
             &owned_bytes.bytes,
             global.parameter_delimiter,
@@ -3919,26 +3967,16 @@ fn parse_owned_record_with_tokenizer(
         )
     };
     let (tokens, record_end) = tokenized.map_err(OwnedParseFailure::from)?;
-    if !matches!(tokens.first().map(|token| &token.value), Some(TokenValue::Integer(value)) if *value == entry.entity_type)
+    if !matches!(tokens.first().map(|token| &token.value), Some(TokenValue::Integer(value)) if *value == entity_type)
     {
         return Err(OwnedParseFailure::Defect(
             ParameterDefect::EntityTypeTokenMismatch,
             tokens.first().map(|token| token.span.start),
         ));
     }
-    let line_start = owned.cards.first().copied().unwrap_or_default();
-    let line_end = match owned.cards.last() {
-        Some(last) => last.checked_add(1).ok_or_else(|| {
-            OwnedParseFailure::Error(CodecError::malformed(
-                "IGES parameter card sequence overflow",
-            ))
-        })?,
-        None => line_start,
-    };
     let parameter_end = tokens.len();
-    Ok(ParameterRecord {
-        directory_sequence: entry.sequence,
-        line_range: line_start..line_end,
+    Ok(AdmittedParameter {
+        directory_sequence,
         comment: owned_bytes
             .bytes
             .get(record_end..)
@@ -4075,6 +4113,26 @@ fn assemble_with(
         recoveries,
         given_up,
     })
+}
+
+pub(crate) fn finish_admitted(
+    directory: &[DirectoryEntry],
+    mut records: Vec<ParameterRecord>,
+    global: &ResolvedGlobal,
+) -> ParameterAssembly {
+    let entries: BTreeMap<_, _> = directory
+        .iter()
+        .filter(|entry| !(entry.entity_type == 0 && entry.parameter_line_count == 0))
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    let trailing_pointer_analysis = finish_records(&entries, &mut records, global);
+    ParameterAssembly {
+        records,
+        trailing_pointer_analysis,
+        quarantined: Vec::new(),
+        recoveries: crate::card::FramingRecoveries::default(),
+        given_up: BTreeSet::new(),
+    }
 }
 
 fn finish_records(

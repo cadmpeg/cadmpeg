@@ -502,7 +502,7 @@ pub(super) fn loft_op(kind: &str) -> Option<BooleanOp> {
     }
 }
 
-pub(super) fn indexed_name(name: &str, prefix: &str) -> bool {
+pub(crate) fn indexed_name(name: &str, prefix: &str) -> bool {
     name.strip_prefix(prefix).is_some_and(|suffix| {
         !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
     })

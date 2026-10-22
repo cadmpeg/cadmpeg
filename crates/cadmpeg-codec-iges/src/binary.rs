@@ -9,7 +9,7 @@
 //! passed to the reader, so normalization does not replace source fidelity.
 
 use crate::directory::DirectoryFieldSlot;
-use cadmpeg_core::decode::{u64_from_index, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -120,6 +120,11 @@ impl BinaryDirectory {
     }
 
     fn admit_directory_fields(&self) -> Result<(), CodecError> {
+        if self.entity_type != 0 && self.parameter_pointer == 0 {
+            return Err(malformed(
+                "a non-null Binary entity has no Parameter Data record",
+            ));
+        }
         for (slot, name) in [
             (DirectoryFieldSlot::Structure, "structure"),
             (DirectoryFieldSlot::Form, "form"),
@@ -154,6 +159,13 @@ struct BinaryParameter {
     entity_type: i64,
     directory_pointer: i64,
     values: Vec<BinaryValue>,
+    admitted: Option<AdmittedBinaryParameter>,
+}
+
+#[derive(Debug)]
+struct AdmittedBinaryParameter {
+    lines: Vec<Vec<u8>>,
+    content: crate::parameter::AdmittedParameter,
 }
 
 #[derive(Debug)]
@@ -162,6 +174,7 @@ struct NormalizedParameter {
     directory_sequence: u32,
     lines: Vec<Vec<u8>>,
     first_sequence: u32,
+    admitted: Option<crate::parameter::AdmittedParameter>,
 }
 
 #[derive(Debug)]
@@ -1128,14 +1141,44 @@ fn finish_parameter_record(
         entity_type,
         directory_pointer: i64::from(directory_pointer),
         values,
+        admitted: None,
     })
+}
+
+fn parameter_lines(
+    parameter: &mut BinaryParameter,
+    directory: &[BinaryDirectory],
+    directory_by_offset: &BTreeMap<u32, usize>,
+) -> Result<Vec<Vec<u8>>, CodecError> {
+    let directory_pointer = positive_pointer(parameter.directory_pointer, "Parameter Directory")?;
+    let directory_index = *directory_by_offset
+        .get(&directory_pointer)
+        .ok_or_else(|| malformed("Binary Parameter Directory pointer does not resolve"))?;
+    for (index, value) in parameter.values.iter_mut().enumerate() {
+        if matches!(value, BinaryValue::Pointer(_)) {
+            *value = resolve_value(value, directory, directory_by_offset)?;
+        } else if directory[directory_index].has_point_parameters() && index == 3 {
+            if let BinaryValue::Integer(pointer) = value {
+                if *pointer != 0 {
+                    *value = resolve_value(
+                        &BinaryValue::Pointer(*pointer),
+                        directory,
+                        directory_by_offset,
+                    )?;
+                }
+            }
+        }
+    }
+    let text = parameter_text(parameter.entity_type, &parameter.values)?;
+    render_parameter_lines(&text, parameter.entity_type == 306)
 }
 
 fn normalize_directory_and_parameters(
     output: &mut Vec<u8>,
     directory: &[BinaryDirectory],
     parameters: Vec<BinaryParameter>,
-) -> Result<(usize, usize), CodecError> {
+    ctx: &DecodeContext<'_>,
+) -> Result<(usize, usize, Vec<crate::parameter::ParameterRecord>), CodecError> {
     let mut directory_by_offset = BTreeMap::new();
     for (index, record) in directory.iter().enumerate() {
         directory_by_offset.insert(record.offset, index);
@@ -1155,23 +1198,13 @@ fn normalize_directory_and_parameters(
             ));
         }
         let directory_sequence = directory[directory_index].source_sequence;
-        for (index, value) in parameter.values.iter_mut().enumerate() {
-            if matches!(value, BinaryValue::Pointer(_)) {
-                *value = resolve_value(value, directory, &directory_by_offset)?;
-            } else if directory[directory_index].has_point_parameters() && index == 3 {
-                if let BinaryValue::Integer(pointer) = value {
-                    if *pointer != 0 {
-                        *value = resolve_value(
-                            &BinaryValue::Pointer(*pointer),
-                            directory,
-                            &directory_by_offset,
-                        )?;
-                    }
-                }
-            }
-        }
-        let text = parameter_text(parameter.entity_type, &parameter.values)?;
-        let lines = render_parameter_lines(&text, parameter.entity_type == 306)?;
+        let (lines, admitted) = match parameter.admitted.take() {
+            Some(admitted) => (admitted.lines, Some(admitted.content)),
+            None => (
+                parameter_lines(&mut parameter, directory, &directory_by_offset)?,
+                None,
+            ),
+        };
         let first_sequence = parameter_sequence;
         parameter_sequence = parameter_sequence
             .checked_add(
@@ -1184,6 +1217,7 @@ fn normalize_directory_and_parameters(
             directory_sequence,
             lines,
             first_sequence,
+            admitted,
         });
     }
     let mut parameter_by_offset = BTreeMap::new();
@@ -1328,7 +1362,21 @@ fn normalize_directory_and_parameters(
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
     }
     let mut parameter_sequence = 1_u32;
-    for parameter in &normalized {
+    let mut admitted = Vec::new();
+    let storage = normalized
+        .len()
+        .checked_mul(size_of::<crate::parameter::ParameterRecord>())
+        .ok_or_else(|| malformed("Binary admitted Parameter storage overflows"))?;
+    admitted.try_reserve_exact(normalized.len()).map_err(|_| {
+        ResourceLimit::allocation_failed(
+            ResourceDimension::RetainedBytes,
+            ctx.policy().limits.max_retained_bytes,
+            u64_from_index(storage),
+            "IGES Binary admitted Parameter storage",
+        )
+    })?;
+    for parameter in normalized {
+        let first = parameter_sequence;
         for line in &parameter.lines {
             render_parameter_line(
                 output,
@@ -1339,6 +1387,9 @@ fn normalize_directory_and_parameters(
             parameter_sequence = parameter_sequence
                 .checked_add(1)
                 .ok_or_else(|| malformed("normalized Parameter Data sequence overflows"))?;
+        }
+        if let Some(content) = parameter.admitted {
+            admitted.push(content.bind_range(first..parameter_sequence));
         }
     }
     let directory_count = directory
@@ -1352,6 +1403,7 @@ fn normalize_directory_and_parameters(
         directory_count,
         usize::try_from(parameter_count)
             .map_err(|_| malformed("normalized Parameter Data count is out of range"))?,
+        admitted,
     ))
 }
 
@@ -1417,6 +1469,13 @@ fn append_output_card(output: &mut Vec<u8>, card: &[u8; CARD_WIDTH]) {
 pub(crate) struct NormalizedBinary {
     pub(crate) bytes: Vec<u8>,
     pub(crate) identities: BinaryIdentities,
+    pub(crate) admission: BinaryAdmission,
+}
+
+pub(crate) struct BinaryAdmission {
+    pub(crate) global: crate::global::ResolvedGlobal,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) parameters: Option<Vec<crate::parameter::ParameterRecord>>,
 }
 
 pub(crate) struct BinaryIdentities(Vec<u32>);
@@ -1472,10 +1531,12 @@ fn resolve_value(
 
 /// Normalize one Binary IGES source into the Fixed ASCII image consumed by the
 /// typed reader.
-pub(crate) fn normalize(source: View<'_>) -> Result<Vec<u8>, CodecError> {
+pub(crate) fn normalize(source: View<'_>, ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
+    ctx.capture_part_extent(source)?;
     normalize_with_records(
         source,
-        |sections| {
+        ctx,
+        |sections, _global| {
             let directory = read_directory(sections.directory, sections.lengths)?;
             let mut directory_by_offset = BTreeMap::new();
             for (index, record) in directory.iter().enumerate() {
@@ -1485,22 +1546,25 @@ pub(crate) fn normalize(source: View<'_>) -> Result<Vec<u8>, CodecError> {
                 read_parameters(sections.parameter, sections.lengths, &directory_by_offset)?;
             Ok((directory, parameters))
         },
-        |bytes, _| Ok(bytes),
+        |bytes, _, _| Ok(bytes),
     )
 }
 
 fn normalize_with_records<T>(
     source: View<'_>,
+    ctx: &DecodeContext<'_>,
     parse: impl FnOnce(
         &BinarySections<'_>,
+        &crate::global::ResolvedGlobal,
     ) -> Result<(Vec<BinaryDirectory>, Vec<BinaryParameter>), CodecError>,
-    finish: impl FnOnce(Vec<u8>, Vec<BinaryDirectory>) -> Result<T, CodecError>,
+    finish: impl FnOnce(Vec<u8>, Vec<BinaryDirectory>, BinaryAdmission) -> Result<T, CodecError>,
 ) -> Result<T, CodecError> {
     let sections = parse_sections(source)?;
     let start_text = normalize_start(sections.start.window(), sections.lengths)?;
     let global_values = read_global(sections.global.window(), sections.lengths)?;
     let global_text = normalize_global(&global_values)?;
-    let (directory, parameters) = parse(&sections)?;
+    let (global, losses) = crate::global::parse_stream(&global_text)?;
+    let (directory, parameters) = parse(&sections, &global)?;
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
     render_start_cards(&mut output, &start_text, &mut start_sequence)?;
@@ -1521,8 +1585,11 @@ fn normalize_with_records<T>(
             .ok_or_else(|| malformed("a Binary Global sequence is zero"))?,
     )
     .map_err(|_| malformed("a Binary Global count does not fit memory"))?;
-    let (directory_count, parameter_count) =
-        normalize_directory_and_parameters(&mut output, &directory, parameters)?;
+    let all_admitted = parameters
+        .iter()
+        .all(|parameter| parameter.admitted.is_some());
+    let (directory_count, parameter_count, parameters) =
+        normalize_directory_and_parameters(&mut output, &directory, parameters, ctx)?;
     render_terminate(
         &mut output,
         start_count,
@@ -1530,7 +1597,15 @@ fn normalize_with_records<T>(
         directory_count,
         parameter_count,
     )?;
-    finish(output, directory)
+    finish(
+        output,
+        directory,
+        BinaryAdmission {
+            global,
+            losses,
+            parameters: all_admitted.then_some(parameters),
+        },
+    )
 }
 
 #[cfg(test)]
@@ -1656,12 +1731,12 @@ mod tests {
 
     fn normalize_for_test(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             source,
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
         )?;
-        normalize(root)
+        normalize(root, &ctx)
     }
 
     #[derive(Debug, Default)]
@@ -2166,7 +2241,7 @@ mod tests {
         let source = root.child(3, bytes.len() - 4).unwrap();
         let sections = super::parse_sections(source).unwrap();
         assert_eq!(
-            super::normalize(source).unwrap(),
+            super::normalize(source, &ctx).unwrap(),
             normalize_for_test(&original).unwrap()
         );
         let foreign_arena = DecodeArena::new();

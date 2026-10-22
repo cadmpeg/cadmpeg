@@ -24,6 +24,7 @@ use std::fmt;
 struct ParsingState<'a> {
     parts: ParserPartOutput,
     binary_identities: Option<&'a crate::binary::BinaryIdentities>,
+    binary_admission: Option<crate::binary::BinaryAdmission>,
     compressed: Option<crate::compressed::parts::Admission>,
 }
 
@@ -32,6 +33,7 @@ impl ParsingState<'_> {
         Self {
             parts: ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges),
             binary_identities: None,
+            binary_admission: None,
             compressed: None,
         }
     }
@@ -297,6 +299,7 @@ impl<'a> PhysicalParse<'a> {
         let ParsingState {
             parts: mut parser_parts,
             binary_identities,
+            binary_admission,
             compressed,
         } = parsing;
         let scan = match source {
@@ -311,7 +314,14 @@ impl<'a> PhysicalParse<'a> {
             ),
             None => (None, None, None),
         };
-        let (global, mut global_losses) = if let Some(global) = prepared_global {
+        let (binary_global, binary_parameters) = match binary_admission {
+            Some(admission) => (
+                Some((admission.global, admission.losses)),
+                admission.parameters,
+            ),
+            None => (None, None),
+        };
+        let (global, mut global_losses) = if let Some(global) = prepared_global.or(binary_global) {
             global
         } else if scan.source_view().is_some() {
             global::parts::parse(&scan, ctx, &mut parser_parts)?
@@ -352,6 +362,8 @@ impl<'a> PhysicalParse<'a> {
                 .chain(quarantined_directory.iter().map(|record| record.sequence));
             if let Some(parameters) = prepared_parameters {
                 parameters
+            } else if let Some(parameters) = binary_parameters {
+                parameter::finish_admitted(&directory, parameters, &global)
             } else if scan.source_view().is_some() {
                 parameter::parts::assemble(&scan, &directory, excluded, &global, ctx, &mut parts)?
             } else {
@@ -489,7 +501,7 @@ pub(crate) fn decode(
 }
 
 pub(crate) fn decode_binary(
-    normalized: &crate::binary::NormalizedBinary,
+    normalized: crate::binary::NormalizedBinary,
     source: View<'_>,
     ctx: &DecodeContext<'_>,
     parts: ParserPartOutput,
@@ -502,6 +514,7 @@ pub(crate) fn decode_binary(
         ParsingState {
             parts,
             binary_identities: Some(&normalized.identities),
+            binary_admission: Some(normalized.admission),
             compressed: None,
         },
     )
@@ -520,6 +533,7 @@ pub(crate) fn decode_compressed(
         ParsingState {
             parts: normalized.parts,
             binary_identities: None,
+            binary_admission: None,
             compressed: Some(normalized.admission),
         },
     )

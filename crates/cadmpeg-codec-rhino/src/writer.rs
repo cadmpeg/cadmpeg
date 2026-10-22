@@ -376,7 +376,9 @@ fn write_archive_prefix(
             TCODE_LIGHT_TABLE => tables::lights::lights(ir)?,
             TCODE_FONT_TABLE => tables::fonts::styles(ir)?,
             TCODE_HATCH_PATTERN_TABLE => tables::hatches::patterns(ir)?,
-            TCODE_INSTANCE_DEFINITION_TABLE => tables::products::definitions(ir, written_bodies)?,
+            TCODE_INSTANCE_DEFINITION_TABLE => {
+                tables::products::definitions(ir, written_bodies, version)?
+            }
             TCODE_MATERIAL_TABLE => materials.encode(ir)?,
             TCODE_GROUP_TABLE => tables::native::groups(ir)?,
             TCODE_LINETYPE_TABLE => tables::native::linetypes(ir)?,

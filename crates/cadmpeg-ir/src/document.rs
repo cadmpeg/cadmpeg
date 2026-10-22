@@ -3,6 +3,7 @@
 
 mod edit;
 mod legacy;
+mod references;
 pub use edit::DimensionEditError;
 mod topology_edit;
 pub use topology_edit::TopologyEditError;

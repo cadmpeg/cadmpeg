@@ -31,7 +31,6 @@ struct Projection<'a> {
     references: BTreeMap<usize, InstanceReference>,
     occurrences: Vec<Occurrence>,
     visited_orders: BTreeSet<usize>,
-    native_occurrences: BTreeMap<String, Vec<String>>,
     losses: Vec<LossNote>,
 }
 
@@ -164,10 +163,6 @@ impl Projection<'_> {
             link: None,
             native_ref: Some(native_ref.clone()),
         });
-        self.native_occurrences
-            .entry(native_ref)
-            .or_default()
-            .push(id.to_string());
         if ambiguous {
             return Ok(());
         }
@@ -269,7 +264,6 @@ pub(super) fn project(
         references: BTreeMap::new(),
         occurrences: Vec::new(),
         visited_orders: BTreeSet::new(),
-        native_occurrences: BTreeMap::new(),
         losses: Vec::new(),
     };
     for (order, object) in scan.objects.iter().enumerate() {
@@ -291,7 +285,6 @@ pub(super) fn project(
             }
         }
     }
-    let mut native_definitions = BTreeMap::<String, String>::new();
     for definition in scan.definitions.definitions() {
         if scan.definitions.is_ambiguous(definition.id()) {
             continue;
@@ -324,7 +317,6 @@ pub(super) fn project(
             bodies,
             native_ref: Some(native_ref.clone()),
         });
-        native_definitions.insert(native_ref, id.to_string());
     }
     let roots = projection
         .references
@@ -359,36 +351,6 @@ pub(super) fn project(
         }
     }
     ir.model.occurrences.extend(projection.occurrences);
-    let namespace = ir.native.namespace_mut("rhino");
-    for (arena, targets) in [
-        (
-            "product_definitions",
-            native_definitions
-                .into_iter()
-                .map(|(id, target)| (id, vec![target]))
-                .collect::<BTreeMap<_, _>>(),
-        ),
-        ("product_occurrences", projection.native_occurrences),
-    ] {
-        let Some(records) = namespace.arenas_mut().get_mut(arena) else {
-            continue;
-        };
-        for record in records {
-            let Some(targets) = targets.get(record.id()) else {
-                continue;
-            };
-            let mut fields = record.copy_fields(ctx)?;
-            fields.insert(
-                "neutral_refs".into(),
-                serde_json::to_value(targets)
-                    .map_err(|error| CodecError::malformed(error.to_string()))?,
-            );
-            *record = cadmpeg_ir::native::NativeRecord::new(
-                cadmpeg_ir::ids::Identity::new(record.id()).map_err(CodecError::malformed)?,
-                fields,
-            )?;
-        }
-    }
     Ok(projection.losses)
 }
 

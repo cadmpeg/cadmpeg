@@ -130,7 +130,8 @@ fn unknown_ancestor_cascades_without_changing_known_local_reference_frames() {
     .unwrap();
     assert_eq!(references.len(), 2);
     assert_eq!(losses.len(), 3);
-    let definitions = super::definitions(&ir, &Default::default()).unwrap();
+    let definitions =
+        super::definitions(&ir, &Default::default(), crate::RhinoArchiveVersion::V5).unwrap();
     for key in ["unknown", "child", "grandchild"] {
         let id = format!("test:model:occurrence#{key}");
         assert_eq!(
