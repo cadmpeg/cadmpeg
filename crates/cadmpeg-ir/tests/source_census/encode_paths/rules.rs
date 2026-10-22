@@ -7,13 +7,14 @@ use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use syn::spanned::Spanned;
 use syn::visit::{self, Visit};
 
+use super::bindings::{Bindings, Value};
 use super::{Call, Site};
 
 pub(super) const CAPACITY: &str =
     "EncodeError::TargetCapacity outside its declared CAPACITY_FIELDS helper";
 pub(super) type Aliases = BTreeMap<String, Vec<String>>;
 
-pub(super) fn path(path: &syn::Path, aliases: &Aliases, owner: Option<&str>) -> Vec<String> {
+pub(super) fn path(path: &syn::Path, aliases: &Aliases, owner: Option<&[String]>) -> Vec<String> {
     let mut result: Vec<_> = path
         .segments
         .iter()
@@ -25,7 +26,7 @@ pub(super) fn path(path: &syn::Path, aliases: &Aliases, owner: Option<&str>) -> 
             break;
         }
         let prefix = if first == "Self" {
-            owner.map(|name| vec![name.to_owned()])
+            owner.map(<[String]>::to_vec)
         } else {
             aliases.get(&first).cloned()
         };
@@ -98,15 +99,17 @@ pub(super) fn import(tree: &syn::UseTree, prefix: &[String], aliases: &mut Alias
 
 pub(super) struct Body<'a> {
     pub aliases: Aliases,
-    pub owner: Option<&'a str>,
+    pub owner: Option<&'a [String]>,
+    pub bindings: Bindings,
     pub calls: BTreeSet<Call>,
     pub sites: Vec<Site>,
 }
 impl<'a> Body<'a> {
-    pub(super) fn new(aliases: Aliases, owner: Option<&'a str>) -> Self {
+    pub(super) fn new(aliases: Aliases, owner: Option<&'a [String]>) -> Self {
         Self {
             aliases,
             owner,
+            bindings: Bindings::default(),
             calls: BTreeSet::new(),
             sites: Vec::new(),
         }
@@ -174,6 +177,54 @@ impl<'a> Body<'a> {
         }
     }
 
+    fn value(&self, expression: &syn::Expr) -> Value {
+        match expression {
+            syn::Expr::Path(value) => {
+                if let Some(name) = value.path.get_ident() {
+                    if let Some(value) = self.bindings.get(&name.to_string()) {
+                        return value.clone();
+                    }
+                }
+                Value::Functions(BTreeSet::from([path(
+                    &value.path,
+                    &self.aliases,
+                    self.owner,
+                )]))
+            }
+            syn::Expr::Paren(value) => self.value(&value.expr),
+            syn::Expr::Group(value) => self.value(&value.expr),
+            syn::Expr::Reference(value) => self.value(&value.expr),
+            _ => Value::Unknown,
+        }
+    }
+
+    fn callable(&mut self, expression: &syn::Expr, invoked: bool) {
+        match self.value(expression) {
+            Value::Functions(paths) => {
+                for path in paths {
+                    self.calls.insert(Call::Function(path));
+                }
+            }
+            Value::Unknown if invoked => {
+                let label = match expression {
+                    syn::Expr::Path(path) => path
+                        .path
+                        .segments
+                        .iter()
+                        .map(|part| part.ident.to_string())
+                        .collect::<Vec<_>>()
+                        .join("::"),
+                    _ => format!(
+                        "indirect expression at line {}",
+                        expression.span().start().line
+                    ),
+                };
+                self.calls.insert(Call::UnresolvedValue(label));
+            }
+            Value::Unknown => {}
+        }
+    }
+
     pub(super) fn tokens(&mut self, tokens: TokenStream) {
         let tokens: Vec<_> = tokens.into_iter().collect();
         let mut index = 0;
@@ -212,8 +263,18 @@ impl<'a> Body<'a> {
                             );
                         if method {
                             self.calls.insert(Call::Method(first.to_string()));
-                        } else {
-                            self.calls.insert(Call::Function(names));
+                        } else if start
+                            .checked_sub(1)
+                            .and_then(|at| tokens.get(at))
+                            .is_some_and(
+                                |token| matches!(token, TokenTree::Punct(p) if p.as_char() == '$'),
+                            )
+                        {
+                            self.calls.insert(Call::UnresolvedValue(format!(
+                                "${first} (macro parameter)"
+                            )));
+                        } else if let Ok(expression) = syn::parse_str::<syn::Expr>(&text) {
+                            self.callable(&expression, true);
                         }
                     } else if matches!(following, Some(TokenTree::Punct(p)) if p.as_char() == '!') {
                         self.calls.insert(Call::Macro(first.to_string()));
@@ -233,8 +294,81 @@ impl<'ast> Visit<'ast> for Body<'_> {
     fn visit_expr_path(&mut self, value: &'ast syn::ExprPath) {
         let names = path(&value.path, &self.aliases, self.owner);
         self.check(&names, value.span(), true);
-        self.calls.insert(Call::Function(names));
         visit::visit_expr_path(self, value);
+    }
+    fn visit_block(&mut self, block: &'ast syn::Block) {
+        self.bindings.push();
+        visit::visit_block(self, block);
+        self.bindings.pop();
+    }
+    fn visit_local(&mut self, local: &'ast syn::Local) {
+        if let Some(init) = &local.init {
+            self.visit_expr(&init.expr);
+        }
+        let value = local
+            .init
+            .as_ref()
+            .map_or(Value::Unknown, |init| self.value(&init.expr));
+        self.bindings.bind(&local.pat, value);
+        if let Some(diverge) = local.init.as_ref().and_then(|init| init.diverge.as_ref()) {
+            self.visit_expr(&diverge.1);
+        }
+    }
+    fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+        self.callable(&call.func, true);
+        for argument in &call.args {
+            self.callable(argument, false);
+        }
+        visit::visit_expr_call(self, call);
+    }
+    fn visit_expr_assign(&mut self, assignment: &'ast syn::ExprAssign) {
+        if let syn::Expr::Path(name) = assignment.left.as_ref() {
+            if let Some(name) = name.path.get_ident() {
+                self.bindings
+                    .assign(&name.to_string(), self.value(&assignment.right));
+            }
+        }
+        visit::visit_expr_assign(self, assignment);
+    }
+    fn visit_arm(&mut self, arm: &'ast syn::Arm) {
+        self.bindings.push();
+        self.bindings.bind(&arm.pat, Value::Unknown);
+        visit::visit_arm(self, arm);
+        self.bindings.pop();
+    }
+    fn visit_expr_closure(&mut self, closure: &'ast syn::ExprClosure) {
+        self.bindings.push();
+        for input in &closure.inputs {
+            self.bindings.bind(input, Value::Unknown);
+        }
+        visit::visit_expr_closure(self, closure);
+        self.bindings.pop();
+    }
+    fn visit_expr_let(&mut self, value: &'ast syn::ExprLet) {
+        self.visit_expr(&value.expr);
+        self.bindings.bind(&value.pat, Value::Unknown);
+    }
+    fn visit_expr_if(&mut self, value: &'ast syn::ExprIf) {
+        self.bindings.push();
+        self.visit_expr(&value.cond);
+        self.visit_block(&value.then_branch);
+        self.bindings.pop();
+        if let Some((_, branch)) = &value.else_branch {
+            self.visit_expr(branch);
+        }
+    }
+    fn visit_expr_while(&mut self, value: &'ast syn::ExprWhile) {
+        self.bindings.push();
+        self.visit_expr(&value.cond);
+        self.visit_block(&value.body);
+        self.bindings.pop();
+    }
+    fn visit_expr_for_loop(&mut self, value: &'ast syn::ExprForLoop) {
+        self.visit_expr(&value.expr);
+        self.bindings.push();
+        self.bindings.bind(&value.pat, Value::Unknown);
+        self.visit_block(&value.body);
+        self.bindings.pop();
     }
     fn visit_expr_struct(&mut self, value: &'ast syn::ExprStruct) {
         self.check(
@@ -247,6 +381,9 @@ impl<'ast> Visit<'ast> for Body<'_> {
     fn visit_expr_method_call(&mut self, value: &'ast syn::ExprMethodCall) {
         self.check(&[value.method.to_string()], value.method.span(), false);
         self.calls.insert(Call::Method(value.method.to_string()));
+        for argument in &value.args {
+            self.callable(argument, false);
+        }
         visit::visit_expr_method_call(self, value);
     }
     fn visit_pat(&mut self, value: &'ast syn::Pat) {
@@ -279,6 +416,13 @@ impl<'ast> Visit<'ast> for Body<'_> {
     fn visit_macro(&mut self, value: &'ast syn::Macro) {
         if let Some(name) = value.path.segments.last() {
             self.calls.insert(Call::Macro(name.ident.to_string()));
+        }
+        if let Ok(arguments) = value.parse_body_with(
+            syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated,
+        ) {
+            for argument in arguments {
+                self.callable(&argument, false);
+            }
         }
         self.tokens(value.tokens.clone());
     }

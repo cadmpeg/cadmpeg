@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native point and curve objects for lower-dimensional shell members.
 
+use cadmpeg_ir::codec::write::EncodeBuffer;
 use std::collections::BTreeSet;
-use std::io::Write;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -22,7 +22,7 @@ use super::{
 pub(super) fn write(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
-    output: &mut impl Write,
+    output: &mut EncodeBuffer<'_>,
     losses: &mut Vec<LossNote>,
     materials: &super::tables::materials::MaterialPlan,
 ) -> Result<usize, CodecError> {
@@ -88,19 +88,22 @@ pub(super) fn write(
             format!("{}.free-vertices", body.id)
         };
         ctx.charge_entities(1, "write Rhino object record")?;
-        output.write_all(&attributed_object_record(
-            ir,
-            kind,
-            class,
-            &payload,
-            &identity,
-            crate::writer::presentation::Display {
-                name: body.name.as_deref(),
-                color: body.color,
-                visible: body.visible,
-            },
-            materials,
-        )?)?;
+        output.append(
+            &attributed_object_record(
+                ir,
+                kind,
+                class,
+                &payload,
+                &identity,
+                crate::writer::presentation::Display {
+                    name: body.name.as_deref(),
+                    color: body.color,
+                    visible: body.visible,
+                },
+                materials,
+            )?,
+            "retain Rhino Brep records",
+        )?;
         count += 1;
     }
     let wires = ir
@@ -119,19 +122,22 @@ pub(super) fn write(
         match curve_payload(ir, edge) {
             Ok((class, payload)) => {
                 ctx.charge_entities(1, "write Rhino object record")?;
-                output.write_all(&attributed_object_record(
-                    ir,
-                    4,
-                    class,
-                    &payload,
-                    edge.id.as_str(),
-                    crate::writer::presentation::Display {
-                        name: body.name.as_deref(),
-                        color: body.color,
-                        visible: body.visible,
-                    },
-                    materials,
-                )?)?;
+                output.append(
+                    &attributed_object_record(
+                        ir,
+                        4,
+                        class,
+                        &payload,
+                        edge.id.as_str(),
+                        crate::writer::presentation::Display {
+                            name: body.name.as_deref(),
+                            color: body.color,
+                            visible: body.visible,
+                        },
+                        materials,
+                    )?,
+                    "retain Rhino Brep records",
+                )?;
                 count += 1;
             }
             Err(CodecError::UnsupportedContent(reason)) => losses.push(

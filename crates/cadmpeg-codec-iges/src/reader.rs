@@ -4,7 +4,7 @@
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, native, parameter};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::DecodeOptions;
@@ -15,6 +15,7 @@ use cadmpeg_ir::report::{
     loss::LossNote,
     Severity,
 };
+use cadmpeg_ir::source_fidelity::parts::ParserPartOutput;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -261,14 +262,33 @@ struct PhysicalParse<'a> {
     quarantined_parameters: Vec<parameter::QuarantinedParameterRecord>,
     framing_recoveries: card::FramingRecoveries,
     references: BTreeMap<u32, Vec<graph::ReferenceEdge>>,
+    parts: ParserPartOutput,
 }
 
 impl<'a> PhysicalParse<'a> {
     fn run(bytes: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let scan = card::scan(bytes)?;
+        Self::run_with_source(bytes, None, ctx)
+    }
+
+    fn run_with_source(
+        bytes: &'a [u8],
+        source: Option<View<'a>>,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, CodecError> {
+        let scan = match source {
+            Some(source) => card::scan_source(source, ctx)?,
+            None => card::scan(bytes)?,
+        };
         let (global, mut global_losses) = global::parse(&scan)?;
-        let (directory, quarantined_directory) =
-            directory::parse(&scan, global.global_table(), ctx)?;
+        let mut parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+        let (directory, quarantined_directory) = if scan.source_view().is_some() {
+            (
+                directory::parts::parse(&scan, global.global_table(), ctx, &mut parts)?,
+                Vec::new(),
+            )
+        } else {
+            directory::parse(&scan, global.global_table(), ctx)?
+        };
         global_losses.extend(directory::metadata_losses(&directory));
         let parameter::ParameterAssembly {
             records: parameters,
@@ -295,6 +315,7 @@ impl<'a> PhysicalParse<'a> {
             quarantined_parameters,
             framing_recoveries,
             references,
+            parts,
         })
     }
 
@@ -386,7 +407,7 @@ pub(crate) fn inspect(
 
 pub(crate) fn decode(
     parse_bytes: &[u8],
-    source_bytes: &[u8],
+    source: View<'_>,
     representation: Representation,
     ctx: &DecodeContext<'_>,
 ) -> Result<Decoded, CodecError> {
@@ -396,32 +417,26 @@ pub(crate) fn decode(
         .map_or(native::MAX_PRODUCT_OCCURRENCE_DEPTH, |policy| {
             policy.min(native::MAX_PRODUCT_OCCURRENCE_DEPTH)
         });
-    decode_with_occurrence_limits(
-        parse_bytes,
-        source_bytes,
-        representation,
-        output,
-        depth,
-        ctx,
-    )
+    decode_with_occurrence_limits(parse_bytes, source, representation, output, depth, ctx)
 }
 
 fn decode_with_occurrence_limits(
     parse_bytes: &[u8],
-    source_bytes: &[u8],
+    source: View<'_>,
     representation: Representation,
     product_occurrence_output_limit: usize,
     product_occurrence_depth_limit: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Decoded, CodecError> {
-    let mut parse = PhysicalParse::run(parse_bytes, ctx)?;
+    let mut source_fidelity = source_fidelity(source.window(), ctx)?;
+    let view = (representation == Representation::FixedAscii).then_some(source);
+    let mut parse = PhysicalParse::run_with_source(parse_bytes, view, ctx)?;
     let length_context = parse.global.length_context();
     let quarantined_parameter_sequences =
         quarantined_parameter_sequences(&parse.quarantined_parameters);
     let projected_directory =
         projection_directory(&parse.directory, &quarantined_parameter_sequences);
     let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
-    let mut source_fidelity = source_fidelity(source_bytes, ctx)?;
     let card_layout = parse
         .scan
         .lines
@@ -536,11 +551,43 @@ fn decode_with_occurrence_limits(
         ),
         ctx,
     )?;
+    let parts = std::mem::replace(
+        &mut parse.parts,
+        ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges),
+    );
+    let (_, mut part_native, part_fidelity, mut part_losses) = parts.into_parts().into_parts();
+    let source_arenas = part_native.namespace_mut("iges").arenas_mut();
+    for (name, mut records) in std::mem::take(source_arenas) {
+        let destination = ir
+            .native
+            .namespace_mut("iges")
+            .arenas_mut()
+            .entry(name)
+            .or_default();
+        let bytes = cadmpeg_core::decode::u64_from_index(
+            records
+                .len()
+                .checked_mul(size_of::<cadmpeg_ir::native::NativeRecord>())
+                .ok_or_else(|| CodecError::malformed("IGES parser record composition overflows"))?,
+        );
+        ctx.retain_bytes(bytes, "IGES parser record composition")?;
+        destination.try_reserve(records.len()).map_err(|_| {
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                bytes,
+                "IGES parser record composition",
+            )
+        })?;
+        destination.append(&mut records);
+    }
+    source_fidelity.append(part_fidelity)?;
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
     ir.finalize();
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses();
+    losses.append(&mut part_losses);
     losses.extend(projection_losses);
     if invalid_resolution
         && !losses.iter().any(|loss| {
@@ -846,7 +893,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
         ) -> Result<Decoded, CodecError> {
             decode_with_occurrence_limits(
                 root.window(),
-                root.window(),
+                root,
                 Representation::FixedAscii,
                 self.output_limit,
                 self.depth_limit,

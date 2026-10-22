@@ -144,5 +144,54 @@ out.chmod(0o755)
         self.assertEqual(self.records(), [])
 
 
+    def test_retries_and_updates_a_real_base_worktree_through_a_symlinked_target(self) -> None:
+        physical_target = self.folder / "physical target with spaces"
+        physical_target.mkdir()
+        (self.repo / "target").symlink_to(physical_target, target_is_directory=True)
+        first = self.run_build()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        retry = self.run_build()
+        self.assertEqual(retry.returncode, 0, retry.stderr)
+        self.git("merge", "-q", "--no-edit", self.main)
+        update = self.run_build()
+        self.assertEqual(update.returncode, 0, update.stderr)
+        self.assertEqual([row["sha"] for row in self.records()], [self.base, self.base, self.main])
+        self.assertEqual({row["cwd"] for row in self.records()}, {str(physical_target / "base-src")})
+        self.assertEqual({row["target"] for row in self.records()}, {str(self.repo / "target/base-build")})
+        binary = self.repo / "target/base/cadmpeg"
+        self.assertEqual(subprocess.check_output([str(binary)], text=True), f"base:{self.main}\n")
+        self.assertEqual((physical_target / "base/base.commit").read_text(), self.main + "\n")
+        self.assertEqual(self.github_env.read_text().splitlines(), [f"CADMPEG_BASE_BIN={binary}"] * 3)
+        source = physical_target / "base-src"
+        self.assertEqual(subprocess.check_output(["git", "-C", str(source), "status", "--porcelain"], text=True), "")
+        (source / "Cargo.toml").write_text("keep this dirty symlinked source\n")
+        dirty = self.run_build()
+        self.assertNotEqual(dirty.returncode, 0)
+        self.assertIn("has local changes", dirty.stderr)
+        self.assertEqual((source / "Cargo.toml").read_text(), "keep this dirty symlinked source\n")
+        self.assertEqual(len(self.records()), 3)
+        self.assertFalse((physical_target / "base-build.lock").exists())
+
+    def test_symlinked_target_still_refuses_a_worktree_from_a_foreign_repository(self) -> None:
+        physical_target = self.folder / "foreign target with spaces"
+        physical_target.mkdir()
+        (self.repo / "target").symlink_to(physical_target, target_is_directory=True)
+        foreign = self.folder / "foreign repository"
+        foreign.mkdir()
+        subprocess.run(["git", "init", "-q", str(foreign)], check=True)
+        subprocess.run(["git", "-C", str(foreign), "config", "user.name", "pcurve"], check=True)
+        subprocess.run(["git", "-C", str(foreign), "config", "user.email", "301495646+pcurve@users.noreply.github.com"], check=True)
+        subprocess.run(["git", "-C", str(foreign), "commit", "-q", "--allow-empty", "-m", "foreign root"], check=True)
+        source = physical_target / "base-src"
+        subprocess.run(["git", "-C", str(foreign), "worktree", "add", "-q", "--detach", str(source), "HEAD"], check=True)
+        before = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True)
+        result = self.run_build()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("belongs to a different repository", result.stderr)
+        self.assertEqual(subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True), before)
+        self.assertEqual(self.records(), [])
+        self.assertFalse((physical_target / "base-build.lock").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

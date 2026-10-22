@@ -31,3 +31,6 @@ impl ParserPartOutput {
         FinalizedPartOutput::from_parser(self)
     }
 }
+
+#[cfg(test)]
+mod tests;

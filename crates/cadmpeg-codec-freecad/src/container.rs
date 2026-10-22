@@ -22,6 +22,8 @@ use crate::native::{
     LogicalSpan, PropertyFamily, PropertyRecord, StringTableRecord,
 };
 
+pub(crate) mod parts;
+
 const DETECTION_XML_BYTES: usize = 8 * 1024;
 
 /// Inspect the first local entry deeply enough to confirm `FCStd` document markers.
@@ -88,6 +90,8 @@ pub(crate) struct Scan<'a> {
     pub(crate) ledger: Vec<ArchiveSpan>,
     /// Bounded physical payloads that could not be opened.
     pub(crate) unreadable_entries: Vec<UnreadableEntry>,
+    /// Independently framed members given up by the shared part helper.
+    pub(crate) failed_members: BTreeSet<String>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
     pub(crate) data: BTreeMap<String, View<'a>>,
 }
@@ -111,6 +115,30 @@ pub(crate) struct UnreadableEntry {
 
 /// Scan an archive through the session resource budget.
 pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
+    scan_impl(ctx, root, None)
+}
+
+pub(crate) fn scan_for_decode<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<
+    (
+        Scan<'a>,
+        cadmpeg_ir::source_fidelity::parts::ParserPartOutput,
+    ),
+    CodecError,
+> {
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::ParserPartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
+    let scan = scan_impl(ctx, root, Some(&mut parts))?;
+    Ok((scan, parts))
+}
+
+fn scan_impl<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+    shared: Option<&mut cadmpeg_ir::source_fidelity::parts::ParserPartOutput>,
+) -> Result<Scan<'a>, CodecError> {
     let archive = ArchiveSnapshot::new(ctx, root)?;
     if !archive
         .entries()
@@ -129,6 +157,10 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     let mut losses = Vec::new();
     let document_xml = admit_document(ctx, document_bytes)?;
     let (document, schema_version) = parse_document(&document_xml, &mut losses)?;
+    let mut opened = match shared {
+        Some(output) => parts::open_optional(ctx, root, &archive, output)?,
+        None => parts::OptionalMembers::default(),
+    };
     let mut data = BTreeMap::new();
     let mut unreadable_entries = Vec::new();
     for file in archive.entries() {
@@ -140,6 +172,10 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         }
         let view = if file.name == "Document.xml" {
             document_view
+        } else if let Some(view) = opened.data.remove(&file.name) {
+            view
+        } else if opened.failed.contains(&file.name) {
+            continue;
         } else {
             match archive.open(ctx, &file.name) {
                 Ok(view) => view,
@@ -199,6 +235,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         schema_version,
         document_xml,
         unreadable_entries,
+        failed_members: opened.failed,
         ledger,
         data,
     })
@@ -213,6 +250,7 @@ pub(crate) fn entry_records(
     for entry in &scan.unreadable_entries {
         unreadable_names.insert(entry.name.as_str());
     }
+    unreadable_names.extend(scan.failed_members.iter().map(String::as_str));
     let references = {
         let mut references = HashMap::<&str, Vec<usize>>::new();
         for (index, property) in properties.iter().enumerate() {

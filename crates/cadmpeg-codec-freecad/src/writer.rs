@@ -60,16 +60,23 @@ fn write_seekable(
     let namespace = resolution.namespace();
     let document = resolution.document();
     let schema_version = resolution.schema_version();
+    let fidelity = resolution.fidelity();
     let unreadable =
         namespace.arena_as::<crate::container::UnreadableEntry>("unreadable_entries")?;
-    if !unreadable.is_empty() {
+    if !unreadable.is_empty()
+        || fidelity.parts().values().any(|part| {
+            matches!(
+                part.state(),
+                cadmpeg_ir::source_fidelity::parts::PartState::GivenUp
+            )
+        })
+    {
         return Err(CodecError::UnsupportedContent("FCStd repacking cannot preserve unreadable ZIP payloads; retained stored bytes are source-only".into()));
     }
     let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
     let objects = namespace.arena_as::<ObjectRecord>("objects")?;
     let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
-    let fidelity = resolution.fidelity();
     let archive_image = crate::source_archive::image(fidelity)?;
     let source_arena = cadmpeg_core::decode::DecodeArena::new();
     let source_policy = cadmpeg_core::decode::DecodePolicy::default();

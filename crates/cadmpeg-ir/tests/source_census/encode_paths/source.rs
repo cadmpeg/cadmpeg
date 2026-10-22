@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 use syn::spanned::Spanned;
 use syn::visit::{self, Visit};
 
+use super::bindings::Value;
 use super::rules::{self, Aliases, Body};
-use super::{Function, Graph};
+use super::{absolute, module_scope, Function, Graph};
 
 fn test_only(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|attribute| {
@@ -29,8 +30,30 @@ fn test_only(attrs: &[syn::Attribute]) -> bool {
     })
 }
 
-fn imports(items: &[syn::Item], inherited: &Aliases) -> Aliases {
-    let mut aliases = inherited.clone();
+fn imports(items: &[syn::Item], inherited: &Aliases, scope: &[String]) -> Aliases {
+    let inherits = scope.last().is_some_and(|part| part.starts_with('$')) || items.iter().any(|item| {
+        matches!(item, syn::Item::Use(item) if matches!(&item.tree, syn::UseTree::Path(path) if path.ident == "super" && matches!(path.tree.as_ref(), syn::UseTree::Glob(_))))
+    });
+    let mut aliases = if inherits {
+        inherited.clone()
+    } else {
+        Aliases::new()
+    };
+    for item in items {
+        let name = match item {
+            syn::Item::Fn(item) if !test_only(&item.attrs) => Some(&item.sig.ident),
+            syn::Item::Struct(item) if !test_only(&item.attrs) => Some(&item.ident),
+            syn::Item::Enum(item) if !test_only(&item.attrs) => Some(&item.ident),
+            syn::Item::Trait(item) if !test_only(&item.attrs) => Some(&item.ident),
+            syn::Item::Mod(item) if !test_only(&item.attrs) => Some(&item.ident),
+            _ => None,
+        };
+        if let Some(name) = name {
+            let mut path = scope.to_vec();
+            path.push(name.to_string());
+            aliases.insert(name.to_string(), path);
+        }
+    }
     for item in items {
         if let syn::Item::Use(item) = item {
             if !test_only(&item.attrs) {
@@ -56,6 +79,9 @@ fn imports(items: &[syn::Item], inherited: &Aliases) -> Aliases {
         if aliases == previous {
             break;
         }
+    }
+    for value in aliases.values_mut() {
+        *value = absolute(value, scope);
     }
     aliases
 }
@@ -107,23 +133,16 @@ impl Loader<'_> {
         scope: &[String],
         inherited: &Aliases,
     ) {
-        let aliases = imports(items, inherited);
+        let aliases = imports(items, inherited, scope);
         for item in items {
             match item {
                 syn::Item::Fn(item) if !test_only(&item.attrs) => {
-                    self.function(
-                        file,
-                        scope,
-                        (None, false),
-                        (&item.sig.ident, item.sig.span()),
-                        &item.block,
-                        &aliases,
-                    );
+                    self.function(file, scope, (None, false), &item.sig, &item.block, &aliases);
                 }
                 syn::Item::Impl(item) if !test_only(&item.attrs) => {
                     let owner = match item.self_ty.as_ref() {
                         syn::Type::Path(ty) => {
-                            rules::path(&ty.path, &aliases, None).last().cloned()
+                            Some(owner_path(rules::path(&ty.path, &aliases, None), scope))
                         }
                         _ => None,
                     };
@@ -132,7 +151,11 @@ impl Loader<'_> {
                             .last()
                             .is_some_and(|name| name == "EncoderBackend")
                     });
-                    if owner.as_deref() == Some("EncodeError") {
+                    if owner
+                        .as_ref()
+                        .and_then(|owner| owner.last())
+                        .is_some_and(|name| name == "EncodeError")
+                    {
                         if let Some((path, _)) = &item.trait_ {
                             if path
                                 .segments
@@ -156,7 +179,7 @@ impl Loader<'_> {
                                     file,
                                     scope,
                                     (owner.clone(), root),
-                                    (&method.sig.ident, method.sig.span()),
+                                    &method.sig,
                                     &method.block,
                                     &aliases,
                                 );
@@ -172,8 +195,11 @@ impl Loader<'_> {
                                     self.function(
                                         file,
                                         scope,
-                                        (Some(item.ident.to_string()), false),
-                                        (&method.sig.ident, method.sig.span()),
+                                        (
+                                            Some(owner_path(vec![item.ident.to_string()], scope)),
+                                            false,
+                                        ),
+                                        &method.sig,
                                         block,
                                         &aliases,
                                     );
@@ -263,14 +289,41 @@ impl Loader<'_> {
         &mut self,
         file: &Path,
         scope: &[String],
-        (owner, root): (Option<String>, bool),
-        (name, span): (&syn::Ident, proc_macro2::Span),
+        (owner, root): (Option<Vec<String>>, bool),
+        signature: &syn::Signature,
         block: &syn::Block,
         aliases: &Aliases,
     ) {
+        let name = &signature.ident;
+        let span = signature.span();
+        let mut nested = Nested(Vec::new());
+        nested.visit_block(block);
+        let mut nested_scope = scope.to_vec();
+        let owner_name = owner
+            .as_ref()
+            .map_or(String::new(), |owner| owner.join("::") + "::");
+        nested_scope.push(format!("${owner_name}{name}@{}", span.start().line));
         let mut local = LocalImports(aliases.clone());
         local.visit_block(block);
+        for item in &nested.0 {
+            if let syn::Item::Fn(item) = item {
+                if !test_only(&item.attrs) {
+                    let mut path = nested_scope.clone();
+                    path.push(item.sig.ident.to_string());
+                    local.0.insert(item.sig.ident.to_string(), path);
+                }
+            }
+        }
+        for value in local.0.values_mut() {
+            *value = absolute(value, scope);
+        }
         let mut scan = Body::new(local.0, owner.as_deref());
+        scan.bindings.push();
+        for argument in &signature.inputs {
+            if let syn::FnArg::Typed(argument) = argument {
+                scan.bindings.bind(&argument.pat, Value::Unknown);
+            }
+        }
         scan.visit_block(block);
         self.graph.functions.push(Function {
             file: self.relative(file),
@@ -283,18 +336,35 @@ impl Loader<'_> {
             calls: scan.calls,
             sites: scan.sites,
         });
-        let mut nested = Nested(Vec::new());
-        nested.visit_block(block);
         for item in nested.0 {
             self.items(
                 &[item],
                 file,
                 file.parent().expect("source directory"),
-                scope,
+                &nested_scope,
                 aliases,
             );
         }
     }
+}
+
+fn owner_path(path: Vec<String>, scope: &[String]) -> Vec<String> {
+    if matches!(
+        path.first().map(String::as_str),
+        Some("crate" | "self" | "super")
+    ) {
+        return absolute(&path, scope);
+    }
+    if path.first().is_some_and(|name| {
+        scope.first() == Some(name)
+            || name.starts_with("cadmpeg_")
+            || matches!(name.as_str(), "std" | "core" | "alloc")
+    }) {
+        return path;
+    }
+    let mut result = module_scope(scope);
+    result.extend(path);
+    result
 }
 
 struct Nested(Vec<syn::Item>);

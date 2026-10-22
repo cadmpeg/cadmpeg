@@ -2,7 +2,7 @@
 //! Native Rhino 3DM archive writing.
 
 use crate::mesh::FaceIndexWidth;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::Write;
 
 mod attributes;
 mod compounds;
@@ -24,6 +24,7 @@ use model::{
 use crate::loss::RhinoLossCode;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::{EncodeBuffer, EncodeSession};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -59,9 +60,6 @@ fn stated_write_tolerance(
         "{field} {value} of {owner} is finer than the Rhino Brep write bound {EPS_WRITE_DEGENERATE}"
     )))
 }
-
-trait WriteSeek: Write + Seek {}
-impl<T: Write + Seek> WriteSeek for T {}
 
 const TCODE_PROPERTIES_TABLE: u32 = 0x1000_0014;
 const TCODE_SETTINGS_TABLE: u32 = 0x1000_0015;
@@ -146,20 +144,22 @@ fn write(
     version: RhinoArchiveVersion,
     output: &mut dyn Write,
 ) -> Result<WriteOutcome, CodecError> {
-    let mut staged = tempfile::tempfile()?;
-    let losses = write_seekable(ctx, ir, version, &mut staged)?;
-    staged.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut staged, output)?;
-    Ok(losses)
+    let session = EncodeSession::new(ctx.policy().limits);
+    let mut staged = session.buffer();
+    let outcome = write_buffered(ctx, ir, version, &session, &mut staged)?;
+    session.finish()?;
+    output.write_all(staged.as_bytes())?;
+    Ok(outcome)
 }
 
-fn write_seekable(
+fn write_buffered(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: RhinoArchiveVersion,
-    output: &mut dyn WriteSeek,
+    session: &EncodeSession,
+    output: &mut EncodeBuffer<'_>,
 ) -> Result<WriteOutcome, CodecError> {
-    let mut plan = prepare_write(ctx, ir, version)?;
+    let mut plan = prepare_write(ctx, ir, version, session)?;
     plan.losses.extend(write_archive_prefix(
         ctx,
         ir,
@@ -168,13 +168,15 @@ fn write_seekable(
         &plan.materials,
         output,
     )?);
-    let table_start = output.stream_position()?;
-    output.write_all(&TCODE_OBJECT_TABLE.to_le_bytes())?;
-    output.write_all(&0_i64.to_le_bytes())?;
-    let body_start = output.stream_position()?;
+    let table_start = output.len();
+    output.append(
+        &TCODE_OBJECT_TABLE.to_le_bytes(),
+        "retain Rhino archive bytes",
+    )?;
+    output.append(&0_i64.to_le_bytes(), "retain Rhino archive bytes")?;
+    let body_start = output.len();
 
-    plan.brep_records.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut plan.brep_records, output)?;
+    output.append(plan.brep_records.as_bytes(), "retain Rhino archive bytes")?;
     for point in ir.model.points.iter().filter(|point| {
         !plan.topology_points.contains(point.id.as_str())
             && !is_support(point.source_object.as_ref())
@@ -190,15 +192,18 @@ fn write_seekable(
             point.source_object.as_ref(),
         );
         ctx.charge_entities(1, "write Rhino object record")?;
-        output.write_all(&attributed_object_record(
-            ir,
-            1,
-            POINT_CLASS,
-            &payload,
-            point.id.as_str(),
-            display,
-            &plan.materials,
-        )?)?;
+        output.append(
+            &attributed_object_record(
+                ir,
+                1,
+                POINT_CLASS,
+                &payload,
+                point.id.as_str(),
+                display,
+                &plan.materials,
+            )?,
+            "retain Rhino archive bytes",
+        )?;
     }
     for (id, payload) in &plan.curves {
         let curve = ir
@@ -213,13 +218,10 @@ fn write_seekable(
             curve.source_object.as_ref(),
         );
         ctx.charge_entities(1, "write Rhino object record")?;
-        output.write_all(&curve_object_record(
-            ir,
-            payload,
-            id,
-            display,
-            &plan.materials,
-        )?)?;
+        output.append(
+            &curve_object_record(ir, payload, id, display, &plan.materials)?,
+            "retain Rhino archive bytes",
+        )?;
     }
     for (id, (class, payload)) in &plan.surfaces {
         let surface = ir
@@ -234,15 +236,10 @@ fn write_seekable(
             surface.source_object.as_ref(),
         );
         ctx.charge_entities(1, "write Rhino object record")?;
-        output.write_all(&attributed_object_record(
-            ir,
-            8,
-            *class,
-            payload,
-            id,
-            display,
-            &plan.materials,
-        )?)?;
+        output.append(
+            &attributed_object_record(ir, 8, *class, payload, id, display, &plan.materials)?,
+            "retain Rhino archive bytes",
+        )?;
     }
     for mesh in &plan.meshes {
         let payload = mesh_payload(mesh, version)?;
@@ -252,37 +249,42 @@ fn write_seekable(
             mesh.source_object.as_ref(),
         );
         ctx.charge_entities(1, "write Rhino object record")?;
-        output.write_all(&mesh_object_record(
-            ir,
-            &payload,
-            mesh.id.as_str(),
-            display,
-            &plan.materials,
-        )?)?;
+        output.append(
+            &mesh_object_record(ir, &payload, mesh.id.as_str(), display, &plan.materials)?,
+            "retain Rhino archive bytes",
+        )?;
     }
 
     let (references, occurrence_losses) = tables::products::references(ir, &plan.materials)?;
     plan.losses.extend(occurrence_losses);
     for record in &references {
         ctx.charge_entities(1, "write Rhino object record")?;
-        output.write_all(record)?;
+        output.append(record, "retain Rhino archive bytes")?;
     }
     let (annotations, annotation_losses) = tables::annotations::records(ir, &plan.materials)?;
     plan.losses.extend(annotation_losses);
     for record in &annotations {
         ctx.charge_entities(1, "write Rhino object record")?;
-        output.write_all(record)?;
+        output.append(record, "retain Rhino archive bytes")?;
     }
 
-    output.write_all(&short_chunk(TCODE_ENDOFTABLE, 0))?;
-    let table_end = output.stream_position()?;
-    let body_len = archive_body_len(table_end - body_start)?;
-    output.seek(SeekFrom::Start(table_start + 4))?;
-    output.write_all(&body_len.to_le_bytes())?;
-    output.seek(SeekFrom::Start(table_end))?;
-    output.write_all(&table(ctx, TCODE_HISTORY_RECORD_TABLE, &[])?)?;
-    let final_size = archive_final_size(output.stream_position()?)?;
-    output.write_all(&long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?)?;
+    output.append(
+        &short_chunk(TCODE_ENDOFTABLE, 0),
+        "retain Rhino archive bytes",
+    )?;
+    let table_end = output.len();
+    let body_len = archive_body_len(cadmpeg_core::decode::u64_from_index(table_end - body_start))?;
+    let patched = output.overwrite(table_start + 4, &body_len.to_le_bytes());
+    debug_assert!(patched, "the staged Rhino object table header exists");
+    output.append(
+        &table(ctx, TCODE_HISTORY_RECORD_TABLE, &[])?,
+        "retain Rhino archive bytes",
+    )?;
+    let final_size = archive_final_size(cadmpeg_core::decode::u64_from_index(output.len()))?;
+    output.append(
+        &long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?,
+        "retain Rhino archive bytes",
+    )?;
     let free_points = ir
         .model
         .points
@@ -310,17 +312,20 @@ fn write_archive_prefix(
     version: RhinoArchiveVersion,
     written_bodies: &std::collections::BTreeSet<String>,
     materials: &MaterialPlan,
-    output: &mut dyn WriteSeek,
+    output: &mut EncodeBuffer<'_>,
 ) -> Result<Vec<LossNote>, CodecError> {
-    output.write_all(&header(version))?;
-    output.write_all(&long_chunk(1, b"cadmpeg")?)?;
+    output.append(&header(version), "retain Rhino archive bytes")?;
+    output.append(&long_chunk(1, b"cadmpeg")?, "retain Rhino archive bytes")?;
     let mut properties = vec![short_chunk(
         TCODE_PROPERTIES_OPENNURBS_VERSION,
         OPENNURBS_WRITER_VERSION,
     )];
     let documents = tables::document::properties(ir)?;
     properties.extend(documents.records);
-    output.write_all(&table(ctx, TCODE_PROPERTIES_TABLE, &properties)?)?;
+    output.append(
+        &table(ctx, TCODE_PROPERTIES_TABLE, &properties)?,
+        "retain Rhino archive bytes",
+    )?;
     let mut settings = vec![units_record(
         ir.tolerances.linear.get(),
         ir.tolerances.angular.get(),
@@ -333,7 +338,10 @@ fn write_archive_prefix(
     )?);
     let views = tables::views::settings(ir)?;
     settings.extend(views.settings);
-    output.write_all(&table(ctx, TCODE_SETTINGS_TABLE, &settings)?)?;
+    output.append(
+        &table(ctx, TCODE_SETTINGS_TABLE, &settings)?,
+        "retain Rhino archive bytes",
+    )?;
     for typecode in [
         TCODE_BITMAP_TABLE,
         TCODE_TEXTURE_MAPPING_TABLE,
@@ -357,9 +365,15 @@ fn write_archive_prefix(
             TCODE_LINETYPE_TABLE => tables::native::linetypes(ir)?,
             _ => Vec::new(),
         };
-        output.write_all(&table(ctx, typecode, &records)?)?;
+        output.append(
+            &table(ctx, typecode, &records)?,
+            "retain Rhino archive bytes",
+        )?;
         if typecode == TCODE_LINETYPE_TABLE {
-            output.write_all(&table(ctx, TCODE_LAYER_TABLE, &tables::layers(ir)?)?)?;
+            output.append(
+                &table(ctx, TCODE_LAYER_TABLE, &tables::layers(ir)?)?,
+                "retain Rhino archive bytes",
+            )?;
         }
     }
     let mut losses = documents.losses;
@@ -376,14 +390,14 @@ struct BrepPayload {
 /// A native class identifier and the payload encoded for it.
 type ClassPayload = ([u8; 16], Vec<u8>);
 
-struct WritePlan<'a> {
+struct WritePlan<'a, 'budget> {
     losses: Vec<LossNote>,
     meshes: Vec<cadmpeg_ir::tessellation::Tessellation>,
     /// Each free curve's identity and encoded payload.
     curves: Vec<(&'a str, compounds::CurvePayload)>,
     /// Each free surface's identity and encoded payload.
     surfaces: Vec<(&'a str, ClassPayload)>,
-    brep_records: std::fs::File,
+    brep_records: EncodeBuffer<'budget>,
     brep_count: usize,
     written_bodies: std::collections::BTreeSet<String>,
     topology_points: std::collections::BTreeSet<String>,
@@ -394,11 +408,12 @@ fn content_limitation(error: &CodecError) -> bool {
     matches!(error, CodecError::UnsupportedContent(_))
 }
 
-fn prepare_write<'a>(
+fn prepare_write<'a, 'budget>(
     ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     archive_version: RhinoArchiveVersion,
-) -> Result<WritePlan<'a>, CodecError> {
+    session: &'budget EncodeSession,
+) -> Result<WritePlan<'a, 'budget>, CodecError> {
     if ir.tolerances.angular.get() > std::f64::consts::PI {
         return Err(CodecError::InvalidInput(
             "Rhino angular tolerance must not exceed pi".into(),
@@ -559,7 +574,7 @@ fn prepare_write<'a>(
             Err(error) => return Err(error),
         }
     }
-    let mut brep_records = tempfile::tempfile()?;
+    let mut brep_records = session.buffer();
     let mut brep_count = 0;
     let mut written_bodies = std::collections::BTreeSet::new();
     for scope in &scopes {
@@ -654,15 +669,18 @@ fn prepare_write<'a>(
         written_bodies.insert(body.id.to_string());
         brep_count += 1;
         ctx.charge_entities(1, "write Rhino object record")?;
-        brep_records.write_all(&brep_object_record(
-            ir,
-            &payload,
-            body.id.as_str(),
-            body.name.as_deref(),
-            body.color,
-            body.visible,
-            &materials,
-        )?)?;
+        brep_records.append(
+            &brep_object_record(
+                ir,
+                &payload,
+                body.id.as_str(),
+                body.name.as_deref(),
+                body.color,
+                body.visible,
+                &materials,
+            )?,
+            "retain Rhino Brep records",
+        )?;
     }
     Ok(WritePlan {
         losses,

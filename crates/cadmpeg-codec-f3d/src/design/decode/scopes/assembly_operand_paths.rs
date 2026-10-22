@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact assembly operand paths and their locator envelopes.
 
+use super::assembly_path_layout::{ParsedOperandPath, PathLinkSources, PathSourceDraft};
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::rigid_transform_at;
@@ -27,12 +28,13 @@ use std::collections::HashMap;
 /// Record types of one Design stream by entity id: type GUID and version.
 pub(super) type StreamTypes<'a> = HashMap<u64, (&'a str, u32)>;
 
-pub(super) fn exact_assembly_operand_paths(
-    bytes: &[u8],
+pub(super) fn exact_assembly_operand_paths<'a>(
+    source: View<'a>,
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &StreamTypes<'_>,
-) -> Result<Option<[DesignAssemblyOperandPath; 2]>, CodecError> {
+) -> Result<Option<[ParsedOperandPath<'a>; 2]>, CodecError> {
+    let bytes = source.window();
     (|| {
         let scope_at = usize::try_from(scope.byte_offset()).ok()?;
         let search_start = usize::try_from(scope.paired_byte_offset())
@@ -63,7 +65,7 @@ pub(super) fn exact_assembly_operand_paths(
             let mut candidate = None;
             for locator_at in candidates {
                 let parsed = match exact_assembly_operand_path_envelope(
-                    bytes,
+                    source,
                     scope,
                     stream_types,
                     locator_record_index,
@@ -84,21 +86,21 @@ pub(super) fn exact_assembly_operand_paths(
         let [Some(first), Some(second)] = paths else {
             return None;
         };
-        let first_start = usize::try_from(first.link().locator_byte_offset).ok()?;
+        let first_start = usize::try_from(first.content.link().locator_byte_offset).ok()?;
         let first_end = next_indexed_record_offset(
             bytes,
-            usize::try_from(first.link().wrapper_byte_offset)
+            usize::try_from(first.content.link().wrapper_byte_offset)
                 .ok()?
                 .checked_add(1)?,
         )?;
-        let second_start = usize::try_from(second.link().locator_byte_offset).ok()?;
+        let second_start = usize::try_from(second.content.link().locator_byte_offset).ok()?;
         let second_end = next_indexed_record_offset(
             bytes,
-            usize::try_from(second.link().wrapper_byte_offset)
+            usize::try_from(second.content.link().wrapper_byte_offset)
                 .ok()?
                 .checked_add(1)?,
         )?;
-        if first.link().locator_record_index == second.link().locator_record_index
+        if first.content.link().locator_record_index == second.content.link().locator_record_index
             || (first_start < second_end && second_start < first_end)
         {
             return None;
@@ -108,14 +110,15 @@ pub(super) fn exact_assembly_operand_paths(
     .transpose()
 }
 
-fn exact_assembly_operand_path_envelope(
-    bytes: &[u8],
+fn exact_assembly_operand_path_envelope<'a>(
+    source: View<'a>,
     scope: &DesignParameterScope,
     stream_types: &StreamTypes<'_>,
     locator_record_index: u32,
     locator_reference_offset: u64,
     locator_at: usize,
-) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
+) -> Result<Option<ParsedOperandPath<'a>>, CodecError> {
+    let bytes = source.window();
     (|| {
         let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
         let variable_reference = crate::design::assembly::variable_reference_assembly_generation(
@@ -317,6 +320,15 @@ fn exact_assembly_operand_path_envelope(
         {
             return None;
         }
+        let link_sources = PathLinkSources::new(
+            source,
+            locator_reference_offset,
+            locator_at,
+            locator_scope_reference_offset,
+            wrapper_reference_offset,
+            wrapper_at,
+            path_reference_offset,
+        )?;
         let link = DesignAssemblyOperandPathLink {
             locator_reference_offset,
             locator_record_index,
@@ -334,14 +346,14 @@ fn exact_assembly_operand_path_envelope(
                 .get(&u64::from(record_index))
                 .map(|(guid, _)| *guid)
                 .filter(|guid| guid.eq_ignore_ascii_case(TYPED_OCCURRENCE_PATH_TYPE_GUID));
-            exact_assembly_operand_path(bytes, start, record_index, limit, link.clone(), type_guid)
+            exact_assembly_operand_path(source, start, record_index, limit, link.clone(), type_guid)
         });
         let mut path = match paths.next()? {
             Ok(Some(path)) => path,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
-        if variable_reference && path.class_tag().as_str() != "330" {
+        if variable_reference && path.content.class_tag().as_str() != "330" {
             return None;
         }
         for continuation in paths {
@@ -350,11 +362,13 @@ fn exact_assembly_operand_path_envelope(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            if !variable_reference || continuation.class_tag().as_str() != "330" {
+            if !variable_reference || continuation.content.class_tag().as_str() != "330" {
                 return None;
             }
-            path = path.try_append(continuation)?;
+            path.content = path.content.try_append(continuation.content)?;
+            path.source.append(continuation.source)?;
         }
+        path.source.set_link(link_sources);
         Some(Ok(path))
     })()
     .transpose()
@@ -362,20 +376,22 @@ fn exact_assembly_operand_path_envelope(
 
 /// Read one path record. `type_guid` is the record's type GUID when it is the
 /// identity-qualified counted path type, which admits it whatever its class.
-fn exact_assembly_operand_path(
-    bytes: &[u8],
+fn exact_assembly_operand_path<'a>(
+    source: View<'a>,
     start: usize,
     record_index: u32,
     limit: usize,
     link: DesignAssemblyOperandPathLink,
     type_guid: Option<&str>,
-) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
+) -> Result<Option<ParsedOperandPath<'a>>, CodecError> {
+    let bytes = source.window();
     (|| {
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(bytes, start, 1..=8, u8::is_ascii_digit)?;
         if View::u64_le_at(bytes, after_tag)? != u64::from(record_index) {
             return None;
         }
+        let mut draft = PathSourceDraft::new(source, start)?;
         let mut occurrence_guids = Vec::new();
         let mut identity_guids = Vec::new();
         let mut paired_occurrence_keys = Vec::new();
@@ -396,6 +412,7 @@ fn exact_assembly_operand_path(
                         Ok(None) => return None,
                         Err(error) => return Some(Err(error)),
                     };
+                draft.occurrence(position, after_occurrence)?;
                 occurrence_guids.push(crate::records::identity::Located {
                     value: occurrence.into(),
                     offset: u64::try_from(position + 4).ok()?,
@@ -408,6 +425,7 @@ fn exact_assembly_operand_path(
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
                         };
+                    draft.identity(position, after_guid)?;
                     identity_guids.push(crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
@@ -425,6 +443,7 @@ fn exact_assembly_operand_path(
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
                         };
+                    draft.identity(position, after_guid)?;
                     identity_guids.push(crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
@@ -456,6 +475,7 @@ fn exact_assembly_operand_path(
                         Ok(None) => return None,
                         Err(error) => return Some(Err(error)),
                     };
+                    draft.occurrence(position, after_guid)?;
                     occurrence_guids.push(crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
@@ -474,6 +494,7 @@ fn exact_assembly_operand_path(
                                 Ok(None) => return None,
                                 Err(error) => return Some(Err(error)),
                             };
+                        draft.identity(position, after_guid)?;
                         identity_guids.push(crate::records::identity::Located {
                             value: guid,
                             offset: u64::try_from(position + 4).ok()?,
@@ -491,6 +512,7 @@ fn exact_assembly_operand_path(
                                 Ok(None) => return None,
                                 Err(error) => return Some(Err(error)),
                             };
+                        draft.identity(position, after_guid)?;
                         identity_guids.push(crate::records::identity::Located {
                             value: guid,
                             offset: u64::try_from(position + 4).ok()?,
@@ -528,6 +550,7 @@ fn exact_assembly_operand_path(
                                         Ok(None) => return None,
                                         Err(error) => return Some(Err(error)),
                                     };
+                                draft.pair(position, after_key)?;
                                 paired_occurrence_keys.push(crate::records::identity::Located {
                                     value: key,
                                     offset: u64::try_from(position + 4).ok()?,
@@ -558,7 +581,12 @@ fn exact_assembly_operand_path(
         )
         .and_then(|path| path.with_paired_occurrence_keys(paired_occurrence_keys))
         .ok()
-        .map(Ok)
+        .map(|content| {
+            Ok(ParsedOperandPath {
+                content,
+                source: draft,
+            })
+        })
     })()
     .transpose()
 }

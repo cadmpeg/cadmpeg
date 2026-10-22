@@ -2905,9 +2905,10 @@ impl<'a> F3dDecodeSession<'a> {
     fn finalize(
         mut self,
         path: FinalizePath,
-        prereqs: prereqs::ProductPrereqs,
+        mut prereqs: prereqs::ProductPrereqs,
         design: DesignState,
     ) -> Result<AuthoredDecoded, CodecError> {
+        let source_layout_pointers = std::mem::take(&mut prereqs.source_layout_pointers);
         let scan = self.scan;
         let ctx = self.ctx;
         let geometry = match path {
@@ -3000,6 +3001,7 @@ impl<'a> F3dDecodeSession<'a> {
                     self.ir,
                     self.report,
                     RetainedArtifacts {
+                        source_layout_pointers,
                         annotations,
                         native_fidelity: self.native.retained_fidelity()?,
                         native_layout: Some(self.native),
@@ -3039,6 +3041,7 @@ impl<'a> F3dDecodeSession<'a> {
             self.ir,
             self.report,
             RetainedArtifacts {
+                source_layout_pointers,
                 annotations,
                 native_fidelity: self.native.retained_fidelity()?,
                 native_layout: Some(self.native),
@@ -3086,8 +3089,11 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     match &scan.kind {
         container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, &scan),
         container::F3dContainerKind::Document { .. } => {
-            decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)
-                .map(AuthoredDecoded::into_decoded)
+            let authored =
+                decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
+            let (mut decoded, pending) = authored.into_decoded();
+            source_layout::install(ctx, &mut decoded.source_fidelity, pending)?;
+            Ok(decoded)
         }
     }
 }
@@ -3107,6 +3113,11 @@ pub(crate) fn decode_patch_baseline<'a>(
     }
     let mut decoded = decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
     decoded.ir.source = Some(decoded.source.clone());
+    source_layout::install(
+        ctx,
+        &mut decoded.source_fidelity,
+        std::mem::take(&mut decoded.pending_layouts),
+    )?;
     Ok(decoded)
 }
 
@@ -3124,6 +3135,22 @@ pub(crate) fn decode_archive_member<'a>(
 }
 
 fn decode_scanned_document<'a>(
+    ctx: &DecodeContext<'a>,
+    scan: &'a ContainerScan<'a>,
+    report_scope: crate::report::ReportScope,
+) -> Result<AuthoredDecoded, CodecError> {
+    let (mut decoded, batch) =
+        ctx.record_batch(|| decode_scanned_document_inner(ctx, scan, report_scope))?;
+    let pointers = std::mem::take(&mut decoded.source_layout_pointers);
+    source_layout::append(
+        ctx,
+        &mut decoded.pending_layouts,
+        [source_layout::PendingLayouts::new(batch, pointers)],
+    )?;
+    Ok(decoded)
+}
+
+fn decode_scanned_document_inner<'a>(
     ctx: &DecodeContext<'a>,
     scan: &'a ContainerScan<'a>,
     report_scope: crate::report::ReportScope,
@@ -3176,6 +3203,7 @@ fn decode_scanned_document<'a>(
             ir,
             report,
             RetainedArtifacts {
+                source_layout_pointers: Default::default(),
                 annotations,
                 native_fidelity: cadmpeg_ir::SourceFidelity::default(),
                 native_layout: None,
@@ -4040,20 +4068,28 @@ pub(crate) struct AuthoredDecoded {
     pub(crate) source: cadmpeg_ir::SourceMeta,
     pub(crate) body: DecodeBody,
     pub(crate) source_fidelity: cadmpeg_ir::SourceFidelity,
+    source_layout_pointers:
+        std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
+    pub(crate) pending_layouts: Vec<source_layout::PendingLayouts>,
 }
 
 impl AuthoredDecoded {
-    pub(crate) fn into_decoded(mut self) -> Decoded {
+    pub(crate) fn into_decoded(mut self) -> (Decoded, Vec<source_layout::PendingLayouts>) {
         self.ir.source = Some(self.source);
-        Decoded {
-            ir: self.ir,
-            body: self.body,
-            source_fidelity: self.source_fidelity,
-        }
+        (
+            Decoded {
+                ir: self.ir,
+                body: self.body,
+                source_fidelity: self.source_fidelity,
+            },
+            self.pending_layouts,
+        )
     }
 }
 
 struct RetainedArtifacts {
+    source_layout_pointers:
+        std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
     native_layout: Option<F3dNative>,
     annotations: cadmpeg_ir::Annotations,
     native_fidelity: cadmpeg_ir::SourceFidelity,
@@ -4171,6 +4207,8 @@ fn decode_result(
         hash,
     );
     Ok(AuthoredDecoded {
+        source_layout_pointers: retained.source_layout_pointers,
+        pending_layouts: Vec::new(),
         native_layout: retained.native_layout,
         ir,
         source,
@@ -5244,6 +5282,7 @@ pub(crate) mod design_intent;
 mod prereqs;
 mod projection_records;
 mod projections;
+pub(crate) mod source_layout;
 
 #[cfg(test)]
 mod tests;

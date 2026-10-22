@@ -42,7 +42,8 @@ pub use probe::{ParseError, ParseErrorKind};
 pub use scope::{ArenaClass, ArenaClasses, ContentScope};
 pub use space::{ByteRange, SpaceId};
 pub use tracking::{
-    ReadTransaction, RecordCapture, RecordCaptureParts, SourceOrigin, SourceSegment, SourceStream,
+    ReadTransaction, RecordBatchId, RecordCapture, RecordCaptureParts, SourceOrigin, SourceSegment,
+    SourceStream,
 };
 pub use unique::unique_index;
 pub use view::{

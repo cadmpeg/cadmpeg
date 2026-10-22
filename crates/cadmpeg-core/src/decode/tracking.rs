@@ -7,11 +7,13 @@ use std::ops::Range;
 
 use super::budget::DecodeBudget;
 
+mod batches;
 mod streams;
 use super::{
     u64_from_index, DecodePolicy, ResourceDimension, ResourceFailure, ResourceLimit, SpaceId, View,
 };
 use crate::CodecError;
+pub use batches::RecordBatchId;
 use streams::{Origin, Streams};
 pub use streams::{SourceOrigin, SourceSegment, SourceStream};
 
@@ -24,6 +26,7 @@ pub type RecordCaptureParts = (String, String, u64, u64, BTreeMap<String, Vec<Ra
 #[derive(Debug, PartialEq, Eq)]
 pub struct RecordCapture {
     id: String,
+    batch: Option<RecordBatchId>,
     stream: String,
     offset: u64,
     byte_len: u64,
@@ -31,6 +34,10 @@ pub struct RecordCapture {
 }
 
 impl RecordCapture {
+    /// Member-local namespace, or None for an unbatched record scope.
+    pub fn batch_id(&self) -> Option<RecordBatchId> {
+        self.batch
+    }
     /// Record identity supplied at its read scope.
     pub fn id(&self) -> &str {
         &self.id
@@ -85,6 +92,7 @@ struct Session {
 #[derive(Debug)]
 struct Frame {
     token: usize,
+    batch: Option<RecordBatchId>,
     record: Option<RecordCapture>,
     captures: Vec<RecordCapture>,
     deltas: Vec<ReadDelta>,
@@ -566,6 +574,7 @@ impl SessionHandle<'_> {
                 .ok_or_else(|| CodecError::malformed("read scope identities exhausted"))?;
             session.frames.push(Frame {
                 token,
+                batch: None,
                 record,
                 captures: Vec::new(),
                 deltas: Vec::new(),
@@ -718,7 +727,7 @@ impl SessionHandle<'_> {
             }
             session.sealed = true;
             let mut captures = std::mem::take(&mut session.committed);
-            captures.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+            captures.sort_unstable_by(|a, b| a.batch.cmp(&b.batch).then_with(|| a.id.cmp(&b.id)));
             Ok(captures)
         })
     }
@@ -764,16 +773,17 @@ impl Session {
         if id.is_empty() {
             return Err(CodecError::malformed("record identity is empty"));
         }
+        let batch = self.frames.iter().rev().find_map(|frame| frame.batch);
         let duplicate = self
             .committed
             .iter()
             .chain(self.frames.iter().flat_map(|frame| frame.captures.iter()))
-            .any(|record| record.id == id)
+            .any(|record| record.batch == batch && record.id == id)
             || self
                 .frames
                 .iter()
                 .filter_map(|frame| frame.record.as_ref())
-                .any(|record| record.id == id);
+                .any(|record| record.batch == batch && record.id == id);
         if duplicate {
             return Err(CodecError::malformed("duplicate record read scope"));
         }
@@ -786,6 +796,7 @@ impl Session {
         )?;
         Ok(RecordCapture {
             id: copy_string(&self.budget, id)?,
+            batch,
             stream: copy_string(&self.budget, stream)?,
             offset: u64_from_index(extent.start()),
             byte_len: u64_from_index(extent.end().abs_diff(extent.start())),

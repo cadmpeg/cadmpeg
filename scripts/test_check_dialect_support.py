@@ -176,6 +176,30 @@ class TestFileLevel(SupportCase):
         )
 
 
+    def test_shared_harness_unit_inputs_do_not_publish_a_codec_fixture_root(self):
+        self.assertClean(
+            GOOD_SUPPORT,
+            files={
+                FIXTURE: "demo bytes",
+                "crates/cadmpeg-test-support/src/golden/tests/artifacts.rs": (
+                    "fn control() { Harness::new(temporary).with_fixture_dir(path); }"
+                ),
+            },
+        )
+
+    def test_codec_override_in_a_nested_helper_still_requires_registration(self):
+        self.assertFires(
+            GOOD_SUPPORT,
+            "Harness::with_fixture_dir has no checker fixture-root override",
+            files={
+                FIXTURE: "demo bytes",
+                "crates/cadmpeg-codec-demo/src/test_support/deep/harness.rs": (
+                    "fn harness() { Harness::new().with_fixture_dir(path); }"
+                ),
+            },
+        )
+
+
 class TestRowShape(SupportCase):
     def test_missing_required_keys(self):
         failures, _ = self.run_check('[[support]]\ndialect = "demo:one"\n')
