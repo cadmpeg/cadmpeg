@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Color, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -22,6 +23,7 @@ use cadmpeg_asm::edit::{
     NurbsSurfaceEdit as AsmNurbsSurfaceEdit, PcurveEdit as AsmPcurveEdit,
 };
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
+use cadmpeg_asm::nurbs::support_chart::{plane_record_chart, NativeChart};
 use cadmpeg_asm::sab;
 
 /// Whether an edited NURBS degree is one an ASM spline record states.
@@ -100,15 +102,44 @@ fn asm_nurbs_curve_edit(edit: &NurbsCurveEdit) -> AsmNurbsCurveEdit<'_> {
     }
 }
 
-fn asm_pcurve_edit(edit: &PcurveEdit) -> AsmPcurveEdit<'_> {
+/// An edited pcurve that the writer converted with a unit plane chart, moved
+/// into the chart of the retained plane record it lies on: that plane's
+/// reference-vector length and v-sense.
+fn retained_plane_pcurve(
+    native: &PcurveNurbs,
+    chart: NativeChart,
+) -> Result<PcurveNurbs, CodecError> {
+    let unit = NativeChart::Plane {
+        reverse_v: false,
+        scale: 1.0,
+    };
+    let mut poles = native.pole_rows().to_raw();
+    poles.edit_points(|point| {
+        *point = chart.native_point(unit.frame_point(*point));
+        Ok(())
+    })?;
+    PcurveNurbs::new(
+        native.degree(),
+        native.knots().to_vec(),
+        poles,
+        native.periodic(),
+    )
+    .map_err(|error| CodecError::NotImplemented(error.to_string()))
+}
+
+/// A pcurve edit whose poles are already in the chart of its retained support.
+fn asm_pcurve_edit<'a>(
+    edit: &'a PcurveEdit,
+    native_geometry: &'a PcurveNurbs,
+) -> AsmPcurveEdit<'a> {
     match edit {
         PcurveEdit::Inline {
-            native_geometry,
             periodic,
             wrapper_reversed,
             native_tail_flags,
             parameter_range,
             fit_tolerance,
+            ..
         } => AsmPcurveEdit::Inline(InlinePcurveEdit::PcurveWrapper {
             native_geometry,
             periodic: *periodic,
@@ -199,18 +230,37 @@ fn patch_asm_geometry(
                 })
         })
         .collect::<BTreeMap<_, _>>();
+    let plane_charts = records
+        .iter()
+        .filter_map(|record| {
+            let chart = plane_record_chart(record.head(), &record.tokens)?;
+            (chart
+                != NativeChart::Plane {
+                    reverse_v: false,
+                    scale: 1.0,
+                })
+            .then(|| (crate::ids::brep_entity_id(record.index), chart))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let pcurve_geometry = pcurves
+        .iter()
+        .map(|(id, edit)| {
+            let geometry = match plane_charts.get(edit.support()) {
+                Some(chart) => retained_plane_pcurve(edit.native_geometry(), *chart)?,
+                None => edit.native_geometry().clone(),
+            };
+            Ok((id.as_str(), geometry))
+        })
+        .collect::<Result<BTreeMap<_, _>, CodecError>>()?;
     let ref_pcurve_geometry = records
         .iter()
         .filter(|record| record.head() == "pcurve")
         .filter_map(|record| {
-            let PcurveEdit::Ref {
-                native_geometry,
-                periodic,
-                ..
-            } = pcurves.get(&crate::ids::brep_entity_id(record.index))?
-            else {
+            let id = crate::ids::brep_entity_id(record.index);
+            let PcurveEdit::Ref { periodic, .. } = pcurves.get(&id)? else {
                 return None;
             };
+            let native_geometry = pcurve_geometry.get(id.as_str())?;
             let target = usize::try_from(record.ref_at(4)?).ok()?;
             Some((
                 target,
@@ -378,8 +428,10 @@ fn patch_asm_geometry(
         if let Some(edit) = ref_pcurve_geometry.get(&record.index) {
             asm_edits.patch_pcurve(bytes, record, *edit)?;
         }
-        if let Some(edit) = pcurves.get(&id) {
-            asm_edits.patch_pcurve(bytes, record, asm_pcurve_edit(edit))?;
+        if let (Some(edit), Some(native_geometry)) =
+            (pcurves.get(&id), pcurve_geometry.get(id.as_str()))
+        {
+            asm_edits.patch_pcurve(bytes, record, asm_pcurve_edit(edit, native_geometry))?;
         }
         if let Some(edit) = nurbs_curves.get(&id) {
             asm_edits.patch_nurbs_curve(
@@ -635,6 +687,11 @@ fn patch_asm_geometry(
                     asm_edits.required_payload_field(bytes, record, field_indices[1], 0x14)?,
                     asm_edits.required_payload_field(bytes, record, field_indices[2], 0x14)?,
                 ];
+                // The reference-vector length scales the plane's pcurve
+                // coordinates, so the patched vector keeps the stored length.
+                let (_, [x, y, z]) =
+                    asm_edits.required_payload_vector(bytes, record, field_indices[2])?;
+                let scale = x.hypot(y).hypot(z);
                 for (offset, values) in fields.into_iter().zip([
                     [
                         origin.x / LEN_TO_MM,
@@ -642,7 +699,7 @@ fn patch_asm_geometry(
                         origin.z / LEN_TO_MM,
                     ],
                     [normal.x, normal.y, normal.z],
-                    [u_axis.x, u_axis.y, u_axis.z],
+                    [u_axis.x * scale, u_axis.y * scale, u_axis.z * scale],
                 ]) {
                     for (component, value) in values.into_iter().enumerate() {
                         let at = offset + 1 + component * 8;

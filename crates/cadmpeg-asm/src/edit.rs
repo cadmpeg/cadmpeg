@@ -252,6 +252,31 @@ impl AsmEditSet {
         Ok((offset, value))
     }
 
+    /// Locate one vector payload and retain its decoded components.
+    pub fn required_payload_vector(
+        &self,
+        bytes: &[u8],
+        record: &Record,
+        index: usize,
+    ) -> Result<(usize, [f64; 3]), CodecError> {
+        let (offset, token) =
+            sab::payload_token(bytes, record, self.ref_width, index).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} record {} lacks payload field {index}",
+                    record.head(),
+                    record.index
+                ))
+            })?;
+        let sab::Token::Vector3(value) = token else {
+            return Err(CodecError::malformed(format_args!(
+                "{} record {} payload field {index} is not tag 0x14",
+                record.head(),
+                record.index
+            )));
+        };
+        Ok((offset, value))
+    }
+
     /// Replace one tagged integer payload without changing its encoded width.
     pub fn patch_integer_field(
         &self,

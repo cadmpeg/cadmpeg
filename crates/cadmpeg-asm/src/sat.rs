@@ -1022,7 +1022,8 @@ enum Slot {
     P,
     /// `VECTOR_3D` carrying lengths (direction magnitude is a model length).
     VLen,
-    /// `VECTOR_3D` carrying a unit direction; not converted.
+    /// `VECTOR_3D` carrying a direction or a dimensionless scaled direction;
+    /// not converted.
     VUnit,
     /// Sense word: `forward` = `FALSE`, `reversed` = `TRUE`.
     Sense,
@@ -1765,7 +1766,9 @@ fn nullable_surface(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<B
         "plane" => {
             cur.bump();
             push_token!(cur, out, Token::Ident("plane".to_string()));
-            for slot in [Slot::P, Slot::VUnit, Slot::VLen, Slot::UvSense] {
+            // The reference vector scales the plane coordinates, which take
+            // the stream unit; it is not a length itself.
+            for slot in [Slot::P, Slot::VUnit, Slot::VUnit, Slot::UvSense] {
                 take_slot(cur, slot, out)?;
             }
             for _ in 0..4 {
@@ -2120,7 +2123,7 @@ fn head_shapes(head: &str) -> &'static [&'static [Slot]] {
         "ellipse" => &[shape![P, VUnit, VLen, D, OptB, OptB]],
         "degenerate_curve" => &[shape![P, OptB, OptB]],
         "intcurve" => &[shape![Sense, Sub, OptB, OptB]],
-        "plane" => &[shape![P, VUnit, VLen, UvSense, OptB, OptB, OptB, OptB]],
+        "plane" => &[shape![P, VUnit, VUnit, UvSense, OptB, OptB, OptB, OptB]],
         "cone" => &[shape![
             P, VUnit, VLen, D, OptB, OptB, D, D, DLen, Sense, OptB, OptB, OptB, OptB
         ]],

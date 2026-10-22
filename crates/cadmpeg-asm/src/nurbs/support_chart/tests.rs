@@ -72,16 +72,18 @@ fn assert_endpoints_hit_vertices(surface: &Record, ends: [Point2; 2], vertices: 
     }
 }
 
-fn plane_case(reverse_v: bool) {
+/// A plane whose reference vector `u_vec` has length `scale`: a native
+/// coordinate counts lengths of `u_vec`.
+fn plane_case(reverse_v: bool, scale: f64) {
     let origin = [1.0, -2.0, 0.5];
     let normal = [0.0, 0.0, 1.0];
-    let u_dir = [0.6, 0.8, 0.0];
+    let u_vec = [0.6 * scale, 0.8 * scale, 0.0];
     let surface = record(
         "plane",
         vec![
             Token::Position(origin),
             Token::Vector3(normal),
-            Token::Vector3(u_dir),
+            Token::Vector3(u_vec),
             sense(reverse_v),
             Token::False,
             Token::False,
@@ -89,7 +91,7 @@ fn plane_case(reverse_v: bool) {
             Token::False,
         ],
     );
-    let (u, n) = (unit(u_dir), unit(normal));
+    let (u, n) = (Vector3::from(u_vec), unit(normal));
     let v = n.cross(u).scale(if reverse_v { -1.0 } else { 1.0 });
     let ends = [Point2::new(0.25, -1.5), Point2::new(-2.0, 3.0)];
     let vertices = ends.map(|end| mm(Vector3::from(origin) + u.scale(end.u) + v.scale(end.v)));
@@ -98,12 +100,18 @@ fn plane_case(reverse_v: bool) {
 
 #[test]
 fn forward_v_plane_second_coordinate_runs_along_normal_cross_u_dir() {
-    plane_case(false);
+    plane_case(false, 1.0);
 }
 
 #[test]
 fn reverse_v_plane_second_coordinate_runs_opposite_normal_cross_u_dir() {
-    plane_case(true);
+    plane_case(true, 1.0);
+}
+
+#[test]
+fn plane_coordinates_count_lengths_of_the_reference_vector() {
+    plane_case(false, 1.0 / 25.4);
+    plane_case(true, 2.5);
 }
 
 /// A cone or cylinder record and the native point of each generator and
@@ -321,8 +329,14 @@ fn embedded_support_chart_reads_the_same_fields_as_the_record() {
 fn native_point_inverts_frame_point() {
     let native = Point2::new(0.375, -1.25);
     for chart in [
-        NativeChart::Plane { reverse_v: false },
-        NativeChart::Plane { reverse_v: true },
+        NativeChart::Plane {
+            reverse_v: false,
+            scale: 1.0,
+        },
+        NativeChart::Plane {
+            reverse_v: true,
+            scale: 1.0 / 25.4,
+        },
         NativeChart::cone(-0.5, 1.75, true).expect("nonzero scale"),
         NativeChart::LatitudeFirst { reverse_v: false },
         NativeChart::LatitudeFirst { reverse_v: true },
@@ -338,7 +352,10 @@ fn native_point_inverts_frame_point() {
 #[test]
 fn chart_overflow_refuses_conversion_without_changing_the_pcurve() {
     let chart = SupportChart::Native {
-        chart: NativeChart::Plane { reverse_v: false },
+        chart: NativeChart::Plane {
+            reverse_v: false,
+            scale: 1.0,
+        },
         map: FrameMap::Frame,
     };
     let mut pcurve = linear_pcurve([Point2::new(f64::MAX, 0.0), Point2::new(1.0, 1.0)]);

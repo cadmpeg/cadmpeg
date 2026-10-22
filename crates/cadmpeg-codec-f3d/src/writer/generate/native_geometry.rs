@@ -5973,11 +5973,13 @@ fn native_support_pcurve_for_range(
 ) -> Result<PcurveNurbs, CodecError> {
     let native = native_pcurve_geometry(pcurve, range)?;
     // The chart of the native support fields `native_embedded_surface` writes:
-    // the neutral frame, forward senses, and `u_scale` equal to the radius.
+    // the neutral frame with a unit plane reference vector, forward senses,
+    // and `u_scale` equal to the radius.
     let chart = match geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-            Some(NativeChart::Plane { reverse_v: false })
-        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => Some(NativeChart::Plane {
+            reverse_v: false,
+            scale: 1.0,
+        }),
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             NativeChart::cone(1.0, cylinder_surface.radius().get() / LEN_TO_MM, false)
         }
@@ -6148,6 +6150,24 @@ pub(in crate::writer) fn pcurve_support_geometry<'a>(
     model: &'a Model,
     pcurve_id: &PcurveId,
 ) -> Result<&'a SurfaceGeometry, CodecError> {
+    let surface_id = pcurve_support_surface(model, pcurve_id)?;
+    model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == *surface_id)
+        .map(|surface| &surface.geometry)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "F3D pcurve {pcurve_id} references missing support {surface_id}"
+            ))
+        })
+}
+
+/// The surface of the faces that use a pcurve.
+pub(in crate::writer) fn pcurve_support_surface<'a>(
+    model: &'a Model,
+    pcurve_id: &PcurveId,
+) -> Result<&'a SurfaceId, CodecError> {
     fn surface_for_loop<'a>(
         model: &'a Model,
         loop_: &cadmpeg_ir::topology::Loop,
@@ -6203,21 +6223,11 @@ pub(in crate::writer) fn pcurve_support_geometry<'a>(
             record_surface(&mut surface_id, surface, pcurve_id)?;
         }
     }
-    let surface_id = surface_id.ok_or_else(|| {
+    surface_id.ok_or_else(|| {
         CodecError::malformed(format_args!(
             "F3D pcurve {pcurve_id} is not used by a coedge or pole vertex"
         ))
-    })?;
-    model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == *surface_id)
-        .map(|surface| &surface.geometry)
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D pcurve {pcurve_id} references missing support {surface_id}"
-            ))
-        })
+    })
 }
 
 fn native_intcurve_support_context(
