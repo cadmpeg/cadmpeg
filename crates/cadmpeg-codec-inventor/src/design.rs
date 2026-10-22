@@ -24,6 +24,7 @@ pub(crate) mod scope;
 
 use scope::{BrepSegmentName, BrepSegmentRole, ParameterScope, ParameterScopes};
 
+const EXPRESSION_FUNCTION_TYPE: [u8; 16] = expression_id(0xf8a7_7a03);
 const EXPRESSION_VALUE_TYPE: [u8; 16] = expression_id(0xf8a7_7a04);
 const EXPRESSION_REFERENCE_TYPE: [u8; 16] = expression_id(0xf8a7_7a05);
 const EXPRESSION_ADD_TYPE: [u8; 16] = expression_id(0xf8a7_7a06);
@@ -126,6 +127,12 @@ pub(crate) enum PmDcExpressionKind {
         operation: PmDcBinaryOperation,
         left: PmDcReference,
         right: PmDcReference,
+    },
+    /// A function call: `function` names the function and `arguments` lists
+    /// its argument expressions in order.
+    Function {
+        function: u32,
+        arguments: crate::pmdc::PmDcReferenceList,
     },
 }
 
@@ -382,6 +389,18 @@ pub(crate) fn inventory(
                 })
             } else if let Some(operation) = binary_operation(record.type_id) {
                 parse_binary_expression(record.payload, version, operation).and_then(|value| {
+                    push_record(
+                        ctx,
+                        &mut inventory.expressions,
+                        value,
+                        record.type_id,
+                        segment.pair.token.key(),
+                        record.ordinal,
+                        "admit Inventor PmDc expression record",
+                    )
+                })
+            } else if record.type_id == EXPRESSION_FUNCTION_TYPE {
+                parse_function_expression(record.payload, version).and_then(|value| {
                     push_record(
                         ctx,
                         &mut inventory.expressions,
@@ -911,6 +930,25 @@ impl<'a, 'b> ExpressionRenderer<'a, 'b> {
                     shape,
                 }
             }
+            PmDcExpressionKind::Function {
+                function,
+                arguments,
+            } => {
+                let ([argument], Some(name)) = (arguments.references(), function_name(*function))
+                else {
+                    return Ok(MeasuredExpression::UNRESOLVED_LEAF);
+                };
+                let argument = self.measure(token, argument.index())?;
+                MeasuredExpression {
+                    height: argument.height + 1,
+                    shape: match argument.shape {
+                        ExpressionShape::Text(length) => {
+                            ExpressionShape::of_length(length.checked_add(name.len() + "()".len()))
+                        }
+                        unrendered => unrendered,
+                    },
+                }
+            }
             PmDcExpressionKind::Binary {
                 operation,
                 left,
@@ -983,6 +1021,22 @@ impl<'a, 'b> ExpressionRenderer<'a, 'b> {
                         dependencies.push(parameter_id(target)?);
                     }
                     text.push_str(&target.name);
+                }
+                PmDcExpressionKind::Function {
+                    function,
+                    arguments,
+                } => {
+                    let ([argument], Some(name)) =
+                        (arguments.references(), function_name(*function))
+                    else {
+                        return Err(expression_changed_after_measure());
+                    };
+                    pending.extend([
+                        ExpressionPiece::Literal(")"),
+                        ExpressionPiece::Node(argument.index()),
+                        ExpressionPiece::Literal("("),
+                        ExpressionPiece::Literal(name),
+                    ]);
                 }
                 PmDcExpressionKind::Unary { operation, operand } => pending.extend([
                     ExpressionPiece::Literal(")"),
@@ -1172,6 +1226,36 @@ fn parse_unary_expression(
         unit,
         kind: PmDcExpressionKind::Unary { operation, operand },
     })
+}
+
+fn parse_function_expression(
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcExpressionPayload, CodecError> {
+    let (mut cursor, header_value, header_id, unit) = expression_header(source)?;
+    let arguments = crate::pmdc::reference_list(&mut cursor, 2, "function expression arguments")?;
+    let function = cursor.u32("function expression function")?;
+    cursor.finish("function expression")?;
+    Ok(PmDcExpressionPayload {
+        save_version_major: version,
+        header_value,
+        header_id,
+        unit,
+        kind: PmDcExpressionKind::Function {
+            function,
+            arguments,
+        },
+    })
+}
+
+/// The display name of a one-argument function code.
+const fn function_name(function: u32) -> Option<&'static str> {
+    match function {
+        1 => Some("cos"),
+        2 => Some("sin"),
+        3 => Some("tan"),
+        _ => None,
+    }
 }
 
 fn parse_binary_expression(
@@ -1464,13 +1548,13 @@ pub(crate) fn ratio_parameter_records() -> [([u8; 16], Vec<u8>); 6] {
 mod tests {
     use super::{
         base_unit, bounded_expression_loss, close_parameter_graph, inventory,
-        parse_binary_expression, parse_parameter, parse_unary_expression, parse_unit_definition,
-        parse_value_expression, project_parameters, DesignInventory, ExpressionRenderer,
-        ExpressionShape, PmDcBinaryOperation, PmDcExpressionKind, PmDcExpressionPayload,
-        PmDcParameterPayload, PmDcUnaryOperation, PmDcUnitDimension, PmDcUnitKind, PmDcUnitPayload,
-        DIMENSIONLESS_TYPE, EXPRESSION_ADD_TYPE, EXPRESSION_NEGATE_TYPE, EXPRESSION_REFERENCE_TYPE,
-        EXPRESSION_VALUE_TYPE, GRAD_TYPE, MAX_EXPRESSION_TEXT_BYTES, PARAMETER_FULL_TYPE,
-        UNIT_TYPE,
+        parse_binary_expression, parse_function_expression, parse_parameter,
+        parse_unary_expression, parse_unit_definition, parse_value_expression, project_parameters,
+        DesignInventory, ExpressionRenderer, ExpressionShape, PmDcBinaryOperation,
+        PmDcExpressionKind, PmDcExpressionPayload, PmDcParameterPayload, PmDcUnaryOperation,
+        PmDcUnitDimension, PmDcUnitKind, PmDcUnitPayload, DIMENSIONLESS_TYPE, EXPRESSION_ADD_TYPE,
+        EXPRESSION_NEGATE_TYPE, EXPRESSION_REFERENCE_TYPE, EXPRESSION_VALUE_TYPE, GRAD_TYPE,
+        MAX_EXPRESSION_TEXT_BYTES, PARAMETER_FULL_TYPE, UNIT_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::loss::InventorLossCode;
@@ -2415,6 +2499,65 @@ mod tests {
             .expect("admitted graph")
             .expect("closed graph");
         assert_eq!(result.0, "-(((x) + (x)))");
+    }
+
+    fn function_call(function: u32, argument: u32) -> PmDcExpressionKind {
+        PmDcExpressionKind::Function {
+            function,
+            arguments: crate::pmdc::PmDcReferenceList::new(
+                2,
+                Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
+                vec![reference(argument, false)],
+            )
+            .expect("one-argument list"),
+        }
+    }
+
+    #[test]
+    fn a_known_function_call_renders_with_its_name() {
+        for (function, name) in [(1, "cos"), (2, "sin"), (3, "tan")] {
+            let result = render_graph(
+                &DecodePolicy::service(),
+                vec![reference_leaf(), function_call(function, 1)],
+                2,
+            )
+            .expect("admitted graph")
+            .expect("closed graph");
+            assert_eq!(result.0, format!("{name}(x)"));
+        }
+        // An unknown function leaves the formula native.
+        assert!(render_graph(
+            &DecodePolicy::service(),
+            vec![reference_leaf(), function_call(9, 1)],
+            2,
+        )
+        .expect("admitted graph")
+        .is_none());
+    }
+
+    #[test]
+    fn parses_generated_function_expression() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&0x0597u16.to_le_bytes());
+        bytes.extend_from_slice(&0x376u32.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&0x3000u16.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&0x377u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        assert_eq!(bytes.len(), 34);
+        let arena = DecodeArena::new();
+        let (_, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("function view");
+        let parsed = parse_function_expression(source, 19).expect("function expression parses");
+        assert!(matches!(
+            parsed.kind,
+            PmDcExpressionKind::Function { function: 1, ref arguments }
+                if arguments.references().len() == 1 && arguments.references()[0].index() == 0x377
+        ));
     }
 
     #[test]

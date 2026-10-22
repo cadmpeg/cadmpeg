@@ -284,6 +284,14 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 references.push(left.index());
                 references.push(right.index());
             }
+            PmDcExpressionKind::Function { arguments, .. } => {
+                references.extend(
+                    arguments
+                        .references()
+                        .iter()
+                        .map(|argument| argument.index()),
+                );
+            }
         }
         if raw.get(&(
             expression.identity.segment_token.as_str(),
