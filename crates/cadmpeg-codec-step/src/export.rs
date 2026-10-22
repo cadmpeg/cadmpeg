@@ -3117,6 +3117,9 @@ impl<'a> Builder<'a> {
                 self.written_procedural_surfaces.insert(id);
                 (reference, reversed)
             } else if let Some((id, helix)) = self.unsolved_helix_surface(surface_id) {
+                if self.failed_helix_fits.contains_key(id) {
+                    return None;
+                }
                 let fitted = match helix_surface_nurbs(helix, self.ir.tolerances.linear) {
                     Ok(fitted) => fitted,
                     Err(error) => {
@@ -3372,6 +3375,9 @@ impl<'a> Builder<'a> {
                     ),
                 )
             } else if let Some((id, helix)) = self.unsolved_helix(curve_id) {
+                if self.failed_helix_fits.contains_key(id) {
+                    return None;
+                }
                 let fitted = match helix_nurbs(helix, self.ir.tolerances.linear) {
                     Ok(fitted) => fitted,
                     Err(error) => {
