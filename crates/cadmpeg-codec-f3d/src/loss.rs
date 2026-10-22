@@ -205,6 +205,8 @@ pub(crate) enum F3dLossCode {
     XrefMemberUndecoded,
     /// T-spline records were retained without typed semantics.
     TsplineRecordUntyped,
+    /// Radial symmetry pairs have no unambiguous neutral topology correspondence.
+    TsplineRadialMapUnresolved,
     /// A T-spline control cage was not decoded.
     TsplineCageUndecoded,
     /// Preserved source image required for a byte-exact write was unavailable.
@@ -328,6 +330,7 @@ impl F3dLossCode {
         Self::XrefMemberMissing,
         Self::XrefMemberUndecoded,
         Self::TsplineRecordUntyped,
+        Self::TsplineRadialMapUnresolved,
         Self::TsplineCageUndecoded,
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
@@ -443,6 +446,7 @@ impl F3dLossCode {
             Self::XrefMemberMissing => "xref.member-missing",
             Self::XrefMemberUndecoded => "xref.member-undecoded",
             Self::TsplineRecordUntyped => "tspline.record-untyped",
+            Self::TsplineRadialMapUnresolved => "tspline.radial-map-unresolved",
             Self::TsplineCageUndecoded => "tspline.cage-undecoded",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -557,6 +561,7 @@ impl F3dLossCode {
             | Self::SolvedRecordUntyped
             | Self::MaterialNotTransferred
             | Self::TsplineRecordUntyped
+            | Self::TsplineRadialMapUnresolved
             | Self::SourceDialectUnverified
             | Self::SourceDialectDisplaced
             | Self::KernelDialectUnverified
@@ -647,7 +652,8 @@ impl F3dLossCode {
             Self::ReferenceImageNativeRetained
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
-            | Self::MeshAttributeNotTransferred => LossTaxonomy::AttributesNotTransferred,
+            | Self::MeshAttributeNotTransferred
+            | Self::TsplineRadialMapUnresolved => LossTaxonomy::AttributesNotTransferred,
             Self::BrepBlobUndecoded
             | Self::SurfaceShapeNotDecoded
             | Self::GeometryNotTransferred
@@ -817,6 +823,7 @@ mod tests {
                 "xref.member-missing",
                 "xref.member-undecoded",
                 "tspline.record-untyped",
+                "tspline.radial-map-unresolved",
                 "tspline.cage-undecoded",
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",

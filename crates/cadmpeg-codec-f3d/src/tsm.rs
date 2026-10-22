@@ -165,6 +165,12 @@ pub(crate) fn decode(
                     let message = format!("{}", UntypedRecords(&parsed.unknown_record_kinds));
                     losses.push(F3dLossCode::TsplineRecordUntyped.note(message));
                 }
+                if parsed.unresolved_radial_pairs != 0 {
+                    losses.push(F3dLossCode::TsplineRadialMapUnresolved.note(format!(
+                        "{} radial symmetry pair(s) retain native identifiers without an unambiguous topology correspondence.",
+                        parsed.unresolved_radial_pairs
+                    )));
+                }
                 cages.push(parsed.surface);
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -254,6 +260,7 @@ fn require_end<'a>(
 struct ParsedCage {
     surface: SubdSurface,
     unknown_record_kinds: BTreeMap<String, usize>,
+    unresolved_radial_pairs: usize,
 }
 
 #[derive(Debug)]
@@ -331,6 +338,105 @@ enum SymmetryKind {
         sweep: FiniteReal,
         maps: Vec<SubdRadialSymmetryMap>,
     },
+}
+
+#[derive(Default)]
+struct ProjectedRadialPairs {
+    face: Vec<[u32; 2]>,
+    edge: Vec<[u32; 2]>,
+    vertex: Vec<[u32; 2]>,
+    unresolved: usize,
+}
+
+fn agreed_radial_index(id: u64, slots: &[Option<u32>], live_count: usize) -> Option<u32> {
+    let index = usize::try_from(id).ok()?;
+    let raw_slot = slots.get(index).copied().flatten()?;
+    let compact_index = u32::try_from(id).ok()?;
+    (index < live_count && raw_slot == compact_index).then_some(raw_slot)
+}
+
+fn project_radial_pairs(pairs: &[[u64; 2]], slots: &[Option<u32>]) -> (Vec<[u32; 2]>, usize) {
+    let live_count = slots.iter().flatten().count();
+    let candidates: Vec<Option<[u32; 2]>> = pairs
+        .iter()
+        .map(|[source, target]| {
+            Some([
+                agreed_radial_index(*source, slots, live_count)?,
+                agreed_radial_index(*target, slots, live_count)?,
+            ])
+        })
+        .collect();
+    let mut targets = BTreeMap::new();
+    for pair in candidates.iter().flatten() {
+        *targets.entry(pair[1]).or_insert(0usize) += 1;
+    }
+    let mut resolved = Vec::new();
+    let mut unresolved = 0;
+    for pair in candidates {
+        match pair {
+            Some(pair) if targets.get(&pair[1]) == Some(&1) => resolved.push(pair),
+            _ => unresolved += 1,
+        }
+    }
+    (resolved, unresolved)
+}
+
+fn mutual_radial_pairs(
+    forward: Vec<[u32; 2]>,
+    reverse: &[[u32; 2]],
+    unresolved: &mut usize,
+) -> Vec<[u32; 2]> {
+    let forward_set: BTreeSet<_> = forward.iter().copied().collect();
+    let reverse_set: BTreeSet<_> = reverse.iter().copied().collect();
+    *unresolved += reverse
+        .iter()
+        .filter(|[source, target]| !forward_set.contains(&[*target, *source]))
+        .count();
+    forward
+        .into_iter()
+        .filter(|[source, target]| {
+            if reverse_set.contains(&[*target, *source]) {
+                true
+            } else {
+                *unresolved += 1;
+                false
+            }
+        })
+        .collect()
+}
+
+fn project_radial_maps(
+    maps: &[SubdRadialSymmetryMap],
+    faces: &[Option<u32>],
+    edges: &[Option<u32>],
+    vertices: &[Option<u32>],
+) -> ProjectedRadialPairs {
+    let mut projected = ProjectedRadialPairs::default();
+    let mut reverse_face = Vec::new();
+    let mut reverse_edge = Vec::new();
+    let mut reverse_vertex = Vec::new();
+    for map in maps {
+        let slots = match map.selector {
+            SubdRadialMapSelector::Ef | SubdRadialMapSelector::Er => edges,
+            SubdRadialMapSelector::Ff | SubdRadialMapSelector::Fr => faces,
+            SubdRadialMapSelector::Vf | SubdRadialMapSelector::Vr => vertices,
+        };
+        let (pairs, unresolved) = project_radial_pairs(&map.pairs, slots);
+        projected.unresolved += unresolved;
+        match map.selector {
+            SubdRadialMapSelector::Ef => projected.edge = pairs,
+            SubdRadialMapSelector::Ff => projected.face = pairs,
+            SubdRadialMapSelector::Vf => projected.vertex = pairs,
+            SubdRadialMapSelector::Er => reverse_edge = pairs,
+            SubdRadialMapSelector::Fr => reverse_face = pairs,
+            SubdRadialMapSelector::Vr => reverse_vertex = pairs,
+        }
+    }
+    projected.face = mutual_radial_pairs(projected.face, &reverse_face, &mut projected.unresolved);
+    projected.edge = mutual_radial_pairs(projected.edge, &reverse_edge, &mut projected.unresolved);
+    projected.vertex =
+        mutual_radial_pairs(projected.vertex, &reverse_vertex, &mut projected.unresolved);
+    projected
 }
 
 fn parse_pairs<'a>(
@@ -1393,6 +1499,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let edge_ir = compact(edge_roots.iter().map(Option::is_some))?;
     let face_ir = compact(face_roots.iter().map(Option::is_some))?;
     let mut symmetries = Vec::new();
+    let mut unresolved_radial_pairs = 0;
     for block in typed_symmetry_blocks {
         let plane = symmetry_plane(name, block.plane)?;
         let (kind, face_pairs, edge_pairs, vertex_pairs) = match block.kind {
@@ -1406,13 +1513,17 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 segments,
                 sweep,
                 maps,
-            } => (
-                SubdSymmetryKind::radial_from_parts(segments, sweep, maps)
-                    .map_err(|error| malformed(name, error))?,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ),
+            } => {
+                let projected = project_radial_maps(&maps, &face_ir, &edge_ir, &vertex_ir);
+                unresolved_radial_pairs += projected.unresolved;
+                (
+                    SubdSymmetryKind::radial_from_parts(segments, sweep, maps)
+                        .map_err(|error| malformed(name, error))?,
+                    projected.face,
+                    projected.edge,
+                    projected.vertex,
+                )
+            }
         };
         let symmetry = SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs)
             .map_err(|error| malformed(name, error))?;
@@ -1618,6 +1729,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 .map_err(|error| malformed(name, error))?,
         },
         unknown_record_kinds,
+        unresolved_radial_pairs,
     })
 }
 
@@ -1983,7 +2095,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let source = format!(
             "#TS0200\n{QUAD_TOPOLOGY}\
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
-             105sym 1\n105plane 0 0 0 1 0 1 0 0 0 0 1 0\n\
+             105sym 1\n105plane 0.5 0.5 0 1 1 0 0 0 0 1 0 0\n\
              105r segments 4\n105r sweep 1\n\
              105r ef 0 1\n105r er 1 0\n105r ff 0 0\n105r fr 0 0\n\
              105r vf 0 1\n105r vr 1 0\n\
@@ -2016,19 +2128,28 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         );
         assert_eq!(
             wire::field::<cadmpeg_ir::math::Point3>(&(symmetry.plane), "origin"),
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
+            cadmpeg_ir::math::Point3::new(5.0, 5.0, 0.0)
         );
         assert_eq!(
             wire::field::<cadmpeg_ir::math::Vector3>(&(symmetry.plane), "first_axis"),
-            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
         );
         assert_eq!(
             wire::field::<cadmpeg_ir::math::Vector3>(&(symmetry.plane), "second_axis"),
-            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
         );
-        assert!(wire::field_or_default::<Vec<[u32; 2]>>(&(symmetry), "face_pairs").is_empty());
-        assert!(wire::field_or_default::<Vec<[u32; 2]>>(&(symmetry), "edge_pairs").is_empty());
-        assert!(wire::field_or_default::<Vec<[u32; 2]>>(&(symmetry), "vertex_pairs").is_empty());
+        assert_eq!(
+            *wire::field_or_default::<Vec<[u32; 2]>>(&(symmetry), "face_pairs"),
+            vec![[0, 0]]
+        );
+        assert_eq!(
+            *wire::field_or_default::<Vec<[u32; 2]>>(&(symmetry), "edge_pairs"),
+            vec![[0, 1]]
+        );
+        assert_eq!(
+            *wire::field_or_default::<Vec<[u32; 2]>>(&(symmetry), "vertex_pairs"),
+            vec![[0, 1]]
+        );
         assert_eq!(
             *radial_maps,
             vec![
@@ -2089,6 +2210,138 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
                 .find(|map| map.selector == cadmpeg_ir::SubdRadialMapSelector::Ef)
                 .expect("ef radial map");
         assert_eq!(ef.pairs, vec![[native_id, native_id]]);
+    }
+
+    #[test]
+    fn radial_indices_abstain_when_deleted_slot_models_disagree() {
+        let slots = [Some(0), None, Some(1), Some(2)];
+        assert_eq!(super::agreed_radial_index(0, &slots, 3), Some(0));
+        for id in [1, 2, 3, 4, u64::MAX] {
+            assert_eq!(super::agreed_radial_index(id, &slots, 3), None);
+        }
+        let dense = [Some(0), Some(1), Some(2)];
+        assert_eq!(super::agreed_radial_index(2, &dense, 3), Some(2));
+        assert_eq!(super::agreed_radial_index(3, &dense, 3), None);
+    }
+
+    #[test]
+    fn radial_domains_conflicts_and_inverse_pairs_do_not_get_fallbacks() {
+        let dense = [Some(0), Some(1), Some(2), Some(3)];
+        let (pairs, unresolved) = super::project_radial_pairs(&[[0, 1], [2, 1]], &dense);
+        assert!(pairs.is_empty());
+        assert_eq!(unresolved, 2);
+        let maps = [subd::SubdRadialSymmetryMap {
+            selector: subd::SubdRadialMapSelector::Ff,
+            pairs: vec![[3, 0]],
+        }];
+        let projected = super::project_radial_maps(&maps, &[Some(0)], &dense, &dense);
+        assert!(projected.face.is_empty());
+        assert!(projected.edge.is_empty());
+        assert!(projected.vertex.is_empty());
+        assert_eq!(projected.unresolved, 1);
+        let mut unmatched = 0;
+        assert!(super::mutual_radial_pairs(vec![[0, 1]], &[[0, 1]], &mut unmatched).is_empty());
+        assert_eq!(unmatched, 2);
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct RadialFixture {
+        source: String,
+        face_pairs: Vec<[u32; 2]>,
+        edge_pairs: Vec<[u32; 2]>,
+        vertex_pairs: Vec<[u32; 2]>,
+        unresolved_pairs: usize,
+        raw_maps: Vec<subd::SubdRadialSymmetryMap>,
+    }
+
+    #[test]
+    fn radial_source_maps_keep_raw_pairs_and_resolve_proved_domains() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
+             105sym 1\n105plane 0.5 0.5 0 1 1 0 0 0 0 1 0 0\n\
+             105r segments 4\n105r sweep 1\n\
+             105r ef 0 1\n105r er 1 0\n105r ff 0 0\n105r fr 0 0\n\
+             105r vf 0 1\n105r vr 1 0\n"
+        );
+        let raw_maps = [
+            (subd::SubdRadialMapSelector::Ef, [0, 1]),
+            (subd::SubdRadialMapSelector::Er, [1, 0]),
+            (subd::SubdRadialMapSelector::Ff, [0, 0]),
+            (subd::SubdRadialMapSelector::Fr, [0, 0]),
+            (subd::SubdRadialMapSelector::Vf, [0, 1]),
+            (subd::SubdRadialMapSelector::Vr, [1, 0]),
+        ]
+        .into_iter()
+        .map(|(selector, pair)| subd::SubdRadialSymmetryMap {
+            selector,
+            pairs: vec![pair],
+        })
+        .collect();
+        let synthetic = serde_json::to_string(&[RadialFixture {
+            source,
+            face_pairs: vec![[0, 0]],
+            edge_pairs: vec![[0, 1]],
+            vertex_pairs: vec![[0, 1]],
+            unresolved_pairs: 0,
+            raw_maps,
+        }])
+        .unwrap();
+        let records = crate::test_support::verification::text("tsm/radial.json", &synthetic);
+        let cases: Vec<RadialFixture> = serde_json::from_str(&records).unwrap();
+        assert_eq!(
+            cases.len(),
+            crate::test_support::verification::case_count(1, 29)
+        );
+        let mut unresolved = 0;
+        for case in cases {
+            let parsed = parse_cage(case.source.as_bytes()).expect("radial source cage");
+            assert_eq!(parsed.unresolved_radial_pairs, case.unresolved_pairs);
+            unresolved += parsed.unresolved_radial_pairs;
+            let symmetries = wire::field_or_default::<Vec<subd::SubdSymmetry>>(
+                &parsed.surface.cage,
+                "symmetries",
+            );
+            let radial: Vec<_> = symmetries
+                .iter()
+                .filter(|symmetry| {
+                    matches!(
+                        wire::field::<subd::SubdSymmetryKind>(symmetry, "kind"),
+                        subd::SubdSymmetryKind::Radial(_)
+                    )
+                })
+                .collect();
+            assert_eq!(radial.len(), 1);
+            let symmetry = radial[0];
+            assert_eq!(
+                *wire::field_or_default::<Vec<[u32; 2]>>(symmetry, "face_pairs"),
+                case.face_pairs
+            );
+            assert_eq!(
+                *wire::field_or_default::<Vec<[u32; 2]>>(symmetry, "edge_pairs"),
+                case.edge_pairs
+            );
+            assert_eq!(
+                *wire::field_or_default::<Vec<[u32; 2]>>(symmetry, "vertex_pairs"),
+                case.vertex_pairs
+            );
+            let subd::SubdSymmetryKind::Radial(metadata) =
+                wire::field::<subd::SubdSymmetryKind>(symmetry, "kind")
+            else {
+                panic!("radial metadata");
+            };
+            assert_eq!(
+                *wire::field_or_default::<Vec<subd::SubdRadialSymmetryMap>>(
+                    &metadata,
+                    "radial_maps"
+                ),
+                case.raw_maps
+            );
+        }
+        assert_eq!(
+            unresolved,
+            crate::test_support::verification::case_count(0, 52)
+        );
     }
 
     #[test]

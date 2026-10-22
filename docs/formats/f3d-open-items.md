@@ -328,12 +328,10 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** Controlled exports that vary evaluation time, operation order, and the relevant Boolean state must separate the scalar unit, ordinal allocation rule, flag meaning, and flag-width selector. A neutral Form writer also needs an explicit tracking-member-to-cage identity join.
 
-### TS-06. Radial symmetry map namespace
+### TS-06. Radial deleted-slot indices and nondefault sweep
 
-**Question.** Which native element domain do the six radial `105r` map records address, and how do their operands map to neutral cage elements?
+**Question.** Does a radial operand address a raw program slot or a compact live-element index when its domain contains a deleted slot, and how does a nondefault sweep change the rotation?
 
-**Known.** The `105r` selectors `ef`, `er`, `ff`, `fr`, `vf`, and `vr` carry even-length index runs. Their records occur with the positive `segments` count and finite `sweep` value of a `105sym 1` block. The operands do not consistently address the populated `f`, `e`, or `v` topology slots.
+**Known.** `f3d.md` §1.1.1 "In a domain with no deleted slots" defines the same-numbered neutral binding and selector-specific element domains. Raw-slot and compact-index predictions agree on all-live topology. An out-of-range operand supplies no discriminator. A raw pair remains retained when the predictions disagree. At sweep `1`, the forward and reverse rotation steps are `+2*pi/N` and `-2*pi/N`; the native sweep scalar remains separate.
 
-**Need.** A neutral radial symmetry carrier still needs a proven mapping from the native map identifiers to cage faces, edges, and vertices before a writer can generate the block from edited topology. The typed native-map carrier preserves source values but does not assert that mapping.
-
-**Conflict.** Treating every radial operand as a local topology slot rejects valid large cages and assigns some native IDs to unrelated neutral elements.
+**Need.** A producer-generated radial TSM must retain a deleted domain slot at `p` and map a live element with raw slot `q > p`. The raw-slot prediction is `q`; the compact-index prediction after one deletion is `q-1`. Saving must preserve the deleted slot to separate these predictions. A controlled radial export with a nondefault sweep must establish the sweep-to-angle rule.
