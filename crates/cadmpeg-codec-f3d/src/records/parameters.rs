@@ -368,7 +368,11 @@ impl DesignParameter {
             evaluated_value_offset: None,
         })
     }
-    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
+    pub(crate) fn retain_source(
+        &self,
+        fidelity: &mut cadmpeg_ir::SourceFidelity,
+        layout_pointers: Option<&std::collections::BTreeMap<String, u64>>,
+    ) {
         for (name, offset) in [
             ("byte_offset", self.byte_offset),
             ("expression_offset", self.expression_offset),
@@ -385,6 +389,11 @@ impl DesignParameter {
             ),
         ] {
             if let Some(offset) = offset {
+                if name == "byte_offset"
+                    && layout_pointers.and_then(|pointers| pointers.get(name)) == Some(&offset)
+                {
+                    continue;
+                }
                 fidelity
                     .metadata
                     .insert(format!("{}.{name}", self.id), offset.to_string());

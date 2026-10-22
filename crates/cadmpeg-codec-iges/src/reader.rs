@@ -330,24 +330,35 @@ impl<'a> PhysicalParse<'a> {
         };
         // A given-up Directory Entry owns its Parameter Data cards, as a
         // quarantined one does: they are not unclaimed (#215 rules 2-3).
-        let (directory, quarantined_directory, given_up_directory) =
+        let (directory, quarantined_directory, given_up_directory, unreadable_metadata) =
             if let Some(directory) = prepared_directory {
-                (directory, Vec::new(), Vec::new())
+                (directory, Vec::new(), Vec::new(), BTreeSet::new())
             } else if scan.source_view().is_some() {
                 let parsed =
                     directory::parts::parse(&scan, global.global_table(), ctx, &mut parser_parts)?;
-                (parsed.entries, Vec::new(), parsed.given_up)
+                (
+                    parsed.entries,
+                    Vec::new(),
+                    parsed.given_up,
+                    parsed.unreadable_metadata,
+                )
             } else if let Some(identities) = binary_identities {
                 let (directory, quarantined) =
                     directory::parse_with_keys(&scan, global.global_table(), ctx, |grammar| {
                         identities.semantic_sequence(grammar)
                     })?;
-                (directory, quarantined, Vec::new())
+                (directory, quarantined, Vec::new(), BTreeSet::new())
             } else {
                 let (directory, quarantined) = directory::parse(&scan, global.global_table(), ctx)?;
-                (directory, quarantined, Vec::new())
+                (directory, quarantined, Vec::new(), BTreeSet::new())
             };
-        global_losses.extend(directory::metadata_losses(&directory));
+        global_losses.extend(if unreadable_metadata.is_empty() {
+            directory::metadata_losses(&directory)
+        } else {
+            directory::metadata_losses_except(&directory, |sequence, name| {
+                unreadable_metadata.contains(&(sequence, name))
+            })
+        });
         let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
         let parameter::ParameterAssembly {
             records: parameters,

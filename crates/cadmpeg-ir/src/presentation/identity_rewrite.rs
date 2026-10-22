@@ -21,7 +21,7 @@ rewrite_enum!(PresentationItem, []; {
     Pmi {annotation},
     Tessellation {tessellation},
     Source {source_id},
-});
+}; reference_leaf true; string_references { });
 rewrite_record!(PresentationLayer, []; {id, native_ref, name, parent, description, visible, items});
 rewrite_record!(PresentationState, []; {kind, order, attributes, assets});
 rewrite_enum!(PresentationStateKind, []; {
@@ -29,3 +29,6 @@ rewrite_enum!(PresentationStateKind, []; {
     Native(field0),
 });
 rewrite_record!(ViewPresentation, []; {id, object, order, expanded, visible, display_mode, selection_style, line_width, point_size, properties, native_ref});
+
+#[cfg(test)]
+mod tests;

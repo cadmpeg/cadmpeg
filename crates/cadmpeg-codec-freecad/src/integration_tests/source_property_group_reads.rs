@@ -62,6 +62,11 @@ fn current_group_and_documentation_fields_keep_exact_source_ownership_and_dynami
             range("type", "App::PropertyFloat"),
             range("group", "Custom&amp;Parameters"),
             range("doc", " Ω &amp; β "),
+            // The key is kept in ValueRecord.attributes as well as its value.
+            {
+                let at = document.find("value='7.5'").unwrap();
+                u64_from_index(at)..u64_from_index(at + "value".len())
+            },
             range("value", "7.5")
         ]
     );

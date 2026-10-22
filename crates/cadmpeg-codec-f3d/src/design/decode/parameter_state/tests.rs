@@ -370,6 +370,7 @@ fn compact_parameter_keeps_its_actual_tail_target_through_native_serde() {
     capture_tail(
         &ctx,
         view,
+        u64_from_index(parameter_start),
         "Design1/BulkStream.dat",
         &mut parsed,
         &frames,
@@ -391,4 +392,164 @@ fn compact_parameter_keeps_its_actual_tail_target_through_native_serde() {
     assert_eq!(capture.offset(), u64_from_index(parameter_start));
     let target = u64_from_index(parameter_start + tail_start + 2);
     assert_eq!(capture.reads()["file"], [target..target + 8]);
+}
+
+#[test]
+fn captured_parameter_byte_offset_moves_only_to_its_actual_layout_and_occurrence() {
+    let (mut bytes, meta) = fixture(false);
+    let parameter_start = bytes.len();
+    let mut parameter = indexed("259", 905);
+    parameter.extend_from_slice(&[0; 15]);
+    parameter.extend_from_slice(&13_u32.to_le_bytes());
+    parameter.push(0);
+    crate::test_support::lp_utf16(&mut parameter, "12 mm");
+    parameter.extend_from_slice(&[0, 0, 0, 0, 1]);
+    crate::test_support::lp_utf16(&mut parameter, "User Parameter");
+    crate::test_support::lp_utf16(&mut parameter, "mm");
+    crate::test_support::lp_utf16(&mut parameter, "Width");
+    parameter.extend_from_slice(&1.2_f64.to_le_bytes());
+    let tail_start = parameter.len();
+    parameter.extend_from_slice(&[0, 1]);
+    parameter.extend_from_slice(&401_u64.to_le_bytes());
+    parameter.extend_from_slice(&36_u32.to_le_bytes());
+    parameter.extend_from_slice(STATE_GUID.as_bytes());
+    parameter.extend_from_slice(&[0, 0]);
+    bytes.extend_from_slice(&parameter);
+    let mut enclosing = b"prefix!".to_vec();
+    enclosing.extend_from_slice(&bytes);
+    enclosing.extend_from_slice(b"suffix");
+    let arena = DecodeArena::new();
+    let (ctx, file) = DecodeContext::from_root_bytes(&enclosing, &arena, &DecodePolicy::default())
+        .expect("context");
+    let root = ctx
+        .register_named_slice(
+            file,
+            cadmpeg_core::decode::ByteRange {
+                start: 7,
+                end: u64::try_from(7 + bytes.len()).expect("member endpoint fits u64"),
+            },
+            "Design1/BulkStream.dat",
+        )
+        .expect("actual nonzero member");
+    let source = root.child(0, parameter_start).expect("state source");
+    let frames = supported_frames(&ctx, source, &meta).expect("frames");
+    let mut output = PartOutput::new(CodecFormat::F3d);
+    decode_stream(&ctx, source, "Design1/BulkStream.dat", &frames, &mut output).expect("states");
+    let (_, native, _, losses) = output.into_parts(&ctx).expect("closure").into_parts();
+    assert!(losses.is_empty());
+    let states = native
+        .namespace("f3d")
+        .expect("namespace")
+        .arena_as::<DesignParameterState>("design_parameter_states")
+        .expect("states");
+    let mut parsed = super::super::parameters::parse_design_parameter(&parameter)
+        .expect("parameter grammar")
+        .expect("typed parameter")
+        .into_record("Design1/BulkStream.dat", u64_from_index(parameter_start))
+        .expect("located parameter");
+    let view = root
+        .child(parameter_start, bytes.len())
+        .expect("parameter extent");
+    let (pointers, batch) = ctx
+        .record_batch(|| {
+            capture_tail(
+                &ctx,
+                view,
+                u64_from_index(parameter_start),
+                "Design1/BulkStream.dat",
+                &mut parsed,
+                &frames,
+                &states,
+            )?
+            .ok_or_else(|| CodecError::malformed("expected captured parameter tail"))
+        })
+        .expect("actual parameter source callback");
+    assert_eq!(
+        pointers,
+        BTreeMap::from([("byte_offset".to_owned(), u64_from_index(parameter_start))])
+    );
+    let wire = serde_json::to_value(&parsed).expect("native scalar content");
+    assert_eq!(wire["expression"], "12 mm");
+    assert_eq!(wire["name"], "Width");
+    assert_eq!(wire["evaluated_value"], 1.2);
+    let native = crate::native::F3dNative {
+        design_parameters: vec![parsed.clone()],
+        ..Default::default()
+    };
+    let key = format!("{}.byte_offset", parsed.id);
+    let uncaptured = native
+        .retained_fidelity(&BTreeMap::new())
+        .expect("uncaptured fallback");
+    assert_eq!(uncaptured.metadata[&key], parameter_start.to_string());
+    let unrelated = BTreeMap::from([("f3d:other:design-parameter#0".to_owned(), pointers.clone())]);
+    assert_eq!(
+        native
+            .retained_fidelity(&unrelated)
+            .expect("different owner")
+            .metadata,
+        uncaptured.metadata
+    );
+    let wrong_offset = BTreeMap::from([(
+        parsed.id.clone(),
+        BTreeMap::from([(
+            "byte_offset".to_owned(),
+            u64_from_index(parameter_start + 1),
+        )]),
+    )]);
+    assert_eq!(
+        native
+            .retained_fidelity(&wrong_offset)
+            .expect("different coordinate")
+            .metadata,
+        uncaptured.metadata
+    );
+    let drafts = BTreeMap::from([(parsed.id.clone(), pointers)]);
+    let mut fidelity = native
+        .retained_fidelity(&drafts)
+        .expect("matching source draft");
+    let mut expected_metadata = uncaptured.metadata.clone();
+    expected_metadata
+        .remove(&key)
+        .expect("only superseded fact");
+    assert_eq!(fidelity.metadata, expected_metadata);
+    let mut pending = crate::decode::source_layout::PendingLayouts::new(batch, drafts);
+    pending
+        .rescope(&ctx, "one")
+        .expect("actual occurrence mapping");
+    crate::decode::source_layout::install(&ctx, &mut fidelity, vec![pending])
+        .expect("committed capture handoff");
+    let target_id =
+        crate::f3z::merge::rescope_record_id(&parsed.id, "one").expect("native identity mapping");
+    assert!(!fidelity.record_layout().contains_key(&parsed.id));
+    let layout = &fidelity.record_layout()[&target_id];
+    assert_eq!(layout.stream(), "f3d:xref/one/Design1/BulkStream.dat");
+    assert_eq!(
+        (layout.offset(), layout.byte_len()),
+        (
+            u64_from_index(parameter_start),
+            u64_from_index(parameter.len())
+        )
+    );
+    assert_eq!(
+        layout.pointers(),
+        &BTreeMap::from([("byte_offset".to_owned(), u64_from_index(parameter_start))])
+    );
+    let target = u64_from_index(parameter_start + tail_start + 2);
+    assert_eq!(
+        layout.reads(),
+        &BTreeMap::from([
+            (
+                "f3d:xref/one/Design1/BulkStream.dat".to_owned(),
+                vec![target..target + 8]
+            ),
+            (
+                "f3d:xref/one/file".to_owned(),
+                vec![target + 7..target + 15]
+            ),
+        ])
+    );
+    assert_eq!(
+        serde_json::to_value(parsed).expect("unchanged native scalar content"),
+        wire
+    );
 }

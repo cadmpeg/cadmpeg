@@ -41,29 +41,11 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
     }
     names = super::names::prepare(ir, &native_objects, &native_properties);
     let mut entries = BTreeMap::<String, Vec<u8>>::new();
-    let unreadable_owners: HashSet<_> = native_properties
-        .iter()
-        .filter(|property| {
-            property.body.is_none()
-                || matches!(
-                    property.body,
-                    Some(crate::native::PropertyBody::Unreadable(_))
-                )
-        })
-        .map(|property| property.owner.as_str())
-        .collect();
     // Source-only objects remain typed content. A neutral counterpart owns its
     // complete object and is regenerated below, so stale native properties can
     // never override a neutral edit.
     for original in &native_objects {
         if !super::native::retained(ir, original, &native_properties)? {
-            continue;
-        }
-        if unreadable_owners.contains(original.id().as_str()) {
-            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                "object {} is omitted because its source properties are unreadable",
-                original.name()
-            )));
             continue;
         }
         let neutral_feature = ir
@@ -131,13 +113,6 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
         objects.push(object);
     }
     for feature in &ir.model.features {
-        if feature
-            .native_ref
-            .as_deref()
-            .is_some_and(|native| unreadable_owners.contains(native))
-        {
-            continue;
-        }
         if let Some(name) = names
             .get(feature.native_ref.as_deref().unwrap_or_default())
             .filter(|name| native_names.contains(*name))
@@ -229,12 +204,24 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
             }
             match xml::native_named(property, &names)? {
                 Some(property_xml) => object.set(&property.name, property_xml),
-                None => losses.push(FreecadLossCode::ExportNativePropertyNotTransferred.note(
-                    format!(
-                        "native property {} has no independently writable typed payload",
-                        property.id
-                    ),
-                )),
+                None => {
+                    if matches!(
+                        property.body.as_ref(),
+                        None | Some(crate::native::PropertyBody::Unreadable(_))
+                    ) {
+                        losses.push(cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                            "property {} ({}) on object {} is omitted because its value is not held",
+                            property.id, property.name, property.owner,
+                        )));
+                    } else {
+                        losses.push(FreecadLossCode::ExportNativePropertyNotTransferred.note(
+                            format!(
+                                "native property {} has no independently writable typed payload",
+                                property.id,
+                            ),
+                        ));
+                    }
+                }
             }
         } else if property.owner == crate::native::native_id("document", "0") {
             if let Some(property_xml) = xml::native(property)? {

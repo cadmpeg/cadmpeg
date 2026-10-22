@@ -658,3 +658,5 @@ mod document_scalar_parts;
 mod document_vector_parts;
 
 mod document_value_parts;
+
+mod source_native_missing_values;

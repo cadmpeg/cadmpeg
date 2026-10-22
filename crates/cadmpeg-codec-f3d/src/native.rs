@@ -1676,6 +1676,10 @@ impl F3dNative {
     /// The retained bytes are the sole home of undecoded history payloads.
     pub(crate) fn retained_fidelity(
         &self,
+        source_layout_pointers: &std::collections::BTreeMap<
+            String,
+            std::collections::BTreeMap<String, u64>,
+        >,
     ) -> Result<cadmpeg_ir::SourceFidelity, cadmpeg_core::CodecError> {
         let mut fidelity = cadmpeg_ir::SourceFidelity::default();
         for header in &self.design_record_headers {
@@ -1820,7 +1824,7 @@ impl F3dNative {
             companion.retain_source(&mut fidelity);
         }
         for parameter in &self.design_parameters {
-            parameter.retain_source(&mut fidelity);
+            parameter.retain_source(&mut fidelity, source_layout_pointers.get(&parameter.id));
         }
         for entity in &self.act_entities {
             entity.retain_source(&mut fidelity)?;

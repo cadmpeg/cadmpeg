@@ -251,6 +251,13 @@ impl DirectoryEntry {
 }
 
 pub(crate) fn metadata_losses(entries: &[DirectoryEntry]) -> Vec<LossNote> {
+    metadata_losses_except(entries, |_, _| false)
+}
+
+pub(crate) fn metadata_losses_except(
+    entries: &[DirectoryEntry],
+    handled: impl Fn(u32, &'static str) -> bool,
+) -> Vec<LossNote> {
     let mut losses = Vec::new();
     for entry in entries {
         if entry.status_padding_recovered {
@@ -270,7 +277,7 @@ pub(crate) fn metadata_losses(entries: &[DirectoryEntry]) -> Vec<LossNote> {
             ("color", entry.color),
             ("subscript", entry.subscript),
         ] {
-            if value.is_none() {
+            if value.is_none() && !handled(entry.sequence, name) {
                 let note = IgesLossCode::DirectoryMetadataUnreadable
                     .note(format!(
                         "Directory D{} {name} is unreadable; interpretation fields and exact \
@@ -294,6 +301,12 @@ pub(crate) enum DirectoryDefect {
     StatusNumberInvalid,
     RepeatedEntityTypeMismatch { declared: i64, repeated: i64 },
     UnpairedCard,
+}
+
+impl From<DirectoryDefect> for CodecError {
+    fn from(defect: DirectoryDefect) -> Self {
+        Self::malformed(defect)
+    }
 }
 
 impl Serialize for DirectoryDefect {
@@ -465,6 +478,24 @@ pub(crate) fn admit_fields(
     second_fields: [[u8; 8]; 9],
     global_table: GlobalTable,
 ) -> Result<DirectoryEntry, DirectoryDefect> {
+    admit_fields_with(
+        sequence,
+        source_offset,
+        first_fields,
+        second_fields,
+        global_table,
+        |field, name, number| Ok(directory_integer(field, name, number, global_table).ok()),
+    )
+}
+
+pub(crate) fn admit_fields_with<E: From<DirectoryDefect>>(
+    sequence: u32,
+    source_offset: u64,
+    first_fields: [[u8; 8]; 9],
+    second_fields: [[u8; 8]; 9],
+    global_table: GlobalTable,
+    mut optional: impl FnMut([u8; 8], &'static str, u8) -> Result<Option<i64>, E>,
+) -> Result<DirectoryEntry, E> {
     let entity_type = directory_integer(first_fields[0], "entity type", 1, global_table)?;
     let repeated_type =
         directory_integer(second_fields[0], "repeated entity type", 11, global_table)?;
@@ -472,7 +503,8 @@ pub(crate) fn admit_fields(
         return Err(DirectoryDefect::RepeatedEntityTypeMismatch {
             declared: entity_type,
             repeated: repeated_type,
-        });
+        }
+        .into());
     }
     Ok(DirectoryEntry {
         source_offset,
@@ -485,19 +517,19 @@ pub(crate) fn admit_fields(
             global_table,
         )?,
         structure: directory_integer(first_fields[2], "structure", 3, global_table)?,
-        line_font: directory_integer(first_fields[3], "line font", 4, global_table).ok(),
-        level: directory_integer(first_fields[4], "level", 5, global_table).ok(),
-        view: directory_integer(first_fields[5], "view", 6, global_table).ok(),
+        line_font: optional(first_fields[3], "line font", 4)?,
+        level: optional(first_fields[4], "level", 5)?,
+        view: optional(first_fields[5], "view", 6)?,
         transform: directory_integer(first_fields[6], "transformation", 7, global_table)?,
-        label_display: directory_integer(first_fields[7], "label display", 8, global_table).ok(),
+        label_display: optional(first_fields[7], "label display", 8)?,
         status: status(first_fields[8])?,
         status_padding_recovered: !matches!(
             global_table,
             GlobalTable::Legacy | GlobalTable::V4_0 | GlobalTable::V5_0
         ) && first_fields[8][0] == b' '
             && first_fields[8].iter().any(u8::is_ascii_digit),
-        line_weight: directory_integer(second_fields[1], "line weight", 12, global_table).ok(),
-        color: directory_integer(second_fields[2], "color", 13, global_table).ok(),
+        line_weight: optional(second_fields[1], "line weight", 12)?,
+        color: optional(second_fields[2], "color", 13)?,
         parameter_line_count: directory_integer(
             second_fields[3],
             "Parameter Data count",
@@ -507,7 +539,7 @@ pub(crate) fn admit_fields(
         form: directory_integer(second_fields[4], "form", 15, global_table)?,
         reserved: [second_fields[5], second_fields[6]],
         label: second_fields[7],
-        subscript: directory_integer(second_fields[8], "entity subscript", 19, global_table).ok(),
+        subscript: optional(second_fields[8], "entity subscript", 19)?,
     })
 }
 

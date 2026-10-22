@@ -155,7 +155,7 @@ pub(super) fn decode(
         unparsed: design_parameter_unparsed,
     } = crate::design::decode::parameters::decode_parameters(scan)?;
     let parameter_state_parts = crate::design::decode::parameter_state::decode(ctx, scan)?;
-    crate::design::decode::parameter_state::link_parameters(
+    let parameter_source_pointers = crate::design::decode::parameter_state::link_parameters(
         ctx,
         scan,
         &mut design_parameters,
@@ -196,12 +196,17 @@ pub(super) fn decode(
         &mut design_parameter_scopes,
         &history_index,
     )?;
-    let source_layout_pointers =
+    let mut source_layout_pointers =
         crate::design::decode::scopes::parameter_scope::capture_assembly_path_layouts(
             ctx,
             &design_parameter_scopes,
             source_layout_drafts,
         )?;
+    for (id, pointers) in parameter_source_pointers {
+        if source_layout_pointers.insert(id, pointers).is_some() {
+            return Err(CodecError::malformed("source pointer owner is duplicated"));
+        }
+    }
     let design_joint_motions =
         crate::design::decode::joint_motion::decode_joint_motions(scan, &design_parameter_scopes)?;
     let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(scan)

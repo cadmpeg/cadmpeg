@@ -5882,7 +5882,10 @@ fn direct_root<T>(
     expected_tag: &str,
     use_root: impl FnOnce(roxmltree::Node<'_, '_>) -> T,
 ) -> Result<Option<T>, CodecError> {
-    if property.body.is_none() {
+    if matches!(
+        property.body.as_ref(),
+        None | Some(crate::native::PropertyBody::Unreadable(_))
+    ) {
         return Ok(None);
     }
     let property_xml = ctx.property_xml(property)?;

@@ -182,7 +182,7 @@ fn authored_parameter_has_semantic_content_without_source_layout() {
     let restored: DesignParameter = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(restored).unwrap(), wire);
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    parameter.retain_source(&mut fidelity);
+    parameter.retain_source(&mut fidelity, None);
     assert!(fidelity.metadata.is_empty());
     assert!(fidelity.retained_records().is_empty());
 }

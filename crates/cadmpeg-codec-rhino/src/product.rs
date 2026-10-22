@@ -450,6 +450,7 @@ mod tests {
             let occurrences = &namespace.arenas()["product_occurrences"];
             assert_eq!(occurrences.len(), 1, "unit={unit:?}");
             let occurrence = serde_json::to_value(&occurrences[0]).expect("occurrence JSON");
+            assert!(occurrence.get("neutral_refs").is_none());
             let expected_rows = [
                 [2.0, 1.0, 0.0, expected_translation[0]],
                 [0.0, 1.0, 0.0, expected_translation[1]],
@@ -469,8 +470,8 @@ mod tests {
                 assert_eq!(occurrence["transform"], serde_json::json!(expected_rows));
                 assert_eq!(occurrence["transform_units"], expected_units);
                 assert_eq!(
-                    occurrence["neutral_refs"],
-                    serde_json::json!([ir.model.occurrences[0].id.as_str()])
+                    ir.model.occurrences[0].native_ref.as_deref(),
+                    Some(occurrences[0].id())
                 );
             } else {
                 assert!(ir.model.occurrences.is_empty());

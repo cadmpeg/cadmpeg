@@ -2419,7 +2419,7 @@ mod tests {
             sketch_curve_identities: vec![source],
             ..Default::default()
         };
-        let fidelity = native.retained_fidelity().unwrap();
+        let fidelity = native.retained_fidelity(&Default::default()).unwrap();
         assert_eq!(
             fidelity.metadata["f3d:Design:sketch-curve#1.byte_offset"],
             "987"

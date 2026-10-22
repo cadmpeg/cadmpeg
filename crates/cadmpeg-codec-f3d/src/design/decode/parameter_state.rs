@@ -24,7 +24,7 @@ use cadmpeg_ir::{
     CodecFormat,
 };
 
-use std::mem::size_of;
+use std::{collections::BTreeMap, mem::size_of};
 
 const STATE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
 const COMPANION_GUID: &str = "E276745D-D84E-40D5-88BC-8C94DD4ACCDF";
@@ -404,7 +404,8 @@ pub(crate) fn link_parameters(
     scan: &ContainerScan<'_>,
     parameters: &mut [crate::records::parameters::DesignParameter],
     states: &[DesignParameterState],
-) -> Result<(), CodecError> {
+) -> Result<BTreeMap<String, BTreeMap<String, u64>>, CodecError> {
+    let mut pointers = BTreeMap::new();
     for entry in scan.entries.iter().filter(|entry| {
         scan.is_design_stream(entry, cadmpeg_core::container::ContainerRole::Bulkstream)
     }) {
@@ -447,22 +448,37 @@ pub(crate) fn link_parameters(
             let view = source.child(start, end).ok_or_else(|| {
                 CodecError::malformed("parameter primary extent exceeds its source")
             })?;
-            capture_tail(ctx, view, &entry.name, parameter, &frames, states)?;
+            if let Some(fields) = capture_tail(
+                ctx,
+                view,
+                u64_from_index(physical.start),
+                &entry.name,
+                parameter,
+                &frames,
+                states,
+            )? {
+                if pointers.insert(parameter.id.clone(), fields).is_some() {
+                    return Err(CodecError::malformed(
+                        "parameter source owner is duplicated",
+                    ));
+                }
+            }
         }
     }
-    Ok(())
+    Ok(pointers)
 }
 
 fn capture_tail(
     ctx: &DecodeContext<'_>,
     view: View<'_>,
+    record_offset: u64,
     stream: &str,
     parameter: &mut crate::records::parameters::DesignParameter,
     frames: &[Option<DesignPrimaryFrame<'_>>],
     states: &[DesignParameterState],
-) -> Result<(), CodecError> {
+) -> Result<Option<BTreeMap<String, u64>>, CodecError> {
     let Some(tail) = super::parameters::typed_parameter_tail_start(view.window()) else {
-        return Ok(());
+        return Ok(None);
     };
     let target_offset = tail
         .checked_add(2)
@@ -475,18 +491,29 @@ fn capture_tail(
         .flatten()
         .find(|frame| frame.entity_id == target_index && matching(frame, STATE_GUID, 4))
     else {
-        return Ok(());
+        return Ok(None);
     };
     let state_id = identity(stream, state_frame);
     if !states.iter().any(|state| state.id == state_id) {
-        return Ok(());
+        return Ok(None);
     }
-    let actual_state = ctx.record(&parameter.id, view, || {
+    let (actual_state, pointers) = ctx.record(&parameter.id, view, || {
         let actual = at(view, target_offset, 8)?.req_u64_le()?;
-        Ok(identity(stream, target(frames, actual, STATE_GUID, 4)?))
+        let state = identity(stream, target(frames, actual, STATE_GUID, 4)?);
+        let bytes = parameter
+            .id
+            .len()
+            .checked_add("byte_offset".len())
+            .and_then(|bytes| bytes.checked_add(size_of::<u64>()))
+            .ok_or_else(|| CodecError::malformed("parameter source pointer storage overflows"))?;
+        ctx.retain_bytes(u64_from_index(bytes), "parameter source pointer")?;
+        Ok((
+            state,
+            BTreeMap::from([("byte_offset".to_owned(), record_offset)]),
+        ))
     })?;
     parameter.set_parameter_state(actual_state);
-    Ok(())
+    Ok(Some(pointers))
 }
 
 pub(crate) fn install_unknowns(

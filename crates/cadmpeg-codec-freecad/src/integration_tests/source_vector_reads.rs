@@ -52,26 +52,69 @@ fn current_vector_fields_retain_exact_source_reads_without_crediting_opaque_extr
         let start = document.find(&format!("{key}='{raw}'")).unwrap() + key.len() + "='".len();
         u64_from_index(start)..u64_from_index(start + raw.len())
     };
+    let key = |key: &str, raw: &str| {
+        let at = document.find(&format!("{key}='{raw}'")).unwrap();
+        u64_from_index(at)..u64_from_index(at + key.len())
+    };
     assert_eq!(
         layout.reads()[layout.stream()],
         [
             range("name", "ExtraVector"),
             range("type", "App::PropertyVector"),
+            key("valueX", "1.25"),
             range("valueX", "1.25"),
+            key("valueY", "-2"),
             range("valueY", "-2"),
-            range("valueZ", "3")
+            key("valueZ", "3"),
+            range("valueZ", "3"),
+            key("Vendor", "opaque-extra"),
+            range("Vendor", "opaque-extra")
         ]
     );
     assert_eq!(
         crate::test_support::source_fidelity::bytes(fidelity, &native.id),
         property.as_bytes()
     );
-    let opaque = range("Vendor", "opaque-extra");
+    // This attribute is held verbatim in the typed native value, so its
+    // actual source producer must read it even though it is not a coordinate.
+    let held_extra = range("Vendor", "opaque-extra");
     assert!(fidelity.b1_spans()[layout.stream()]
         .spans()
         .iter()
-        .any(|span| {
+        .all(|span| {
             let unread = span.range();
-            unread.start <= opaque.start && opaque.end <= unread.end
+            unread.end <= held_extra.start || held_extra.end <= unread.start
         }));
+    let changed_document = document.replace("Vendor='opaque-extra'", "Vendor='current-extra'");
+    let changed = crate::FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(
+                &changed_document,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let changed_properties = changed
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let [changed_native] = changed_properties.as_slice() else {
+        panic!("one property after changing only the retained native extra")
+    };
+    assert_ne!(changed_native, native);
+    assert_eq!(
+        changed_native.values()[0].attributes["Vendor"],
+        "current-extra"
+    );
+    let changed_vector = changed
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| attribute.native_ref.as_deref() == Some(changed_native.id.as_str()))
+        .unwrap();
+    assert_eq!(changed_vector.values, projected.values);
 }

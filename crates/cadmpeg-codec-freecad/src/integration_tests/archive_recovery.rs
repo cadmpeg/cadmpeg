@@ -77,7 +77,47 @@ fn an_unframeable_optional_header_gives_up_its_archive_and_no_document_records_e
     assert!(part.parent().is_none());
     assert_eq!(part.offset(), 0);
     assert_eq!(part.byte_len(), u64::try_from(bytes.len()).unwrap());
-    assert_eq!(fidelity.parts().len(), 7);
+    // The original seven archive/document scopes remain; the live object
+    // producer adds exactly the eleven source-owned Appendix C descendants.
+    let level_counts = fidelity.parts().values().fold(
+        std::collections::BTreeMap::<&str, usize>::new(),
+        |mut counts, part| {
+            *counts.entry(part.level().as_str()).or_default() += 1;
+            counts
+        },
+    );
+    assert_eq!(
+        level_counts,
+        std::collections::BTreeMap::from([
+            ("zip.archive", 1),
+            ("zip.local_header", 2),
+            ("zip.entry", 2),
+            ("freecad.document_xml", 1),
+            ("freecad.document", 1),
+            ("freecad.objects", 1),
+            ("freecad.object_declaration", 1),
+            ("freecad.object_data_section", 1),
+            ("freecad.object_data", 1),
+            ("freecad.properties", 1),
+            ("freecad.property", 3),
+            ("freecad.property_value", 3),
+        ])
+    );
+    assert_eq!(
+        fidelity
+            .parts()
+            .values()
+            .filter(|part| matches!(
+                part.level().as_str(),
+                "zip.archive"
+                    | "zip.local_header"
+                    | "zip.entry"
+                    | "freecad.document_xml"
+                    | "freecad.document"
+            ))
+            .count(),
+        7
+    );
     for (id, child) in fidelity.parts().iter().filter(|(id, _)| *id != &unknown.id) {
         assert_ne!(id, &unknown.id);
         assert_eq!(
@@ -96,6 +136,18 @@ fn an_unframeable_optional_header_gives_up_its_archive_and_no_document_records_e
             let parent = &fidelity.parts()[child.parent().unwrap()];
             assert_eq!(parent.level().as_str(), "zip.entry");
             assert_eq!(parent.parent(), Some(&unknown.id));
+        } else if let Some(parent_level) = match child.level().as_str() {
+            "freecad.objects" | "freecad.object_data_section" | "freecad.properties" => {
+                Some("freecad.document")
+            }
+            "freecad.object_declaration" => Some("freecad.objects"),
+            "freecad.object_data" => Some("freecad.object_data_section"),
+            "freecad.property" => Some("freecad.properties"),
+            "freecad.property_value" => Some("freecad.property"),
+            _ => None,
+        } {
+            let parent = &fidelity.parts()[child.parent().unwrap()];
+            assert_eq!(parent.level().as_str(), parent_level);
         } else {
             assert_eq!(child.parent(), Some(&unknown.id));
         }
