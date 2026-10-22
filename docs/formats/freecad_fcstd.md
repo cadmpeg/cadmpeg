@@ -364,8 +364,9 @@ surface is the persisted face orientation reversed; its wires keep their orienta
 offset surface takes the reversal of its basis. A cone pcurve V parameter
 is also multiplied by the cosine of the cone half-angle to convert persisted slant distance to
 neutral axial distance. A surface of revolution uses U as its rotation angle and V as its directrix
-parameter. A trimmed surface converts its persisted support-coordinate bounds and pcurves to
-zero-based local parameters while preserving each bound's direction.
+parameter. A rectangular-trimmed surface retains its basis parameterization. Its bounds describe
+the declared rectangle; point and derivative evaluation delegate to the basis, including outside
+that rectangle. Face pcurves on a rectangular-trimmed surface use the basis coordinates.
 
 The serialized edge child uses provide endpoint incidence but no radial-neighbor relation. One
 coedge is self-radial. Two coedges reference each other. Three or more coedges remain self-radial;

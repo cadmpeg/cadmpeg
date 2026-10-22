@@ -306,7 +306,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     .tables
                     .surfaces
                     .get(surface - 1)
-                    .map(surface_parameter_affine);
+                    .map(|surface| surface_parameter_affine(face_support_surface(surface)));
                 let primary_read =
                     match pcurve_geometry(self.ctx, &self.tables.curve2ds[primary - 1]) {
                         Ok(geometry) => geometry,
@@ -866,7 +866,13 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         let mut normal_reversed = false;
         let surface_id = if let Some(surface) = surface {
             normal_reversed = surface.resolve(self.tables.surfaces)?.normal_reversed();
-            self.located_surface(ir, surface.index(), surface_transform)?
+            let mut support = surface.resolve(self.tables.surfaces)?;
+            let mut trimmed_layers = 0;
+            while let TextSurface::Trimmed { basis, .. } = support {
+                trimmed_layers += 1;
+                support = basis.surface();
+            }
+            self.located_surface(ir, surface.index(), trimmed_layers, surface_transform)?
         } else if let Some((index, triangulation, vertices, triangles, deflection_scale)) =
             &located_triangulation
         {
@@ -1394,19 +1400,29 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         &mut self,
         ir: &mut CadIr,
         source: usize,
+        trimmed_layers: usize,
         transform: Transform,
     ) -> Result<SurfaceId, CodecError> {
-        let base_key = format!("{source}");
-        let base_id = SurfaceId::mint(crate::native::model_id(
+        let mut base_key = source.to_string();
+        let mut base_id = SurfaceId::mint(crate::native::model_id(
             "surface",
             &self.payload.id,
             &base_key,
         ))
         .map_err(CodecError::malformed)?;
+        for _ in 0..trimmed_layers {
+            base_key.push_str(":basis");
+            base_id = SurfaceId::mint(crate::native::model_id(
+                "surface",
+                base_id.as_str(),
+                "basis",
+            ))
+            .map_err(CodecError::malformed)?;
+        }
         if is_identity(transform) {
             return Ok(base_id);
         }
-        let key = format!("{}@{}", source, transform_digest(transform));
+        let key = format!("{}@{}", base_key, transform_digest(transform));
         let id = SurfaceId::mint(crate::native::model_id("surface", &self.payload.id, &key))
             .map_err(CodecError::malformed)?;
         let cached_id = SurfaceId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?;
@@ -1550,6 +1566,13 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             None => label,
         })
     }
+}
+
+fn face_support_surface(mut surface: &TextSurface) -> &TextSurface {
+    while let TextSurface::Trimmed { basis, .. } = surface {
+        surface = basis.surface();
+    }
+    surface
 }
 
 fn bounded_pcurve_range(
@@ -2342,3 +2365,6 @@ mod located_geometry_tests;
 
 #[cfg(test)]
 mod pcurve_selection_tests;
+
+#[cfg(test)]
+mod trimmed_support_tests;
