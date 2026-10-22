@@ -1231,6 +1231,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 taper_angle: None,
                 against_distance: None,
                 side_two_taper_angle: None,
+                profile_offset: None,
+                side_one_offset: None,
             });
             if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
             | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
