@@ -2113,10 +2113,9 @@ pub(crate) mod display_lists_inline_visual_properties_prefix {
 pub(crate) mod visual_states_feature_appearance_prefix {
     /// Record length in bytes. Spec §8.
     pub(crate) const LEN: usize = 36;
-    /// Offset of `version` (`u32`, little-endian). Spec §8.
-    pub(crate) const VERSION: usize = 0;
-    /// Stated value of `version` (`u32`). Spec §8.
-    pub(crate) const VERSION_VALUE: u32 = 0x0000_4268;
+    /// Offset of `prelude` (`u32`, little-endian). Spec §8.
+    #[cfg(test)]
+    pub(crate) const PRELUDE: usize = 0;
     /// Offset of `feature_source_id` (`u32`, little-endian). Spec §8.
     pub(crate) const FEATURE_SOURCE_ID: usize = 4;
     /// Offset of `feature_timestamp` (`u32`, little-endian). Spec §8.
@@ -2539,4 +2538,26 @@ pub(crate) mod parasolid_construction_prefix {
     pub(crate) const USER_FIELD_WIDTH_VALUE: u32 = 0x0000_0000;
     /// Stated value of `first_node_type` (`u16`). Spec §2.
     pub(crate) const FIRST_NODE_TYPE_VALUE: u16 = 0x000c;
+}
+
+/// Byte offsets for the `visual_component_body_prefix` record.
+///
+/// Spec §8. Record length 17 B.
+///
+/// ```text
+/// Relative to a moCompSolidBody_c body. The identity scalar resolves only through a current BODY native attribute owner.
+/// ```
+pub(crate) mod visual_component_body_prefix {
+    /// Record length in bytes. Spec §8.
+    pub(crate) const LEN: usize = 17;
+    /// Offset of `class_token` (`u16`, little-endian). Spec §8.
+    pub(crate) const CLASS_TOKEN: usize = 0;
+    /// Offset of `zero_padding` (`bytes[7]`). Spec §8.
+    pub(crate) const ZERO_PADDING: usize = 2;
+    /// Stated value of `zero_padding` (`bytes[7]`). Spec §8.
+    pub(crate) const ZERO_PADDING_VALUE: [u8; 7] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `identity` (`u32`, little-endian). Spec §8.
+    pub(crate) const IDENTITY: usize = 9;
+    /// Offset of `identity_copy` (`u32`, little-endian). Spec §8.
+    pub(crate) const IDENTITY_COPY: usize = 13;
 }

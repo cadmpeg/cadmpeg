@@ -98,6 +98,8 @@ pub(crate) struct Brep {
     pub(crate) face_colors: Vec<OwnedFaceColor>,
     /// Per-face producing-feature identities resolved from Parasolid attributes.
     pub(crate) face_atoms: Vec<attrib::FaceAtom>,
+    pub(crate) native_face_identities: Vec<attrib::NativeIdentity<FaceId>>,
+    pub(crate) native_body_identities: Vec<attrib::NativeIdentity<BodyId>>,
     /// Source-local sequence-to-attribute links carried by face bridge
     /// records. The decode boundary retains this map only for the active
     /// source because SWIFT identifiers resolve in that source namespace.
@@ -347,6 +349,12 @@ impl Brep {
         }
         for atom in &mut self.face_atoms {
             atom.face = qualified(&atom.face, &tail)?;
+        }
+        for identity in &mut self.native_face_identities {
+            identity.target = qualified(&identity.target, &tail)?;
+        }
+        for identity in &mut self.native_body_identities {
+            identity.target = qualified(&identity.target, &tail)?;
         }
         for modifier in &mut self.body_modifiers {
             if let Some(target) = &mut modifier.target {
@@ -1200,6 +1208,8 @@ fn append_entity_facts(target: &mut entity::Facts, mut source: entity::Facts) {
         .face_color_versions
         .append(&mut source.face_color_versions);
     target.face_atoms.append(&mut source.face_atoms);
+    target.face_payloads.append(&mut source.face_payloads);
+    target.body_payloads.append(&mut source.body_payloads);
     target.body_modifiers.append(&mut source.body_modifiers);
     target.entity_count += source.entity_count;
     target.unresolved_face_colors += source.unresolved_face_colors;
@@ -2469,6 +2479,14 @@ fn decode_graph(
             .filter(|face| emitted_faces.contains_key(face.as_str()))
             .map(cadmpeg_ir::ids::FaceId::into_string);
     }
+    for (owner, values) in attrib::unique_payloads(entity_facts.face_payloads) {
+        if let Some(face) = emitted_faces.get(id_face(owner).as_str()) {
+            out.native_face_identities.push(attrib::NativeIdentity {
+                target: (*face).clone(),
+                values,
+            });
+        }
+    }
     let mut bound_faces = HashSet::new();
     for atom in entity_facts.face_atoms {
         let Some(identity) = atom.identity else {
@@ -2659,6 +2677,16 @@ fn decode_graph(
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 *entry.get_mut() = None;
             }
+        }
+    }
+    for (owner, values) in attrib::unique_payloads(entity_facts.body_payloads) {
+        if let Some(Some(id)) = body_ids_by_attr.get(&owner) {
+            let Some(body) = out.bodies.iter().find(|body| body.id.as_str() == *id) else {
+                continue;
+            };
+            let target = body.id.clone();
+            out.native_body_identities
+                .push(attrib::NativeIdentity { target, values });
         }
     }
     for modifier in &mut out.body_modifiers {

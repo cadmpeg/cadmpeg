@@ -172,13 +172,13 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the renderer meanings of `B` and `C` and the rule that selects their values when no retained metadata supplies them.
 
-### AL-05. Appearance ownership beyond DisplayLists
+### AL-05. Retained and direct face appearance paths
 
-**Question.** Which records bind appearances to a part, configuration, display state, or B-rep-only feature output?
+**Question.** Which complete persistent-path relation selects retained feature faces and direct face appearances?
 
-**Known.** `sldprt.md` §8 defines DisplayLists body defaults, feature assignments through framed persistent surface references, face-local assignments, and their precedence. A `moVisualProperties_c` definition alone does not establish ownership. The opaque six-value `FACE_ID_2001` layout does not establish a DisplayLists feature binding.
+**Known.** `sldprt.md` §8 defines native display-state selection, three complete part-default class chains, body identity through `ATOM_ID_2001`, and generated-face feature scope through current `FACE_ID_2001` source and timestamp values. Four-word face values identify a feature-scoped owner set without a local face selector. A `moCompFace_c` object can carry a complete multi-component path. A terminal source, timestamp, and local triple can match more than one current face or omit another affected current face. A bare definition supplies no ownership. Unresolved higher-rank paths do not supply lower-rank appearance fallbacks.
 
-**Need.** Part ownership, configuration and display-state selection, missing or conflicting persistent surface references, and feature appearance propagation to B-rep-only geometry remain unresolved.
+**Need.** The complete path-to-current-face binding for retained or modified feature faces and direct face assignments, and a complete holderless part-default owner relation. A unique terminal triple in one current identity set does not establish a general path-truncation rule.
 
 ## 5. Design intent
 

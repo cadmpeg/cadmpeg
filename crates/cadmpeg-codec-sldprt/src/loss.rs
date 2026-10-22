@@ -101,6 +101,8 @@ pub(crate) enum SldprtLossCode {
     AppearanceFaceColorUnresolved,
     /// Appearance assignments have no unambiguous `DisplayLists` target.
     AppearanceAssignmentUnresolved,
+    /// Native appearance ownership, state, or precedence has no unique scope.
+    NativeAppearanceScopeUnresolved,
     /// `DisplayLists` tessellation does not resolve to its B-rep face owners.
     TessellationFaceOwnershipUnresolved,
     /// Surface-owner assignment ran out of its local work cap.
@@ -205,6 +207,7 @@ impl SldprtLossCode {
         Self::GeometrySplineLanesUnpaired,
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
+        Self::NativeAppearanceScopeUnresolved,
         Self::TessellationFaceOwnershipUnresolved,
         Self::TessellationOwnerWorkCapped,
         Self::TopologyBodyHierarchyDerived,
@@ -273,6 +276,7 @@ impl SldprtLossCode {
             Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
+            Self::NativeAppearanceScopeUnresolved => "appearance.native-scope-unresolved",
             Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
             Self::TessellationOwnerWorkCapped => "tessellation.owner-work-capped",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
@@ -353,6 +357,7 @@ impl SldprtLossCode {
             | Self::GeometrySplineLanesUnpaired
             | Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
+            | Self::NativeAppearanceScopeUnresolved
             | Self::TessellationFaceOwnershipUnresolved
             | Self::TessellationOwnerWorkCapped
             | Self::TopologyBodyHierarchyDerived
@@ -401,9 +406,9 @@ impl SldprtLossCode {
             Self::GeometryPcurveAmbiguous | Self::GeometrySurfaceSolverWorkCapped => {
                 LossTaxonomy::PcurveOmitted
             }
-            Self::AppearanceFaceColorUnresolved | Self::AppearanceAssignmentUnresolved => {
-                LossTaxonomy::MaterialNotTransferred
-            }
+            Self::AppearanceFaceColorUnresolved
+            | Self::AppearanceAssignmentUnresolved
+            | Self::NativeAppearanceScopeUnresolved => LossTaxonomy::MaterialNotTransferred,
             Self::TessellationFaceOwnershipUnresolved | Self::TessellationOwnerWorkCapped => {
                 LossTaxonomy::ReferenceGraphNotClosed
             }
@@ -613,6 +618,7 @@ mod tests {
                 "geometry.spline-lanes-unpaired",
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
+                "appearance.native-scope-unresolved",
                 "tessellation.face-ownership-unresolved",
                 "tessellation.owner-work-capped",
                 "topology.body-hierarchy-derived",

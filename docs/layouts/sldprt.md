@@ -2412,7 +2412,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `version` | `u32` | little | spec | begins with u32 LE version `17000` · value `17000` |
+| 0 | 4 | `prelude` | `u32` | little | spec | begins with an unconstrained u32 LE object prelude |
 | 4 | 4 | `feature_source_id` | `u32` | little | spec | the feature source ID |
 | 8 | 4 | `feature_timestamp` | `u32` | little | spec | the feature timestamp |
 | 12 | 4 | `selector_one_a` | `u32` | little | spec | u32 LE values `1`, `1`, and `2` · value `1` |
@@ -2806,6 +2806,22 @@ Parsed by:
 | 0 | 2 | `maximum_node_type` | `u16` | big | spec | u16 BE maximum node type at `+0` |
 | 2 | 4 | `user_field_width` | `u32` | big | spec | u32 BE zero user-field width at `+2` · value `0` |
 | 6 | 2 | `first_node_type` | `u16` | big | spec | u16 BE BODY type `12` at `+6` · value `12` |
+
+## `visual_component_body_prefix`
+
+Spec §8 · layout: byte offsets · size: 17 B
+
+Relative to a moCompSolidBody_c body. The identity scalar resolves only through a current BODY native attribute owner.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/appearance/visual_states.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_token` | `u16` | little | spec | u16 LE class token at `+0` |
+| 2 | 7 | `zero_padding` | `bytes[7]` | little | spec | seven zero bytes at `+2..+8` · value `[0, 0, 0, 0, 0, 0, 0]` |
+| 9 | 4 | `identity` | `u32` | little | spec | at `+9` and `+13` |
+| 13 | 4 | `identity_copy` | `u32` | little | spec | at `+9` and `+13` |
 
 ## Not tabulated
 

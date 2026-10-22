@@ -2234,6 +2234,12 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.unknowns.append(&mut source.unknowns);
     target.face_colors.append(&mut source.face_colors);
     target.face_atoms.append(&mut source.face_atoms);
+    target
+        .native_face_identities
+        .append(&mut source.native_face_identities);
+    target
+        .native_body_identities
+        .append(&mut source.native_body_identities);
     target.body_modifiers.append(&mut source.body_modifiers);
     target.losses.append(&mut source.losses);
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
@@ -2253,11 +2259,18 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+enum ScopedAppearanceOrigin {
+    DisplayList,
+    VisualState,
+}
+
 fn ensure_display_appearance(
     ir: &mut CadIr,
     definition: &crate::appearance::AppearanceDefinition,
     section_ordinal: usize,
     annotations: &mut Annotations,
+    origin: ScopedAppearanceOrigin,
 ) -> Result<AppearanceId, CodecError> {
     if let Some(existing) = ir.model.appearances.iter().find(|appearance| {
         appearance.name.as_deref() == Some(definition.name.as_str())
@@ -2265,8 +2278,20 @@ fn ensure_display_appearance(
     }) {
         return Ok(existing.id.clone());
     }
+    let (namespace, kind, schema) = match origin {
+        ScopedAppearanceOrigin::DisplayList => (
+            cadmpeg_ir::identity_namespace!("sldprt", "appearance", "displaylist"),
+            "displaylist_visual_properties",
+            "moVisualProperties_c",
+        ),
+        ScopedAppearanceOrigin::VisualState => (
+            cadmpeg_ir::identity_namespace!("sldprt", "appearance", "visualstate"),
+            "visual_states_scoped_appearance",
+            "SolidWorks.VisualStates",
+        ),
+    };
     let id = AppearanceId::compose(
-        &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "displaylist"),
+        &namespace,
         cadmpeg_ir::ids::IdentityKey::from(section_ordinal).colon(definition.record_offset),
     );
     crate::annotations::note(
@@ -2274,7 +2299,7 @@ fn ensure_display_appearance(
         id.as_str(),
         &definition.source_name,
         u64_from_index(definition.record_offset),
-        "displaylist_visual_properties",
+        kind,
         Exactness::ByteExact,
     )?;
     ir.model.appearances.push(Appearance {
@@ -2284,7 +2309,7 @@ fn ensure_display_appearance(
         library_id: None,
         visual_guid: None,
         physical_token: None,
-        schema: Some("moVisualProperties_c".into()),
+        schema: Some(schema.into()),
         category: None,
         base_color: Some(definition.color),
         properties: BTreeMap::new(),
@@ -2598,6 +2623,11 @@ fn build_geometry_ir(
             identity.feature_source_id.value(),
         ));
     }
+    for identity in &brep.native_face_identities {
+        if identity.values.len() == 4 {
+            face_producers.push((identity.target.as_str().to_owned(), identity.values[1]));
+        }
+    }
     let body_modifiers = std::mem::take(&mut brep.body_modifiers)
         .into_iter()
         .filter_map(|modifier| {
@@ -2770,6 +2800,17 @@ fn build_geometry_ir(
         &mut pmi_losses,
     )?;
     stamp_feature_baseline(ctx, &mut ir)?;
+    let native_appearance_plan = crate::appearance::visual_states::resolve(
+        ctx,
+        scan,
+        crate::appearance::visual_states::Inputs {
+            model: &ir.model,
+            histories: &histories,
+            lanes: &all_lanes,
+            faces: &brep.native_face_identities,
+            bodies: &brep.native_body_identities,
+        },
+    )?;
     let mut native = crate::native::SldprtNative {
         feature_histories: histories,
         feature_input_lanes: all_lanes,
@@ -2908,9 +2949,10 @@ fn build_geometry_ir(
         .into_iter()
         .map(|assignment| assignment.feature_source_id)
         .collect::<BTreeSet<_>>();
-    let mut matched_feature_sources = BTreeSet::new();
+    let mut matched_feature_sources = native_appearance_plan.feature_sources.clone();
     let mut conflicting_display_references = Vec::new();
     let mut persistent_face_bindings = Vec::new();
+    let mut display_appearance_ranks = BTreeMap::new();
     for (display, display_faces) in display_sections {
         if display_faces.is_empty() {
             continue;
@@ -2930,8 +2972,13 @@ fn build_geometry_ir(
                 ));
             }
         }
-        let resolved =
-            crate::appearance::resolve_display_appearances(ctx, scan, display, &display_faces)?;
+        let resolved = crate::appearance::resolve_display_appearances(
+            ctx,
+            scan,
+            display,
+            &display_faces,
+            &native_appearance_plan.feature_sources,
+        )?;
         for source in resolved.matched_feature_sources {
             matched_feature_sources.insert(source);
         }
@@ -2961,7 +3008,9 @@ fn build_geometry_ir(
                 Exactness::ByteExact,
             )?;
             display_links.push(id.clone());
-            if let Some(definition) = resolved.by_face.get(&table_index) {
+            if let Some(resolved_definition) = resolved.by_face.get(&table_index) {
+                display_appearance_ranks.insert(id.clone(), resolved_definition.rank);
+                let definition = &resolved_definition.definition;
                 let source_entity_id =
                     format!("{}::DisplayFace[{table_index}]", display_stream.as_str());
                 let appearance = ensure_display_appearance(
@@ -2969,6 +3018,7 @@ fn build_geometry_ir(
                     definition,
                     display.ordinal(),
                     &mut annotations,
+                    ScopedAppearanceOrigin::DisplayList,
                 )?;
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: cadmpeg_ir::ids::AppearanceBindingId::compose(
@@ -3031,7 +3081,85 @@ fn build_geometry_ir(
     let remaining_assignments =
         crate::tessellation::assign_unique_surface_owners(ctx, &mut ir.model, &mut pmi_losses)?;
     assigned_tessellations.extend(remaining_assignments);
+    if native_appearance_plan.unresolved > 0 {
+        pmi_losses.push(
+            SldprtLossCode::NativeAppearanceScopeUnresolved.note(format!(
+                "{} native appearance ownership or display-state relation(s) remain unresolved.",
+                native_appearance_plan.unresolved
+            )),
+        );
+    }
+    let mut scoped_color_faces = Vec::new();
+    for (face_index, (face_id, choice)) in native_appearance_plan.faces.iter().enumerate() {
+        let Some(definition) = choice.definition.as_ref() else {
+            continue;
+        };
+        let Some(face) = ir.model.faces.iter().find(|face| &face.id == face_id) else {
+            continue;
+        };
+        if face.color.is_some() && choice.rank < 4 {
+            continue;
+        }
+        if face.color.is_some_and(|color| color != definition.color) && choice.rank == 4 {
+            pmi_losses.push(
+                SldprtLossCode::NativeAppearanceScopeUnresolved
+                    .note("Conflicting face appearances remain unresolved."),
+            );
+            continue;
+        }
+        let appearance = ensure_display_appearance(
+            &mut ir,
+            definition,
+            choice.ordinal,
+            &mut annotations,
+            ScopedAppearanceOrigin::VisualState,
+        )?;
+        if let Some(face) = ir.model.faces.iter_mut().find(|face| &face.id == face_id) {
+            face.color = Some(definition.color);
+            scoped_color_faces.push(face_id.clone());
+        }
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: cadmpeg_ir::ids::AppearanceBindingId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "native-binding"),
+                cadmpeg_ir::ids::IdentityKey::from(choice.ordinal)
+                    .colon(definition.record_offset)
+                    .colon(face_index),
+            ),
+            target: AppearanceTarget::Face(face_id.clone()),
+            appearance,
+            source_entity_id: Some(format!(
+                "{}:{}",
+                definition.source_name.as_str(),
+                definition.record_offset
+            )),
+            object_type: Some("Native scoped face".into()),
+            visible: None,
+            channels: BTreeMap::new(),
+        });
+    }
+    for tessellation in &ir.model.tessellations {
+        let old_rank = display_appearance_ranks
+            .get(tessellation.id.as_str())
+            .copied()
+            .unwrap_or(0);
+        let blocked = native_appearance_plan.blocked_display_rank >= old_rank
+            && native_appearance_plan.blocked_display_rank != 0
+            || tessellation.faces.iter().any(|face| {
+                native_appearance_plan
+                    .faces
+                    .get(face)
+                    .is_some_and(|choice| choice.definition.is_none() && choice.rank >= old_rank)
+            });
+        if blocked {
+            ir.model.appearance_bindings.retain(|binding| {
+                binding.target != AppearanceTarget::Tessellation(tessellation.id.to_string())
+            });
+        }
+    }
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
+    for id in scoped_color_faces {
+        annotation_builder.field_exactness(id.as_str(), "color", Exactness::Derived)?;
+    }
     for id in assigned_tessellations {
         annotation_builder.field_exactness(id.as_str(), "body", Exactness::Derived)?;
         annotation_builder.field_exactness(id.as_str(), "faces", Exactness::Derived)?;

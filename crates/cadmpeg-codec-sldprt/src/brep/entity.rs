@@ -40,6 +40,8 @@ pub(crate) struct Facts {
     pub(super) face_colors: Vec<FaceColor>,
     /// Per-face producing-feature identities carried by Parasolid attributes.
     pub(super) face_atoms: Vec<super::attrib::RawFaceAtom>,
+    pub(super) face_payloads: Vec<(u16, Vec<u32>)>,
+    pub(super) body_payloads: Vec<(u16, Vec<u32>)>,
     /// Body-to-history ordinals carried by Parasolid attributes.
     pub(super) body_modifiers: Vec<super::attrib::BodyModifier>,
 }
@@ -283,6 +285,8 @@ pub(crate) fn scan_metadata(body: &[u8], prefixed: bool) -> Facts {
         face_color_versions,
         face_colors,
         face_atoms: super::attrib::scan(body),
+        face_payloads: super::attrib::scan_face_payloads(body),
+        body_payloads: super::attrib::scan_body_payloads(body),
         body_modifiers: super::attrib::scan_body_modifiers(body),
     }
 }

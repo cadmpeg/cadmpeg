@@ -9529,18 +9529,17 @@ name = "visual_states_feature_appearance_prefix"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/appearance.rs"
 kind = "byte"
 section = "8"
-anchor = "A `ThirdPtyStore/VisualStates` feature-appearance instance in an `moCompFeature_c` interval begins with u32 LE version `17000`"
+anchor = "A `ThirdPtyStore/VisualStates` appearance instance begins with an unconstrained u32 LE object prelude"
 size = 36
 endianness = "little"
 note = "The prefix ends after the packed colour. The remaining visual-property payload is outside this fixed layout."
 
 [[record.field]]
-name = "version"
+name = "prelude"
 offset = 0
 type = "u32"
 source = "spec"
-anchor = "begins with u32 LE version `17000`"
-value = 17000
+anchor = "begins with an unconstrained u32 LE object prelude"
 
 [[record.field]]
 name = "feature_source_id"
@@ -10988,3 +10987,43 @@ type = "u16"
 source = "spec"
 anchor = "u16 BE BODY type `12` at `+6`"
 value = 12
+
+
+[[record]]
+name = "visual_component_body_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/appearance/visual_states.rs"
+kind = "byte"
+section = "8"
+anchor = "A `VisualStates` body-component identity prefix is 17 bytes"
+size = 17
+endianness = "little"
+note = "Relative to a moCompSolidBody_c body. The identity scalar resolves only through a current BODY native attribute owner."
+
+[[record.field]]
+name = "class_token"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "u16 LE class token at `+0`"
+
+[[record.field]]
+name = "zero_padding"
+offset = 2
+type = "bytes[7]"
+source = "spec"
+anchor = "seven zero bytes at `+2..+8`"
+value = [0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "identity"
+offset = 9
+type = "u32"
+source = "spec"
+anchor = "at `+9` and `+13`"
+
+[[record.field]]
+name = "identity_copy"
+offset = 13
+type = "u32"
+source = "spec"
+anchor = "at `+9` and `+13`"

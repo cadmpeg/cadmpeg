@@ -23,8 +23,9 @@ use crate::layout::attribute_short_references as attr_refs;
 
 /// Attribute family binding a face to its producing feature.
 const FACE_ID: &str = "FACE_ID_2001";
+const BODY_ID: &str = "ATOM_ID_2001";
 
-/// Attribute family carrying a body's last modeling-history ordinal.
+/// Attribute family carrying a body's last native feature source identity.
 const LAST_BODY_MODIFIER: &str = "LAST_BODY_MODIFYING_FEATURE_ID";
 
 const FACE_FIELDS: &[u8] = &[9, 9, 1, 1];
@@ -32,6 +33,7 @@ const BODY_FIELDS: &[u8] = &[9, 1];
 
 /// Widths of an `FACE_ID_2001` payload list.
 const FACE_ID_WIDTHS: std::ops::RangeInclusive<usize> = 5..=7;
+const NATIVE_FACE_ID_WIDTHS: std::ops::RangeInclusive<usize> = 4..=7;
 
 /// Payload position of the producing feature's native source id.
 const FACE_ID_FEATURE: usize = 1;
@@ -214,6 +216,7 @@ fn definitions(buf: &[u8]) -> HashMap<u16, &'static str> {
         let family = match family.name.as_str() {
             FACE_ID if family.fields == FACE_FIELDS => FACE_ID,
             LAST_BODY_MODIFIER if family.fields == BODY_FIELDS => LAST_BODY_MODIFIER,
+            BODY_ID if family.fields == BODY_FIELDS => BODY_ID,
             _ => continue,
         };
         supported.insert(node, family);
@@ -243,7 +246,7 @@ fn integer_lists(buf: &[u8]) -> HashMap<u16, Vec<u32>> {
         let Some(count) = cadmpeg_core::decode::bounded_len(u64::from(count), 4, available) else {
             continue;
         };
-        if count != 1 && !FACE_ID_WIDTHS.contains(&count) {
+        if count != 1 && !NATIVE_FACE_ID_WIDTHS.contains(&count) {
             continue;
         }
         let mut values = Vec::new();
@@ -398,6 +401,79 @@ pub(super) fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
     out
 }
 
+/// A complete native identity attached to one emitted topology entity.
+#[derive(Debug, Clone)]
+pub(crate) struct NativeIdentity<T> {
+    pub(crate) target: T,
+    pub(crate) values: Vec<u32>,
+}
+
+fn scan_identity_payloads(buf: &[u8], family: &str, fields: &[u8]) -> Vec<(u16, Vec<u32>)> {
+    let definitions = definitions(buf);
+    let lists = integer_lists(buf);
+    let mut found = HashMap::<u16, Option<Vec<u32>>>::new();
+    for off in 0..buf.len() {
+        let Some(p) = record_body(buf, off, 0x51) else {
+            continue;
+        };
+        if View::u16_be_at(buf, p + attr_inst::ZERO_SELECTOR) != Some(0) {
+            continue;
+        }
+        let Some(definition) = View::u16_be_at(buf, p + attr_inst::DEFINITION_NODE_ID) else {
+            continue;
+        };
+        if definitions.get(&definition).copied() != Some(family) {
+            continue;
+        }
+        let Some(owner) = short_index(buf, p + attr_inst::OWNER_ATTRIBUTE_ID) else {
+            continue;
+        };
+        let Some(values) = named_integer_payload(buf, p, &lists, fields) else {
+            continue;
+        };
+        let valid = if family == FACE_ID {
+            NATIVE_FACE_ID_WIDTHS.contains(&values.len())
+                && values.get(FACE_ID_GUARD) == Some(&0)
+                && (values.len() != 4 || values[0] == 36)
+                && FeatureSourceId::try_from(values[FACE_ID_FEATURE]).is_ok()
+                && values[2] != 0
+                && values[2] != u32::MAX
+        } else {
+            values.len() == 1 && values[0] != 0 && values[0] != u32::MAX
+        };
+        if valid {
+            consistent_insert(&mut found, owner, values.to_vec());
+        }
+    }
+    let mut out: Vec<_> = found
+        .into_iter()
+        .filter_map(|(owner, values)| Some((owner, values?)))
+        .collect();
+    out.sort_by_key(|(owner, _)| *owner);
+    out
+}
+
+pub(super) fn scan_face_payloads(buf: &[u8]) -> Vec<(u16, Vec<u32>)> {
+    scan_identity_payloads(buf, FACE_ID, FACE_FIELDS)
+}
+
+pub(super) fn scan_body_payloads(buf: &[u8]) -> Vec<(u16, Vec<u32>)> {
+    scan_identity_payloads(buf, BODY_ID, BODY_FIELDS)
+}
+
+pub(super) fn unique_payloads(payloads: Vec<(u16, Vec<u32>)>) -> Vec<(u16, Vec<u32>)> {
+    let mut found = HashMap::new();
+    for (owner, values) in payloads {
+        consistent_insert(&mut found, owner, values);
+    }
+    let mut out: Vec<_> = found
+        .into_iter()
+        .filter_map(|(owner, values)| Some((owner, values?)))
+        .collect();
+    out.sort_by_key(|(owner, _)| *owner);
+    out
+}
+
 /// Decode every body-level last-modifier binding carried by one stream body.
 pub(super) fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
     let definitions = definitions(buf);
@@ -524,7 +600,48 @@ mod tests {
         out
     }
 
-    /// Serialize one body-modifier family, one scalar list, and one instance.
+    #[test]
+    fn four_word_face_payload_keeps_every_feature_scoped_owner_without_a_local_selector() {
+        let payload = [36, 47, 0x6523_4178, 0];
+        for owner in [13, 29, 53] {
+            let bytes = stream(&payload, owner);
+            assert!(scan(&bytes).is_empty());
+            assert_eq!(
+                super::scan_face_payloads(&bytes),
+                vec![(owner, payload.to_vec())]
+            );
+        }
+    }
+
+    #[test]
+    fn native_face_scope_rejects_unknown_four_word_forms_and_invalid_producer_identity() {
+        for payload in [
+            [37, 47, 0x6523_4178, 0],
+            [36, 0, 0x6523_4178, 0],
+            [36, 47, 0, 0],
+            [36, 47, u32::MAX, 0],
+            [36, 47, 0x6523_4178, 1],
+        ] {
+            assert!(super::scan_face_payloads(&stream(&payload, 13)).is_empty());
+        }
+    }
+
+    #[test]
+    fn merged_identity_payloads_withhold_conflicting_owners_and_keep_distinct_owners() {
+        let first = vec![36, 47, 0x6523_4178, 0];
+        let second = vec![72, 53, 0x6523_4180, 0, 9];
+        assert_eq!(
+            super::unique_payloads(vec![
+                (13, first.clone()),
+                (13, second.clone()),
+                (29, first.clone()),
+                (29, first.clone()),
+                (31, second.clone()),
+            ]),
+            vec![(29, first), (31, second)]
+        );
+    }
+
     fn body_modifier_stream(payloads: &[&[u32]], body_attr: u16) -> Vec<u8> {
         let mut out = Vec::new();
         append_definition(&mut out, LAST_BODY_MODIFIER, 15, 16);

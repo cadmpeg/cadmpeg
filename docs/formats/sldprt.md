@@ -1516,7 +1516,11 @@ equal-sequence tie. A deltas record with an identity absent from the
 partition adds that identity.
 
 `FACE_ID_2001` instances hang on face bridge records and reference one
-integer list of five through seven values whose value 3 is zero. Value 1 is
+integer list of four through seven values whose value 3 is zero. A four-word
+form `[36, source, timestamp, 0]` identifies a feature-scoped set of current
+FACE owners. It has no feature-local face selector and cannot select one
+face when multiple owners carry it. Local-bearing forms have five through
+seven values. Value 2 is the producer timestamp. Value 1 is
 the native object id of the history feature that produced the face and value
 4 is that producer's feature-local face identity. Values 5 through the end
 are optional signed path fields; a field with bit pattern `0xffffffff` is
@@ -1525,6 +1529,10 @@ value 4, and this ordered optional tail. A `moSingleFaceRef_w` path or a
 generated-surface component path selects the surviving face whose
 `FACE_ID_2001` carries the same complete identity. A feature whose produced
 faces survive is a producer of every body owning one of them.
+
+`ATOM_ID_2001` has definition field codes `[9, 1]`. Its first integer field
+carries one nonzero body identity scalar. The scalar and its complete current
+BODY owner relation establish body identity; face identity uses `FACE_ID_2001`.
 
 `LAST_BODY_MODIFYING_FEATURE_ID` instances hang on BODY attributes and
 resolve one `00 52` integer-list payload containing one native feature source
@@ -1772,7 +1780,7 @@ The offset surface retains the support parameterization. Nested offset carriers 
 
   A DisplayFace metadata slot can contain duplicated framed UTF-16LE strings. Their frame is `ff fe ff`, a u8 code-unit count, then the UTF-16LE payload. A payload of the form `<SurfIdRep class>,<feature source ID>,<local surface ID>[,<signed path field>...],` is a persistent surface reference when the class begins with `mo` and ends with `SurfIdRep_c`. The terminal comma is part of the framed text convention. A signed path field is a decimal signed 32-bit value compared by its u32 bit pattern; decimal `-1` therefore denotes `0xffffffff`. When every trailing field is signed numeric, the complete identity is the source ID, local surface ID, and ordered trailing fields. All complete references in one slot must agree on that identity, which joins the slot to the surviving face whose `FACE_ID_2001` carries the same values; the join is valid only when it selects one face and that face has one body. A reference with an opaque trailing field remains a source-level reference for appearance matching but cannot establish face ownership. A missing, conflicting, or multiply resolved complete identity leaves face ownership unresolved. The feature source ID alone remains sufficient for feature-appearance matching only when all references agree on that source ID.
 
-  A `ThirdPtyStore/VisualStates` feature-appearance instance in an `moCompFeature_c` interval begins with u32 LE version `17000`, the feature source ID, the feature timestamp, u32 LE values `1`, `1`, and `2`, bytes `07 80 01 00 00 00`, and marker `09 80`. The packed `0x00BBGGRR` colour follows the marker. A matching DisplayFace persistent surface source ID binds this feature appearance to the table. Effective DisplayLists precedence is body default, feature appearance, then face-local appearance.
+  A `ThirdPtyStore/VisualStates` appearance instance begins with an unconstrained u32 LE object prelude, the feature source ID, the feature timestamp, u32 LE values `1`, `1`, and `2`, bytes `07 80 01 00 00 00`, and marker `09 80`. The packed `0x00BBGGRR` colour follows the marker. The source and timestamp select a feature assignment only through one Keywords feature, one neutral model feature, and one feature-input object. Current `FACE_ID_2001` owners with that source and timestamp establish the generated-face scope, including four-word feature-scoped owners. A matching DisplayFace persistent surface source ID binds a validated feature appearance to the table. Effective appearance precedence is part, body, feature, then face. Equal-rank conflicting assignments supply no unique effective appearance; an unresolved higher-rank relation does not supply a lower-rank fallback.
 - A DisplayLists scene-class declaration scopes its following scene objects. The byte sequence `00 00 00 00 00 00 30 40 00 00 00 00` followed by a nonzero u32 LE source identifier binds that object class to the Keywords record with the same source identifier. Anonymous object counts do not identify Keywords records.
 - **Materials / metadata** live in SW Objects blocks: `moVisualProperties_c` contains appearance definitions with material names and RGB `0x00BBGGRR` values; names use UTF-16LE. A class-token occurrence does not establish an appearance assignment. A document metadata record starts with its ASCII class token. Offsets below are from the end of that token. Scalar fields are little-endian.
 
@@ -1804,6 +1812,35 @@ The offset surface retains the support parameterization. Nested offset carriers 
 - **XML / UnQLite** carry OPC parts, document/feature metadata, unit metadata (`SW_UnitsLinear=0` = millimetres), and MessagePack UI data: auxiliary, not the exact B-rep.
 
 ---
+
+
+`ThirdPtyStore/VisualStates` and the inflated payload of
+`ThirdPtyStore/VisualStates__ZLB` carry the same semantic appearance stream.
+One `visStateKeyData_c` interval carries a framed UTF-16LE key formed from a
+configuration name and a nonempty display-state name separated by `_`.
+A configuration name can appear inside angle brackets. A unique exact name
+prefix selects its configuration; a sole configuration supplies an unambiguous
+configuration when no name prefix matches. An inactive configuration does not
+supply the active geometry's appearance scope. Multiple keys or multiple
+matching configuration names supply no unique active scope.
+
+A part-default definition follows one of these class sequences:
+`moCompHolder_c`, `moUnitComponent_c`, `visStateVisualPropertiesAttribute_c`,
+`moVisualProperties_c`; the same sequence with `visStateVisualStateAttribute_c`
+between the attribute and definition; or `moUnitComponent_c`,
+`visStateVisualPropertiesAttribute_c`, `visStateVisualStateAttribute_c`,
+`moCompHolder_c`, `moVisualProperties_c`. The property-attribute body is
+`01 00 00 00` or `01 00 00 00 00 00`. Class order establishes the relation;
+a fixed distance between class tokens does not. A definition alone supplies
+no part scope. An empty material name does not invalidate the stored colour.
+
+A `VisualStates` body-component identity prefix is 17 bytes relative to the
+`moCompSolidBody_c` body: a non-null high-bit u16 LE class token at `+0`,
+seven zero bytes at `+2..+8`, and equal nonzero u32 LE body identity scalars
+at `+9` and `+13`. The complete scalar resolves through a unique current
+BODY `ATOM_ID_2001` owner. A conflicting or missing owner supplies no body
+appearance scope.
+
 
 ## 9. Units
 

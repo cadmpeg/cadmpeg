@@ -244,10 +244,10 @@ impl<'a> FeatureObjectNames<'a> {
 }
 
 /// Object-name offsets of every history feature in one lane, in ascending order.
-pub(super) struct FeatureObjectStarts(Vec<u64>);
+pub(crate) struct FeatureObjectStarts(Vec<u64>);
 
 impl FeatureObjectStarts {
-    pub(super) fn new(
+    pub(crate) fn new(
         histories: &[crate::records::FeatureHistory],
         names: &FeatureObjectNames<'_>,
     ) -> Self {
@@ -263,7 +263,7 @@ impl FeatureObjectStarts {
 
     /// End of the feature object named at `start`: the next feature object
     /// start after it, else `payload_len`.
-    pub(super) fn end(&self, start: u64, payload_len: usize) -> usize {
+    pub(crate) fn end(&self, start: u64, payload_len: usize) -> usize {
         self.0
             .get(self.0.partition_point(|offset| *offset <= start))
             .and_then(|offset| usize::try_from(*offset).ok())
