@@ -41,23 +41,10 @@ fn object_color(provider: &mut Provider, color: Color) {
     );
 }
 
-// App::Material's native constructor defaults (the required fields are
-// present on every PropertyMaterial carrier).
-const DEFAULT_MATERIAL_SHININESS: f64 = 0.9;
-const DEFAULT_MATERIAL_TRANSPARENCY: f64 = 0.0;
-
 fn material(
     provider: &mut Provider,
     appearance: &cadmpeg_ir::appearance::Appearance,
-    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if appearance.base_color.is_none() {
-        provider.properties.remove("ShapeMaterial");
-        losses.push(FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
-            "appearance {} has no diffuse color required by a native material; ShapeMaterial is omitted", appearance.id
-        )));
-        return Ok(());
-    }
     let scalar = |name: &str| {
         appearance
             .properties
@@ -67,13 +54,6 @@ fn material(
     };
     let shininess = scalar("shininess");
     let transparency = scalar("material_transparency");
-    if shininess.is_none() || transparency.is_none() {
-        losses.push(FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
-            "appearance {} uses required native material defaults for unauthored shininess/transparency", appearance.id
-        )));
-    }
-    let shininess = shininess.unwrap_or(DEFAULT_MATERIAL_SHININESS);
-    let transparency = transparency.unwrap_or(DEFAULT_MATERIAL_TRANSPARENCY);
     if let Some(original) = provider.native.get("ShapeMaterial") {
         let mut property = original.clone();
         for value in &mut property.values {
@@ -85,12 +65,16 @@ fn material(
                 } else {
                     value.attributes.remove("diffuseColor");
                 }
-                value
-                    .attributes
-                    .insert("shininess".into(), shininess.to_string());
-                value
-                    .attributes
-                    .insert("transparency".into(), transparency.to_string());
+                if let Some(number) = shininess {
+                    value
+                        .attributes
+                        .insert("shininess".into(), number.to_string());
+                }
+                if let Some(number) = transparency {
+                    value
+                        .attributes
+                        .insert("transparency".into(), number.to_string());
+                }
             }
         }
         if let Some(value) = native_property(&property)? {
@@ -105,8 +89,12 @@ fn material(
         if let Some(color) = appearance.base_color {
             attributes.push(("diffuseColor", packed(color).to_string()));
         }
-        attributes.push(("shininess", shininess.to_string()));
-        attributes.push(("transparency", transparency.to_string()));
+        if let Some(value) = shininess {
+            attributes.push(("shininess", value.to_string()));
+        }
+        if let Some(value) = transparency {
+            attributes.push(("transparency", value.to_string()));
+        }
         provider.properties.insert(
             "ShapeMaterial".into(),
             xml::property(
@@ -277,9 +265,7 @@ pub(super) fn write(
                 defaults.insert(name.clone(), packed(color));
             }
         }
-        if selection(&binding.target).is_none() {
-            material(provider, appearance, losses)?;
-        }
+        material(provider, appearance)?;
         if binding.visible.is_some() || !binding.channels.is_empty() {
             losses.push(FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
                 "appearance binding {} independent visibility/channel gates are reduced to the effective native provider state", binding.id
@@ -299,7 +285,7 @@ pub(super) fn write(
                     "Float",
                     value.get(),
                 ),
-                "shininess" | "material_transparency" if selection(&binding.target).is_none() => {}
+                "shininess" | "material_transparency" => {}
                 _ => losses.push(
                     FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
                         "appearance {} property {key} has no FreeCAD GUI encoding",
@@ -420,7 +406,7 @@ mod tests {
             serde_json::from_value(serde_json::json!({"id":"test:model:appearance#empty"}))
                 .unwrap();
         let mut provider = Provider::new("Shape".into());
-        material(&mut provider, &appearance, &mut Vec::new()).unwrap();
+        material(&mut provider, &appearance).unwrap();
         let document = roxmltree::Document::parse(&provider.properties["ShapeMaterial"]).unwrap();
         let value = document
             .descendants()

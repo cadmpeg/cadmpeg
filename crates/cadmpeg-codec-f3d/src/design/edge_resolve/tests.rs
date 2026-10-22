@@ -27,6 +27,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
 use crate::records::topology::edge_identity::DesignEdgeOperand;
+use crate::test_support::record_access::EdgeIdentityGuids;
 use cadmpeg_ir::ids::EdgeId;
 
 fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {

@@ -29,62 +29,6 @@ enum ScalarUnit {
     Angle,
 }
 
-/// Whether a current cache can inhabit a retained scalar's declared quantity.
-/// A false result makes that source copy unavailable; it does not retype the
-/// canonical parameter or supply a value for a canonical dimensional binding.
-pub(crate) fn scalar_quantity_matches(
-    lane: &FeatureInputLane,
-    scalar: &FeatureInputScalar,
-    value: &cadmpeg_ir::features::ParameterValue,
-) -> bool {
-    use cadmpeg_ir::features::ParameterValue;
-    let declared = lane
-        .names
-        .iter()
-        .find(|name| name.id == scalar.name)
-        .and_then(|name| {
-            let class = lane
-                .classes
-                .iter()
-                .filter(|class| class.sequence < name.sequence)
-                .max_by_key(|class| class.sequence)?;
-            if lane
-                .names
-                .iter()
-                .any(|other| other.sequence > class.sequence && other.sequence < name.sequence)
-            {
-                return None;
-            }
-            match class.name.as_str() {
-                "moLengthParameter_c" => Some(ScalarUnit::Length),
-                "moAngleParameter_c" => Some(ScalarUnit::Angle),
-                _ => None,
-            }
-        });
-    let families = lane
-        .relation_bindings
-        .iter()
-        .filter(|binding| binding.scalar_ref == scalar.id)
-        .map(|binding| binding.family)
-        .chain(
-            lane.relation_instances
-                .iter()
-                .filter(|relation| relation.scalar_refs().contains(&scalar.id))
-                .map(|relation| relation.family),
-        );
-    let units = declared
-        .into_iter()
-        .chain(families.map(|family| match family {
-            FeatureInputRelationFamily::Angle => ScalarUnit::Angle,
-            _ => ScalarUnit::Length,
-        }));
-    units.into_iter().all(|unit| match unit {
-        ScalarUnit::Length => matches!(value, ParameterValue::Length(_)),
-        ScalarUnit::Angle => matches!(value, ParameterValue::Angle(_)),
-        ScalarUnit::Native => true,
-    })
-}
-
 /// A lane's scalars by owner. A scalar naming a feature belongs to it; an
 /// unreferenced scalar belongs to the object whose open span holds its offset.
 struct ScalarOwners<'a> {
@@ -509,29 +453,12 @@ fn native_scalar_matches_discrete_parameter(
 }
 
 pub(crate) fn sync_feature_scalars(
-    model: &cadmpeg_ir::document::Model,
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::ParameterValue;
 
     for lane in lanes {
-        let configuration = lane
-            .configuration
-            .as_deref()
-            .and_then(|slot| slot.parse::<u32>().ok())
-            .and_then(|slot| {
-                crate::history::configuration::configuration_for_source_slot(
-                    &model.configurations,
-                    slot,
-                )
-            })
-            .map(|index| &model.configurations[index]);
-        if lane.configuration.is_some() && configuration.is_none() {
-            // A scoped native statement without a unique canonical slot is
-            // independent content. A global cache cannot replace its value.
-            continue;
-        }
         let names_by_id = lane
             .names
             .iter()
@@ -553,7 +480,7 @@ pub(crate) fn sync_feature_scalars(
         for (index, &(start, feature)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map(|(offset, _)| *offset);
             let mut owned = None;
-            for name in feature.parameters.keys() {
+            for (name, expression) in &feature.parameters {
                 let candidates = owned
                     .get_or_insert_with(|| owners.owned(&feature.id, start, end))
                     .iter()
@@ -562,28 +489,21 @@ pub(crate) fn sync_feature_scalars(
                         names_by_id.get(scalar.name.as_str()) == Some(&name.as_str())
                     })
                     .collect::<Vec<_>>();
-                let parsed = current_scalar_cache(model, configuration, feature, name.as_str())?;
-                let value = match &parsed {
+                let value = match crate::history::parameters::parse_native_parameter_literal(
+                    feature,
+                    name.as_str(),
+                    expression,
+                ) {
                     Some(ParameterValue::Length(value)) => value.get() / 1000.0,
                     Some(ParameterValue::Angle(value)) => value.get(),
                     Some(ParameterValue::Real(value)) => value.get(),
                     _ => continue,
                 };
-                for (scalar_index, scalar) in candidates {
-                    if parsed
-                        .as_ref()
-                        .is_some_and(|parsed| !scalar_quantity_matches(lane, scalar, parsed))
-                    {
-                        if !lane.native_payload.is_empty() {
-                            return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
-                                "SLDPRT scalar {} no longer has its source quantity; regenerate the input lane",
-                                scalar.id
-                            )));
-                        }
-                        continue;
-                    }
-                    updates.push((scalar_index, value));
-                }
+                updates.extend(
+                    candidates
+                        .into_iter()
+                        .map(|(scalar_index, _)| (scalar_index, value)),
+                );
             }
         }
         for (scalar_index, value) in updates {
@@ -615,71 +535,6 @@ pub(crate) fn sync_feature_scalars(
         }
     }
     Ok(())
-}
-
-/// Resolve a duplicate scalar from its canonical owner and effective
-/// configuration. Native-only literal edits retain their declared quantity.
-fn current_scalar_cache(
-    model: &cadmpeg_ir::document::Model,
-    configuration: Option<&cadmpeg_ir::features::DesignConfiguration>,
-    feature: &crate::records::Feature,
-    name: &str,
-) -> Result<Option<cadmpeg_ir::features::ParameterValue>, cadmpeg_core::CodecError> {
-    let owner = model.features.iter().find(|owner| {
-        owner.native_ref.as_deref() == Some(feature.id.as_str())
-            || (owner.native_ref.is_none()
-                && crate::history::write::features::generated_feature_record_id(&owner.id)
-                    == feature.id)
-    });
-    if let Some(owner) = owner {
-        let binding =
-            crate::history::encode::bindings::role_parameter(owner, &feature.parameters, name)?;
-        let parameter = binding
-            .as_ref()
-            .and_then(|id| {
-                model
-                    .parameters
-                    .iter()
-                    .find(|parameter| &parameter.id == id)
-            })
-            .or_else(|| {
-                model.parameters.iter().find(|parameter| {
-                    parameter.owner.as_ref() == Some(&owner.id) && parameter.name == name
-                })
-            });
-        if let Some(parameter) = parameter {
-            let value = match configuration {
-                Some(configuration)
-                    if configuration
-                        .parameter_overrides
-                        .contains_key(&parameter.id) =>
-                {
-                    configuration.parameter_values.get(&parameter.id)
-                }
-                Some(configuration) => configuration
-                    .parameter_values
-                    .get(&parameter.id)
-                    .or(parameter.value.as_ref()),
-                None => parameter.value.as_ref(),
-            };
-            return value.cloned().map(Some).ok_or_else(|| cadmpeg_core::CodecError::UnsupportedContent(format!(
-                "SLDPRT canonical parameter {} has no evaluated scalar in its current configuration", parameter.id
-            )));
-        }
-    }
-    let cache = crate::history::parameters::source_parameter_value(feature, name);
-    let literal = feature.parameters.get(name).and_then(|expression| {
-        crate::history::parameters::parse_native_parameter_literal(feature, name, expression)
-    });
-    Ok(match (literal, cache) {
-        (Some(literal), Some(cache))
-            if std::mem::discriminant(&literal) == std::mem::discriminant(&cache) =>
-        {
-            Some(literal)
-        }
-        (_, Some(cache)) => Some(cache),
-        (literal, None) => literal,
-    })
 }
 
 #[cfg(test)]

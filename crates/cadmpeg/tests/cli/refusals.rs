@@ -828,15 +828,15 @@ fn decode_loss_floor_applies_to_native_input_and_never_to_history() {
 
 #[cfg(all(feature = "step", feature = "rhino"))]
 #[test]
-fn fine_native_tolerance_preserves_exact_rhino_geometry() {
+fn native_geometry_all_omitted_by_target_requires_allow_empty() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
-    const FINE_STATED_TOLERANCE: f64 = 1e-12;
+    const FINER_THAN_RHINO_WRITE_TOLERANCE: f64 = 1e-12;
     let dir = tempdir().unwrap();
     let mut document = unit_cube().unwrap();
     document.tolerances = cadmpeg_ir::units::Tolerances::new(
-        FINE_STATED_TOLERANCE,
+        FINER_THAN_RHINO_WRITE_TOLERANCE,
         document.tolerances.angular.get(),
     )
     .unwrap();
@@ -850,11 +850,11 @@ fn fine_native_tolerance_preserves_exact_rhino_geometry() {
         .unwrap();
     assert!(
         decoded.report().geometry_transferred(),
-        "the source decode delivers the exact BRep to be preserved"
+        "the source decode delivers BRep, so this exercises completed-target emptiness"
     );
     let input = dir.path().join("fine.step");
-    let output = dir.path().join("fine.3dm");
-    let report = dir.path().join("written.json");
+    let output = dir.path().join("empty.3dm");
+    let report = dir.path().join("refusal.json");
     fs::write(&input, source).unwrap();
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -869,55 +869,45 @@ fn fine_native_tolerance_preserves_exact_rhino_geometry() {
             report.to_str().unwrap(),
         ])
         .assert()
-        .success();
-    assert!(output.exists());
+        .code(1)
+        .stderr(predicate::str::contains("--allow-empty"));
+    assert!(!output.exists());
     let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert!(report["refusal"].is_null());
+    assert_eq!(report["refusal"]["code"], "empty_geometry");
     assert_eq!(
         report["decode_report"]["transfer"]["geometry_transferred"],
         true
     );
-    assert!(!report["export"]["losses"]
+    assert!(report["export"]["losses"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|loss| {
-            loss["code"]["code"]
-                .as_str()
-                .is_some_and(|code| code.contains("no-exportable-solids"))
-        }));
-    let written = cadmpeg_codec_rhino::RhinoCodec
+        .any(|loss| loss["code"]["code"]
+            .as_str()
+            .is_some_and(|code| code.contains("no-exportable-solids"))));
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--to",
+            "rhino:archive-80",
+            "--allow-empty",
+        ])
+        .assert()
+        .success();
+    let empty = cadmpeg_codec_rhino::RhinoCodec
         .decode(
-            &mut Cursor::new(fs::read(&output).unwrap()),
+            &mut Cursor::new(fs::read(output).unwrap()),
             &DecodeOptions::default(),
         )
         .unwrap();
-    // #209 §5.2: an implementation tolerance floor cannot omit this exact cube.
-    assert_eq!(
-        written.ir().model.bodies.len(),
-        decoded.ir().model.bodies.len()
-    );
-    assert_eq!(
-        written.ir().model.faces.len(),
-        decoded.ir().model.faces.len()
-    );
-    assert_eq!(
-        written.ir().model.edges.len(),
-        decoded.ir().model.edges.len()
-    );
-    assert_eq!(
-        written.ir().model.points.len(),
-        decoded.ir().model.points.len()
-    );
-    assert_eq!(
-        written.ir().tolerances.linear.get().to_bits(),
-        FINE_STATED_TOLERANCE.to_bits()
-    );
-    Command::cargo_bin("cadmpeg")
-        .unwrap()
-        .args(["check", output.to_str().unwrap()])
-        .assert()
-        .success();
+    assert!(empty.ir().model.bodies.is_empty());
+    assert!(empty.ir().model.points.is_empty());
+    assert!(empty.ir().model.curves.is_empty());
+    assert!(empty.ir().model.surfaces.is_empty());
 }
 
 #[cfg(feature = "rhino")]

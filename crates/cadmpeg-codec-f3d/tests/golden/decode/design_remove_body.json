@@ -1532,7 +1532,7 @@
           "kind": "feature_history_retained"
         },
         "severity": "warning",
-        "message": "2 decoded sketch curve(s) have no neutral sketch entity (1 have no stated Sketch owner). Records: f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1830, f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#2328."
+        "message": "1 decoded sketch curve(s) have no neutral sketch entity. Records: f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1830."
       },
       {
         "code": {

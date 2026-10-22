@@ -75,14 +75,17 @@
         "file_size": "158",
         "section.0.length": "42",
         "section.0.name": "VisibGeom",
+        "section.0.offset": "79",
         "section.0.raw_name": "VisibGeom",
         "section.0.role": "psb-geometry",
         "section.1.length": "16",
         "section.1.name": "AllFeatur",
+        "section.1.offset": "121",
         "section.1.raw_name": "AllFeatur",
         "section.1.role": "model-data",
         "section.2.length": "21",
         "section.2.name": "THMB_IMG_MAIN",
+        "section.2.offset": "137",
         "section.2.raw_name": "THMB_IMG_MAIN",
         "section.2.role": "thumbnail",
         "section_count": "3",
@@ -589,11 +592,6 @@
           "tag": "psb_geometry_section"
         }
       }
-    },
-    "metadata": {
-      "source.section.0.offset": "79",
-      "source.section.1.offset": "121",
-      "source.section.2.offset": "137"
     },
     "retained_records": {
       "creo:THMB_IMG_MAIN:section#152": {

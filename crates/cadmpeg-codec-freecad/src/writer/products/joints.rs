@@ -267,7 +267,7 @@ pub(super) fn write(
             JointOperands::Grounded { .. } => "",
             JointOperands::Pair { kind, .. } => {
                 let Some(label) = family_label(kind) else {
-                    losses.push(FreecadLossCode::ExportJointNotTransferred.note(format!(
+                    losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                         "joint {} has no FreeCAD joint family for {kind:?}",
                         joint.id
                     )));

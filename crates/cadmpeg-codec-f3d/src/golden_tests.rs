@@ -780,112 +780,6 @@ fn golden_output_is_deterministic() {
     }
 }
 
-/// Apply E1 to the arenas the actual independent synthesizer claims Written.
-fn assert_writer_arenas(
-    name: &str,
-    report: &cadmpeg_ir::report::export::ExportReport,
-    left: &CadIr,
-    right: &CadIr,
-) {
-    // Diagnostics compare model-only JSON without changing any expectation.
-    // Print at most three literal arena differences; E1 uses its global identity
-    // bijection and all values/references rather than these literal source IDs.
-    let left_model = serde_json::to_value(&left.model).unwrap();
-    let right_model = serde_json::to_value(&right.model).unwrap();
-    let differences = cadmpeg_ir::ArenaName::ALL
-        .iter()
-        .filter_map(|arena| {
-            let field = arena.as_str();
-            cadmpeg_ir::compare::values_agree(&left_model[field], &right_model[field])
-                .err()
-                .map(|difference| format!("{field}: {difference}"))
-        })
-        .take(3)
-        .collect::<Vec<_>>();
-    if !differences.is_empty() {
-        eprintln!("fixture {name}: model diagnostics {differences:?}; actual synthesis coverage {:?}; losses {:?}", report.coverage, report.losses);
-    }
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        cadmpeg_test_support::contract::assert_written_arenas_agree(report, left, right);
-    }));
-    assert!(
-        result.is_ok(),
-        "fixture {name}: Written-arena conservation failed; coverage {:?}; losses {:?}",
-        report.coverage,
-        report.losses
-    );
-}
-
-fn assert_writer_metadata(
-    name: &str,
-    input: &CadIr,
-    output: &DecodeResult,
-    report: &cadmpeg_ir::report::export::ExportReport,
-) {
-    // CADIR units are an implicit type invariant, serialized on its wire.
-    let units: serde_json::Value = cadmpeg_test_support::wire::field(output.ir(), "units");
-    assert_eq!(
-        units,
-        serde_json::json!({"length": "millimeter"}),
-        "{name}: canonical document units"
-    );
-    cadmpeg_ir::compare::values_agree(
-        &serde_json::to_value(input.tolerances).unwrap(),
-        &serde_json::to_value(output.ir().tolerances).unwrap(),
-    )
-    .unwrap_or_else(|error| panic!("{name}: document tolerances: {error}"));
-    let target: cadmpeg_core::dialect::DialectId =
-        cadmpeg_test_support::wire::field(report, "identity/target");
-    let actual = output.report().dialects().expect("classified output");
-    assert_eq!(
-        actual.primary().dialect(),
-        &target,
-        "{name}: actual output target"
-    );
-    let source = output.ir().source.as_ref().expect("output source identity");
-    assert_eq!(
-        source.format(),
-        report.format(),
-        "{name}: output format metadata"
-    );
-    assert_eq!(
-        actual.primary().declared()["top_level_manifest_version"],
-        "3-2-0-0",
-        "{name}: manifest version"
-    );
-    if matches!(report.write_path(), WritePath::Synthesized { .. }) {
-        assert_eq!(
-            source.attributes.get("product_version").map(String::as_str),
-            Some("ASM 231.6.3.65535 OSX"),
-            "{name}: generated kernel version"
-        );
-    }
-    if let Some(before) = &input.source {
-        for (key, value) in &before.attributes {
-            if matches!(
-                key.as_str(),
-                "asset_folder" | "save_date" | "solved_record_len" | "zip_entry_count"
-            ) {
-                continue; // Current container framing and save event, outside E1.
-            }
-            if key.as_str() == "product_version"
-                && matches!(report.write_path(), WritePath::Synthesized { .. })
-            {
-                continue; // The exact generated kernel version is checked above.
-            }
-            if source.attributes.get(key) != Some(value) {
-                assert!(
-                    report
-                        .losses
-                        .iter()
-                        .any(|loss| loss.message.contains(key.as_str())),
-                    "{name}: metadata {key} changed without a named omission"
-                );
-            }
-        }
-    }
-}
-
 /// Preserved layout and separately authored bytes mean the same document.
 #[test]
 fn fixtures_preservation_agrees_with_synthesis() {
@@ -911,15 +805,17 @@ fn fixtures_preservation_agrees_with_synthesis() {
             assert!(plan.report().synthesis_cause().is_some(), "{name}");
         }
         let mut retained = Vec::new();
-        let retained_report = plan.write_to(&mut retained).unwrap();
+        plan.write_to(&mut retained).unwrap();
         let mut authored = Vec::new();
         let report = F3dCodec.encode(decoded.ir(), &mut authored).unwrap();
         assert!(matches!(report.write_path(), WritePath::Synthesized { .. }));
         let retained = decode_result(&retained).unwrap();
         let authored = decode_result(&authored).unwrap();
-        assert_writer_arenas(name, &report, retained.ir(), authored.ir());
-        assert_writer_metadata(name, decoded.ir(), &retained, &retained_report);
-        assert_writer_metadata(name, decoded.ir(), &authored, &report);
+        assert_eq!(
+            cadmpeg_test_support::contract::neutral_view(retained.ir(), &[]),
+            cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]),
+            "{name}"
+        );
     }
 }
 
@@ -934,10 +830,7 @@ fn fixtures_synthesize_without_source_bytes() {
             .encode(decoded.ir(), &mut bytes)
             .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
         assert!(matches!(report.write_path(), WritePath::Synthesized { .. }));
-        let output =
-            decode_result(&bytes).unwrap_or_else(|error| panic!("fixture {name}: {error}"));
-        assert_writer_arenas(name, &report, decoded.ir(), output.ir());
-        assert_writer_metadata(name, decoded.ir(), &output, &report);
+        decode_result(&bytes).unwrap_or_else(|error| panic!("fixture {name}: {error}"));
     }
 }
 
@@ -979,14 +872,16 @@ fn an_edit_survives_native_writer_fallback() {
             WritePath::Patched { .. } | WritePath::Synthesized { .. }
         ));
         let mut preserved = Vec::new();
-        let preserved_report = plan.write_to(&mut preserved).unwrap();
+        plan.write_to(&mut preserved).unwrap();
         let mut authored = Vec::new();
-        let authored_report = F3dCodec.encode(&edited, &mut authored).unwrap();
+        F3dCodec.encode(&edited, &mut authored).unwrap();
         let preserved = decode_result(&preserved).unwrap();
         let authored = decode_result(&authored).unwrap();
-        assert_writer_arenas(name, &authored_report, preserved.ir(), authored.ir());
-        assert_writer_metadata(name, &edited, &preserved, &preserved_report);
-        assert_writer_metadata(name, &edited, &authored, &authored_report);
+        assert_eq!(
+            cadmpeg_test_support::contract::neutral_view(preserved.ir(), &[]),
+            cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]),
+            "{name}"
+        );
     }
     assert_eq!(skipped, FIXTURES_WITHOUT_POINTS);
 }

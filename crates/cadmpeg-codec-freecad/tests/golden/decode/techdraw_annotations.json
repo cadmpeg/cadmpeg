@@ -3046,7 +3046,7 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "fc4aa87de03311dda60040d0cb3d936be17db5df30d5cbbff737376b85362555",
-          "applications": "23e16a11390a3900af9e33f2f84f1cd281d5c61708277e0ebe87f550e748fc90",
+          "applications": "0e53336af9bba98cfe30accded8c3dc6a8de8b49220e250711ea2355fe4b7adc",
           "carrier_census": "efa84ccb5acbee7f3408b19c2d98278e5324cb914eae7422f6137782c9f45aec",
           "design_census": "36fa88b89a1dbe73989e2f0e0d30bcbbd58c94c8d73b8cef24757d8207dcfef3",
           "document": "49c32df2c71ab8d28178fc633c063765d5d41f35656d27686d0fabd47fb26485",
@@ -3540,7 +3540,7 @@
   "source_fidelity": {
     "annotations": {},
     "metadata": {
-      "document_local_sha256": "f0da79b3b399e4e607b46ee3ca0eafa55f51ec8e3e1ad3ca8deb75805ddb94aa",
+      "document_local_sha256": "c492327b92df36eb028383bb0c4010ad4c221c3ad1da31ee6c83d34842371ef9",
       "fcstd.archive_entry_count": "5",
       "fcstd.object_count": "8",
       "fcstd.physical_archive_bytes": "5014",

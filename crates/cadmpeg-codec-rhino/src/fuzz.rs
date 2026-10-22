@@ -41,13 +41,14 @@ fn uuid(mut canonical: [u8; uuid_wire::LEN]) -> Uuid {
 /// Exercises header, table, record, and EOF framing.
 pub fn container(data: &[u8]) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    if let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         data,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
-    ) {
-        let _probe = crate::container::scan(&ctx, data);
+    ) else {
+        return;
     };
+    let _probe = crate::container::scan(&ctx, data);
 }
 
 /// Exercises chunk framing at sequential and arbitrary bounded offsets.
@@ -127,20 +128,21 @@ pub fn nurbs(data: &[u8]) {
         ]),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    if let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         data,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
-    ) {
-        let _probe = crate::curves::decode(
-            &ctx,
-            data,
-            class,
-            2..data.len(),
-            crate::settings::MillimeterScale::IDENTITY,
-            selected_archive(data[1]),
-        );
+    ) else {
+        return;
     };
+    let _probe = crate::curves::decode(
+        &ctx,
+        data,
+        class,
+        2..data.len(),
+        crate::settings::MillimeterScale::IDENTITY,
+        selected_archive(data[1]),
+    );
 }
 
 /// Exercises compressed-buffer inflation and checksum handling.
@@ -154,20 +156,21 @@ pub fn brep(data: &[u8]) {
         return;
     }
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    if let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         data,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
-    ) {
-        let _probe = crate::brep::parse(
-            &ctx,
-            data,
-            1..data.len(),
-            selected_archive(data[0]),
-            None,
-            &[],
-        );
+    ) else {
+        return;
     };
+    let _probe = crate::brep::parse(
+        &ctx,
+        data,
+        1..data.len(),
+        selected_archive(data[0]),
+        None,
+        &[],
+    );
 }
 
 /// Exercises `SubD` framing, archive ID maps, and directed rings.

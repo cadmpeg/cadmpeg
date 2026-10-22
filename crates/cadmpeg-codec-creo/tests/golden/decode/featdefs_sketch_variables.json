@@ -68,12 +68,10 @@
       "creo": {
         "feature_definitions": [
           {
-            "body": {
-              "byte_len": 60,
-              "sha256": "aa07102dcec8abf1c415f47cb7ea4d258d88fe4a1b14b0f11ce81c4445f347a1"
-            },
+            "body": "666561745f646566735f3430007661725f61727200f802f701fbe2736368656d61f1f701e20107e40f010003e2020746080000000000000f010004e2",
             "definition_id": 40,
             "id": "creo:featdefs:feature_definition#40",
+            "offset": 86,
             "outlines": [],
             "owner_feature_id": null,
             "parameter_frames": [],
@@ -90,6 +88,7 @@
             "dimensions": [],
             "equations": [],
             "id": "creo:featdefs:sketch#40",
+            "offset": 86,
             "opaque_segments": [],
             "order_rows": [],
             "owner_feature_id": null,
@@ -118,6 +117,7 @@
                 "entity_ref": 1,
                 "entry_ref": null,
                 "kind": "variables",
+                "offset": 99,
                 "row_count": 2
               }
             ],
@@ -127,41 +127,31 @@
               {
                 "dimension_driven": false,
                 "guess": 0.0,
-                "guess_body": {
-                  "byte_len": 1,
-                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                },
+                "guess_body": "0f",
                 "guess_dimension_driven": false,
                 "homogeneity": 0,
                 "key": 7,
                 "known": 1,
+                "offset": 123,
                 "resolved_value": 1.0,
                 "uvar_id": 3,
                 "value": 1.0,
-                "value_body": {
-                  "byte_len": 1,
-                  "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-                },
+                "value_body": "e4",
                 "variable_type": 1
               },
               {
                 "dimension_driven": false,
                 "guess": 0.0,
-                "guess_body": {
-                  "byte_len": 1,
-                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                },
+                "guess_body": "0f",
                 "guess_dimension_driven": false,
                 "homogeneity": 0,
                 "key": 7,
                 "known": 1,
+                "offset": 131,
                 "resolved_value": 3.0,
                 "uvar_id": 4,
                 "value": 3.0,
-                "value_body": {
-                  "byte_len": 8,
-                  "sha256": "dfb7407dd08878e1725784b585414efa612b7a9fe60aa0527f13a26c85119ea3"
-                },
+                "value_body": "4608000000000000",
                 "variable_type": 2
               }
             ]
@@ -180,6 +170,7 @@
         "file_size": "146",
         "section.0.length": "70",
         "section.0.name": "FeatDefs",
+        "section.0.offset": "76",
         "section.0.raw_name": "FeatDefs",
         "section.0.role": "model-data",
         "section_count": "1",
@@ -716,14 +707,6 @@
           "tag": "section_sketch_feature"
         }
       }
-    },
-    "metadata": {
-      "native.creo.feature_definitions.creo:featdefs:feature_definition#40.offset": "86",
-      "native.creo.sketches.creo:featdefs:sketch#40.offset": "86",
-      "native.creo.sketches.creo:featdefs:sketch#40.table_headers[0].offset": "99",
-      "native.creo.sketches.creo:featdefs:sketch#40.variables[0].offset": "123",
-      "native.creo.sketches.creo:featdefs:sketch#40.variables[1].offset": "131",
-      "source.section.0.offset": "76"
     },
     "retained_records": {
       "creo:source:image#whole": {

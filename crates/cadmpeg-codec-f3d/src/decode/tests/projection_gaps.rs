@@ -541,8 +541,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     native.sketch_points[0].owner_reference = None;
     native.sketch_curve_identities[0].owner_reference = None;
     let ownerless = design_projection_gaps(&ir, &native);
-    assert_eq!(ownerless.unprojected_sketch_points, 1);
-    assert_eq!(ownerless.unprojected_sketch_curves, 1);
+    assert_eq!(ownerless.unprojected_sketch_points, 0);
+    assert_eq!(ownerless.unprojected_sketch_curves, 0);
     native.sketch_points[0].owner_reference = Some(1);
     native.sketch_curve_identities[0].owner_reference = Some(1);
 
@@ -1042,39 +1042,4 @@ fn material_bindings_do_not_restate_display_colors() {
     assert_eq!(ir.model.faces[0].color, None);
     assert_eq!(ir.model.appearances[0].base_color, Some(material));
     assert_eq!(ir.model.faces[1].color, None);
-}
-
-#[test]
-fn ownerless_auxiliary_curve_retains_source_identity_and_has_a_named_projection_loss() {
-    use cadmpeg_ir::codec::{Codec, DecodeOptions};
-    let bytes = include_bytes!("../../../tests/golden/fixtures/design_sketch_constraints.f3d");
-    let result = crate::F3dCodec
-        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    let native = crate::test_support::native_test::f3d_native(result.ir());
-    let curve = native
-        .sketch_curve_identities
-        .iter()
-        .find(|curve| curve.record_index == 800)
-        .unwrap();
-    assert!(curve.owner_reference.is_none());
-    assert_eq!(curve.primary_id.get(), 700);
-    assert!(curve.geometry.is_some());
-    assert!(!result
-        .ir()
-        .model
-        .sketch_entities
-        .iter()
-        .any(|entity| entity.native_ref.as_deref() == Some(curve.id.as_str())));
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code.local_code() == "sketch.curve-unprojected"
-            && loss.message.contains(&curve.id)
-            && loss.message.contains("no stated Sketch owner")
-    }));
-    assert_eq!(result.ir().model.sketch_entities.len(), 8);
-    assert_eq!(result.ir().model.sketch_constraints.len(), 4);
-    assert!(result
-        .source_fidelity()
-        .metadata
-        .contains_key(&format!("{}.byte_offset", curve.id)));
 }

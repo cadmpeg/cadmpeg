@@ -1713,23 +1713,21 @@ fn untyped_feature_framing_is_not_written_as_content() {
             .iter()
             .any(|loss| loss.code.namespace() == "export"
                 && loss.code.local_code() == "native.records-omitted"));
-        assert!(matches!(plan.report().synthesis_cause(),
-            Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason })
-                if reason.contains("reconstructible typed payload")));
         let mut written = Vec::new();
-        let report = plan.write_to(&mut written).unwrap();
+        plan.write_to(&mut written).unwrap();
+        let scan = crate::test_support::container::scan(&written);
+        assert!(!scan.blocks.iter().any(|block| block
+            .section
+            .name()
+            .is_some_and(|name| name.ends_with("ResolvedFeatures"))));
         let output = SldprtCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap();
         let synthesized =
             crate::test_support::assert_source_free_synthesis_agrees(&document, output.ir());
-        for actual in [output.ir(), synthesized.ir()] {
-            crate::test_support::native::assert_marker_framing_omission(
-                &report,
-                &sldprt_native(&document),
-                &sldprt_native(actual),
-            );
-        }
+        assert!(sldprt_native(synthesized.ir())
+            .feature_input_lanes
+            .is_empty());
     }
 }
 

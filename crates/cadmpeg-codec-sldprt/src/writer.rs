@@ -66,9 +66,6 @@ pub(crate) struct SemanticOutput {
     pub(crate) dialect: cadmpeg_core::dialect::DialectId,
     /// Which model arenas the written document carries.
     pub(crate) coverage: ArenaDispositions,
-    /// The emitted archive used retained layout or payload bytes. Merely
-    /// receiving source metadata does not make an authored write a patch.
-    pub(crate) source_consumed: bool,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -133,12 +130,18 @@ pub(super) fn write_semantic_at(
         .map(|(ctx, root)| crate::container::scan(ctx, *root))
         .transpose()?;
     if let Some(native) = native.as_mut() {
-        crate::native::source::attach(native, |id| {
-            retained_records
-                .iter()
-                .find(|record| record.id == *id)
-                .and_then(|record| record.data)
-        })?;
+        for lane in &mut native.feature_input_lanes {
+            if lane.native_payload.is_empty() && lane.native_payload.byte_len() != 0 {
+                let id = crate::records::lane_payload::retained_id(&lane.id)?;
+                if let Some(bytes) = retained_records
+                    .iter()
+                    .find(|record| record.id == id)
+                    .and_then(|record| record.data)
+                {
+                    lane.native_payload.attach(bytes)?;
+                }
+            }
+        }
     }
     let retained_partition = retained_partition(
         &normalized,
@@ -151,19 +154,6 @@ pub(super) fn write_semantic_at(
         // Keep their transient output buffers out of the CADIR native arena.
         Vec::new()
     } else {
-        // A retained lane must be reconstructible before patching its bytes.
-        // Later preparation authors canonical sketch buffers, including spatial
-        // xyz records whose coordinates are held by the canonical geometry.
-        // Those buffers are output of the current serializer, not input to
-        // the native-only reconstruction proof.
-        if let Some(native) = native.as_ref() {
-            for lane in &native.feature_input_lanes {
-                crate::resolved_features::native_lane_write::require_reconstructible_content(
-                    lane,
-                    &native.feature_histories,
-                )?;
-            }
-        }
         let feature_input_renames =
             crate::history::write::synchronize_feature_records(&digest_ctx, ir, &mut native)?;
         crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
@@ -195,7 +185,7 @@ pub(super) fn write_semantic_at(
     } else {
         None
     };
-    let coverage = semantic_coverage(retained_partition.is_some());
+    let coverage = semantic_coverage(!retained_records.is_empty(), retained_partition.is_some());
     let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
     if !retain_native_brep && requires_native_partition(ir) {
         return Err(CodecError::UnsupportedContent(
@@ -266,10 +256,6 @@ pub(super) fn write_semantic_at(
         }
         true
     };
-    let replayed_swobjects_bytes = replay_swobjects
-        && retained_swobjects
-            .iter()
-            .any(|(_, payload)| !payload.is_empty());
     if replay_swobjects {
         sections.extend(retained_swobjects);
     } else {
@@ -329,13 +315,6 @@ pub(super) fn write_semantic_at(
         &generated_partition_sections,
         retain_native_brep,
     )?;
-    // The source scan supplies the header, section type ids, directory fields
-    // and cache-cell layout below. Other source records count only when their
-    // payload was actually selected for output by a retained-byte branch.
-    let source_consumed = source_scan.is_some()
-        || retain_native_brep
-        || replayed_swobjects_bytes
-        || opaque.iter().any(|(_, payload)| !payload.is_empty());
     let document_envelope = crate::container::first_solidworks_envelope(
         opaque.iter().map(|(_, payload)| payload.as_slice()),
     );
@@ -374,7 +353,6 @@ pub(super) fn write_semantic_at(
     Ok(SemanticOutput {
         dialect: written_dialect,
         coverage,
-        source_consumed,
     })
 }
 
@@ -382,7 +360,8 @@ pub(super) fn write_semantic_at(
 /// `subds` are `Dropped` because `check_semantic_support` refuses them when
 /// non-empty.
 ///
-/// `retained_brep` states that the retained Parasolid partition was replayed because
+/// `patched` states that retained source records fed the write; `retained_brep`
+/// states that the retained Parasolid partition was replayed because
 /// `brep_local_sha256` still matches. Only that partition carries pcurves and
 /// procedural constructions: the generated and patched partitions do not
 /// encode them. Retained semantic PMI is carried only by the retained
@@ -398,7 +377,7 @@ pub(super) fn write_semantic_at(
 /// `WriterSphereSeamCurvesOmitted` accounts for withheld degenerate sphere-seam curves.
 /// `tessellations` stays `Written`: every mesh is written, and
 /// `WriterTessellationMetadataOmitted` charges only fields of written meshes.
-fn semantic_coverage(retained_brep: bool) -> ArenaDispositions {
+fn semantic_coverage(_patched: bool, retained_brep: bool) -> ArenaDispositions {
     use ArenaDisposition::{Dropped, Reported, Written};
     let brep_carried = if retained_brep { Written } else { Dropped };
     ArenaDispositions {
@@ -1004,11 +983,6 @@ fn remap_written_geometry_references(
     let mut projected = ir.clone();
     projected.model = model;
     crate::history::write::parameters::synchronize_parameter_records(&projected, native)?;
-    if let Some(native) = native.as_mut() {
-        // Feature synchronization above replaces the generated class lane.
-        // Re-author its dimension cells from the same current, remapped model.
-        crate::resolved_features::write_feature_parameters::synthesize(&projected, native)?;
-    }
 
     Ok(())
 }

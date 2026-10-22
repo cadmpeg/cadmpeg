@@ -148,8 +148,9 @@ fn extract_bytes(
             cadmpeg_ir::source_fidelity::RetainedSourceRecord::from_bytes(
                 path.to_owned(),
                 0,
-                cadmpeg_ir::source_fidelity::RetainedBytes::Inline {
-                    data: bytes.clone(),
+                cadmpeg_ir::source_fidelity::RetainedBytes::Digest {
+                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
+                    sha256: hash.clone(),
                 },
             )?,
         )?;

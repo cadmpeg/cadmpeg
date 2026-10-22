@@ -48,7 +48,7 @@ fn native_macro_instance_keeps_parameter_wire_fields() {
 }
 
 #[test]
-fn native_parameter_record_keeps_typed_tokens_and_authored_comment() {
+fn native_parameter_record_keeps_bytes_tokens_comment_and_line_wire_fields() {
     let record = crate::parameter::ParameterRecord::from_test_tokens(
         1,
         1..2,
@@ -263,7 +263,7 @@ fn decode_preserves_native_entities_and_graph() {
 
     assert_eq!(result.ir().source.as_ref().unwrap().format(), "iges");
     assert_eq!(
-        result.source_fidelity().metadata[cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY],
+        result.ir().source.as_ref().unwrap().attributes["document_local_sha256"],
         crate::document_digest(result.ir()).unwrap()
     );
     assert_eq!(

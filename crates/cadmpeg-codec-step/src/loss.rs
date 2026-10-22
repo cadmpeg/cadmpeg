@@ -996,6 +996,10 @@ const UNREPRESENTED: &[(StepLossCode, cadmpeg_ir::ArenaClass)] = &[
         cadmpeg_ir::ArenaClass::Model,
     ),
     (
+        StepLossCode::PcurveGlobalFidelityUnproved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
         StepLossCode::PcurveAssociationAmbiguous,
         cadmpeg_ir::ArenaClass::Model,
     ),
@@ -1134,17 +1138,6 @@ pub(crate) fn unrepresented(
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn admitted_pcurve_relation_warning_does_not_omit_source_bytes() {
-        assert!(super::unrepresented(
-            &[super::StepLossCode::PcurveGlobalFidelityUnproved.note(
-                "a finite witness admits the retained relation; global equality is unproved",
-            )],
-            None,
-        )
-        .is_empty());
-    }
-
     #[test]
     fn retained_records_and_diagnostics_do_not_exclude_source_classes() {
         let losses = [

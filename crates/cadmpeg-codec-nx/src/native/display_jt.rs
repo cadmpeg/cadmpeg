@@ -442,19 +442,7 @@ struct DisplayJtCompressionWire {
     compressed_data_byte_len: u32,
     algorithm: u8,
     compressed_byte_len: u32,
-    #[serde(deserialize_with = "deserialize_compression_digest")]
     inflated_sha256: Sha256Digest,
-}
-
-fn deserialize_compression_digest<'de, D>(deserializer: D) -> Result<Sha256Digest, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Sha256Digest::deserialize(deserializer).map_err(|error| {
-        serde::de::Error::custom(format_args!(
-            "DisplayJtCompression.inflated_sha256: {error}"
-        ))
-    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{
-    keep_faces_and_carriers, keep_saved_free_surfaces, walk_reachable_topology, TopologyContext,
-};
+use super::{keep_faces_and_carriers, walk_reachable_topology, TopologyContext};
 use crate::brep::records::WireMembers;
 use crate::brep::{AsmBrep, Carriers, DecodePurpose, Reachable};
 use crate::kernel_header::RefWidth;
@@ -436,54 +434,6 @@ fn triple(bytes: &mut Vec<u8>, tag: u8, values: [f64; 3]) {
     }
 }
 
-fn revision_sum_record(width: RefWidth, tolerance: f64) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    ident(&mut bytes, "spline");
-    bytes.extend_from_slice(&[0x0b, 0x0f]);
-    ident(&mut bytes, "sum_spl_sur");
-    integer(&mut bytes, 0x04, 23_100, width);
-    for direction in [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
-        ident(&mut bytes, "straight");
-        triple(&mut bytes, 0x13, [0.0; 3]);
-        triple(&mut bytes, 0x14, direction);
-        bytes.extend_from_slice(&[0x0b, 0x0b]);
-    }
-    triple(&mut bytes, 0x13, [0.0; 3]);
-    integer(&mut bytes, 0x15, 0, width);
-    ident(&mut bytes, "nubs");
-    for _ in 0..2 {
-        integer(&mut bytes, 0x04, 1, width);
-    }
-    for _ in 0..4 {
-        integer(&mut bytes, 0x15, 0, width);
-    }
-    for _ in 0..2 {
-        integer(&mut bytes, 0x04, 2, width);
-    }
-    for _ in 0..2 {
-        for knot in [0.0, 1.0] {
-            double(&mut bytes, knot);
-            integer(&mut bytes, 0x04, 1, width);
-        }
-    }
-    for pole in [
-        [0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [1.0, 0.0, 0.0],
-        [1.0, 1.0, 0.0],
-    ] {
-        for coordinate in pole {
-            double(&mut bytes, coordinate);
-        }
-    }
-    double(&mut bytes, tolerance);
-    for _ in 0..6 {
-        integer(&mut bytes, 0x04, 0, width);
-    }
-    bytes.extend_from_slice(&[0x0b, 0x10, 0x0b, 0x0b, 0x0b, 0x0b, 0x11]);
-    bytes
-}
-
 #[test]
 fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
     let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
@@ -495,7 +445,50 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
     .expect("test decode context");
     for width in [RefWidth::Four, RefWidth::Eight] {
         for tolerance in [0.0, 0.125] {
-            let mut bytes = revision_sum_record(width, tolerance);
+            let mut bytes = Vec::new();
+            ident(&mut bytes, "spline");
+            bytes.extend_from_slice(&[0x0b, 0x0f]);
+            ident(&mut bytes, "sum_spl_sur");
+            integer(&mut bytes, 0x04, 23_100, width);
+            for direction in [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+                ident(&mut bytes, "straight");
+                triple(&mut bytes, 0x13, [0.0; 3]);
+                triple(&mut bytes, 0x14, direction);
+                bytes.extend_from_slice(&[0x0b, 0x0b]);
+            }
+            triple(&mut bytes, 0x13, [0.0; 3]);
+            integer(&mut bytes, 0x15, 0, width);
+            ident(&mut bytes, "nubs");
+            for _ in 0..2 {
+                integer(&mut bytes, 0x04, 1, width);
+            }
+            for _ in 0..4 {
+                integer(&mut bytes, 0x15, 0, width);
+            }
+            for _ in 0..2 {
+                integer(&mut bytes, 0x04, 2, width);
+            }
+            for _ in 0..2 {
+                for knot in [0.0, 1.0] {
+                    double(&mut bytes, knot);
+                    integer(&mut bytes, 0x04, 1, width);
+                }
+            }
+            for pole in [
+                [0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+            ] {
+                for coordinate in pole {
+                    double(&mut bytes, coordinate);
+                }
+            }
+            double(&mut bytes, tolerance);
+            for _ in 0..6 {
+                integer(&mut bytes, 0x04, 0, width);
+            }
+            bytes.extend_from_slice(&[0x0b, 0x10, 0x0b, 0x0b, 0x0b, 0x0b, 0x11]);
             ident(&mut bytes, "face");
             for reference in [-1, -1, -1, -1, -1, 2, -1, 0] {
                 integer(&mut bytes, 0x0c, reference, width);
@@ -651,73 +644,4 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
     assert_eq!(out.coedges.len(), 1);
     assert_eq!(out.coedges[0].pcurves.len(), 1);
     assert_eq!(out.coedges[0].pcurves[0].parameter_range, None);
-}
-
-#[test]
-fn only_saved_model_roots_admit_free_procedural_surfaces() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .unwrap();
-    for width in [RefWidth::Four, RefWidth::Eight] {
-        let mut bytes = Vec::new();
-        ident(&mut bytes, "asmheader");
-        bytes.push(0x11);
-        // Identical live and auxiliary constructions; only the actual saved
-        // root prefix, never a search for unreferenced records, distinguishes them.
-        bytes.extend_from_slice(&revision_sum_record(width, 0.125));
-        bytes.extend_from_slice(&revision_sum_record(width, 0.125));
-        let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
-        let by_index = records
-            .iter()
-            .map(|record| (i64::try_from(record.index).unwrap(), record))
-            .collect();
-        let table = nurbs::toks::SubtypeTable::from_records(&records);
-        for (purpose, limit, expected) in [
-            (DecodePurpose::Model, Some(2), HashSet::from([1])),
-            (DecodePurpose::Model, Some(1), HashSet::new()),
-            (DecodePurpose::Model, None, HashSet::new()),
-            (DecodePurpose::History, Some(2), HashSet::new()),
-        ] {
-            let mut out = AsmBrep::default();
-            let mut carriers = Carriers::default();
-            let mut reach = Reachable::default();
-            let format = crate::asm_format!("f3d");
-            keep_saved_free_surfaces(
-                TopologyContext {
-                    ctx: &ctx,
-                    by_index: &by_index,
-                    token_table: &table,
-                    purpose,
-                    format,
-                },
-                &mut out,
-                &records,
-                limit,
-                &mut carriers,
-                &mut reach,
-            )
-            .unwrap();
-            assert_eq!(reach.surfaces, expected);
-            assert_eq!(carriers.procedural_surface_defs.len(), expected.len());
-            crate::brep::emit::emit_carrier_records(
-                &mut out,
-                &records,
-                &mut carriers,
-                &reach,
-                crate::brep::emit::CurveSenseRefs {
-                    reversed_curve_refs: &HashSet::new(),
-                    forward_curve_refs: &HashSet::new(),
-                },
-                format,
-            )
-            .unwrap();
-            assert_eq!(out.surfaces.len(), expected.len());
-            assert_eq!(out.procedural_surfaces.len(), expected.len());
-            assert!(out.faces.is_empty());
-        }
-    }
 }

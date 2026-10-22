@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::feature_project::{
-    project_pattern_group_seed, project_rectangular_pattern_scalars,
-};
+use crate::design::feature_project::project_rectangular_pattern_scalars;
 use crate::records::{
     feature::{patterns::DesignRectangularPatternConstruction, scope::DesignParameterScope},
     topology::{
@@ -150,13 +148,6 @@ fn circular_pattern_seed_role_selects_body_or_face() {
     ] {
         let scope = circular_scope();
         let group = group(10, 20, role);
-        assert_eq!(
-            project_pattern_group_seed(&scope, std::slice::from_ref(&group), &[]),
-            Some(expected_seed)
-        );
-        let construction = scope.circular_pattern_construction().unwrap();
-        assert_eq!(construction.count.get(), 3);
-        assert_eq!(construction.angle.get(), std::f64::consts::TAU);
         let parameters = [
             (11, "count", None, 3.0),
             (12, "angle", Some("rad"), std::f64::consts::TAU),
@@ -215,54 +206,16 @@ fn circular_pattern_seed_role_selects_body_or_face() {
             )
         })
         .unwrap();
-        let FeatureDefinition::Operation(FeatureOperation::Native {
-            kind,
-            parameters: controls,
-        }) = projection.features[0].evaluation.definition()
+        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+            projection.features[0].evaluation.definition().clone()
         else {
-            panic!("unclassified circular distribution stays native");
+            panic!("circular pattern definition");
         };
-        assert_eq!(kind, &scopes[0].kind_name().to_owned().into());
-        assert_eq!(
-            controls.get("count").unwrap().parameter(),
-            Some(&crate::ids::neutral_parameter_id(&parameters[0]))
-        );
-        assert_eq!(
-            controls.get("angle").unwrap().parameter(),
-            Some(&crate::ids::neutral_parameter_id(&parameters[1]))
-        );
-        assert_eq!(
-            projection.features[0].native_ref.as_deref(),
-            Some(scopes[0].id.as_str())
-        );
-        let native = crate::native::F3dNative {
-            design_parameter_scopes: scopes.into(),
-            design_construction_operand_groups: groups.into(),
-            ..crate::native::F3dNative::default()
-        };
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        crate::test_support::with_decode_context(|ctx| {
-            native.store(ctx, ir.native.namespace_mut("f3d"))
-        })
-        .unwrap();
-        let retained = crate::native::F3dNative::load(ir.native.namespace("f3d").unwrap()).unwrap();
-        assert_eq!(retained.design_construction_operand_groups[0].role(), role);
-        assert_eq!(
-            retained.design_parameter_scopes[0]
-                .circular_pattern_construction()
-                .unwrap()
-                .count
-                .get(),
-            3
-        );
-        assert_eq!(
-            retained.design_parameter_scopes[0]
-                .circular_pattern_construction()
-                .unwrap()
-                .angle
-                .get(),
-            std::f64::consts::TAU
-        );
+        assert_eq!(seeds, vec![expected_seed]);
+        assert!(matches!(
+            pattern.definition(),
+            PatternTransform::Circular { .. }
+        ));
     }
 }
 

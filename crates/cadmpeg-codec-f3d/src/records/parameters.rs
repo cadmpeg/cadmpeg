@@ -887,34 +887,6 @@ impl DesignParameterOwner {
 }
 
 #[cfg(test)]
-impl TryFrom<DesignParameterOwner> for DesignParameterOwnerWire {
-    type Error = String;
-    fn try_from(owner: DesignParameterOwner) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: owner.id.clone(),
-            class_tag: owner.class_tag.clone(),
-            byte_offset: owner
-                .byte_offset
-                .ok_or("source owner offset is unavailable")?,
-            frame_length: owner
-                .frame_length
-                .ok_or("source owner frame is unavailable")?,
-            record_index: owner.record_index(),
-            scope_record_index: owner.scope_record_index.unwrap_or(0),
-            local_ordinal: owner.local_ordinal.unwrap_or(0),
-            evaluated_value: owner.evaluated_value.get(),
-            evaluated_value_offset: owner
-                .evaluated_value_offset
-                .ok_or("source owner value offset is unavailable")?,
-            parameter_record_index: owner.parameter_record_index(),
-            owned_ordinal: owner.owned_ordinal,
-            variant: owner.variant,
-            companion_record_index: owner.companion_record_index(),
-        })
-    }
-}
-
-#[cfg(test)]
 impl From<DesignParameterOwner> for DesignParameterOwnerContent {
     fn from(owner: DesignParameterOwner) -> Self {
         Self {

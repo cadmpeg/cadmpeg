@@ -171,7 +171,7 @@
     },
     "scope": {
       "design": true,
-      "model": false
+      "model": true
     },
     "source": {
       "attributes": {
@@ -310,17 +310,6 @@
         },
         "message": "Inventor geometry is not available for this document kind.",
         "severity": "blocking"
-      },
-      {
-        "code": {
-          "code": "depth.not-delivered",
-          "kind": "geometry_not_transferred",
-          "namespace": "decode",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "requested full depth but the inventor decoder did not deliver classes: model",
-        "severity": "error"
       }
     ],
     "notes": [],
@@ -328,7 +317,7 @@
       "geometry_transferred": false,
       "scope": {
         "design": true,
-        "model": false
+        "model": true
       }
     }
   },

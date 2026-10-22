@@ -449,8 +449,9 @@
         },
         "nx:source:evidence#c3850832240578fb442a3acbf2290ad4f150e61ee09aa49deec280edba8030d9": {
           "bytes": {
-            "data": "Kg==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
           },
           "offset": 0,
           "stream": "native.nx.data_block_references.nx:om-data-block-references-0-2:reference#0.raw_object_id",

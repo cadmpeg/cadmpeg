@@ -306,60 +306,13 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
             cadmpeg_ir::scalar::Length::new(7.1374).unwrap()
         ))
     );
-    semantic_lane.classes.push(FeatureInputClass {
-        id: "length-class".into(),
-        parent: "lane".into(),
-        ordinal: 0,
-        sequence: 99,
-        offset: None,
-        feature_ref: None,
-        name: "moLengthParameter_c".into(),
-    });
-    assert!(super::scalar_quantity_matches(
-        &semantic_lane,
-        &semantic_lane.scalars[0],
-        &cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(7.1374).unwrap()
-        ),
-    ));
-    assert!(!super::scalar_quantity_matches(
-        &semantic_lane,
-        &semantic_lane.scalars[0],
-        &cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap()
-        ),
-    ));
     histories[0].features[0]
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "<MOD-DIAM>8".into());
-    sync_feature_scalars(
-        &cadmpeg_ir::document::Model::default(),
-        &histories,
-        std::slice::from_mut(&mut lane),
-    )
-    .expect("explicit scalar owner is writable");
+    sync_feature_scalars(&histories, std::slice::from_mut(&mut lane))
+        .expect("explicit scalar owner is writable");
     assert_eq!(lane.scalars[0].value.get(), 0.008);
     assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
-
-    // An unmatched native configuration does not inherit the global cache.
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let mut model = cadmpeg_ir::document::Model::default();
-    model.features = crate::history::project::project_features(&ctx, &histories).unwrap();
-    model.parameters = crate::history::parameters::project_parameters(&ctx, &histories).unwrap();
-    assert_eq!(model.parameters.len(), 1);
-    model.parameters[0].value = Some(cadmpeg_ir::features::ParameterValue::Length(
-        cadmpeg_ir::scalar::Length::new(99.0).unwrap(),
-    ));
-    lane.configuration = Some("99".into());
-    sync_feature_scalars(&model, &histories, std::slice::from_mut(&mut lane)).unwrap();
-    assert_eq!(lane.scalars[0].value.get(), 0.008);
-    assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
-    assert_eq!(
-        model.parameters[0].value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(99.0).unwrap(),
-        ))
-    );
 }
 
 #[test]

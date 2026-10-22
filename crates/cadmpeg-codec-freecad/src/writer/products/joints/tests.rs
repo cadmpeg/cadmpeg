@@ -149,7 +149,7 @@ fn unsupported_joint_families_report_each_omission_and_keep_supported_siblings()
     assert!(objects[1].properties["JointType"].contains("value=\"Ball\""));
     assert_eq!(losses.len(), 5);
     for (index, loss) in losses.iter().enumerate() {
-        assert_eq!(loss.code.local_code(), "joint.not-transferred");
+        assert_eq!(loss.code.local_code(), "feature.not-transferred");
         assert!(loss
             .message
             .contains(&format!("authored:model:joint#Omitted{index}")));

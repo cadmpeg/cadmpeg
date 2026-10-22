@@ -648,8 +648,9 @@
       },
       "catia:source:evidence#1cbbd6be94d7539e15e46214f7624cf4b7ebed821d419d0bb7d49e1bfca1f33b": {
         "bytes": {
-          "data": "RklOSlBMICABAQACAAAACgBDQVRQcmV2aWV3NBJDQVRTdG9yYWdlUHJvcGVydHmAAQAAAAAiDAAAADQBAQA0EENBVFVuaWNvZGVTdHJpbmegAgAAAAA0BUNBVElBn6ACAAAAADQPU3VwcG9ydC5DQVRQYXJ0n0NBVElBX1Y1IENCMDAwMQA=",
-          "retention": "inline"
+          "byte_len": 134,
+          "retention": "digest",
+          "sha256": "2277f6fdcc2556d60b190445ba63f8d6b00ec9dee07b3c50fca4a6fcaf4983f1"
         },
         "offset": 0,
         "stream": "native.catia.finjpl_segments.catia:outer:finjpl#1.data",
@@ -657,8 +658,9 @@
       },
       "catia:source:evidence#8959ac478b2915dac50619fda35582343d6a109ce04fee0ca1a42a7b366cafad": {
         "bytes": {
-          "data": "/9j/wAALCAEgAoABAREA/9oACAEBAAA/ABEi/wAz/9k=",
-          "retention": "inline"
+          "byte_len": 32,
+          "retention": "digest",
+          "sha256": "ef7fecd2f22ffd459c6109400f140c8f7fd8bdce59564bd4a560e00ee8fae8c0"
         },
         "offset": 0,
         "stream": "native.catia.preview_images.catia:outer:preview#0.data",
@@ -666,8 +668,9 @@
       },
       "catia:source:evidence#fe674abf16e6b261c586e43781344cec05297d5b3dc4a73cc7755c7ac9050604": {
         "bytes": {
-          "data": "RklOSlBMICABAQADAAAAFQBDQVRTdW1tYXJ5SW5mb3JtYXRpb25MYXN0U2F2ZVZlcnNpb24APFZlcnNpb24+NS88VmVyc2lvbj48UmVsZWFzZT4yNy88UmVsZWFzZT48U2VydmljZVBhY2s+Mi88U2VydmljZVBhY2s+PEJ1aWxkRGF0ZT4wMy0xMC0yMDE3LjIyLjAwLzxCdWlsZERhdGU+PEhvdEZpeD4wLzxIb3RGaXg+AP/Y/8AACwgBIAKAAQERAP/aAAgBAQAAPwARIv8AM//Zc3VtbWFyeS10YWls",
-          "retention": "inline"
+          "byte_len": 225,
+          "retention": "digest",
+          "sha256": "b89c2c542c56e1df2f57cf7e1356c8445aece5485e2a2eb0f91a81428b6d15ea"
         },
         "offset": 0,
         "stream": "native.catia.finjpl_segments.catia:outer:finjpl#0.data",

@@ -86,6 +86,7 @@
               0.0,
               -1.0
             ],
+            "offset": 122,
             "origin": [
               0.0,
               0.0,
@@ -102,10 +103,7 @@
         ],
         "plane_envelopes": [
           {
-            "body": {
-              "byte_len": 16,
-              "sha256": "92d8d93f202dcd2254f955825951ec2b8465724b9fdeef524f70c18c28415de4"
-            },
+            "body": "0f0f0f0f43f00043f000e4e42f0000e4",
             "corner_coordinate_equal": [
               false,
               false,
@@ -137,47 +135,19 @@
               "kind": "standard"
             },
             "id": "creo:surface:plane_envelope#122:7",
+            "offset": 122,
+            "row_offset": 116,
             "scalar_tokens": [
-              {
-                "byte_len": 1,
-                "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-              },
-              {
-                "byte_len": 1,
-                "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-              },
-              {
-                "byte_len": 1,
-                "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-              },
-              {
-                "byte_len": 1,
-                "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-              },
-              {
-                "byte_len": 3,
-                "sha256": "9f7bda26aa917815f4f70c145ae462056bdd75a8f9b9cfa21334b3b9467910e2"
-              },
-              {
-                "byte_len": 3,
-                "sha256": "9f7bda26aa917815f4f70c145ae462056bdd75a8f9b9cfa21334b3b9467910e2"
-              },
-              {
-                "byte_len": 1,
-                "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-              },
-              {
-                "byte_len": 1,
-                "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-              },
-              {
-                "byte_len": 3,
-                "sha256": "06324978685c1bea71ac1fcd6e7accac8b785ce2109a4ff4622e31457431db33"
-              },
-              {
-                "byte_len": 1,
-                "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-              }
+              "0f",
+              "0f",
+              "0f",
+              "0f",
+              "43f000",
+              "43f000",
+              "e4",
+              "e4",
+              "2f0000",
+              "e4"
             ],
             "source_section": "VisibGeom",
             "surface_id": 7
@@ -185,10 +155,7 @@
         ],
         "plane_local_systems": [
           {
-            "body": {
-              "byte_len": 19,
-              "sha256": "84cb9795f8f11b4f1851ea32a91c14bd761ad7a9e2aa770b5d2b7224cf98bff5"
-            },
+            "body": "0fe40fe40f0f0f0f0f46080000000000000fe4",
             "classification": "simple",
             "id": "creo:surface:plane_local_system#139:7",
             "normal": [
@@ -196,11 +163,13 @@
               0.0,
               -1.0
             ],
+            "offset": 139,
             "origin": [
               3.0,
               0.0,
               1.0
             ],
+            "row_offset": 116,
             "slots": [
               0.0,
               1.0,
@@ -226,10 +195,8 @@
         ],
         "surface_parameters": [
           {
-            "body": {
-              "byte_len": 16,
-              "sha256": "92d8d93f202dcd2254f955825951ec2b8465724b9fdeef524f70c18c28415de4"
-            },
+            "body": "0f0f0f0f43f00043f000e4e42f0000e4",
+            "body_offset": 122,
             "boundary": "compound_close",
             "cone_half_angle_override": null,
             "extrusion_direction": null,
@@ -239,87 +206,69 @@
             "positional_cylinder_frame": null,
             "positional_torus_frame": null,
             "replayed_torus_minor_radius": null,
+            "row_offset": 116,
             "scalar_frames": [
               {
+                "offset": 0,
                 "slots": [
                   {
                     "length": 1,
-                    "raw": {
-                      "byte_len": 1,
-                      "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                    },
+                    "offset": 0,
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
-                    "raw": {
-                      "byte_len": 1,
-                      "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                    },
+                    "offset": 1,
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
-                    "raw": {
-                      "byte_len": 1,
-                      "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                    },
+                    "offset": 2,
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 1,
-                    "raw": {
-                      "byte_len": 1,
-                      "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                    },
+                    "offset": 3,
+                    "raw": "0f",
                     "value": 0.0
                   },
                   {
                     "length": 3,
-                    "raw": {
-                      "byte_len": 3,
-                      "sha256": "9f7bda26aa917815f4f70c145ae462056bdd75a8f9b9cfa21334b3b9467910e2"
-                    },
+                    "offset": 4,
+                    "raw": "43f000",
                     "value": -1.0
                   },
                   {
                     "length": 3,
-                    "raw": {
-                      "byte_len": 3,
-                      "sha256": "9f7bda26aa917815f4f70c145ae462056bdd75a8f9b9cfa21334b3b9467910e2"
-                    },
+                    "offset": 7,
+                    "raw": "43f000",
                     "value": -1.0
                   },
                   {
                     "length": 1,
-                    "raw": {
-                      "byte_len": 1,
-                      "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-                    },
+                    "offset": 10,
+                    "raw": "e4",
                     "value": 1.0
                   },
                   {
                     "length": 1,
-                    "raw": {
-                      "byte_len": 1,
-                      "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-                    },
+                    "offset": 11,
+                    "raw": "e4",
                     "value": 1.0
                   },
                   {
                     "length": 3,
-                    "raw": {
-                      "byte_len": 3,
-                      "sha256": "06324978685c1bea71ac1fcd6e7accac8b785ce2109a4ff4622e31457431db33"
-                    },
+                    "offset": 12,
+                    "raw": "2f0000",
                     "value": 2.0
                   },
                   {
                     "length": 1,
-                    "raw": {
-                      "byte_len": 1,
-                      "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-                    },
+                    "offset": 15,
+                    "raw": "e4",
                     "value": 1.0
                   }
                 ]
@@ -328,82 +277,62 @@
             "slots": [
               {
                 "length": 1,
-                "raw": {
-                  "byte_len": 1,
-                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                },
+                "offset": 0,
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
-                "raw": {
-                  "byte_len": 1,
-                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                },
+                "offset": 1,
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
-                "raw": {
-                  "byte_len": 1,
-                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                },
+                "offset": 2,
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 1,
-                "raw": {
-                  "byte_len": 1,
-                  "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                },
+                "offset": 3,
+                "raw": "0f",
                 "value": 0.0
               },
               {
                 "length": 3,
-                "raw": {
-                  "byte_len": 3,
-                  "sha256": "9f7bda26aa917815f4f70c145ae462056bdd75a8f9b9cfa21334b3b9467910e2"
-                },
+                "offset": 4,
+                "raw": "43f000",
                 "value": -1.0
               },
               {
                 "length": 3,
-                "raw": {
-                  "byte_len": 3,
-                  "sha256": "9f7bda26aa917815f4f70c145ae462056bdd75a8f9b9cfa21334b3b9467910e2"
-                },
+                "offset": 7,
+                "raw": "43f000",
                 "value": -1.0
               },
               {
                 "length": 1,
-                "raw": {
-                  "byte_len": 1,
-                  "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-                },
+                "offset": 10,
+                "raw": "e4",
                 "value": 1.0
               },
               {
                 "length": 1,
-                "raw": {
-                  "byte_len": 1,
-                  "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-                },
+                "offset": 11,
+                "raw": "e4",
                 "value": 1.0
               },
               {
                 "length": 3,
-                "raw": {
-                  "byte_len": 3,
-                  "sha256": "06324978685c1bea71ac1fcd6e7accac8b785ce2109a4ff4622e31457431db33"
-                },
+                "offset": 12,
+                "raw": "2f0000",
                 "value": 2.0
               },
               {
                 "length": 1,
-                "raw": {
-                  "byte_len": 1,
-                  "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-                },
+                "offset": 15,
+                "raw": "e4",
                 "value": 1.0
               }
             ],
@@ -414,85 +343,66 @@
             "surface_type_byte": 34,
             "tabulated_cylinder_frame": null,
             "terminal_scalar_frame": {
+              "offset": 0,
               "slots": [
                 {
                   "length": 1,
-                  "raw": {
-                    "byte_len": 1,
-                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                  },
+                  "offset": 0,
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
-                  "raw": {
-                    "byte_len": 1,
-                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                  },
+                  "offset": 1,
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
-                  "raw": {
-                    "byte_len": 1,
-                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                  },
+                  "offset": 2,
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 1,
-                  "raw": {
-                    "byte_len": 1,
-                    "sha256": "dc0e9c3658a1a3ed1ec94274d8b19925c93e1abb7ddba294923ad9bde30f8cb8"
-                  },
+                  "offset": 3,
+                  "raw": "0f",
                   "value": 0.0
                 },
                 {
                   "length": 3,
-                  "raw": {
-                    "byte_len": 3,
-                    "sha256": "9f7bda26aa917815f4f70c145ae462056bdd75a8f9b9cfa21334b3b9467910e2"
-                  },
+                  "offset": 4,
+                  "raw": "43f000",
                   "value": -1.0
                 },
                 {
                   "length": 3,
-                  "raw": {
-                    "byte_len": 3,
-                    "sha256": "9f7bda26aa917815f4f70c145ae462056bdd75a8f9b9cfa21334b3b9467910e2"
-                  },
+                  "offset": 7,
+                  "raw": "43f000",
                   "value": -1.0
                 },
                 {
                   "length": 1,
-                  "raw": {
-                    "byte_len": 1,
-                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-                  },
+                  "offset": 10,
+                  "raw": "e4",
                   "value": 1.0
                 },
                 {
                   "length": 1,
-                  "raw": {
-                    "byte_len": 1,
-                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-                  },
+                  "offset": 11,
+                  "raw": "e4",
                   "value": 1.0
                 },
                 {
                   "length": 3,
-                  "raw": {
-                    "byte_len": 3,
-                    "sha256": "06324978685c1bea71ac1fcd6e7accac8b785ce2109a4ff4622e31457431db33"
-                  },
+                  "offset": 12,
+                  "raw": "2f0000",
                   "value": 2.0
                 },
                 {
                   "length": 1,
-                  "raw": {
-                    "byte_len": 1,
-                    "sha256": "5e1effe9b7bab73dce628ccd9f0cbbb16c1e6efc6c4f311e59992a467bc119fd"
-                  },
+                  "offset": 15,
+                  "raw": "e4",
                   "value": 1.0
                 }
               ]
@@ -509,6 +419,7 @@
             "feature_id": 4,
             "id": "creo:visibgeom:surface_row#7",
             "next_surface": 0,
+            "offset": 116,
             "reversed": false,
             "source_section": "VisibGeom",
             "surface_family": "plane",
@@ -536,6 +447,7 @@
         "file_size": "159",
         "section.0.length": "83",
         "section.0.name": "VisibGeom",
+        "section.0.offset": "76",
         "section.0.raw_name": "VisibGeom",
         "section.0.role": "psb-geometry",
         "section_count": "1",
@@ -1070,49 +982,6 @@
           "tag": "surface_namespace_row"
         }
       }
-    },
-    "metadata": {
-      "native.creo.outline_planes.creo:surface:outline_plane#122:7.offset": "122",
-      "native.creo.plane_envelopes.creo:surface:plane_envelope#122:7.offset": "122",
-      "native.creo.plane_envelopes.creo:surface:plane_envelope#122:7.row_offset": "116",
-      "native.creo.plane_local_systems.creo:surface:plane_local_system#139:7.offset": "139",
-      "native.creo.plane_local_systems.creo:surface:plane_local_system#139:7.row_offset": "116",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.body_offset": "122",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.row_offset": "116",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].offset": "0",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[0].offset": "0",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[1].offset": "1",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[2].offset": "2",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[3].offset": "3",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[4].offset": "4",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[5].offset": "7",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[6].offset": "10",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[7].offset": "11",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[8].offset": "12",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.scalar_frames[0].slots[9].offset": "15",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[0].offset": "0",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[1].offset": "1",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[2].offset": "2",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[3].offset": "3",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[4].offset": "4",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[5].offset": "7",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[6].offset": "10",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[7].offset": "11",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[8].offset": "12",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.slots[9].offset": "15",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.offset": "0",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[0].offset": "0",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[1].offset": "1",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[2].offset": "2",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[3].offset": "3",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[4].offset": "4",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[5].offset": "7",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[6].offset": "10",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[7].offset": "11",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[8].offset": "12",
-      "native.creo.surface_parameters.creo:visibgeom:surface_parameter#7.terminal_scalar_frame.slots[9].offset": "15",
-      "native.creo.surface_rows.creo:visibgeom:surface_row#7.offset": "116",
-      "source.section.0.offset": "76"
     },
     "retained_records": {
       "creo:VisibGeom:section#76": {
