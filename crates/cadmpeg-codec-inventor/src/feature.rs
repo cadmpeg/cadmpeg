@@ -324,6 +324,9 @@ pub(crate) struct PmDcFeatureLabelPayload {
     index: u32,
     pub(crate) participants: PmDcReferenceList,
     name: String,
+    /// The stored code units, present only when they hold an unpaired
+    /// surrogate that `name` replaces with U+FFFD.
+    name_units: Option<Vec<u16>>,
     class_id: ClassId,
 }
 
@@ -334,6 +337,8 @@ struct PmDcFeatureLabelPayloadRef<'a> {
     index: u32,
     participants: &'a PmDcReferenceList,
     name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name_units: Option<&'a [u16]>,
     class_id: &'a ClassId,
 }
 
@@ -345,6 +350,7 @@ impl Serialize for PmDcFeatureLabelPayload {
             index: self.index,
             participants: &self.participants,
             name: self.name.as_str(),
+            name_units: self.name_units.as_deref(),
             class_id: &self.class_id,
         }
         .serialize(serializer)
@@ -358,18 +364,31 @@ struct PmDcFeatureLabelPayloadWire {
     index: u32,
     participants: PmDcReferenceList,
     name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name_units: Option<Vec<u16>>,
     class_id: String,
 }
 
 impl TryFrom<PmDcFeatureLabelPayloadWire> for PmDcFeatureLabelPayload {
     type Error = String;
     fn try_from(wire: PmDcFeatureLabelPayloadWire) -> Result<Self, Self::Error> {
+        // Exact code units accompany a name only when they are not valid
+        // UTF-16 and the name is their replacement decoding.
+        if let Some(units) = &wire.name_units {
+            if String::from_utf16(units).is_ok() || String::from_utf16_lossy(units) != wire.name {
+                return Err(
+                    "Inventor feature label code units are valid UTF-16 or differ from its name"
+                        .into(),
+                );
+            }
+        }
         Ok(Self {
             save_version_major: wire.save_version_major,
             header: wire.header,
             index: wire.index,
             participants: wire.participants,
             name: wire.name,
+            name_units: wire.name_units,
             class_id: ClassId::try_from(wire.class_id)?,
         })
     }
@@ -383,6 +402,7 @@ impl From<PmDcFeatureLabelPayload> for PmDcFeatureLabelPayloadWire {
             index: value.index,
             participants: value.participants,
             name: value.name.as_str().to_owned(),
+            name_units: value.name_units,
             class_id: value.class_id.into(),
         }
     }
@@ -395,6 +415,11 @@ impl PmDcFeatureLabelPayload {
 
     pub(crate) fn class_id(&self) -> ClassId {
         self.class_id
+    }
+
+    /// Whether the neutral name replaces unpaired surrogates of the stored name.
+    pub(crate) fn name_replaced(&self) -> bool {
+        self.name_units.is_some()
     }
 }
 
@@ -1182,7 +1207,7 @@ fn parse_label(
     let header = linked_header(&mut cursor)?;
     let index = cursor.u32("feature label index")?;
     let participants = reference_list(&mut cursor, 2, "feature-label participants")?;
-    let name = cursor.utf16(ctx, "feature label")?;
+    let (name, name_units) = cursor.utf16_units(ctx, "feature label")?;
     let class_id_bytes = cursor.take_array("feature-label class id")?;
     let class_id = type_id_string(class_id_bytes);
     cursor.finish("feature label")?;
@@ -1192,6 +1217,7 @@ fn parse_label(
         index,
         participants,
         name,
+        name_units,
         class_id,
     })
     .map_err(CodecError::malformed)
@@ -3203,6 +3229,7 @@ mod tests {
                 index,
                 participants: reference_list(participants),
                 name: format!("Feature {index}"),
+                name_units: None,
                 class_id: class_id.into(),
             })
             .expect("valid label fixture"),
@@ -4309,6 +4336,43 @@ mod tests {
     }
 
     #[test]
+    fn a_label_name_with_an_unpaired_surrogate_keeps_its_code_units() {
+        let stored = [0x0059u16, 0xdca5, 0x006b];
+        let mut label = Vec::new();
+        label.extend_from_slice(&0u32.to_le_bytes());
+        label.extend_from_slice(&18u16.to_le_bytes());
+        for value in [0u32, 0, 0x8000_000d, 0, 0, 4] {
+            label.extend_from_slice(&value.to_le_bytes());
+        }
+        label.extend_from_slice(&references(&[0x8000_0013]));
+        label.extend_from_slice(&3u32.to_le_bytes());
+        for unit in stored {
+            label.extend_from_slice(&unit.to_le_bytes());
+        }
+        label.extend_from_slice(&[0xabu8; 16]);
+        let parsed = parse(&label, |ctx, source| {
+            parse_label(ctx, source, 16).expect("label")
+        });
+        assert_eq!(parsed.name, "Y\u{fffd}k");
+        assert!(parsed.name_replaced());
+        assert_eq!(parsed.name_units.as_deref(), Some(&stored[..]));
+
+        // The wire admits code units only beside their replacement decoding.
+        let wire = |name: &str, units: &[u16]| PmDcFeatureLabelPayloadWire {
+            save_version_major: 16,
+            header: parsed.header.clone(),
+            index: 4,
+            participants: parsed.participants.clone(),
+            name: name.to_owned(),
+            name_units: Some(units.to_vec()),
+            class_id: "ab".repeat(16),
+        };
+        assert!(PmDcFeatureLabelPayload::try_from(wire("Y\u{fffd}k", &stored)).is_ok());
+        assert!(PmDcFeatureLabelPayload::try_from(wire("Yk", &stored)).is_err());
+        assert!(PmDcFeatureLabelPayload::try_from(wire("Yk", &[0x59, 0x6b])).is_err());
+    }
+
+    #[test]
     fn class_id_admits_only_the_canonical_lowercase_spelling() {
         let lower = "ab".repeat(16);
         assert_eq!(
@@ -4368,6 +4432,7 @@ mod tests {
             )
             .expect("paired participants"),
             name: "Extrude1".to_owned(),
+            name_units: None,
             class_id: "ab".repeat(16),
         })
         .expect("feature label");

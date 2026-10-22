@@ -364,7 +364,7 @@ parent_reference u32
 next_reference u32
 ```
 
-The header is followed by `index:u32`, a type-2 participant-reference list, a counted UTF-16LE label, and a 16-byte class identifier. The owner reference identifies the labeled record. Each participant is a one-based record reference in the same PmDc segment. Other records with the same type identifier use different payload forms and do not satisfy the label grammar.
+The header is followed by `index:u32`, a type-2 participant-reference list, a counted UTF-16LE label, and a 16-byte class identifier. The label's code units can include unpaired surrogates. The owner reference identifies the labeled record. Each participant is a one-based record reference in the same PmDc segment. Other records with the same type identifier use different payload forms and do not satisfy the label grammar.
 
 Type `154d8790d011f8d10008cabc0663dc09` is an entity-style link and also starts with the linked-element header. It then stores `value:u32`, `associative_id:u32`, and `entity_type:u32`. An entity-style link whose owner is a planar sketch entity gives that entity its associative identifier within the sketch. Entity type 1 marks a point and entity type 2 marks a curve. A profile-selection record selects an entity-style link or a kernel-entity link through its entity-link reference.
 

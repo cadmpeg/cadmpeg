@@ -94,6 +94,36 @@ pub(crate) fn take<'a>(
     Ok(view.req_take(len).map_err(|error| error.during(field))?)
 }
 
+/// Decodes a counted string whose code units may hold unpaired surrogates.
+///
+/// The text replaces each unpaired surrogate with U+FFFD. The exact code
+/// units come back only when the text replaced one.
+pub(crate) fn utf16_text_units(
+    ctx: &DecodeContext<'_>,
+    source: &mut View<'_>,
+    count: usize,
+    field: &'static str,
+    operation: &'static str,
+) -> Result<(String, Option<Vec<u16>>), CodecError> {
+    let len = count
+        .checked_mul(2)
+        .ok_or_else(|| CodecError::malformed("Inventor UTF-16 byte length overflow"))?;
+    let mut candidate = *source;
+    let bytes = take(&mut candidate, len, field)?;
+    let value = match ctx.utf16le_text(bytes, count, false, operation) {
+        Ok(text) => (text, None),
+        Err(_) => {
+            let mut units = View::over_retained(bytes);
+            (
+                ctx.utf16le_lossy_text(bytes, count, false, operation)?,
+                Some(std::iter::from_fn(|| units.u16_le()).collect()),
+            )
+        }
+    };
+    *source = candidate;
+    Ok(value)
+}
+
 /// Decodes a counted string and advances the source only after admission.
 pub(crate) fn utf16_text(
     ctx: &DecodeContext<'_>,

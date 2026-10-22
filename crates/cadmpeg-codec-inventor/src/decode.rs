@@ -731,6 +731,16 @@ fn decode_container<'a>(
                 "{unnamed_labels} optional feature label(s) have no display name; their exact native records are retained."
             )));
         }
+        let replaced_names = feature_inventory
+            .labels
+            .iter()
+            .filter(|label| label.name_replaced())
+            .count();
+        if replaced_names != 0 {
+            losses.push(InventorLossCode::FeatureLabelNameReplaced.note(format!(
+                "{replaced_names} feature label name(s) store unpaired UTF-16 surrogates; their neutral names replace each with U+FFFD, and their exact native code units are retained."
+            )));
+        }
         if !feature_inventory.issues.is_empty() {
             losses.push(InventorLossCode::FeatureRecordMalformed.note(format!(
                 "{} typed Inventor feature record(s) could not be parsed exactly.",
