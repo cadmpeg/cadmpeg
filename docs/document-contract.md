@@ -83,4 +83,4 @@ Adding an arena class changes the wire contract and requires a wire bump. Update
 
 ## Version policy
 
-Readers accept exactly version 8. Earlier documents are refused with a message explaining `decode_depth` to `scope` and the report transfer change. There is no migration path in the reader.
+Readers accept exactly version 8. Earlier documents are refused with a message that names the change to `scope` and the report transfer change. There is no migration path in the reader.
