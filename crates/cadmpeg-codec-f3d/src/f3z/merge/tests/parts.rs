@@ -113,7 +113,7 @@ fn occurrence_composition_keeps_canonical_part_ids_and_every_home_reference() {
     );
     assert_eq!(output.parts().len(), 2);
     assert_eq!(output.parts()[SCOPED_PART].stream(), "f3d:xref/a/member");
-    assert_eq!(output.parts()[SCOPED_PART].state(), &PartState::GivenUp);
+    assert_eq!(output.parts()[SCOPED_PART].state(), &PartState::GivenUp {});
     let child = output
         .parts()
         .values()

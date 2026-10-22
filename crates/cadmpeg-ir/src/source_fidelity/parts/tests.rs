@@ -142,7 +142,7 @@ fn given_up_part_has_one_exact_source_home_and_successful_sibling_is_unchanged()
         .is_empty());
     assert_eq!(output.fidelity().parts().len(), 2);
     let failed = &output.fidelity().parts()[id];
-    assert_eq!(failed.state(), &PartState::GivenUp);
+    assert_eq!(failed.state(), &PartState::GivenUp {});
     assert_eq!(
         failed.content_ranges(),
         [3..cadmpeg_core::decode::u64_from_index(split - 1)]
@@ -235,7 +235,7 @@ fn failed_parent_covers_reached_children_and_discards_child_records_stubs_and_lo
     assert_eq!(output.fidelity().parts().len(), 3);
     assert_eq!(
         output.fidelity().parts()[parent_id].state(),
-        &PartState::GivenUp
+        &PartState::GivenUp {}
     );
     for (id, child) in output.fidelity().parts() {
         if id != parent_id {
@@ -403,4 +403,24 @@ fn strict_part_tree_wire_refuses_unknown_keys_bad_ranges_missing_parents_and_cov
     let mut cycle = wire;
     cycle["parts"][&id]["parent"] = serde_json::json!(id);
     assert!(serde_json::from_value::<SourceFidelity>(cycle).is_err());
+}
+
+#[test]
+fn part_state_arms_keep_their_tag_spelling_and_refuse_unknown_keys() {
+    for (state, tag) in [
+        (PartState::Decoded {}, "decoded"),
+        (PartState::GivenUp {}, "given_up"),
+    ] {
+        let wire = serde_json::json!({ "state": tag });
+        assert_eq!(serde_json::to_value(&state).expect("state wire"), wire);
+        assert_eq!(
+            serde_json::from_value::<PartState>(wire).expect("exact state arm"),
+            state
+        );
+        assert!(
+            serde_json::from_value::<PartState>(serde_json::json!({ "state": tag, "unknown": 1 }))
+                .is_err(),
+            "{tag} must refuse an undeclared key"
+        );
+    }
 }
