@@ -133,3 +133,23 @@ fn rejected_expansion_keeps_session_charge_and_no_registered_child() {
         if limit.scope == LimitScope::Session && limit.dimension == ResourceDimension::DecompressedBytes));
     assert!(ctx.resource_refusal().is_some());
 }
+
+#[test]
+fn a_rejected_zlib_candidate_retains_no_bytes() {
+    let compressed = member();
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::service()).unwrap();
+    let available = ctx.retained_bytes_available();
+    for _ in 0..2 {
+        assert!(crate::compression::inflate_zlib_member_if(
+            &ctx,
+            root,
+            ExpandSpec::Exact(8),
+            |_, _| { Ok(false) }
+        )
+        .unwrap()
+        .is_none());
+    }
+    assert_eq!(ctx.retained_bytes_available(), available);
+}

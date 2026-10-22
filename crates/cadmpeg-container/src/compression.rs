@@ -55,7 +55,7 @@ pub fn inflate_zlib_member_if<'a>(
     spec: ExpandSpec,
     admit: impl FnOnce(&[u8], usize) -> Result<bool, CodecError>,
 ) -> Result<Option<(View<'a>, usize)>, CodecError> {
-    ctx.capture_part_extent(source)?;
+    ctx.require_source(source)?;
     let (writer, consumed) = inflate_zlib_writer(ctx, source, spec)?;
     if !admit(writer.completed_bytes()?, consumed)? {
         return Ok(None);

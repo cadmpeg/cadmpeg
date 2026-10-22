@@ -51,7 +51,7 @@ pub(super) fn inflate<'a>(
     admit: impl FnOnce(&[u8], u64) -> Result<bool, CodecError>,
 ) -> Result<Option<Candidate<'a>>, CodecError> {
     if source.has_source_tracking() {
-        ctx.capture_part_extent(source)?;
+        ctx.require_source(source)?;
     }
     let mut decoded = false;
     let mut completed = None;
