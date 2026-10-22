@@ -2030,11 +2030,16 @@ fn arc_nurbs(
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
+/// Whether the arc is a full circle whose parameter `t` evaluates the angle
+/// `t` modulo one turn. `ON_ArcCurve` maps its domain linearly onto its angle
+/// interval, so this holds when both intervals span one turn and both start
+/// on a whole number of turns.
 fn canonical_circle(circle: &Circle, angle: [f64; 2], domain: [f64; 2], delta: f64) -> bool {
+    let whole_turns = |value: f64| (value - (value / TAU).round() * TAU).abs() < CIRCLE_TOLERANCE;
     (delta - TAU).abs() < CIRCLE_TOLERANCE
-        && angle[0].abs() < CIRCLE_TOLERANCE
-        && (domain[0]).abs() < CIRCLE_TOLERANCE
-        && (domain[1] - TAU).abs() < CIRCLE_TOLERANCE
+        && whole_turns(angle[0])
+        && whole_turns(domain[0])
+        && (domain[1] - domain[0] - TAU).abs() < CIRCLE_TOLERANCE
         && (circle.xaxis.norm() - 1.0).abs() < CIRCLE_TOLERANCE
 }
 
@@ -2799,6 +2804,9 @@ mod tests {
             TAU
         ));
         assert!(!canonical_circle(&circle, [0.0, TAU], [2.0, 4.0], TAU));
+        assert!(canonical_circle(&circle, [0.0, TAU], [-TAU, 0.0], TAU));
+        assert!(canonical_circle(&circle, [TAU, 2.0 * TAU], [0.0, TAU], TAU));
+        assert!(!canonical_circle(&circle, [0.0, TAU], [-PI, PI], TAU));
     }
 
     #[test]

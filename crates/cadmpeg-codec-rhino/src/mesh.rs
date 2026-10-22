@@ -788,7 +788,7 @@ pub(crate) fn triangulate_faces<P: Copy>(
             match slot {
                 Some(slot @ None) => *slot = Some(record),
                 _ => {
-                    owner.iter_mut().for_each(|slot| *slot = None);
+                    owner.fill(None);
                     dropped_ngons = ngons.len();
                     break 'ngons;
                 }
