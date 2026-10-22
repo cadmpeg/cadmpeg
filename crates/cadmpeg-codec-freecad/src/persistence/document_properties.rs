@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Document-owned values are born in their actual XML property scopes.
 
-use crate::native::{PropertyBody, PropertyRecord};
+use crate::native::PropertyRecord;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
@@ -19,9 +19,11 @@ pub(crate) struct RootProperties {
 pub(crate) fn selected(node: roxmltree::Node<'_, '_>) -> bool {
     let tag = match node.attribute("type") {
         Some("App::PropertyString") => "String",
-        Some("App::PropertyInteger" | "App::PropertyIntegerConstraint") => "Integer",
+        Some(
+            "App::PropertyInteger" | "App::PropertyIntegerConstraint" | "App::PropertyPercent",
+        ) => "Integer",
         Some("App::PropertyBool") => "Bool",
-        Some("App::PropertyFloat") => "Float",
+        Some("App::PropertyFloat" | "App::PropertyFloatConstraint") => "Float",
         Some("App::PropertyVector") => "PropertyVector",
         _ => return false,
     };
@@ -115,9 +117,11 @@ pub(crate) fn decode<'source>(
                 .children()
                 .filter(|node| node.has_tag_name("Property") || node.has_tag_name("_Property"))
                 .count();
-            let bytes = count.checked_mul(size_of::<Option<&str>>()).ok_or_else(|| {
-                CodecError::malformed("document property name inventory overflows")
-            })?;
+            let bytes = count
+                .checked_mul(size_of::<Option<&str>>())
+                .ok_or_else(|| {
+                    CodecError::malformed("document property name inventory overflows")
+                })?;
             ctx.retain_bytes(
                 cadmpeg_core::decode::u64_from_index(bytes),
                 "FreeCAD document property names",
@@ -130,11 +134,16 @@ pub(crate) fn decode<'source>(
             ) {
                 *name = property.attribute("name");
                 if name.is_none() && !selected(property) {
-                    return Err(CodecError::malformed("property element has no name attribute"));
+                    return Err(CodecError::malformed(
+                        "property element has no name attribute",
+                    ));
                 }
             }
             names.sort_unstable();
-            if names.windows(2).any(|pair| pair[0].is_some() && pair[0] == pair[1]) {
+            if names
+                .windows(2)
+                .any(|pair| pair[0].is_some() && pair[0] == pair[1])
+            {
                 return Err(CodecError::malformed("duplicate document property name"));
             }
             let mut result = RootProperties::default();
@@ -159,44 +168,7 @@ pub(crate) fn decode<'source>(
                         let name = super::required_attr(node, "name")?;
                         let id = crate::native::native_child_id("property", &owner, name);
                         source.record(&id, node, || {
-                            if node.attribute("type") == Some("App::PropertyIntegerConstraint") {
-                                return value_parts::decode(ctx, view, &source, node, &owner, order, stage);
-                            }
-                            let mut losses = Vec::new();
-                            let property = super::parse_persisted_property(
-                                node,
-                                &owner,
-                                order,
-                                &mut losses,
-                                Some(&source),
-                                true,
-                            )?;
-                            if let Some(PropertyBody::Unreadable(detail)) = &property.body {
-                                return Err(CodecError::malformed(detail));
-                            }
-                            if let Some(attribute) = crate::attributes::document_property(&property)?
-                            {
-                                stage.insert_model(ctx, attribute)?;
-                            } else if !matches!(property.name.as_str(), "Shape" | "Placement") && !crate::property_policy::is_projection_metadata(&property) {
-                                stage.push_loss(ctx, crate::loss::FreecadLossCode::AttributePropertyUnprojected.note(format!("property {} ({}) has no neutral attribute encoding; its admitted typed native values remain held", property.id, property.type_name)))?;
-                            }
-                            if property.type_name != "App::PropertyString" {
-                                stage.insert_native(
-                                    ctx,
-                                    "properties",
-                                    crate::native::document_value::DocumentValue::new(property.clone())?,
-                                )?;
-                            } else {
-                                stage.insert_native(
-                                    ctx,
-                                    "properties",
-                                    crate::native::document_string::DocumentString::new(property.clone())?,
-                                )?;
-                            }
-                            for loss in losses {
-                                stage.push_loss(ctx, loss)?;
-                            }
-                            Ok(property)
+                            value_parts::decode(ctx, view, &source, node, &owner, order, stage)
                         })
                     },
                 )? {

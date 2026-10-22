@@ -27,6 +27,7 @@ impl PmarkState {
     /// Decode fields at an already established instance cursor.
     ///
     /// This reader assigns no ownership to a type-shaped payload occurrence.
+    #[cfg(test)]
     pub(super) fn read(stream: &[u8], at: usize) -> Option<(Self, usize)> {
         let mut view = View::over_retained(stream);
         view.seek(at)?;

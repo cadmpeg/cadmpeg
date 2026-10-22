@@ -63,6 +63,7 @@ mod attachment_containment;
 mod dialect;
 mod enlarge;
 mod extract_face;
+mod source_pmark_packets;
 mod source_prefix;
 mod swp104;
 mod symbolic_thread;

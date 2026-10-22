@@ -5,7 +5,8 @@ use super::partition_prefix::PartitionPrefixState;
 use super::pmark_nodes::PmarkNodes;
 use super::pmark_state::PmarkState;
 use super::PartitionPrefix;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 /// An enclosing packet and its separately keyed PMARK nodes.
@@ -20,49 +21,103 @@ pub(crate) struct PmarkPacket {
 /// Read a complete packet at the walk cursor. An earlier complete record has
 /// already consumed its payload, so a nested packet cannot preempt that owner.
 pub(super) fn at(stream: &[u8], offset: usize, prefix: &PartitionPrefix) -> Option<PmarkPacket> {
-    let head_end = offset.checked_add(6)?;
-    if stream.get(offset..head_end) != Some(&[0, 1, 0, 1, 0, 4]) {
-        return None;
-    }
-    let highest_id = prefix.state.highest_id();
-    let mut at = offset + 4;
-    let (first, end) = node_at(stream, at)?;
-    // A syntactically complete candidate can fail its independently parsed
-    // partition context. This bound does not discover its byte boundary.
-    if first.identifier() > highest_id {
-        return None;
-    }
-    let mut nodes = PmarkNodes::new(first);
-    at = end;
-    while View::u16_be_at(stream, at) == Some(4) {
-        let (node, end) = node_at(stream, at)?;
-        if node.identifier() > highest_id {
-            return None;
+    let view = View::over_retained(stream).child(offset, stream.len())?;
+    let mut nodes = None;
+    let parsed = read_fields(view, prefix.state.highest_id(), |node| {
+        match &mut nodes {
+            None => nodes = Some(PmarkNodes::new(node)),
+            Some(nodes) => nodes.push(node),
         }
-        nodes.push(node);
-        at = end;
-    }
-    let terminal = terminal_end(stream, at);
+        Ok::<(), std::convert::Infallible>(())
+    });
+    let (terminal, end) = match parsed {
+        Ok(parsed) => parsed?,
+        Err(never) => match never {},
+    };
     Some(PmarkPacket {
-        nodes,
-        terminal: terminal.is_some(),
+        nodes: nodes?,
+        terminal,
         offset,
-        end: terminal.unwrap_or(at),
+        end,
     })
 }
 
-fn node_at(stream: &[u8], offset: usize) -> Option<(PmarkState, usize)> {
-    (View::u16_be_at(stream, offset) == Some(4)).then_some(())?;
-    PmarkState::read(stream, offset.checked_add(2)?)
+pub(crate) fn read_source(
+    ctx: &DecodeContext<'_>,
+    view: View<'_>,
+    highest_id: u32,
+) -> Result<PmarkPacket, CodecError> {
+    let capacity = view.remaining() / (2 + 5 * 2 + 21);
+    let mut nodes: Option<Vec<PmarkState>> = None;
+    let mut count = 0_usize;
+    let parsed = read_fields(view, highest_id, |node| {
+        if nodes.is_none() {
+            let bytes = capacity
+                .checked_mul(size_of::<PmarkState>())
+                .ok_or_else(|| CodecError::malformed("NX PMARK node storage overflows"))?;
+            ctx.retain_bytes(u64_from_index(bytes), "NX PMARK packet nodes")?;
+            nodes = Some(ctx.alloc_filled(capacity, node, "NX PMARK packet nodes")?);
+        }
+        let slot = nodes
+            .as_mut()
+            .and_then(|nodes| nodes.get_mut(count))
+            .ok_or_else(|| CodecError::malformed("NX PMARK node count exceeds its source bound"))?;
+        *slot = node;
+        count += 1;
+        Ok::<(), CodecError>(())
+    })?
+    .ok_or_else(|| CodecError::malformed("NX PMARK packet is unreadable"))?;
+    let mut nodes = nodes.ok_or_else(|| CodecError::malformed("NX PMARK packet has no nodes"))?;
+    nodes.truncate(count);
+    Ok(PmarkPacket {
+        nodes: PmarkNodes::try_from(nodes).map_err(CodecError::malformed)?,
+        terminal: parsed.0,
+        offset: view.position(),
+        end: parsed.1,
+    })
 }
 
-fn terminal_end(stream: &[u8], offset: usize) -> Option<usize> {
-    let mut view = View::over_retained(stream);
-    view.seek(offset)?;
-    for _ in 0..3 {
-        (view.u16_be()? == 1).then_some(())?;
+fn read_fields<E>(
+    mut view: View<'_>,
+    highest_id: u32,
+    mut retain: impl FnMut(PmarkState) -> Result<(), E>,
+) -> Result<Option<(bool, usize)>, E> {
+    if !view.unread().starts_with(&[0, 1, 0, 1, 0, 4]) || view.skip(4).is_none() {
+        return Ok(None);
     }
-    (view.u32_be()? == 1).then_some(view.position())
+    loop {
+        let Some((node, end)) = node_at(view) else {
+            return Ok(None);
+        };
+        if node.identifier() > highest_id {
+            return Ok(None);
+        }
+        retain(node)?;
+        if view.seek(end).is_none() {
+            return Ok(None);
+        }
+        if !view.unread().starts_with(&[0, 4]) {
+            break;
+        }
+    }
+    let terminal = terminal_end(view);
+    Ok(Some((
+        terminal.is_some(),
+        terminal.unwrap_or(view.position()),
+    )))
+}
+
+fn node_at(mut view: View<'_>) -> Option<(PmarkState, usize)> {
+    view.unread().starts_with(&[0, 4]).then_some(())?;
+    view.skip(2)?;
+    PmarkState::read_view(view)
+}
+
+fn terminal_end(view: View<'_>) -> Option<usize> {
+    view.unread()
+        .starts_with(&[0, 1, 0, 1, 0, 1, 0, 0, 0, 1])
+        .then_some(())?;
+    view.position().checked_add(10)
 }
 
 pub(super) fn admit(packets: &[PmarkPacket], prefix: PartitionPrefixState) -> bool {
@@ -203,3 +258,6 @@ mod tests {
         assert!(packets(&test_pmarks::prefix(40_001)).is_empty());
     }
 }
+
+#[cfg(test)]
+mod source_tests;

@@ -178,6 +178,13 @@ fn invalid_scalar_give_up_keeps_exact_float_bool_integer_and_string_peers() {
         "<Property name='Bad' type='App::PropertyFloat'><Float value='1e999'/></Property>",
         "<Property name='Bad' type='App::PropertyFloat'><Float/></Property>",
     ] {
+        let bad_dom = roxmltree::Document::parse(bad).unwrap();
+        let value_range = bad_dom
+            .root_element()
+            .first_element_child()
+            .unwrap()
+            .range();
+        let raw_value = &bad[value_range.clone()];
         let xml = document(&format!("{peers}{bad}"), 5);
         let bytes = archive(&xml);
         let decoded = crate::FcstdCodec
@@ -190,8 +197,23 @@ fn invalid_scalar_give_up_keeps_exact_float_bool_integer_and_string_peers() {
             .unwrap()
             .arena_as::<crate::native::PropertyRecord>("properties")
             .unwrap();
+        assert_eq!(properties.len(), 5);
+        let bad_property = properties
+            .iter()
+            .find(|property| property.name == "Bad")
+            .unwrap();
+        assert!(bad_property.body.is_none());
         assert_eq!(
-            properties,
+            bad_property.type_name,
+            bad_dom.root_element().attribute("type").unwrap()
+        );
+        let readable_peers = properties
+            .iter()
+            .filter(|property| property.name != "Bad")
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            readable_peers,
             baseline
                 .ir()
                 .native
@@ -210,30 +232,42 @@ fn invalid_scalar_give_up_keeps_exact_float_bool_integer_and_string_peers() {
         };
         let fidelity = decoded.source_fidelity();
         let part = &fidelity.parts()[&unknown.id];
-        assert_eq!(part.level().as_str(), "freecad.property");
+        assert_eq!(part.level().as_str(), "freecad.property_value");
         assert_eq!(part.state(), &PartState::GivenUp {});
         assert_eq!(
             part.offset(),
-            u64::try_from(xml.find(bad).unwrap()).unwrap()
+            u64::try_from(xml.find(bad).unwrap() + value_range.start).unwrap()
         );
-        assert_eq!(part.byte_len(), u64::try_from(bad.len()).unwrap());
+        assert_eq!(part.byte_len(), u64::try_from(raw_value.len()).unwrap());
         assert_eq!(
             fidelity
                 .retained_record(unknown.id.as_str())
                 .unwrap()
                 .data(),
-            Some(bad.as_bytes())
+            Some(raw_value.as_bytes())
         );
         assert_eq!(
             fidelity.parts()[part.parent().unwrap()].state(),
             &PartState::Decoded {}
+        );
+        assert_eq!(
+            fidelity.parts()[part.parent().unwrap()].level().as_str(),
+            "freecad.property"
         );
         let bad_id = crate::native::native_child_id(
             "property",
             &crate::native::native_id("document", "0"),
             "Bad",
         );
-        assert!(!fidelity.record_layout().contains_key(&bad_id));
+        assert_eq!(unknown.links.len(), 1);
+        assert_eq!(unknown.links[0].as_str(), bad_id);
+        assert!(fidelity.record_layout()[bad_id.as_str()]
+            .payloads()
+            .is_empty());
+        assert_eq!(
+            fidelity.record_layout()[bad_id.as_str()].byte_len(),
+            u64::try_from(bad.len()).unwrap()
+        );
         let errors = decoded
             .report()
             .losses

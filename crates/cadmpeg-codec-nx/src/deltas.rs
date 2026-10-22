@@ -25,7 +25,7 @@ use world::WorldLayout;
 pub(crate) mod packet_marker;
 pub(crate) mod partition_prefix;
 pub(crate) mod pmark_nodes;
-mod pmark_packets;
+pub(super) mod pmark_packets;
 pub(crate) mod pmark_state;
 use partition_prefix::PartitionPrefixState;
 use pmark_packets::PmarkPacket;

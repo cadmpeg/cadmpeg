@@ -98,34 +98,32 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
             .iter()
             .find(|candidate| candidate.guid == record.guid)
         {
-            let again_pointers = again_fidelity
-                .record_layout()
-                .get(&parsed.id)
-                .expect("reparsed PMI layout")
-                .pointers();
+            let again_layout = again_fidelity.record_layout().get(&parsed.id);
+            assert!(again_layout.is_some(), "reparsed PMI layout");
+            let again_pointers = again_layout.map(|layout| layout.pointers());
             assert_eq!(parsed.value.get().to_bits(), edited.to_bits());
             assert_eq!(
-                again_pointers.get("value_offset"),
+                again_pointers.and_then(|pointers| pointers.get("value_offset")),
                 pointers.get("value_offset")
             );
             assert_eq!(
-                again_pointers.get("precision_offset"),
+                again_pointers.and_then(|pointers| pointers.get("precision_offset")),
                 pointers.get("precision_offset")
             );
             assert_eq!(
-                again_pointers.get("basic_offset"),
+                again_pointers.and_then(|pointers| pointers.get("basic_offset")),
                 pointers.get("basic_offset")
             );
             assert_eq!(
-                again_pointers.get("inspection_offset"),
+                again_pointers.and_then(|pointers| pointers.get("inspection_offset")),
                 pointers.get("inspection_offset")
             );
             assert_eq!(
-                again_pointers.get("reference_only_offset"),
+                again_pointers.and_then(|pointers| pointers.get("reference_only_offset")),
                 pointers.get("reference_only_offset")
             );
             assert_eq!(
-                again_pointers.get("display_text_offset"),
+                again_pointers.and_then(|pointers| pointers.get("display_text_offset")),
                 pointers.get("display_text_offset")
             );
         }

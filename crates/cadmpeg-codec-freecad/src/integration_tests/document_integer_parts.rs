@@ -107,12 +107,15 @@ fn invalid_integer_parts_lose_no_readable_native_or_neutral_peer() {
         "<Property name='Bad' type='App::PropertyInteger'><Integer/></Property>",
         "<Property name='Bad' type='App::PropertyInteger'><Integer value='9223372036854775808'/></Property>",
     ] {
+        let bad_dom = roxmltree::Document::parse(bad).unwrap();
+        let value_range = bad_dom.root_element().first_element_child().unwrap().range();
+        let raw_value = &bad[value_range.clone()];
         let xml = document(&format!("{bad}{good}{text}"), 3);
         let bytes = zip_fixture::archive(&[RawEntry::stored("Document.xml", xml.as_bytes()), RawEntry::stored("peer.bin", b"independent")]);
         let decoded = crate::FcstdCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
         let ns = decoded.ir().native.namespace("fcstd").unwrap();
         let properties = ns.arena_as::<crate::native::PropertyRecord>("properties").unwrap();
-        assert_eq!(properties.len(), 2);
+        assert_eq!(properties.len(), 3);
         for name in ["Good", "Note"] {
             let kept = properties.iter().find(|property| property.name == name).unwrap();
             let original = baseline_properties.iter().find(|property| property.name == name).unwrap();
@@ -120,19 +123,25 @@ fn invalid_integer_parts_lose_no_readable_native_or_neutral_peer() {
             let attribute = decoded.ir().model.attributes.iter().find(|attribute| attribute.name == name).unwrap();
             assert_eq!(attribute, baseline.ir().model.attributes.iter().find(|attribute| attribute.name == name).unwrap());
         }
-        assert!(!properties.iter().any(|property| property.name == "Bad"));
+        let bad_property = properties.iter().find(|property| property.name == "Bad").unwrap();
+        assert!(bad_property.body.is_none());
+        assert_eq!(bad_property.type_name, "App::PropertyInteger");
         let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
         let [unknown] = unknowns.as_slice() else { panic!("one failed integer") };
         let fidelity = decoded.source_fidelity();
         let part = &fidelity.parts()[&unknown.id];
-        assert_eq!(part.level().as_str(), "freecad.property");
+        assert_eq!(part.level().as_str(), "freecad.property_value");
         assert_eq!(part.state(), &PartState::GivenUp {});
-        assert_eq!(part.offset(), u64::try_from(xml.find(bad).unwrap()).unwrap());
-        assert_eq!(part.byte_len(), u64::try_from(bad.len()).unwrap());
-        assert_eq!(fidelity.retained_record(unknown.id.as_str()).unwrap().data(), Some(bad.as_bytes()));
+        assert_eq!(part.offset(), u64::try_from(xml.find(bad).unwrap() + value_range.start).unwrap());
+        assert_eq!(part.byte_len(), u64::try_from(raw_value.len()).unwrap());
+        assert_eq!(fidelity.retained_record(unknown.id.as_str()).unwrap().data(), Some(raw_value.as_bytes()));
         assert_eq!(fidelity.parts()[part.parent().unwrap()].state(), &PartState::Decoded {});
+        assert_eq!(fidelity.parts()[part.parent().unwrap()].level().as_str(), "freecad.property");
         let bad_id = crate::native::native_child_id("property", &crate::native::native_id("document", "0"), "Bad");
-        assert!(!fidelity.record_layout().contains_key(&bad_id));
+        assert_eq!(unknown.links.len(), 1);
+        assert_eq!(unknown.links[0].as_str(), bad_id);
+        assert!(fidelity.record_layout()[bad_id.as_str()].payloads().is_empty());
+        assert_eq!(fidelity.record_layout()[bad_id.as_str()].byte_len(), u64::try_from(bad.len()).unwrap());
         let errors = decoded.report().losses.iter().filter(|loss| loss.code.local_code() == "record.unreadable").collect::<Vec<_>>();
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].severity, cadmpeg_ir::report::Severity::Error);

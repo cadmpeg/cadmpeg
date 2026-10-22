@@ -1050,7 +1050,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 stream.inflated.len(),
             )?;
         }
-        let census = census.into_events();
+        let mut census = census.into_events();
         if let Some(header) = census.transmit_header {
             let bytes = &stream.inflated[..header.end];
             events.transmit_headers.push(ParasolidDeltasTransmitHeader {
@@ -1163,19 +1163,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     inflated_offset: cadmpeg_core::decode::u64_from_index(map.offset),
                 });
         }
-        for packet in census.pmark_packets {
-            let bytes = &stream.inflated[packet.offset..packet.end];
-            events.pmark_packets.push(ParasolidDeltasPmarkPacket {
-                id: deltas_event_id(stream_ordinal, "deltas-pmark", packet.offset, None),
-                stream_ordinal: stream_ordinal_u32,
-                nodes: packet.nodes,
-                terminal: packet.terminal,
-                byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
-                inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
-            });
-        }
-        if let Some(prefix) = census.partition_prefix {
+        let partition_state = if let Some(prefix) = census.partition_prefix.take() {
             let bytes = &stream.inflated[prefix.offset..prefix.end];
             let id = deltas_event_id(
                 stream_ordinal,
@@ -1219,6 +1207,53 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(prefix.offset),
                 });
+            Some(state)
+        } else {
+            None
+        };
+        for packet in census.pmark_packets {
+            let bytes = &stream.inflated[packet.offset..packet.end];
+            let id = deltas_event_id(stream_ordinal, "deltas-pmark", packet.offset, None);
+            let (nodes, terminal) = match stream.source {
+                Some(source) => {
+                    let prefix = partition_state.ok_or_else(|| {
+                        CodecError::malformed("NX PMARK packet has no partition owner")
+                    })?;
+                    let start = source.start().checked_add(packet.offset).ok_or_else(|| {
+                        CodecError::malformed("NX PMARK packet source offset overflows")
+                    })?;
+                    let end = source.start().checked_add(packet.end).ok_or_else(|| {
+                        CodecError::malformed("NX PMARK packet source end overflows")
+                    })?;
+                    let extent = source.child(start, end).ok_or_else(|| {
+                        CodecError::malformed("NX PMARK packet lies outside its source")
+                    })?;
+                    let parsed = ctx.record(&id, extent, || {
+                        let parsed = crate::deltas::pmark_packets::read_source(
+                            ctx,
+                            extent,
+                            prefix.highest_id(),
+                        )?;
+                        if parsed.end != end {
+                            return Err(CodecError::malformed(
+                                "NX PMARK packet source extent disagrees",
+                            ));
+                        }
+                        Ok(parsed)
+                    })?;
+                    (parsed.nodes, parsed.terminal)
+                }
+                None => (packet.nodes, packet.terminal),
+            };
+            events.pmark_packets.push(ParasolidDeltasPmarkPacket {
+                id,
+                stream_ordinal: stream_ordinal_u32,
+                nodes,
+                terminal,
+                byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
+                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
+                inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
+            });
         }
         for packet in census.reference_marker_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];

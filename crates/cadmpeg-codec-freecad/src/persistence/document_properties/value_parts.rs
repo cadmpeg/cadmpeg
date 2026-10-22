@@ -36,7 +36,10 @@ pub(super) fn decode<'source>(
         complete.body = Some(body.clone());
         if let Some(attribute) = crate::attributes::document_property(&complete)? {
             value_stage.insert_model(ctx, attribute)?;
-        } else if !crate::property_policy::is_projection_metadata(&complete) {
+        } else if (complete.type_name == "App::PropertyIntegerConstraint"
+            || !matches!(complete.name.as_str(), "Shape" | "Placement"))
+            && !crate::property_policy::is_projection_metadata(&complete)
+        {
             value_stage.push_loss(ctx, crate::loss::FreecadLossCode::AttributePropertyUnprojected.note(format!(
                 "property {} ({}) has no neutral attribute encoding; its admitted typed native values remain held",
                 complete.id, complete.type_name,
@@ -46,10 +49,18 @@ pub(super) fn decode<'source>(
         Ok(body)
     })?;
     property.body = body;
-    stage.insert_native(
-        ctx,
-        "properties",
-        crate::native::document_value::DocumentValue::new(property.clone())?,
-    )?;
+    if property.type_name == "App::PropertyString" {
+        stage.insert_native(
+            ctx,
+            "properties",
+            crate::native::document_string::DocumentString::new(property.clone())?,
+        )?;
+    } else {
+        stage.insert_native(
+            ctx,
+            "properties",
+            crate::native::document_value::DocumentValue::new(property.clone())?,
+        )?;
+    }
     Ok(property)
 }

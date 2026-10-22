@@ -38,11 +38,7 @@ pub(super) fn validate<'source>(
                         .flat_map(|node| {
                             std::iter::once(("freecad.property", node)).chain(
                                 node.children()
-                                    .filter(move |value| {
-                                        node.attribute("type")
-                                            == Some("App::PropertyIntegerConstraint")
-                                            && value.is_element()
-                                    })
+                                    .filter(roxmltree::Node::is_element)
                                     .map(|value| ("freecad.property_value", value)),
                             )
                         }),

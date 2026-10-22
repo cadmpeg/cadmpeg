@@ -16,11 +16,13 @@ impl DocumentValue {
             property.type_name.as_str(),
             "App::PropertyInteger"
                 | "App::PropertyIntegerConstraint"
+                | "App::PropertyPercent"
                 | "App::PropertyBool"
                 | "App::PropertyFloat"
+                | "App::PropertyFloatConstraint"
                 | "App::PropertyVector"
         ) || !(matches!(&property.body, Some(PropertyBody::Persisted { links, side_entries, .. }) if links.is_empty() && side_entries.is_empty())
-            || property.type_name == "App::PropertyIntegerConstraint" && property.body.is_none())
+            || property.body.is_none())
         {
             return Err(CodecError::malformed(
                 "document value has a different property grammar",
