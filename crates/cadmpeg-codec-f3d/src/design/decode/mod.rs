@@ -15,6 +15,7 @@ pub(crate) mod meta;
 pub(crate) mod operands;
 pub(crate) mod parameters;
 mod patch;
+pub(crate) mod placement_construction;
 pub(crate) mod presentation;
 pub(crate) mod scopes;
 pub(crate) mod sheet_metal_settings;

@@ -50,6 +50,7 @@ use crate::records::{
     },
     mesh::DesignMeshFeature,
     parameters::{DesignParameter, DesignParameterCompanion, DesignParameterOwner},
+    placement_construction::DesignPlacementConstruction,
     recipes::{ConstructionRecipe, CreationTimestamp, DesignComponentNamingSpace},
     references::{DesignMaterialAssignment, LostEdgeReference, PersistentReference},
     sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchSurface, SketchText},
@@ -155,6 +156,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_parameter_owners",
     "design_parameter_scopes",
     "design_parameters",
+    "design_placement_constructions",
     "design_record_headers",
     "design_sheet_metal_settings",
     "design_sketch_placements",
@@ -816,6 +818,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "design_placement_constructions",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_placement_constructions)
+        },
+        len: |model| model.design_placement_constructions.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "design_sketch_placements",
         exactness: (),
         phase: Phase::ArenaOnly,
@@ -1339,6 +1351,9 @@ pub(crate) struct F3dNative {
     /// Local-to-model placement frames for Design sketches.
     #[serde(default)]
     pub(crate) design_sketch_placements: Vec<DesignSketchPlacement>,
+    /// Versioned placement members and their exact reference encodings.
+    #[serde(default)]
+    pub(crate) design_placement_constructions: Vec<DesignPlacementConstruction>,
     /// Self-validating per-entity headers from the Design `BulkStream`.
     #[serde(default)]
     pub(crate) design_entity_headers: Vec<DesignEntityHeader>,
@@ -1547,6 +1562,7 @@ impl F3dNative {
             design_entity_headers: read_arena!("design_entity_headers"),
             design_record_headers: read_arena!("design_record_headers"),
             design_sketch_placements: read_arena!("design_sketch_placements"),
+            design_placement_constructions: read_arena!("design_placement_constructions"),
             design_body_bindings: read_arena!("design_body_bindings"),
             design_body_bounds: read_arena!("design_body_bounds"),
             design_body_members: read_arena!("design_body_members"),

@@ -368,6 +368,7 @@
         "design_parameter_owners": [],
         "design_parameter_scopes": [],
         "design_parameters": [],
+        "design_placement_constructions": [],
         "design_record_headers": [],
         "design_sheet_metal_settings": [],
         "design_sketch_placements": [],

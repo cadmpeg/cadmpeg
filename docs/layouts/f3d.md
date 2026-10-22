@@ -4873,23 +4873,12 @@ Spec §3.1 · layout: byte offsets · size: 30 B
 
 Spec §3.1 · layout: byte offsets · size: 21 B
 
-Class members follow this prefix. The 20-byte form is a version-4 layout.
+Class members follow this 21-byte prefix. Version 4 admits marked and unmarked matrix forms.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
-| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | the bytes from indexed-header offset 11 to the class members are zero |
-
-## `placement_v4_short_indexed_prefix`
-
-Spec §3.1 · layout: byte offsets · size: 20 B
-
-Class members follow this prefix. The 20-byte form is a version-4 layout.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
-| 11 | 9 | `zero_prefix` | `bytes[9]` | little | spec | the bytes from indexed-header offset 11 to the class members are zero |
+| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | The bytes from indexed-header offset 11 through 20 are zero |
 
 ## `surface_patch_boundary_settings_prefix`
 

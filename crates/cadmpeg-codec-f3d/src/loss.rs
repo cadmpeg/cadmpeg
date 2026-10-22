@@ -28,6 +28,8 @@ pub(crate) enum F3dLossCode {
     DimensionCompanionUntyped,
     /// A whole-body reference tail has no admitted standard reference-run frame.
     BodyReferenceTailUntyped,
+    /// A placement construction has no unambiguous registered member layout.
+    PlacementConstructionUntyped,
     /// A construction tracking path has no matching indexed type registration.
     ConstructionTrackingPathUntyped,
     /// Design configuration JSON members have no assigned neutral semantics.
@@ -233,6 +235,7 @@ impl F3dLossCode {
     const ALL: &'static [F3dLossCode] = &[
         Self::DimensionCompanionUntyped,
         Self::BodyReferenceTailUntyped,
+        Self::PlacementConstructionUntyped,
         Self::ConstructionTrackingPathUntyped,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
@@ -338,6 +341,7 @@ impl F3dLossCode {
         match self {
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::BodyReferenceTailUntyped => "body-reference.tail-untyped",
+            Self::PlacementConstructionUntyped => "placement.construction-untyped",
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
@@ -471,6 +475,7 @@ impl F3dLossCode {
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
+            | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
@@ -556,6 +561,7 @@ impl F3dLossCode {
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
+            | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
             | Self::ParameterRecordUnparsed
             | Self::HistoryRecordFramingFailed
@@ -706,6 +712,7 @@ mod tests {
             [
                 "dimension.companion-untyped",
                 "body-reference.tail-untyped",
+                "placement.construction-untyped",
                 "feature.tracking-path-untyped",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",

@@ -1039,6 +1039,7 @@
             "unit_offset": 4499
           }
         ],
+        "design_placement_constructions": [],
         "design_record_headers": [
           {
             "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1006",

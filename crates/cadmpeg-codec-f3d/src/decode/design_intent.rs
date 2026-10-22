@@ -148,6 +148,8 @@ pub(super) struct DesignNative {
     design_edge_treatment_vertex_operands: Vec<DesignEdgeTreatmentVertexOperand>,
     design_face_operands: Vec<DesignFaceOperand>,
     design_sketch_placements: Vec<DesignSketchPlacement>,
+    design_placement_constructions:
+        Vec<crate::records::placement_construction::DesignPlacementConstruction>,
     pub(super) design_dimension_recipe_records: Vec<DesignDimensionRecipeRecord>,
     pub(super) design_dimension_locus_pairs: DesignDimensionLocusPairs,
     pub(super) design_dimension_annotation_frames: Vec<DesignDimensionAnnotationFrame>,
@@ -200,6 +202,7 @@ impl DesignNative {
             design_edge_treatment_vertex_operands,
             design_face_operands,
             design_sketch_placements,
+            design_placement_constructions,
             design_dimension_recipe_records,
             design_dimension_locus_pairs,
             design_dimension_annotation_frames,
@@ -240,6 +243,7 @@ impl DesignNative {
         native.design_edge_treatment_vertex_operands = design_edge_treatment_vertex_operands;
         native.design_face_operands = design_face_operands;
         native.design_sketch_placements = design_sketch_placements;
+        native.design_placement_constructions = design_placement_constructions;
         native.design_dimension_recipe_records = design_dimension_recipe_records;
         native.design_dimension_locus_pairs = design_dimension_locus_pairs;
         native.design_dimension_annotation_frames = design_dimension_annotation_frames;
@@ -570,6 +574,16 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &mut losses,
             F3dLossCode::BodyReferenceTailUntyped,
             format_args!("{} whole-body reference tail(s) remain source-only because no complete standard reference-run frame was admitted.", tails.unparsed),
+        );
+    }
+
+    let placements = crate::design::decode::placement_construction::decode(ctx, scan)?;
+    design.design_placement_constructions = placements.records;
+    if placements.unparsed != 0 {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::PlacementConstructionUntyped,
+            format_args!("{} placement construction record(s) remain source-only because their registration or bounded member layout is unsupported or ambiguous.", placements.unparsed),
         );
     }
 

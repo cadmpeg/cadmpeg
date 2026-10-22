@@ -4804,6 +4804,20 @@ pub(crate) mod canvas_geometry_prefix {
     pub(crate) const LABEL_CODE_UNIT_COUNT: usize = 213;
 }
 
+/// Byte offsets for the `placement_indexed_prefix` record.
+///
+/// Spec §3.1. Record length 21 B.
+///
+/// ```text
+/// Class members follow this 21-byte prefix. Version 4 admits marked and unmarked matrix forms.
+/// ```
+pub(crate) mod placement_indexed_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 21;
+    /// Offset of `zero_prefix` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+}
+
 /// Byte offsets for the `surface_patch_boundary_settings_prefix` record.
 ///
 /// Spec §3.1. Record length 38 B.
