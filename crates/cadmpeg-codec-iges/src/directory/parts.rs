@@ -190,13 +190,15 @@ fn part_spec(name: &str, framing: Vec<Range<u64>>) -> Result<PartSpec, CodecErro
     Ok(PartSpec::new(level, framing))
 }
 
+/// Push parser working storage. It is not retained bytes
+/// (`docs/decode-resource-caps.md`, "Retained bytes"); the entity charge per
+/// Directory Entry and the input length bound it.
 fn append_parser_item<T>(
     ctx: &DecodeContext<'_>,
     out: &mut Vec<T>,
     value: T,
 ) -> Result<(), CodecError> {
     let bytes = u64_from_index(size_of::<T>());
-    ctx.retain_bytes(bytes, "IGES Directory parser storage")?;
     out.try_reserve(1).map_err(|_| {
         ResourceLimit::allocation_failed(
             ResourceDimension::RetainedBytes,

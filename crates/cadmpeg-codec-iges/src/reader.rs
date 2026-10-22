@@ -601,6 +601,8 @@ fn decode_with_occurrence_limits(
                 .arenas_mut()
                 .entry(name)
                 .or_default();
+            // The part helper charged these records when its root output
+            // received them. This move is not a new retained copy.
             let bytes = cadmpeg_core::decode::u64_from_index(
                 records
                     .len()
@@ -609,7 +611,6 @@ fn decode_with_occurrence_limits(
                         CodecError::malformed("IGES parser record composition overflows")
                     })?,
             );
-            ctx.retain_bytes(bytes, "IGES parser record composition")?;
             destination.try_reserve(records.len()).map_err(|_| {
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::RetainedBytes,
