@@ -54,6 +54,23 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
     );
     assert_eq!(scope.frame_length(), 269);
     assert_eq!(scope.reference_members().len(), 0);
+    // The empty table is read only in the rigid 269-byte class-405/262 form.
+    let mut other = bytes.clone();
+    other[4..7].copy_from_slice(b"406");
+    let other_records = crate::design::decode::sketch::IndexedRecordOffsets::build(&other);
+    let other_class =
+        crate::records::references::DesignClassTag::try_from("406".to_owned()).unwrap();
+    assert!(
+        crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+            &other,
+            &other_records,
+            10,
+            &other_class,
+            0,
+        )
+        .unwrap()
+        .is_none()
+    );
     scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
 
     let locator = "2E3AC990-483D-4A55-8662-C064B976A957";

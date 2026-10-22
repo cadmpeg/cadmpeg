@@ -111,7 +111,10 @@ impl AssemblyScopeGeneration {
             850 => (Some(CompactWide), Some((6, 0, 4)), Some([556, 567])),
             945 => (Some(Wide), Some((4, 0, 4)), Some([541, 552])),
             269 if rigid_as_built_scope(frame_length, class_tag, paired_class_tag) => {
-                (None, Some((0, 0, 0)), Some([41, 52]))
+                (None, Some((0, 0, 0)), Some([
+                    crate::layout::assembly_rigid_as_built_scope::FIRST_LOCATOR_REFERENCE,
+                    crate::layout::assembly_rigid_as_built_scope::SECOND_LOCATOR_REFERENCE,
+                ]))
             }
             length if length == u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
                 (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
@@ -161,6 +164,60 @@ impl AssemblyScopeGeneration {
     pub(crate) fn operand_path_locator_offsets(self) -> Option<[usize; 2]> {
         self.locator_offsets
     }
+}
+
+/// Inserted-design occurrences that store the identity while a joint places
+/// them. A joint names an occurrence directly, or names an inserted design
+/// through an external operand container, which the neutral model cannot tie
+/// to one occurrence: each distinct external document then accounts for at
+/// most one identity occurrence. Their pose is the one their joints define,
+/// which is not solved.
+pub(crate) fn joint_placed_identity_occurrences<'a>(
+    occurrences: &[cadmpeg_ir::products::Occurrence],
+    containers: impl IntoIterator<Item = &'a cadmpeg_ir::OperandContainer>,
+) -> usize {
+    let mut named = std::collections::HashSet::new();
+    let mut documents = Vec::new();
+    for container in containers {
+        match container {
+            cadmpeg_ir::OperandContainer::Occurrence { occurrence, .. } => {
+                named.insert(occurrence);
+            }
+            cadmpeg_ir::OperandContainer::External { external_document } => {
+                if !documents.contains(&external_document) {
+                    documents.push(external_document);
+                }
+            }
+            cadmpeg_ir::OperandContainer::Root {} => {}
+        }
+    }
+    let (direct, unnamed) = occurrences
+        .iter()
+        .filter(|occurrence| {
+            matches!(
+                occurrence.prototype,
+                cadmpeg_ir::products::PrototypeReference::External { .. }
+            ) && occurrence.transform.rows() == cadmpeg_ir::transform::Transform::identity().rows()
+        })
+        .fold((0_usize, 0_usize), |(direct, unnamed), occurrence| {
+            if named.contains(&occurrence.id) {
+                (direct + 1, unnamed)
+            } else {
+                (direct, unnamed + 1)
+            }
+        });
+    direct + unnamed.min(documents.len())
+}
+
+/// The loss note for joint-placed identity occurrences, when there are any.
+pub(crate) fn joint_placed_occurrence_loss(
+    joint_placed: usize,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (joint_placed != 0).then(|| {
+        F3dLossCode::JointPlacedOccurrenceUnsolved.note(format!(
+            "{joint_placed} inserted-design occurrence(s) store the identity and are placed by their joints; the joint-solved pose is not computed, so they are placed at the identity."
+        ))
+    })
 }
 
 /// The 269-byte class-405/262 rigid `As-built` scope: no parameter owners and
@@ -1124,6 +1181,64 @@ mod tests {
 
         // The class tag alone admits no external path and no untyped arity.
         assert!(path(11, false).is_err());
+    }
+
+    #[test]
+    fn joint_placed_identity_occurrences_count_each_inserted_design_once() {
+        let occurrence = |id: &str, scope: &str| -> cadmpeg_ir::products::Occurrence {
+            let prototype = if scope == "external" {
+                serde_json::json!({"scope": "external", "document": {"resolution": "path", "path": format!("{id}.f3d")}})
+            } else {
+                serde_json::json!({"scope": "local", "definition": "f3d:model:product_definition#1"})
+            };
+            serde_json::from_value(serde_json::json!({
+                "id": format!("f3d:model:occurrence#{id}"),
+                "prototype": prototype,
+                "parent": {"kind": "root"},
+                "ordinal": 0,
+                "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
+                "scale": [1.0, 1.0, 1.0],
+            }))
+            .unwrap()
+        };
+        let occurrences = [
+            occurrence("xref-0-0", "external"),
+            occurrence("xref-1-0", "external"),
+            occurrence("local", "local"),
+        ];
+        let container = |value: serde_json::Value| -> cadmpeg_ir::OperandContainer {
+            serde_json::from_value(value).unwrap()
+        };
+        let external = container(serde_json::json!({
+            "container": "external",
+            "external_document": {"resolution": "document_id", "document_id": "7b14bb25-3d8a-422c-9b0c-0805a6ef037c"},
+        }));
+        let named = container(serde_json::json!({
+            "container": "occurrence",
+            "occurrence": "f3d:model:occurrence#xref-1-0",
+        }));
+        // One inserted design named twice accounts for one occurrence.
+        assert_eq!(
+            super::joint_placed_identity_occurrences(&occurrences, [&external, &external]),
+            1
+        );
+        assert_eq!(
+            super::joint_placed_identity_occurrences(&occurrences, [&named]),
+            1
+        );
+        assert_eq!(
+            super::joint_placed_identity_occurrences(&occurrences, [&named, &external]),
+            2
+        );
+        assert_eq!(
+            super::joint_placed_identity_occurrences(&occurrences, []),
+            0
+        );
+        assert_eq!(
+            super::joint_placed_occurrence_loss(1).map(|loss| loss.code),
+            Some(crate::loss::F3dLossCode::JointPlacedOccurrenceUnsolved.kind())
+        );
+        assert!(super::joint_placed_occurrence_loss(0).is_none());
     }
 
     #[test]

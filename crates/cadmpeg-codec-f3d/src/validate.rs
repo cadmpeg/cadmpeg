@@ -2277,11 +2277,24 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     alignment.operand_frames().is_none_or(|frames| {
                         frames[0].reference_record_index != frames[1].reference_record_index
                             && frames.iter().enumerate().all(|(ordinal, frame)| {
-                                // A wide locator's frame is its transform at 68, or the
-                                // identity located at its flag at 67.
+                                // A wide locator's frame is its stored transform, or the
+                                // identity located at its identity flag.
+                                use crate::layout::assembly_wide_operand_path_locator as wide;
+                                let identity = frame.transform.rows()
+                                    == cadmpeg_ir::transform::Transform::identity().rows();
                                 let (reference_at, transform_at): (u64, &[u64]) = if rigid_as_built
                                 {
-                                    (57, &[67, 68])
+                                    (
+                                        u64_from_index(wide::NONZERO_RECORD_REFERENCE + 1),
+                                        if identity {
+                                            &[
+                                                u64_from_index(wide::IDENTITY_FLAG),
+                                                u64_from_index(wide::TRANSFORM),
+                                            ]
+                                        } else {
+                                            &[u64_from_index(wide::TRANSFORM)]
+                                        },
+                                    )
                                 } else {
                                     (22, &[33])
                                 };

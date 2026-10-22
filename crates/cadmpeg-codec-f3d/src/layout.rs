@@ -5182,6 +5182,22 @@ pub(crate) mod assembly_wide_scope {
     pub(crate) const FRAME_SENSE: usize = 25;
 }
 
+/// Byte offsets for the `assembly_rigid_as_built_scope` record.
+///
+/// Spec §Assembly operands.
+///
+/// ```text
+/// This size-less byte record describes the fixed prefix of the 269-byte rigid As-built scope through its empty reference table. Offsets are relative to the scope's primary indexed header.
+/// ```
+pub(crate) mod assembly_rigid_as_built_scope {
+    /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 41;
+    /// Offset of `second_locator_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_LOCATOR_REFERENCE: usize = 52;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const REFERENCE_COUNT: usize = 153;
+}
+
 /// Byte offsets for the `assembly_compact_wide_scope` record.
 ///
 /// Spec §Assembly operands.

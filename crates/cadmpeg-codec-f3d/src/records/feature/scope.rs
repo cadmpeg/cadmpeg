@@ -2232,8 +2232,17 @@ impl DesignParameterScope {
                 ))
             }
         }
+        // Only the rigid 269-byte class-405/262 `As-built` scope stores an
+        // empty reference table.
+        let rigid_as_built = kind == "As-built"
+            && crate::design::assembly::rigid_as_built_scope(
+                draft.frame_length,
+                draft.class_tag.as_str(),
+                draft.paired_class_tag.as_str(),
+            );
         if !(draft.byte_offset < draft.reference_count_offset
             && draft.reference_count_offset < draft.kind_offset)
+            || (draft.reference_members.is_empty() && !rigid_as_built)
         {
             return Err(fail("reference_count_offset/reference_members"));
         }

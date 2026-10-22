@@ -17355,6 +17355,91 @@ source = "spec"
 anchor = "zero\nbytes at offsets 26 through 36"
 
 [[record]]
+name = "assembly_rigid_as_built_scope"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 269-byte class-405/262 `As-built` form is a"
+note = "This size-less byte record describes the fixed prefix of the 269-byte rigid As-built scope through its empty reference table. Offsets are relative to the scope's primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "After its indexed header it"
+
+[[record.field]]
+name = "zero_run_11"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "stores eleven zero bytes"
+
+[[record.field]]
+name = "pathless_locator_reference"
+offset = 22
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference at offset 22 to a wide"
+
+[[record.field]]
+name = "zero_run_33"
+offset = 33
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes, u32 value\n2 at offset 37"
+
+[[record.field]]
+name = "locator_count"
+offset = 37
+type = "u32"
+source = "spec"
+anchor = "u32 value\n2 at offset 37"
+
+[[record.field]]
+name = "first_locator_reference"
+offset = 41
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked references to its two wide operand-path locators at\noffsets 41 and 52"
+
+[[record.field]]
+name = "second_locator_reference"
+offset = 52
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked references to its two wide operand-path locators at\noffsets 41 and 52"
+
+[[record.field]]
+name = "joint_reference"
+offset = 63
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to its joint record at offset 63"
+
+[[record.field]]
+name = "guid"
+offset = 74
+type = "bytes[76]"
+source = "spec"
+anchor = "LP-UTF16 GUID at offset 74"
+
+[[record.field]]
+name = "zero_run_150"
+offset = 150
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes, and an empty reference table"
+
+[[record.field]]
+name = "reference_count"
+offset = 153
+type = "u32"
+source = "spec"
+anchor = "u32 count 0 immediately before the history state"
+
+[[record]]
 name = "assembly_compact_wide_scope"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_frames.rs"
 kind = "byte"

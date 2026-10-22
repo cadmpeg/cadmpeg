@@ -1060,13 +1060,23 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 return None;
             }
         }
-        // An `As-built` scope without references stores count 0 before its
-        // history state; the last reference of a counted table also ends in
-        // four zero bytes, so the empty table is read only when no counted
-        // table matches.
-        if reference_table.is_none() && kind == scope::DesignFeatureKind::AsBuilt {
-            let count_at = reference_table_end.checked_sub(4)?;
-            if View::u32_le_at(bytes, count_at)? == 0 {
+        // The rigid `As-built` scope stores count 0 at its fixed offset,
+        // immediately before its history state, with no reference marker in
+        // the slot before it. Every other scope keeps a counted table.
+        if reference_table.is_none()
+            && kind == scope::DesignFeatureKind::AsBuilt
+            && crate::design::assembly::rigid_as_built_scope(
+                u64::try_from(paired_at.checked_sub(start)?).ok()?,
+                class_tag.as_str(),
+                paired_class_tag,
+            )
+        {
+            let count_at =
+                start.checked_add(crate::layout::assembly_rigid_as_built_scope::REFERENCE_COUNT)?;
+            if count_at.checked_add(4) == Some(reference_table_end)
+                && View::u32_le_at(bytes, count_at)? == 0
+                && bytes.get(count_at.checked_sub(11)?) != Some(&1)
+            {
                 reference_table = Some((count_at, Vec::new(), Vec::new()));
             }
         }
