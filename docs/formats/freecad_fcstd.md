@@ -671,7 +671,9 @@ the body natively instead of selecting a source-order value. A valid tip identif
 member as the active result. Suppressed, active,
 frozen, invalid, touched, mapping, support, and visibility properties remain individually named
 state rather than being collapsed into one enabled flag. Validation rejects duplicate members,
-inconsistent parentage, missing members, and an active tip outside the body's ordered membership.
+inconsistent parentage, missing members, and an active tip outside the body's ordered membership. A body displays its result through its own `Shape`; the bodies transferred from its members'
+shapes, and from any shape property other than `Shape` (such as a feature's `AddSubShape` tool
+shape), are intermediate and carry `visible: false` unless a GUI view provider states otherwise.
 
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a
