@@ -175,3 +175,18 @@ fn empty_admitted_block_has_a_genuine_zero_length_expanded_view() {
     assert_eq!(ctx.capture_part_extent(view).unwrap().byte_len(), 0);
     assert_eq!(ctx.source_streams().unwrap().len(), 2);
 }
+
+#[test]
+fn expanded_block_bytes_are_not_charged_again_as_retained_bytes() {
+    let mut source = outer_header();
+    let payload = vec![0x5a_u8; 64 * 1024];
+    source.extend(make_block(0x42, "Contents/PMISemanticDataDB", &payload));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64_from_index(payload.len() / 2);
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let scan = container::scan(&ctx, root).unwrap();
+    let block = &scan.blocks[0];
+    assert_eq!(block.payload, payload);
+    assert_eq!(scan.block_view(block).unwrap().window(), payload.as_slice());
+}

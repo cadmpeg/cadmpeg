@@ -195,7 +195,7 @@ pub(crate) struct CacheCell {
 
 /// One named stream in a Compound File Binary container.
 #[derive(Debug, Clone)]
-pub(crate) struct CompoundStream {
+pub(crate) struct CompoundStream<'a> {
     /// Storage-qualified stream path and admitted source owner.
     pub(crate) path: cadmpeg_ir::StreamName,
     /// Unique directory entry identifier.
@@ -205,7 +205,7 @@ pub(crate) struct CompoundStream {
     /// Exact stream bytes.
     pub(crate) payload: Vec<u8>,
     /// Inflated semantic bytes when the stream uses the `__ZLB` wrapper.
-    pub(crate) decoded_payload: Option<Vec<u8>>,
+    pub(crate) decoded_payload: Option<&'a [u8]>,
     /// Every located and header-validated Parasolid stream carried here.
     pub(crate) ps_streams: Vec<crate::parasolid::ExtractedStream>,
     /// The legacy zlib probe stopped at its work limit in this stream.
@@ -226,7 +226,7 @@ pub(crate) struct ContainerScan<'a> {
     /// Cache-cell grid entries, in file order.
     pub(crate) cache_cells: Vec<CacheCell>,
     /// Named streams when the source uses the Compound File Binary envelope.
-    pub(crate) compound_streams: Vec<CompoundStream>,
+    pub(crate) compound_streams: Vec<CompoundStream<'a>>,
     pub(crate) compound_views: BTreeMap<u32, View<'a>>,
     /// `swSolidWorks` XML facts parsed once from the retained sections.
     pub(crate) solidworks: SolidWorksEnvelopeScan,
@@ -235,7 +235,7 @@ pub(crate) struct ContainerScan<'a> {
 #[derive(Clone, Copy)]
 pub(crate) enum Section<'a> {
     Block(&'a Block),
-    Compound(&'a CompoundStream),
+    Compound(&'a CompoundStream<'a>),
 }
 
 impl<'a> Section<'a> {
@@ -287,7 +287,7 @@ impl<'a> Section<'a> {
     pub(crate) fn payload(self) -> &'a [u8] {
         match self {
             Self::Block(block) => &block.payload,
-            Self::Compound(stream) => stream.decoded_payload.as_deref().unwrap_or(&stream.payload),
+            Self::Compound(stream) => stream.decoded_payload.unwrap_or(&stream.payload),
         }
     }
 
@@ -453,19 +453,19 @@ fn walk_native_markers<'a>(
 
 #[derive(Default)]
 struct CompoundStreams<'a> {
-    streams: Vec<CompoundStream>,
+    streams: Vec<CompoundStream<'a>>,
     views: BTreeMap<u32, View<'a>>,
 }
 
-fn compound_stream(
+fn compound_stream<'a>(
     ctx: &DecodeContext<'_>,
     path: String,
     directory_id: u32,
     start_sector: u32,
     bytes: Vec<u8>,
-    decoded_bytes: Option<Vec<u8>>,
-) -> Result<CompoundStream, CodecError> {
-    let semantic_payload = decoded_bytes.as_deref().unwrap_or(&bytes);
+    decoded_bytes: Option<&'a [u8]>,
+) -> Result<CompoundStream<'a>, CodecError> {
+    let semantic_payload = decoded_bytes.unwrap_or(&bytes);
     let extracted = crate::parasolid::extract_streams_with_offsets(semantic_payload, ctx)?;
     let path = match cadmpeg_ir::StreamName::try_from(path) {
         Ok(path) => path,
@@ -531,13 +531,7 @@ fn compound_streams<'a>(
         )?;
         let payload = view.window().to_vec();
         let decoded_view = decode_wrapped_payload(ctx, view)?;
-        if let Some(decoded) = decoded_view {
-            ctx.retain_bytes(
-                u64_from_index(decoded.window().len()),
-                "retain SolidWorks decoded CFB stream",
-            )?;
-        }
-        let decoded = decoded_view.map(|view| view.window().to_vec());
+        let decoded = decoded_view.map(|view| view.window());
         let semantic_view = decoded_view.unwrap_or(view);
         let path = entry.path().to_owned();
         let stream = compound_stream(
@@ -744,10 +738,6 @@ fn try_block<'a>(
     let Some(view) = expand_block(ctx, payload_view, &frame)? else {
         return Ok(None);
     };
-    ctx.retain_bytes(
-        u64_from_index(view.window().len()),
-        "SLDPRT owned block payload",
-    )?;
     let count = view
         .counted(u64_from_index(view.window().len()), 1)
         .ok_or_else(|| CodecError::malformed("SLDPRT block payload exceeds its source view"))?
