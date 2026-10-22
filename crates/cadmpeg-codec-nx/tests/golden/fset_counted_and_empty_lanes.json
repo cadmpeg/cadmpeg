@@ -671,8 +671,9 @@
       "retained_records": {
         "nx:source:evidence#0674497ed58e38077fe658cf8acdb04263b96182ee41fbb3f0c9d9f20bb6a3c7": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000002.raw_object_indices[3]",
@@ -680,8 +681,9 @@
         },
         "nx:source:evidence#1122e078e057bc0cb435b466de3445b6fe8d6bf8ee88797f21bd0c68d54d1c7c": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[3]",
@@ -689,8 +691,9 @@
         },
         "nx:source:evidence#2b01879b3869475c74ed2f24f33fe79088ca0feecdae3e92212224f4c3e1adb8": {
           "bytes": {
-            "data": "gSEBI0VniavN7wY=",
-            "retention": "inline"
+            "byte_len": 11,
+            "retention": "digest",
+            "sha256": "3577471a7217e8fde1557f2db265bab6b34e7b8e563b69fbed40af86e574abb7"
           },
           "offset": 0,
           "stream": "native.nx.class_definitions.nx:om-entry-0:class#51.registry_suffix",
@@ -698,8 +701,9 @@
         },
         "nx:source:evidence#33b19424214bffab107004b3bc0187284cc20d01af93d8aa72245609f9a8d815": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000001.raw_object_indices[2]",
@@ -707,8 +711,9 @@
         },
         "nx:source:evidence#37a024383220e3ff5349ff88a38005bcd3e604e5ea4c1eff22252f86d15e72db": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000002.raw_object_indices[2]",
@@ -716,8 +721,9 @@
         },
         "nx:source:evidence#3b0964c10b2e17814b4149cee5b681761888143498b91c4f6f5a39a72cd3f11d": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000001.raw_object_indices[1]",
@@ -725,8 +731,9 @@
         },
         "nx:source:evidence#406fcb07dfe6b564fe327d6e7e5706fd100841f6518976d15e9d2c23e8541da1": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[2]",
@@ -734,8 +741,9 @@
         },
         "nx:source:evidence#4c93e098bac789a7ffa8169e6b8c95db89a2db7249df21fc3720ee99872a68e9": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000001.raw_object_indices[0]",
@@ -743,8 +751,9 @@
         },
         "nx:source:evidence#8dbc4128376cf01bbc41910b91929aa6b8029ff3ccc39848a4b0cb08f132e331": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[1]",
@@ -752,8 +761,9 @@
         },
         "nx:source:evidence#9b6c77b9b619d3f687da327745542323799cbb8fd91cf257801f2757f2d09a1f": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000001.raw_object_indices[3]",
@@ -761,8 +771,9 @@
         },
         "nx:source:evidence#9b87cd084be27db5fdd839b8bc9b27668a6ec0a8a2967aae7972b8f5dbe90faf": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000000.raw_object_indices[0]",
@@ -770,8 +781,9 @@
         },
         "nx:source:evidence#aac03df6b6cdd7c03b743e73a21e3f95075c0479a7e9249e19cd248c38d8c472": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000002.raw_object_indices[1]",
@@ -779,8 +791,9 @@
         },
         "nx:source:evidence#b10617f752231a5efc4abb3e67c55a0172591ef51ecb6b0fad96d87db58959d8": {
           "bytes": {
-            "data": "AQI=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "a12871fee210fb8619291eaea194581cbd2531e4b23759d225f6806923f63222"
           },
           "offset": 0,
           "stream": "native.nx.field_definitions.nx:om-entry-0:field#117.registry_suffix",
@@ -788,8 +801,9 @@
         },
         "nx:source:evidence#ce52074cf79364679c8a2ab4ffeed1a7490c35a32d4b3264dfac5b342c1b2fec": {
           "bytes": {
-            "data": "/w==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_labels.nx:feature-history:operation-label#0000000000-0000000002.raw_object_indices[0]",
@@ -797,8 +811,9 @@
         },
         "nx:source:evidence#dae91d3d1b0134336e537b9bc0b3741ce336daa3c04dbb7d0f04554ded18b7ff": {
           "bytes": {
-            "data": "AA==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_terminal_frames.nx:feature-history:operation-terminal-frame#0000000000-0000000001.raw_local_ordinal",
@@ -806,8 +821,9 @@
         },
         "nx:source:evidence#fc18ea47478cc541780509115a0c91d4fd7c4e62321dad17406d8b322f4ff490": {
           "bytes": {
-            "data": "Aw==",
-            "retention": "inline"
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "084fed08b978af4d7d196a7446a86b58009e636b611db16211b65a9aadff29c5"
           },
           "offset": 0,
           "stream": "native.nx.feature_operation_terminal_frames.nx:feature-history:operation-terminal-frame#0000000000-0000000001.raw_object_index",

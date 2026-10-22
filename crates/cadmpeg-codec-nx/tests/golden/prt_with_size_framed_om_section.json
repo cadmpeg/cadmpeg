@@ -440,8 +440,9 @@
         },
         "nx:source:evidence#5a39d6eb805c19984ec786bfd09c4c6c4473c6c8a42be818979d27dbd32a9126": {
           "bytes": {
-            "data": "AQI=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "a12871fee210fb8619291eaea194581cbd2531e4b23759d225f6806923f63222"
           },
           "offset": 0,
           "stream": "native.nx.field_definitions.nx:om-entry-0:field#85.registry_suffix",
@@ -449,8 +450,9 @@
         },
         "nx:source:evidence#f167b04a9ab35583fa3a5481f679c4fc7d2b46492f3d296b63fda424cd2c1754": {
           "bytes": {
-            "data": "gSEBI0VniavN7wY=",
-            "retention": "inline"
+            "byte_len": 11,
+            "retention": "digest",
+            "sha256": "3577471a7217e8fde1557f2db265bab6b34e7b8e563b69fbed40af86e574abb7"
           },
           "offset": 0,
           "stream": "native.nx.class_definitions.nx:om-entry-0:class#19.registry_suffix",

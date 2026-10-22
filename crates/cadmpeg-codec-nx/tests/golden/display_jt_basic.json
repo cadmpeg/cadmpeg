@@ -481,8 +481,9 @@
         },
         "nx:source:evidence#ba73b4c49cf9cf9f0565365a23509fa318cde684c8f0ffd835de3e1d1fb36856": {
           "bytes": {
-            "data": "BgU=",
-            "retention": "inline"
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "678feb3f747a2d2f550e94426e93e05c4701e4ee09543ff89eb06986772c261c"
           },
           "offset": 0,
           "stream": "native.nx.display_jt_compressed_element_sequences.nx:display-jt:segment#0-row-0-0-inflated-sequence.tail",

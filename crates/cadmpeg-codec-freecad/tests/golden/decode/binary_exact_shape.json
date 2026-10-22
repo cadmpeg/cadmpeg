@@ -1121,7 +1121,7 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "914e0c86caef27154be5df6027a0b8ddf65be4740373562d43b04ca5166a68a7",
+          "applications": "54241872de667e861ebc9155f900a37dd8b7a622d2ece6be1a4745dda3886798",
           "carrier_census": "b4fc9a4c2f317e87e6f18c5c4ab2cdef86f68a5a0bacfc94222162c048b0fea4",
           "design_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "document": "7cfb1eb06c9f334c540c5a686f2da950a097b17e083b388910a4efd0b2f4d8e8",
@@ -1370,7 +1370,7 @@
   "source_fidelity": {
     "annotations": {},
     "metadata": {
-      "document_local_sha256": "9c2d5b6c3b9320be92f38c48dfa90634de5bd52514fc233a69c9a4da5556f666",
+      "document_local_sha256": "1d20fea395f2c9166aa19c620d3d4e87cbd0ccd86f365957e0ee4647ea37a423",
       "fcstd.archive_entry_count": "2",
       "fcstd.object_count": "2",
       "fcstd.physical_archive_bytes": "2400",
