@@ -67,6 +67,8 @@ pub(crate) enum ActiveCarrierState<'a> {
 pub(crate) struct DecodedKernelCarrier {
     pub(crate) header: BinaryHeader,
     pub(crate) brep: AsmBrep,
+    /// Framed records other than the `asmheader` record.
+    pub(crate) model_records: usize,
 }
 
 fn parse_kernel_header(family: KernelFamily, bytes: &[u8]) -> Result<BinaryHeader, String> {
@@ -138,6 +140,10 @@ pub(crate) fn decode_kernel_carrier(
     Ok(DecodedKernelCarrier {
         header: header.clone(),
         brep,
+        model_records: records
+            .iter()
+            .filter(|record| record.head() != "asmheader")
+            .count(),
     })
 }
 
@@ -434,6 +440,7 @@ mod tests {
         );
         assert!(decoded.brep.bodies.is_empty());
         assert!(decoded.brep.unknowns.is_empty());
+        assert_eq!(decoded.model_records, 0);
     }
 
     #[test]
