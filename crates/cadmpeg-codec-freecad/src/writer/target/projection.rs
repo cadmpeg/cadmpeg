@@ -9,32 +9,22 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{ArenaName, CadIr};
 use std::collections::BTreeMap;
 
-mod payloads;
-
 pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecError> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return decline("there is no typed FreeCAD graph");
     };
     let objects = namespace.arena_as::<native::ObjectRecord>("objects")?;
     let mut properties = namespace.arena_as::<native::PropertyRecord>("properties")?;
-    let payloads = namespace.arena_as::<brep::ShapePayloadRecord>("shape_payloads")?;
-    let products = namespace.arena_as::<native::ProductNodeRecord>("product_nodes")?;
-    let mut maps = namespace.arena_as::<native::element_map::ElementMapRecord>("element_maps")?;
-    let tables = namespace.arena_as::<native::StringTableRecord>("string_tables")?;
-    let entries = namespace.arena_as::<native::EntryRecord>("entries")?;
     // Parsers that operate on XML receive a temporary serialization of CURRENT
     // typed values. Their native evidence fields never become a content source.
     for property in &mut properties {
-        let references =
-            payloads::entries(property, &payloads, &maps, &tables, &products, &entries);
-        let Some(xml) = super::super::xml::native_projection(property, &references)? else {
-            return decline(&format!(
-                "the typed property {} has no independent projection",
-                property.id
-            ));
+        let Some(xml) = super::super::xml::native(property)? else {
+            return decline("the typed property has no independent projection");
         };
         property.xml = native::RetainedXml::from_source(&xml, 0)?;
     }
+    let payloads = namespace.arena_as::<brep::ShapePayloadRecord>("shape_payloads")?;
+    let products = namespace.arena_as::<native::ProductNodeRecord>("product_nodes")?;
     let joints = namespace.arena_as::<native::joint::JointRecord>("joints")?;
     let drawings = namespace.arena_as::<native::DrawingRecord>("drawings")?;
     let annotations = namespace.arena_as::<native::SemanticAnnotationRecord>("annotations")?;
@@ -43,7 +33,6 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         .first()
         .and_then(|document| document.program_version.as_deref());
     let mut projected = CadIr::empty();
-    projected.scope = ir.scope;
     projected.native.clone_from(&ir.native);
     projected.source.clone_from(&ir.source);
     let mut curves = brep::transfer_text_curves(ctx, &payloads, &properties)?;
@@ -59,6 +48,7 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         .add_procedural_surfaces(surfaces.procedural)?
         .map_err(CodecError::malformed)?;
     let mut losses = Vec::new();
+    let mut maps = namespace.arena_as::<native::element_map::ElementMapRecord>("element_maps")?;
     let occurrences = crate::topology_transfer::transfer(
         ctx,
         &mut projected,
@@ -119,9 +109,6 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
     }
     crate::writer::body_styles::apply(&mut projected, &payloads, &properties)?;
     crate::attributes::transfer(&mut projected, &objects, &properties)?;
-    // Decoded documents are finalized before sealing. Match their canonical
-    // identity order before an exact comparison of the reconstructed arenas.
-    projected.finalize();
     let current = serde_json::to_value(&ir.model).map_err(CodecError::malformed)?;
     let candidate = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
     for arena in ArenaName::ALL {
