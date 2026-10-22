@@ -289,6 +289,9 @@ pub(crate) enum StepLossCode {
     /// Helix definitions without a solved carrier were written as fitted
     /// cubic B-splines.
     HelixFittedToBspline,
+    /// Procedural definitions without another STEP carrier were written as
+    /// sampled cubic B-splines.
+    ProceduralSampledToBspline,
     /// A helix definition without a solved carrier had no B-spline within the
     /// linear tolerance, so its carrier was not written.
     HelixFitFailed,
@@ -498,6 +501,7 @@ impl StepLossCode {
         Self::SourceAttributeNotWritten,
         Self::ProceduralReducedToCarrier,
         Self::HelixFittedToBspline,
+        Self::ProceduralSampledToBspline,
         Self::HelixFitFailed,
         Self::ProceduralDefinitionNotWritten,
         Self::SourceNativeRecordOmitted,
@@ -684,6 +688,7 @@ impl StepLossCode {
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
             Self::HelixFittedToBspline => "geometry.helix-fitted-to-bspline",
+            Self::ProceduralSampledToBspline => "geometry.procedural-sampled-to-bspline",
             Self::HelixFitFailed => "geometry.helix-fit-failed",
             Self::ProceduralDefinitionNotWritten => "geometry.procedural-definition-not-written",
             Self::SourceNativeRecordOmitted => "native.source-record-omitted",
@@ -771,6 +776,7 @@ impl StepLossCode {
             | Self::SourceAttributeNotWritten
             | Self::ProceduralReducedToCarrier
             | Self::HelixFittedToBspline
+            | Self::ProceduralSampledToBspline
             | Self::SourceNativeRecordOmitted
             | Self::NonManifoldEdgeSplit => Severity::Info,
             _ => Severity::Warning,
@@ -940,9 +946,9 @@ impl StepLossCode {
             Self::AppearanceReducedToBaseColor | Self::AppearanceBindingMetadataReduced => {
                 LossTaxonomy::AppearanceReduced
             }
-            Self::ProceduralReducedToCarrier | Self::HelixFittedToBspline => {
-                LossTaxonomy::ProceduralReduced
-            }
+            Self::ProceduralReducedToCarrier
+            | Self::HelixFittedToBspline
+            | Self::ProceduralSampledToBspline => LossTaxonomy::ProceduralReduced,
         }
     }
 
@@ -1104,6 +1110,7 @@ mod tests {
                 "attribute.source-record-not-written",
                 "geometry.procedural-reduced-to-carrier",
                 "geometry.helix-fitted-to-bspline",
+                "geometry.procedural-sampled-to-bspline",
                 "geometry.helix-fit-failed",
                 "geometry.procedural-definition-not-written",
                 "native.source-record-omitted",
