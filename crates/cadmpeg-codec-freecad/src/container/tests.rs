@@ -538,6 +538,7 @@ fn producer_version_metadata_does_not_refuse_the_document() {
                 .note("")
                 .code));
         drop(scan);
+        drop(ctx);
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
