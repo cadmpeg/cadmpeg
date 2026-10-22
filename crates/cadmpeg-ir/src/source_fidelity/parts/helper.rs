@@ -19,7 +19,7 @@ pub use parser::ParserPartOutput;
 
 use super::{PartLevel, PartRecord, PartSpec, PartState};
 use crate::codec::DecodeLossCode;
-use crate::document::Model;
+use crate::document::{ArenaClass, ArenaClasses, Model};
 use crate::draft::ArenaEntity;
 use crate::ids::UnknownId;
 use crate::native::{Native, NativeConvertError, NativeRecord};
@@ -392,6 +392,7 @@ impl DecodeParts for DecodeContext<'_> {
                     .transpose()?
                     .into_iter()
                     .collect::<Vec<_>>();
+                let untyped = given_up_classes(&output.model, &links);
                 let stub = NativeUnknownRecord {
                     id: id.clone(),
                     links,
@@ -420,7 +421,8 @@ impl DecodeParts for DecodeContext<'_> {
                     capture.stream().to_owned(),
                     capture.offset(),
                     RetainedBytes::Inline { data: bytes },
-                )?;
+                )?
+                .with_untyped(untyped);
                 replacement
                     .fidelity
                     .insert_retained_record(id.clone(), retained)?;
@@ -502,6 +504,19 @@ impl SourceFidelity {
         }
         self.append(staged)
     }
+}
+
+/// The §3.1 classes of a given-up part's bytes: the classes of the records
+/// its stub links, or both classes when no linked record has a class.
+fn given_up_classes(model: &Model, links: &[crate::ids::Identity]) -> ArenaClasses {
+    let mut classes = ArenaClasses::new();
+    for link in links {
+        classes.extend(model.provenance_classes(link.as_str()));
+    }
+    if classes.is_empty() {
+        classes.extend([ArenaClass::Model, ArenaClass::Design]);
+    }
+    classes
 }
 
 pub(super) fn part_id(

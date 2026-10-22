@@ -188,10 +188,18 @@ impl CadIr {
 
     /// Union of the owner's own neutral class and exact reverse native links.
     pub fn provenance_classes(&self, owner: &str) -> ArenaClasses {
+        self.model.provenance_classes(owner)
+    }
+}
+
+impl crate::document::Model {
+    /// Union of the owner's own neutral class and exact reverse native links
+    /// among this model's records.
+    pub(crate) fn provenance_classes(&self, owner: &str) -> ArenaClasses {
         let mut classes = ArenaClasses::new();
         macro_rules! collect {
             ($($field:ident: $ty:ty, $class:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-                $(if self.model.$field.iter().any(|record| {
+                $(if self.$field.iter().any(|record| {
                     record.identity() == owner || record.native_reference() == Some(owner)
                 }) {
                     classes.insert(crate::document::arena_class!($class));
