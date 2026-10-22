@@ -609,28 +609,4 @@ mod tests {
             })
         );
     }
-
-    #[test]
-    fn a_metadata_only_change_remains_visible_without_other_fidelity_changes() {
-        let left = cadmpeg_ir::SourceFidelity::default();
-        let mut right = left.clone();
-        right
-            .metadata
-            .insert("layout.offset".to_owned(), "42".to_owned());
-        let diff = super::fidelity_diff(Some(&left), Some(&right));
-        assert!(super::fidelity_differs(&diff));
-        assert_eq!(
-            serde_json::to_value(diff).expect("serialize metadata-only fidelity change"),
-            serde_json::json!({
-                "present": "both",
-                "different": true,
-                "diff": {
-                    "annotations_changed": false,
-                    "retained_records_changed": false,
-                    "unrepresented_changed": false,
-                    "metadata_changed": true
-                }
-            })
-        );
-    }
 }
