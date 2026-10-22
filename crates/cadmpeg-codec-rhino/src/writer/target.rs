@@ -63,7 +63,6 @@ pub(crate) fn plan(
         });
     let model = &input.ir.model;
     for (name, count, code) in [
-        ("subds", model.subds.len(), RhinoLossCode::WriterSubdOmitted),
         (
             "procedural_surfaces",
             model.procedural_surfaces.len(),
@@ -264,7 +263,8 @@ pub(crate) fn plan(
              so no other target avoids it",
         ));
     }
-    let coverage = ArenaCoverage::Declared(coverage::verified(&ctx, input.ir, &bytes));
+    let coverage =
+        ArenaCoverage::Declared(coverage::verified(&ctx, input.ir, &bytes, outcome.subds));
     ctx.finish_session()?;
     Ok(ExportBody {
         native_dispositions: super::native_dispositions(input.ir)?,
@@ -287,7 +287,7 @@ pub(crate) fn plan(
 /// complete preservation of an arena. The verifier promotes populated arenas
 /// only after comparing their complete records under one global identity map.
 ///
-/// `subds`, procedural surfaces and curves, features, configurations, parameters,
+/// Procedural surfaces and curves, features, configurations, parameters,
 /// sketches, sketch entities and constraints, appearances, appearance bindings
 /// and attributes are `Dropped` with a per-arena loss.
 /// Topology is written as Brep and point objects. Unsupported bodies and free

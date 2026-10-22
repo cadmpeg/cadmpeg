@@ -90,6 +90,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
                 input.ir,
                 &value.annotations,
                 &records,
+                value,
                 &mut bytes,
             )?
         }
@@ -97,6 +98,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
             input.ir,
             &Annotations::default(),
             &[],
+            None,
             SemanticFidelity::NotConsumed,
             &mut bytes,
         )?,
@@ -104,6 +106,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
             input.ir,
             &Annotations::default(),
             &[],
+            None,
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
             } else {

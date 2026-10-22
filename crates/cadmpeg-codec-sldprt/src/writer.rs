@@ -74,9 +74,18 @@ pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
+    source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
-    write_semantic_at(ir, annotations, retained_records, None, false, None, writer)
+    write_semantic_at(
+        ir,
+        annotations,
+        retained_records,
+        source_fidelity.map_or(ClassLayouts::Unavailable, ClassLayouts::Source),
+        None,
+        None,
+        writer,
+    )
 }
 
 /// Author the selected version envelope without consuming retained bytes.
@@ -84,11 +93,12 @@ pub(super) fn write_semantic_at(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
+    class_layouts: ClassLayouts<'_>,
     sw_version: Option<&str>,
-    prepared_design: bool,
     prepared_native: Option<SldprtNative>,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
+    let prepared_design = matches!(class_layouts, ClassLayouts::Authored);
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =
         DecodeContext::from_root_bytes(&[], &digest_arena, &DecodePolicy::desktop())?;
@@ -215,9 +225,11 @@ pub(super) fn write_semantic_at(
             parasolid_stream(&body, schema)?,
         )]
     };
-    if !retain_native_brep && ir.scope.design {
-        remap_written_geometry_references(ir, &partition_sections, &mut native)?;
-    }
+    let written_class_sources = if !retain_native_brep && ir.scope.design {
+        remap_written_geometry_references(ir, &partition_sections, &mut native)?
+    } else {
+        crate::resolved_features::class_sources::ClassSources::default()
+    };
     let generated_partition_sections = partition_sections
         .iter()
         .map(|(section, _)| section.clone())
@@ -301,7 +313,13 @@ pub(super) fn write_semantic_at(
             .map_or(&[][..], |native| native.feature_histories.as_slice());
         sections.push((
             section,
-            resolved_feature_payload(lane, histories, &feature_input_renames)?,
+            resolved_feature_payload(
+                lane,
+                histories,
+                &feature_input_renames,
+                class_layouts,
+                &written_class_sources,
+            )?,
         ));
     }
     sections.extend(previews::sections(ir)?);
@@ -886,7 +904,7 @@ fn remap_written_geometry_references(
     ir: &CadIr,
     partitions: &[(String, Vec<u8>)],
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<(), CodecError> {
+) -> Result<crate::resolved_features::class_sources::ClassSources, CodecError> {
     let active = ir
         .model
         .configurations
@@ -974,7 +992,7 @@ fn remap_written_geometry_references(
             .evaluation
             .set_definition(serde_json::from_value(value).map_err(CodecError::malformed)?);
     }
-    crate::history::write::features::synthesize_neutral_features(
+    let (_, class_sources) = crate::history::write::features::synthesize_neutral_features(
         &model,
         &model.parameters,
         &model.bodies,
@@ -984,7 +1002,7 @@ fn remap_written_geometry_references(
     projected.model = model;
     crate::history::write::parameters::synchronize_parameter_records(&projected, native)?;
 
-    Ok(())
+    Ok(class_sources)
 }
 
 fn canonicalize_resolved_selection_spelling(value: &mut serde_json::Value) {
@@ -1630,6 +1648,27 @@ fn patch_active_configuration_xml(
     Ok(Some(output.into_bytes()))
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum ClassLayouts<'a> {
+    Source(&'a cadmpeg_ir::SourceFidelity),
+    Authored,
+    Unavailable,
+}
+
+impl ClassLayouts<'_> {
+    fn has_class(self, class: &crate::records::FeatureInputClass) -> bool {
+        match self {
+            Self::Authored => true,
+            Self::Unavailable => false,
+            Self::Source(fidelity) => fidelity
+                .record_layout()
+                .get(&class.id)
+                .and_then(|layout| layout.pointers().get("offset"))
+                .is_some(),
+        }
+    }
+}
+
 /// The bytes written for one feature-input lane.
 ///
 /// Every object-name record states the payload bytes at its own offset, so the
@@ -1637,14 +1676,19 @@ fn patch_active_configuration_xml(
 /// changes that `synchronize_feature_input_names` derived from the neutral
 /// feature names; the splice loop at the end of this function writes each one
 /// into the emitted payload.
+
 fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
     histories: &[crate::records::FeatureHistory],
     renames: &[crate::history::write::features::FeatureInputRename],
+    class_layouts: ClassLayouts<'_>,
+    written_classes: &crate::resolved_features::class_sources::ClassSources,
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
     if lane.names.iter().any(|name| name.offset.is_none())
-        || lane.classes.iter().any(|class| class.offset.is_none())
+        || lane.classes.iter().any(|class| {
+            !class_layouts.has_class(class) && written_classes.position(class).is_none()
+        })
         || lane
             .sketch_entities
             .iter()
@@ -1662,7 +1706,8 @@ fn resolved_feature_payload(
         &lane.id,
         lane.configuration.clone(),
         lane.native_payload.to_vec(),
-    )?;
+    )?
+    .0;
     let expected_classes = &expected_lane.classes;
     if &lane.classes != expected_classes {
         return Err(CodecError::UnsupportedContent(format!(

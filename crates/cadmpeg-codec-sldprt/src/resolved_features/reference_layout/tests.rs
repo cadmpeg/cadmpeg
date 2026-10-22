@@ -4,6 +4,7 @@
 use super::capture;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::body_sources::BodySources;
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::SourceFidelity;
 
@@ -41,8 +42,10 @@ fn lane(ctx: &DecodeContext<'_>, source: View<'_>) -> FeatureInputLane {
     let id = "lane";
     let names = super::super::names::object_names(ctx, source.window(), id).unwrap();
     let classes = super::super::names::class_declarations(source.window(), id).unwrap();
+    let class_sources = ClassSources::from_source(ctx, source, &classes).unwrap();
     let scalars = super::super::scalars::named_scalars(source.window(), id, &names).unwrap();
-    let references = super::super::markers::reference_cells(&scalars.records, &classes).unwrap();
+    let references =
+        super::super::markers::reference_cells(&class_sources, &scalars.records, &classes).unwrap();
     FeatureInputLane {
         id: id.into(),
         configuration: None,
@@ -87,7 +90,7 @@ fn assert_actual_cell_layout(compact: bool) {
     )
     .unwrap();
     let mut fidelity = SourceFidelity::default();
-    crate::pmi::layout::install(&ctx, sources.into_pointers(), &mut fidelity).unwrap();
+    crate::pmi::layout::install(&ctx, sources.into_pointers(&ctx).unwrap(), &mut fidelity).unwrap();
     for (ordinal, (reference, position)) in lane.references.iter().zip(old_positions).enumerate() {
         assert_eq!(reference.object_index, [7, 9][ordinal]);
         let layout = &fidelity.record_layout()[&reference.id];

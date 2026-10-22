@@ -20,7 +20,7 @@ fn compact_cycle_projection_orders_closed_cycle() {
         parent: lane.id.clone(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(0),
+
         name: "sgLineHandle".into(),
     });
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -35,7 +35,10 @@ fn compact_cycle_projection_orders_closed_cycle() {
     let mut entities = Vec::new();
     let mut losses = Vec::new();
     super::project_compact_sketch_profiles(
-        &ctx,
+        (
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &ctx,
+        ),
         &mut features,
         &mut sketches,
         &mut entities,

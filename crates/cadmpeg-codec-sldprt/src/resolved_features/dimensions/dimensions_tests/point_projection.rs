@@ -57,7 +57,6 @@ fn explicit_point_circle_input() -> (
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(10),
             name: "sgEntHandle".into(),
         }],
         names: Vec::new(),
@@ -140,6 +139,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     let (feature, parameter, lane, mut entities) = explicit_point_circle_input();
 
     project_relation_point_dimensioned_circles(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
         &mut entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -159,6 +159,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     classless_lane.references[0].class_ref = None;
     let mut classless_entities = vec![entities[0].clone()];
     project_relation_point_dimensioned_circles(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&classless_lane)),
         &mut classless_entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -182,6 +183,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     object_index_lane.relation_instances[0].operands[0].entity_index = 1;
     let mut object_index_entities = vec![entities[0].clone()];
     project_relation_point_dimensioned_circles(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&object_index_lane)),
         &mut object_index_entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -201,6 +203,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
 fn point_dimension_projection_adds_the_explicit_point_circle() {
     let (feature, parameter, lane, mut entities) = explicit_point_circle_input();
     project_relation_point_dimensioned_circles(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
         &mut entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),

@@ -2,9 +2,11 @@
 
 use super::super::generated_surface_identities;
 use crate::records::{FeatureInputClass, FeatureInputLane};
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn captured_identities(
+    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     source: cadmpeg_core::decode::View<'_>,
     lane: &FeatureInputLane,
@@ -13,7 +15,8 @@ fn captured_identities(
     cadmpeg_ir::SourceFidelity,
 ) {
     let parsed =
-        generated_surface_identities(&lane.id, &lane.classes, &lane.native_payload).unwrap();
+        generated_surface_identities(class_sources, &lane.id, &lane.classes, &lane.native_payload)
+            .unwrap();
     let mut staged = lane.clone();
     staged.generated_surface_identities = parsed.records;
     let mut sources = crate::resolved_features::body_sources::BodySources::from_views([(
@@ -24,7 +27,7 @@ fn captured_identities(
     crate::resolved_features::generated_surface_layout::capture(ctx, &staged, &mut sources)
         .unwrap();
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    crate::pmi::layout::install(ctx, sources.into_pointers(), &mut fidelity).unwrap();
+    crate::pmi::layout::install(ctx, sources.into_pointers(ctx).unwrap(), &mut fidelity).unwrap();
     (staged.generated_surface_identities, fidelity)
 }
 
@@ -56,7 +59,6 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(0),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -74,7 +76,12 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
     let policy = DecodePolicy::service();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
-    let (identities, fidelity) = captured_identities(&ctx, root, &lane);
+    let (identities, fidelity) = captured_identities(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &ctx,
+        root,
+        &lane,
+    );
     assert_eq!(identities.len(), 1);
     let identity = &identities[0];
     assert_eq!(
@@ -124,7 +131,6 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(0),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -142,7 +148,12 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
     let policy = DecodePolicy::service();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
-    let (identities, fidelity) = captured_identities(&ctx, root, &lane);
+    let (identities, fidelity) = captured_identities(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &ctx,
+        root,
+        &lane,
+    );
     assert_eq!(identities.len(), 2048);
     for (index, identity) in identities.iter().enumerate() {
         assert_eq!(
@@ -196,7 +207,6 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
                 id: "surface-class".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: Some(0),
                 name: class_name.into(),
             },
             FeatureInputClass {
@@ -205,7 +215,6 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
                 id: "projection-class".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: Some(4096),
                 name: "moPLineProjIdRep_c".into(),
             },
         ],
@@ -226,7 +235,10 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
     let mut cache = None;
     for _ in 0..32 {
         let selections = operation_surface_selection_candidates(
-            &ctx,
+            (
+                &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+                &ctx,
+            ),
             FeatureClass::SplitFace,
             &lane,
             0,

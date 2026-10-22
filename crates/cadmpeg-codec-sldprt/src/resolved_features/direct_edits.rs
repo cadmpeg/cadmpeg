@@ -4,6 +4,7 @@ use super::axes::{compact_line_reference_directions, declared_line_reference_dir
 use super::scalars::FeatureObjectNames;
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{FeatureDirection3, FiniteVector3};
@@ -168,6 +169,7 @@ fn move_body_translation_record_with_read<'a>(
 
 /// Add translation laws carried by Move Face direction-spec children.
 pub(crate) fn enrich_history_move_face_translations(
+    class_sources: &ClassSources,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
@@ -216,14 +218,14 @@ pub(crate) fn enrich_history_move_face_translations(
                 .iter()
                 .filter(|class| {
                     class.name == "moDirectionSpec_c"
-                        && class.offset.is_some_and(|position| {
+                        && class_sources.position(class).is_some_and(|position| {
                             (u64_from_index(start)..u64_from_index(end)).contains(&position)
                         })
                 })
                 .count();
             let mut line_refs = lane.classes.iter().filter(|class| {
                 class.name == "moLineRef_w"
-                    && class.offset.is_some_and(|position| {
+                    && class_sources.position(class).is_some_and(|position| {
                         (u64_from_index(start)..u64_from_index(end)).contains(&position)
                     })
             });
@@ -238,10 +240,17 @@ pub(crate) fn enrich_history_move_face_translations(
             let Some(line_ref) = line_ref else {
                 continue;
             };
-            let mut directions =
-                declared_line_reference_directions(&lane.native_payload, line_ref.offset, end);
+            let mut directions = declared_line_reference_directions(
+                &lane.native_payload,
+                class_sources.position(line_ref),
+                end,
+            );
             let excluded_handles = std::iter::once(line_ref)
-                .filter_map(|class| class.offset.and_then(|offset| usize::try_from(offset).ok()))
+                .filter_map(|class| {
+                    class_sources
+                        .position(class)
+                        .and_then(|offset| usize::try_from(offset).ok())
+                })
                 .flat_map(|offset| [offset + 136, offset + 144])
                 .collect::<Vec<_>>();
             let compact = compact_line_reference_directions(
@@ -300,6 +309,7 @@ pub(crate) fn enrich_history_move_face_translations(
 
 /// Add non-copy translations carried by Move/Copy Body data children.
 pub(crate) fn enrich_history_move_body_translations(
+    class_sources: &ClassSources,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
@@ -337,15 +347,18 @@ pub(crate) fn enrich_history_move_body_translations(
             };
             let mut data_classes = lane.classes.iter().filter(|class| {
                 class.name == "moMoveCopyBodyData_c"
-                    && class.offset.is_some_and(|position| {
+                    && class_sources.position(class).is_some_and(|position| {
                         (u64_from_index(start)..u64_from_index(end)).contains(&position)
                     })
             });
             let candidate = match (data_classes.next(), data_classes.next()) {
-                (Some(class), None) => {
-                    move_body_translation_record(&lane.native_payload, start, end, class.offset)
-                        .map(|record| record.translation_m)
-                }
+                (Some(class), None) => move_body_translation_record(
+                    &lane.native_payload,
+                    start,
+                    end,
+                    class_sources.position(class),
+                )
+                .map(|record| record.translation_m),
                 _ => None,
             };
             candidates
@@ -387,7 +400,6 @@ mod tests {
         FeatureInputScalarRole,
     };
 
-    use cadmpeg_core::decode::u64_from_index;
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::{
         features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation, FiniteVector3},
@@ -399,7 +411,11 @@ mod tests {
         histories: &mut [FeatureHistory],
         lanes: &[FeatureInputLane],
     ) {
-        enrich_history_move_face_translations(histories, lanes);
+        enrich_history_move_face_translations(
+            &crate::test_support::native::class_sources(lanes),
+            histories,
+            lanes,
+        );
     }
 
     fn move_face_history() -> FeatureHistory {
@@ -472,11 +488,15 @@ mod tests {
             parent: "lane".into(),
             ordinal: 1,
             sequence: 1,
-            offset: Some(u64_from_index(selection_offset)),
+
             name: "moMoveCopyBodyData_c".into(),
         });
 
-        enrich_history_move_body_translations(&mut histories, std::slice::from_ref(&lane));
+        enrich_history_move_body_translations(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &mut histories,
+            std::slice::from_ref(&lane),
+        );
         assert!(histories[0].features[0]
             .properties
             .contains_key("Translation"));
@@ -504,7 +524,7 @@ mod tests {
                 parent: "lane".into(),
                 ordinal: u32::try_from(index).expect("test index fits u32"),
                 sequence: u32::try_from(index).expect("test index fits u32"),
-                offset: Some(32 + u64_from_index(index)),
+
                 name: "moDirectionSpec_c".into(),
             })
             .collect::<Vec<_>>();
@@ -514,7 +534,7 @@ mod tests {
             parent: "lane".into(),
             ordinal: u32::try_from(direction_specs).expect("test direction spec count fits u32"),
             sequence: u32::try_from(direction_specs).expect("test direction spec count fits u32"),
-            offset: Some(80),
+
             name: "moLineRef_w".into(),
         });
         FeatureInputLane {
@@ -574,6 +594,7 @@ mod tests {
         let lane = line_reference_lane(&[Vector3::new(0.0, -1.0, 0.0)], 1);
         enrich_history_move_face_translations_test(&mut histories, std::slice::from_ref(&lane));
         crate::resolved_features::parameters::enrich_history_parameters(
+            &crate::test_support::native::class_sources(&[&lane]),
             &mut histories,
             [&lane],
             true,

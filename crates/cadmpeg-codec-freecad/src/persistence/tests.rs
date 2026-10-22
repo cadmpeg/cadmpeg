@@ -809,6 +809,7 @@ fn property_value_xml_above_the_copy_bound_is_unreadable_with_a_loss() {
         &mut properties,
         &mut property_sources,
         &mut losses,
+        None,
     )
     .expect("a value copy above the bound skips the values");
     assert!(matches!(

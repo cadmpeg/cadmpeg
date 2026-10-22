@@ -1,5 +1,6 @@
 //! Tests for the `bindings` module.
 
+use crate::resolved_features::class_sources::ClassSources;
 use crate::test_support::dimensions::source_value;
 
 use super::super::{LEGACY_SKETCH_MARKER, SKETCH_MARKER};
@@ -27,11 +28,17 @@ use cadmpeg_ir::topology::{Face, Sense};
 use std::collections::{BTreeMap, HashSet};
 
 fn bind_pattern_inputs_test(
+    _class_sources: &ClassSources,
     features: &mut [Feature],
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    bind_pattern_inputs(features, histories, lanes)
+    bind_pattern_inputs(
+        &crate::test_support::native::class_sources(lanes),
+        features,
+        histories,
+        lanes,
+    )
 }
 
 #[test]
@@ -534,6 +541,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     ];
 
     bind_pattern_inputs_test(
+        &crate::test_support::native::class_sources(std::slice::from_mut(&mut lane)),
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
@@ -673,7 +681,13 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         native_ref: Some("pattern-native".into()),
     }];
 
-    bind_pattern_inputs_test(&mut features, std::slice::from_ref(&history), &[lane]).unwrap();
+    bind_pattern_inputs_test(
+        &crate::test_support::native::class_sources(&[&lane]),
+        &mut features,
+        std::slice::from_ref(&history),
+        &[lane],
+    )
+    .unwrap();
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -868,7 +882,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         parent: "sldprt:feature-input:config-objects#1".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(offset),
+
         name: name.into(),
     };
     let name = |index, value: &str| FeatureInputName {

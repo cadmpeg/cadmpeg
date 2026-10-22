@@ -454,7 +454,6 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
             id: "component-edge".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(cadmpeg_core::decode::u64_from_index(class_offset)),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -469,9 +468,14 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
         sketch_entities: Vec::new(),
     };
 
-    let references =
-        cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len())
-            .unwrap();
+    let references = cosmetic_thread_component_references(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &references_ctx,
+        &lane,
+        0,
+        lane.native_payload.len(),
+    )
+    .unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].0, marker);
     assert_eq!(
@@ -549,7 +553,6 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
                 id: "component-edge".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: Some(cadmpeg_core::decode::u64_from_index(component_edge_offset)),
                 name: component_edge_name.into(),
             },
             FeatureInputClass {
@@ -559,7 +562,6 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
                 id: "edge-ref".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: Some(cadmpeg_core::decode::u64_from_index(edge_ref_offset)),
                 name: edge_ref_name.into(),
             },
         ],
@@ -575,9 +577,14 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
         sketch_entities: Vec::new(),
     };
 
-    let references =
-        cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len())
-            .unwrap();
+    let references = cosmetic_thread_component_references(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &references_ctx,
+        &lane,
+        0,
+        lane.native_payload.len(),
+    )
+    .unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].0, marker);
     assert_eq!(
@@ -645,9 +652,14 @@ fn cosmetic_thread_reads_repeated_component_edge_reference_through_edge_ref_chil
         sketch_entities: Vec::new(),
     };
 
-    let references =
-        cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len())
-            .unwrap();
+    let references = cosmetic_thread_component_references(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &references_ctx,
+        &lane,
+        0,
+        lane.native_payload.len(),
+    )
+    .unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].0, marker);
     assert_eq!(

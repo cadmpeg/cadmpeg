@@ -36,8 +36,33 @@ pub(crate) fn prepare(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
     scan: &crate::container::Scan<'_>,
+    gui_source: Option<&crate::gui::source::Source<'_>>,
 ) -> Result<Admission, CodecError> {
-    if scan.data.contains_key("GuiDocument.xml") || pending_grammar(&scan.document_xml) {
+    let gui_framing = if let Some(actual) = scan.data.get("GuiDocument.xml") {
+        let Some(source) = gui_source else {
+            return Ok(Admission::Pending);
+        };
+        if ctx.capture_part_extent(source.view())? != ctx.capture_part_extent(*actual)? {
+            return Err(CodecError::malformed(
+                "GUI XML framing is not from the selected actual member",
+            ));
+        }
+        let (Some(document), Some(framing)) = (source.document(), source.framing()) else {
+            return Ok(Admission::Pending);
+        };
+        if !framing.supported() || pending_grammar(document) {
+            return Ok(Admission::Pending);
+        }
+        Some(framing)
+    } else {
+        if gui_source.is_some() {
+            return Err(CodecError::malformed(
+                "GUI XML framing has no selected actual member",
+            ));
+        }
+        None
+    };
+    if pending_grammar(&scan.document_xml) {
         return Ok(Admission::Pending);
     }
     let mut actual = ctx.source_streams()?;
@@ -72,6 +97,14 @@ pub(crate) fn prepare(
     }
     for view in xml.insignificant() {
         inventory.range(ctx, *view, true)?;
+    }
+    if let Some(gui) = gui_framing {
+        for view in gui.framing() {
+            inventory.range(ctx, *view, false)?;
+        }
+        for view in gui.insignificant() {
+            inventory.range(ctx, *view, true)?;
+        }
     }
     Ok(Admission::Complete(inventory))
 }
@@ -228,6 +261,11 @@ impl Inventory {
                 .offset()
                 .checked_add(part.byte_len())
                 .ok_or_else(|| CodecError::malformed("given-up source extent overflows"))?;
+            // A failed empty member still has a real part/stub, but contains
+            // no bytes to subtract from semantic reads or classify as B1.
+            if part.byte_len() == 0 {
+                continue;
+            }
             let ranges = match given_up.entry(part.stream()) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => {

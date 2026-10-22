@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::decode::append_design_losses;
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;
@@ -21,6 +22,8 @@ use std::collections::BTreeMap;
 
 #[test]
 fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let feature = |id: &str, ordinal, definition| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
@@ -86,6 +89,7 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -100,6 +104,8 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
 
 #[test]
 fn design_completeness_audits_direct_body_and_shape_families() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let other_body = BodyId::mint("test:model:entity#other-body").expect("identity grammar");
@@ -238,6 +244,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -252,6 +259,8 @@ fn design_completeness_audits_direct_body_and_shape_families() {
 
 #[test]
 fn design_completeness_audits_typed_construction_families() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
@@ -371,6 +380,7 @@ fn design_completeness_audits_typed_construction_families() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -385,6 +395,8 @@ fn design_completeness_audits_typed_construction_families() {
 
 #[test]
 fn binder_completeness_requires_resolved_targets_and_shape_arity() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let source = FeatureId::mint("synthetic:test:id#source").expect("identity grammar");
     let feature = |id: &str, ordinal, dependencies: Vec<FeatureId>, definition| Feature {
@@ -464,6 +476,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -478,6 +491,8 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
 
 #[test]
 fn post_process_completeness_delegates_to_the_wrapped_operation() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let post_process = |operation: FeatureOperation| FeatureDefinition::PostProcess {
         operation,
@@ -532,6 +547,7 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -546,6 +562,8 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
 
 #[test]
 fn design_completeness_recurses_through_pattern_operands() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let seed = cadmpeg_ir::features::patterns::PatternSeed::Feature(
         FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"),
@@ -648,6 +666,7 @@ fn design_completeness_recurses_through_pattern_operands() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -662,6 +681,8 @@ fn design_completeness_recurses_through_pattern_operands() {
 
 #[test]
 fn design_completeness_checks_secondary_sweep_and_loft_paths() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
     let planar_profile = cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch.clone());
@@ -741,6 +762,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -755,6 +777,8 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
 
 #[test]
 fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
     let planar_profile = cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch.clone());
@@ -872,6 +896,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -886,6 +911,8 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
 
 #[test]
 fn empty_required_operands_are_incomplete_design_semantics() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let feature = |ordinal, definition| Feature {
         id: FeatureId::mint(format!("synthetic:test:id#feature-{ordinal}"))
@@ -1009,6 +1036,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -1023,6 +1051,8 @@ fn empty_required_operands_are_incomplete_design_semantics() {
 
 #[test]
 fn hole_completeness_checks_optional_operands_when_present() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let hole = |profile, exit_kind| {
         FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -1089,6 +1119,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -1103,6 +1134,8 @@ fn hole_completeness_checks_optional_operands_when_present() {
 
 #[test]
 fn incomplete_parameter_semantics_are_reported_as_design_losses() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let owner = FeatureId::mint("synthetic:test:id#owner").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -1316,6 +1349,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -1334,6 +1368,8 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
 
 #[test]
 fn incoherent_feature_graph_is_reported_as_design_loss() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
     let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
@@ -1384,6 +1420,7 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -1402,6 +1439,8 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
 
 #[test]
 fn missing_feature_outputs_are_reported_as_design_loss() {
+    let class_sources = ClassSources::default();
+
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.features.clear();
     ir.model.parameters.clear();
@@ -1440,6 +1479,7 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,

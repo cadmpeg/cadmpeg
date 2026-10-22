@@ -16,6 +16,7 @@ use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole,
     SketchInputKind, SketchRelationKind,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use crate::resolved_features::markers::additional_linked_profile_point_coordinates;
 use crate::resolved_features::markers::compact_legacy_profile_vertex;
 use crate::resolved_features::markers::linked_profile_point;
@@ -56,6 +57,8 @@ fn current_compact_spatial_point_marker(
 
 #[test]
 fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
+    let class_sources = ClassSources::default();
+
     let parent = "sldprt:feature-input:resolved-features#synthetic";
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let reference = |offset| FeatureInputOperand {
@@ -84,11 +87,13 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         parent: parent.into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(155),
+
         name: "sgEntHandle".into(),
     }];
 
-    let references = reference_cells(&scalars, &classes).unwrap().records;
+    let references = reference_cells(&class_sources, &scalars, &classes)
+        .unwrap()
+        .records;
 
     assert_eq!(references.len(), 2);
     assert!(references
@@ -102,18 +107,22 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         parent: parent.into(),
         ordinal: 1,
         sequence: 1,
-        offset: Some(299),
+
         name: "sgArcHandle".into(),
     });
-    assert!(reference_cells(&scalars, &ambiguous_classes)
-        .unwrap()
-        .records
-        .iter()
-        .all(|reference| reference.class_ref.is_none()));
+    assert!(
+        reference_cells(&class_sources, &scalars, &ambiguous_classes)
+            .unwrap()
+            .records
+            .iter()
+            .all(|reference| reference.class_ref.is_none())
+    );
 }
 
 #[test]
 fn reference_cells_copy_operand_identity() {
+    let class_sources = ClassSources::default();
+
     let kind = FeatureInputOperandKind::D6;
     let scalar = FeatureInputScalar {
         id: "scalar".into(),
@@ -135,7 +144,7 @@ fn reference_cells_copy_operand_identity() {
         }],
     };
     assert_eq!(
-        reference_cells(std::slice::from_ref(&scalar), &[])
+        reference_cells(&class_sources, std::slice::from_ref(&scalar), &[])
             .unwrap()
             .records,
         vec![crate::records::FeatureInputReference {
@@ -425,8 +434,12 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) =
-        spatial_sketches(&mut features, &[history], std::slice::from_ref(&lane));
+    let (sketches, entities) = spatial_sketches(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &mut features,
+        &[history],
+        std::slice::from_ref(&lane),
+    );
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
@@ -531,8 +544,12 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) =
-        spatial_sketches(&mut features, &[history], std::slice::from_ref(&lane));
+    let (sketches, entities) = spatial_sketches(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &mut features,
+        &[history],
+        std::slice::from_ref(&lane),
+    );
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
@@ -680,13 +697,15 @@ fn extended_object_indexed_spatial_point_uses_wide_coordinate_offset() {
 
 #[test]
 fn relation_binding_requires_family_operand_signature() {
+    let class_sources = ClassSources::default();
+
     let class = FeatureInputClass {
         feature_ref: None,
         id: "class".into(),
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(10),
+
         name: "sgLLDist".into(),
     };
     let operand = |kind, entity_index| FeatureInputOperand {
@@ -712,6 +731,7 @@ fn relation_binding_requires_family_operand_signature() {
 
     assert_eq!(
         relation_bindings(
+            &class_sources,
             "lane",
             std::slice::from_ref(&class),
             &[scalar(FeatureInputOperandKind::E1)],
@@ -722,6 +742,7 @@ fn relation_binding_requires_family_operand_signature() {
         1
     );
     assert!(relation_bindings(
+        &class_sources,
         "lane",
         &[class],
         &[scalar(FeatureInputOperandKind::Native(
@@ -735,13 +756,15 @@ fn relation_binding_requires_family_operand_signature() {
 
 #[test]
 fn relation_binding_with_ambiguous_declarations_is_withheld() {
+    let class_sources = ClassSources::default();
+
     let class = |offset: u64, name: &str| FeatureInputClass {
         feature_ref: None,
         id: format!("class-{offset}"),
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(offset),
+
         name: name.into(),
     };
     let operand = |entity_index| FeatureInputOperand {
@@ -766,6 +789,7 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
     };
 
     assert!(relation_bindings(
+        &class_sources,
         "lane",
         &[class(10, "sgPntPntDist"), class(20, "sgPntPntVertDist")],
         &[scalar],
@@ -777,13 +801,15 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
 
 #[test]
 fn scoped_relation_binding_does_not_cross_feature_interval() {
+    let class_sources = ClassSources::default();
+
     let class = FeatureInputClass {
         feature_ref: None,
         id: "class".into(),
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(10),
+
         name: "sgPntPntDist".into(),
     };
     let operand = |entity_index| FeatureInputOperand {
@@ -808,6 +834,7 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
     };
 
     assert!(relation_bindings(
+        &class_sources,
         "lane",
         &[class],
         &[scalar],
@@ -1399,6 +1426,8 @@ fn spatial_vertex_record_decodes_model_coordinates() {
 
 #[test]
 fn reference_cells_index_classes_by_parent_and_offset() {
+    let class_sources = ClassSources::default();
+
     const CELLS: u64 = 1 << 14;
     let parent = "sldprt:feature-input:resolved-features#synthetic";
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
@@ -1425,13 +1454,13 @@ fn reference_cells_index_classes_by_parent_and_offset() {
         role: FeatureInputScalarRole::Driving,
         operands,
     }];
-    let class = |parent: &str, offset: u64, id: String| FeatureInputClass {
+    let class = |parent: &str, _offset: u64, id: String| FeatureInputClass {
         feature_ref: None,
         id,
         parent: parent.into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(offset),
+
         name: "sgEntHandle".into(),
     };
     let mut classes = (0..CELLS)
@@ -1450,7 +1479,9 @@ fn reference_cells_index_classes_by_parent_and_offset() {
         "other-lane".into(),
     ));
 
-    let references = reference_cells(&scalars, &classes).unwrap().records;
+    let references = reference_cells(&class_sources, &scalars, &classes)
+        .unwrap()
+        .records;
 
     assert_eq!(references.len(), usize::try_from(CELLS).unwrap());
     assert!(references

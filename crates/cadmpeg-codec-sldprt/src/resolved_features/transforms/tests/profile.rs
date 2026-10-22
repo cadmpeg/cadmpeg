@@ -208,7 +208,13 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     };
     let mut features = vec![producer, target];
 
-    project_compact_edge_selections(&mut features, &[], &[lane]).unwrap();
+    project_compact_edge_selections(
+        &crate::test_support::native::class_sources(&[&lane]),
+        &mut features,
+        &[],
+        &[lane],
+    )
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         features[1].evaluation.definition()
@@ -582,6 +588,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     )
     .expect("marker profile fixture fits service policy");
     project_marker_backed_sketches(
+        &crate::test_support::native::class_sources(&lanes),
         &ctx,
         &mut features,
         &mut sketches,
@@ -632,6 +639,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
         }));
     project_marker_backed_sketches(
+        &crate::test_support::native::class_sources(&lanes),
         &ctx,
         &mut configured_features,
         &mut sketches,
@@ -672,6 +680,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     let mut replacement_sketches = vec![compact_sketch];
     let mut replacement_entities = vec![compact_entity];
     project_marker_backed_sketches(
+        &crate::test_support::native::class_sources(&lanes),
         &ctx,
         &mut replacement_features,
         &mut replacement_sketches,
@@ -760,6 +769,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
     )
     .expect("marker profile fixture fits service policy");
     project_marker_backed_sketches(
+        &crate::test_support::native::class_sources(&lanes),
         &ctx,
         &mut features,
         &mut sketches,

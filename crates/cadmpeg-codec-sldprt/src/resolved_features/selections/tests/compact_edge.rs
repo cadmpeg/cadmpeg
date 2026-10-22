@@ -825,9 +825,14 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(&history_ctx, &[history], &lane)
-        .unwrap()
-        .records;
+    let selections = compact_edge_selections(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &history_ctx,
+        &[history],
+        &lane,
+    )
+    .unwrap()
+    .records;
 
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].feature_ref, "consumer");
@@ -869,7 +874,6 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
             id: "vertex-dimension-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(cadmpeg_core::decode::u64_from_index(class_offset)),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -884,9 +888,22 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
         sketch_entities: Vec::new(),
     };
 
-    assert_eq!(fillet_edge_roster_end(&lane, 0, 80), Some(direct_record));
     assert_eq!(
-        fillet_edge_roster_end(&lane, 80, 144),
+        fillet_edge_roster_end(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &lane,
+            0,
+            80
+        ),
+        Some(direct_record)
+    );
+    assert_eq!(
+        fillet_edge_roster_end(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &lane,
+            80,
+            144
+        ),
         Some(repeated_record)
     );
 }
@@ -1099,7 +1116,10 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
         sketch_entities: Vec::new(),
     };
     let selections = operation_surface_selection_candidates(
-        &identity_ctx,
+        (
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &identity_ctx,
+        ),
         FeatureClass::CutWithSurface,
         &lane,
         0,
@@ -1196,7 +1216,6 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
             id: "vertex-dimension-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(cadmpeg_core::decode::u64_from_index(class_offset)),
             name: class_name.into(),
         }],
         names: vec![FeatureInputName {
@@ -1220,9 +1239,14 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(&history_ctx, &[history], &lane)
-        .unwrap()
-        .records;
+    let selections = compact_edge_selections(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &history_ctx,
+        &[history],
+        &lane,
+    )
+    .unwrap()
+    .records;
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].references.len(), 4);
     assert_eq!(selections[0].references[3][0].instance, Some(0x8083));

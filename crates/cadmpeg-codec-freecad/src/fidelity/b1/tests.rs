@@ -196,8 +196,10 @@ fn an_unlisted_registered_stream_prevents_complete_source_grammar_admission() {
     )
     .unwrap();
     assert!(matches!(
-        prepare(&ctx, root, &scan).unwrap(),
+        prepare(&ctx, root, &scan, None).unwrap(),
         Admission::Pending
     ));
-    assert!(ctx.take_record_captures().unwrap().is_empty());
+    crate::test_support::test_archive::assert_only_document_file_version_capture(&ctx, &scan);
 }
+
+mod gui;

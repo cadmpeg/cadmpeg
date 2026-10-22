@@ -8,6 +8,7 @@ use super::selections::{
 };
 use crate::classification::{classify, FeatureClass};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FeatureDirection3;
@@ -53,6 +54,7 @@ pub(super) fn same_draft_operands(left: &DraftOperands, right: &DraftOperands) -
 }
 
 fn draft_operands(
+    class_sources: &ClassSources,
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
     object_start: usize,
@@ -61,18 +63,19 @@ fn draft_operands(
     if classify(feature) != Some(FeatureClass::Draft) || object_start >= object_end {
         return Ok(None);
     }
-    if let Some(operands) = declared_draft_operands(lane, object_start, object_end) {
+    if let Some(operands) = declared_draft_operands(class_sources, lane, object_start, object_end) {
         return Ok(Some(operands));
     }
     compact_parting_line_draft_operands(lane, object_start, object_end)
 }
 
 fn declared_draft_operands(
+    class_sources: &ClassSources,
     lane: &FeatureInputLane,
     object_start: usize,
     object_end: usize,
 ) -> Option<DraftOperands> {
-    let token = unique_declared_plane_reference_token(lane)?;
+    let token = unique_declared_plane_reference_token(class_sources, lane)?;
     let end = super::DeclaredEnd::of(object_end, lane.native_payload.len())?;
     let end = end.get();
     let final_record_start = end.checked_sub(draft_plane::LEN)?;
@@ -289,13 +292,16 @@ fn same_component_path_semantics(
         })
 }
 
-fn unique_declared_plane_reference_token(lane: &FeatureInputLane) -> Option<[u8; 2]> {
+fn unique_declared_plane_reference_token(
+    class_sources: &ClassSources,
+    lane: &FeatureInputLane,
+) -> Option<[u8; 2]> {
     let mut tokens = lane.classes.iter().filter_map(|class| {
         if class.name != "moPlaneRef_w" {
             return None;
         }
-        let body = class
-            .offset
+        let body = class_sources
+            .position(class)
             .and_then(|offset| usize::try_from(offset).ok())?
             .checked_add(6 + class.name.len())?;
         let value = View::u16_le_at(&lane.native_payload, body)?;
@@ -399,6 +405,7 @@ fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Fe
 }
 
 pub(super) fn draft_operand_candidates(
+    class_sources: &ClassSources,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Result<Vec<(String, DraftOperands)>, CodecError> {
@@ -419,7 +426,7 @@ pub(super) fn draft_operand_candidates(
             .get(index + 1)
             .and_then(|(offset, _)| usize::try_from(*offset).ok())
             .unwrap_or(lane.native_payload.len());
-        if let Some(operands) = draft_operands(feature, lane, start, end)? {
+        if let Some(operands) = draft_operands(class_sources, feature, lane, start, end)? {
             let mut id = String::new();
             id.push_str(&feature.id);
             candidates.push((id, operands));
@@ -635,9 +642,15 @@ mod tests {
             2
         );
 
-        let operands = draft_operands(&feature, &lane, object_start, object_end)
-            .expect("draft parse")
-            .expect("compact parting-line draft operands");
+        let operands = draft_operands(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &feature,
+            &lane,
+            object_start,
+            object_end,
+        )
+        .expect("draft parse")
+        .expect("compact parting-line draft operands");
         assert!(matches!(operands.anchor, DraftAnchor::PartingTool(ref paths) if paths.len() == 2));
         assert_eq!(operands.faces.len(), 2);
         assert_eq!(operands.pull_direction.get(), Vector3::new(0.0, -1.0, 0.0));
@@ -678,7 +691,6 @@ mod tests {
                 id: "plane-ref".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: Some(u64_from_index(class_offset)),
                 name: class_name.into(),
             }],
             names: vec![FeatureInputName {
@@ -707,9 +719,15 @@ mod tests {
             unique_draft_direction(&lane.native_payload, neutral.2, first_face),
             Some(Vector3::new(0.0, 0.0, 1.0))
         );
-        let operands = draft_operands(&feature, &lane, object_start, class_offset)
-            .expect("draft parse")
-            .expect("complete draft operands");
+        let operands = draft_operands(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+            &feature,
+            &lane,
+            object_start,
+            class_offset,
+        )
+        .expect("draft parse")
+        .expect("complete draft operands");
         assert!(matches!(
             operands.anchor,
             DraftAnchor::NeutralPlane(ref path) if path.last().unwrap().local_id == Some(3)
@@ -721,11 +739,15 @@ mod tests {
         let mut malformed = lane.clone();
         malformed.native_payload[object_start + 15..object_start + 19]
             .copy_from_slice(&103u32.to_le_bytes());
-        assert!(
-            draft_operands(&feature, &malformed, object_start, class_offset)
-                .expect("malformed draft parse")
-                .is_none()
-        );
+        assert!(draft_operands(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&malformed)),
+            &feature,
+            &malformed,
+            object_start,
+            class_offset
+        )
+        .expect("malformed draft parse")
+        .is_none());
 
         let history = FeatureHistory {
             id: "history".into(),
@@ -762,6 +784,7 @@ mod tests {
             native_ref: Some("draft".into()),
         }];
         super::super::projections::project_draft_operands(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
             &mut projected,
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
@@ -800,6 +823,7 @@ mod tests {
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
         });
         super::super::projections::project_draft_operands(
+            &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
             &mut projected,
             &[history],
             std::slice::from_ref(&lane),

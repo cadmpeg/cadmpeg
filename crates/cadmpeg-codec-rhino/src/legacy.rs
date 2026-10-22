@@ -3998,6 +3998,31 @@ mod tests {
     #[test]
     fn v1_container_request_keeps_geometry_only_as_source_bytes() {
         let data = archive(&[[1.0, 2.0, 3.0]]);
+        let comment = chunk_at(
+            &data,
+            crate::layout::file_header::LEN,
+            data.len(),
+            ArchiveVersion::V1,
+            false,
+        )
+        .expect("bounded V1 comment");
+        assert_eq!(comment.typecode, TCODE_COMMENT);
+        let point = chunk_at(
+            &data,
+            comment.next_offset(),
+            data.len(),
+            ArchiveVersion::V1,
+            false,
+        )
+        .expect("bounded V1 point part");
+        assert_eq!(point.typecode, TCODE_RH_POINT);
+        assert_eq!(point.next_offset(), data.len());
+        assert_eq!(
+            cadmpeg_ir::document::ArenaName::parse("points")
+                .expect("registered geometry arena")
+                .class(),
+            cadmpeg_ir::ArenaClass::Model
+        );
         let decoded = cadmpeg_ir::codec::Codec::decode(
             &crate::RhinoCodec,
             &mut std::io::Cursor::new(data),
@@ -4007,7 +4032,11 @@ mod tests {
             },
         )
         .expect("a V1 container request reads chunk boundaries");
-        assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::container());
+        assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::geometry());
+        assert_eq!(
+            decoded.report().scope(),
+            cadmpeg_ir::ContentScope::geometry()
+        );
         assert_eq!(decoded.ir().model, cadmpeg_ir::document::Model::default());
         assert!(!decoded.report().geometry_transferred());
         assert!(decoded

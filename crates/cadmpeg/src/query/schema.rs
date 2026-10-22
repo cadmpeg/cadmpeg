@@ -59,8 +59,8 @@ pub(super) fn run(args: &SchemaArgs) -> Result<()> {
 }
 
 fn compile_run(spec: Option<&str>, json: bool) -> Result<()> {
-    let root =
-        serde_json::to_value(cadmpeg_ir::cadir_json_schema()).context("serializing the schema")?;
+    let (schema, metadata) = cadmpeg_ir::schema::query::cadir();
+    let root = serde_json::to_value(schema).context("serializing the schema")?;
     let defs = root
         .get("$defs")
         .and_then(Value::as_object)
@@ -82,7 +82,7 @@ fn compile_run(spec: Option<&str>, json: bool) -> Result<()> {
                      from a decoded CADIR file: `cadmpeg query schema file FILE \
                      native.{codec}.{arena}`"
                 ),
-                ArenaTarget::Model { arena } => arena_table(arena, model, defs, json),
+                ArenaTarget::Model { arena } => arena_table(arena, model, defs, &metadata, json),
             }
         }
     }
@@ -126,6 +126,7 @@ fn arena_table(
     arena: &str,
     model: &Map<String, Value>,
     defs: &Map<String, Value>,
+    metadata: &cadmpeg_ir::schema::query::SchemaTypeMetadata,
     json: bool,
 ) -> Result<()> {
     let properties = model
@@ -143,17 +144,40 @@ fn arena_table(
     let items = node.get("items").context(SHAPE)?;
     let element = resolve(defs, items);
     if json {
+        let definitions = defs_closure(element, defs);
+        let identities = type_metadata(items, &definitions, metadata);
         let payload = serde_json::json!({
             "arena": format!("model.{arena}"),
             "element": ref_name(items).unwrap_or("(inline)"),
             "schema": element,
-            "defs": defs_closure(element, defs),
+            "defs": definitions,
+            "type_metadata": identities,
         });
         print_json("schema", payload)?;
         return Ok(());
     }
     print_type_table(element, defs);
     Ok(())
+}
+
+fn type_metadata(
+    items: &Value,
+    definitions: &Value,
+    metadata: &cadmpeg_ir::schema::query::SchemaTypeMetadata,
+) -> Value {
+    let mut references = Map::new();
+    for (reference, identities) in &metadata.references {
+        let Some(encoded) = reference.strip_prefix("#/$defs/") else {
+            continue;
+        };
+        let name = encoded.replace("~1", "/").replace("~0", "~");
+        if items.get("$ref").and_then(Value::as_str) == Some(reference.as_str())
+            || definitions.get(&name).is_some()
+        {
+            references.insert(reference.clone(), serde_json::json!(identities));
+        }
+    }
+    serde_json::json!({ "references": references })
 }
 
 fn sidecar(json: bool) -> Result<()> {

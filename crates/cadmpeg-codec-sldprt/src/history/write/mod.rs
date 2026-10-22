@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral-to-native history write preparation.
 
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
@@ -145,6 +146,7 @@ fn project_feature_model_with_native_inputs(
     native: &crate::native::SldprtNative,
     sketches: &[cadmpeg_ir::sketches::Sketch],
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
+    let class_sources = ClassSources::default();
     let projection_bytes = native
         .feature_input_lanes
         .iter()
@@ -155,6 +157,7 @@ fn project_feature_model_with_native_inputs(
         DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
     let mut histories = native.feature_histories.clone();
     enrich_history_semantic(
+        &class_sources,
         &ctx,
         &mut histories,
         &native.feature_input_lanes,
@@ -164,18 +167,27 @@ fn project_feature_model_with_native_inputs(
     let mut projection = project_feature_model(&ctx, &histories)?;
     let features = &mut projection.features;
     crate::resolved_features::bindings::bind_pattern_inputs(
+        &class_sources,
         features,
         &histories,
         &native.feature_input_lanes,
     )?;
     crate::resolved_features::operations::bind_sweep_operations(
+        &class_sources,
         features,
         &histories,
         &native.feature_input_lanes,
         None,
     );
-    project_compact_and_generated(&ctx, features, &histories, &native.feature_input_lanes)?;
+    project_compact_and_generated(
+        &class_sources,
+        &ctx,
+        features,
+        &histories,
+        &native.feature_input_lanes,
+    )?;
     crate::resolved_features::operations::bind_revolution_operations(
+        &class_sources,
         features,
         &histories,
         &native.feature_input_lanes,
@@ -183,6 +195,7 @@ fn project_feature_model_with_native_inputs(
     );
     // discarded-value: marking the features is the whole effect on the write route; the collected sketches have a reader only on the decode route
     let _ = crate::resolved_features::markers::spatial_sketches(
+        &class_sources,
         features,
         &histories,
         &native.feature_input_lanes,

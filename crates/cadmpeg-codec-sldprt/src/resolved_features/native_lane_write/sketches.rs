@@ -450,7 +450,8 @@ pub(super) fn merge(
                     &lane.id,
                     lane.configuration.clone(),
                     payload,
-                )?;
+                )?
+                .0;
         }
     }
     Ok(())

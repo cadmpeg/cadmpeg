@@ -2088,7 +2088,7 @@ pub(crate) fn project(
         let native_ref = native_ids[index].clone();
         ir.model.features.push(Feature {
             id: feature_id,
-            ordinal: cadmpeg_core::decode::u64_from_index(index),
+            ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
             name: None,
             suppressed: Some(false),
             needs_recompute: false,

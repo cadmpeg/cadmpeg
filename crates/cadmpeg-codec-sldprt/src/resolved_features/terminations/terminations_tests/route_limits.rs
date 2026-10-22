@@ -228,7 +228,10 @@ fn compact_surface_selections_refuses_legacy_path_nesting_limit() {
         DecodeContext::from_root_bytes(&lane.native_payload, &arena, &DecodePolicy::service())
             .unwrap();
     let selections = crate::resolved_features::selections::compact_surface_selections(
-        &service, &histories, &lane,
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &service,
+        &histories,
+        &lane,
     )
     .unwrap();
     assert_eq!(selections.len(), 1);
@@ -239,7 +242,10 @@ fn compact_surface_selections_refuses_legacy_path_nesting_limit() {
     let (limited, _) =
         DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
     let error = crate::resolved_features::selections::compact_surface_selections(
-        &limited, &histories, &lane,
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &limited,
+        &histories,
+        &lane,
     )
     .unwrap_err();
     assert!(

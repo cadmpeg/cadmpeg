@@ -4,6 +4,7 @@
 //! These flags are recorded at projection cuts. Loss-code classification is an
 //! independent audit and never supplies this production state.
 
+use crate::resolved_features::class_sources::ClassSources;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::CodecError;
@@ -14,6 +15,7 @@ use cadmpeg_ir::{Annotations, SourceFidelity};
 pub(super) struct Retention {
     records: BTreeMap<String, ArenaClasses>,
     source: ArenaClasses,
+    pub(super) class_sources: ClassSources,
     pub(super) pmi_pointers: BTreeMap<String, BTreeMap<String, u64>>,
 }
 

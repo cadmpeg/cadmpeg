@@ -12,6 +12,7 @@ mod placement;
 mod presentation;
 mod reduce;
 mod scopes;
+mod subd;
 mod tables;
 pub(crate) mod target;
 mod trim_iso;
@@ -136,6 +137,7 @@ use tables::materials::MaterialPlan;
 struct WriteOutcome {
     losses: Vec<LossNote>,
     objects: usize,
+    subds: usize,
 }
 
 fn write(
@@ -255,6 +257,16 @@ fn write_buffered(
         )?;
     }
 
+    let subds = subd::write(
+        ctx,
+        ir,
+        version,
+        session,
+        output,
+        &plan.materials,
+        &mut plan.losses,
+    )?;
+
     let (references, occurrence_losses) = tables::products::references(ir, &plan.materials)?;
     plan.losses.extend(occurrence_losses);
     for record in &references {
@@ -300,9 +312,11 @@ fn write_buffered(
             + plan.curves.len()
             + plan.surfaces.len()
             + plan.meshes.len()
+            + subds
             + annotations.len()
             + references.len(),
         losses: plan.losses,
+        subds,
     })
 }
 

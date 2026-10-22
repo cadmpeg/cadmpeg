@@ -1626,7 +1626,12 @@ fn source_intervals_supply_legacy_hole_profiles() {
         operands: Vec::new(),
     });
     let mut histories = [history];
-    enrich_history_parameters(&mut histories, [&lane], true);
+    enrich_history_parameters(
+        &crate::test_support::native::class_sources(&[&lane]),
+        &mut histories,
+        [&lane],
+        true,
+    );
     assert_eq!(histories[0].features[1].parameters["depth"], "6.8mm");
     enrich_history_hole_constructions(&mut histories, &[lane]);
     assert_eq!(
@@ -1841,7 +1846,7 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(100),
+
         name: "moAngleParameter_c".into(),
     });
     lane.names.push(FeatureInputName {
@@ -1869,7 +1874,12 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         operands: Vec::new(),
     });
 
-    enrich_history_parameters(std::slice::from_mut(&mut history), [&lane], true);
+    enrich_history_parameters(
+        &crate::test_support::native::class_sources(&[&lane]),
+        std::slice::from_mut(&mut history),
+        [&lane],
+        true,
+    );
     assert_eq!(
         history.features[0].parameters.get("D1").map(String::as_str),
         Some("6.283185307179586rad")

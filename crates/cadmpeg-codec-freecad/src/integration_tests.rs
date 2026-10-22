@@ -3,6 +3,7 @@
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
 mod content_scope;
+mod design_ordinals;
 mod metadata_recovery;
 mod source_b1;
 mod source_ledgers;
@@ -633,3 +634,7 @@ fn a_structurally_alien_document_under_a_foreign_version_still_fails() {
             .expect_err("alien element vocabulary must fail");
     }
 }
+
+mod source_document_reads;
+mod source_property_reads;
+mod source_scalar_reads;

@@ -2847,6 +2847,7 @@ pub(crate) struct ParameterAssembly {
     pub(crate) trailing_pointer_analysis: BTreeMap<u32, TrailingPointerAnalysis>,
     pub(crate) quarantined: Vec<QuarantinedParameterRecord>,
     pub(crate) recoveries: FramingRecoveries,
+    pub(crate) given_up: BTreeSet<u32>,
 }
 
 fn back_pointer(line: &PhysicalLine) -> Option<u32> {
@@ -3915,7 +3916,7 @@ pub(crate) fn assemble(
         directory,
         quarantined_directory,
         global,
-        |owned, lines| parse_legacy_owned(owned, lines, global),
+        |owned, lines, _| parse_legacy_owned(owned, lines, global),
     )
 }
 
@@ -3933,6 +3934,7 @@ fn assemble_with(
     mut parse: impl FnMut(
         &Ownership<'_>,
         &BTreeMap<u32, &PhysicalLine>,
+        &[Ownership<'_>],
     ) -> Result<ParsedOwned, CodecError>,
 ) -> Result<ParameterAssembly, CodecError> {
     let mut lines = BTreeMap::new();
@@ -3955,11 +3957,14 @@ fn assemble_with(
     let mut records = Vec::new();
     let mut trailing_pointer_analysis = BTreeMap::new();
     let mut quarantined = Vec::new();
+    let mut given_up = BTreeSet::new();
     for owned in &ownership {
-        match parse(owned, &lines)? {
+        match parse(owned, &lines, &ownership)? {
             ParsedOwned::Record(record) => records.push(record),
             ParsedOwned::Quarantined(record) => quarantined.push(record),
-            ParsedOwned::GivenUp => {}
+            ParsedOwned::GivenUp => {
+                given_up.insert(owned.entry.sequence);
+            }
         }
     }
     {
@@ -4019,6 +4024,7 @@ fn assemble_with(
         trailing_pointer_analysis,
         quarantined,
         recoveries,
+        given_up,
     })
 }
 

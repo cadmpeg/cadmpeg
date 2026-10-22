@@ -87,7 +87,7 @@ fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
     };
     assert_eq!(loss.code.local_code(), "record.unreadable");
     assert_eq!(loss.provenance.as_ref().unwrap().offset, range.start);
-    assert!(ctx.take_record_captures().unwrap().is_empty());
+    crate::test_support::test_archive::assert_only_document_file_version_capture(&ctx, &scan);
 }
 
 #[test]

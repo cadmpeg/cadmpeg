@@ -312,6 +312,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     project_configuration_sketch_states(
+        &crate::test_support::native::class_sources(&[&feature_input_lane("lane", Some("0"))]),
         &ctx,
         &mut ir,
         &[],

@@ -1,4 +1,5 @@
 //! Line reference directions and revolution axis inputs.
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_ir::features::PlanarProfileRef;
 
 use super::component_paths::is_profile_feature_object;
@@ -215,6 +216,7 @@ pub(super) struct TypedLinearPatternDimensions<'a> {
 }
 
 pub(super) fn typed_linear_pattern_dimensions<'a>(
+    class_sources: &ClassSources,
     feature: &'a crate::records::Feature,
     lane: &'a FeatureInputLane,
     object_start: usize,
@@ -223,13 +225,13 @@ pub(super) fn typed_linear_pattern_dimensions<'a>(
     let parameter = |class_name: &str| {
         let mut classes = lane.classes.iter().filter(|class| {
             class.name == class_name
-                && class.offset.is_some_and(|position| {
+                && class_sources.position(class).is_some_and(|position| {
                     (u64_from_index(object_start)..u64_from_index(object_end)).contains(&position)
                 })
         });
         let class = classes.next().filter(|_| classes.next().is_none())?;
-        let class_offset = class
-            .offset
+        let class_offset = class_sources
+            .position(class)
             .and_then(|offset| usize::try_from(offset).ok())?;
         let name_end = class_offset.checked_add(128)?.min(object_end);
         let mut names = lane.names.iter().filter(|name| {

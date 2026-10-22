@@ -158,7 +158,12 @@ fn scan_impl<'a>(
     }
     let mut losses = Vec::new();
     let document_xml = admit_document(ctx, document_bytes)?;
-    let (document, schema_version) = parse_document(&document_xml, &mut losses)?;
+    let source = crate::persistence::source::Source::new(ctx, document_view, &document_xml)?;
+    let (document, schema_version) = source.record(
+        &crate::native::native_id("document", "0"),
+        document_xml.root_element(),
+        || parse_document_impl(&document_xml, &mut losses, Some(&source)),
+    )?;
     let mut opened = match shared {
         Some(output) => parts::open_optional(ctx, root, &archive, output)?,
         None => parts::OptionalMembers::default(),
@@ -557,9 +562,18 @@ pub(crate) fn admit_document<'input>(
 }
 
 /// Read container metadata from the admitted persistence tree.
+#[cfg(test)]
 pub(crate) fn parse_document(
     xml: &roxmltree::Document<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(DocumentFacts, String), CodecError> {
+    parse_document_impl(xml, losses, None)
+}
+
+fn parse_document_impl(
+    xml: &roxmltree::Document<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source: Option<&crate::persistence::source::Source<'_, '_>>,
 ) -> Result<(DocumentFacts, String), CodecError> {
     let root = xml.root_element();
     if root.tag_name().name() != "Document" {
@@ -576,7 +590,8 @@ pub(crate) fn parse_document(
         "fileVersion",
         crate::loss::FreecadLossCode::FileVersionNoncanonical,
         losses,
-    )
+        source,
+    )?
     .unwrap_or_else(|| "0".into());
     let vocabulary = crate::persistence::Vocabulary::from_declaration(&schema_version)?;
     let file_version = crate::native::FileVersion::from(file_version);
@@ -614,7 +629,8 @@ pub(crate) fn parse_document(
         "programVersion",
         crate::loss::FreecadLossCode::ProgramVersionNoncanonical,
         losses,
-    );
+        source,
+    )?;
     let document = DocumentFacts {
         id: crate::native::native_id("document", "0"),
         file_version,
@@ -633,7 +649,8 @@ fn metadata_attribute(
     alias: &str,
     code: crate::loss::FreecadLossCode,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Option<String> {
+    source: Option<&crate::persistence::source::Source<'_, '_>>,
+) -> Result<Option<String>, CodecError> {
     let value = root.attribute(canonical);
     if let Some(alias_value) = root.attribute(alias) {
         let message = if value.is_some_and(|value| value != alias_value) {
@@ -643,7 +660,18 @@ fn metadata_attribute(
         };
         losses.push(code.note(message));
     }
-    value.or_else(|| root.attribute(alias)).map(str::to_owned)
+    let Some(attribute) = root.attributes().find(|attribute| {
+        attribute.namespace().is_none()
+            && attribute.name() == if value.is_some() { canonical } else { alias }
+    }) else {
+        return Ok(None);
+    };
+    match source
+        .filter(|_| canonical != "FileVersion" || attribute.value().parse::<usize>().is_ok())
+    {
+        Some(source) => source.attribute(&attribute).map(Some),
+        None => Ok(Some(attribute.value().to_owned())),
+    }
 }
 
 pub(crate) fn logical_ledger(

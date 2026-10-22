@@ -20,8 +20,9 @@ pub(super) fn capture(
     let source = sources.view(lane)?;
     let names = super::names::object_names(ctx, source.window(), &lane.id)?;
     let classes = super::names::class_declarations(source.window(), &lane.id)?;
+    let class_sources = super::class_sources::ClassSources::from_source(ctx, source, &classes)?;
     let scalars = super::scalars::named_scalars(source.window(), &lane.id, &names)?;
-    let references = super::markers::reference_cells(&scalars.records, &classes)?;
+    let references = super::markers::reference_cells(&class_sources, &scalars.records, &classes)?;
     // feature_ref and sequence are derived by the binding/order passes, not
     // encoded in a cell. Compare every source-encoded fact and stable identity;
     // those later passes use this same proven cell locator for ownership.

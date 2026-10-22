@@ -80,6 +80,7 @@ fn surface_sweep_projection_binds_the_helix_profile() {
     }
     let mut admitted = features.clone();
     project_surface_sweep_profiles(
+        &crate::test_support::native::class_sources(&native.feature_input_lanes),
         &mut admitted,
         &native.feature_histories,
         &native.feature_input_lanes,

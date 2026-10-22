@@ -540,7 +540,13 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
         histories[0].features[0].properties.get("Face"),
         Some(&"sldprt:feature-input:single-face-ref:7:220".to_string())
     );
-    let selections = compact_surface_selections(&identity_ctx, &histories, &lane).unwrap();
+    let selections = compact_surface_selections(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &identity_ctx,
+        &histories,
+        &lane,
+    )
+    .unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].offset, Some(220));
 }
@@ -1693,7 +1699,6 @@ fn sweep_path_enrichment_binds_the_general_curve_path() {
             id: "general-curve".into(),
             parent: "lane#35".into(),
             ordinal: 0,
-            offset: Some(40),
             name: "moGeneralCurveRef_w".into(),
         }],
         names: vec![FeatureInputName {
@@ -1717,7 +1722,11 @@ fn sweep_path_enrichment_binds_the_general_curve_path() {
         sketch_entities: Vec::new(),
     }];
     let mut admitted = histories.clone();
-    super::enrich_history_sweep_paths(&mut admitted, &lanes);
+    super::enrich_history_sweep_paths(
+        &crate::test_support::native::class_sources(&lanes),
+        &mut admitted,
+        &lanes,
+    );
     assert_eq!(
         admitted[0].features[0]
             .properties

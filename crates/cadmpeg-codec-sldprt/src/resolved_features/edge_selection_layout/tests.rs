@@ -4,6 +4,7 @@
 use super::capture;
 use crate::records::{Feature, FeatureHistory, FeatureInputLane};
 use crate::resolved_features::body_sources::BodySources;
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::SourceFidelity;
 use std::collections::BTreeMap;
@@ -84,9 +85,11 @@ fn lane(
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    lane.edge_selections = super::super::selections::compact_edge_selections(ctx, histories, &lane)
-        .unwrap()
-        .records;
+    let class_sources = ClassSources::from_source(ctx, source, &lane.classes).unwrap();
+    lane.edge_selections =
+        super::super::selections::compact_edge_selections(&class_sources, ctx, histories, &lane)
+            .unwrap()
+            .records;
     lane
 }
 
@@ -112,7 +115,7 @@ fn assert_source_layout(reference_list: bool) {
     .unwrap();
     capture(&ctx, &histories, &lane, &mut sources).unwrap();
     let mut fidelity = SourceFidelity::default();
-    crate::pmi::layout::install(&ctx, sources.into_pointers(), &mut fidelity).unwrap();
+    crate::pmi::layout::install(&ctx, sources.into_pointers(&ctx).unwrap(), &mut fidelity).unwrap();
     let record = &lane.edge_selections[0];
     let layout = &fidelity.record_layout()[&record.id];
     assert_eq!(layout.stream(), "file");

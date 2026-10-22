@@ -19,6 +19,7 @@ import sys
 from typing import Any, Mapping
 
 from decode_nonregression_inputs import discover, pair_fixtures
+from decode_nonregression_schema import SchemaPaths
 
 
 JsonPath = tuple[str, ...]
@@ -32,15 +33,6 @@ class Finding:
     code: str
     path: JsonPath
     message: str
-
-
-@dataclass(frozen=True)
-class SchemaPaths:
-    """Exact collapsed paths supplied by the schema/typed-D10 adapter."""
-
-    variant_tags: frozenset[JsonPath]
-    dimensions: frozenset[JsonPath]
-    d10_companions: frozenset[JsonPath] = frozenset()
 
 
 @dataclass(frozen=True)

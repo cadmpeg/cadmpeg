@@ -1840,3 +1840,63 @@ fn summary_projects_cadir_export_without_a_native_target() {
         .stdout("severity\tcode\tmessage\n")
         .stderr("");
 }
+
+mod schema_type_identities {
+    use crate::support::cadmpeg;
+
+    #[test]
+    fn schema_type_query_exports_compiler_bound_dimension_ids_with_unchanged_schema() {
+        let result = cadmpeg()
+            .args([
+                "query",
+                "schema",
+                "types",
+                "model.sketch_constraints",
+                "--json",
+            ])
+            .output()
+            .expect("schema query executes");
+        assert!(result.status.success());
+        let result: serde_json::Value = serde_json::from_slice(&result.stdout).expect("query JSON");
+        let payload = &result["payload"];
+        let (schema, metadata) = cadmpeg_ir::schema::query::cadir();
+        let schema = schema.as_value();
+        let model_ref = schema["properties"]["model"]["$ref"]
+            .as_str()
+            .expect("model reference");
+        let model = schema.pointer(&model_ref[1..]).expect("model schema");
+        let element_ref = model["properties"]["sketch_constraints"]["items"]["$ref"]
+            .as_str()
+            .expect("arena element reference");
+        let element = schema.pointer(&element_ref[1..]).expect("element schema");
+        assert_eq!(&payload["schema"], element);
+        let references = payload["type_metadata"]["references"]
+            .as_object()
+            .expect("typed references");
+        assert!(!references.is_empty());
+        for (reference, identities) in references {
+            let original = metadata
+                .references
+                .get(reference)
+                .expect("compiler-bound reference");
+            assert_eq!(
+                identities,
+                &serde_json::to_value(original).expect("identity JSON")
+            );
+            let name = reference
+                .strip_prefix("#/$defs/")
+                .expect("local schema reference")
+                .replace("~1", "/")
+                .replace("~0", "~");
+            assert!(payload["defs"].get(&name).is_some() || element_ref == reference);
+        }
+        assert!(references
+            .values()
+            .flat_map(|value| value.as_array().expect("alias list"))
+            .any(|identity| identity["role"] == "dimension"
+                && identity["rust_type"].as_str().is_some_and(|name| name
+                    == std::any::type_name::<
+                        cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::Length>,
+                    >())));
+    }
+}

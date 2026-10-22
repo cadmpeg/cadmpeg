@@ -19,18 +19,21 @@ pub(super) fn capture(
                 || actual.parent != staged.parent
                 || actual.ordinal != staged.ordinal
                 || actual.name != staged.name
-                || actual.offset != staged.offset
         })
     {
         return Err(CodecError::malformed(
             "class declaration content differs from source",
         ));
     }
-    for record in &parsed {
-        let relative = record
-            .offset
-            .and_then(|value| usize::try_from(value).ok())
-            .ok_or_else(|| CodecError::malformed("source class declaration has no locator"))?;
+    for (record, (relative, name)) in parsed
+        .iter()
+        .zip(super::names::payload_classes(source.window()))
+    {
+        if name != record.name {
+            return Err(CodecError::malformed(
+                "source class declaration order changed",
+            ));
+        }
         let start = source
             .start()
             .checked_add(relative)
@@ -71,7 +74,7 @@ pub(super) fn capture(
             }
             Ok(())
         })?;
-        sources.insert(record.id.clone(), pointer)?;
+        sources.insert_class(ctx, &record.id, pointer)?;
     }
     Ok(())
 }

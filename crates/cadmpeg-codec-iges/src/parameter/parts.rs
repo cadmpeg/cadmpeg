@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-bounded Parameter record parsing with shared failure ownership.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
@@ -9,8 +9,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, ParserPartOutput, PartLevel, PartSpec};
 
 use super::{
-    OwnedParameterBytes, OwnedParseFailure, Ownership, ParameterAssembly, ParsedOwned, Token,
-    TokenValue,
+    OwnedParameterBytes, OwnedParseFailure, Ownership, ParameterAssembly, ParameterDefect,
+    ParsedOwned, Token, TokenValue,
 };
 use crate::card::{CardScan, PhysicalLine, Section};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
@@ -42,12 +42,33 @@ pub(crate) fn assemble(
         extent,
         spec("iges.parameter_section", framing)?,
         |children| {
+            let mut source_parts = ConflictParts::default();
             super::assemble_with(
                 scan,
                 directory,
                 quarantined_directory,
                 global,
-                |owned, lines| parse_owned(ctx, source, children, owned, lines, global),
+                |owned, lines, ownership| {
+                    if !source_parts.initialized {
+                        source_parts = ConflictParts::new(ctx, source, ownership, lines)?;
+                    }
+                    let parsed = parse_owned(
+                        ctx,
+                        source,
+                        children,
+                        owned,
+                        lines,
+                        global,
+                        &mut source_parts,
+                    )?;
+                    if matches!(&parsed, ParsedOwned::GivenUp) {
+                        ctx.retain_bytes(
+                            u64_from_index(size_of::<u32>()),
+                            "IGES Parameter part owner attribution",
+                        )?;
+                    }
+                    Ok(parsed)
+                },
             )
         },
     )?;
@@ -56,6 +77,7 @@ pub(crate) fn assemble(
         trailing_pointer_analysis: BTreeMap::new(),
         quarantined: Vec::new(),
         recoveries: crate::card::FramingRecoveries::default(),
+        given_up: BTreeSet::new(),
     }))
 }
 
@@ -66,8 +88,9 @@ fn parse_owned(
     owned: &Ownership<'_>,
     lines: &BTreeMap<u32, &PhysicalLine>,
     global: &ResolvedGlobal,
+    source_parts: &mut ConflictParts,
 ) -> Result<ParsedOwned, CodecError> {
-    if owned.cards.is_empty() || owned.quarantine.is_some() {
+    if owned.cards.is_empty() {
         return super::parse_legacy_owned(owned, lines, global);
     }
     let mut cards = Vec::new();
@@ -81,6 +104,14 @@ fn parse_owned(
         return super::parse_legacy_owned(owned, lines, global);
     }
     let extent = extent(source, &cards)?;
+    if let Some(defect) = owned.quarantine {
+        if defect != ParameterDefect::OwnershipConflict || !source_parts.located(extent) {
+            return super::parse_legacy_owned(owned, lines, global);
+        }
+        if !source_parts.claim(ctx, extent)? {
+            return Ok(ParsedOwned::GivenUp);
+        }
+    }
     let mut inputs = Vec::new();
     let mut card_boundaries = Vec::new();
     for card in &cards {
@@ -137,6 +168,12 @@ fn parse_owned(
         extent,
         spec("iges.parameter_record", framing)?,
         || {
+            if let Some(defect) = owned.quarantine {
+                return Err(failure(
+                    owned.entry.sequence,
+                    OwnedParseFailure::Defect(defect, None),
+                ));
+            }
             ctx.record(&id, extent, || {
                 ctx.retain_bytes(
                     u64_from_index(stream.window().len()),
@@ -161,6 +198,74 @@ fn parse_owned(
         },
     )?;
     Ok(parsed.map_or(ParsedOwned::GivenUp, ParsedOwned::Record))
+}
+
+#[derive(Default)]
+struct ConflictParts {
+    initialized: bool,
+    ends: BTreeMap<usize, Option<usize>>,
+    reached: BTreeSet<usize>,
+}
+
+impl ConflictParts {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        source: View<'_>,
+        ownership: &[Ownership<'_>],
+        lines: &BTreeMap<u32, &PhysicalLine>,
+    ) -> Result<Self, CodecError> {
+        let mut ends = BTreeMap::new();
+        for owned in ownership {
+            if owned.quarantine != Some(ParameterDefect::OwnershipConflict)
+                || owned.cards.is_empty()
+            {
+                continue;
+            }
+            let mut cards = Vec::new();
+            for sequence in &owned.cards {
+                let card = lines.get(sequence).ok_or_else(|| {
+                    CodecError::malformed("IGES conflicted Parameter card is absent")
+                })?;
+                append_parameter_item(ctx, &mut cards, *card)?;
+            }
+            if !contiguous(source, &cards)? {
+                continue;
+            }
+            let extent = extent(source, &cards)?;
+            if let Some(end) = ends.get_mut(&extent.start()) {
+                if *end != Some(extent.end()) {
+                    *end = None;
+                }
+            } else {
+                ctx.retain_bytes(
+                    u64_from_index(size_of::<(usize, Option<usize>)>()),
+                    "IGES Parameter source address",
+                )?;
+                ends.insert(extent.start(), Some(extent.end()));
+            }
+        }
+        Ok(Self {
+            initialized: true,
+            ends,
+            reached: BTreeSet::new(),
+        })
+    }
+
+    fn located(&self, extent: View<'_>) -> bool {
+        self.ends.get(&extent.start()) == Some(&Some(extent.end()))
+    }
+
+    fn claim(&mut self, ctx: &DecodeContext<'_>, extent: View<'_>) -> Result<bool, CodecError> {
+        if self.reached.contains(&extent.start()) {
+            return Ok(false);
+        }
+        ctx.retain_bytes(
+            u64_from_index(size_of::<usize>()),
+            "IGES reached Parameter source part",
+        )?;
+        self.reached.insert(extent.start());
+        Ok(true)
+    }
 }
 
 fn read_token(

@@ -3,6 +3,9 @@
 
 use serde::Serialize;
 
+/// Generated-schema identities for compiled dimension and D10 types.
+#[cfg(feature = "schema")]
+pub mod query;
 pub mod rewrite;
 /// Caller-accounted structural value projection and reconstruction.
 pub mod structural;

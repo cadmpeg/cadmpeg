@@ -26,6 +26,7 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperandKind, FeatureInputReference,
     FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FinitePoint3};
@@ -53,6 +54,7 @@ use crate::layout::wide_spatial_marker_coordinate_prefix as spatial_pre;
 /// Relation-owned indexed point markers use the relation-tail decoder below;
 /// their native relation kind must remain intact for downstream binding.
 pub(crate) fn spatial_sketches(
+    class_sources: &ClassSources,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -90,7 +92,7 @@ pub(crate) fn spatial_sketches(
         let mut point_candidates = Vec::new();
         for (lane, objects) in lanes.iter().zip(&lane_objects) {
             let mut relation_ranges = Vec::new();
-            for (start, end) in spatial_relation_manager_ranges(lane) {
+            for (start, end) in spatial_relation_manager_ranges(class_sources, lane) {
                 if lane.scalars.iter().any(|scalar| {
                     scalar.feature_ref.as_deref() == Some(native_ref)
                         && scalar.offset.is_some_and(|position| position > start)
@@ -1148,13 +1150,15 @@ pub(super) fn current_geometry_locus_arc_handle_point(payload: &[u8], offset: us
 }
 
 pub(crate) fn relation_bindings(
+    class_sources: &ClassSources,
     parent: &str,
     classes: &[FeatureInputClass],
     scalars: &[FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],
 ) -> Result<Vec<FeatureInputRelationBinding>, CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    let candidates = unique_relation_declaration_candidates(classes, scalars, intervals);
+    let candidates =
+        unique_relation_declaration_candidates(class_sources, classes, scalars, intervals);
     let mut bindings = Vec::new();
     for (class, scalar, family) in candidates {
         let ordinal = u32::try_from(bindings.len())
@@ -1187,6 +1191,7 @@ pub(crate) struct ParsedReferences {
 }
 
 pub(crate) fn reference_cells(
+    class_sources: &ClassSources,
     scalars: &[FeatureInputScalar],
     classes: &[FeatureInputClass],
 ) -> Result<ParsedReferences, CodecError> {
@@ -1224,7 +1229,7 @@ pub(crate) fn reference_cells(
     }
     let mut classes_at = HashMap::<(&str, u64), Vec<&FeatureInputClass>>::new();
     for class in classes {
-        if let Some(position) = class.offset {
+        if let Some(position) = class_sources.position(class) {
             classes_at
                 .entry((class.parent.as_str(), position))
                 .or_default()
@@ -1249,7 +1254,7 @@ pub(crate) fn reference_cells(
     for declared in declarations.values_mut() {
         declared
             .as_mut_slice()
-            .sort_unstable_by_key(|left| left.offset);
+            .sort_unstable_by_key(|left| class_sources.position(left));
         declared.dedup_by_key(|class| class.id.as_str());
     }
     for cell in &mut cells {

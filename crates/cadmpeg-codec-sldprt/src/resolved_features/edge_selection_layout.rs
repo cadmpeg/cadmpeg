@@ -18,6 +18,7 @@ pub(super) fn capture(
     let source = sources.view(lane)?;
     let names = super::names::object_names(ctx, source.window(), &lane.id)?;
     let classes = super::names::class_declarations(source.window(), &lane.id)?;
+    let class_sources = super::class_sources::ClassSources::from_source(ctx, source, &classes)?;
     if names.len() != lane.names.len()
         || names.iter().zip(&lane.names).any(|(actual, staged)| {
             actual.id != staged.id
@@ -32,7 +33,6 @@ pub(super) fn capture(
             actual.id != staged.id
                 || actual.parent != staged.parent
                 || actual.ordinal != staged.ordinal
-                || actual.offset != staged.offset
                 || actual.name != staged.name
         })
     {
@@ -40,7 +40,7 @@ pub(super) fn capture(
             "edge-selection declarations differ from source",
         ));
     }
-    let parsed = super::selections::compact_edge_selections(ctx, histories, lane)?;
+    let parsed = super::selections::compact_edge_selections(&class_sources, ctx, histories, lane)?;
     if parsed.records.len() != lane.edge_selections.len()
         || parsed
             .records

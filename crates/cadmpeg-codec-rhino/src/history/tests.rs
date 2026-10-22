@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
+mod dense_ordinals;
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{
@@ -67,7 +69,7 @@ fn record(record_id: u8, command: u8, antecedents: &[u8], descendants: &[u8]) ->
     }
 }
 
-fn source_band_history_record(archive: ArchiveVersion, minor: i32) -> Vec<u8> {
+pub(crate) fn source_band_history_record(archive: ArchiveVersion, minor: i32) -> Vec<u8> {
     source_band_history_record_with_major(archive, 1, minor, 1, &[])
 }
 

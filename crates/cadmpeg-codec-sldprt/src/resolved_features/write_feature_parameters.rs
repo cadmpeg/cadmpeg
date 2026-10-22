@@ -105,14 +105,15 @@ pub(crate) fn synthesize(ir: &CadIr, native: &mut SldprtNative) -> Result<(), Co
         }
     }
     if !payload.is_empty() {
-        native
-            .feature_input_lanes
-            .push(super::write_prepare::generated_native_lane(
+        native.feature_input_lanes.push(
+            super::write_prepare::generated_native_lane(
                 &native.feature_histories,
                 LANE,
                 None,
                 payload,
-            )?);
+            )?
+            .0,
+        );
     }
     Ok(())
 }

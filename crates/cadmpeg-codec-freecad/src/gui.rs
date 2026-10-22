@@ -2,6 +2,7 @@
 //! Transfer of `GuiDocument.xml` object appearance into neutral presentation records.
 
 mod schema;
+pub(crate) mod source;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -223,14 +224,29 @@ fn transfer_xml(
     bytes: &[u8],
     sources: &GuiSources<'_, '_>,
 ) -> Result<Graph, CodecError> {
+    let xml = parse_xml(ctx, bytes)?;
+    transfer_document(ir, &xml, sources)
+}
+
+fn parse_xml<'input>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'input [u8],
+) -> Result<roxmltree::Document<'input>, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
-    let xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
+    ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
         let CodecError::Malformed(error) = error else {
             return error;
         };
         CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}"))
-    })?;
+    })
+}
+
+fn transfer_document(
+    ir: &mut CadIr,
+    xml: &roxmltree::Document<'_>,
+    sources: &GuiSources<'_, '_>,
+) -> Result<Graph, CodecError> {
     let schema_declaration = crate::container::canonical_attribute(
         xml.root_element(),
         "SchemaVersion",
@@ -240,7 +256,7 @@ fn transfer_xml(
     let neutral_schema_version = admission.neutral_schema_version();
     let transferred = transfer_schema_one(
         ir,
-        &xml,
+        xml,
         schema_declaration.as_deref(),
         neutral_schema_version,
         sources,
