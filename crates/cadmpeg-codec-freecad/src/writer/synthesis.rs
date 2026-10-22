@@ -225,7 +225,14 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
                 }
             }
         } else if property.owner == crate::native::native_id("document", "0") {
-            if let Some(property_xml) = xml::native(property)? {
+            if property.body.is_none() {
+                losses.push(
+                    cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                        "document property {} has no decoded body and is omitted",
+                        property.id
+                    )),
+                );
+            } else if let Some(property_xml) = xml::native(property)? {
                 document_properties.insert(property.name.clone(), property_xml);
             } else {
                 losses.push(

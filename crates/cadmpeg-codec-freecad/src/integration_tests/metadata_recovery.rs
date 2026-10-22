@@ -490,3 +490,46 @@ fn source_only_properties_synthesize_with_explicit_omissions() {
         .is_empty());
     }
 }
+
+#[test]
+fn a_bodiless_document_property_is_omitted_as_undecoded_source() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Properties Count="1"><Property name="Bad" type="App::PropertyInteger"><Integer/></Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(archive(xml)), &DecodeOptions::default())
+        .unwrap();
+    let property = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<PropertyRecord>("properties")
+        .unwrap()
+        .into_iter()
+        .find(|property| property.name == "Bad")
+        .unwrap();
+    assert!(property.body.is_none());
+    let mut written = Vec::new();
+    let report = FcstdCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut written))
+        .unwrap();
+    // #238, §7.11.2: an omitted property with no decoded body is undecoded
+    // source, a Warning, and the loss names the property. The §5.6
+    // `native.records-omitted` list names it too.
+    let omitted = report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message.contains(&property.id)
+                && loss.code.local_code() != "native.records-omitted"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(omitted.len(), 1);
+    assert_eq!(
+        omitted[0].code,
+        cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted
+            .note(String::new())
+            .code
+    );
+    assert_eq!(omitted[0].severity, cadmpeg_ir::report::Severity::Warning);
+}
