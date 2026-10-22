@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use cadmpeg_ir::attributes::AttributeValue;
-use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileRegion};
+use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+use cadmpeg_ir::geometry::DirectedParameterRange;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
@@ -120,6 +121,20 @@ fn edge(associative_id: i64, start: (f64, f64), end: (f64, f64)) -> ProfileEdge 
         }),
         start: Point3::new(start.0, start.1, 0.0),
         end: Point3::new(end.0, end.1, 0.0),
+        middle: None,
+    }
+}
+
+/// An edge whose carrier passes through `middle` halfway along it.
+fn edge_through(
+    associative_id: i64,
+    start: (f64, f64),
+    middle: (f64, f64),
+    end: (f64, f64),
+) -> ProfileEdge {
+    ProfileEdge {
+        middle: Some(Point3::new(middle.0, middle.1, 0.0)),
+        ..edge(associative_id, start, end)
     }
 }
 
@@ -161,8 +176,8 @@ fn profile_body(square_start: (f64, f64)) -> ProfileBody {
                 key: 8,
                 // The circle runs through two half edges.
                 edges: vec![
-                    edge(5, (13.0, 10.0), (7.0, 10.0)),
-                    edge(5, (7.0, 10.0), (13.0, 10.0)),
+                    edge_through(5, (13.0, 10.0), (10.0, 13.0), (7.0, 10.0)),
+                    edge_through(5, (7.0, 10.0), (10.0, 7.0), (13.0, 10.0)),
                 ],
             },
         ],
@@ -175,7 +190,7 @@ fn index<'a>(
     entities: &'a [SketchEntity],
 ) -> ProfileIndex<'a> {
     let mut index = ProfileIndex::new(bodies, links, &[], &[], entities);
-    index.curves = (1..=5)
+    index.curves = (1..=6)
         .map(|id| {
             (
                 ("segment", SKETCH_ORDINAL, id),
@@ -216,7 +231,7 @@ fn a_loop_inside_another_selected_loop_is_a_hole_of_its_region() {
 }
 
 #[test]
-fn a_wire_edge_shorter_than_its_sketch_curve_leaves_the_selection_unresolved() {
+fn a_wire_that_does_not_close_leaves_the_selection_unresolved() {
     let (sketch, entities) = square_with_hole();
     let bodies = [profile_body((5.0, 0.0))];
     let links = [kernel_link(20, 7)];
@@ -303,4 +318,58 @@ fn an_arc_turns_by_its_chord_and_the_segment_it_bounds() {
         arc((0.5, -0.417), 0.651, 0.695, -4.531),
     ];
     assert_eq!(encloses(&crescent, Point2::new(0.898, 0.053)), Some(false));
+}
+
+#[test]
+fn a_ring_along_parts_of_curves_is_a_trimmed_region() {
+    // A divider from (10, 0) to (10, 20) splits the square; the selection is
+    // its left half.
+    let (sketch, mut entities) = square_with_hole();
+    entities.push(entity(
+        16,
+        SketchGeometryDefinition::Line {
+            start: Point2::new(10.0, 0.0),
+            end: Point2::new(10.0, 20.0),
+        },
+    ));
+    let bodies = [ProfileBody {
+        segment_token: cadmpeg_ir::identity_key!("segment"),
+        record_ordinal: BODY_ORDINAL,
+        wires: vec![ProfileWire {
+            key: 9,
+            edges: vec![
+                edge(1, (0.0, 0.0), (10.0, 0.0)),
+                edge(6, (10.0, 0.0), (10.0, 20.0)),
+                edge(3, (10.0, 20.0), (0.0, 20.0)),
+                edge(4, (0.0, 20.0), (0.0, 0.0)),
+            ],
+        }],
+    }];
+    let links = [kernel_link(20, 9)];
+    let index = index(&bodies, &links, &entities);
+    let profile = index
+        .regions("segment", SKETCH_ORDINAL, &sketch, &[20])
+        .expect("resolved profile");
+    let PlanarProfileRef::SketchRegions { regions, .. } = profile else {
+        panic!("profile regions");
+    };
+    let boundary_use = |ordinal: u32, range: [f64; 2]| SketchProfileBoundaryUse {
+        entity: SketchEntityId::mint(format!("inventor:design:sketch-entity#segment-{ordinal}"))
+            .expect("entity id"),
+        parameter_range: DirectedParameterRange::new(range).expect("range"),
+        reversed: false,
+    };
+    assert_eq!(
+        regions.as_slice(),
+        [SketchProfileRegion::trimmed(
+            vec![
+                boundary_use(11, [0.0, 0.5]),
+                boundary_use(16, [0.0, 1.0]),
+                boundary_use(13, [0.5, 1.0]),
+                boundary_use(14, [0.0, 1.0]),
+            ],
+            Vec::new(),
+        )
+        .expect("region")]
+    );
 }

@@ -212,11 +212,11 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 
 ### DE-06. Profile selections outside the whole-loop form
 
-**Question.** What do these profile selections select: a selection whose entity link is an entity-style link; a wire edge whose naming attribute has another integer layout; a wire edge whose associative identifier names no curve of the consumed sketch; a wire edge that runs along part of a sketch curve; and one loop selected twice in one boundary patch?
+**Question.** What do these profile selections select: a selection whose entity link is an entity-style link; a wire edge whose naming attribute has another integer layout; a wire edge whose associative identifier names no curve of the consumed sketch; a wire whose edges do not form one closed ring; and one ring selected twice in one boundary patch?
 
-**Known.** A selection whose wire body edges each run along a whole curve of the consumed sketch is one closed loop of that sketch. Some wire bodies name associative identifiers that the consumed sketch gives to points, or to no entity. Some naming attributes store three integers after the five leading fields. Adjacent regions of crossing sketch curves give wire edges that share one associative identifier.
+**Known.** A selection whose wire body edges each run along a whole curve or a part of a curve of the consumed sketch is one closed ring of that sketch. Some wire bodies name associative identifiers that the consumed sketch gives to points, or to no entity, and their edges do not lie on the current sketch curves. Some naming attributes store three integers after the five leading fields.
 
-**Need.** Each form requires its exact sketch curves, trimmed parameter ranges, or region rule before the extrusion profile can transfer.
+**Need.** Each form requires its exact sketch curves or region rule before the extrusion profile can transfer.
 
 ## 5. Adjacent envelopes
 

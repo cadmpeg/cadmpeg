@@ -9,10 +9,12 @@ use cadmpeg_asm::brep::AsmBrep;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
-use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileRegion};
+use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+use cadmpeg_ir::geometry::DirectedParameterRange;
 use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityUse, SketchGeometryDefinition};
+use cadmpeg_ir::topology::EdgeCarrier;
 
 use super::{PmDcEntityStyleLink, PmDcKernelEntityLink};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
@@ -42,6 +44,8 @@ pub(super) struct ProfileEdge {
     name: Option<EdgeName>,
     start: Point3,
     end: Point3,
+    /// The carrier point at the middle of the edge's parameter interval.
+    middle: Option<Point3>,
 }
 
 /// One wire body of a profile-body record, keyed by its ASM body key.
@@ -140,11 +144,16 @@ fn decode_profile_body(
     Ok(ProfileBody {
         segment_token: segment_token.clone(),
         record_ordinal,
-        wires: profile_wires(&decoded.brep),
+        wires: profile_wires(ctx, &decoded.brep)?,
     })
 }
 
-fn profile_wires(brep: &AsmBrep) -> Vec<ProfileWire> {
+fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileWire>, CodecError> {
+    let curves = brep
+        .curves
+        .iter()
+        .map(|curve| (curve.id.as_str(), &curve.geometry))
+        .collect::<HashMap<_, _>>();
     let points = brep
         .points
         .iter()
@@ -214,14 +223,34 @@ fn profile_wires(brep: &AsmBrep) -> Vec<ProfileWire> {
                 Some([name]) => *name,
                 _ => None,
             };
-            wire_edges.push(ProfileEdge { name, start, end });
+            let middle = match edges.get(id.as_str()).map(|edge| &edge.carrier) {
+                Some(EdgeCarrier::Bounded(curve, interval)) => match curves.get(curve.as_str()) {
+                    Some(geometry) => {
+                        let [first, last] = interval.endpoints();
+                        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
+                            ctx,
+                            geometry,
+                            first.midpoint(last),
+                        ))?
+                        .map(|point| *point.as_raw())
+                    }
+                    None => None,
+                },
+                _ => None,
+            };
+            wire_edges.push(ProfileEdge {
+                name,
+                start,
+                end,
+                middle,
+            });
         }
         wires.push(ProfileWire {
             key: *key,
             edges: wire_edges,
         });
     }
-    wires
+    Ok(wires)
 }
 
 /// The naming-type and associative-id integers of an edge naming attribute.
@@ -338,9 +367,11 @@ impl<'a> ProfileIndex<'a> {
     /// The regions that the profile selections of one extrusion select.
     ///
     /// `links` holds the ordinal of each selection's entity link, in source
-    /// selection order. A selection resolves only when its wire edges run the
-    /// whole length of the curves of one closed loop of `sketch`. A loop that
-    /// the sketch profile table lacks is appended to it.
+    /// selection order. Each selection resolves to one closed ring of pieces
+    /// of curves of `sketch`. When every ring runs along whole curves, the
+    /// regions use loops of the sketch profile table, and a loop that the
+    /// table lacks is appended to it. Otherwise the regions state their
+    /// trimmed boundary rings.
     pub(super) fn regions(
         &self,
         token: &str,
@@ -349,12 +380,7 @@ impl<'a> ProfileIndex<'a> {
         links: &[u32],
     ) -> Option<PlanarProfileRef> {
         let frame = SketchFrame::new(sketch)?;
-        let mut table = sketch.profiles.iter().cloned().collect::<Vec<_>>();
-        if let Some(added) = self.added.borrow().get(sketch.id.as_str()) {
-            table.extend(added.iter().cloned());
-        }
-        let known = table.len();
-        let mut loops = Vec::new();
+        let mut rings = Vec::new();
         for ordinal in links {
             let link = self.kernel_links.get(&(token, *ordinal))?;
             let body = self
@@ -369,7 +395,33 @@ impl<'a> ProfileIndex<'a> {
             let (Some(wire), None) = (wires.next(), wires.next()) else {
                 return None;
             };
-            let curves = self.wire_curves(token, sketch_ordinal, sketch, &frame, link, wire)?;
+            rings.push(self.ring(token, sketch_ordinal, sketch, &frame, link, wire)?);
+        }
+        if rings
+            .iter()
+            .all(|ring| ring.iter().all(|piece| piece.whole))
+        {
+            self.loop_regions(sketch, &rings)
+        } else {
+            trimmed_regions(sketch, &rings)
+        }
+    }
+
+    /// Whole-curve rings as regions over loops of the sketch profile table.
+    fn loop_regions(&self, sketch: &Sketch, rings: &[Vec<Piece<'a>>]) -> Option<PlanarProfileRef> {
+        let mut table = sketch.profiles.iter().cloned().collect::<Vec<_>>();
+        if let Some(added) = self.added.borrow().get(sketch.id.as_str()) {
+            table.extend(added.iter().cloned());
+        }
+        let known = table.len();
+        let mut loops = Vec::new();
+        for ring in rings {
+            let mut curves = Vec::<&SketchEntity>::new();
+            for piece in ring {
+                if !curves.iter().any(|curve| curve.id() == piece.entity.id()) {
+                    curves.push(piece.entity);
+                }
+            }
             let index = match table.iter().position(|profile| {
                 profile.len() == curves.len()
                     && profile
@@ -387,7 +439,19 @@ impl<'a> ProfileIndex<'a> {
             }
             loops.push(index);
         }
-        let regions = self.nest(&table, &loops)?;
+        let geometry = loops
+            .iter()
+            .map(|index| self.loop_curves(table.get(*index)?))
+            .collect::<Option<Vec<_>>>()?;
+        let mut regions = Vec::new();
+        for (outer, holes) in nest(&geometry)? {
+            let holes = holes
+                .into_iter()
+                .map(|hole| u32::try_from(loops[hole]).ok())
+                .collect::<Option<Vec<_>>>()?;
+            regions
+                .push(SketchProfileRegion::loops(u32::try_from(loops[outer]).ok()?, holes).ok()?);
+        }
         let profile = PlanarProfileRef::sketch_regions(sketch.id.clone(), regions).ok()?;
         if table.len() > known {
             self.added
@@ -404,8 +468,9 @@ impl<'a> ProfileIndex<'a> {
         self.added.into_inner()
     }
 
-    /// The distinct sketch curves a wire runs along, in wire order.
-    fn wire_curves(
+    /// The pieces of sketch curves a wire runs along, as one closed ring in
+    /// wire order.
+    fn ring(
         &self,
         token: &str,
         sketch_ordinal: u32,
@@ -413,8 +478,8 @@ impl<'a> ProfileIndex<'a> {
         frame: &SketchFrame,
         link: &PmDcKernelEntityLink,
         wire: &ProfileWire,
-    ) -> Option<Vec<&'a SketchEntity>> {
-        let mut curves = Vec::new();
+    ) -> Option<Vec<Piece<'a>>> {
+        let mut pieces = Vec::new();
         for edge in &wire.edges {
             let name = edge.name?;
             if name.naming_type != i64::from(link.entity_type) {
@@ -425,65 +490,27 @@ impl<'a> ProfileIndex<'a> {
                 .get(&(token, sketch_ordinal, name.associative_id))?
                 .as_deref()?;
             let entity = *self.entities.get(native)?;
-            if entity.sketch != sketch.id
-                || entity.construction
-                || !spans_curve(frame, entity, edge)
-            {
+            if entity.sketch != sketch.id || entity.construction {
                 return None;
             }
-            if curves
+            pieces.push(Piece::new(frame, entity, edge)?);
+        }
+        let (first, rest) = pieces.split_first()?;
+        // A full circle bounds a ring by itself; it can run through more
+        // than one edge.
+        if matches!(first.curve, LoopCurve::Circle { .. })
+            && rest
                 .iter()
-                .any(|curve: &&SketchEntity| curve.id() == entity.id())
-            {
-                // Only a full circle runs through more than one edge.
-                if !is_full_circle(entity) {
-                    return None;
-                }
-                continue;
-            }
-            curves.push(entity);
+                .all(|piece| piece.entity.id() == first.entity.id())
+        {
+            let mut whole = pieces.swap_remove(0);
+            whole.whole = true;
+            whole.range = [0.0, TAU];
+            whole.ends = [polar_point(whole.curve, 0.0); 2];
+            return Some(vec![whole]);
         }
-        // A full circle bounds a loop by itself.
-        if curves.len() > 1 && curves.iter().any(|curve| is_full_circle(curve)) {
-            return None;
-        }
-        (!curves.is_empty()).then_some(curves)
-    }
-
-    /// Selected loops nested by containment: a loop inside an odd number of
-    /// other selected loops is a hole of the innermost loop that contains it.
-    fn nest(
-        &self,
-        table: &[Vec<SketchEntityUse>],
-        loops: &[usize],
-    ) -> Option<Vec<SketchProfileRegion>> {
-        let geometry = loops
-            .iter()
-            .map(|index| self.loop_curves(table.get(*index)?))
-            .collect::<Option<Vec<_>>>()?;
-        let mut contains = vec![vec![false; loops.len()]; loops.len()];
-        for (inner, inner_curves) in geometry.iter().enumerate() {
-            let point = inner_curves.first()?.point_on();
-            for (outer, outer_curves) in geometry.iter().enumerate() {
-                contains[outer][inner] = outer != inner && encloses(outer_curves, point)?;
-            }
-        }
-        let depth = (0..loops.len())
-            .map(|inner| contains.iter().filter(|row| row[inner]).count())
-            .collect::<Vec<_>>();
-        let mut regions = Vec::new();
-        for (outer, outer_depth) in depth.iter().enumerate() {
-            if outer_depth % 2 != 0 {
-                continue;
-            }
-            let holes = (0..loops.len())
-                .filter(|hole| depth[*hole] == outer_depth + 1 && contains[outer][*hole])
-                .map(|hole| u32::try_from(loops[hole]).ok())
-                .collect::<Option<Vec<_>>>()?;
-            regions
-                .push(SketchProfileRegion::loops(u32::try_from(loops[outer]).ok()?, holes).ok()?);
-        }
-        Some(regions)
+        orient(&mut pieces)?;
+        Some(pieces)
     }
 
     fn loop_curves(&self, profile: &[SketchEntityUse]) -> Option<Vec<LoopCurve>> {
@@ -494,6 +521,280 @@ impl<'a> ProfileIndex<'a> {
                 LoopCurve::new(entity, use_.reversed)
             })
             .collect()
+    }
+}
+
+/// Rings that use parts of curves as regions with trimmed boundary rings.
+fn trimmed_regions(sketch: &Sketch, rings: &[Vec<Piece<'_>>]) -> Option<PlanarProfileRef> {
+    let geometry = rings
+        .iter()
+        .map(|ring| ring.iter().map(Piece::loop_curve).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let boundary = |ring: &[Piece<'_>]| {
+        ring.iter()
+            .map(Piece::boundary_use)
+            .collect::<Option<Vec<_>>>()
+    };
+    let mut regions = Vec::new();
+    for (outer, holes) in nest(&geometry)? {
+        let holes = holes
+            .into_iter()
+            .map(|hole| boundary(&rings[hole]))
+            .collect::<Option<Vec<_>>>()?;
+        regions.push(SketchProfileRegion::trimmed(boundary(&rings[outer])?, holes).ok()?);
+    }
+    PlanarProfileRef::sketch_regions(sketch.id.clone(), regions).ok()
+}
+
+/// Selected rings nested by containment: a ring inside an odd number of
+/// other selected rings is a hole of the innermost ring that contains it.
+/// Each result pairs an outer ring with its holes, in source order.
+fn nest(rings: &[Vec<LoopCurve>]) -> Option<Vec<(usize, Vec<usize>)>> {
+    let mut contains = vec![vec![false; rings.len()]; rings.len()];
+    for (inner, inner_curves) in rings.iter().enumerate() {
+        for (outer, outer_curves) in rings.iter().enumerate() {
+            if outer == inner {
+                continue;
+            }
+            // A ring that shares a boundary with another is tested at a
+            // point of its own boundary off the other ring.
+            let point = inner_curves
+                .iter()
+                .map(|curve| curve.middle())
+                .find(|point| !outer_curves.iter().any(|curve| curve.touches(*point)))?;
+            contains[outer][inner] = encloses(outer_curves, point)?;
+        }
+    }
+    let depth = (0..rings.len())
+        .map(|inner| contains.iter().filter(|row| row[inner]).count())
+        .collect::<Vec<_>>();
+    let mut regions = Vec::new();
+    for (outer, outer_depth) in depth.iter().enumerate() {
+        if outer_depth % 2 != 0 {
+            continue;
+        }
+        let holes = (0..rings.len())
+            .filter(|hole| depth[*hole] == outer_depth + 1 && contains[outer][*hole])
+            .collect();
+        regions.push((outer, holes));
+    }
+    Some(regions)
+}
+
+/// The part of one sketch curve that one wire edge runs along.
+#[derive(Debug, Clone, Copy)]
+struct Piece<'a> {
+    entity: &'a SketchEntity,
+    /// The whole curve in its stored direction.
+    curve: LoopCurve,
+    /// Ascending parameters of the piece on the curve: a normalized line
+    /// parameter or an angle.
+    range: [f64; 2],
+    /// Whether the piece is the whole curve.
+    whole: bool,
+    /// The piece ends in traversal order.
+    ends: [Point2; 2],
+    /// Whether traversal runs from the upper parameter to the lower one.
+    reversed: bool,
+}
+
+impl<'a> Piece<'a> {
+    fn new(frame: &SketchFrame, entity: &'a SketchEntity, edge: &ProfileEdge) -> Option<Self> {
+        let start = frame.uv(edge.start)?;
+        let end = frame.uv(edge.end)?;
+        let curve = LoopCurve::new(entity, false)?;
+        let (range, whole) = match curve {
+            LoopCurve::Line {
+                start: first,
+                end: last,
+            } => {
+                let length = distance(first, last);
+                let tolerance = EPS_PROFILE_WIRE_POINT_MM / length;
+                let parameter = |point: Point2| {
+                    let along = (point.u - first.u)
+                        .mul_add(last.u - first.u, (point.v - first.v) * (last.v - first.v))
+                        / (length * length);
+                    let off = ((point.u - first.u) * (last.v - first.v)
+                        - (point.v - first.v) * (last.u - first.u))
+                        .abs()
+                        / length;
+                    (off <= EPS_PROFILE_WIRE_POINT_MM
+                        && (-tolerance..=1.0 + tolerance).contains(&along))
+                    .then(|| along.clamp(0.0, 1.0))
+                };
+                let range = ascending(parameter(start)?, parameter(end)?, tolerance)?;
+                let whole = range[0] <= tolerance && range[1] >= 1.0 - tolerance;
+                (if whole { [0.0, 1.0] } else { range }, whole)
+            }
+            LoopCurve::Arc {
+                center,
+                radius,
+                start_angle,
+                sweep,
+            } => {
+                let tolerance = EPS_PROFILE_WIRE_POINT_MM / radius;
+                let angle = |point: Point2| {
+                    on_circle(point, center, radius)?;
+                    let offset = ((point.v - center.v).atan2(point.u - center.u) - start_angle)
+                        .rem_euclid(TAU);
+                    // An end within the tolerance below the start angle
+                    // wraps to just under a full turn.
+                    let offset = if offset > TAU - tolerance {
+                        0.0
+                    } else {
+                        offset
+                    };
+                    (offset <= sweep + tolerance).then(|| start_angle + offset.min(sweep))
+                };
+                let range = ascending(angle(start)?, angle(end)?, tolerance)?;
+                let whole = range[0] <= start_angle + tolerance
+                    && range[1] >= start_angle + sweep - tolerance;
+                (
+                    if whole {
+                        [start_angle, start_angle + sweep]
+                    } else {
+                        range
+                    },
+                    whole,
+                )
+            }
+            LoopCurve::Circle { center, radius } => {
+                on_circle(start, center, radius)?;
+                on_circle(end, center, radius)?;
+                let tolerance = EPS_PROFILE_WIRE_POINT_MM / radius;
+                let at = |point: Point2| (point.v - center.v).atan2(point.u - center.u);
+                if distance(start, end) <= EPS_PROFILE_WIRE_POINT_MM {
+                    ([0.0, TAU], true)
+                } else {
+                    // Two ends split a circle into two arcs; the edge middle
+                    // lies on the one the edge runs along.
+                    let middle = frame.uv(edge.middle?)?;
+                    on_circle(middle, center, radius)?;
+                    let (first, last) = (at(start), at(end));
+                    let ccw = |from: f64, to: f64| (to - from).rem_euclid(TAU);
+                    let from = if ccw(first, at(middle)) < ccw(first, last) {
+                        first
+                    } else {
+                        last
+                    };
+                    let to = if from == first { last } else { first };
+                    let from = from.rem_euclid(TAU);
+                    let span = ccw(from, to);
+                    (span > tolerance).then_some(())?;
+                    ([from, from + span], false)
+                }
+            }
+        };
+        Some(Self {
+            entity,
+            curve,
+            range,
+            whole,
+            ends: [start, end],
+            reversed: false,
+        })
+    }
+
+    /// The piece as an oriented loop curve.
+    fn loop_curve(&self) -> LoopCurve {
+        match self.curve {
+            LoopCurve::Line { .. } => LoopCurve::Line {
+                start: self.ends[0],
+                end: self.ends[1],
+            },
+            LoopCurve::Arc { center, radius, .. } | LoopCurve::Circle { center, radius }
+                if !(self.whole && matches!(self.curve, LoopCurve::Circle { .. })) =>
+            {
+                let [low, high] = self.range;
+                if self.reversed {
+                    LoopCurve::Arc {
+                        center,
+                        radius,
+                        start_angle: high,
+                        sweep: low - high,
+                    }
+                } else {
+                    LoopCurve::Arc {
+                        center,
+                        radius,
+                        start_angle: low,
+                        sweep: high - low,
+                    }
+                }
+            }
+            whole => whole,
+        }
+    }
+
+    fn boundary_use(&self) -> Option<SketchProfileBoundaryUse> {
+        Some(SketchProfileBoundaryUse {
+            entity: self.entity.id().clone(),
+            parameter_range: DirectedParameterRange::new(self.range).ok()?,
+            reversed: self.reversed,
+        })
+    }
+
+    /// The parameter of a point of this piece's curve.
+    fn parameter(&self, point: Point2) -> f64 {
+        match self.curve {
+            LoopCurve::Line { start, end } => {
+                let length = distance(start, end);
+                (point.u - start.u)
+                    .mul_add(end.u - start.u, (point.v - start.v) * (end.v - start.v))
+                    / (length * length)
+            }
+            LoopCurve::Arc { center, .. } | LoopCurve::Circle { center, .. } => {
+                let angle = (point.v - center.v).atan2(point.u - center.u);
+                self.range[0] + (angle - self.range[0]).rem_euclid(TAU)
+            }
+        }
+    }
+}
+
+/// Orient a ring's pieces so that each one ends where the next one starts
+/// and the last ends where the first starts.
+fn orient(pieces: &mut [Piece<'_>]) -> Option<()> {
+    let count = pieces.len();
+    if count < 2 {
+        return None;
+    }
+    let touches = |point: Point2, piece: &Piece<'_>| piece.ends.iter().any(|end| near(point, *end));
+    if !touches(pieces[0].ends[1], &pieces[1]) {
+        pieces[0].ends.swap(0, 1);
+    }
+    for index in 1..count {
+        let at = pieces[index - 1].ends[1];
+        let piece = &mut pieces[index];
+        if near(piece.ends[1], at) && !near(piece.ends[0], at) {
+            piece.ends.swap(0, 1);
+        }
+        near(piece.ends[0], at).then_some(())?;
+    }
+    near(pieces[count - 1].ends[1], pieces[0].ends[0]).then_some(())?;
+    for piece in pieces.iter_mut() {
+        let [low, high] = piece.range;
+        let start = piece.parameter(piece.ends[0]);
+        // A traversal start at the upper parameter runs the piece backwards.
+        piece.reversed = (start - high).abs() < (start - low).abs();
+    }
+    Some(())
+}
+
+fn ascending(first: f64, second: f64, tolerance: f64) -> Option<[f64; 2]> {
+    let range = [first.min(second), first.max(second)];
+    (range[1] - range[0] > tolerance).then_some(range)
+}
+
+fn on_circle(point: Point2, center: Point2, radius: f64) -> Option<()> {
+    ((distance(point, center) - radius).abs() <= EPS_PROFILE_WIRE_POINT_MM).then_some(())
+}
+
+fn polar_point(curve: LoopCurve, angle: f64) -> Point2 {
+    match curve {
+        LoopCurve::Arc { center, radius, .. } | LoopCurve::Circle { center, radius } => {
+            polar(center, radius, angle)
+        }
+        LoopCurve::Line { start, .. } => start,
     }
 }
 
@@ -514,7 +815,7 @@ fn chain(curves: &[&SketchEntity]) -> Option<Vec<SketchEntityUse>> {
     let (first, rest) = curves.split_first()?;
     let start = LoopCurve::new(first, false)?;
     if rest.is_empty() {
-        return matches!(start, LoopCurve::Circle { .. }).then(|| vec![use_(first, false)]);
+        return is_full_circle(first).then(|| vec![use_(first, false)]);
     }
     let (origin, mut at) = start.ends();
     let mut uses = vec![use_(first, false)];
@@ -580,28 +881,6 @@ impl SketchFrame {
         );
         (offset.dot(self.normal).abs() <= EPS_PROFILE_WIRE_POINT_MM)
             .then(|| Point2::new(offset.dot(self.u_axis), offset.dot(self.v_axis)))
-    }
-}
-
-/// Whether a wire edge runs the full length of a sketch curve.
-fn spans_curve(frame: &SketchFrame, entity: &SketchEntity, edge: &ProfileEdge) -> bool {
-    let (Some(start), Some(end)) = (frame.uv(edge.start), frame.uv(edge.end)) else {
-        return false;
-    };
-    let same = near;
-    let ends = |first: Point2, second: Point2| {
-        (same(start, first) && same(end, second)) || (same(start, second) && same(end, first))
-    };
-    match LoopCurve::new(entity, false) {
-        Some(LoopCurve::Line { start: a, end: b }) => ends(a, b),
-        Some(arc @ LoopCurve::Arc { .. }) => {
-            let (a, b) = arc.ends();
-            ends(a, b)
-        }
-        Some(LoopCurve::Circle { center, radius }) => [start, end]
-            .iter()
-            .all(|point| (distance(*point, center) - radius).abs() <= EPS_PROFILE_WIRE_POINT_MM),
-        None => false,
     }
 }
 
@@ -690,9 +969,56 @@ impl LoopCurve {
         }
     }
 
-    /// A point on the curve.
-    fn point_on(self) -> Point2 {
-        self.ends().0
+    /// The point halfway along the curve.
+    fn middle(self) -> Point2 {
+        match self {
+            Self::Line { start, end } => {
+                Point2::new(start.u.midpoint(end.u), start.v.midpoint(end.v))
+            }
+            Self::Arc {
+                center,
+                radius,
+                start_angle,
+                sweep,
+            } => polar(center, radius, sweep.mul_add(0.5, start_angle)),
+            Self::Circle { center, radius } => polar(center, radius, 0.0),
+        }
+    }
+
+    /// Whether `point` lies on the curve.
+    fn touches(self, point: Point2) -> bool {
+        match self {
+            Self::Line { start, end } => {
+                let length = distance(start, end);
+                let along = (point.u - start.u)
+                    .mul_add(end.u - start.u, (point.v - start.v) * (end.v - start.v))
+                    / length;
+                let off = ((point.u - start.u) * (end.v - start.v)
+                    - (point.v - start.v) * (end.u - start.u))
+                    .abs()
+                    / length;
+                off <= EPS_PROFILE_WIRE_POINT_MM
+                    && (-EPS_PROFILE_WIRE_POINT_MM..=length + EPS_PROFILE_WIRE_POINT_MM)
+                        .contains(&along)
+            }
+            Self::Arc {
+                center,
+                radius,
+                start_angle,
+                sweep,
+            } => {
+                let (low, span) = if sweep < 0.0 {
+                    (start_angle + sweep, -sweep)
+                } else {
+                    (start_angle, sweep)
+                };
+                let offset = ((point.v - center.v).atan2(point.u - center.u) - low).rem_euclid(TAU);
+                let tolerance = EPS_PROFILE_WIRE_POINT_MM / radius;
+                on_circle(point, center, radius).is_some()
+                    && (offset <= span + tolerance || offset >= TAU - tolerance)
+            }
+            Self::Circle { center, radius } => on_circle(point, center, radius).is_some(),
+        }
     }
 
     /// The angle this curve turns about `point`, which lies off the curve.
