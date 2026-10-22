@@ -172,18 +172,101 @@ fn conditional_and_match_value_bindings_do_not_become_same_named_callbacks() {
 }
 
 #[test]
-fn unproved_symbol_resolution_is_exposed_as_a_limitation_instead_of_global_name_fallback() {
+fn unproved_symbol_resolution_is_a_finding_instead_of_a_global_name_fallback() {
     let graph = fixture(
         r#"
         impl EncoderBackend for Writer { fn plan(&self) { unknown_reexport::emit(); } }
         mod other { fn emit() { CodecError::WrongFormat("not the unresolved symbol".into()); } }
     "#,
     );
-    assert!(graph.findings().is_empty());
+    let found = graph.findings();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("unresolved workspace call unknown_reexport::emit"));
+    assert!(!found[0].contains("CodecError construction"));
+    assert_eq!(graph.reachable().len(), 1);
     let unresolved = graph.unresolved_symbols();
     assert_eq!(unresolved.len(), 1);
     assert!(unresolved[0].contains("unknown_reexport::emit"));
     assert!(unresolved[0].contains("classification remains unresolved"));
+    let graph = fixture(
+        r#"
+        impl EncoderBackend for Writer { fn plan(&self) { unknown_reexport::missing(); } }
+    "#,
+    );
+    let found = graph.findings();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("unresolved workspace call unknown_reexport::missing"));
+}
+
+#[test]
+fn re_exported_renamed_and_glob_imported_paths_reach_the_defining_module() {
+    let graph = fixture(
+        r#"
+        mod decode {
+            pub use context::{Context, Spec as Renamed};
+            pub use helpers::*;
+            mod context {
+                pub struct Context; pub struct Spec;
+                impl Context { pub fn from_root() -> Self { root_limit() } }
+                impl Spec { pub fn make() {} }
+                fn root_limit() { ResourceLimit { scope, dimension }; }
+            }
+            mod helpers { pub fn emit() { CodecError::WrongFormat("glob".into()); } }
+        }
+        mod writer {
+            use crate::decode::emit as forwarded;
+            impl EncoderBackend for Writer { fn plan(&self) {
+                crate::decode::Context::from_root(); crate::decode::Renamed::make(); forwarded();
+            } }
+        }
+    "#,
+    );
+    let found = graph.findings();
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(found
+        .iter()
+        .any(|site| site.contains("manufactured ResourceLimit") && site.contains("root_limit")));
+    assert!(found
+        .iter()
+        .any(|site| site.contains("CodecError construction") && site.contains("helpers::emit")));
+}
+
+#[test]
+fn types_constants_variants_and_external_paths_are_not_unresolved_calls() {
+    let graph = fixture(
+        r#"
+        struct Wrapper(u8); enum Kind { One(u8) } const LIMIT: u8 = 1;
+        impl EncoderBackend for Writer { fn plan(&self) {
+            Wrapper(LIMIT); Kind::One(LIMIT); std::mem::take(value); u64::from(LIMIT);
+            Vec::with_capacity(1); Some(LIMIT);
+        } }
+    "#,
+    );
+    assert!(graph.findings().is_empty(), "{:?}", graph.findings());
+}
+
+#[test]
+fn self_imports_and_macro_generated_items_reach_their_definitions() {
+    let graph = fixture(
+        r#"
+        mod helpers { pub fn emit() { CodecError::WrongFormat("self import".into()); } }
+        macro_rules! accessors { ($name:ident) => { fn $name() { CodecError::WrongFormat("generated".into()); } }; }
+        mod view { struct View; impl View { accessors!(read_at); } }
+        mod writer { use crate::helpers::{self};
+            impl EncoderBackend for Writer { fn plan(&self) { helpers::emit(); crate::view::View::read_at(); } }
+        }
+    "#,
+    );
+    let found = graph.findings();
+    assert!(!found
+        .iter()
+        .any(|site| site.contains("unresolved workspace call")));
+    assert!(found
+        .iter()
+        .any(|site| site.contains("CodecError construction") && site.contains("helpers::emit")));
+    assert!(found
+        .iter()
+        .any(|site| site.contains("CodecError construction") && site.contains("accessors")));
 }
 
 #[test]
@@ -315,7 +398,9 @@ fn alias_cycles_stay_explicitly_unresolved_without_borrowing_an_unrelated_target
         impl EncoderBackend for Writer { fn plan(&self) { crate::first::emit(); } }
     "#,
     );
-    assert!(graph.findings().is_empty());
+    let found = graph.findings();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("unresolved workspace call crate::first::emit"));
     assert_eq!(graph.reachable().len(), 1);
     let unresolved = graph.unresolved_symbols();
     assert_eq!(unresolved.len(), 1);
@@ -332,7 +417,9 @@ fn path_growing_alias_cycles_are_bounded_and_remain_an_unresolved_limitation() {
         mod unrelated { fn emit() { CodecError::WrongFormat("not a proved target".into()); } }
     "#,
     );
-    assert!(graph.findings().is_empty());
+    let found = graph.findings();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("unresolved workspace call crate::recursive::forward::emit"));
     assert_eq!(graph.reachable().len(), 1);
     assert_eq!(graph.unresolved_symbols().len(), 1);
 }
@@ -438,4 +525,21 @@ fn an_unrelated_trait_with_the_same_export_alias_is_not_an_encoder_root() {
         .any(|name| name == "SafeWriter"));
     assert_eq!(graph.reachable().len(), 1);
     assert!(graph.findings().is_empty());
+}
+
+#[test]
+fn a_call_through_a_type_parameter_dispatches_like_a_method_call() {
+    let graph = fixture(
+        r#"
+        trait Scan { const WIDTH: usize; fn scan(); }
+        impl Scan for Part { const WIDTH: usize = 4; fn scan() { CodecError::WrongFormat("dispatched".into()); } }
+        fn read<P: Scan>() { P::scan(); consume(P::WIDTH); }
+        fn consume(value: usize) { let _ = value; }
+        impl EncoderBackend for Writer { fn plan(&self) { read::<Part>(); } }
+    "#,
+    );
+    let found = graph.findings();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("CodecError construction") && found[0].contains("Part::scan"));
+    assert!(graph.unresolved_symbols().is_empty());
 }
