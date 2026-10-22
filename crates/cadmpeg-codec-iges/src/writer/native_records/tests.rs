@@ -126,6 +126,9 @@ fn reemitted_font_definition_uses_current_directory_pointer() {
 
 #[test]
 fn units_data_preserves_its_current_owner_link() {
+    // The writer states the scale as an IGES real; compare its value, not
+    // its digit layout.
+    const EPS_UNIT_SCALE_REAL: f64 = 1.0e-12;
     let mut ir = CadIr::empty();
     let id = "iges:metadata:units-data#D99";
     install(
@@ -144,7 +147,17 @@ fn units_data_preserves_its_current_owner_link() {
     assert!(exported.regenerated.contains(id));
     assert_eq!(entities[0].property_links, [1]);
     assert_eq!(entities[1].type_code, 316);
-    assert_eq!(&entities[1].parameter_body, b"1,6HLENGTH,2HMM,1;");
+    let parameters = std::str::from_utf8(&entities[1].parameter_body)
+        .expect("units-data parameter body is ASCII");
+    let scale = parameters
+        .strip_prefix("1,6HLENGTH,2HMM,")
+        .and_then(|rest| rest.strip_suffix(';'))
+        .expect("units-data parameter body holds one unit and its scale");
+    let scale: f64 = scale
+        .replace('D', "e")
+        .parse()
+        .expect("units-data scale is an IGES real");
+    assert!((scale - 1.0).abs() <= EPS_UNIT_SCALE_REAL);
 }
 
 #[test]
