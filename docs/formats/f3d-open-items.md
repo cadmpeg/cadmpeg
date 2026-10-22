@@ -332,7 +332,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** Sketch constraints and complete feature definitions in documents of this generation stay native until each fixed-offset grammar reads references by their encoded width.
 
-### DR-85. Typed profile-identity entry fields and other profile forms
+### DR-89. Typed profile-identity entry fields and other profile forms
 
 **Question.** What do the twelve bytes after the secondary identity in a typed profile-identity entry mean, what separates the two loop lists, and which form do the typed Extrude profile groups without a typed profile selection use?
 
