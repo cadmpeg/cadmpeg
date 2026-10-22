@@ -773,23 +773,20 @@ outside the source-defined range.
 **Question.** Which current built-in Rhino object classes must have a typed
 geometry or annotation transfer?
 
-**Known.** `decode.rs:789-843` dispatches classes through the current family
-predicates, while `decode.rs:2404-2415` groups every object that remains in the
-retained state under `object.family-not-transferred`. Current built-in records
-that reach that state include
-`ON_Text`, `ON_TextDot`, obsolete V2 text dots and annotation arrows, obsolete
-V5 text and leaders, instance references, the legacy `TL_Brep` alias, and
-ordinary `ON_Point`, `ON_LineCurve`, and `ON_ArcCurve` records. The V1 path
-also retains flat geometry typecodes `0x80400025`, `0x02000014`, `0x02000013`,
-`0x00400020`, `0x00200001`, `0x0200000f`, `0x00400010`, and `0x00800001`
-without neutral geometry. Some nonempty documents consequently produce no
-neutral geometry.
+**Known.** `decode.rs` dispatches classes through the current family
+predicates and groups every object that remains in the retained state under
+`object.family-not-transferred`. Current built-in records that reach that
+state include `ON_Text`, `ON_TextDot`, obsolete V2 text dots and annotation
+arrows, obsolete V5 text and leaders, instance references, and the legacy
+`TL_Brep` alias. In `v2_Camera.3dm` the 54 old-polycurve
+(`EF638317-154B-11d4-8000-0010830122F0`) records decode, but each curve
+candidate fails admission because candidate validation reports the
+`geometric_consistency` errors of an already committed Brep; they reach
+`object.framing-undecodable`.
 
-**Need.** Inventory each listed UUID and V1 typecode against its source class,
-then distinguish an unsupported dispatch from a failed supported decode and
-add the missing typed reader or repair the failing reader. Ordinary point,
-line, arc, and Brep aliases must reach their owning geometry decoder and leave
-the retained state for every valid versioned payload.
+**Need.** Add typed transfers for the listed annotation and instance classes,
+route the `TL_Brep` alias to the Brep decoder, and scope candidate admission
+so that findings on committed entities outside the candidate do not reject it.
 
 ### AN-01. Annotation transfer loses text and style binding
 

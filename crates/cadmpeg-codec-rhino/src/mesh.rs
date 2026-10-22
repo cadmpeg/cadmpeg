@@ -304,6 +304,7 @@ pub(crate) fn decode(
     }
     let faces = read_faces(&mut reader, vertex_count, face_count)?;
     let mut ngons = Vec::new();
+    let mut unusable_ngons = 0;
     if major == 1 {
         read_raw_channels(
             expand.ctx(),
@@ -434,7 +435,11 @@ pub(crate) fn decode(
             })
         {
             match read_v4v5_ngon_userdata(data, extra, archive, vertex_count, face_count) {
-                Ok(Some(records)) => ngons = records,
+                Ok(Some(V4V5Ngons {
+                    records,
+                    indices_valid: true,
+                })) => ngons = records,
+                Ok(Some(V4V5Ngons { records, .. })) => unusable_ngons = records.len(),
                 Ok(None) => decoded.warnings.push(format_args!(
                     "V4/V5 mesh n-gon userdata at offset {} was rejected; grouping omitted",
                     extra.range.start
@@ -568,7 +573,7 @@ pub(crate) fn decode(
         warnings: decoded.warnings,
         losses: decoded.losses,
         scaled: scale != MillimeterScale::IDENTITY,
-        dropped_ngons,
+        dropped_ngons: dropped_ngons + unusable_ngons,
         quad_count,
         proxy_fingerprint,
     })
@@ -1459,7 +1464,7 @@ fn read_v4v5_ngon_userdata(
     archive: ArchiveVersion,
     vertex_count: usize,
     face_count: usize,
-) -> Result<Option<Vec<Vec<u32>>>, GeometryError> {
+) -> Result<Option<V4V5Ngons>, GeometryError> {
     let chunk = chunk_at(
         data,
         extra.payload_range.start,
@@ -1491,7 +1496,10 @@ fn read_v4v5_ngon_userdata(
     let raw_count = reader.i32()?;
     if raw_count <= 0 {
         reader.skip_remaining()?;
-        return Ok(Some(Vec::new()));
+        return Ok(Some(V4V5Ngons {
+            records: Vec::new(),
+            indices_valid: true,
+        }));
     }
     let count = usize::try_from(raw_count)
         .ok()
@@ -1531,10 +1539,13 @@ fn read_v4v5_ngon_userdata(
                 unused_faces = true;
                 continue;
             }
-            if unused_faces || face < 0 || face >= mesh_face_count {
+            if unused_faces || face >= mesh_face_count {
                 valid_indices = false;
             }
-            record.push(u32::try_from(face).unwrap_or(u32::MAX));
+            match u32::try_from(face) {
+                Ok(face) => record.push(face),
+                Err(_) => valid_indices = false,
+            }
         }
         records.push(record);
     }
@@ -1550,7 +1561,18 @@ fn read_v4v5_ngon_userdata(
     if !valid {
         return Ok(None);
     }
-    Ok(Some(records))
+    Ok(Some(V4V5Ngons {
+        records,
+        indices_valid: valid_indices,
+    }))
+}
+
+/// Admitted V4/V5 n-gon records. A list admitted by its stored mesh counts
+/// can still name faces outside the mesh; it then groups no faces.
+#[derive(Debug, PartialEq, Eq)]
+struct V4V5Ngons {
+    records: Vec<Vec<u32>>,
+    indices_valid: bool,
 }
 
 fn consume_optional_chunk(
@@ -2252,7 +2274,10 @@ mod tests {
         let extra = descriptor.known().expect("known n-gon userdata");
         assert_eq!(
             read_v4v5_ngon_userdata(&bytes, extra, ArchiveVersion::V5, 3, 1).expect("one n-gon"),
-            Some(vec![vec![0]])
+            Some(super::V4V5Ngons {
+                records: vec![vec![0]],
+                indices_valid: true,
+            })
         );
     }
 
