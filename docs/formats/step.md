@@ -1333,6 +1333,15 @@ domain. Deferred surface dependencies resolve by graph fixpoint, including
 forward and nested replicas. Its native entity is emitted again when those
 values are available.
 
+CADIR export decision: the writer applies a carrier's placement chain to the
+carrier itself when the placed carrier keeps the parameterization of the
+replica: an analytic curve or surface under a proper rigid motion, and a NURBS
+carrier, a polyline or a point under any placement the writer admits. In
+parameter space, a line or NURBS pcurve is placed under any affine map and a
+conic pcurve under a proper rigid motion. Every other placement is written as
+a `CURVE_REPLICA` or `SURFACE_REPLICA` over the written basis. The half-turn
+of a reversed cone chart is a proper rigid motion and follows the same rule.
+
 ISO 10303-42 defines each surface as `σ(u,v)` with independent parameters. For
 `SURFACE_OF_LINEAR_EXTRUSION`, if the directrix is `λ(u)` and the extrusion axis
 is `V`, the surface is `σ(u,v) = λ(u) + v V`; U follows the directrix
