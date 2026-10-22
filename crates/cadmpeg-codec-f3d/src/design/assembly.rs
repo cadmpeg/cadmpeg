@@ -123,6 +123,12 @@ impl AssemblyScopeGeneration {
                 ])),
             length if length == u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN) => (
                 (class_tag == "383" && paired_class_tag == "258").then_some(Standard), Some((20, 8, 12)), None),
+            // A rigid group with more than two members keeps the 269-byte
+            // prefix; its first two locators lead the run.
+            length if rigid_group_member_count(length).is_some() => (None, Some((0, 0, 0)), Some([
+                crate::layout::assembly_rigid_as_built_scope::FIRST_LOCATOR_REFERENCE,
+                crate::layout::assembly_rigid_as_built_scope::SECOND_LOCATOR_REFERENCE,
+            ])),
             _ => (None, None, None),
         };
         if variable_reference_assembly_generation(class_tag, paired_class_tag) {
@@ -220,11 +226,21 @@ pub(crate) fn joint_placed_occurrence_loss(
     })
 }
 
-/// The 269-byte rigid `As-built` scope: no parameter owners and two wide
-/// operand-path locators. Its class tags are per-file dynamic values, so its
-/// kind and frame length identify it.
+/// The rigid `As-built` scope of a rigid group: no parameter owners and one
+/// wide operand-path locator per member. The 269-byte frame has two members;
+/// each further member adds one 11-byte locator reference. Its class tags are
+/// per-file dynamic values, so its kind and frame length identify it.
 pub(crate) fn rigid_as_built_scope(frame_length: u64, as_built: bool) -> bool {
-    as_built && frame_length == 269
+    as_built && rigid_group_member_count(frame_length).is_some()
+}
+
+/// The member count a rigid `As-built` frame length implies.
+pub(crate) fn rigid_group_member_count(frame_length: u64) -> Option<usize> {
+    let extra = frame_length.checked_sub(269)?;
+    if extra % 11 != 0 {
+        return None;
+    }
+    usize::try_from(extra / 11).ok()?.checked_add(2)
 }
 
 /// Admit the legacy 383/258 assembly scope only as its exact generation.
@@ -407,6 +423,16 @@ pub(crate) fn project_assembly_joints(
                     undecoded_motions.insert(reason);
                 }
                 joints.entry(joint.id.as_str().to_owned()).or_insert(joint);
+                match rigid_group_member_joints(scope, stream, &occurrences, scopes, inserts) {
+                    Ok(members) => {
+                        for member in members {
+                            joints
+                                .entry(member.id.as_str().to_owned())
+                                .or_insert(member);
+                        }
+                    }
+                    Err(_) => unprojected += 1,
+                }
             }
             Ok(None) => {}
             Err(_) => unprojected += 1,
@@ -690,13 +716,86 @@ fn project_assembly_joint(
     Ok(Some((joint, undecoded)))
 }
 
+/// The fixed joints that tie each rigid-group member after the first two to
+/// the group's first member, at their as-built relative pose. Every such joint
+/// names the group's scope as its native record, as the joint between the
+/// first two members does.
+fn rigid_group_member_joints(
+    scope: &DesignParameterScope,
+    stream: &str,
+    occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
+    scopes: &[DesignParameterScope],
+    inserts: &ComponentInserts,
+) -> Result<Vec<AssemblyJoint>, CodecError> {
+    let Some(alignment) = scope.assembly_alignment() else {
+        return Ok(Vec::new());
+    };
+    let Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Qualified([first, _])) =
+        alignment.form.as_ref()
+    else {
+        return Ok(Vec::new());
+    };
+    let angle = cadmpeg_ir::scalar::FiniteReal::new(alignment.angle())
+        .ok_or_else(|| CodecError::Malformed("joint angle must be finite".into()))?;
+    let [x, y, z] = alignment.offset().map(|value| {
+        cadmpeg_ir::scalar::FiniteReal::new(value * 10.0)
+            .ok_or_else(|| CodecError::Malformed("joint translation_offset must be finite".into()))
+    });
+    let translation_offset = [x?, y?, z?];
+    let first_frame = super::components::neutral_transform(first.frame.transform.rows())?;
+    let mut joints = Vec::new();
+    for (ordinal, member) in alignment.additional_members.iter().enumerate() {
+        let [first_operand, member_operand] = project_qualified_operands(
+            [&first.qualifier, &member.qualifier],
+            stream,
+            occurrences,
+            scopes,
+            inserts,
+        )
+        .ok_or_else(|| {
+            CodecError::NotImplemented(
+                "rigid group member names no projected occurrence or origin".into(),
+            )
+        })?;
+        let mut joint = AssemblyJoint::paired(
+            crate::ids::neutral_assembly_group_joint_id(scope, ordinal + 2),
+            PairedJointKind::Fixed {
+                angle: Some(angle),
+                translation_offset: Some(translation_offset),
+                angular_limits: None,
+                linear_limits: None,
+            },
+            [
+                JointConnector {
+                    operand: first_operand,
+                    frame: first_frame,
+                    detached: false,
+                },
+                JointConnector {
+                    operand: member_operand,
+                    frame: super::components::neutral_transform(member.frame.transform.rows())?,
+                    detached: false,
+                },
+            ],
+            None,
+        );
+        joint.native_ref = Some(scope.id.clone());
+        joints.push(joint);
+    }
+    Ok(joints)
+}
+
 /// Bind each native `Assemble` feature to the joint that product projection
 /// emitted for its scope.
 pub(crate) fn bind_assembly_joint_features(features: &mut [Feature], joints: &[AssemblyJoint]) {
-    let joints = joints
-        .iter()
-        .filter_map(|joint| Some((joint.native_ref.as_deref()?, &joint.id)))
-        .collect::<BTreeMap<_, _>>();
+    // A rigid group's joints share its scope; the feature binds the first.
+    let mut by_scope = BTreeMap::new();
+    for joint in joints {
+        if let Some(scope) = joint.native_ref.as_deref() {
+            by_scope.entry(scope).or_insert(&joint.id);
+        }
+    }
+    let joints = by_scope;
     for feature in features {
         let Some(joint) = feature
             .native_ref
@@ -1175,6 +1274,39 @@ mod tests {
                 .collect::<Vec<_>>(),
             [crate::loss::F3dLossCode::AssemblyJointFrameSenseUnprojected.kind()]
         );
+
+        // A rigid group's members after its first two each tie to its first
+        // member, and every joint names the group's scope.
+        let mut group = scopes(true, false);
+        group[0]
+            .try_edit(|draft| {
+                if let DesignScopePayload::Assemble(Some(alignment)) = &mut draft.payload {
+                    alignment.additional_members = vec![
+                        crate::records::feature::assembly::DesignQualifiedAssemblyOperand {
+                            frame: DesignAssemblyOperandFrame {
+                                reference_record_index: 30,
+                                reference_offset: 0,
+                                transform: cadmpeg_ir::transform::Transform::identity()
+                                    .rows()
+                                    .try_into()
+                                    .unwrap(),
+                                transform_offset: 0,
+                            },
+                            qualifier: DesignAssemblyOperandQualifier::OccurrencePath {
+                                path: path(31, true).unwrap(),
+                            },
+                        },
+                    ];
+                }
+            })
+            .unwrap();
+        let projection = super::project_assembly_joints(&group, &[], &inserts, &[]);
+        assert_eq!(projection.joints.len(), 2);
+        assert!(projection
+            .joints
+            .iter()
+            .all(|joint| joint.native_ref.as_deref() == Some(group[0].id.as_str())));
+        assert_ne!(projection.joints[0].id, projection.joints[1].id);
 
         // The class tag alone admits no external path and no untyped arity.
         assert!(path(11, false).is_err());
