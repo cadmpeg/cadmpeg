@@ -1712,3 +1712,16 @@ fn grouped_alias_storage_yields_one_surface_alias() {
 
     assert_eq!(surface_aliases(&bytes, &[]).len(), 1);
 }
+
+#[test]
+fn outer_alias_parser_retains_exact_unclassified_0133_lead() {
+    use crate::object_graph::AliasLead;
+
+    let mut bytes = surface_alias_stream();
+    bytes[..4].copy_from_slice(&0x0000_0133u32.to_le_bytes());
+    let [row] = surface_aliases(&bytes, &[])
+        .try_into()
+        .expect("one unclassified alias row");
+    assert_eq!(row.lead(), AliasLead::Unclassified(0x0000_0133));
+    assert_eq!(row.entity_record_ordinal(), 7);
+}

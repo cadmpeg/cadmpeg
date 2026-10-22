@@ -112,20 +112,30 @@ fn parameter_numeric_and_source_edits_keep_the_old_value_on_failure() {
 
 #[test]
 fn source_parameter_admission_checks_actual_field_order() {
+    assert!(DesignParameter::try_from(draft()).is_ok());
     for (field, offset) in [
+        ("byte", 140),
         ("expression", 100),
         ("expression", 160),
         ("source_kind", 180),
+        ("unit", 160),
+        ("unit", 180),
         ("name", 190),
         ("evaluated", 180),
     ] {
         let mut input = draft();
         match field {
+            "byte" => input.byte_offset = offset,
             "expression" => input.expression_offset = offset,
             "source_kind" => input.source_kind_offset = offset,
+            "unit" => input.unit.as_mut().expect("original source unit").offset = offset,
             "name" => input.name_offset = offset,
             _ => input.evaluated_value_offset = offset,
         }
         assert!(DesignParameter::try_from(input).is_err(), "{field}");
     }
+    let mut no_unit = draft();
+    no_unit.unit = None;
+    no_unit.name_offset = 160;
+    assert!(DesignParameter::try_from(no_unit).is_err());
 }

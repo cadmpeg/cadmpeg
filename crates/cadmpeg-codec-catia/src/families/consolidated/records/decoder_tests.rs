@@ -1325,3 +1325,56 @@ fn object_stream_vertex_record_reads_one_xyz_point() {
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
 }
+
+#[test]
+fn class25_edge_run_accepts_segmented_finite_lane_and_rejects_unknown_marker() {
+    let mut descriptor = vec![0x08, 0x34, 0x12, 0x02];
+    descriptor.extend_from_slice(&3.0_f64.to_le_bytes());
+    descriptor.extend_from_slice(&7.0_f64.to_le_bytes());
+    let mut definition = vec![0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
+    for value in [1.0_f64, 2.0, 0.001, 3.0, 4.0] {
+        definition.extend_from_slice(&value.to_le_bytes());
+    }
+    let marker = definition.len();
+    definition.push(0x82);
+    for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 0.001] {
+        definition.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut bytes = vec![
+        0xb2,
+        0x03,
+        0x18,
+        u8::try_from(descriptor.len()).expect("fixture value fits u8"),
+        0x05,
+    ];
+    bytes.extend_from_slice(&descriptor);
+    bytes.extend_from_slice(&[
+        0xb2,
+        0x03,
+        0x25,
+        u8::try_from(definition.len()).expect("fixture value fits u8"),
+        0x05,
+    ]);
+    let definition_start = bytes.len();
+    bytes.extend_from_slice(&definition);
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    assert_eq!(super::consolidated_class25_edge_runs(&bytes).len(), 1);
+    bytes[definition_start + marker] = 0x84;
+    assert!(super::consolidated_class25_edge_runs(&bytes).is_empty());
+}
+
+#[test]
+fn unsegmented_scalar_deserialization_rejects_arity_outside_its_grammar() {
+    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+    for (kind, lower, upper) in [("scalar", 8, 9), ("scalar25", 7, 10)] {
+        for count in 0..=11 {
+            let wire = serde_json::json!({"kind": kind, "operands": [1, 2, 3], "persistent_lead": 10, "values": vec![0.0; count]});
+            let result = serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire);
+            assert_eq!(
+                result.is_ok(),
+                (lower..=upper).contains(&count),
+                "{kind} {count}"
+            );
+        }
+    }
+}

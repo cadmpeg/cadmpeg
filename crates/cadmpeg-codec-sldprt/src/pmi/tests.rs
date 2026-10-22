@@ -916,6 +916,62 @@ fn decode_reports_unbound_pmi_semantic_dimension() {
 }
 
 #[test]
+fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    for guid in [
+        "01234567-89ab-cdef-0123-456789abcdef",
+        "fedcba98-7654-3210-fedc-ba9876543210",
+    ] {
+        source.extend(make_block(
+            0x49,
+            "Contents/PMISemanticDataDB",
+            &pmi_semantic_payload_for_with_guid("D1@Sketch1", guid),
+        ));
+    }
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    assert_eq!(sldprt_native(decoded.ir()).pmi_dimensions.len(), 2);
+    assert_eq!(decoded.ir().model.parameters.len(), 1);
+    assert!(decoded.report().losses.iter().all(|loss| !loss
+        .message
+        .contains("semantic dimension record(s) are not bound")));
+
+    {
+        let mut ir = decoded.ir_mut();
+        let parameter = &mut ir.model.parameters[0];
+        parameter.expression = "50mm".into();
+        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
+        ));
+    }
+
+    let mut encoded = Vec::new();
+    crate::test_support::serialize_edited_history(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(regenerated.ir());
+    assert_eq!(native.pmi_dimensions.len(), 2);
+    assert!(native
+        .pmi_dimensions
+        .iter()
+        .all(|dimension| dimension.value.get() == 0.05));
+}
+
+#[test]
 fn duplicate_pmi_records_share_one_parameter_and_report_annotation_loss() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

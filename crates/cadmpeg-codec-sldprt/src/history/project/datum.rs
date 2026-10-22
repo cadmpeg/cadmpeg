@@ -341,4 +341,67 @@ mod tests {
         parameter(&mut feature, "D3", "7mm");
         assert!(project_native_axis_helix(&feature).is_none());
     }
+
+    #[test]
+    fn helix_revolutions_are_admitted_once_into_the_operation() {
+        let mut feature = crate::history::tests::feature("helix", None, 1);
+        property(&mut feature, "AxisOrigin", "0mm,0mm,0mm");
+        property(&mut feature, "AxisDirection", "0,0,1");
+        parameter(&mut feature, "Radius", "2mm");
+        parameter(&mut feature, "Pitch", "1mm");
+        parameter(&mut feature, "Revolutions", "2.5");
+
+        let parameters = crate::history::parameters::project_parameters(
+            &cadmpeg_test_support::service_decode_context(),
+            &[crate::records::FeatureHistory {
+                id: "history".into(),
+                part_name: None,
+                properties: std::collections::BTreeMap::new(),
+                content: Vec::new(),
+                configurations: Vec::new(),
+                features: vec![feature.clone()],
+            }],
+        )
+        .unwrap();
+
+        assert!(matches!(
+            project_helix(&feature),
+            Some(FeatureDefinition::Operation(FeatureOperation::Helix { shape, .. }))
+                if shape.law().and_then(|law| law.resolved_from(&parameters))
+                    .is_some_and(|law| law.revolutions.get() == 2.5)
+        ));
+        parameter(&mut feature, "Revolutions", "0");
+        assert!(project_helix(&feature).is_none());
+    }
+
+    #[test]
+    fn native_axis_helix_revolutions_are_admitted_once_into_the_operation() {
+        let mut feature = crate::history::tests::feature("helix", None, 1);
+        parameter(&mut feature, "D3", "2mm");
+        parameter(&mut feature, "D4", "1mm");
+        parameter(&mut feature, "D5", "2.5");
+        parameter(&mut feature, "D7", "0rad");
+
+        let parameters = crate::history::parameters::project_parameters(
+            &cadmpeg_test_support::service_decode_context(),
+            &[crate::records::FeatureHistory {
+                id: "history".into(),
+                part_name: None,
+                properties: std::collections::BTreeMap::new(),
+                content: Vec::new(),
+                configurations: Vec::new(),
+                features: vec![feature.clone()],
+            }],
+        )
+        .unwrap();
+
+        assert!(matches!(
+            project_native_axis_helix(&feature),
+            Some(FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis { law, .. }))
+                if law.resolved_from(&parameters)
+                    .is_some_and(|law| law.revolutions.get() == 2.5)
+        ));
+        parameter(&mut feature, "D5", "0");
+        assert!(project_native_axis_helix(&feature).is_none());
+    }
 }
