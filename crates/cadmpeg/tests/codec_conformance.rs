@@ -817,20 +817,20 @@ mod subset_carriers {
         normal: Vector3,
     ) -> SolvedCurveGeometry {
         let origin = Point3::new(0.0, 0.0, 0.0);
-        let (x, z) = (Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
-        let unit = canonical(basis, 1.0, origin, x, z);
+        let (reference, axis) = (Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
+        let unit = canonical(basis, 1.0, origin, reference, axis);
         let size = norm(sub(first, second)) / norm(sub(at(&unit, RANGE[1]), at(&unit, RANGE[0])));
-        let local = canonical(basis, size, origin, x, z);
+        let local = canonical(basis, size, origin, reference, axis);
         let (start, end) = (at(&local, RANGE[0]), at(&local, RANGE[1]));
         let chord = sub(end, start);
-        let (ux, uy) = (chord.x / norm(chord), chord.y / norm(chord));
-        let d = scaled(sub(second, first), 1.0 / norm(sub(second, first)));
-        let w = cross(normal, d);
-        let x = sum(scaled(d, ux), scaled(w, -uy));
-        let y = sum(scaled(d, uy), scaled(w, ux));
-        let offset = sum(scaled(x, start.x), scaled(y, start.y));
+        let (chord_x, chord_y) = (chord.x / norm(chord), chord.y / norm(chord));
+        let along = scaled(sub(second, first), 1.0 / norm(sub(second, first)));
+        let across = cross(normal, along);
+        let placed_x = sum(scaled(along, chord_x), scaled(across, -chord_y));
+        let placed_y = sum(scaled(along, chord_y), scaled(across, chord_x));
+        let offset = sum(scaled(placed_x, start.x), scaled(placed_y, start.y));
         let placed = Point3::new(first.x - offset.x, first.y - offset.y, first.z - offset.z);
-        canonical(basis, size, placed, x, normal)
+        canonical(basis, size, placed, placed_x, normal)
     }
 
     /// The unit cube with its first edge on a subset of `basis`.
