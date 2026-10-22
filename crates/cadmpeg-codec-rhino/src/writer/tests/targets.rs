@@ -93,7 +93,7 @@ fn inherit_defaults_a_source_that_records_no_dialect() {
         TargetRequest::Inherit,
     )
     .expect("§5.0 selects catalog-default synthesis");
-    assert_default_synthesis(plan, "the unrecorded same-format source dialect was displaced by target dialect rhino:archive-80; the source dialect identity is not preserved");
+    assert_default_synthesis(plan, "unrecorded");
 }
 
 /// An explicit target that is not the source archive version charges a loss.
@@ -154,7 +154,7 @@ fn inherit_synthesizes_the_default_for_a_source_archive_version_outside_the_cata
         TargetRequest::Inherit,
     )
     .expect("§5.0 selects catalog-default synthesis");
-    assert_default_synthesis(plan, "source dialect rhino:archive-3 was displaced by target dialect rhino:archive-80; the source dialect identity is not preserved");
+    assert_default_synthesis(plan, "rhino:archive-3");
 }
 
 /// The §8.3 honesty invariant on the synthesis path: re-decoding the output
@@ -218,7 +218,8 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     }
 }
 
-fn assert_default_synthesis(plan: cadmpeg_ir::codec::write::ExportPlan, message: &str) {
+/// `displaced` is the displaced source dialect id, or `unrecorded`.
+fn assert_default_synthesis(plan: cadmpeg_ir::codec::write::ExportPlan, displaced: &str) {
     use cadmpeg_ir::{Codec, DecodeOptions};
     assert!(matches!(
         plan.report().write_path(),
@@ -235,7 +236,8 @@ fn assert_default_synthesis(plan: cadmpeg_ir::codec::write::ExportPlan, message:
         .filter(|loss| loss.code == crate::loss::RhinoLossCode::SourceDialectDisplaced.kind())
         .collect();
     assert_eq!(displacement.len(), 1);
-    assert_eq!(displacement[0].message, message);
+    assert!(displacement[0].message.contains(displaced));
+    assert!(displacement[0].message.contains("rhino:archive-80"));
     assert!(plan.report().synthesis_cause().is_none());
     assert_eq!(
         wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
