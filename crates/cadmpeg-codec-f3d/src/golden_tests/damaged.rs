@@ -6,7 +6,7 @@ use std::path::Path;
 
 use cadmpeg_test_support::golden::artifact_names;
 
-fn inputs_at(root: &Path) -> Vec<(String, Vec<u8>)> {
+pub(super) fn inputs_at(root: &Path) -> Vec<(String, Vec<u8>)> {
     let fixtures = root.join("fixtures");
     if !fixtures.join("damaged").is_dir() {
         return Vec::new();

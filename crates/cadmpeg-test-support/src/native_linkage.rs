@@ -30,13 +30,66 @@ pub struct NativeLinkageAudit {
 /// Panics if the complete document cannot be inspected or any link violates
 /// check 8. Each failure states the exact JSON pointer and identity.
 pub fn assert_native_linkage(document: &cadmpeg_ir::CadIr) -> NativeLinkageAudit {
-    let value = serde_json::to_value(document).expect("serialize the complete golden document");
-    let audit = audit_native_linkage(&value).expect("inspect every golden native row");
-    assert_eq!(
-        audit.neutral_records,
-        document.model.entity_count(),
-        "every neutral row must be inspected"
+    check_native_linkage(document).unwrap_or_else(|failure| panic!("{failure}"))
+}
+
+/// Run check 8 over one codec's golden inputs, each decoded with
+/// `DecodeOptions::default()`, as the golden snapshots decode them.
+///
+/// A golden whose decode is refused holds no document, so it has no native row
+/// to check. Every decoded golden is checked; none is exempt.
+///
+/// # Panics
+///
+/// Panics when `inputs` is empty or no input decodes, so the check cannot pass
+/// vacuously. Panics listing every golden whose document violates check 8 at
+/// once rather than stopping at the first.
+pub fn assert_golden_native_linkage(
+    codec: &dyn cadmpeg_ir::codec::Codec,
+    inputs: &[(String, Vec<u8>)],
+) {
+    assert!(
+        !inputs.is_empty(),
+        "no golden inputs; check 8 would pass vacuously"
     );
+    let mut decoded = 0_usize;
+    let mut failures = Vec::new();
+    for (name, bytes) in inputs {
+        let Ok(result) = codec.decode(
+            &mut std::io::Cursor::new(bytes.as_slice()),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        ) else {
+            continue;
+        };
+        decoded += 1;
+        if let Err(failure) = check_native_linkage(result.ir()) {
+            failures.push(format!("golden `{name}`: {failure}"));
+        }
+    }
+    assert!(
+        decoded > 0,
+        "no golden input decodes; check 8 would pass vacuously"
+    );
+    assert!(
+        failures.is_empty(),
+        "check 8 failed on {} golden(s):\n\n{}",
+        failures.len(),
+        failures.join("\n\n")
+    );
+}
+
+fn check_native_linkage(document: &cadmpeg_ir::CadIr) -> Result<NativeLinkageAudit, String> {
+    let value = serde_json::to_value(document)
+        .map_err(|error| format!("serialize the complete golden document: {error}"))?;
+    let audit = audit_native_linkage(&value)
+        .map_err(|error| format!("inspect every golden native row: {error}"))?;
+    if audit.neutral_records != document.model.entity_count() {
+        return Err(format!(
+            "every neutral row must be inspected: {} of {}",
+            audit.neutral_records,
+            document.model.entity_count()
+        ));
+    }
     let native_records: usize = document
         .native
         .0
@@ -44,17 +97,20 @@ pub fn assert_native_linkage(document: &cadmpeg_ir::CadIr) -> NativeLinkageAudit
         .flat_map(|namespace| namespace.arenas().values())
         .map(Vec::len)
         .sum();
-    assert_eq!(
-        audit.native_records, native_records,
-        "every actual native row must be inspected"
-    );
-    assert!(
-        audit.findings.is_empty(),
-        "check 8 found {} native linkage violations:\n{}",
-        audit.findings.len(),
-        audit.findings.join("\n")
-    );
-    audit
+    if audit.native_records != native_records {
+        return Err(format!(
+            "every actual native row must be inspected: {} of {native_records}",
+            audit.native_records
+        ));
+    }
+    if !audit.findings.is_empty() {
+        return Err(format!(
+            "check 8 found {} native linkage violations:\n{}",
+            audit.findings.len(),
+            audit.findings.join("\n")
+        ));
+    }
+    Ok(audit)
 }
 
 /// Check #213 linkage and #246 IV.2 check 8 on one serialized CADIR document.
