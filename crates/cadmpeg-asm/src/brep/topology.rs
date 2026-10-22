@@ -92,225 +92,178 @@ pub(super) fn keep_faces_and_carriers(
     carriers: &mut Carriers,
     reach: &mut Reachable,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for face in records.iter().filter(|record| record.head() == "face") {
-        if face.ref_at(5).is_none() {
+    let TopologyContext {
+        ctx,
+        by_index,
+        token_table,
+        purpose,
+        format,
+    } = inputs;
+    let Carriers {
+        surface_geo,
+        procedural_surface_defs,
+        ..
+    } = &mut *carriers;
+    let Reachable {
+        faces: kept_faces,
+        surfaces: kept_surfaces,
+        unknown_surface_records,
+        cached_unknown_procedural_surfaces,
+        undecoded_carriers,
+        ..
+    } = &mut *reach;
+    for r in records {
+        if r.head() != "face" {
             continue;
         }
-        let Some(surface) = face.ref_at(7) else {
+        // A standalone face cannot supply the shell required by the neutral
+        // topology. Do not reach its children or carriers through an owner
+        // that the emit pass must omit.
+        if r.ref_at(5).is_none() {
+            continue;
+        }
+        let Some(surf_ref) = r.ref_at(7) else {
             count_kind(&mut out.stats.missing_face_surface_kinds, "null-reference");
             continue;
         };
-        let Some(record) = inputs.by_index.get(&surface) else {
+        let Some(surf_rec) = by_index.get(&surf_ref) else {
+            // Dangling surface reference: a face without a resolvable surface
+            // cannot be emitted (the IR requires one), so it is dropped.
+
             count_kind(
                 &mut out.stats.missing_face_surface_kinds,
                 "dangling-reference",
             );
             continue;
         };
-        reach.faces.insert(i64::try_from(face.index).map_err(|_| {
+        kept_faces.insert(i64::try_from(r.index).map_err(|_| {
             cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
         })?);
-        keep_surface_carrier(inputs, out, record, surface, carriers, reach)?;
-    }
-    Ok(())
-}
-
-/// Saved-root prefix membership proves a free construction is current source
-/// content. Unreferenced carrier records outside that prefix are not roots.
-pub(super) fn keep_saved_free_surfaces(
-    inputs: TopologyContext<'_, '_, '_>,
-    out: &mut AsmBrep,
-    records: &[Record],
-    saved_entity_limit: Option<i64>,
-    carriers: &mut Carriers,
-    reach: &mut Reachable,
-) -> Result<(), cadmpeg_core::CodecError> {
-    if inputs.purpose == DecodePurpose::History {
-        return Ok(());
-    }
-    let Some(limit) = saved_entity_limit else {
-        return Ok(());
-    };
-    for record in records.iter().filter(|record| record.head() == "spline") {
-        let index = i64::try_from(record.index).map_err(|_| {
-            cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
-        })?;
-        if !(1..limit).contains(&index) || reach.surfaces.contains(&index) {
-            continue;
-        }
-        let Some(definition) = nurbs::proc_surface::procedural_surface_resolving_refs(
-            inputs.ctx,
-            &record.tokens,
-            inputs.token_table,
-        )
-        .transpose()?
-        else {
-            continue;
-        };
-        carriers.procedural_surface_defs.insert(index, definition);
-        keep_surface_carrier(inputs, out, record, index, carriers, reach)?;
-    }
-    Ok(())
-}
-
-fn keep_surface_carrier(
-    inputs: TopologyContext<'_, '_, '_>,
-    out: &mut AsmBrep,
-    surf_rec: &Record,
-    surf_ref: i64,
-    carriers: &mut Carriers,
-    reach: &mut Reachable,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let TopologyContext {
-        ctx,
-        token_table,
-        purpose,
-        format,
-        ..
-    } = inputs;
-    let Carriers {
-        surface_geo,
-        procedural_surface_defs,
-        ..
-    } = carriers;
-    let Reachable {
-        surfaces: kept_surfaces,
-        unknown_surface_records,
-        cached_unknown_procedural_surfaces,
-        undecoded_carriers,
-        ..
-    } = reach;
-    if purpose == DecodePurpose::History {
-        let native_kind = (surf_rec.head() == "spline")
-            .then(|| nurbs::toks::owned_construction_subtype(&surf_rec.tokens))
-            .flatten();
-        if native_kind
-            .as_deref()
-            .is_some_and(|kind| kind.contains("blend"))
-        {
-            if let Some(procedural) = nurbs::proc_surface::procedural_surface_resolving_refs(
-                ctx,
-                &surf_rec.tokens,
-                token_table,
-            ) {
-                procedural_surface_defs.insert(surf_ref, procedural?);
+        if purpose == DecodePurpose::History {
+            let native_kind = (surf_rec.head() == "spline")
+                .then(|| nurbs::toks::owned_construction_subtype(&surf_rec.tokens))
+                .flatten();
+            if native_kind
+                .as_deref()
+                .is_some_and(|kind| kind.contains("blend"))
+            {
+                if let Some(procedural) = nurbs::proc_surface::procedural_surface_resolving_refs(
+                    ctx,
+                    &surf_rec.tokens,
+                    token_table,
+                ) {
+                    procedural_surface_defs.insert(surf_ref, procedural?);
+                }
             }
+            surface_geo
+                .entry(surf_ref)
+                .or_insert(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                    record: None,
+                }));
+            kept_surfaces.insert(surf_ref);
+            continue;
         }
-        surface_geo
-            .entry(surf_ref)
-            .or_insert(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                record: None,
-            }));
-        kept_surfaces.insert(surf_ref);
-        return Ok(());
-    }
-    if let std::collections::hash_map::Entry::Vacant(entry) =
-        procedural_surface_defs.entry(surf_ref)
-    {
         if let Some(procedural) = nurbs::proc_surface::procedural_surface_resolving_refs(
             ctx,
             &surf_rec.tokens,
             token_table,
         ) {
-            entry.insert(procedural?);
+            procedural_surface_defs.insert(surf_ref, procedural?);
         }
-    }
-    if let Some(procedural) = procedural_surface_defs.get(&surf_ref) {
-        if let Some(geometry) = analytic_procedural_surface(procedural.definition()) {
-            surface_geo.insert(surf_ref, geometry);
-        }
-    }
-    let exact_cacheless_construction =
-        procedural_surface_defs
-            .get(&surf_ref)
-            .is_some_and(|procedural| {
-                procedural.cache_fit_tolerance().is_none()
-                    && procedural_surface_definition_is_exact_carrier(procedural.definition())
-            });
-    // A non-analytic surface may still carry a decodable B-spline face
-    // cache. Exact cacheless constructions own their nested surface blocks
-    // as supports, not as evaluated face caches.
-    if !exact_cacheless_construction && !surface_geo.contains_key(&surf_ref) {
-        if let Some(ns) =
-            nurbs::core::surface_cache_resolving_refs(ctx, &surf_rec.tokens, token_table)
-        {
-            surface_geo.insert(
-                surf_ref,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(ns?)),
-            );
-            if surf_rec.head() == "spline" && !procedural_surface_defs.contains_key(&surf_ref) {
-                cached_unknown_procedural_surfaces.insert(surf_ref);
-                count_kind(
-                    &mut out.stats.other_record_kinds,
-                    "cached-procedural-surface-untyped",
-                );
+        if let Some(procedural) = procedural_surface_defs.get(&surf_ref) {
+            if let Some(geometry) = analytic_procedural_surface(procedural.definition()) {
+                surface_geo.insert(surf_ref, geometry);
             }
-            out.stats.nurbs_surfaces += 1;
         }
-    }
-    if !surface_geo.contains_key(&surf_ref) && procedural_surface_defs.contains_key(&surf_ref) {
-        let construction_is_exact_carrier =
+        let exact_cacheless_construction =
             procedural_surface_defs
                 .get(&surf_ref)
                 .is_some_and(|procedural| {
-                    procedural_surface_definition_is_exact_carrier(procedural.definition())
+                    procedural.cache_fit_tolerance().is_none()
+                        && procedural_surface_definition_is_exact_carrier(procedural.definition())
                 });
-        surface_geo.insert(
-            surf_ref,
-            if construction_is_exact_carrier {
-                SurfaceGeometry::Procedural {
-                    construction: brep_id!(
-                        format,
-                        ProceduralSurfaceId,
-                        "procedural_surface",
-                        surf_ref
-                    ),
-                    cache: None,
-                }
-            } else {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                    record: Some(unknown_record_id(surf_rec, format)?),
-                })
-            },
-        );
-        if !construction_is_exact_carrier {
-            undecoded_carriers.insert(surf_ref);
-        }
-    }
-    if surface_geo.contains_key(&surf_ref) {
-        kept_surfaces.insert(surf_ref);
-    } else {
-        unknown_surface_records.insert(surf_ref);
-        undecoded_carriers.insert(surf_ref);
-        if surf_rec.head() == "mesh_surface" && surf_rec.chunks().next().is_none() {
-            if !out
-                .mesh_surface_sentinels
-                .iter()
-                .any(|sentinel| usize::try_from(sentinel.record_index).ok() == Some(surf_rec.index))
+        // A non-analytic surface may still carry a decodable B-spline face
+        // cache. Exact cacheless constructions own their nested surface blocks
+        // as supports, not as evaluated face caches.
+        if !exact_cacheless_construction && !surface_geo.contains_key(&surf_ref) {
+            if let Some(ns) =
+                nurbs::core::surface_cache_resolving_refs(ctx, &surf_rec.tokens, token_table)
             {
-                out.mesh_surface_sentinels.push(MeshSurfaceSentinel {
-                    source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
-                        format,
-                    ),
-                    surface: SurfaceId::from(id(format, surf_ref)),
-                    record_index: u32::try_from(surf_rec.index).map_err(|_| {
-                        cadmpeg_core::CodecError::malformed(
-                            "ASM native record index exceeds the u32 range",
-                        )
-                    })?,
-                });
+                surface_geo.insert(
+                    surf_ref,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(ns?)),
+                );
+                if surf_rec.head() == "spline" && !procedural_surface_defs.contains_key(&surf_ref) {
+                    cached_unknown_procedural_surfaces.insert(surf_ref);
+                    count_kind(
+                        &mut out.stats.other_record_kinds,
+                        "cached-procedural-surface-untyped",
+                    );
+                }
+                out.stats.nurbs_surfaces += 1;
             }
-            out.stats.mesh_surface_faces += 1;
-        } else {
-            let native_kind = if surf_rec.head() == "spline" {
-                nurbs::toks::owned_construction_subtype(&surf_rec.tokens)
-            } else {
-                None
-            };
-            count_kind(
-                &mut out.stats.unknown_surface_kinds,
-                native_kind.as_deref().unwrap_or_else(|| surf_rec.head()),
+        }
+        if !surface_geo.contains_key(&surf_ref) && procedural_surface_defs.contains_key(&surf_ref) {
+            let construction_is_exact_carrier =
+                procedural_surface_defs
+                    .get(&surf_ref)
+                    .is_some_and(|procedural| {
+                        procedural_surface_definition_is_exact_carrier(procedural.definition())
+                    });
+            surface_geo.insert(
+                surf_ref,
+                if construction_is_exact_carrier {
+                    SurfaceGeometry::Procedural {
+                        construction: brep_id!(
+                            format,
+                            ProceduralSurfaceId,
+                            "procedural_surface",
+                            surf_ref
+                        ),
+                        cache: None,
+                    }
+                } else {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                        record: Some(unknown_record_id(surf_rec, format)?),
+                    })
+                },
             );
+            if !construction_is_exact_carrier {
+                undecoded_carriers.insert(surf_ref);
+            }
+        }
+        if surface_geo.contains_key(&surf_ref) {
+            kept_surfaces.insert(surf_ref);
+        } else {
+            unknown_surface_records.insert(surf_ref);
+            undecoded_carriers.insert(surf_ref);
+            if surf_rec.head() == "mesh_surface" && surf_rec.chunks().next().is_none() {
+                if !out.mesh_surface_sentinels.iter().any(|sentinel| {
+                    usize::try_from(sentinel.record_index).ok() == Some(surf_rec.index)
+                }) {
+                    out.mesh_surface_sentinels.push(MeshSurfaceSentinel {
+                        source_namespace:
+                            crate::brep::records::identity::NativeRecordNamespace::new(format),
+                        surface: SurfaceId::from(id(format, surf_ref)),
+                        record_index: u32::try_from(surf_rec.index).map_err(|_| {
+                            cadmpeg_core::CodecError::malformed(
+                                "ASM native record index exceeds the u32 range",
+                            )
+                        })?,
+                    });
+                }
+                out.stats.mesh_surface_faces += 1;
+            } else {
+                let native_kind = if surf_rec.head() == "spline" {
+                    nurbs::toks::owned_construction_subtype(&surf_rec.tokens)
+                } else {
+                    None
+                };
+                count_kind(
+                    &mut out.stats.unknown_surface_kinds,
+                    native_kind.as_deref().unwrap_or_else(|| surf_rec.head()),
+                );
+            }
         }
     }
     Ok(())
