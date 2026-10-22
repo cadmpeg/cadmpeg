@@ -75,7 +75,6 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
             attributes: [("value".into(), "same".into())].into(),
             decoded_json: None,
             text: None,
-            raw_xml: raw_value.into(),
         })
         .collect::<Vec<_>>();
     values[1]
@@ -117,7 +116,6 @@ fn xml_serialization_preserves_normalized_whitespace() {
         attributes: [("value".into(), "a\tb\nc\rd".into())].into(),
         decoded_json: None,
         text: Some("a\tb\nc\rd".into()),
-        raw_xml: r#"<String value="old">old</String>"#.into(),
     };
     let property = PropertyRecord {
         id: "test:property#whitespace".into(),
@@ -135,6 +133,10 @@ fn xml_serialization_preserves_normalized_whitespace() {
         },
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
     };
+    let _fidelity = crate::test_support::source_fidelity::value_layout_fixture(
+        &property.id,
+        &[r#"<String value="old">old</String>"#],
+    );
     let serialized = crate::writer::xml::native(&property).unwrap().unwrap();
     assert!(serialized.contains("a&#9;b&#10;c&#13;d"));
     assert_eq!(serialized.matches("&#9;").count(), 2);

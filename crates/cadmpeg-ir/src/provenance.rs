@@ -407,6 +407,7 @@ impl<'de> Deserialize<'de> for SourceOwner {
 pub struct SourceLocation {
     format: String,
     stream: Option<StreamName>,
+    byte_len: Option<u64>,
 }
 
 /// Source provenance attached to a report loss.
@@ -447,6 +448,7 @@ impl Provenance<SourceLocation> {
             location: SourceLocation {
                 format: format.into(),
                 stream: None,
+                byte_len: None,
             },
             offset,
             tag: None,
@@ -459,6 +461,7 @@ impl Provenance<SourceLocation> {
             location: SourceLocation {
                 format: format.into(),
                 stream: Some(stream),
+                byte_len: None,
             },
             offset,
             tag: None,
@@ -495,6 +498,32 @@ impl Provenance<SourceLocation> {
         stream.push_str(source);
         self.location.stream = Some(StreamName::try_from(stream).map_err(CodecError::malformed)?);
         Ok(self)
+    }
+
+    /// Attach an exact positive byte length without overflowing the source domain.
+    pub fn with_byte_len(mut self, byte_len: u64) -> Result<Self, cadmpeg_core::CodecError> {
+        if byte_len == 0 || self.offset.checked_add(byte_len).is_none() {
+            return Err(cadmpeg_core::CodecError::malformed(
+                "source provenance extent is empty or overflows",
+            ));
+        }
+        self.location.byte_len = Some(byte_len);
+        Ok(self)
+    }
+
+    /// Format that owns this source location.
+    pub fn format(&self) -> &str {
+        &self.location.format
+    }
+
+    /// Explicit source stream; absent root names do not identify a named span.
+    pub fn stream_name(&self) -> Option<&str> {
+        self.location.stream.as_ref().map(StreamName::as_str)
+    }
+
+    /// Exact extent length when the loss names a complete byte span.
+    pub const fn byte_len(&self) -> Option<u64> {
+        self.location.byte_len
     }
 
     /// Attach a source record or class name.
@@ -568,21 +597,35 @@ struct SourceProvenanceWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_len"
+    )]
+    byte_len: Option<u64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_tag"
     )]
     tag: Option<String>,
 }
 
-impl From<SourceProvenanceWire> for Provenance<SourceLocation> {
-    fn from(wire: SourceProvenanceWire) -> Self {
-        Self {
+impl TryFrom<SourceProvenanceWire> for Provenance<SourceLocation> {
+    type Error = String;
+    fn try_from(wire: SourceProvenanceWire) -> Result<Self, Self::Error> {
+        if wire
+            .byte_len
+            .is_some_and(|len| len == 0 || wire.offset.checked_add(len).is_none())
+        {
+            return Err("source provenance extent is empty or overflows".into());
+        }
+        Ok(Self {
             location: SourceLocation {
                 format: wire.format,
                 stream: wire.stream,
+                byte_len: wire.byte_len,
             },
             offset: wire.offset,
             tag: wire.tag,
-        }
+        })
     }
 }
 
@@ -591,7 +634,8 @@ impl<'de> Deserialize<'de> for Provenance<SourceLocation> {
     where
         D: serde::Deserializer<'de>,
     {
-        SourceProvenanceWire::deserialize(deserializer).map(Self::from)
+        SourceProvenanceWire::deserialize(deserializer)
+            .and_then(|wire| Self::try_from(wire).map_err(D::Error::custom))
     }
 }
 
@@ -763,3 +807,5 @@ cadmpeg_core::named_optional_field!(deserialize_stream, StreamName, "stream");
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(deserialize_byte_len, u64, "byte_len");

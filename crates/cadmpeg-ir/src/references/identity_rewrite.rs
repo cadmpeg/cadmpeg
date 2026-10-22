@@ -8,4 +8,4 @@ rewrite_enum!(ReferenceTarget, []; {
     Null,
     Local(field0),
     External {document, object},
-});
+}; reference_leaf true; string_references { Local(field0) });

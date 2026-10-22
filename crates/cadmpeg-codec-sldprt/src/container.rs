@@ -12,13 +12,14 @@ use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, Ve
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
-use cadmpeg_container::compression::{inflate_deflate_owned, inflate_zlib_member_owned};
+use cadmpeg_container::compression::inflate_zlib_member_tracked;
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ContainerSummary;
+use std::io::Read;
 
 use crate::layout::block_frame_header as block_hdr;
 use crate::layout::cache_cell_header as cache_hdr;
@@ -219,12 +220,14 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) version: u32,
     /// CRC-validated compressed blocks, in file order.
     pub(crate) blocks: Vec<Block>,
+    pub(crate) block_views: BTreeMap<usize, View<'a>>,
     /// Tail directory entries, in file order.
     pub(crate) directory: Vec<DirectoryEntry>,
     /// Cache-cell grid entries, in file order.
     pub(crate) cache_cells: Vec<CacheCell>,
     /// Named streams when the source uses the Compound File Binary envelope.
     pub(crate) compound_streams: Vec<CompoundStream>,
+    pub(crate) compound_views: BTreeMap<u32, View<'a>>,
     /// `swSolidWorks` XML facts parsed once from the retained sections.
     pub(crate) solidworks: SolidWorksEnvelopeScan,
 }
@@ -303,7 +306,18 @@ impl<'a> Section<'a> {
     }
 }
 
-impl ContainerScan<'_> {
+impl<'a> ContainerScan<'a> {
+    pub(crate) fn block_view(&self, block: &Block) -> Option<View<'a>> {
+        self.block_views.get(&block.offset).copied()
+    }
+
+    pub(crate) fn section_view(&self, section: Section<'_>) -> Option<View<'a>> {
+        match section {
+            Section::Block(block) => self.block_view(block),
+            Section::Compound(stream) => self.compound_views.get(&stream.directory_id).copied(),
+        }
+    }
+
     pub(crate) fn sections(&self) -> impl Iterator<Item = Section<'_>> {
         self.blocks
             .iter()
@@ -356,23 +370,27 @@ fn completed_scan<'a>(
     ctx: &DecodeContext<'_>,
     source_image: &'a [u8],
     version: u32,
-    blocks: Vec<Block>,
-    directory: Vec<DirectoryEntry>,
-    cache_cells: Vec<CacheCell>,
-    compound_streams: Vec<CompoundStream>,
+    markers: NativeMarkers<'a>,
+    compound: CompoundStreams<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     let mut scan = ContainerScan {
         source_image,
         version,
-        blocks,
-        directory,
-        cache_cells,
-        compound_streams,
+        blocks: markers.blocks,
+        block_views: markers.block_views,
+        directory: markers.directory,
+        cache_cells: markers.cache_cells,
+        compound_streams: compound.streams,
+        compound_views: compound.views,
         solidworks: SolidWorksEnvelopeScan::default(),
     };
     let solidworks = scan_solidworks_envelopes(
-        scan.sections()
-            .map(|section| (section.name(), section.payload())),
+        scan.sections().map(|section| {
+            let payload = scan
+                .section_view(section)
+                .map_or(section.payload(), View::window);
+            (section.name(), payload)
+        }),
         &ScanAdmission::Decode(ctx),
     )?;
     scan.solidworks = solidworks;
@@ -387,18 +405,20 @@ enum ScanAdmission<'a, 'ctx> {
 }
 
 #[derive(Default)]
-struct NativeMarkers {
+struct NativeMarkers<'a> {
     blocks: Vec<Block>,
+    block_views: BTreeMap<usize, View<'a>>,
     directory: Vec<DirectoryEntry>,
     cache_cells: Vec<CacheCell>,
 }
 
-fn walk_native_markers(
-    ctx: &DecodeContext<'_>,
+fn walk_native_markers<'a>(
+    ctx: &DecodeContext<'a>,
     root: View<'_>,
-) -> Result<NativeMarkers, CodecError> {
+) -> Result<NativeMarkers<'a>, CodecError> {
     let bytes = root.window();
     let mut blocks = Vec::new();
+    let mut block_views = BTreeMap::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
     let mut i = outer_hdr::LEN;
@@ -407,9 +427,10 @@ fn walk_native_markers(
             i += 1;
             continue;
         }
-        if let Some(block) = try_block(ctx, root, i)? {
+        if let Some((block, view)) = try_block(ctx, root, i)? {
             i = block.offset + block_hdr::LEN + block.preamble_len + index_from_u32(block.comp_sz);
             ctx.charge_entities(1, "admit SLDPRT block")?;
+            block_views.insert(block.offset, view);
             blocks.push(block.into_block());
             continue;
         }
@@ -424,9 +445,16 @@ fn walk_native_markers(
     }
     Ok(NativeMarkers {
         blocks,
+        block_views,
         directory,
         cache_cells,
     })
+}
+
+#[derive(Default)]
+struct CompoundStreams<'a> {
+    streams: Vec<CompoundStream>,
+    views: BTreeMap<u32, View<'a>>,
 }
 
 fn compound_stream(
@@ -457,7 +485,7 @@ fn compound_stream(
 /// Scans an in-memory image, inflating through the decode context's
 /// decompressed-byte limit.
 pub(crate) fn scan<'a>(
-    ctx: &DecodeContext<'_>,
+    ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     if root.window().starts_with(&COMPOUND_FILE_MAGIC) {
@@ -466,9 +494,7 @@ pub(crate) fn scan<'a>(
             ctx,
             root.window(),
             0,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            NativeMarkers::default(),
             compound_streams,
         );
     }
@@ -480,32 +506,20 @@ pub(crate) fn scan<'a>(
     // discarded-value: the file ID precedes the required version field
     let _ = header.req_take(outer_hdr::VERSION)?;
     let version = header.req_u32_be()?;
-    let NativeMarkers {
-        blocks,
-        directory,
-        cache_cells,
-    } = walk_native_markers(ctx, root)?;
-    completed_scan(
-        ctx,
-        bytes,
-        version,
-        blocks,
-        directory,
-        cache_cells,
-        Vec::new(),
-    )
+    let markers = walk_native_markers(ctx, root)?;
+    completed_scan(ctx, bytes, version, markers, CompoundStreams::default())
 }
 
 /// CFB directory/FAT/open is [`CompoundSnapshot`]; ZLB unwrap and Parasolid
 /// extract stay codec-local because they are `SolidWorks` payload semantics, not
 /// CFB.
-fn compound_streams(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-) -> Result<Vec<CompoundStream>, CodecError> {
+fn compound_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<CompoundStreams<'a>, CodecError> {
     let snapshot = CompoundSnapshot::new(ctx, root)?;
     snapshot.require_canonical()?;
-    let mut streams = Vec::new();
+    let mut streams = CompoundStreams::default();
     for entry in snapshot.entries() {
         let CompoundEntry::Stream(entry) = entry else {
             continue;
@@ -516,7 +530,15 @@ fn compound_streams(
             "retain SolidWorks CFB stream",
         )?;
         let payload = view.window().to_vec();
-        let decoded = decode_wrapped_payload(ctx, view)?;
+        let decoded_view = decode_wrapped_payload(ctx, view)?;
+        if let Some(decoded) = decoded_view {
+            ctx.retain_bytes(
+                u64_from_index(decoded.window().len()),
+                "retain SolidWorks decoded CFB stream",
+            )?;
+        }
+        let decoded = decoded_view.map(|view| view.window().to_vec());
+        let semantic_view = decoded_view.unwrap_or(view);
         let path = entry.path().to_owned();
         let stream = compound_stream(
             ctx,
@@ -526,15 +548,18 @@ fn compound_streams(
             payload,
             decoded,
         )?;
-        streams.push(stream);
+        streams
+            .views
+            .insert(entry.id().directory_id(), semantic_view);
+        streams.streams.push(stream);
     }
     Ok(streams)
 }
 
-fn decode_wrapped_payload(
-    ctx: &DecodeContext<'_>,
+fn decode_wrapped_payload<'a>(
+    ctx: &DecodeContext<'a>,
     source: View<'_>,
-) -> Result<Option<Vec<u8>>, CodecError> {
+) -> Result<Option<View<'a>>, CodecError> {
     let payload = source.window();
     if payload.get(..WRAPPED_PAYLOAD_MAGIC.len()) != Some(&WRAPPED_PAYLOAD_MAGIC) {
         return Ok(None);
@@ -563,7 +588,7 @@ fn decode_wrapped_payload(
         return Ok(None);
     };
     let (decoded, consumed) =
-        match inflate_zlib_member_owned(ctx, member, ExpandSpec::Exact(uncompressed_size)) {
+        match inflate_zlib_member_tracked(ctx, member, ExpandSpec::Exact(uncompressed_size)) {
             Ok(result) => result,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => return Ok(None),
@@ -693,11 +718,11 @@ fn block_from_inflated(
     }))
 }
 
-fn try_block(
-    ctx: &DecodeContext<'_>,
+fn try_block<'a>(
+    ctx: &DecodeContext<'a>,
     root: View<'_>,
     off: usize,
-) -> Result<Option<RawBlock>, CodecError> {
+) -> Result<Option<(RawBlock, View<'a>)>, CodecError> {
     let bytes = root.window();
     let Some((frame, payload_start, payload_end)) = read_block_frame(bytes, off) else {
         return Ok(None);
@@ -716,16 +741,62 @@ fn try_block(
     let Some(payload_view) = root.child(abs_start, abs_end) else {
         return Ok(None);
     };
-    let inflated = match inflate_deflate_owned(
-        ctx,
-        payload_view,
-        ExpandSpec::Exact(u64::from(frame.uncomp_sz)),
-    ) {
-        Ok(view) => view,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
+    let Some(view) = expand_block(ctx, payload_view, &frame)? else {
+        return Ok(None);
     };
-    block_from_inflated(ctx, bytes, off, &frame, inflated)
+    ctx.retain_bytes(
+        u64_from_index(view.window().len()),
+        "SLDPRT owned block payload",
+    )?;
+    let count = view
+        .counted(u64_from_index(view.window().len()), 1)
+        .ok_or_else(|| CodecError::malformed("SLDPRT block payload exceeds its source view"))?
+        .get();
+    let mut inflated = ctx.alloc_filled(count, 0_u8, "SLDPRT owned block payload")?;
+    inflated.copy_from_slice(view.window());
+    Ok(block_from_inflated(ctx, bytes, off, &frame, inflated)?.map(|block| (block, view)))
+}
+
+fn expand_block<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'_>,
+    frame: &BlockFrame,
+) -> Result<Option<View<'a>>, CodecError> {
+    let mut decoder = flate2::read::DeflateDecoder::new(source.window());
+    let mut writer = ctx.begin_expand(ExpandSpec::Exact(u64::from(frame.uncomp_sz)))?;
+    let mut checksum = crc32fast::Hasher::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = match decoder.read(&mut chunk) {
+            Ok(read) => read,
+            Err(_) => return Ok(None),
+        };
+        if read == 0 {
+            break;
+        }
+        if let Err(error) = writer.write(&chunk[..read]) {
+            return match error {
+                error @ CodecError::ResourceLimit(_) => Err(error),
+                _ => Ok(None),
+            };
+        }
+        checksum.update(&chunk[..read]);
+    }
+    if decoder.total_in() != u64_from_index(source.window().len())
+        || writer.written() != u64::from(frame.uncomp_sz)
+        || checksum.finalize() != frame.crc
+    {
+        return Ok(None);
+    }
+    let extent = ctx.capture_part_extent(source)?;
+    let stream = format!(
+        "sldprt-block:{}:{}:{}:{}",
+        extent.stream().len(),
+        extent.stream(),
+        extent.offset(),
+        extent.byte_len()
+    );
+    writer.finalize_from(source, &stream).map(Some)
 }
 
 fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {

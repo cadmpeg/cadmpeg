@@ -663,18 +663,9 @@ fn native_dispositions(
         .and_then(|namespace| namespace.arenas().get("layers"))
     {
         for record in records {
-            let Some(layer) = record
-                .field("neutral_ref")
-                .and_then(|value| value.as_str().map(str::to_owned))
-            else {
-                continue;
-            };
-            if ir
-                .model
-                .presentation_layers
-                .iter()
-                .any(|value| value.id.as_str() == layer && value.description.is_none())
-                && tables::native_layer_complete(record)
+            if ir.model.presentation_layers.iter().any(|value| {
+                value.native_ref.as_deref() == Some(record.id()) && value.description.is_none()
+            }) && tables::native_layer_complete(record)
             {
                 dispositions.set_record(
                     "rhino",

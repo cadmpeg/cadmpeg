@@ -15,6 +15,9 @@ pub mod provenance;
 /// Immutable owner-derived classes of unconsumed spans.
 pub mod classification;
 
+/// Atomic B1 classification, report attribution and source closure.
+pub mod finalization;
+
 const PARTITION: &str = "partition source byte coverage";
 
 /// Disjoint, sorted byte ranges covering one complete source stream.

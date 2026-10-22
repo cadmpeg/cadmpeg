@@ -33,11 +33,13 @@ fn immutable_table_has_all_exact_registered_rows_and_parent_alternatives() {
             PartParent::Level(level("nx.om_section")),
         ]
     );
-    assert!(table
-        .rule(level("catia.object_stream_record"))
-        .unwrap()
-        .parents()
-        .contains(&PartParent::Level(level("catia.object_stream_record"))));
+    assert!(
+        table
+            .rule(level("catia.object_stream_record"))
+            .unwrap()
+            .parents()
+            .contains(&PartParent::Level(level("catia.object_stream_record")))
+    );
     for name in [
         "nx.om_store_control_block",
         "nx.om_store_column_block",
@@ -69,18 +71,22 @@ fn table_rejects_missing_parents_and_registry_framing_disagreement() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(PartTable::parse(&missing).is_err());
-    assert!(PartTable::parse(&TABLE.replacen(
-        "zip\tarchive\tfile\tlocated",
-        "zip\tarchive\tfile\tterminated",
-        1
-    ))
-    .is_err());
-    assert!(PartTable::parse(&TABLE.replacen(
-        "zip\tarchive\tfile\tlocated\t",
-        "zip\tarchive\tfile\tlocated\textent only:",
-        1
-    ))
-    .is_err());
+    assert!(
+        PartTable::parse(&TABLE.replacen(
+            "zip\tarchive\tfile\tlocated",
+            "zip\tarchive\tfile\tterminated",
+            1
+        ))
+        .is_err()
+    );
+    assert!(
+        PartTable::parse(&TABLE.replacen(
+            "zip\tarchive\tfile\tlocated\t",
+            "zip\tarchive\tfile\tlocated\textent only:",
+            1
+        ))
+        .is_err()
+    );
 }
 
 #[test]
@@ -110,15 +116,17 @@ fn framing_and_dispatch_use_absolute_ordered_bounded_source_ranges() {
         vec![5..7, 4..5],
         vec![3..6, 5..7],
     ] {
-        assert!(FramedPart::new(
-            &ctx,
-            level("step.exchange"),
-            view,
-            FrameParent::File,
-            invalid,
-            Vec::new()
-        )
-        .is_err());
+        assert!(
+            FramedPart::new(
+                &ctx,
+                level("step.exchange"),
+                view,
+                FrameParent::File,
+                invalid,
+                Vec::new()
+            )
+            .is_err()
+        );
     }
     assert!(ctx.take_record_captures().unwrap().is_empty());
 }
@@ -131,15 +139,17 @@ fn detached_and_mixed_session_inventories_are_rejected() {
         DecodeContext::from_root_bytes(b"source", &arena, &DecodePolicy::default()).unwrap();
     let (other_ctx, other) =
         DecodeContext::from_root_bytes(b"source", &other_arena, &DecodePolicy::default()).unwrap();
-    assert!(FramedPart::new(
-        &ctx,
-        level("step.exchange"),
-        View::over_retained(b"source"),
-        FrameParent::File,
-        Vec::new(),
-        Vec::new()
-    )
-    .is_err());
+    assert!(
+        FramedPart::new(
+            &ctx,
+            level("step.exchange"),
+            View::over_retained(b"source"),
+            FrameParent::File,
+            Vec::new(),
+            Vec::new()
+        )
+        .is_err()
+    );
     let frames = [frame(&other_ctx, "step.exchange", other, FrameParent::File)];
     assert!(PartTable::load().unwrap().validate(&ctx, &frames).is_err());
     let part = frame(&ctx, "step.exchange", root, FrameParent::File);
@@ -277,12 +287,14 @@ fn a_shared_root_cannot_be_filed_as_a_physical_root_or_an_unrelated_host() {
         .register_named_slice(root, ByteRange { start: 2, end: 8 }, "member")
         .unwrap();
     let table = PartTable::load().unwrap();
-    assert!(table
-        .validate(
-            &ctx,
-            &[frame(&ctx, "asm.sab_stream", alias, FrameParent::File)]
-        )
-        .is_err());
+    assert!(
+        table
+            .validate(
+                &ctx,
+                &[frame(&ctx, "asm.sab_stream", alias, FrameParent::File)]
+            )
+            .is_err()
+    );
     let frames = [
         frame(&ctx, "step.exchange", root, FrameParent::File),
         frame(&ctx, "asm.sab_stream", alias, FrameParent::Host(0)),

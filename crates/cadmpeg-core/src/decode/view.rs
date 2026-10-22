@@ -187,6 +187,11 @@ impl<'a> View<'a> {
         self
     }
 
+    pub(super) fn for_framing(mut self) -> Self {
+        self.tracking = None;
+        self
+    }
+
     pub(super) fn session(self) -> Option<super::tracking::SessionHandle<'a>> {
         self.tracking
     }

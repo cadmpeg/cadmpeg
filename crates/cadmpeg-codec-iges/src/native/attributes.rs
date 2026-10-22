@@ -16,8 +16,6 @@ use cadmpeg_ir::CadIr;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 
-pub(super) type ProjectedValues = BTreeMap<String, Vec<AttributeId>>;
-
 pub(super) fn serialize_product_property<S: Serializer>(
     record: &NativeProductProperty,
     serializer: S,
@@ -30,8 +28,6 @@ pub(super) fn serialize_product_property<S: Serializer>(
         property_kind: ProductPropertyKind,
         value: &'a Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
         owners: &'a [String],
-        #[serde(skip_serializing_if = "Option::is_none")]
-        neutral_values: Option<&'a ProjectedValues>,
     }
     Wire {
         id: &record.id,
@@ -40,7 +36,6 @@ pub(super) fn serialize_product_property<S: Serializer>(
         property_kind: record.property_kind,
         value: &record.value,
         owners: &record.owners,
-        neutral_values: record.neutral_values.as_ref(),
     }
     .serialize(serializer)
 }
@@ -58,8 +53,6 @@ pub(super) fn serialize_property<S: Serializer>(
         owners: &'a [String],
         #[serde(flatten)]
         value: &'a NativePropertyValue,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        neutral_values: Option<&'a ProjectedValues>,
     }
     Wire {
         id: &record.id,
@@ -68,7 +61,6 @@ pub(super) fn serialize_property<S: Serializer>(
         declared_value_count: record.declared_value_count,
         owners: &record.owners,
         value: &record.value,
-        neutral_values: record.neutral_values.as_ref(),
     }
     .serialize(serializer)
 }
@@ -86,8 +78,6 @@ pub(super) fn serialize_definition<S: Serializer>(
         attribute_list_type: Option<i64>,
         declared_attribute_count: Option<i64>,
         attributes: &'a [super::NativeAttributeDefinition],
-        #[serde(skip_serializing_if = "Option::is_none")]
-        neutral_values: Option<&'a ProjectedValues>,
     }
     Wire {
         id: &record.id,
@@ -97,7 +87,6 @@ pub(super) fn serialize_definition<S: Serializer>(
         attribute_list_type: record.attribute_list_type,
         declared_attribute_count: record.declared_attribute_count,
         attributes: &record.attributes,
-        neutral_values: record.neutral_values.as_ref(),
     }
     .serialize(serializer)
 }
@@ -114,8 +103,6 @@ pub(super) fn serialize_instance<S: Serializer>(
         definition: &'a Option<String>,
         declared_row_count: Option<i64>,
         rows: &'a [Vec<TokenValue>],
-        #[serde(skip_serializing_if = "Option::is_none")]
-        neutral_values: Option<&'a ProjectedValues>,
     }
     Wire {
         id: &record.id,
@@ -124,7 +111,6 @@ pub(super) fn serialize_instance<S: Serializer>(
         definition: &record.definition,
         declared_row_count: record.declared_row_count,
         rows: &record.rows,
-        neutral_values: record.neutral_values.as_ref(),
     }
     .serialize(serializer)
 }
@@ -260,7 +246,7 @@ fn project_fields(
     fields: Fields,
     targets: &BTreeMap<String, Vec<AttributeTarget>>,
     ctx: &DecodeContext<'_>,
-) -> Result<ProjectedValues, CodecError> {
+) -> Result<(), CodecError> {
     let sequence = source_id
         .rsplit_once('#')
         .and_then(|(_, sequence)| sequence.parse::<u32>().ok())
@@ -281,9 +267,7 @@ fn project_fields(
     }
     assigned.sort();
     assigned.dedup();
-    let mut result = BTreeMap::new();
     for (field_index, (field, value)) in fields.into_iter().enumerate() {
-        let mut references = Vec::new();
         for (owner_index, target) in assigned.iter().enumerate() {
             let key =
                 IdentityKey::encode_key_text(&format!("D{sequence}:{field_index}:{owner_index}"));
@@ -294,7 +278,7 @@ fn project_fields(
             ctx.charge_entities(1, "iges_neutral_attributes")?;
             ir.model.attributes.push(SourceAttribute {
                 native_ref: Some(native_ref.to_owned()),
-                id: id.clone(),
+                id,
                 target: target.clone(),
                 name: if field.is_empty() {
                     name.to_owned()
@@ -303,44 +287,40 @@ fn project_fields(
                 },
                 values: value.clone(),
             });
-            references.push(id);
         }
-        result.insert(field, references);
     }
-    Ok(result)
+    Ok(())
 }
 
 mod fields;
 mod labels;
 
 pub(super) struct PropertyRecords<'a> {
-    pub(super) properties: &'a mut [NativeProperty],
-    pub(super) products: &'a mut [NativeProductProperty],
-    pub(super) definitions: &'a mut [NativeAttributeTableDefinition],
-    pub(super) instances: &'a mut [NativeAttributeTableInstance],
+    pub(super) properties: &'a [NativeProperty],
+    pub(super) definitions: &'a [NativeAttributeTableDefinition],
+    pub(super) instances: &'a [NativeAttributeTableInstance],
 }
 
 pub(super) fn project(
     ir: &mut CadIr,
     sequences: &SourceSequences,
-    entities: &mut [super::NativeEntity<'_>],
+    entities: &[super::NativeEntity<'_>],
     records: PropertyRecords<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let PropertyRecords {
         properties,
-        products,
         definitions,
         instances,
     } = records;
     let targets = targets(ir, sequences);
     let mut losses = Vec::new();
-    for property in properties.iter_mut().filter(|property| property.form != 15) {
+    for property in properties.iter().filter(|property| property.form != 15) {
         match fields::property(&property.value)
             .and_then(|fields| Ok((fields::name(&property.value)?, fields)))
         {
             Ok((name, fields)) => {
-                property.neutral_values = Some(project_fields(
+                project_fields(
                     ir,
                     &property.source_entity,
                     &property.id,
@@ -349,7 +329,7 @@ pub(super) fn project(
                     fields,
                     &targets,
                     ctx,
-                )?);
+                )?;
             }
             Err(reason) => losses.push(
                 IgesLossCode::NeutralProjectionUnavailable
@@ -358,13 +338,7 @@ pub(super) fn project(
         }
     }
     losses.extend(labels::project(ir, entities, properties, &targets, ctx)?);
-    for product in products.iter_mut() {
-        product.neutral_values = properties
-            .iter()
-            .find(|property| property.source_entity == product.source_entity)
-            .and_then(|property| property.neutral_values.clone());
-    }
-    for definition in definitions.iter_mut() {
+    for definition in definitions {
         let mut fields = Vec::new();
         let mut refusal = None;
         for (index, attribute) in definition.attributes.iter().enumerate() {
@@ -385,7 +359,7 @@ pub(super) fn project(
                     .note(format!("{}: {reason}", definition.id)),
             );
         } else {
-            definition.neutral_values = Some(project_fields(
+            project_fields(
                 ir,
                 &definition.source_entity,
                 &definition.id,
@@ -394,7 +368,7 @@ pub(super) fn project(
                 fields,
                 &targets,
                 ctx,
-            )?);
+            )?;
         }
     }
     for instance in instances {
@@ -430,7 +404,7 @@ pub(super) fn project(
                     .note(format!("{}: {reason}", instance.id)),
             );
         } else {
-            instance.neutral_values = Some(project_fields(
+            project_fields(
                 ir,
                 &instance.source_entity,
                 &instance.id,
@@ -439,7 +413,7 @@ pub(super) fn project(
                 fields,
                 &targets,
                 ctx,
-            )?);
+            )?;
         }
     }
 

@@ -34,6 +34,7 @@ pub(crate) struct Graph {
     pub(crate) documents: Vec<GuiDocumentRecord>,
     pub(crate) providers: Vec<GuiViewProviderRecord>,
     pub(crate) provider_sources: Vec<(String, std::ops::Range<usize>)>,
+    pub(crate) value_sources: Vec<crate::fidelity::ValueSourceRanges>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
     pub(crate) losses: Vec<LossNote>,
     /// The GUI stream was not admitted into typed records.
@@ -626,10 +627,25 @@ fn transfer_schema_one(
             });
         }
     }
+    let value_sources = crate::fidelity::value_sources(
+        xml,
+        document
+            .states
+            .iter()
+            .map(|state| (state.id.as_str(), &state.xml, state.values.as_slice()))
+            .chain(native_properties.iter().map(|property| {
+                (
+                    property.id.as_str(),
+                    &property.xml,
+                    property.values.as_slice(),
+                )
+            })),
+    )?;
     let mut graph = Graph {
         documents: vec![document],
         providers: native_providers,
         provider_sources,
+        value_sources,
         properties: native_properties,
         losses,
         untyped: false,
@@ -1227,7 +1243,6 @@ fn gui_state(
                 .collect::<Result<_, CodecError>>()?,
             decoded_json: None,
             text: value.text().map(ToOwned::to_owned),
-            raw_xml: text[value.range()].to_owned(),
         });
     }
     let mut side_entries = Vec::new();
@@ -1373,7 +1388,6 @@ fn append_native_provider(
                     .collect::<Result<_, CodecError>>()?,
                 decoded_json: None,
                 text: value.text().map(ToOwned::to_owned),
-                raw_xml: text[value.range()].to_owned(),
             });
         }
         let mut side_entries = Vec::new();

@@ -3,9 +3,17 @@
 
 use std::collections::BTreeSet;
 
+use crate::schema::rewrite::typed::RewriteIdentities;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
+
+mod dependencies;
+mod finalization;
+mod parser;
+pub use dependencies::{DeferredRecordPruning, PartDependencyPruning};
+pub use finalization::{FinalizedPartOutput, PartFinalization};
+pub use parser::ParserPartOutput;
 
 use super::{PartLevel, PartRecord, PartSpec, PartState};
 use crate::codec::DecodeLossCode;
@@ -30,6 +38,8 @@ pub struct PartOutput {
     fidelity: SourceFidelity,
     losses: Vec<LossNote>,
     ids: BTreeSet<String>,
+    native_owners: std::collections::BTreeMap<String, dependencies::NativeOwner>,
+    failures: Vec<dependencies::FailureHome>,
 }
 
 impl PartOutput {
@@ -42,6 +52,8 @@ impl PartOutput {
             fidelity: SourceFidelity::default(),
             losses: Vec::new(),
             ids: BTreeSet::new(),
+            native_owners: std::collections::BTreeMap::new(),
+            failures: Vec::new(),
         }
     }
     /// Borrow successfully staged model records.
@@ -85,7 +97,7 @@ impl PartOutput {
         Ok(())
     }
     /// Insert one typed native record without replacing an existing arena.
-    pub fn insert_native<T: Serialize>(
+    pub fn insert_native<T: Serialize + DeserializeOwned + RewriteIdentities>(
         &mut self,
         ctx: &DecodeContext<'_>,
         arena: &str,
@@ -97,6 +109,7 @@ impl PartOutput {
             .pop()
             .ok_or_else(|| CodecError::malformed("native part record was not formed"))?;
         self.admit_id(ctx, record.id())?;
+        self.register_native_owner::<T>(ctx, record.id())?;
         ctx.charge_entities(1, "part native entity")?;
         let destination = self
             .native
@@ -107,13 +120,6 @@ impl PartOutput {
         reserve(ctx, destination, 1)?;
         destination.push(record);
         Ok(())
-    }
-    /// Consume staged document records and their decode metadata.
-    ///
-    /// This is not a finalized decode: the per-byte B1 partition must derive
-    /// unrepresented classes before these outputs become an exportable document.
-    pub fn into_parts(self) -> (Model, Native, SourceFidelity, Vec<LossNote>) {
-        (self.model, self.native, self.fidelity, self.losses)
     }
     fn admit_id(&mut self, ctx: &DecodeContext<'_>, id: &str) -> Result<(), CodecError> {
         if self.ids.contains(id) {
@@ -187,6 +193,15 @@ impl PartOutput {
                 arena.append(&mut records);
             }
         }
+        self.native_owners.append(&mut other.native_owners);
+        for failure in &mut other.failures {
+            failure.loss_index = failure
+                .loss_index
+                .checked_add(self.losses.len())
+                .ok_or_else(|| CodecError::malformed("part diagnostic index overflows"))?;
+        }
+        reserve(ctx, &mut self.failures, other.failures.len())?;
+        self.failures.append(&mut other.failures);
         self.ids.append(&mut other.ids);
         reserve(ctx, &mut self.losses, other.losses.len())?;
         self.losses.append(&mut other.losses);
@@ -205,9 +220,30 @@ pub trait DecodeParts {
         spec: PartSpec,
         decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
     ) -> Result<Option<T>, CodecError>;
+
+    /// Run a real parser callback without access to a semantic record stage.
+    /// Only the helper can add failure stubs; no built record can become a
+    /// dependency-pruning seed in this constrained output.
+    fn decode_parser_part<T>(
+        &self,
+        output: &mut ParserPartOutput,
+        extent: View<'_>,
+        spec: PartSpec,
+        decode: impl FnOnce() -> Result<T, CodecError>,
+    ) -> Result<Option<T>, CodecError>;
 }
 
 impl DecodeParts for DecodeContext<'_> {
+    fn decode_parser_part<T>(
+        &self,
+        output: &mut ParserPartOutput,
+        extent: View<'_>,
+        spec: PartSpec,
+        decode: impl FnOnce() -> Result<T, CodecError>,
+    ) -> Result<Option<T>, CodecError> {
+        self.decode_part(&mut output.0, extent, spec, |_stage| decode())
+    }
+
     fn decode_part<T>(
         &self,
         output: &mut PartOutput,
@@ -265,6 +301,21 @@ impl DecodeParts for DecodeContext<'_> {
                     self.retain_bytes(u64_from_index(dropped_id.len()), "dropped part identity")?;
                     dropped.push(dropped_id.clone());
                 }
+                let mut dropped_set = dropped.into_iter().collect::<BTreeSet<_>>();
+                for failure in &staged.failures {
+                    for id in &failure.dropped {
+                        if !dropped_set.contains(id) {
+                            self.retain_bytes(
+                                u64_from_index(id.len()),
+                                "discarded descendant identity",
+                            )?;
+                            dropped_set.insert(id.clone());
+                        }
+                    }
+                }
+                let mut dropped = Vec::new();
+                reserve(self, &mut dropped, dropped_set.len())?;
+                dropped.extend(dropped_set);
                 let mut parts = std::mem::take(&mut staged.fidelity.parts);
                 for node in parts.values_mut() {
                     self.retain_bytes(u64_from_index(id.as_str().len()), "covering part identity")?;
@@ -287,6 +338,7 @@ impl DecodeParts for DecodeContext<'_> {
                     links,
                 };
                 replacement.admit_id(self, id.as_str())?;
+                replacement.register_native_owner::<NativeUnknownRecord>(self, id.as_str())?;
                 self.charge_entities(1, "given-up part stub")?;
                 let native = NativeRecord::from(&stub);
                 self.retain_bytes(
@@ -325,14 +377,17 @@ impl DecodeParts for DecodeContext<'_> {
                     RecordLayout::from_part_capture(&capture),
                 );
                 replacement.fidelity.parts = parts;
-                let message = format!(
-                    "{} stream={} offset={} length={} record={} error={} dropped={}",
+                let prefix = format!(
+                    "{} stream={} offset={} length={} record={} error={}",
                     replacement.fidelity.parts[&id].level.as_str(),
                     capture.stream(),
                     capture.offset(),
                     capture.byte_len(),
                     capture.record_id().unwrap_or("none"),
-                    error,
+                    error
+                );
+                let message = format!(
+                    "{prefix} dropped={}",
                     serde_json::to_string(&dropped).map_err(CodecError::malformed)?
                 );
                 let provenance = SourceProvenance::in_stream(
@@ -347,6 +402,7 @@ impl DecodeParts for DecodeContext<'_> {
                         .note(message)
                         .with_provenance(provenance),
                 )?;
+                replacement.record_failure(self, id, dropped, prefix)?;
                 output.append(self, replacement)?;
                 Ok(None)
             }

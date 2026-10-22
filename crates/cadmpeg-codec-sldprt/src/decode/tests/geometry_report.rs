@@ -499,9 +499,11 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
         source_image: &[],
         version: 0,
         blocks: Vec::new(),
+        block_views: std::collections::BTreeMap::new(),
         directory: Vec::new(),
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
+        compound_views: std::collections::BTreeMap::new(),
         solidworks: crate::container::SolidWorksEnvelopeScan::default(),
     };
     let mut decoded = Brep::default();
@@ -528,9 +530,11 @@ fn geometry_report_aggregates_surface_solver_caps_across_partitions() {
         source_image: &[],
         version: 0,
         blocks: Vec::new(),
+        block_views: std::collections::BTreeMap::new(),
         directory: Vec::new(),
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
+        compound_views: std::collections::BTreeMap::new(),
         solidworks: crate::container::SolidWorksEnvelopeScan::default(),
     };
     let mut decoded = Brep::default();

@@ -85,4 +85,4 @@ rewrite_enum!(PrototypeReference, []; {
     Local {definition},
     External {document, object},
     Unresolved {},
-});
+}; reference_leaf true; string_references {  });

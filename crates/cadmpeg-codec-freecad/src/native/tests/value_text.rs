@@ -22,7 +22,6 @@ fn direct_text_survives_every_value_tag_without_serialization_filtering() {
                 attributes: BTreeMap::new(),
                 decoded_json: None,
                 text: text.map(str::to_owned),
-                raw_xml: String::new(),
             };
             let wire = serde_json::to_value(&value).unwrap();
             assert_eq!(wire["text"], serde_json::json!(text), "{tag}");

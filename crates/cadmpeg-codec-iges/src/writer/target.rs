@@ -104,6 +104,7 @@ fn synthesized_body(
         input.ir,
         &body.losses,
         &synthesis.regenerated_native,
+        &synthesis.written_native,
     );
     body.synthesis_cause = synthesis_cause;
     Ok(body)

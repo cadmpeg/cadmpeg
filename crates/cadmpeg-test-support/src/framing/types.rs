@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, PartCapture, View};
+use cadmpeg_core::decode::{DecodeContext, PartCapture, View, XmlElementScan, u64_from_index};
 use cadmpeg_ir::source_fidelity::parts::{PartLevel, PartSpec};
 
 /// Index-based containment in a parent-first frame inventory.
@@ -27,6 +27,13 @@ pub struct FramedPart<'a> {
     framing: Vec<Range<u64>>,
     dispatch: Vec<Range<u64>>,
     external_dispatch: Vec<View<'a>>,
+    xml_containment: Option<XmlContainment>,
+}
+
+#[derive(Debug)]
+pub(super) struct XmlContainment {
+    pub(super) owner: usize,
+    pub(super) parent: PartCapture,
 }
 
 impl<'a> FramedPart<'a> {
@@ -50,6 +57,7 @@ impl<'a> FramedPart<'a> {
             framing,
             dispatch,
             external_dispatch: Vec::new(),
+            xml_containment: None,
         })
     }
 
@@ -67,6 +75,44 @@ impl<'a> FramedPart<'a> {
         }
         self.external_dispatch = views;
         Ok(self)
+    }
+
+    /// Bind actual immediate XML containment separately from the declared owner.
+    ///
+    /// Only a node from the source scanner can supply this proof. The table
+    /// validator still checks the owner level and its physical ancestor chain.
+    pub fn with_xml_parent(
+        mut self,
+        ctx: &DecodeContext<'_>,
+        scan: &XmlElementScan<'a>,
+        node: usize,
+        declared_owner: usize,
+    ) -> Result<Self, String> {
+        if !matches!(self.parent, FrameParent::Part(_)) {
+            return Err("XML containment requires a physical part parent".into());
+        }
+        let child = scan.elements().get(node).ok_or("missing XML child")?;
+        let actual = ctx
+            .capture_part_extent(child.extent())
+            .map_err(|error| error.to_string())?;
+        if !same_extent(&actual, &self.capture) {
+            return Err("XML child proof does not describe this frame".into());
+        }
+        let parent = child
+            .parent()
+            .and_then(|index| scan.elements().get(index))
+            .ok_or("XML child has no physical parent")?;
+        self.xml_containment = Some(XmlContainment {
+            owner: declared_owner,
+            parent: ctx
+                .capture_part_extent(parent.extent())
+                .map_err(|error| error.to_string())?,
+        });
+        Ok(self)
+    }
+
+    pub(super) fn xml_containment(&self) -> Option<&XmlContainment> {
+        self.xml_containment.as_ref()
     }
 
     /// Exact qualified table level.
@@ -116,6 +162,12 @@ impl<'a> FramedPart<'a> {
             &self.framing,
         )
     }
+}
+
+pub(super) fn same_extent(first: &PartCapture, second: &PartCapture) -> bool {
+    first.stream() == second.stream()
+        && first.offset() == second.offset()
+        && first.byte_len() == second.byte_len()
 }
 
 fn validate_ranges(capture: &PartCapture, ranges: &[Range<u64>]) -> Result<(), String> {

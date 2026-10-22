@@ -190,8 +190,14 @@ pub(crate) fn project(
                 )),
             );
         }
+        let native_ref = ir
+            .native
+            .namespace("rhino")
+            .and_then(|namespace| namespace.arenas().get("layers"))
+            .and_then(|records| records.get(ordinal))
+            .map(|record| record.id().to_owned());
         ir.model.presentation_layers.push(PresentationLayer {
-            native_ref: None,
+            native_ref,
             id: layer_id(ordinal),
             name: layer.name.clone(),
             parent,
@@ -199,7 +205,6 @@ pub(crate) fn project(
             visible: Some(layer.visible),
             items: Vec::new(),
         });
-        link_native_record(ctx, ir, "layers", ordinal, layer_id(ordinal).as_str())?;
     }
     for (source_order, object) in scan.objects.iter().enumerate() {
         let Some(object) = object.framed() else {

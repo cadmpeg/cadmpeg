@@ -17,6 +17,11 @@ fn source<'a>(ctx: &DecodeContext<'a>, root: cadmpeg_core::decode::View<'a>) -> 
         Err::<(), _>(CodecError::malformed("manifest could not be decoded"))
     })
     .expect("bounded recovery");
+    let crate::source_fidelity::parts::PartFinalization::Ready(output) =
+        output.into_parts(ctx).expect("dependency finalization")
+    else {
+        panic!("shared stubs have registered typed owners");
+    };
     output.into_parts().2
 }
 

@@ -71,5 +71,5 @@ rewrite_enum!(PmiTarget, []; {
     Product {product},
     Occurrence {occurrence},
     ShapeAspect {source_id},
-});
+}; reference_leaf true; string_references {  });
 rewrite_scalar!(PmiValue);

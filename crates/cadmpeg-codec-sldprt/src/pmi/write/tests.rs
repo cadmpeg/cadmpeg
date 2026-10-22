@@ -76,10 +76,10 @@ fn authored_database_round_trips_current_bound_value_names_and_overflow_text() {
     assert_eq!(bytes.get(..7), Some(b"unqlite".as_slice()));
     assert_eq!(View::u32_be_at(&bytes, 7), Some(0xdb7c_2712));
     let arena = DecodeArena::new();
-    let (ctx, _) =
+    let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let mut losses = Vec::new();
-    let records = crate::pmi::parse_payload(&ctx, &bytes, &mut losses).unwrap();
+    let records = crate::pmi::parse_payload(&ctx, root, &mut losses).unwrap();
     assert!(losses.is_empty(), "{losses:?}");
     let [record] = records.as_slice() else {
         panic!("one semantic dimension survives");

@@ -195,22 +195,17 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError
             output.push(crc_chunk(0x2000_803a, &body)?);
         }
         if let Some(index) = fields.get("current_layer_index").and_then(Value::as_i64) {
-            if let Some(id) = records(ir, "layers")
-                .iter()
-                .find(|record| {
-                    record
-                        .field("archive_index")
-                        .and_then(|value| value.as_i64())
-                        == Some(index)
-                })
-                .and_then(|record| record.field("neutral_ref"))
-                .and_then(|value| value.as_str().map(str::to_owned))
-            {
+            if let Some(record) = records(ir, "layers").iter().find(|record| {
+                record
+                    .field("archive_index")
+                    .and_then(|value| value.as_i64())
+                    == Some(index)
+            }) {
                 if let Some(index) = ir
                     .model
                     .presentation_layers
                     .iter()
-                    .position(|layer| layer.id.as_str() == id)
+                    .position(|layer| layer.native_ref.as_deref() == Some(record.id()))
                 {
                     output.push(short_chunk(0xa000_0038, i64::from(wire_index(index)?)));
                 }

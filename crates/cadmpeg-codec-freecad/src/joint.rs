@@ -646,7 +646,6 @@ pub(crate) mod tests {
                     .collect(),
                 decoded_json: None,
                 text: None,
-                raw_xml: xml[node.range()].into(),
             })
             .collect();
         property.body = crate::native::PropertyBody::Persisted {

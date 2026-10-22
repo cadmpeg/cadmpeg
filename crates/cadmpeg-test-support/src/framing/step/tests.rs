@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{frame, frame_zip_root, rebuild, Edit};
+use super::{Edit, frame, frame_zip_root, rebuild};
 use crate::framing::{FrameParent, FramedPart, PartTable};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::source_fidelity::parts::PartLevel;
@@ -126,9 +126,11 @@ fn anchor_reference_and_signature_parts_have_their_distinct_parents() {
             .filter(|part| part.level().as_str() == "step.signature_section")
             .collect::<Vec<_>>();
         assert_eq!(signatures.len(), 2);
-        assert!(signatures
-            .iter()
-            .all(|part| part.parent() == FrameParent::File));
+        assert!(
+            signatures
+                .iter()
+                .all(|part| part.parent() == FrameParent::File)
+        );
         assert_eq!(
             signatures[0].view().window(),
             b"SIGNATURE;AAENDSEC; /* ENDSEC; */ ENDSEC; /* one */ "
@@ -182,10 +184,11 @@ fn cut_short_and_unsupported_content_retain_only_real_available_extents() {
         let last = frames.last().unwrap();
         assert_eq!(last.level().as_str(), "step.complex_entity_instance");
         assert_eq!(last.view().window(), b"#2=(A(1) B(");
-        assert!(last
-            .framing()
-            .iter()
-            .all(|range| range.end <= u64::try_from(bytes.len()).unwrap()));
+        assert!(
+            last.framing()
+                .iter()
+                .all(|range| range.end <= u64::try_from(bytes.len()).unwrap())
+        );
         PartTable::load().unwrap().validate(ctx, &frames).unwrap();
     });
     for bytes in [
@@ -211,11 +214,12 @@ fn framing_and_dispatch_are_not_semantic_record_reads() {
                 .map_err(cadmpeg_core::CodecError::malformed)
         })
         .unwrap();
-        assert!(ctx
-            .take_record_captures()
-            .unwrap()
-            .iter()
-            .all(|capture| capture.reads().is_empty()));
+        assert!(
+            ctx.take_record_captures()
+                .unwrap()
+                .iter()
+                .all(|capture| capture.reads().is_empty())
+        );
         assert!(frames.iter().all(|part| part.capture().stream() == "file"));
     });
 }
@@ -311,15 +315,17 @@ fn rebuild_splices_content_and_dispatch_without_inventing_or_changing_framing() 
             .is_err(),
             "content cannot swallow source framing"
         );
-        assert!(rebuild(
-            ctx,
-            view,
-            &[Edit {
-                range: 0..1,
-                replacement: b"X"
-            }]
-        )
-        .is_err());
+        assert!(
+            rebuild(
+                ctx,
+                view,
+                &[Edit {
+                    range: 0..1,
+                    replacement: b"X"
+                }]
+            )
+            .is_err()
+        );
     });
 }
 

@@ -55,9 +55,9 @@ pub fn entity(data: &[u8]) {
 /// offsets consistent across an in-place value edit and reparse.
 pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
+    let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
     let mut losses = Vec::new();
-    let records = crate::pmi::parse_payload(&ctx, data, &mut losses)?;
+    let records = crate::pmi::parse_payload(&ctx, root, &mut losses)?;
     for record in records {
         if record.item_count.get() != 1 {
             continue;
@@ -78,7 +78,9 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         let edited = f64::from_bits(record.value.get().to_bits() ^ 1);
         patched[start..end].copy_from_slice(&edited.to_be_bytes());
         let mut again_losses = Vec::new();
-        let again = crate::pmi::parse_payload(&ctx, &patched, &mut again_losses)?;
+        let (again_ctx, again_root) =
+            DecodeContext::from_root_bytes(&patched, &arena, &DecodePolicy::service())?;
+        let again = crate::pmi::parse_payload(&again_ctx, again_root, &mut again_losses)?;
         if let Some(parsed) = again.iter().find(|candidate| candidate.guid == record.guid) {
             assert_eq!(parsed.value.get().to_bits(), edited.to_bits());
             assert_eq!(parsed.value_offset, record.value_offset);

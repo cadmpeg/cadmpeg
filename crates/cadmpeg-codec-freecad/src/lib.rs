@@ -923,6 +923,17 @@ impl CodecBackend for FcstdCodec {
                     )?;
                 }
             }
+            for source in &graph.value_sources {
+                fidelity::value_layout_payloads(
+                    ctx,
+                    *scan
+                        .data
+                        .get("Document.xml")
+                        .ok_or_else(|| CodecError::malformed("property has no source entry"))?,
+                    source,
+                    &mut layout_payloads,
+                )?;
+            }
             for (id, range) in &graph.extension_sources {
                 fidelity::xml_layout_payload(
                     ctx,
@@ -944,7 +955,14 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &entry_records,
                 &mut scan.losses,
-                Some(&mut source_fidelity),
+                Some(&mut element_map::SourceLayouts {
+                    document: *scan.data.get("Document.xml").ok_or_else(|| {
+                        CodecError::malformed("string table has no document source")
+                    })?,
+                    entries: &scan.data,
+                    fidelity: &mut source_fidelity,
+                    payloads: &mut layout_payloads,
+                }),
             )?;
             namespace.set_arena(ctx, "objects", &graph.objects)?;
             namespace.set_arena(ctx, "extensions", &graph.extensions)?;
@@ -1118,6 +1136,17 @@ impl CodecBackend for FcstdCodec {
                         cadmpeg_ir::ArenaClasses::new(),
                     )?;
                 }
+            }
+            for source in &gui_graph.value_sources {
+                fidelity::value_layout_payloads(
+                    ctx,
+                    *scan
+                        .data
+                        .get("GuiDocument.xml")
+                        .ok_or_else(|| CodecError::malformed("GUI value has no source entry"))?,
+                    source,
+                    &mut layout_payloads,
+                )?;
             }
             for (id, range) in &gui_graph.provider_sources {
                 let view = scan

@@ -222,8 +222,9 @@ impl ZstdDecoder<'_, '_> {
         let inspected = inspect_frame(self.input)?;
         let source = self
             .input
-            .take(inspected.size)
-            .ok_or_else(|| CodecError::Malformed("truncated Zstandard stream".into()))?;
+            .req_take_child(inspected.size)
+            .map_err(|_| CodecError::Malformed("truncated Zstandard stream".into()))?
+            .window();
         let Some(facts) = inspected.data else {
             return Ok(());
         };
@@ -367,7 +368,8 @@ fn zstd_error(error: &FrameDecoderError, window: u64) -> CodecError {
 
 /// Reads one frame header, returning the view past it and the frame's facts. A skippable
 /// frame has no facts, and its view is left before its four-byte length.
-fn frame_header(mut frame: View<'_>) -> Result<(View<'_>, Option<FrameFacts>), CodecError> {
+fn frame_header(frame: View<'_>) -> Result<(View<'_>, Option<FrameFacts>), CodecError> {
+    let mut frame = frame.for_framing();
     let magic = frame.req_u32_le()?;
     if (0x184d_2a50..=0x184d_2a5f).contains(&magic) {
         return Ok((frame, None));
@@ -472,6 +474,8 @@ mod tests {
     use crate::CodecError;
 
     const MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
+
+    mod tracking;
 
     // Frames are laid out by hand rather than with `zstd::bulk::compress`, which is the
     // libzstd binding this crate no longer links; the frames written by the reference

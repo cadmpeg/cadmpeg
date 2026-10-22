@@ -4,6 +4,7 @@
 use super::{AttributeTarget, AttributeValue, SourceAttribute};
 
 impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
+    const IS_REFERENCE_LEAF: bool = true;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         value: &mut serde_json::Value,

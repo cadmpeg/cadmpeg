@@ -240,11 +240,7 @@ impl MergeSession<'_, '_> {
                 &occurrence,
                 &part_ids,
             )?;
-            parent_fidelity.append(rescope_fidelity(
-                component_fidelity,
-                &occurrence,
-                &part_ids,
-            )?)?;
+            parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence, part_ids)?)?;
             merged += descendants + 1;
             if component_report.transfer.geometry_transferred {
                 parent_report.transfer.geometry_transferred = true;
@@ -333,9 +329,10 @@ fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), C
 fn rescope_fidelity(
     source: SourceFidelity,
     occurrence: &str,
-    part_ids: &PartIdentityMap,
+    part_ids_owned: PartIdentityMap,
 ) -> Result<SourceFidelity, CodecError> {
-    let (mut annotations, records, metadata, layouts, parts) = source.into_parts();
+    let part_ids = &part_ids_owned;
+    let (mut annotations, records, metadata, layouts, parts, b1_spans) = source.into_parts();
     part_ids.validate_rescoped_tree(&parts)?;
     annotations
         .map_ids(|id| match rescope(id, occurrence, part_ids) {
@@ -380,6 +377,7 @@ fn rescope_fidelity(
         rescoped.insert_retained_record(id, record.with_owner(stream))?;
     }
     rescoped.append_part_tree(parts)?;
+    part_ids_owned.append_b1_coverage(&mut rescoped, b1_spans)?;
     Ok(rescoped)
 }
 

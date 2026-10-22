@@ -52,7 +52,7 @@ fn test_parse_string_table(
     count: usize,
     side_entry: bool,
 ) -> Result<Vec<crate::native::StringTableEntry>, CodecError> {
-    parse_string_table(bytes, count, side_entry)
+    parse_string_table(bytes, count, side_entry).map(|(entries, _)| entries)
 }
 
 fn test_parse_element_map(bytes: &[u8], side_entry: bool) -> Result<super::ParsedMap, CodecError> {
@@ -952,3 +952,5 @@ fn empty_legacy_element_map_markers_are_typed_absence_not_unread_payloads() {
             .note("")
             .code));
 }
+
+mod string_table_layout;

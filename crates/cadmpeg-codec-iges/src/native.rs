@@ -975,7 +975,6 @@ struct NativeAttributeTableDefinition {
     attribute_list_type: Option<i64>,
     declared_attribute_count: Option<i64>,
     attributes: Vec<NativeAttributeDefinition>,
-    neutral_values: Option<attributes::ProjectedValues>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -986,7 +985,6 @@ struct NativeAttributeTableInstance {
     definition: Option<String>,
     declared_row_count: Option<i64>,
     rows: Vec<Vec<TokenValue>>,
-    neutral_values: Option<attributes::ProjectedValues>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -996,7 +994,6 @@ struct NativeProductProperty {
     property_kind: ProductPropertyKind,
     value: Option<NativeBytes<Vec<u8>>>,
     owners: Vec<String>,
-    neutral_values: Option<attributes::ProjectedValues>,
 }
 
 impl Serialize for NativeProductProperty {
@@ -1234,7 +1231,6 @@ struct NativeProperty {
     declared_value_count: Option<i64>,
     owners: Vec<String>,
     value: NativePropertyValue,
-    neutral_values: Option<attributes::ProjectedValues>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1973,8 +1969,6 @@ struct NativeEntity<'a> {
     reserved: [NativeBytes<[u8; 8]>; 2],
 
     label: NativeBytes<[u8; 8]>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    neutral_label: Vec<cadmpeg_ir::ids::AttributeId>,
     subscript: Option<i64>,
     #[serde(flatten)]
     parameter_record: NativeParameterRecordSlot<'a>,
@@ -2540,7 +2534,6 @@ pub(crate) fn store(
                 reserved: entry.reserved.map(NativeBytes::from),
 
                 label: NativeBytes::from(entry.label),
-                neutral_label: Vec::new(),
                 subscript: entry.subscript,
                 parameter_record: NativeParameterRecordSlot(parameters),
                 association_links,
@@ -4468,7 +4461,7 @@ pub(crate) fn store(
             associativities.push(association);
             Ok(())
         })?;
-    let mut attribute_table_definitions = collect_native_items(
+    let attribute_table_definitions = collect_native_items(
         directory
             .iter()
             .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2)),
@@ -4570,7 +4563,6 @@ pub(crate) fn store(
                 attributes.clear();
             }
             Ok(NativeAttributeTableDefinition {
-                neutral_values: None,
                 id: format!("iges:product:attribute-definition#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 form: entry.form,
@@ -4583,7 +4575,7 @@ pub(crate) fn store(
             })
         },
     )?;
-    let mut attribute_table_instances = collect_native_items(
+    let attribute_table_instances = collect_native_items(
         directory
             .iter()
             .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1)),
@@ -4632,7 +4624,6 @@ pub(crate) fn store(
                 }
             };
             Ok(NativeAttributeTableInstance {
-                neutral_values: None,
                 id: format!("iges:product:attribute-instance#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 form: entry.form,
@@ -4645,14 +4636,13 @@ pub(crate) fn store(
             })
         },
     )?;
-    let mut product_properties = collect_native_items(
+    let product_properties = collect_native_items(
         directory
             .iter()
             .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 7 | 15)),
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             Ok(NativeProductProperty {
-                neutral_values: None,
                 id: format!("iges:product:property#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 property_kind: if entry.form == 7 {
@@ -5005,7 +4995,6 @@ pub(crate) fn store(
             _ => continue,
         };
         properties.push(NativeProperty {
-            neutral_values: None,
             id: format!("iges:application:property#D{}", entry.sequence),
             source_entity: format!("iges:entity:directory#{}", entry.sequence),
             form: entry.form,
@@ -5847,12 +5836,11 @@ pub(crate) fn store(
         projection_losses.extend(attributes::project(
             ir,
             sequences,
-            &mut entities,
+            &entities,
             attributes::PropertyRecords {
-                properties: &mut properties,
-                products: &mut product_properties,
-                definitions: &mut attribute_table_definitions,
-                instances: &mut attribute_table_instances,
+                properties: &properties,
+                definitions: &attribute_table_definitions,
+                instances: &attribute_table_instances,
             },
             ctx,
         )?);

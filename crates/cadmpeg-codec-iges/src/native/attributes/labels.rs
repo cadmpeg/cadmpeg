@@ -15,13 +15,13 @@ fn carrier(target: &AttributeTarget) -> bool {
 
 pub(super) fn project(
     ir: &mut CadIr,
-    entities: &mut [super::super::NativeEntity<'_>],
-    properties: &mut [NativeProperty],
+    entities: &[super::super::NativeEntity<'_>],
+    properties: &[NativeProperty],
     targets: &BTreeMap<String, Vec<AttributeTarget>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
-    for property in properties.iter_mut().filter(|property| property.form == 15) {
+    for property in properties.iter().filter(|property| property.form == 15) {
         let owners: Vec<_> = property
             .owners
             .iter()
@@ -45,7 +45,7 @@ pub(super) fn project(
             );
             continue;
         };
-        property.neutral_values = Some(project_fields(
+        project_fields(
             ir,
             &property.source_entity,
             &property.id,
@@ -57,7 +57,7 @@ pub(super) fn project(
             )],
             targets,
             ctx,
-        )?);
+        )?;
     }
     for entity in entities {
         let Some(assigned) = targets.get(&entity.id) else {
@@ -95,32 +95,27 @@ pub(super) fn project(
                 .iter()
                 .all(|attribute| attribute.values == [AttributeValue::String(label.to_owned())])
         {
-            entity.neutral_label = current
-                .iter()
-                .map(|attribute| attribute.id.clone())
-                .collect();
-        } else {
-            let name = if current.is_empty() {
-                "name"
-            } else {
-                "iges.directory_label"
-            };
-            let label_targets = BTreeMap::from([(entity.id.clone(), assigned)]);
-            let values = project_fields(
-                ir,
-                &entity.id,
-                &entity.id,
-                std::slice::from_ref(&entity.id),
-                name,
-                vec![(
-                    String::new(),
-                    vec![AttributeValue::String(label.to_owned())],
-                )],
-                &label_targets,
-                ctx,
-            )?;
-            entity.neutral_label = values.into_values().flatten().collect();
+            continue;
         }
+        let name = if current.is_empty() {
+            "name"
+        } else {
+            "iges.directory_label"
+        };
+        let label_targets = BTreeMap::from([(entity.id.clone(), assigned)]);
+        project_fields(
+            ir,
+            &entity.id,
+            &entity.id,
+            std::slice::from_ref(&entity.id),
+            name,
+            vec![(
+                String::new(),
+                vec![AttributeValue::String(label.to_owned())],
+            )],
+            &label_targets,
+            ctx,
+        )?;
     }
     Ok(losses)
 }

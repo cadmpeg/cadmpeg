@@ -573,3 +573,5 @@ fn duplicate_layer_indexes_keep_each_source_summary_entry() {
         .all(|key| !key.as_str().starts_with("layer.")));
     assert_valid(&result);
 }
+
+mod linkage;

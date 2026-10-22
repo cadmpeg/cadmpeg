@@ -714,7 +714,8 @@ pub(crate) fn dimensions(
         }
         collect_dimensions(
             ctx,
-            source.payload(),
+            scan.section_view(source)
+                .ok_or_else(|| CodecError::malformed("PMI section lacks its source view"))?,
             source.source_stream(),
             source.native_id().as_str(),
             annotations,
@@ -736,7 +737,7 @@ pub(crate) fn dimensions(
 /// placeholders; production decode supplies real block identities.
 pub(crate) fn parse_payload(
     ctx: &DecodeContext<'_>,
-    payload: &[u8],
+    payload: View<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<PmiDimension>, CodecError> {
     let mut annotations = Annotations::default();
@@ -768,7 +769,7 @@ struct DimensionOutput<'a> {
 
 fn collect_dimensions(
     ctx: &DecodeContext<'_>,
-    payload: &[u8],
+    payload: View<'_>,
     stream: &cadmpeg_ir::StreamName,
     parent: &str,
     annotations: &mut Annotations,
@@ -821,11 +822,9 @@ fn collect_dimensions(
             continue;
         }
         let first = output.records.len();
-        let mut encoded = image.key.as_bytes().to_vec();
-        encoded.extend_from_slice(&image.value);
         collect_dimension_maps(
             ctx,
-            &encoded,
+            image.encoded,
             stream,
             parent,
             &mut Annotations::default(),
@@ -868,13 +867,14 @@ fn collect_dimensions(
 
 fn collect_dimension_maps(
     ctx: &DecodeContext<'_>,
-    payload: &[u8],
+    source: View<'_>,
     stream: &cadmpeg_ir::StreamName,
     parent: &str,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
     output: DimensionOutput<'_>,
 ) -> Result<(), CodecError> {
+    let payload = source.window();
     let DimensionOutput {
         records,
         seen,

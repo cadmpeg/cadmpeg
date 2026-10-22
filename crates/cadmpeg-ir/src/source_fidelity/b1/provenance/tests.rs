@@ -35,6 +35,41 @@ fn native(id: &str, fields: Value) -> NativeRecord {
         .expect("valid native fields")
 }
 
+struct FixtureOwners;
+
+impl NativeOwnerResolver for FixtureOwners {
+    fn visit_owners(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        ir: &CadIr,
+        visitor: &mut dyn FnMut(NativeOwnership) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        for namespace in ir.native.0.values() {
+            for (arena, records) in namespace.arenas() {
+                if arena == "unknowns" {
+                    continue;
+                }
+                for record in records {
+                    let owner = serde_json::from_value::<Option<Identity>>(
+                        record.field("owner").unwrap_or(Value::Null),
+                    )
+                    .map_err(|error| {
+                        CodecError::malformed(format_args!(
+                            "fixture {} owner: {error}",
+                            record.id()
+                        ))
+                    })?;
+                    visitor(NativeOwnership::new(
+                        Identity::new(record.id()).expect("fixture record identity"),
+                        owner,
+                    ))?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[test]
 fn owner_classes_use_the_neutral_registry_and_exact_reverse_links() {
     let mut ir = CadIr::empty();
@@ -176,7 +211,7 @@ fn native_owners_are_direct_and_do_not_infer_classes_from_other_fields() {
     let arena = DecodeArena::new();
     let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), DecodeDepth::Full);
     let mut owners = BTreeMap::new();
-    ir.visit_native_provenance(&ctx, &mut |record| {
+    ir.visit_native_provenance_with_owner_resolver(&ctx, &FixtureOwners, &mut |record| {
         assert!(record.unknown_links().is_empty());
         assert_eq!(record.identity_only(), None);
         owners.insert(
@@ -221,7 +256,7 @@ fn native_owner_shape_and_identity_are_validated() {
         let arena = DecodeArena::new();
         let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), DecodeDepth::Full);
         let error = ir
-            .visit_native_provenance(&ctx, &mut |_| Ok(()))
+            .visit_native_provenance_with_owner_resolver(&ctx, &FixtureOwners, &mut |_| Ok(()))
             .expect_err("invalid owner must refuse");
         assert!(error.to_string().contains(SHARED));
         assert!(error.to_string().contains("owner"));
@@ -284,4 +319,120 @@ fn visitor_refusal_stops_before_later_records() {
         error.to_string(),
         CodecError::malformed("visitor stopped").to_string()
     );
+}
+
+#[test]
+fn native_rows_cannot_silently_skip_owner_resolution() {
+    let mut ir = CadIr::empty();
+    ir.native.namespace_mut("test").arenas_mut().insert(
+        "objects".into(),
+        vec![native(SHARED, json!({"owner":null}))],
+    );
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), DecodeDepth::Full);
+    let error = ir
+        .visit_native_provenance(&ctx, &mut |_| Ok(()))
+        .expect_err("non-unknown rows need their codec's typed resolver");
+    assert!(error.to_string().contains(SHARED));
+    assert!(error
+        .to_string()
+        .contains("requires one typed owner resolution"));
+}
+
+#[test]
+fn owner_resolution_refuses_missing_targets_and_duplicate_or_missing_rows() {
+    struct Rows(Vec<NativeOwnership>);
+    impl NativeOwnerResolver for Rows {
+        fn visit_owners(
+            &self,
+            _: &DecodeContext<'_>,
+            _: &CadIr,
+            visitor: &mut dyn FnMut(NativeOwnership) -> Result<(), CodecError>,
+        ) -> Result<(), CodecError> {
+            for row in &self.0 {
+                visitor(row.clone())?;
+            }
+            Ok(())
+        }
+    }
+    let mut ir = CadIr::empty();
+    let other = "test:source:record#other";
+    ir.native.namespace_mut("test").arenas_mut().insert(
+        "objects".into(),
+        vec![
+            native(SHARED, json!({"owner":null})),
+            native(other, json!({"owner":null})),
+        ],
+    );
+    let id = |text| Identity::new(text).expect("control identity");
+    for rows in [
+        vec![],
+        vec![NativeOwnership::new(id(SHARED), None)],
+        vec![
+            NativeOwnership::new(id(SHARED), None),
+            NativeOwnership::new(id(SHARED), None),
+        ],
+        vec![
+            NativeOwnership::new(id(SHARED), Some(id("test:source:record#missing"))),
+            NativeOwnership::new(id(other), None),
+        ],
+        vec![
+            NativeOwnership::new(id(SHARED), None),
+            NativeOwnership::new(id("foreign:source:record#extra"), None),
+        ],
+    ] {
+        let arena = DecodeArena::new();
+        let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), DecodeDepth::Full);
+        let mut visits = 0;
+        assert!(ir
+            .visit_native_provenance_with_owner_resolver(&ctx, &Rows(rows), &mut |_| {
+                visits += 1;
+                Ok(())
+            })
+            .is_err());
+        assert_eq!(
+            visits, 0,
+            "validate complete ownership before exposing any fact"
+        );
+    }
+}
+
+#[test]
+fn resolved_owner_can_be_an_actual_neutral_record() {
+    struct NeutralOwner;
+    impl NativeOwnerResolver for NeutralOwner {
+        fn visit_owners(
+            &self,
+            _: &DecodeContext<'_>,
+            ir: &CadIr,
+            visitor: &mut dyn FnMut(NativeOwnership) -> Result<(), CodecError>,
+        ) -> Result<(), CodecError> {
+            visitor(NativeOwnership::new(
+                Identity::new(SHARED).expect("native identity"),
+                Some(
+                    Identity::new(ir.model.product_definitions[0].id.as_str())
+                        .expect("neutral identity"),
+                ),
+            ))
+        }
+    }
+    let mut ir = CadIr::empty();
+    ir.model
+        .product_definitions
+        .push(product("test:model:product#owner", None));
+    ir.native
+        .namespace_mut("test")
+        .arenas_mut()
+        .insert("objects".into(), vec![native(SHARED, json!({}))]);
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), DecodeDepth::Full);
+    ir.visit_native_provenance_with_owner_resolver(&ctx, &NeutralOwner, &mut |record| {
+        assert_eq!(record.owner(), Some("test:model:product#owner"));
+        assert_eq!(
+            ir.provenance_classes(record.owner().expect("resolved owner")),
+            ArenaClasses::from([ArenaClass::Model])
+        );
+        Ok(())
+    })
+    .expect("actual neutral owner exists in the same document");
 }

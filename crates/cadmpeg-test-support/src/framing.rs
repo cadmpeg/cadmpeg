@@ -5,6 +5,7 @@ mod table;
 mod types;
 mod validation;
 
+pub mod freecad;
 pub mod step;
 
 pub use table::{PartParent, PartRule, PartTable};

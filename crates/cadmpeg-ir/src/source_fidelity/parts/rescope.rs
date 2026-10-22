@@ -13,9 +13,22 @@ use crate::source_fidelity::SourceFidelity;
 
 /// Address-derived identity changes for one composed part tree.
 #[derive(Debug, Default)]
-pub struct PartIdentityMap(BTreeMap<String, String>);
+pub struct PartIdentityMap(
+    BTreeMap<String, String>,
+    crate::source_fidelity::b1::finalization::B1RescopeProof,
+);
 
 impl PartIdentityMap {
+    /// Move classified source streams admitted by this exact composition proof.
+    /// The map must be the unchanged sixth component of the composed fidelity.
+    pub fn append_b1_coverage(
+        self,
+        destination: &mut SourceFidelity,
+        coverage: BTreeMap<String, crate::source_fidelity::b1::finalization::ClassifiedStream>,
+    ) -> Result<(), CodecError> {
+        self.1.append(destination, coverage)
+    }
+
     /// The new canonical identity of a part present in the source tree.
     pub fn get(&self, id: &str) -> Option<&str> {
         self.0.get(id).map(String::as_str)
@@ -96,7 +109,12 @@ impl SourceFidelity {
                 return Err(CodecError::malformed("composed part identity collision"));
             }
         }
-        let ids = PartIdentityMap(ids);
+        let coverage = crate::source_fidelity::b1::finalization::B1RescopeProof::stage(
+            ctx,
+            &self.b1_spans,
+            prefix,
+        )?;
+        let ids = PartIdentityMap(ids, coverage);
         for node in mapped.values_mut() {
             if let Some(parent) = &mut node.parent {
                 *parent = mapped_identity(ctx, &ids, parent)?;

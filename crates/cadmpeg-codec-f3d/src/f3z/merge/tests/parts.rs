@@ -4,9 +4,9 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
-use cadmpeg_ir::CodecFormat;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec, PartState};
 use cadmpeg_ir::source_fidelity::RecordLayout;
+use cadmpeg_ir::CodecFormat;
 use cadmpeg_ir::{Native, NativeUnknownRecord, SourceFidelity};
 
 use super::super::{extend_native, occurrence_stream_prefix, rescope_fidelity};
@@ -34,6 +34,11 @@ fn source<'a>(
         .map(drop)
     })
     .expect("owner and failed bounded child");
+    let cadmpeg_ir::source_fidelity::parts::PartFinalization::Ready(output) =
+        output.into_parts(ctx).expect("dependency finalization")
+    else {
+        panic!("shared stub references have representable lists");
+    };
     let (_, mut native, mut fidelity, losses) = output.into_parts();
     assert_eq!(losses.len(), 1);
     let namespace = native.namespace_mut("f3d");
@@ -73,7 +78,7 @@ fn occurrence_composition_keeps_canonical_part_ids_and_every_home_reference() {
         DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::service()).expect("root");
     let (native, mut fidelity) = source(&ctx, root);
     let before = fidelity.clone();
-    assert!(rescope_fidelity(fidelity.clone(), "a", &Default::default()).is_err());
+    assert!(rescope_fidelity(fidelity.clone(), "a", Default::default()).is_err());
     let ids = fidelity
         .rescope_part_tree(
             &ctx,
@@ -83,7 +88,7 @@ fn occurrence_composition_keeps_canonical_part_ids_and_every_home_reference() {
         .expect("checked address mapping");
     let mut output_native = Native::default();
     extend_native(&ctx, &mut output_native, native, "a", &ids).expect("native composition");
-    let output = rescope_fidelity(fidelity, "a", &ids).expect("fidelity composition");
+    let output = rescope_fidelity(fidelity, "a", ids).expect("fidelity composition");
     let unknowns = output_native
         .namespace("f3d")
         .expect("native")
@@ -170,7 +175,7 @@ fn distinct_and_nested_occurrences_recompute_ids_from_actual_escaped_streams() {
             occurrence_stream_prefix("a").expect("owner").as_str(),
         )
         .expect("first address map");
-    let mut first = rescope_fidelity(first, "a", &ids).expect("first");
+    let mut first = rescope_fidelity(first, "a", ids).expect("first");
     let ids = first
         .rescope_part_tree(
             &ctx,
@@ -178,7 +183,7 @@ fn distinct_and_nested_occurrences_recompute_ids_from_actual_escaped_streams() {
             occurrence_stream_prefix("b/c").expect("owner").as_str(),
         )
         .expect("nested address map");
-    let nested = rescope_fidelity(first, "b/c", &ids).expect("nested");
+    let nested = rescope_fidelity(first, "b/c", ids).expect("nested");
     assert!(nested
         .parts()
         .values()
@@ -197,7 +202,7 @@ fn distinct_and_nested_occurrences_recompute_ids_from_actual_escaped_streams() {
                 .as_str(),
         )
         .expect("other address map");
-    let other = rescope_fidelity(other, "b%2Fc", &ids).expect("other");
+    let other = rescope_fidelity(other, "b%2Fc", ids).expect("other");
     assert!(other
         .parts()
         .keys()
