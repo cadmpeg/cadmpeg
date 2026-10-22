@@ -37,7 +37,7 @@ const LEGACY_TEXT: Uuid = Uuid::from_canonical([
 const LEGACY_LEADER: Uuid = Uuid::from_canonical([
     0x14, 0x92, 0x2b, 0x7a, 0x5b, 0x65, 0x4f, 0x11, 0x83, 0x45, 0xd4, 0x15, 0xa9, 0x63, 0x71, 0x29,
 ]);
-const TEXT_DOT: Uuid = Uuid::from_canonical([
+pub(crate) const TEXT_DOT: Uuid = Uuid::from_canonical([
     0x74, 0x19, 0x83, 0x02, 0xcd, 0xf4, 0x4f, 0x95, 0x96, 0x09, 0x6d, 0x68, 0x4f, 0x22, 0xab, 0x37,
 ]);
 const V2_TEXT_DOT: Uuid = Uuid::from_canonical([
@@ -75,6 +75,11 @@ impl AnnotationClass {
             _ => None,
         }
     }
+}
+
+/// Whether the class is one of the general annotation grammars.
+pub(crate) fn is_annotation_class(uuid: Uuid) -> bool {
+    AnnotationClass::from_uuid(uuid).is_some()
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]

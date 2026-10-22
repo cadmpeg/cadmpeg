@@ -2508,6 +2508,19 @@ impl<'a> DecodeContext<'a> {
             decoded?;
             let after = ModelCheckpoint::capture(&self.session.document().model);
             if before.same_state(&after) {
+                if member.class_uuid().is_some_and(|class| {
+                    crate::annotations::is_annotation_class(class)
+                        || crate::dimensions::supported_class(class)
+                }) {
+                    self.report
+                        .typed_losses
+                        .push(RhinoLossCode::AnnotationRecordDropped.note(format_args!(
+                            "instance reference {} places definition-member annotation \
+                             {member_id} without a neutral instance-placed annotation",
+                            identity.object_id
+                        )));
+                    continue;
+                }
                 return Err(format!("definition member {member_id} did not decode").into());
             }
             let transformed = self.transform_new_entities(&before, transform)?;
