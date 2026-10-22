@@ -16,26 +16,13 @@ use cadmpeg_core::CodecError;
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// One typed owner whose list cannot yet represent the required deletion.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeferredRecordPruning {
-    /// Actual surviving record identity.
-    pub record: String,
-    /// Fixed/checked cardinality or missing typed position information.
-    pub effect: ReferencePruneEffect,
-}
-/// Dependency finalization outcome; deferred output is not exportable.
+/// Dependency finalization outcome.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PartDependencyPruning {
     /// Required dependencies are gone and surviving lists retain their order.
     Complete {
         /// Sorted identities removed by the dependency closure.
         dropped_records: Vec<String>,
-    },
-    /// No output records or lists were changed; owner representation work remains.
-    Deferred {
-        /// Surviving typed owners that cannot represent their pruned lists.
-        records: Vec<DeferredRecordPruning>,
     },
 }
 
@@ -121,7 +108,7 @@ impl PartOutput {
             .and_then(|sum| sum.checked_add(size_of::<FailureHome>()))
             .ok_or_else(|| CodecError::malformed("part failure staging storage overflows"))?;
         ctx.retain_bytes(u64_from_index(bytes), "part failure staging")?;
-        reserve(ctx, &mut self.failures, 1)?;
+        super::reserve_output(ctx, self.staged, &mut self.failures, 1)?;
         self.failures.push(FailureHome {
             id,
             dropped: dropped.into_iter().collect(),
@@ -138,7 +125,9 @@ impl PartOutput {
     /// Drop transitively required records, then prune only typed reference lists.
     ///
     /// All list edits are prepared and re-admitted through their actual owning
-    /// types before mutation. A deferred result leaves the staged output intact.
+    /// types before mutation. A surviving record whose pruned form cannot be
+    /// represented or re-admitted is not formed: it joins the dropped set, and
+    /// the closure runs again until no record changes (#215 §4.5 rules 1-2).
     /// This operation does not derive B1 classes or source-byte coverage.
     pub fn prune_dependencies(
         &mut self,
@@ -158,15 +147,17 @@ impl PartOutput {
         for (_, namespace) in &self.native.0 {
             for records in namespace.arenas().values() {
                 for record in records {
-                    let Some(owner) = self.native_owners.get(record.id()) else {
-                        return Ok(PartDependencyPruning::Deferred {
-                            records: vec![DeferredRecordPruning {
-                                record: record.id().to_owned(),
-                                effect: ReferencePruneEffect::UnknownReferencePosition {
-                                    owner: "unregistered native owner",
-                                },
-                            }],
-                        });
+                    let owner = self.native_owners.get(record.id());
+                    debug_assert!(
+                        owner.is_some(),
+                        "decoder error: native record {} has no registered typed owner",
+                        record.id()
+                    );
+                    let Some(owner) = owner else {
+                        return Err(CodecError::malformed(format_args!(
+                            "native part record {} has no registered typed owner",
+                            record.id()
+                        )));
                     };
                     let mut edges = Vec::new();
                     (owner.visit)(ctx, record, &mut |edge| add_edge(ctx, &mut edges, edge))?;
@@ -174,60 +165,59 @@ impl PartOutput {
                 }
             }
         }
-        let owners = closure(ctx, &graph, &self.failures)?;
+        let required = required_dependents(ctx, &graph)?;
+        let mut owners = BTreeMap::new();
         let mut deleted = BTreeSet::new();
-        for id in owners.keys() {
-            ctx.retain_bytes(
-                storage_bytes(&[id.len(), size_of::<String>()])?,
-                "deleted dependency identity",
-            )?;
-            deleted.insert(id.clone());
-        }
-        let mut deferred = Vec::new();
-        let mut replacements = crate::document::Model::default();
-        macro_rules! prepare_model {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => { $(
-                for record in &self.model.$field {
-                    if !deleted.contains(record.identity()) {
-                        let prepared = crate::native::prune::model(ctx, record, &deleted)?;
-                        if !prepared.effect.can_apply() {
-                            defer(ctx, &mut deferred, record.identity(), prepared.effect)?;
-                        } else if let Some((_, replacement)) = prepared.replacement {
-                            reserve(ctx, &mut replacements.$field, 1)?;
-                            replacements.$field.push(replacement);
+        let mut pending = closure_seeds(ctx, &self.failures)?;
+        let (replacements, mut native_replacements) = loop {
+            extend_closure(ctx, &required, &mut owners, &mut deleted, pending)?;
+            let mut not_formed = BTreeSet::new();
+            let mut replacements = crate::document::Model::default();
+            macro_rules! prepare_model {
+                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => { $(
+                    for record in &self.model.$field {
+                        if !deleted.contains(record.identity()) {
+                            let prepared = crate::native::prune::model(ctx, record, &deleted)?;
+                            if !formed(prepared.effect, record.identity())? {
+                                not_formed.insert(not_formed_seed(ctx, &graph, &owners, record.identity())?);
+                            } else if let Some((_, replacement)) = prepared.replacement {
+                                reserve(ctx, &mut replacements.$field, 1)?;
+                                replacements.$field.push(replacement);
+                            }
+                        }
+                    }
+                )* };
+            }
+            crate::document::arena_registry!(prepare_model);
+            let mut native_replacements = BTreeMap::new();
+            for (_, namespace) in &self.native.0 {
+                for records in namespace.arenas().values() {
+                    for record in records {
+                        if deleted.contains(record.id()) {
+                            continue;
+                        }
+                        let owner = &self.native_owners[record.id()];
+                        let prepared = (owner.prepare)(ctx, record, &deleted)?;
+                        if !formed(prepared.effect, record.id())? {
+                            not_formed.insert(not_formed_seed(ctx, &graph, &owners, record.id())?);
+                        } else if let Some(record) = prepared.replacement {
+                            ctx.retain_bytes(
+                                storage_bytes(&[
+                                    record.id().len(),
+                                    size_of::<(String, NativeRecord)>(),
+                                ])?,
+                                "native dependency replacement",
+                            )?;
+                            native_replacements.insert(record.id().to_owned(), record);
                         }
                     }
                 }
-            )* };
-        }
-        crate::document::arena_registry!(prepare_model);
-        let mut native_replacements = BTreeMap::new();
-        for (_, namespace) in &self.native.0 {
-            for records in namespace.arenas().values() {
-                for record in records {
-                    if deleted.contains(record.id()) {
-                        continue;
-                    }
-                    let owner = &self.native_owners[record.id()];
-                    let prepared = (owner.prepare)(ctx, record, &deleted)?;
-                    if !prepared.effect.can_apply() {
-                        defer(ctx, &mut deferred, record.id(), prepared.effect)?;
-                    } else if let Some(record) = prepared.replacement {
-                        ctx.retain_bytes(
-                            storage_bytes(&[
-                                record.id().len(),
-                                size_of::<(String, NativeRecord)>(),
-                            ])?,
-                            "native dependency replacement",
-                        )?;
-                        native_replacements.insert(record.id().to_owned(), record);
-                    }
-                }
             }
-        }
-        if !deferred.is_empty() {
-            return Ok(PartDependencyPruning::Deferred { records: deferred });
-        }
+            if not_formed.is_empty() {
+                break (replacements, native_replacements);
+            }
+            pending = not_formed;
+        };
         // Prepare diagnostic text before changing any surviving record or list.
         let mut messages = Vec::new();
         let mut drops = Vec::new();
@@ -341,25 +331,65 @@ fn add_record(
     }
     Ok(())
 }
-fn defer(
-    ctx: &DecodeContext<'_>,
-    records: &mut Vec<DeferredRecordPruning>,
-    id: &str,
-    effect: ReferencePruneEffect,
-) -> Result<(), CodecError> {
-    ctx.retain_bytes(u64_from_index(id.len()), "deferred typed dependency record")?;
-    reserve(ctx, records, 1)?;
-    records.push(DeferredRecordPruning {
-        record: id.to_owned(),
-        effect,
-    });
-    Ok(())
+/// Whether a surviving record keeps a representable typed form.
+///
+/// A required reference to a dropped record, a fixed-cardinality list that
+/// would lose an entry, or a failed typed re-admission means the record is not
+/// formed (#215 §4.5 rule 1). An unknown reference position means its owner
+/// type does not declare where the reference sits; that is a decoder error.
+fn formed(effect: ReferencePruneEffect, id: &str) -> Result<bool, CodecError> {
+    debug_assert!(
+        !matches!(
+            effect,
+            ReferencePruneEffect::UnknownReferencePosition { .. }
+        ),
+        "decoder error: {effect:?} for part record {id}"
+    );
+    match effect {
+        ReferencePruneEffect::Unchanged | ReferencePruneEffect::ListsChanged => Ok(true),
+        ReferencePruneEffect::DropRequired
+        | ReferencePruneEffect::UnrepresentablePrunedList { .. } => Ok(false),
+        ReferencePruneEffect::UnknownReferencePosition { owner } => {
+            Err(CodecError::malformed(format_args!(
+                "typed owner {owner} does not declare the reference positions of part record {id}"
+            )))
+        }
+    }
 }
-fn closure(
+
+/// The failure home of a record that is not formed: the home of the first
+/// dropped record it references.
+fn not_formed_seed(
     ctx: &DecodeContext<'_>,
     graph: &BTreeMap<String, Vec<Edge>>,
-    failures: &[FailureHome],
-) -> Result<BTreeMap<String, UnknownId>, CodecError> {
+    owners: &BTreeMap<String, UnknownId>,
+    id: &str,
+) -> Result<(UnknownId, String), CodecError> {
+    let home = graph
+        .get(id)
+        .into_iter()
+        .flatten()
+        .find_map(|edge| owners.get(&edge.target))
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "part record {id} lost a reference that its typed visitor does not emit"
+            ))
+        })?;
+    ctx.retain_bytes(
+        storage_bytes(&[
+            home.as_str().len(),
+            id.len(),
+            size_of::<(UnknownId, String)>(),
+        ])?,
+        "unformed dependency seed",
+    )?;
+    Ok((home.clone(), id.to_owned()))
+}
+
+fn required_dependents(
+    ctx: &DecodeContext<'_>,
+    graph: &BTreeMap<String, Vec<Edge>>,
+) -> Result<BTreeMap<String, Vec<String>>, CodecError> {
     let mut required = BTreeMap::<String, Vec<String>>::new();
     for (id, edges) in graph {
         for edge in edges {
@@ -378,6 +408,13 @@ fn closure(
             }
         }
     }
+    Ok(required)
+}
+
+fn closure_seeds(
+    ctx: &DecodeContext<'_>,
+    failures: &[FailureHome],
+) -> Result<BTreeSet<(UnknownId, String)>, CodecError> {
     let mut pending = BTreeSet::new();
     for failure in failures {
         for id in &failure.dropped {
@@ -392,7 +429,17 @@ fn closure(
             pending.insert((failure.id.clone(), id.clone()));
         }
     }
-    let mut owners = BTreeMap::new();
+    Ok(pending)
+}
+
+/// Drop `pending` and every record that transitively requires one of them.
+fn extend_closure(
+    ctx: &DecodeContext<'_>,
+    required: &BTreeMap<String, Vec<String>>,
+    owners: &mut BTreeMap<String, UnknownId>,
+    deleted: &mut BTreeSet<String>,
+    mut pending: BTreeSet<(UnknownId, String)>,
+) -> Result<(), CodecError> {
     while let Some((home, id)) = pending.pop_first() {
         if owners.contains_key(&id) {
             continue;
@@ -418,9 +465,14 @@ fn closure(
             ])?,
             "dropped dependency owner",
         )?;
+        ctx.retain_bytes(
+            storage_bytes(&[id.len(), size_of::<String>()])?,
+            "deleted dependency identity",
+        )?;
+        deleted.insert(id.clone());
         owners.insert(id, home);
     }
-    Ok(owners)
+    Ok(())
 }
 
 #[cfg(test)]

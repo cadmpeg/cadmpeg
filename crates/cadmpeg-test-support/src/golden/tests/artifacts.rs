@@ -1,8 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Binary/text branch orphan checks retain exact relative artifact identities.
 
-use super::super::artifact_names;
+use std::path::PathBuf;
+
+use super::super::{artifact_names, Harness};
 use super::TempTree;
+
+/// A harness whose regular fixture root is `regular`.
+///
+/// `Harness::with_fixture_dir` is a codec harness setting: each crate that
+/// calls it has a fixture-root entry in `check-dialect-support.py`. This
+/// crate has no golden fixtures, so its own tests set the private root.
+fn custom_root_harness(tree: &TempTree, regular: PathBuf) -> Harness {
+    Harness {
+        fixture_dir: regular,
+        ..Harness::new(tree.manifest_dir(), "bin", "regenerate")
+    }
+}
 
 #[test]
 fn artifact_names_descend_damaged_and_keep_unexpected_root_entries_visible() {
@@ -39,9 +53,7 @@ fn custom_regular_fixture_root_also_reads_the_canonical_damaged_tree() {
     std::fs::create_dir_all(&damaged).expect("canonical damaged root");
     std::fs::write(regular.join("regular.bin"), b"regular bytes").expect("regular input");
     std::fs::write(damaged.join("cut.bin"), b"damaged bytes").expect("damaged input");
-    let inputs = super::super::Harness::new(tree.manifest_dir(), "bin", "regenerate")
-        .with_fixture_dir(regular)
-        .fixture_inputs();
+    let inputs = custom_root_harness(&tree, regular).fixture_inputs();
     assert_eq!(
         inputs,
         [
@@ -61,7 +73,5 @@ fn duplicate_damaged_stems_across_custom_and_canonical_roots_are_not_discarded()
     std::fs::create_dir_all(&damaged).expect("canonical damaged root");
     std::fs::write(regular.join("damaged/same.bin"), b"one input").expect("custom input");
     std::fs::write(damaged.join("same.bin"), b"another input").expect("canonical input");
-    let _inputs = super::super::Harness::new(tree.manifest_dir(), "bin", "regenerate")
-        .with_fixture_dir(regular)
-        .fixture_inputs();
+    let _inputs = custom_root_harness(&tree, regular).fixture_inputs();
 }

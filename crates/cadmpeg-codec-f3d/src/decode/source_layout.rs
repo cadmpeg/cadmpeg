@@ -7,7 +7,6 @@ use cadmpeg_core::decode::{
     u64_from_index, DecodeContext, RecordBatchId, ResourceDimension, ResourceLimit,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::RecordLayout;
 use cadmpeg_ir::SourceFidelity;
 
 /// Pointer drafts associated with one genuine member capture batch.
@@ -104,9 +103,8 @@ pub(crate) fn install(
     fidelity: &mut SourceFidelity,
     mut pending: Vec<PendingLayouts>,
 ) -> Result<(), CodecError> {
-    let captures = ctx.take_record_captures()?;
     let mut staged = SourceFidelity::default();
-    for capture in captures {
+    staged.install_mapped_record_captures(ctx, |mut capture| {
         let batch = capture
             .batch_id()
             .ok_or_else(|| CodecError::malformed("F3D capture has no member batch"))?;
@@ -119,17 +117,11 @@ pub(crate) fn install(
             .remove(capture.id())
             .ok_or_else(|| CodecError::malformed("F3D captured owner has no pointer draft"))?;
         let target = member.owner_ids.remove(capture.id());
-        let (id, mut layout) = RecordLayout::from_capture(capture);
         for (field, offset) in pointers {
-            layout.insert_pointer(field, offset)?;
+            capture.fields_mut().insert_pointer(field, offset)?;
         }
-        let layout = if member.stream_prefix.is_empty() {
-            layout
-        } else {
-            layout.with_stream_prefix(&member.stream_prefix)?
-        };
-        staged.insert_record_layout(target.unwrap_or(id), layout)?;
-    }
+        capture.with_mapping(ctx, target, &member.stream_prefix)
+    })?;
     if pending
         .iter()
         .any(|member| !member.pointers.is_empty() || !member.owner_ids.is_empty())

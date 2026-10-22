@@ -405,4 +405,237 @@ fn strict_part_tree_wire_refuses_unknown_keys_bad_ranges_missing_parents_and_cov
     assert!(serde_json::from_value::<SourceFidelity>(cycle).is_err());
 }
 
+#[test]
+fn part_state_arms_keep_their_tag_spelling_and_refuse_unknown_keys() {
+    for (state, tag) in [
+        (PartState::Decoded {}, "decoded"),
+        (PartState::GivenUp {}, "given_up"),
+    ] {
+        let wire = serde_json::json!({ "state": tag });
+        assert_eq!(serde_json::to_value(&state).expect("state wire"), wire);
+        assert_eq!(
+            serde_json::from_value::<PartState>(wire).expect("exact state arm"),
+            state
+        );
+        assert!(
+            serde_json::from_value::<PartState>(serde_json::json!({ "state": tag, "unknown": 1 }))
+                .is_err(),
+            "{tag} must refuse an undeclared key"
+        );
+    }
+}
+
+fn tree_node(parent: Option<usize>, state: PartState) -> super::PartRecord {
+    super::PartRecord {
+        level: PartLevel::parse("step.simple_entity_instance").expect("table level"),
+        stream: "file".into(),
+        offset: 0,
+        byte_len: 1,
+        parent: parent.map(tree_id),
+        state,
+        framing_bytes: Vec::new(),
+    }
+}
+
+fn tree_id(index: usize) -> crate::ids::UnknownId {
+    crate::ids::UnknownId::try_from(format!("step:source:part#{index:05}")).expect("part id")
+}
+
+#[test]
+fn part_tree_check_is_linear_on_a_deep_chain_and_names_only_given_up_ancestors() {
+    // A chain p0 <- p1 <- ... <- p19999, with p0 given up and every other node
+    // covered by it. Each node's ancestry is the whole prefix of the chain.
+    let depth = 20_000;
+    let mut tree = std::collections::BTreeMap::new();
+    tree.insert(tree_id(0), tree_node(None, PartState::GivenUp {}));
+    for index in 1..depth {
+        tree.insert(
+            tree_id(index),
+            tree_node(Some(index - 1), PartState::Covered { by: tree_id(0) }),
+        );
+    }
+    super::validate_tree(&tree).expect("covered chain under one given-up root");
+
+    // A covering id must be a proper ancestor: a sibling or a descendant fails.
+    let mut sibling = std::collections::BTreeMap::new();
+    sibling.insert(tree_id(0), tree_node(None, PartState::Decoded {}));
+    sibling.insert(tree_id(1), tree_node(Some(0), PartState::GivenUp {}));
+    sibling.insert(
+        tree_id(2),
+        tree_node(Some(0), PartState::Covered { by: tree_id(1) }),
+    );
+    assert!(super::validate_tree(&sibling).is_err());
+    let mut descendant = std::collections::BTreeMap::new();
+    descendant.insert(
+        tree_id(0),
+        tree_node(None, PartState::Covered { by: tree_id(1) }),
+    );
+    descendant.insert(tree_id(1), tree_node(Some(0), PartState::GivenUp {}));
+    assert!(super::validate_tree(&descendant).is_err());
+    let mut own = std::collections::BTreeMap::new();
+    own.insert(
+        tree_id(0),
+        tree_node(None, PartState::Covered { by: tree_id(0) }),
+    );
+    assert!(super::validate_tree(&own).is_err());
+
+    // A covering ancestor that is not given up fails.
+    let mut decoded = std::collections::BTreeMap::new();
+    decoded.insert(tree_id(0), tree_node(None, PartState::Decoded {}));
+    decoded.insert(
+        tree_id(1),
+        tree_node(Some(0), PartState::Covered { by: tree_id(0) }),
+    );
+    assert!(super::validate_tree(&decoded).is_err());
+
+    // A long cycle with no root fails.
+    let mut cycle = std::collections::BTreeMap::new();
+    for index in 0..depth {
+        cycle.insert(
+            tree_id(index),
+            tree_node(Some((index + 1) % depth), PartState::Decoded {}),
+        );
+    }
+    assert!(super::validate_tree(&cycle).is_err());
+}
+
+#[test]
+fn damaged_framing_gives_up_its_part_and_the_next_part_still_decodes() {
+    // #215 §4.5: a decoder gives up on the part it cannot read, decodes the
+    // rest, and reports the give-up. A framing interval outside the extent is
+    // damaged framing, not a whole-file refusal.
+    let source = b"#1=UNKNOWN(1);#2=KNOWN(2);";
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::default()).expect("root");
+    let first = root.child(0, 14).expect("first instance");
+    let second = root.child(14, source.len()).expect("second instance");
+    let mut output = PartOutput::new(CodecFormat::Step);
+    let damaged = PartSpec::new(
+        PartLevel::parse("step.simple_entity_instance").expect("table level"),
+        vec![0..3, 13..20],
+    );
+    let mut ran = false;
+    let result = ctx
+        .decode_part(&mut output, first, damaged, |_| {
+            ran = true;
+            Ok(())
+        })
+        .expect("framing damage is a part give-up");
+    assert_eq!(result, None);
+    assert!(!ran, "content is not decoded under invalid framing");
+    assert_eq!(
+        ctx.decode_part(&mut output, second, entity_spec(second), |_| Ok(2))
+            .expect("next part"),
+        Some(2)
+    );
+    let given_up = output
+        .fidelity()
+        .parts()
+        .values()
+        .find(|part| part.offset() == 0)
+        .expect("first part record");
+    assert_eq!(given_up.state(), &PartState::GivenUp {});
+    assert!(given_up.framing_bytes().is_empty());
+    assert_eq!(given_up.content_ranges(), [0..14]);
+    assert_eq!(output.losses().len(), 1);
+    assert_eq!(output.losses()[0].code.local_code(), "record.unreadable");
+    let wire = serde_json::to_value(output.fidelity()).expect("wire");
+    assert_eq!(
+        serde_json::from_value::<SourceFidelity>(wire).expect("admitted part tree"),
+        *output.fidelity()
+    );
+}
+
+#[test]
+fn a_child_part_with_its_parents_identity_is_refused_not_replaced() {
+    // The part id is minted from (codec, level, stream, offset). A child of the
+    // same level at its parent's offset would replace the parent's tree node.
+    let source = b"#1=UNKNOWN(1);";
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::default()).expect("root");
+    let mut output = PartOutput::new(CodecFormat::Step);
+    for child_fails in [false, true] {
+        let error = ctx
+            .decode_part(&mut output, root, entity_spec(root), |staged| {
+                ctx.decode_part(staged, root, entity_spec(root), |_| {
+                    if child_fails {
+                        Err(CodecError::malformed("damaged child"))
+                    } else {
+                        Ok(())
+                    }
+                })?;
+                Ok(())
+            })
+            .expect_err("duplicate part identity");
+        assert!(error
+            .to_string()
+            .contains("duplicate part invocation identity"));
+    }
+    assert!(output.fidelity().parts().is_empty());
+}
+
+/// Retained bytes charged to decode one point record `depth` parts deep, or
+/// the same part nesting with no record.
+fn nested_point_cost(depth: usize, with_point: bool) -> u64 {
+    fn nest(
+        ctx: &DecodeContext<'_>,
+        output: &mut PartOutput,
+        view: View<'_>,
+        depth: usize,
+        with_point: bool,
+    ) -> Result<(), CodecError> {
+        if depth == 0 {
+            if with_point {
+                let position = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                    .expect("literal finite coordinates");
+                output.insert_model(
+                    ctx,
+                    Point::new(
+                        "step:model:point#nested"
+                            .try_into()
+                            .expect("point identity"),
+                        position,
+                        None,
+                    ),
+                )?;
+            }
+            return Ok(());
+        }
+        let level = PartLevel::parse("step.simple_entity_instance").expect("table level");
+        // Each level starts one byte later, so every part has its own identity.
+        let inner = view
+            .child(view.start() + 1, view.end())
+            .expect("inner part");
+        ctx.decode_part(output, view, PartSpec::new(level, Vec::new()), |stage| {
+            nest(ctx, stage, inner, depth - 1, with_point)
+        })?
+        .ok_or_else(|| CodecError::malformed("nested part gave up"))
+    }
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"####", &arena, &DecodePolicy::default()).expect("root");
+    let before = ctx.retained_bytes_available();
+    let mut output = PartOutput::new(CodecFormat::Step);
+    nest(&ctx, &mut output, root, depth, with_point).expect("nested parts decode");
+    assert_eq!(output.model().points.len(), usize::from(with_point));
+    before - ctx.retained_bytes_available()
+}
+
+#[test]
+fn a_staged_record_is_charged_once_whatever_its_part_depth() {
+    // The record's storage moves from each stage to its parent unchanged. It
+    // is charged to the session retained budget once, at the root output.
+    let at_root = nested_point_cost(0, true) - nested_point_cost(0, false);
+    assert!(at_root > 0);
+    for depth in [1, 3] {
+        assert_eq!(
+            nested_point_cost(depth, true) - nested_point_cost(depth, false),
+            at_root,
+            "depth {depth}"
+        );
+    }
+}
+
 mod state;

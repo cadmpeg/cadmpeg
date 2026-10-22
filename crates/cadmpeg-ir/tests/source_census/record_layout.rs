@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Only tracked core captures and the part helper can build read attribution.
+//!
+//! The owners are `source_fidelity/part.rs`, the #215 part-helper tree
+//! `source_fidelity/parts/**` and `cadmpeg-core/src/decode/**`. Elsewhere,
+//! a layout comes from `SourceFidelity::install_record_captures` and a
+//! composed layout from `SourceFidelity::prefix_record_layouts`.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -8,10 +13,21 @@ use syn::visit::{self, Visit};
 use syn::{Expr, Pat, Type, UseTree};
 
 const PART_HELPER: &str = "crates/cadmpeg-ir/src/source_fidelity/part.rs";
+const PART_HELPER_TREE: &str = "crates/cadmpeg-ir/src/source_fidelity/parts/";
 
 fn is_owner(path: &str) -> bool {
-    path == PART_HELPER || path.starts_with("crates/cadmpeg-core/src/decode/")
+    path == PART_HELPER
+        || path.starts_with(PART_HELPER_TREE)
+        || path.starts_with("crates/cadmpeg-core/src/decode/")
 }
+
+/// `RecordLayout` functions that build `reads` from a capture or rewrite
+/// their stream keys.
+const READ_BUILDERS: [&str; 3] = [
+    "from_capture",
+    "with_stream_prefix",
+    "with_stream_prefix_in",
+];
 
 #[derive(Default)]
 struct Aliases {
@@ -72,6 +88,10 @@ struct ReadConstruction<'a> {
 }
 
 impl ReadConstruction<'_> {
+    fn names_layout(&self, segment: &syn::PathSegment) -> bool {
+        self.aliases.names.contains(&segment.ident.to_string())
+    }
+
     fn layout(&self, expr: &Expr) -> bool {
         match expr {
             Expr::Path(path) => path.path.get_ident().is_some_and(|name| {
@@ -179,7 +199,30 @@ impl<'ast> Visit<'ast> for ReadConstruction<'_> {
         visit::visit_expr_field(self, field);
     }
 
+    fn visit_expr_path(&mut self, path: &'ast syn::ExprPath) {
+        let segments = path.path.segments.iter().collect::<Vec<_>>();
+        if let [.., owner, function] = segments.as_slice() {
+            if READ_BUILDERS.contains(&function.ident.to_string().as_str())
+                && (self.names_layout(owner) || (owner.ident == "Self" && self.layout_impl))
+            {
+                self.violations
+                    .insert("RecordLayout read builder call outside the part helper");
+            }
+        }
+        visit::visit_expr_path(self, path);
+    }
+
     fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+        // `RecordLayout::with_stream_prefix` takes one argument; the
+        // provenance method of the same name takes a context and a prefix.
+        if (call.method == "with_stream_prefix"
+            && (call.args.len() == 1 || self.layout(&call.receiver)))
+            || (call.method == "with_stream_prefix_in"
+                && (call.args.len() == 2 || self.layout(&call.receiver)))
+        {
+            self.violations
+                .insert("RecordLayout read builder call outside the part helper");
+        }
         if (self.layout(&call.receiver) && call.method == "reads_mut")
             || (self.reads(&call.receiver)
                 && matches!(
@@ -277,6 +320,16 @@ fn guard_controls_cover_aliases_updates_mutations_and_helper_boundaries() {
         "fn f(layout:&mut RecordLayout){layout.reads().get_mut(\"file\");}",
         "fn f(layout:&mut RecordLayout){let RecordLayout{reads: alias,..}=layout;}",
         "impl RecordLayout {fn make()->Self {Self{..existing}}}",
+        "fn f(capture:RecordCapture){let _=RecordLayout::from_capture(capture);}",
+        "use x::RecordLayout as Layout; fn f(c:RecordCapture){let _=Layout::from_capture(c);}",
+        "fn f(captures:Vec<RecordCapture>){let _=captures.into_iter().map(RecordLayout::from_capture);}",
+        "fn f(layout:RecordLayout){let _=layout.with_stream_prefix(\"p/\");}",
+        "fn f(layouts:Map){for (_, layout) in layouts {let _=layout.with_stream_prefix(prefix);}}",
+        "fn f(layout:RecordLayout){let _=RecordLayout::with_stream_prefix(layout, \"p/\");}",
+        "impl RecordLayout {fn g(c:RecordCapture){let _=Self::from_capture(c);}}",
+        "fn f(layout:RecordLayout){let _=layout.with_stream_prefix_in(ctx, prefix);}",
+        "fn f(layouts:Map){for (_, layout) in layouts {let _=layout.with_stream_prefix_in(ctx, prefix);}}",
+        "use x::RecordLayout as Layout; fn f(l:Layout){let _=Layout::with_stream_prefix_in(l, ctx, prefix);}",
     ] {
         assert!(!violations("crates/a/src/decode.rs", source).is_empty(), "{source}");
         assert!(!violations("crates/a/src/tests.rs", source).is_empty(), "no test exemption: {source}");
@@ -284,15 +337,36 @@ fn guard_controls_cover_aliases_updates_mutations_and_helper_boundaries() {
     }
     let allowed = "fn f(layout:&RecordLayout){let _=layout.reads().get(\"file\");}";
     assert!(violations("crates/a/src/lib.rs", allowed).is_empty());
+    for allowed in [
+        "fn f(p:SourceProvenance){let _=p.with_stream_prefix(ctx, \"p/\");}",
+        "fn f(f:&mut SourceFidelity){f.install_record_captures(ctx, |_, _| Ok(())).unwrap();}",
+        "fn f(f:&mut SourceFidelity, l:Map){f.prefix_record_layouts(l, \"p/\").unwrap();}",
+        "fn f(c:Other){let _=Other::from_capture(c);}",
+    ] {
+        assert!(
+            violations("crates/a/src/lib.rs", allowed).is_empty(),
+            "{allowed}"
+        );
+    }
     assert!(violations(
         "crates/a/src/lib.rs",
         "struct Other{reads:u8} fn f(other:Other){let _=other.reads;}"
     )
     .is_empty());
-    for owner in [PART_HELPER, "crates/cadmpeg-core/src/decode/tracking.rs"] {
+    for owner in [
+        PART_HELPER,
+        "crates/cadmpeg-ir/src/source_fidelity/parts/helper.rs",
+        "crates/cadmpeg-ir/src/source_fidelity/parts/rescope.rs",
+        "crates/cadmpeg-core/src/decode/tracking.rs",
+    ] {
         assert!(violations(
             owner,
             "fn f(layout:&mut RecordLayout){layout.reads.clear();}"
+        )
+        .is_empty());
+        assert!(violations(
+            owner,
+            "fn f(c:RecordCapture){let (_, l)=RecordLayout::from_capture(c); l.with_stream_prefix(\"p/\");}"
         )
         .is_empty());
     }

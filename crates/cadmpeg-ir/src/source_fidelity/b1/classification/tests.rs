@@ -261,7 +261,10 @@ fn equal_length_partition_for_another_stream_is_rejected() {
 }
 
 #[test]
-fn crossing_record_extents_are_an_explicit_fidelity_error() {
+fn crossing_record_extents_classify_by_the_smallest_containing_extent() {
+    // #214 §3.1: the owner is "the innermost record whose `record_layout`
+    // extent contains the span". For crossing extents that is the smallest
+    // containing extent; containing extents of equal length union classes.
     let ir = document();
     let mut fidelity = SourceFidelity::default();
     layout(&mut fidelity, NATIVE_MODEL, 0, 8);
@@ -278,9 +281,37 @@ fn crossing_record_extents_are_an_explicit_fidelity_error() {
         &[],
     )
     .expect("valid byte partition");
-    let error = classify_partition(&ctx, &ir, &fidelity, "file", &partition)
-        .expect_err("crossing owners cannot be ordered by containment");
-    assert!(error.to_string().contains("ambiguous innermost ownership"));
+    let spans = classify_partition(&ctx, &ir, &fidelity, "file", &partition)
+        .expect("crossing extents do not refuse the decode");
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].range(), 4..6);
+    assert_eq!(
+        spans[0].classes(),
+        ArenaClasses::from([ArenaClass::Model]),
+        "[0,8) is shorter than [3,12)"
+    );
+
+    let mut tied = SourceFidelity::default();
+    layout(&mut tied, NATIVE_MODEL, 0, 8);
+    layout(&mut tied, NATIVE_DESIGN, 2, 10);
+    let partition = super::super::partition_stream(
+        &ctx,
+        "file",
+        12,
+        tied.record_layout(),
+        &[0..4, 6..12],
+        &[],
+        &[],
+    )
+    .expect("valid byte partition");
+    let spans = classify_partition(&ctx, &ir, &tied, "file", &partition)
+        .expect("crossing extents of equal length");
+    assert_eq!(spans[0].range(), 4..6);
+    assert_eq!(
+        spans[0].classes(),
+        ArenaClasses::from([ArenaClass::Model, ArenaClass::Design]),
+        "[0,8) and [2,10) tie at length 8"
+    );
 }
 
 #[test]

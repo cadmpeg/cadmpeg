@@ -70,12 +70,17 @@ fn assembly_path_source_layout(
         Ok(())
     })
     .unwrap();
-    let capture = ctx.take_record_captures().unwrap().pop().unwrap();
-    let (_, mut layout) = cadmpeg_ir::source_fidelity::RecordLayout::from_capture(capture);
-    for (field, offset) in pointers {
-        layout.insert_pointer(field, offset).unwrap();
-    }
-    layout
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    fidelity
+        .install_record_captures(&ctx, |id, layout| {
+            assert_eq!(id, scope.id.as_str());
+            for (field, offset) in std::mem::take(&mut pointers) {
+                layout.insert_pointer(field, offset).unwrap();
+            }
+            Ok(())
+        })
+        .unwrap();
+    fidelity.record_layout()[&scope.id].clone()
 }
 
 fn path_source_pointer(

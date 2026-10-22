@@ -4,7 +4,7 @@
 use super::*;
 use crate::document::ArenaClass;
 use crate::ids::UnknownId;
-use crate::source_fidelity::{RecordLayout, RetainedSourceRecord};
+use crate::source_fidelity::RetainedSourceRecord;
 use crate::CadIr;
 use cadmpeg_core::decode::{ByteRange, DecodeArena, DecodePolicy, View};
 use serde_json::json;
@@ -35,10 +35,9 @@ fn fidelity(ctx: &DecodeContext<'_>, root: View<'_>) -> SourceFidelity {
     })
     .unwrap();
     let mut fidelity = SourceFidelity::default();
-    for capture in ctx.take_record_captures().unwrap() {
-        let (id, layout) = RecordLayout::from_capture(capture);
-        fidelity.insert_record_layout(id, layout).unwrap();
-    }
+    fidelity
+        .install_record_captures(ctx, |_, _| Ok(()))
+        .unwrap();
     fidelity
 }
 
@@ -412,10 +411,9 @@ fn thousand_disjoint_spans_keep_exact_loss_keys_duplicates_and_image_classes() {
         ctx.record(id, root.child(start, end).unwrap(), || Ok(()))
             .unwrap();
     }
-    for capture in ctx.take_record_captures().unwrap() {
-        let (id, layout) = RecordLayout::from_capture(capture);
-        fidelity.insert_record_layout(id, layout).unwrap();
-    }
+    fidelity
+        .install_record_captures(&ctx, |_, _| Ok(()))
+        .unwrap();
     let framing = (0..1000).map(|i| (2 * i)..(2 * i + 1)).collect::<Vec<_>>();
     let partition = super::super::partition_stream(
         &ctx,
@@ -555,5 +553,70 @@ fn unsorted_actual_stream_names_and_partition_order_keep_exact_domains() {
     }
     fidelity
         .check_b1_closure(&ctx, &index, "synthetic", &partitions, &losses)
+        .unwrap();
+}
+
+#[test]
+fn a_given_up_part_is_named_only_by_its_record_unreadable_loss() {
+    // #215 §4.5 rule 3: "No other loss names a given-up part: its
+    // `record.unreadable` loss alone names a span inside it." Records read
+    // [0,2) and [6,10); the part [2,6) gives up. Its framing byte [4,5) splits
+    // the part's B1 bytes into [2,4) and [5,6), so no B1 span equals the part.
+    use crate::provenance::CodecFormat;
+    use crate::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
+
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"abcdefghij", &arena, &DecodePolicy::service()).unwrap();
+    for (id, start, end) in [(MODEL, 0, 2), (DESIGN, 6, 10)] {
+        ctx.record(id, root.child(start, end).unwrap(), || {
+            assert!(root.read_at(start, end - start).is_some());
+            Ok(())
+        })
+        .unwrap();
+    }
+    let mut output = PartOutput::new(CodecFormat::Step);
+    let spec = PartSpec::new(
+        PartLevel::parse("step.simple_entity_instance").unwrap(),
+        vec![4..5],
+    );
+    let given_up = ctx
+        .decode_part(&mut output, root.child(2, 6).unwrap(), spec, |_| {
+            Err::<(), _>(CodecError::malformed("damaged entity"))
+        })
+        .unwrap();
+    assert_eq!(given_up, None);
+    let mut fidelity = output.fidelity().clone();
+    let mut losses = output.losses().to_vec();
+    assert_eq!(losses.len(), 1);
+    let unreadable = losses[0].provenance.as_ref().unwrap();
+    assert_eq!(
+        (unreadable.offset, unreadable.byte_len()),
+        (2, Some(4)),
+        "the loss gives the part's stream, offset and length (#217 §5.6)"
+    );
+    fidelity
+        .install_record_captures(&ctx, |_, _| Ok(()))
+        .unwrap();
+    let partitions = [super::super::partition_stream(
+        &ctx,
+        "file",
+        10,
+        fidelity.record_layout(),
+        &[4..5],
+        &[],
+        &[2..6],
+    )
+    .unwrap()];
+    assert_eq!(partitions[0].b1(), &[2..4, 5..6]);
+    let ir = document();
+    let index = ClassificationIndex::new(&ctx, &ir).unwrap();
+    fidelity
+        .finalize_b1(&ctx, &index, "step", &partitions, &mut losses)
+        .unwrap();
+    assert_eq!(losses.len(), 1, "no source.bytes-undecoded for the part");
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    fidelity
+        .check_b1_closure(&ctx, &index, "step", &partitions, &losses)
         .unwrap();
 }

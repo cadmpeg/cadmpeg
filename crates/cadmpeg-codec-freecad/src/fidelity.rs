@@ -7,7 +7,6 @@ use std::ops::Range;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
-use cadmpeg_ir::source_fidelity::RecordLayout;
 use cadmpeg_ir::{
     ids::UnknownId, ArenaClasses, RetainedBytes, RetainedSourceRecord, SourceFidelity,
 };
@@ -487,20 +486,19 @@ pub(crate) fn install_layouts(
     mut payloads: BTreeMap<String, BTreeMap<String, NativeBytes>>,
     mut pointers: BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<(), CodecError> {
-    for capture in ctx.take_record_captures()? {
-        let (id, mut layout) = RecordLayout::from_capture(capture);
-        if let Some(fields) = payloads.remove(&id) {
+    fidelity.install_record_captures(ctx, |id, layout| {
+        if let Some(fields) = payloads.remove(id) {
             for (field, bytes) in fields {
                 layout.insert_payload(field, bytes)?;
             }
         }
-        if let Some(fields) = pointers.remove(&id) {
+        if let Some(fields) = pointers.remove(id) {
             for (field, pointer) in fields {
                 layout.insert_pointer(field, pointer)?;
             }
         }
-        fidelity.insert_record_layout(id, layout)?;
-    }
+        Ok(())
+    })?;
     if !payloads.is_empty() || !pointers.is_empty() {
         return Err(CodecError::malformed(
             "XML payload has no completed record capture",

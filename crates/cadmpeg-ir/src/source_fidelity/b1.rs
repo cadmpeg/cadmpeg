@@ -60,8 +60,9 @@ impl StreamPartition {
 /// Partitions a named stream using completed record captures and source framing.
 ///
 /// `framing` and `insignificant` are admitted by the owning format's framer.
-/// Given-up content is B1, including overlaps with another record's
-/// capture; framing and insignificant bytes remain exempt. This function does not assign classes, mutate fidelity, or charge
+/// Given-up content is B1, including overlaps with another record's capture
+/// and insignificant bytes inside the part; framing bytes remain exempt.
+/// This function does not assign classes, mutate fidelity, or charge
 /// losses; those steps require the record-owner and part-tree inventories.
 pub fn partition_stream(
     ctx: &DecodeContext<'_>,
@@ -93,8 +94,10 @@ pub fn partition_stream(
         .filter_map(|layout| layout.reads().get(stream))
         .flatten();
     let reads = normalize(ctx, read_ranges, byte_len)?;
-    let exempt = normalize(ctx, framing.iter().chain(insignificant), byte_len)?;
     let given_up = normalize(ctx, given_up.iter(), byte_len)?;
+    let insignificant = normalize(ctx, insignificant.iter(), byte_len)?;
+    let insignificant = difference(ctx, &insignificant, &given_up)?;
+    let exempt = normalize(ctx, framing.iter().chain(&insignificant), byte_len)?;
     let reads = difference(ctx, &reads, &given_up)?;
     let exempt = difference(ctx, &exempt, &reads)?;
     let covered = normalize(ctx, reads.iter().chain(&exempt), byte_len)?;

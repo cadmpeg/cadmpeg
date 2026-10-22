@@ -598,10 +598,7 @@ fn decode_with_occurrence_limits(
     }
     source_fidelity.append(part_fidelity)?;
     if parse.scan.source_view().is_some() {
-        for capture in ctx.take_record_captures()? {
-            let (id, layout) = cadmpeg_ir::source_fidelity::RecordLayout::from_capture(capture);
-            source_fidelity.insert_record_layout(id, layout)?;
-        }
+        source_fidelity.install_record_captures(ctx, |_, _| Ok(()))?;
     }
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.

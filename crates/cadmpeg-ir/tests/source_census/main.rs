@@ -845,6 +845,9 @@ const WRITING_DECLARATIONS: &[(&str, &str)] = &[
     ("FeatureRowWire", "FeatureWriteWire"),
     // `CadIr` writes through `CadIrWriteWire` in its hand-written `Serialize`.
     ("CadIrReadWire", "CadIrWriteWire"),
+    // These owners' manual serializers delegate to the corresponding Out structs.
+    ("ArchiveSpan", "ArchiveSpanOut"),
+    ("LogicalSpan", "LogicalSpanOut"),
     // Each of these is read by a hand-written `Deserialize` impl for the type
     // named beside it, which derives `Serialize` and writes the keys.
     ("HoleShapeWire", "HoleShape"),

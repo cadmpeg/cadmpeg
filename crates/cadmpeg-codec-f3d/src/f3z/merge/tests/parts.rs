@@ -5,7 +5,6 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec, PartState};
-use cadmpeg_ir::source_fidelity::RecordLayout;
 use cadmpeg_ir::CodecFormat;
 use cadmpeg_ir::{Native, NativeUnknownRecord, SourceFidelity};
 
@@ -34,11 +33,7 @@ fn source<'a>(
         .map(drop)
     })
     .expect("owner and failed bounded child");
-    let cadmpeg_ir::source_fidelity::parts::PartFinalization::Ready(output) =
-        output.into_parts(ctx).expect("dependency finalization")
-    else {
-        panic!("shared stub references have representable lists");
-    };
+    let output = output.into_parts(ctx).expect("dependency finalization");
     let (_, mut native, mut fidelity, losses) = output.into_parts();
     assert_eq!(losses.len(), 1);
     let namespace = native.namespace_mut("f3d");
@@ -54,15 +49,10 @@ fn source<'a>(
     namespace
         .set_arena(ctx, "unknowns", &unknowns)
         .expect("owner link to part");
-    let capture = ctx
-        .take_record_captures()
-        .expect("owner capture")
-        .pop()
-        .expect("record");
-    let (id, layout) = RecordLayout::from_capture(capture);
     fidelity
-        .insert_record_layout(id, layout)
+        .install_record_captures(ctx, |_, _| Ok(()))
         .expect("owner layout");
+    assert!(fidelity.record_layout().contains_key(OWNER));
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new("member".to_owned().try_into().expect("stream"));
     annotations.note(part.as_str(), &stream, 0, Some("failed manifest"));
