@@ -1504,7 +1504,8 @@ operand-path-locator count is at offset 537 and the two marked locator
 references are at offsets 541 and 552.
 
 The 806-, 850- and 861-byte `Assemble` scopes use the compact wide
-operand-frame form. Bytes 11 through 31 are zero, the operand references are
+operand-frame form. Bytes 11 through 20 are zero, byte 21 is `0` or `1`,
+bytes 22 through 31 are zero, the operand references are
 at offsets 32 and 254, seven zero bytes follow each reference, rigid
 row-major transforms start at offsets 50 and 272, and an LP-UTF16 GUID follows
 each transform. The four parameter owners are the angle, X, Y, and Z alignment

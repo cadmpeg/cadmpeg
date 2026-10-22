@@ -141,9 +141,12 @@ pub(super) fn exact_assembly_operand_frames(
         frame_variant,
         crate::design::assembly::AssemblyOperandFrameVariant::CompactWide
     ) {
-        if bytes
-            .get(start + compact_wide::ZERO_RUN_21..start + compact_wide::FIRST_OPERAND_REFERENCE)?
-            != [0; compact_wide::FIRST_OPERAND_REFERENCE - compact_wide::ZERO_RUN_21]
+        if bytes.get(start + compact_wide::ZERO_RUN_11..start + compact_wide::OPERAND_FLAG)?
+            != [0; compact_wide::OPERAND_FLAG - compact_wide::ZERO_RUN_11]
+            || !matches!(bytes.get(start + compact_wide::OPERAND_FLAG), Some(0 | 1))
+            || bytes.get(
+                start + compact_wide::ZERO_RUN_22..start + compact_wide::FIRST_OPERAND_REFERENCE,
+            )? != [0; compact_wide::FIRST_OPERAND_REFERENCE - compact_wide::ZERO_RUN_22]
             || bytes.get(start + 43..start + 50)? != [0; 7]
             || bytes.get(start + 265..start + 272)? != [0; 7]
         {

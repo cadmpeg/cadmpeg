@@ -5052,7 +5052,9 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The 806-, 850- and 861-byte `Assemble` scopes use the compact wide |
-| 11 | 21 | `zero_run_21` | `bytes[21]` | little | spec | Bytes 11 through 31 are zero |
+| 11 | 10 | `zero_run_11` | `bytes[10]` | little | spec | Bytes 11 through 20 are zero |
+| 21 | 1 | `operand_flag` | `u8` | little | spec | byte 21 is `0` or `1` |
+| 22 | 10 | `zero_run_22` | `bytes[10]` | little | spec | bytes 22 through 31 are zero |
 | 32 | 11 | `first_operand_reference` | `bytes[11]` | little | spec | the operand references are at offsets 32 and 254 |
 | 43 | 7 | `first_reference_zero_run` | `bytes[7]` | little | spec | seven zero bytes follow each reference |
 | 50 | 128 | `first_operand_transform` | `f64[16]` | little | spec | row-major transforms start at offsets 50 and 272 |

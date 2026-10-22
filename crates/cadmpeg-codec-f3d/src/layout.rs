@@ -4946,8 +4946,12 @@ pub(crate) mod assembly_wide_operand_path_locator {
 /// This size-less byte record describes the fixed operand prefix of the 806-, 850- and 861-byte scopes. Offsets are relative to the scope's primary indexed header; an LP-UTF16 GUID follows each transform.
 /// ```
 pub(crate) mod assembly_compact_wide_scope {
-    /// Offset of `zero_run_21` (`bytes[21]`). Spec §Assembly operands.
-    pub(crate) const ZERO_RUN_21: usize = 11;
+    /// Offset of `zero_run_11` (`bytes[10]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_11: usize = 11;
+    /// Offset of `operand_flag` (`u8`). Spec §Assembly operands.
+    pub(crate) const OPERAND_FLAG: usize = 21;
+    /// Offset of `zero_run_22` (`bytes[10]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_22: usize = 22;
     /// Offset of `first_operand_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const FIRST_OPERAND_REFERENCE: usize = 32;
     /// Offset of `first_operand_transform` (`f64[16]`, little-endian). Spec §Assembly operands.
