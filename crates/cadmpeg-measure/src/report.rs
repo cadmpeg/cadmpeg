@@ -804,6 +804,9 @@ pub struct ShellMeasures {
     pub(crate) closed: bool,
     pub(crate) open_edges: Vec<String>,
     pub(crate) open_edge_count: usize,
+    pub(crate) natural_edge_faces: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) volume: Option<Quantity<Scalar>>,
 }
 
 accessors!(ShellMeasures {
@@ -811,12 +814,63 @@ accessors!(ShellMeasures {
     shell: String;
     /// Outer or void.
     role: ShellRole;
-    /// Whether every edge is used twice with opposite senses.
+    /// Whether every edge is used twice with opposite senses and no face
+    /// reaches an uncovered natural domain edge.
     closed: bool;
     /// The first open edges.
     open_edges: Vec<String>;
     /// The number of open edges.
     open_edge_count: usize;
+    /// Faces whose region reaches a natural domain edge.
+    natural_edge_faces: Vec<String>;
+    /// The shell's signed volume under the body's reading, when measured.
+    volume: Option<Quantity<Scalar>>;
+});
+
+/// Closure fluxes of a body under its two orientation readings.
+#[derive(Debug, Clone, Serialize)]
+pub struct ClosureFlux {
+    pub(crate) face_sense: Quantity<Scalar>,
+    pub(crate) loop_winding: Quantity<Scalar>,
+}
+
+accessors!(ClosureFlux {
+    /// `|Σ σ ∫ N|` with every face's sense.
+    face_sense: Quantity<Scalar>;
+    /// `|Σ σ ∫ N|` with every face's loop winding where it is determinable.
+    loop_winding: Quantity<Scalar>;
+});
+
+/// The orientation facts of a body.
+#[derive(Debug, Clone, Serialize)]
+pub struct BodyOrientation {
+    pub(crate) consistent: Option<bool>,
+    #[serde(rename = "inconsistent_faces")]
+    pub(crate) inconsistent: Vec<String>,
+    #[serde(rename = "mixed_faces")]
+    pub(crate) mixed: Vec<String>,
+    #[serde(rename = "unconfirmed_faces")]
+    pub(crate) unconfirmed: Vec<String>,
+    #[serde(rename = "conflict_faces")]
+    pub(crate) conflict: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) closure_flux: Option<ClosureFlux>,
+}
+
+accessors!(BodyOrientation {
+    /// `true` when every face's readings agree, `false` when one disagrees,
+    /// `null` otherwise.
+    consistent: Option<bool>;
+    /// Faces whose sense disagrees with their loop winding.
+    inconsistent: Vec<String>;
+    /// Faces whose loops disagree with each other.
+    mixed: Vec<String>;
+    /// Declared-orientation faces no witness confirms.
+    unconfirmed: Vec<String>;
+    /// Declared-orientation faces a witness contradicts.
+    conflict: Vec<String>;
+    /// Closure fluxes under both readings; absent for a body with no faces.
+    closure_flux: Option<ClosureFlux>;
 });
 
 /// The role of a shell in its region.
@@ -861,8 +915,15 @@ pub struct BodyMeasures {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) area: Option<Quantity<Scalar>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) volume: Option<Quantity<Scalar>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) centroid: Option<Quantity<Point>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) area_centroid: Option<Quantity<Point>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) length: Option<Quantity<Scalar>>,
     pub(crate) bbox: Quantity<BoxValue>,
+    pub(crate) orientation: BodyOrientation,
     pub(crate) caveats: Vec<CaveatCount>,
     pub(crate) status: RowStatus,
 }
@@ -888,10 +949,18 @@ accessors!(BodyMeasures {
     shells: Vec<ShellMeasures>;
     /// Sum of face areas; absent for a body with no faces.
     area: Option<Quantity<Scalar>>;
+    /// Enclosed volume; absent for a body with no faces.
+    volume: Option<Quantity<Scalar>>;
+    /// Volume centroid; absent for a body with no faces.
+    centroid: Option<Quantity<Point>>;
+    /// Area-weighted centroid of a body with faces and no closed shell.
+    area_centroid: Option<Quantity<Point>>;
     /// Total edge length of a body with edges and no faces.
     length: Option<Quantity<Scalar>>;
     /// Union of member boxes.
     bbox: Quantity<BoxValue>;
+    /// Orientation facts.
+    orientation: BodyOrientation;
     /// Face caveats per code.
     caveats: Vec<CaveatCount>;
     /// Row status.
@@ -933,6 +1002,10 @@ pub struct DocumentOrientation {
     pub(crate) inconsistent: Vec<String>,
     #[serde(rename = "mixed_faces")]
     pub(crate) mixed: Vec<String>,
+    #[serde(rename = "unconfirmed_faces")]
+    pub(crate) unconfirmed: Vec<String>,
+    #[serde(rename = "conflict_faces")]
+    pub(crate) conflict: Vec<String>,
     #[serde(rename = "ring_order_faces")]
     pub(crate) ring_order: Vec<String>,
 }
@@ -942,6 +1015,10 @@ accessors!(DocumentOrientation {
     inconsistent: Vec<String>;
     /// Faces whose loops disagree with each other.
     mixed: Vec<String>;
+    /// Declared-orientation faces no witness confirms.
+    unconfirmed: Vec<String>;
+    /// Declared-orientation faces a witness contradicts.
+    conflict: Vec<String>;
     /// Faces with a ring listed out of traversal order.
     ring_order: Vec<String>;
 });
@@ -953,6 +1030,7 @@ pub struct DocumentMeasures {
     pub(crate) faces: usize,
     pub(crate) edges: usize,
     pub(crate) area: Option<Quantity<Scalar>>,
+    pub(crate) closed_volume: Option<Quantity<Scalar>>,
     pub(crate) bbox: Option<Quantity<BoxValue>>,
     pub(crate) orientation: DocumentOrientation,
     pub(crate) unavailable: BTreeMap<Category, BTreeMap<String, usize>>,
@@ -968,6 +1046,8 @@ accessors!(DocumentMeasures {
     edges: usize;
     /// Total area of the body rows; absent without body rows.
     area: Option<Quantity<Scalar>>;
+    /// Total volume of the body rows with faces; absent without them.
+    closed_volume: Option<Quantity<Scalar>>;
     /// Union box of the body rows; absent without body rows.
     bbox: Option<Quantity<BoxValue>>;
     /// Orientation lists.
@@ -1156,6 +1236,9 @@ impl EdgeMeasures {
 impl BodyMeasures {
     pub(crate) fn visit(&self, visitor: &mut impl QuantityVisitor) {
         visitor.visit_option(self.area.as_ref());
+        visitor.visit_option(self.volume.as_ref());
+        visitor.visit_option(self.centroid.as_ref());
+        visitor.visit_option(self.area_centroid.as_ref());
         visitor.visit_option(self.length.as_ref());
         visitor.visit(&self.bbox);
     }

@@ -9,8 +9,8 @@
 use std::io::{self, Write};
 
 use cadmpeg_measure::report::{
-    BodyMeasures, CarrierParameters, EdgeMeasures, EdgeParameters, FaceMeasures, LoopMeasures,
-    MeasureReport, NormalReading, RegionRule,
+    BodyMeasures, BodyOrientation, CarrierParameters, EdgeMeasures, EdgeParameters, FaceMeasures,
+    LoopMeasures, MeasureReport, NormalReading, RegionRule,
 };
 use cadmpeg_measure::value::{BoxValue, Measured, Point, Quantity, Range, Scalar, Sweep};
 use serde::Serialize;
@@ -99,6 +99,21 @@ fn face_orientation_cell(face: &FaceMeasures) -> &'static str {
             "unconfirmed"
         }
         (None, _) => "not_determinable",
+    }
+}
+
+/// The TSV `orientation` cell of a body.
+fn body_orientation_cell(orientation: &BodyOrientation) -> &'static str {
+    match *orientation.consistent() {
+        Some(true) => "consistent",
+        Some(false)
+            if orientation.inconsistent().is_empty() && orientation.conflict().is_empty() =>
+        {
+            "mixed"
+        }
+        Some(false) => "inconsistent",
+        None if !orientation.unconfirmed().is_empty() => "unconfirmed",
+        None => "not_determinable",
     }
 }
 
@@ -249,14 +264,17 @@ fn body_row(body: &BodyMeasures) -> Vec<String> {
         body.shells().len().to_string(),
         closed.to_string(),
         scalar_cell(body.area().as_ref()),
-        String::new(),
+        scalar_cell(body.volume().as_ref()),
         scalar_cell(body.length().as_ref()),
-        String::new(),
-        String::new(),
-        String::new(),
     ];
+    row.extend(point_cells(body.centroid().as_ref()));
     row.extend(box_cells(body.bbox()));
-    row.push(String::new());
+    let orientation = if *body.faces() == 0 {
+        ""
+    } else {
+        body_orientation_cell(body.orientation())
+    };
+    row.push(orientation.to_owned());
     row.push(name(body.status()));
     row.push(body.unavailable_codes().join(","));
     let caveats: Vec<String> = body
@@ -399,7 +417,8 @@ fn scalar_text(quantity: &Quantity<Scalar>, unit: &str) -> String {
     )
 }
 
-fn point_text(quantity: &Quantity<Point>) -> String {
+/// A point with its unit, or a direction when `unit` is empty.
+fn point_text(quantity: &Quantity<Point>, unit: &str) -> String {
     if let Some(text) = unavailable_text(quantity) {
         return text;
     }
@@ -407,8 +426,13 @@ fn point_text(quantity: &Quantity<Point>) -> String {
         return String::new();
     };
     let point = measured.value().value.get();
+    let unit = if unit.is_empty() {
+        String::new()
+    } else {
+        format!(" {unit}")
+    };
     format!(
-        "({}, {}, {})  {}",
+        "({}, {}, {}){unit}  {}",
         number(point.x),
         number(point.y),
         number(point.z),
@@ -502,9 +526,9 @@ fn parameters_text(out: &mut impl Write, parameters: &CarrierParameters) -> io::
             normal,
             u_axis,
         } => {
-            line(out, "origin", &point_text(origin))?;
-            line(out, "normal", &point_text(normal))?;
-            line(out, "u_axis", &point_text(u_axis))
+            line(out, "origin", &point_text(origin, "mm"))?;
+            line(out, "normal", &point_text(normal, ""))?;
+            line(out, "u_axis", &point_text(u_axis, ""))
         }
         CarrierParameters::Cylinder {
             radius,
@@ -515,8 +539,8 @@ fn parameters_text(out: &mut impl Write, parameters: &CarrierParameters) -> io::
         } => {
             line(out, "radius", &scalar_text(radius, "mm"))?;
             line(out, "diameter", &scalar_text(diameter, "mm"))?;
-            line(out, "axis point", &point_text(axis_point))?;
-            line(out, "axis", &point_text(axis_direction))
+            line(out, "axis point", &point_text(axis_point, "mm"))?;
+            line(out, "axis", &point_text(axis_direction, ""))
         }
         CarrierParameters::Cone {
             half_angle,
@@ -526,9 +550,9 @@ fn parameters_text(out: &mut impl Write, parameters: &CarrierParameters) -> io::
         } => {
             line(out, "half angle", &scalar_text(half_angle, "rad"))?;
             if let Some(apex) = apex {
-                line(out, "apex", &point_text(apex))?;
+                line(out, "apex", &point_text(apex, "mm"))?;
             }
-            line(out, "opening", &point_text(opening_direction))
+            line(out, "opening", &point_text(opening_direction, ""))
         }
         CarrierParameters::Sphere {
             radius,
@@ -538,7 +562,7 @@ fn parameters_text(out: &mut impl Write, parameters: &CarrierParameters) -> io::
         } => {
             line(out, "radius", &scalar_text(radius, "mm"))?;
             line(out, "diameter", &scalar_text(diameter, "mm"))?;
-            line(out, "center", &point_text(center))?;
+            line(out, "center", &point_text(center, "mm"))?;
             line(out, "normal", &name(normal_direction))
         }
         CarrierParameters::Torus {
@@ -550,7 +574,7 @@ fn parameters_text(out: &mut impl Write, parameters: &CarrierParameters) -> io::
         } => {
             line(out, "major radius", &scalar_text(major_radius, "mm"))?;
             line(out, "minor radius", &scalar_text(minor_radius, "mm"))?;
-            line(out, "center", &point_text(center))?;
+            line(out, "center", &point_text(center, "mm"))?;
             line(out, "form", &name(form))
         }
         CarrierParameters::Nurbs {
@@ -684,10 +708,59 @@ fn edge_text(out: &mut impl Write, edge: &EdgeMeasures) -> io::Result<()> {
     if let Some(angle) = edge.arc_angle() {
         line(out, "arc angle", &scalar_text(angle, "rad"))?;
     }
-    line(out, "start", &point_text(edge.start()))?;
-    line(out, "end", &point_text(edge.end()))?;
+    line(out, "start", &point_text(edge.start(), "mm"))?;
+    line(out, "end", &point_text(edge.end(), "mm"))?;
     line(out, "bbox", &box_text(edge.bbox()))?;
     line(out, "faces", &edge.faces().join(", "))
+}
+
+/// One line per candidate reading of a scalar.
+fn scalar_candidates(
+    out: &mut impl Write,
+    quantity: &Quantity<Scalar>,
+    unit: &str,
+) -> io::Result<()> {
+    let candidates = match quantity {
+        Quantity::Measured(measured) => measured.candidates(),
+        Quantity::Unavailable(unavailable) => unavailable.candidates(),
+    };
+    for candidate in candidates {
+        writeln!(
+            out,
+            "                  {:<13} {} {unit}",
+            name(&candidate.reading()),
+            number(candidate.value().value.get())
+        )?;
+    }
+    Ok(())
+}
+
+fn body_orientation_text(orientation: &BodyOrientation) -> String {
+    let mut parts = vec![body_orientation_cell(orientation).to_owned()];
+    for (label, faces) in [
+        ("inconsistent faces", orientation.inconsistent()),
+        ("mixed faces", orientation.mixed()),
+        ("unconfirmed faces", orientation.unconfirmed()),
+        ("conflict faces", orientation.conflict()),
+    ] {
+        if !faces.is_empty() {
+            parts.push(format!("{label}: {}", faces.join(", ")));
+        }
+    }
+    if let Some(closure) = orientation.closure_flux() {
+        let flux = |quantity: &Quantity<Scalar>| {
+            quantity.measured().map_or_else(
+                || String::from("unavailable"),
+                |measured| format!("{} mm²", number(measured.value().value.get())),
+            )
+        };
+        parts.push(format!(
+            "closure flux {} (face sense), {} (loop winding)",
+            flux(closure.face_sense()),
+            flux(closure.loop_winding())
+        ));
+    }
+    parts.join("; ")
 }
 
 fn body_text(out: &mut impl Write, body: &BodyMeasures) -> io::Result<()> {
@@ -726,10 +799,27 @@ fn body_text(out: &mut impl Write, body: &BodyMeasures) -> io::Result<()> {
     if let Some(area) = body.area() {
         line(out, "area", &scalar_text(area, "mm²"))?;
     }
+    if let Some(volume) = body.volume() {
+        line(out, "volume", &scalar_text(volume, "mm³"))?;
+        scalar_candidates(out, volume, "mm³")?;
+    }
+    if let Some(centroid) = body.centroid() {
+        line(out, "centroid", &point_text(centroid, "mm"))?;
+    }
+    if let Some(centroid) = body.area_centroid() {
+        line(out, "area centroid", &point_text(centroid, "mm"))?;
+    }
     if let Some(length) = body.length() {
         line(out, "length", &scalar_text(length, "mm"))?;
     }
     line(out, "bbox", &box_text(body.bbox()))?;
+    if *body.faces() > 0 {
+        line(
+            out,
+            "orientation",
+            &body_orientation_text(body.orientation()),
+        )?;
+    }
     for caveat in body.caveats() {
         line(
             out,
@@ -760,11 +850,18 @@ pub(super) fn text(out: &mut impl Write, report: &MeasureReport) -> io::Result<(
         .map_or_else(String::new, |area| {
             format!(", area {} mm²", number(area.value().value.get()))
         });
+    let volume = document
+        .closed_volume()
+        .as_ref()
+        .and_then(Quantity::measured)
+        .map_or_else(String::new, |volume| {
+            format!(", closed volume {} mm³", number(volume.value().value.get()))
+        });
     line(
         out,
         "counts",
         &format!(
-            "bodies {}, faces {}, edges {}{area}",
+            "bodies {}, faces {}, edges {}{area}{volume}",
             document.bodies(),
             document.faces(),
             document.edges()

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{assert_measured, measure_json};
+use super::{assert_measured, assert_volume_or_candidate, measure_json};
 
 fn corpus(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -95,4 +95,32 @@ fn freecad_revolved_faces() {
         .find(|body| body["body"].as_str().unwrap().contains("#Revolved:"))
         .unwrap();
     assert_measured(&body["area"], 48.0 + 181.5 * PI, 100.0);
+}
+
+/// Body volumes from the authoring scripts: `Cut` is the 30 × 20 × 10 box
+/// less the cylinder of radius 4 through it; `Cylinder` has radius 4 and
+/// height 16; `Revolved` is the annulus between radii 4 and 7, height 8,
+/// revolved 270°; `Mirror` is the mirror image of a cylinder of radius 3
+/// and height 10.
+#[test]
+fn freecad_volumes() {
+    for (file, needle, expected) in [
+        ("core_design_product.FCStd", "#Cut:", 6000.0 - 160.0 * PI),
+        ("core_design_product.FCStd", "#Cylinder:", 256.0 * PI),
+        ("geometry_topology.FCStd", "#Revolved:", 198.0 * PI),
+        ("core_operations.FCStd", "#Mirror:", 90.0 * PI),
+    ] {
+        let path = corpus(file);
+        let report = measure_json(&[path.to_str().unwrap()]);
+        let bodies: Vec<&Value> = report["measure"]["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|body| body["body"].as_str().unwrap().contains(needle))
+            .collect();
+        let [body] = bodies.as_slice() else {
+            panic!("one {needle} body in {file}");
+        };
+        assert_volume_or_candidate(&body["volume"], "loop_winding", expected);
+    }
 }

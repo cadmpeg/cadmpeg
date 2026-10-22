@@ -239,4 +239,14 @@ impl<'ir> Owners<'ir> {
     pub(crate) fn body_vertex_count(&self, body: &str) -> usize {
         self.body_vertices.get(body).map_or(0, BTreeSet::len)
     }
+
+    /// The body-local positions of a body's vertices, in vertex ID order.
+    pub(crate) fn body_vertex_points(&self, body: &str) -> Vec<Point3> {
+        self.body_vertices
+            .get(body)
+            .into_iter()
+            .flatten()
+            .filter_map(|vertex| self.vertex_position(vertex))
+            .collect()
+    }
 }

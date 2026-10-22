@@ -18,6 +18,7 @@ use crate::context::Eval;
 use crate::edges::EdgeGeometry;
 use crate::extent::{angular_sweep, axial_range, parameter_ranges};
 use crate::failure::{settle, Measure, Missing, Outcome};
+use crate::flux::{Flux, FluxFrame};
 use crate::geom::Aabb;
 use crate::orientation::{declared_normal, face_orientation, opposite};
 use crate::owners::Owners;
@@ -25,7 +26,8 @@ use crate::reason::{CaveatCode, UnavailableReason};
 use crate::region::{classify, loop_shape, winding, FiniteContext, LoopShape, Region};
 use crate::report::{
     CarrierMeasures, CarrierParameters, Caveat, CoedgeMeasures, FaceMeasures, FaceOrientation,
-    FaceQuantities, ListedOrder, LoopMeasures, LoopRole, StatusTally, Witness, WitnessKind,
+    FaceQuantities, ListedOrder, LoopMeasures, LoopRole, RegionRule, StatusTally, Witness,
+    WitnessKind,
 };
 use crate::select::SurfaceKind;
 use crate::tolerance::{allowance, model_tolerance};
@@ -33,7 +35,8 @@ use crate::value::{
     measured, BoundaryBox, BoxKind, BoxValue, Errors, Method, Point, Quantity, Range, Scalar,
     Sweep, Unit,
 };
-use readings::{face_area, AreaInput, Verdict};
+pub(crate) use readings::Verdict;
+use readings::{face_area, AreaInput};
 
 /// Everything measured about one face.
 pub(crate) struct FaceResult {
@@ -44,6 +47,26 @@ pub(crate) struct FaceResult {
     pub(crate) tau: f64,
     /// The radius `--radius` matches, when the carrier has one.
     pub(crate) radius: Option<f64>,
+    /// The face's fluxes, when the measurement needs them.
+    pub(crate) flux: Option<Outcome<FaceFlux>>,
+    /// What the readings of a declared-orientation face settle.
+    pub(crate) verdict: Verdict,
+    /// Whether the region reaches the carrier's natural domain edges.
+    pub(crate) natural: bool,
+    /// The model tolerance of the face's boundary with its measured gaps.
+    pub(crate) tau_b: f64,
+    /// The non-seam boundary length.
+    pub(crate) boundary_length: f64,
+}
+
+/// A face's fluxes under its readings.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FaceFlux {
+    /// The flux of the region the face's declared orientation states, or
+    /// of its region when the rule does not rest on the orientation.
+    pub(crate) declared: Flux,
+    /// The flux of the complement region of a declared-orientation face.
+    pub(crate) complement: Option<Flux>,
 }
 
 /// What one face measurement reads.
@@ -53,6 +76,9 @@ pub(crate) struct FaceInput<'a, 'ir> {
     pub(crate) fidelity: Option<&'a SourceFidelity>,
     pub(crate) body: Option<&'ir str>,
     pub(crate) placement: Outcome<Placement>,
+    /// The reference point of the body's fluxes, when the measurement needs
+    /// them.
+    pub(crate) flux_origin: Option<cadmpeg_ir::math::Point3>,
 }
 
 /// The facts of a face boundary, from its resolution.
@@ -410,11 +436,39 @@ impl<'ir> FaceInput<'_, 'ir> {
             caveats,
             status: tally.status(),
         };
+        let flux = match (self.flux_origin, &chart, &boundary, &region) {
+            (None, ..) => None,
+            (Some(origin), Ok(chart), Ok(boundary), Ok(region)) => {
+                let resolved: Vec<Option<&ResolvedLoop<'_>>> = boundary
+                    .resolved
+                    .loops
+                    .iter()
+                    .map(|resolution| resolution.outcome.as_ref().ok())
+                    .collect();
+                let frame = FluxFrame {
+                    chart,
+                    origin,
+                    scale,
+                };
+                Some(settle(
+                    face_flux(eval, &frame, region, &resolved).map_err(|failure| failure.at(id)),
+                )?)
+            }
+            (Some(_), Err(missing), _, _)
+            | (Some(_), _, Err(missing), _)
+            | (Some(_), _, _, Err(missing)) => Some(Err(missing.clone())),
+        };
+        let natural = region.as_ref().is_ok_and(|region| region.exterior != 0.0);
         Ok(FaceResult {
             row,
             aabb,
             tau,
             radius,
+            flux,
+            verdict,
+            natural,
+            tau_b,
+            boundary_length: lengths.boundary,
         })
     }
 
@@ -650,6 +704,25 @@ impl<'ir> FaceInput<'_, 'ir> {
         }
         entries
     }
+}
+
+/// A face's fluxes under its readings.
+fn face_flux(
+    eval: &Eval<'_, '_>,
+    frame: &FluxFrame<'_, '_>,
+    region: &Region,
+    resolved: &[Option<&ResolvedLoop<'_>>],
+) -> Measure<FaceFlux> {
+    let declared = frame.region_flux(eval, region, resolved)?;
+    let complement = if region.rule == RegionRule::DeclaredOrientation {
+        Some(frame.domain_flux(eval)?.add(declared, -1.0))
+    } else {
+        None
+    };
+    Ok(FaceFlux {
+        declared,
+        complement,
+    })
 }
 
 /// What a face box joins to its boundary box, and how.

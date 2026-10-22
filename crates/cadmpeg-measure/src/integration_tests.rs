@@ -8,3 +8,4 @@ mod cylinders;
 mod nurbs;
 mod pcurves;
 mod serialization;
+mod volume;

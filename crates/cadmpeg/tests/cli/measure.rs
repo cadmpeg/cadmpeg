@@ -11,16 +11,12 @@ use std::path::Path;
 #[cfg(feature = "step")]
 use std::path::PathBuf;
 
-#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
 use assert_cmd::Command;
 #[cfg(any(feature = "step", feature = "fcstd"))]
 use predicates::prelude::predicate;
-#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
 use serde_json::Value;
-#[cfg(feature = "step")]
 use tempfile::tempdir;
 
-#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
 /// Relative floor of the comparison of a measured value with its expression.
 const TEST_ABSOLUTE_FLOOR: f64 = 1.0e-9;
 
@@ -39,12 +35,10 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
 fn cadmpeg() -> Command {
     Command::cargo_bin("cadmpeg").unwrap()
 }
 
-#[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
 /// Run `measure ARGS --json`, require exit 0 and parse stdout.
 fn measure_json(args: &[&str]) -> Value {
     let output = cadmpeg()
@@ -118,6 +112,41 @@ fn assert_box(quantity: &Value, min: [f64; 3], max: [f64; 3], scale: f64) {
             );
         }
     }
+}
+
+/// The only body row of a report.
+fn only_body(report: &Value) -> &Value {
+    let bodies = report["measure"]["bodies"].as_array().unwrap();
+    assert_eq!(bodies.len(), 1, "{bodies:#?}");
+    &bodies[0]
+}
+
+#[cfg(feature = "fcstd")]
+/// Assert the defect-agnostic volume form: either the volume is measured
+/// and equals `expected`, or it is unavailable with
+/// `volume.orientation-conflict` and the candidate under `reading` equals
+/// `expected`.
+fn assert_volume_or_candidate(volume: &Value, reading: &str, expected: f64) {
+    if volume["status"] == "measured" {
+        assert_measured(volume, expected, 1.0);
+        return;
+    }
+    assert_eq!(
+        volume["reason"], "volume.orientation-conflict",
+        "{volume:#}"
+    );
+    let candidate = volume["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|candidate| candidate["reading"] == reading)
+        .unwrap_or_else(|| panic!("no {reading} candidate in {volume:#}"));
+    let value = candidate["value"].as_f64().unwrap();
+    let bound = candidate["numeric_error"].as_f64().unwrap() + TEST_ABSOLUTE_FLOOR * expected.abs();
+    assert!(
+        (value - expected).abs() <= bound,
+        "{reading}: {value} differs from {expected} by more than {bound}"
+    );
 }
 
 #[cfg(feature = "step")]
@@ -259,6 +288,41 @@ fn measures_trimmed_patch() {
     assert_measured(&measures["axial_extent"], 30.0, scale);
     assert_box(&measures["bbox"], [0.0; 3], [10.0, 10.0, 30.0], scale);
     assert_eq!(row["status"], "measured");
+
+    let report = measure_json(&[patch.to_str().unwrap()]);
+    let body = only_body(&report);
+    assert_eq!(body["volume"]["status"], "unavailable");
+    assert_eq!(body["volume"]["reason"], "volume.shell-open");
+    assert_eq!(body["volume"]["category"], "undefined");
+    assert_eq!(body["status"], "measured");
+}
+
+/// The cylinder solid `r = 10`, `z ∈ [0, 30]`.
+#[cfg(feature = "step")]
+#[test]
+fn measures_cylinder_body() {
+    let solid = fixture("measure_cylinder_solid.p21");
+    let report = measure_json(&[solid.to_str().unwrap()]);
+    let body = only_body(&report);
+    let pi = std::f64::consts::PI;
+    assert_measured(&body["volume"], 3000.0 * pi, 1.0);
+    assert_point(&body["centroid"], [0.0, 0.0, 15.0], 30.0);
+    assert_measured(&body["area"], 800.0 * pi, 1.0);
+    assert_eq!(body["orientation"]["consistent"], true);
+    assert_eq!(body["status"], "measured");
+    let document = &report["measure"]["document"];
+    assert_measured(&document["closed_volume"], 3000.0 * pi, 1.0);
+    assert!(
+        document["unavailable"]
+            .as_object()
+            .is_none_or(serde_json::Map::is_empty),
+        "{document:#}"
+    );
+    assert_eq!(document["work"]["exhausted"], false);
+
+    let text = measure_text(&[solid.to_str().unwrap()]);
+    assert!(text.contains("  volume        9424.77796077 mm³"), "{text}");
+    assert!(text.contains("  orientation   consistent;"), "{text}");
 }
 
 #[cfg(feature = "step")]
@@ -671,4 +735,45 @@ fn json_refusal_envelope() {
     ];
     expected.sort_unstable();
     assert_eq!(keys, expected);
+}
+
+/// The 10 mm cube with the sense of one face flipped. The face-sense
+/// reading loses that face's pyramid `1000 / 6` twice; the loop-winding
+/// reading is the cube.
+#[test]
+fn orientation_conflict_is_visible() {
+    let dir = tempdir().unwrap();
+    let mut cube = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let flipped = cube.model.faces[0].id.as_str().to_owned();
+    cube.model.faces[0].sense = match cube.model.faces[0].sense {
+        cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
+        cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
+    };
+    let path = crate::support::fixture(dir.path(), "flipped.cadir.json", &cube);
+    let report = measure_json(&[path.to_str().unwrap()]);
+    let body = only_body(&report);
+    let volume = &body["volume"];
+    assert_eq!(volume["status"], "unavailable");
+    assert_eq!(volume["reason"], "volume.orientation-conflict");
+    assert_eq!(volume["category"], "input");
+    let candidate = |reading: &str| {
+        volume["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|candidate| candidate["reading"] == reading)
+            .and_then(|candidate| candidate["value"].as_f64())
+            .unwrap_or_else(|| panic!("no {reading} candidate"))
+    };
+    assert!((candidate("face_sense") - 2000.0 / 3.0).abs() <= TEST_ABSOLUTE_FLOOR * 1000.0);
+    assert!((candidate("loop_winding") - 1000.0).abs() <= TEST_ABSOLUTE_FLOOR * 1000.0);
+    assert_eq!(
+        body["orientation"]["inconsistent_faces"],
+        serde_json::json!([flipped])
+    );
+    let unavailable = &report["measure"]["document"]["unavailable"]["input"];
+    assert!(
+        unavailable["volume.orientation-conflict"].as_u64() >= Some(1),
+        "{unavailable:#}"
+    );
 }

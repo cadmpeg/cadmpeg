@@ -1,16 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Body rows: counts, shells and closure, area, length and box.
+//! Body rows: counts, shells and closure, area, volume, centroid, length,
+//! box and orientation.
+
+mod volume;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Body, Sense};
+
+use crate::canonical::placement::Placement;
+use volume::{Member, VolumeInput};
 
 use crate::edges::EdgeGeometry;
 use crate::face::{box_value, FaceResult};
 use crate::geom::Aabb;
 use crate::owners::Owners;
 use crate::reason::CaveatCode;
-use crate::report::{BodyMeasures, CaveatCount, ShellMeasures, ShellRole, StatusTally};
+use crate::report::{
+    BodyMeasures, BodyOrientation, CaveatCount, ShellMeasures, ShellRole, StatusTally,
+};
 use crate::value::{
     measured, BoxKind, BoxValue, Errors, Method, Quantity, Scalar, Unavailable, Unit,
 };
@@ -23,6 +32,8 @@ pub(crate) struct BodyInput<'a, 'ir> {
     pub(crate) owners: &'a Owners<'ir>,
     pub(crate) faces: &'a HashMap<&'ir str, FaceResult>,
     pub(crate) edges: &'a HashMap<&'ir str, EdgeGeometry<'ir>>,
+    /// The reference point of each body's fluxes.
+    pub(crate) origins: &'a HashMap<&'ir str, Point3>,
 }
 
 /// One aggregate of member values: a sum, or the first unavailable member.
@@ -81,7 +92,7 @@ impl Sum {
     }
 }
 
-impl BodyInput<'_, '_> {
+impl<'a> BodyInput<'a, '_> {
     pub(crate) fn row(&self, body: &Body) -> BodyMeasures {
         let id = body.id.as_str();
         let face_ids: Vec<&str> = self.owners.body_faces(id).collect();
@@ -121,7 +132,7 @@ impl BodyInput<'_, '_> {
             sum.finish(Unit::Millimeter, id)
         });
         let bbox = self.bbox(id, &face_ids, &edge_ids);
-        let shells = self.shells(body);
+        let mut shells = self.shells(body);
         let caveats = caveats
             .into_iter()
             .map(|(code, faces)| CaveatCount {
@@ -130,6 +141,68 @@ impl BodyInput<'_, '_> {
                 faces: faces.len(),
             })
             .collect();
+        let volume = (!face_ids.is_empty()).then(|| {
+            let placement = body.transform.map(Placement::of);
+            let handedness = match &placement {
+                Some(Ok(placement)) if placement.reflection => -1.0,
+                _ => 1.0,
+            };
+            let placement_term = |dimension: u8, value: f64| match &placement {
+                Some(Ok(placement)) => placement.model_term(dimension, value),
+                _ => 0.0,
+            };
+            let area_value = area
+                .as_ref()
+                .and_then(Quantity::measured)
+                .map_or(0.0, |area| area.value().value.get());
+            let diagonal = bbox.measured().map_or(0.0, |bbox| {
+                bbox.value().min.get().distance(bbox.value().max.get())
+            });
+            let input = VolumeInput {
+                id,
+                members: self.members(body),
+                shells: shells
+                    .iter()
+                    .map(|shell| (shell.closed, shell.role == ShellRole::Outer))
+                    .collect(),
+                origin: self
+                    .origins
+                    .get(id)
+                    .copied()
+                    .unwrap_or(Point3::new(0.0, 0.0, 0.0)),
+                handedness,
+                area: area_value,
+                diagonal,
+                placement: &placement_term,
+            };
+            input.measure()
+        });
+        let (volume, centroid, area_centroid, orientation) = match volume {
+            Some(volume) => {
+                for (shell, value) in shells.iter_mut().zip(volume.shell_volumes) {
+                    shell.volume = value;
+                }
+                (
+                    Some(volume.volume),
+                    Some(volume.centroid),
+                    volume.area_centroid,
+                    volume.orientation,
+                )
+            }
+            None => (
+                None,
+                None,
+                None,
+                BodyOrientation {
+                    consistent: None,
+                    inconsistent: Vec::new(),
+                    mixed: Vec::new(),
+                    unconfirmed: Vec::new(),
+                    conflict: Vec::new(),
+                    closure_flux: None,
+                },
+            ),
+        };
         let mut row = BodyMeasures {
             body: id.to_owned(),
             name: body.name.clone(),
@@ -141,8 +214,12 @@ impl BodyInput<'_, '_> {
             vertices: self.owners.body_vertex_count(id),
             shells,
             area,
+            volume,
+            centroid,
+            area_centroid,
             length,
             bbox,
+            orientation,
             caveats,
             status: crate::report::RowStatus::Measured,
         };
@@ -233,8 +310,36 @@ impl BodyInput<'_, '_> {
         )
     }
 
+    /// The body's faces with their shell positions in region order.
+    fn members(&self, body: &Body) -> Vec<Member<'a>> {
+        let mut members = Vec::new();
+        let mut position = 0;
+        for region in &body.regions {
+            let Some(region) = self.owners.region(region.as_str()) else {
+                continue;
+            };
+            for shell_id in &region.shells {
+                let Some(shell) = self.owners.shell(shell_id.as_str()) else {
+                    continue;
+                };
+                for face in shell.faces() {
+                    if let Some((id, result)) = self.faces.get_key_value(face.as_str()) {
+                        members.push(Member {
+                            id,
+                            shell: position,
+                            result,
+                        });
+                    }
+                }
+                position += 1;
+            }
+        }
+        members
+    }
+
     /// Shell rows in region order; a shell is closed when every edge its
-    /// coedges use is used by exactly two of them with opposite senses.
+    /// coedges use is used by exactly two of them with opposite senses and
+    /// no face's region reaches a natural domain edge.
     fn shells(&self, body: &Body) -> Vec<ShellMeasures> {
         let mut rows = Vec::new();
         for region in &body.regions {
@@ -246,7 +351,15 @@ impl BodyInput<'_, '_> {
                     continue;
                 };
                 let mut uses: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+                let mut natural_edge_faces = Vec::new();
                 for face in shell.faces() {
+                    if self
+                        .faces
+                        .get(face.as_str())
+                        .is_some_and(|result| result.natural)
+                    {
+                        natural_edge_faces.push(face.as_str().to_owned());
+                    }
                     let Some(face) = self.owners.face(face.as_str()) else {
                         continue;
                     };
@@ -284,13 +397,17 @@ impl BodyInput<'_, '_> {
                     } else {
                         ShellRole::Void
                     },
-                    closed: !shell.faces().is_empty() && open.is_empty(),
+                    closed: !shell.faces().is_empty()
+                        && open.is_empty()
+                        && natural_edge_faces.is_empty(),
                     open_edges: open
                         .iter()
                         .take(LISTED_OPEN_EDGES)
                         .map(|edge| (*edge).to_owned())
                         .collect(),
                     open_edge_count: open.len(),
+                    natural_edge_faces,
+                    volume: None,
                 });
             }
         }

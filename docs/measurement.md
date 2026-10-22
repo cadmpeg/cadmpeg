@@ -280,6 +280,76 @@ viewed from the oriented normal. `consistent` is `true` when the two
 readings agree, `false` when they disagree or the loops disagree with each
 other (`mixed`), and `null` when no reading decides.
 
+A body's `orientation` lists its faces by class: `inconsistent_faces`
+(sense against loop winding), `mixed_faces`, `unconfirmed_faces` (a
+`declared_orientation` region with no witness) and `conflict_faces` (a
+`declared_orientation` region a witness contradicts). Its `consistent` is
+`false` when one of `inconsistent_faces`, `mixed_faces` or
+`conflict_faces` is not empty, `null` when a face's orientation is not
+established, and `true` otherwise. The document's `orientation` lists the
+same classes over the body rows.
+
+## Shells
+
+A shell is closed when every edge its coedges use is used by exactly two of
+them with opposite senses, and no face of the shell reaches a natural edge
+of its parameter domain. Degenerate edges do not count. The two coedges of
+a seam in one face count as two uses. A face reaches a natural edge when
+its region is `whole_surface` or `domain_exterior`, or a
+`declared_orientation` region whose indicator constant is 1. An open shell
+lists its first 16 open edges, the open edge count, and the faces that
+reach natural edges (`natural_edge_faces`).
+
+## Volume, centroid and closure
+
+Each face region gives four flux integrals over the face, with
+`N = S_u × S_v` and `d = P − P_ref`: `∫ d·N / 3` (volume), `∫ d_i² N_i / 2`
+(first moments), `∫ N` (closure vector) and `∫ d_i |N|` (area moments). By
+Green's theorem each is `∮ F du` over the region's loops with the inner
+integral `F(u, v) = −∫_{v₀}^{v} f(u, s) ds` from the region's base `v₀`,
+plus the whole domain when the region reaches the domain's natural edges.
+`P_ref` is the centre of the body's edge and vertex box, or the origin when
+the body has neither.
+
+A body sums its faces' fluxes with the sign `σ` of each face's oriented
+normal, times the sign of the determinant of the body placement:
+
+- volume `V = Σ σ Φ_V`;
+- centroid `C = P_ref + M / V`;
+- closure vector `Z = Σ σ Φ_N`, in mm².
+
+The body reports `|Z|` under two readings in `orientation.closure_flux`:
+`face_sense` (every face's sense) and `loop_winding` (every face's loop
+winding where it is determinable). The volume and centroid use the
+`face_sense` reading. They are measured when, in this order:
+
+1. every shell is closed (else `volume.shell-open`, category `undefined`);
+2. every face has a flux (else `aggregate.member-unavailable` with the
+   member's category);
+3. no face disagrees with its readings (else `volume.orientation-conflict`)
+   and every face's orientation is established (else
+   `volume.orientation-unverified`);
+4. `|Z|` is at most the closure tolerance, the flux error plus the sum over
+   faces of boundary length × `τ_b` (else `volume.closure-flux`);
+5. the outer shell's volume is positive and each void shell's volume is
+   negative (else `volume.orientation-conflict`).
+
+Otherwise the volume and the centroid are unavailable with the first
+failing reason. They carry as candidates the `face_sense` and
+`loop_winding` readings, and the `complement` reading for
+`volume.orientation-unverified`; a reading is a candidate only when every
+face has a flux under it. A body with closed shells reports each shell's
+signed volume.
+
+`numeric_error` of `V` is the volume flux error. `model_uncertainty` of `V`
+is body area × the largest `τ_b` of its faces plus the placement term. Of
+`C`, it is that value × the body box diagonal / `|V|`.
+
+A body with faces and no closed shell reports `area_centroid`, the
+area-weighted centroid `P_ref + Σ σ Φ_A / A`, where `A` is the body area.
+`document.closed_volume` is the sum of the body volumes; it is unavailable
+when one is.
+
 ## Pass allowance
 
 One measurement pass owns a work allowance of

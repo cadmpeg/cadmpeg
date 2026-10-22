@@ -213,6 +213,12 @@ impl<T> Unavailable<T> {
         }
     }
 
+    /// The value with the readings that remain available.
+    pub(crate) fn with_candidates(mut self, candidates: Vec<Candidate<T>>) -> Self {
+        self.candidates = candidates;
+        self
+    }
+
     /// An aggregate that cites an unavailable member of `category`.
     pub(crate) fn aggregate(category: Category, entity: &str, message: impl Into<String>) -> Self {
         Self {

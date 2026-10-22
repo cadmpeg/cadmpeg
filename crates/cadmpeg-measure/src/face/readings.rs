@@ -35,7 +35,7 @@ pub(super) struct AreaInput<'a, 'b, 'ir> {
 
 /// What the readings of a declared-orientation face settle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Verdict {
+pub(crate) enum Verdict {
     /// The region rule does not rest on the orientation.
     Settled,
     /// The complement is empty: the declared reading is the region.

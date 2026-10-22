@@ -39,6 +39,7 @@ mod edges;
 mod extent;
 mod face;
 mod failure;
+mod flux;
 mod geom;
 mod length;
 mod orientation;

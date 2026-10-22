@@ -15,7 +15,7 @@ use crate::budget::{PassAllowance, WorkProfile};
 use crate::canonical::placement::Placement;
 use crate::context::Eval;
 use crate::edges::{measure_edge, EdgeGeometry};
-use crate::face::{box_value, FaceInput, FaceResult};
+use crate::face::{box_value, FaceInput, FaceResult, Verdict};
 use crate::failure::{settle, Outcome};
 use crate::geom::Aabb;
 use crate::owners::Owners;
@@ -208,6 +208,13 @@ impl<'ir> Measurer<'ir> {
             edges.insert(edge_id, geometry);
         }
 
+        let flux_origins: HashMap<&'ir str, cadmpeg_ir::math::Point3> = body_rows
+            .iter()
+            .map(|body| {
+                let id = body.id.as_str();
+                (id, self.flux_origin(id, &edges, &placement_of(Some(id))))
+            })
+            .collect();
         let mut faces: HashMap<&'ir str, FaceResult> = HashMap::new();
         for face_id in &needed_faces {
             let Some(face) = self.owners.face(face_id) else {
@@ -226,6 +233,7 @@ impl<'ir> Measurer<'ir> {
                 fidelity: self.input.fidelity,
                 body,
                 placement: placement_of(body),
+                flux_origin: body.and_then(|body| flux_origins.get(body).copied()),
             };
             faces.insert(face_id, input.measure(&eval, face)?);
         }
@@ -248,6 +256,7 @@ impl<'ir> Measurer<'ir> {
             owners: &self.owners,
             faces: &faces,
             edges: &edges,
+            origins: &flux_origins,
         };
         let body_out: Vec<BodyMeasures> = body_rows.iter().map(|body| bodies.row(body)).collect();
 
@@ -306,6 +315,39 @@ impl<'ir> Measurer<'ir> {
             faces: face_out,
             edges: edge_out,
             document,
+        })
+    }
+
+    /// The reference point of a body's fluxes: the centre of the box of its
+    /// edges and vertices, else the origin. No orientation reading enters
+    /// it, so every reading of the body uses the same point.
+    fn flux_origin(
+        &self,
+        body: &str,
+        edges: &HashMap<&'ir str, EdgeGeometry<'ir>>,
+        placement: &Outcome<Placement>,
+    ) -> cadmpeg_ir::math::Point3 {
+        let mut aabb: Option<Aabb> = None;
+        let mut include = |other: Aabb| {
+            aabb = Some(aabb.map_or(other, |aabb| aabb.union(other)));
+        };
+        for edge in self.owners.body_edges(body) {
+            if let Some(Ok(curve_box)) = edges.get(edge).map(|geometry| &geometry.bbox) {
+                include(curve_box.aabb);
+            }
+        }
+        if let Ok(placement) = placement {
+            for point in self.owners.body_vertex_points(body) {
+                include(Aabb::of_point(placement.point(point)));
+            }
+        }
+        aabb.map_or(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0), |aabb| {
+            let [low, high] = [aabb.min_point(), aabb.max_point()];
+            cadmpeg_ir::math::Point3::new(
+                low.x.midpoint(high.x),
+                low.y.midpoint(high.y),
+                low.z.midpoint(high.z),
+            )
         })
     }
 
@@ -390,6 +432,8 @@ impl<'ir> Measurer<'ir> {
         } else {
             (None, None)
         };
+        let closed_volume = (body_level && bodies.iter().any(|body| body.volume.is_some()))
+            .then(|| total_volume(bodies));
         let mut orientation = DocumentOrientation::default();
         let mut face_ids: Vec<&&str> = face_results.keys().collect();
         face_ids.sort();
@@ -398,12 +442,22 @@ impl<'ir> Measurer<'ir> {
                 continue;
             };
             let face = &result.row;
-            match (face.orientation.consistent, face.orientation.loop_normal) {
-                (Some(false), NormalReading::Mixed) => {
+            match (
+                face.orientation.consistent,
+                face.orientation.loop_normal,
+                result.verdict,
+            ) {
+                (_, _, Verdict::Conflict) => {}
+                (Some(false), NormalReading::Mixed, _) => {
                     orientation.mixed.push(face.face.clone());
                 }
-                (Some(false), _) => orientation.inconsistent.push(face.face.clone()),
+                (Some(false), _, _) => orientation.inconsistent.push(face.face.clone()),
                 _ => {}
+            }
+            match result.verdict {
+                Verdict::Unconfirmed => orientation.unconfirmed.push(face.face.clone()),
+                Verdict::Conflict => orientation.conflict.push(face.face.clone()),
+                Verdict::Settled | Verdict::Confirmed => {}
             }
             if face.measures.loops.iter().any(|entry| {
                 matches!(
@@ -419,6 +473,7 @@ impl<'ir> Measurer<'ir> {
             faces: counts[0],
             edges: counts[1],
             area,
+            closed_volume,
             bbox,
             orientation,
             unavailable: histogram.0,
@@ -455,10 +510,34 @@ fn filter_matches(selection: &Selection, result: &FaceResult) -> bool {
 }
 
 fn total_area(bodies: &[BodyMeasures]) -> Quantity<Scalar> {
+    total(
+        bodies,
+        |body| body.area.as_ref(),
+        Unit::SquareMillimeter,
+        "area",
+    )
+}
+
+fn total_volume(bodies: &[BodyMeasures]) -> Quantity<Scalar> {
+    total(
+        bodies,
+        |body| body.volume.as_ref(),
+        Unit::CubicMillimeter,
+        "volume",
+    )
+}
+
+/// The sum of one member quantity over the bodies that have it.
+fn total(
+    bodies: &[BodyMeasures],
+    member: impl Fn(&BodyMeasures) -> Option<&Quantity<Scalar>>,
+    unit: Unit,
+    name: &str,
+) -> Quantity<Scalar> {
     let mut value = 0.0;
     let mut errors = Errors::ZERO;
     for body in bodies {
-        match &body.area {
+        match member(body) {
             Some(Quantity::Measured(area)) => {
                 value += area.value().value.get();
                 errors = errors.add(Errors::new(
@@ -470,19 +549,13 @@ fn total_area(bodies: &[BodyMeasures]) -> Quantity<Scalar> {
                 return Quantity::Unavailable(Unavailable::aggregate(
                     unavailable.category(),
                     &body.body,
-                    format!("member {} area is unavailable", body.body),
+                    format!("member {} {name} is unavailable", body.body),
                 ));
             }
             None => {}
         }
     }
-    measured(
-        Scalar::new(value),
-        Unit::SquareMillimeter,
-        Method::Sum,
-        errors,
-        "document",
-    )
+    measured(Scalar::new(value), unit, Method::Sum, errors, "document")
 }
 
 fn union_box(bodies: &[BodyMeasures]) -> Quantity<crate::value::BoxValue> {
