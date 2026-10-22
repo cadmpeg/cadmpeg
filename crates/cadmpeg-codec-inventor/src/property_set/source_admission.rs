@@ -8,6 +8,12 @@ use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, Par
 use super::{PropertySetDescriptor, PropertySetStream};
 use crate::native::PropertySetRecord;
 
+/// Appendix C `inventor.property_set_header` framing: the u32 section count at
+/// header +24. The section offsets in the pairs are `inventor.property_section`
+/// framing.
+const SECTION_COUNT_OFFSET: u64 = 24;
+const SECTION_COUNT_END: u64 = SECTION_COUNT_OFFSET + 4;
+
 /// Form a header from its actual Appendix C extent. Held syntax values can form
 /// native content without claiming a record layout or source read.
 pub(crate) fn stage_header<'a>(
@@ -55,8 +61,8 @@ pub(crate) fn stage_source_header<'a>(
     let level = PartLevel::parse("inventor.property_set_header").ok_or_else(|| {
         CodecError::malformed("OLE property-set header is absent from Appendix C")
     })?;
-    // Appendix C explicitly defines the entire 28 + 20*n header as framing.
-    let framing = vec![u64_from_index(extent.start())..u64_from_index(extent.end())];
+    let start = u64_from_index(extent.start());
+    let framing = vec![start + SECTION_COUNT_OFFSET..start + SECTION_COUNT_END];
     let result = ctx.decode_part(output, extent, PartSpec::new(level, framing), |stage| {
         ctx.record(&id, extent, || {
             // This second parse constructs the native values from actual reads

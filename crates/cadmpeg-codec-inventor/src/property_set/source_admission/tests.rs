@@ -60,6 +60,11 @@ fn actual_cfb_header_native_values_and_reads_share_one_part_stage() {
     assert_eq!(parts[0].stream(), expected.stream());
     assert_eq!(parts[0].offset(), expected.offset());
     assert_eq!(parts[0].byte_len(), 48);
+    let section_count = parts[0].offset() + 24..parts[0].offset() + 28;
+    assert_eq!(
+        parts[0].framing_bytes(),
+        std::slice::from_ref(&section_count)
+    );
     assert!(matches!(parts[0].state(), PartState::Decoded {}));
     let captures = ctx.take_record_captures().expect("final extraction");
     assert_eq!(captures.len(), 1);
