@@ -6443,8 +6443,19 @@ fn hole_definition(
             }
         }))
     };
-    let direction = axis_reference(ctx, properties, "Profile", objects, properties_by_owner)?
-        .map(|(_, direction)| cadmpeg_ir::features::FeatureDirection3::from(direction));
+    // A hole drills against its profile's normal, into the support; `Reversed`
+    // drills along the normal.
+    let reversed = required!(bool_selector(ctx, properties, "Reversed", false)?);
+    let direction = axis_reference(ctx, properties, "Profile", objects, properties_by_owner)?.map(
+        |(_, direction)| {
+            let normal = cadmpeg_ir::features::FeatureDirection3::from(direction);
+            if reversed {
+                normal
+            } else {
+                normal.reversed()
+            }
+        },
+    );
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: Some(planar_profile),
         profile_filter: Some(profile_filter),

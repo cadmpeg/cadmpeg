@@ -792,12 +792,14 @@ retaining the complete native property and the otherwise valid typed hole. An ou
 has the same result. A descendant `Enum`, an uppercase `Value`, or the numeric index itself does
 not supply a label.
 PartDesign `Hole` boolean carriers `Threaded`, `ModelThread`, `DrillForDepth`, `Tapered`,
-`UseCustomThreadClearance`, and `AllowMultiFace` are `App::PropertyBool` values. Their direct
+`UseCustomThreadClearance`, `AllowMultiFace`, and `Reversed` are `App::PropertyBool` values. Their direct
 `Bool` values are `false` and `true`; an absent carrier means `false`. `Threaded` selects threaded
 versus clearance-hole thread fields, `ModelThread` selects modeled thread geometry,
 `DrillForDepth` includes the angled drill tip in a blind depth, `Tapered` enables `TaperedAngle`,
-`UseCustomThreadClearance` enables `CustomThreadClearance`, and `AllowMultiFace` permits multiple
-profile faces. A present carrier with another runtime type, without exactly one direct `Bool`, or
+`UseCustomThreadClearance` enables `CustomThreadClearance`, `AllowMultiFace` permits multiple
+profile faces, and `Reversed` drills along the profile's normal. Otherwise a hole drills against
+the profile's normal, into the support, and the neutral drilling direction is that reversed
+normal. A present carrier with another runtime type, without exactly one direct `Bool`, or
 with any other value does not select a neutral hole; the operation remains native.
 `CosmeticThread`, when present, is an optional `App::PropertyBool` carrier whose direct `Bool`
 values select cosmetic thread presentation. CADIR decision: an absent carrier means `false`. A
