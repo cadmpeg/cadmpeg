@@ -109,7 +109,6 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
                 parent: parent.clone(),
                 ordinal: 0,
                 sequence: 0,
-                offset: Some(0),
                 type_prefix: (*b"FACE").into(),
                 feature_source_id: crate::brep::feature_source::FeatureSourceId::try_from(1_u32)
                     .unwrap(),

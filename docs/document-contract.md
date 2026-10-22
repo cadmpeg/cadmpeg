@@ -71,7 +71,7 @@ A patch must also meet the content-equality assertion in E1: **`assert_written_a
 
 An editor that replaces design clears both its neutral design arenas and corresponding typed native design records and references. Deletion is an explicit edit, never an inference from a prior report. A geometry-scope document that retains typed native design still holds that native content.
 
-The sidecar's hash binding is an artifact-flow integrity check. Saving edited CADIR requires `DecodeSidecar::bind_sha256` against the new bytes. A stale sidecar is refused. Removing the sidecar leaves the CADIR document as the sole input.
+The sidecar's hash binding is an artifact-flow integrity check. Saving edited CADIR requires `DecodeSidecar::bind_sha256` against the new bytes. The CLI ignores a digest-mismatched sidecar, reports `sidecar.stale` as a Warning, and uses the current CADIR document alone. Malformed sidecars and unsupported sidecar versions remain errors. Removing the sidecar leaves the CADIR document as the sole input.
 
 ## Extending the contract
 

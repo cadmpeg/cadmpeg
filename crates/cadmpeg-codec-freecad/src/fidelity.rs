@@ -86,6 +86,7 @@ pub(crate) fn layout<T: serde::Serialize>(
 }
 
 pub(crate) fn property(
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     fidelity: &mut SourceFidelity,
     property: &crate::native::PropertyRecord,
     objects: &[crate::native::ObjectRecord],
@@ -107,12 +108,15 @@ pub(crate) fn property(
     if opaque || matches!(property.body, crate::native::PropertyBody::Unreadable(_)) {
         classes.insert(class);
     }
+    let range = ctx.source_range(property)?.ok_or_else(|| {
+        CodecError::malformed("source classification requires an original property range")
+    })?;
     evidence(
         fidelity,
         &property.id,
         "Document.xml",
-        property.xml.start(),
-        property.xml.text().as_bytes(),
+        cadmpeg_core::decode::u64_from_index(range.start),
+        ctx.property_xml(property)?.as_bytes(),
         classes,
     )?;
     Ok(opaque.then_some(class))
@@ -253,6 +257,20 @@ pub(crate) fn state_source(
     value_source_from_node(&state.id, node, &state.values)
 }
 
+pub(crate) fn property_source(
+    node: roxmltree::Node<'_, '_>,
+    property: &crate::native::PropertyRecord,
+) -> Result<ValueSourceRanges, CodecError> {
+    if !matches!(property.body, crate::native::PropertyBody::Persisted { .. }) {
+        return Ok(ValueSourceRanges {
+            id: property.id.clone(),
+            record: node.range(),
+            values: Vec::new(),
+        });
+    }
+    value_source_from_node(&property.id, node, property.values())
+}
+
 pub(crate) fn gui_property_source(
     node: roxmltree::Node<'_, '_>,
     property: &crate::native::GuiPropertyRecord,
@@ -293,48 +311,7 @@ fn value_source_from_node(
     })
 }
 
-pub(crate) fn value_sources<'a>(
-    xml: &roxmltree::Document<'_>,
-    owners: impl Iterator<
-        Item = (
-            &'a str,
-            &'a crate::native::RetainedXml,
-            &'a [crate::native::ValueRecord],
-        ),
-    >,
-) -> Result<Vec<ValueSourceRanges>, CodecError> {
-    let mut by_start = BTreeMap::new();
-    for (id, source, values) in owners.filter(|(_, _, values)| !values.is_empty()) {
-        let start = usize::try_from(source.start())
-            .map_err(|_| CodecError::malformed("value owner start exceeds memory"))?;
-        let end = usize::try_from(source.end())
-            .map_err(|_| CodecError::malformed("value owner end exceeds memory"))?;
-        if by_start.insert(start, (id, end, values)).is_some() {
-            return Err(CodecError::malformed(
-                "duplicate XML value owner source start",
-            ));
-        }
-    }
-    let mut output = Vec::new();
-    for node in xml.descendants().filter(roxmltree::Node::is_element) {
-        let Some((id, end, values)) = by_start.remove(&node.range().start) else {
-            continue;
-        };
-        if end != node.range().end {
-            return Err(CodecError::malformed(
-                "XML value owner range differs from its parsed element",
-            ));
-        }
-        output.push(value_source_from_node(id, node, values)?);
-    }
-    if !by_start.is_empty() {
-        return Err(CodecError::malformed(
-            "XML value owner has no original source element",
-        ));
-    }
-    Ok(output)
-}
-
+#[cfg(test)]
 pub(crate) fn value_layout_payloads(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
@@ -402,6 +379,16 @@ pub(crate) fn object_layout_payloads(
         values: Vec::new(),
     };
     xml_value_layout_payloads(ctx, source, &ranges, payloads, pointers)
+}
+
+pub(crate) fn property_layout_payloads(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    ranges: &ValueSourceRanges,
+    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
+    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
+) -> Result<(), CodecError> {
+    xml_value_layout_payloads(ctx, source, ranges, payloads, pointers)
 }
 
 pub(crate) fn gui_property_layout_payloads(

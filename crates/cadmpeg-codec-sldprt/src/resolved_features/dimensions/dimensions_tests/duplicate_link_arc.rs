@@ -115,7 +115,6 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: operand.offset,
             kind,
             class_ref: Some("class".into()),
             object_index: 0,

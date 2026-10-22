@@ -88,7 +88,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         name: "sgEntHandle".into(),
     }];
 
-    let references = reference_cells(&scalars, &classes).unwrap();
+    let references = reference_cells(&scalars, &classes).unwrap().records;
 
     assert_eq!(references.len(), 2);
     assert!(references
@@ -107,6 +107,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
     });
     assert!(reference_cells(&scalars, &ambiguous_classes)
         .unwrap()
+        .records
         .iter()
         .all(|reference| reference.class_ref.is_none()));
 }
@@ -134,14 +135,15 @@ fn reference_cells_copy_operand_identity() {
         }],
     };
     assert_eq!(
-        reference_cells(std::slice::from_ref(&scalar), &[]).unwrap(),
+        reference_cells(std::slice::from_ref(&scalar), &[])
+            .unwrap()
+            .records,
         vec![crate::records::FeatureInputReference {
             sequence: 0,
             id: scalar.operands[0].reference_ref.clone(),
             parent: scalar.parent,
             feature_ref: scalar.feature_ref,
             ordinal: 0,
-            offset: scalar.operands[0].offset,
             kind: scalar.operands[0].kind,
             class_ref: None,
             object_index: scalar.operands[0].entity_index,
@@ -1448,7 +1450,7 @@ fn reference_cells_index_classes_by_parent_and_offset() {
         "other-lane".into(),
     ));
 
-    let references = reference_cells(&scalars, &classes).unwrap();
+    let references = reference_cells(&scalars, &classes).unwrap().records;
 
     assert_eq!(references.len(), usize::try_from(CELLS).unwrap());
     assert!(references

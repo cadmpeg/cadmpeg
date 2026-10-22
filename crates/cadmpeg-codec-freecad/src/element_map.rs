@@ -57,7 +57,8 @@ struct MapPayload {
 struct OwnershipPrefix<'a> {
     start: u64,
     furthest: &'a PropertyRecord,
-    second_furthest: Option<&'a PropertyRecord>,
+    furthest_end: u64,
+    second_furthest: Option<(&'a PropertyRecord, u64)>,
 }
 
 enum ElementMapCarrier<'a, 'input> {
@@ -74,7 +75,7 @@ pub(crate) struct SourceLayouts<'a, 'input> {
 
 /// Recover every string table and element map carried by `Document.xml`.
 pub(crate) fn parse<'input>(
-    ctx: &DecodeContext<'input>,
+    ctx: &crate::property_reader::PropertyReader<'_, 'input>,
     xml: &roxmltree::Document<'_>,
     file_version: Option<usize>,
     properties: &[PropertyRecord],
@@ -112,36 +113,18 @@ pub(crate) fn parse<'input>(
         0
     };
     let mut ownership = Vec::new();
-    ownership.extend(
-        properties
-            .iter()
-            .take(owner_count)
-            .map(|property| OwnershipPrefix {
-                start: property.xml.start(),
-                furthest: property,
-                second_furthest: None,
-            }),
-    );
-    ownership.sort_unstable_by_key(|left| left.start);
-
-    let mut furthest: Option<&PropertyRecord> = None;
-    let mut second_furthest: Option<&PropertyRecord> = None;
-    for prefix in &mut ownership {
-        match furthest {
-            Some(previous) if previous.xml.end() >= prefix.furthest.xml.end() => {
-                if second_furthest.is_none_or(|second| second.xml.end() < prefix.furthest.xml.end())
-                {
-                    second_furthest = Some(prefix.furthest);
-                }
-                prefix.furthest = previous;
-            }
-            _ => {
-                second_furthest = furthest;
-                furthest = Some(prefix.furthest);
-            }
-        }
-        prefix.second_furthest = second_furthest;
+    for property in properties.iter().take(owner_count) {
+        let range = ctx.source_range(property)?.ok_or_else(|| {
+            CodecError::malformed("string-table ownership requires an original source extent")
+        })?;
+        ownership.push(OwnershipPrefix {
+            start: cadmpeg_core::decode::u64_from_index(range.start),
+            furthest: property,
+            furthest_end: cadmpeg_core::decode::u64_from_index(range.end),
+            second_furthest: None,
+        });
     }
+    let ownership = ownership_index(ownership);
 
     let mut tables = Vec::new();
     let mut framing_by_parent = HashMap::new();
@@ -275,8 +258,9 @@ pub(crate) fn parse<'input>(
         let mut untyped = false;
         let mut carrier_present = false;
         let parsed = (|| {
+            let property_xml = ctx.property_xml(property)?;
             let property_xml = ctx
-                .parse_xml(property.xml.text(), "FreeCAD XML tree")
+                .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
                 .map_err(|error| {
                     let CodecError::Malformed(error) = error else {
                         return error;
@@ -501,6 +485,30 @@ pub(crate) fn bind_topology(maps: &mut [ElementMapRecord], occurrences: &[Topolo
     }
 }
 
+fn ownership_index(mut ownership: Vec<OwnershipPrefix<'_>>) -> Vec<OwnershipPrefix<'_>> {
+    ownership.sort_unstable_by_key(|left| left.start);
+
+    let mut furthest: Option<(&PropertyRecord, u64)> = None;
+    let mut second_furthest: Option<(&PropertyRecord, u64)> = None;
+    for prefix in &mut ownership {
+        match furthest {
+            Some((previous, end)) if end >= prefix.furthest_end => {
+                if second_furthest.is_none_or(|(_, end)| end < prefix.furthest_end) {
+                    second_furthest = Some((prefix.furthest, prefix.furthest_end));
+                }
+                prefix.furthest = previous;
+                prefix.furthest_end = end;
+            }
+            _ => {
+                second_furthest = furthest;
+                furthest = Some((prefix.furthest, prefix.furthest_end));
+            }
+        }
+        prefix.second_furthest = second_furthest;
+    }
+    ownership
+}
+
 fn owning_property(
     node: roxmltree::Node<'_, '_>,
     ownership: &[OwnershipPrefix<'_>],
@@ -510,13 +518,10 @@ fn owning_property(
     let Some(prefix) = upper.checked_sub(1).and_then(|index| ownership.get(index)) else {
         return Ok(None);
     };
-    if prefix.furthest.xml.end() <= start {
+    if prefix.furthest_end <= start {
         return Ok(None);
     }
-    if prefix
-        .second_furthest
-        .is_some_and(|property| property.xml.end() > start)
-    {
+    if prefix.second_furthest.is_some_and(|(_, end)| end > start) {
         return Err(CodecError::Malformed(
             "StringHasher has multiple enclosing properties".into(),
         ));

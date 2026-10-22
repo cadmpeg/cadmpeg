@@ -4,7 +4,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, VecDeque};
 
-use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
+use cadmpeg_core::decode::{View, WorkBudget};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -74,7 +74,7 @@ macro_rules! required {
 }
 
 pub(crate) fn transfer(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     ir: &mut CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
@@ -709,7 +709,7 @@ fn design_object_dependencies(
 
 /// Apply an operation's shape-refinement and boolean-tolerance controls.
 fn post_processed_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     definition: FeatureDefinition,
     kind: &str,
     properties: &[&PropertyRecord],
@@ -742,7 +742,7 @@ enum PostProcessControlState {
 
 /// Resolve the exact persisted controls an operation carries.
 fn post_process_controls(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<PostProcessControlState, CodecError> {
     let refine = match unique_named_property(properties, "Refine") {
@@ -814,7 +814,7 @@ fn direct_spreadsheet_value<'a, 'input: 'a>(
 }
 
 fn append_spreadsheet(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     parameters: &mut Vec<DesignParameter>,
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
@@ -829,8 +829,9 @@ fn append_spreadsheet(
             object.id()
         ))
     })?;
+    let property_xml = ctx.property_xml(property)?;
     let xml = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;
@@ -975,7 +976,7 @@ fn append_spreadsheet(
 }
 
 fn spreadsheet_dimensions(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     type_name: &str,
     property_name: &str,
@@ -994,8 +995,9 @@ fn spreadsheet_dimensions(
     else {
         return Ok(Vec::new());
     };
+    let property_xml = ctx.property_xml(property)?;
     let xml = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;
@@ -1233,7 +1235,7 @@ fn append_custom_parameters(
 }
 
 fn append_operation_parameters(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     parameters: &mut Vec<DesignParameter>,
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
@@ -1605,7 +1607,7 @@ fn sketch_attributes(carrier: Option<roxmltree::Node<'_, '_>>) -> BTreeMap<Strin
 }
 
 fn parse_sketch(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
     profile_work: &WorkBudget,
@@ -1622,8 +1624,9 @@ fn parse_sketch(
                 geometry.id, geometry.type_name
             )));
         }
+        let property_xml = ctx.property_xml(geometry)?;
         let xml = ctx
-            .parse_xml(geometry.xml.text(), "FreeCAD XML tree")
+            .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
             .map_err(|error| {
                 let CodecError::Malformed(error) = error else {
                     return error;
@@ -1830,13 +1833,14 @@ fn parse_sketch(
 }
 
 fn builtin_reference_usage(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<(bool, bool, bool), CodecError> {
     let Some(property) = property(properties, "Constraints") else {
         return Ok((false, false, false));
     };
-    let xml = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
+    let property_xml = ctx.property_xml(property)?;
+    let xml = match ctx.parse_xml(property_xml.as_ref(), "FreeCAD XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
@@ -2071,7 +2075,7 @@ fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), Codec
 }
 
 fn bool_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<bool>, CodecError> {
@@ -2094,7 +2098,7 @@ fn bool_property(
 /// `FreeCAD` constructors provide the legacy default for an absent property; a present property
 /// must use the exact enumeration carrier before its value can select neutral semantics.
 fn enumeration_selector(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     absent_default: u64,
@@ -2120,7 +2124,7 @@ fn enumeration_selector(
 /// `FreeCAD` constructors provide the legacy default for an absent property; a present property
 /// must use the exact boolean carrier before its value can select neutral semantics.
 fn bool_selector(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     absent_default: bool,
@@ -2132,7 +2136,7 @@ fn bool_selector(
 }
 
 fn finite_float_selector(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     runtime_type: &str,
@@ -2156,7 +2160,7 @@ fn finite_float_selector(
 }
 
 fn direct_bool_value(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
 ) -> Result<Option<bool>, CodecError> {
     if property.type_name != "App::PropertyBool" {
@@ -2176,7 +2180,7 @@ fn direct_bool_value(
 }
 
 fn direct_fuzzy_tolerance(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
 ) -> Result<Option<FuzzyTolerance>, CodecError> {
     if property.type_name != "App::PropertyFloatConstraint" {
@@ -2201,7 +2205,7 @@ fn direct_fuzzy_tolerance(
 }
 
 fn parse_constraints(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
     sketch: &SketchId,
@@ -2216,8 +2220,9 @@ fn parse_constraints(
             property.id, property.type_name
         )));
     }
+    let property_xml = ctx.property_xml(property)?;
     let xml = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;
@@ -4058,7 +4063,7 @@ fn profile_target<'a>(properties: &'a [&PropertyRecord]) -> Option<(&'a Property
 }
 
 fn revolution_axis(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<RevolutionAxis>, CodecError> {
     Ok(Some(RevolutionAxis {
@@ -4074,7 +4079,7 @@ fn revolution_axis(
 }
 
 fn revolution_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     owner: &str,
     properties: &[&PropertyRecord],
@@ -4302,7 +4307,7 @@ fn revolution_definition(
 }
 
 fn vector_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<cadmpeg_ir::features::FiniteVector3>, CodecError> {
@@ -4331,7 +4336,7 @@ fn vector_property(
 }
 
 fn vector_list_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     entries: &[EntryRecord],
@@ -4394,7 +4399,7 @@ fn vector_list_property(
 }
 
 fn part_construction_geometry_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
@@ -4558,7 +4563,7 @@ fn part_construction_geometry_definition(
 }
 
 fn parametric_helix_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
@@ -4677,7 +4682,7 @@ struct ExtrudeDrafts {
 /// the sweep direction. That refusal is reported, not swallowed: dropping it
 /// would delete the whole feature over one property.
 fn taper_angle(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     key: &str,
 ) -> Result<Option<cadmpeg_ir::scalar::SlopeAngle>, CodecError> {
@@ -4692,7 +4697,7 @@ fn taper_angle(
 
 /// Whether the record states the legacy two-length extent.
 fn legacy_two_length_extent(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<bool, CodecError> {
     Ok(property(properties, "SideType").is_none()
@@ -4702,7 +4707,7 @@ fn legacy_two_length_extent(
 /// The extent kind the extrude record states: 0 one-sided, 1 two-sided,
 /// 2 midplane.
 fn extrude_side_type(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<u64>, CodecError> {
     Ok(if legacy_two_length_extent(ctx, properties)? {
@@ -4717,7 +4722,7 @@ fn extrude_side_type(
 }
 
 fn extrusion_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
     profile: ProfileRef,
@@ -4760,7 +4765,7 @@ fn extrusion_definition(
 }
 
 fn extrusion_shape(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
     profile_and_normal: (ProfileRef, Option<Vector3>),
@@ -5134,7 +5139,7 @@ fn extrusion_shape(
 }
 
 fn dress_up_edge_selection(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<Option<EdgeSelection>, CodecError> {
@@ -5156,7 +5161,7 @@ fn dress_up_edge_selection(
 }
 
 fn scale_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some(base) = singular_operand(properties, "Base") else {
@@ -5200,7 +5205,7 @@ fn scale_definition(
 }
 
 fn fillet_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
@@ -5247,7 +5252,7 @@ fn fillet_definition(
 }
 
 fn chamfer_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
@@ -5356,7 +5361,7 @@ fn part_fillet_edge_values(
 }
 
 fn shell_mode(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<Option<ShellMode>, CodecError> {
@@ -5377,7 +5382,7 @@ fn shell_mode(
 }
 
 fn shell_join(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<Option<ShellJoin>, CodecError> {
@@ -5393,7 +5398,7 @@ fn shell_join(
 }
 
 fn thickness_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
@@ -5448,7 +5453,7 @@ fn thickness_definition(
 }
 
 fn offset_shape_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
@@ -5524,7 +5529,7 @@ fn cached_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefi
 }
 
 fn ruled_surface_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some(first) = property(properties, "Curve1").filter(|property| property.links().len() == 1)
@@ -5552,7 +5557,7 @@ fn ruled_surface_definition(
 }
 
 fn section_shape_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some(base) = property(properties, "Base").filter(|property| property.links().len() == 1)
@@ -5581,7 +5586,7 @@ fn section_shape_definition(
 }
 
 fn mirror_shape_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some(source) = property(properties, "Source") else {
@@ -5617,7 +5622,7 @@ fn mirror_shape_definition(
 }
 
 fn project_on_surface_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some(sources) = property(properties, "Projection") else {
@@ -5677,7 +5682,7 @@ fn project_on_surface_definition(
 }
 
 fn draft_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
@@ -5733,7 +5738,7 @@ fn draft_definition(
 }
 
 fn chamfer_spec(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<ChamferSpec>, CodecError> {
     let mode = required!(property(properties, "ChamferType")
@@ -5833,7 +5838,7 @@ fn text_value_tag(type_name: &str) -> Option<&'static str> {
 }
 
 fn scalar_value(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
 ) -> Result<Option<FiniteReal>, CodecError> {
     let tag = required!(crate::persistence::scalar_value_tag(&property.type_name));
@@ -5852,7 +5857,7 @@ fn scalar_value(
 }
 
 fn scalar_text<T>(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
     use_value: impl FnOnce(&str) -> T,
 ) -> Result<Option<T>, CodecError> {
@@ -5861,7 +5866,7 @@ fn scalar_text<T>(
 }
 
 fn direct_root_value<T>(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
     expected_tag: &str,
     attribute: &str,
@@ -5876,12 +5881,13 @@ fn direct_root_value<T>(
 }
 
 fn direct_root<T>(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
     expected_tag: &str,
     use_root: impl FnOnce(roxmltree::Node<'_, '_>) -> T,
 ) -> Result<Option<T>, CodecError> {
-    let document = match ctx.parse_xml(property.xml.text(), "FreeCAD direct property XML tree") {
+    let property_xml = ctx.property_xml(property)?;
+    let document = match ctx.parse_xml(property_xml.as_ref(), "FreeCAD direct property XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
@@ -5904,7 +5910,7 @@ fn direct_root<T>(
 }
 
 fn native_parameters(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
 ) -> Result<
     BTreeMap<NonBlankString, cadmpeg_ir::features::Dimension<cadmpeg_ir::features::Expression>>,
@@ -5935,7 +5941,7 @@ fn native_parameters(
 }
 
 fn native_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<FeatureDefinition, CodecError> {
@@ -5946,7 +5952,7 @@ fn native_definition(
 }
 
 fn primitive_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
@@ -6091,7 +6097,7 @@ fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Featur
 }
 
 fn boolean_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
@@ -6177,7 +6183,7 @@ fn boolean_definition(
 }
 
 fn loft_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
@@ -6262,7 +6268,7 @@ fn loft_definition(
 }
 
 fn sweep_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
@@ -6449,7 +6455,7 @@ fn sweep_definition(
 }
 
 fn hole_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
@@ -6740,7 +6746,7 @@ fn thread_standard(value: u64) -> Option<&'static str> {
 }
 
 fn helical_sweep_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     owner: &str,
     properties: &[&PropertyRecord],
@@ -6848,7 +6854,7 @@ fn helical_sweep_definition(
 }
 
 fn binder_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
     features: &HashMap<&str, FeatureId>,
@@ -7048,7 +7054,7 @@ fn binder_target(
 }
 
 fn enumeration_label(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<String>, CodecError> {
@@ -7058,7 +7064,8 @@ fn enumeration_label(
     if property.type_name != "App::PropertyEnumeration" {
         return Ok(None);
     }
-    let document = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
+    let property_xml = ctx.property_xml(property)?;
+    let document = match ctx.parse_xml(property_xml.as_ref(), "FreeCAD XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
@@ -7133,7 +7140,7 @@ struct PatternSources<'a, 'b> {
 }
 
 fn pattern_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     owner: &str,
     properties: &[&PropertyRecord],
@@ -7329,7 +7336,7 @@ fn implicit_body_predecessor<'a>(
 }
 
 fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
     sources: PatternSources<'_, '_>,
@@ -7521,7 +7528,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
 }
 
 fn linear_pattern_axis(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     suffix: &str,
     count: u32,
@@ -7617,7 +7624,7 @@ fn has_explicit_pattern_intervals(properties: &[&PropertyRecord], suffix: &str) 
 }
 
 fn pattern_locations(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     suffix: &str,
     count: u32,
@@ -7728,7 +7735,7 @@ fn uniform_step(locations: &[FiniteReal]) -> Option<FiniteReal> {
 }
 
 fn axis_reference(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     objects: &[ObjectRecord],
@@ -7873,7 +7880,7 @@ fn is_link_property_type(type_name: &str) -> bool {
 }
 
 fn scalar_named(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<FiniteReal>, CodecError> {
@@ -7884,7 +7891,7 @@ fn scalar_named(
 }
 
 fn string_property_value(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
 ) -> Result<Option<String>, CodecError> {
     if property.type_name != "App::PropertyString" {
@@ -7894,7 +7901,7 @@ fn string_property_value(
 }
 
 fn integer_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<u64>, CodecError> {
@@ -7911,7 +7918,7 @@ fn integer_property(
 }
 
 fn integer_selector(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     absent_default: u64,
@@ -7934,7 +7941,7 @@ fn integer_selector(
 }
 
 fn integer_constraint_selector(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     absent_default: u64,
@@ -7960,7 +7967,7 @@ fn integer_constraint_selector(
 }
 
 fn numeric_list(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
     entries: &[EntryRecord],
 ) -> Result<Option<Vec<FiniteReal>>, CodecError> {
@@ -8065,7 +8072,7 @@ fn feature_base_definition(
 }
 
 fn imported_geometry_definition(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Result<Option<FeatureDefinition>, CodecError> {

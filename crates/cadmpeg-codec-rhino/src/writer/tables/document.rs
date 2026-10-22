@@ -218,10 +218,14 @@ pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, CodecE
     Ok(output)
 }
 
-pub(in crate::writer) fn settings(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
+pub(in crate::writer) fn settings(
+    ir: &CadIr,
+    materials: &super::materials::MaterialPlan,
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<Vec<u8>>, CodecError> {
     let mut output = Vec::new();
-    for record in records(ir, "document_settings") {
-        let fields = record.fields()?;
+    for setting in records(ir, "document_settings") {
+        let fields = setting.fields()?;
         if let Some(url) = fields.get("model_url").and_then(Value::as_str) {
             output.push(crc_chunk(0x2000_8131, &utf16(url)?)?);
         }
@@ -260,10 +264,14 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError
                     .and_then(|value| value.as_i64())
                     == Some(index)
             }) {
-                if let Some(material_index) = super::materials::native_index(ir, record.id())? {
-                    let mut body = material_index.to_le_bytes().to_vec();
-                    body.extend(integer(Some(&fields), "current_material_source", 0).to_le_bytes());
-                    output.push(crc_chunk(0x2000_8039, &body)?);
+                match materials.native_targets(record.id()) {
+                    [material_index] => {
+                        let mut body = material_index.to_le_bytes().to_vec();
+                        body.extend(integer(Some(&fields),"current_material_source",0).to_le_bytes());
+                        output.push(crc_chunk(0x2000_8039,&body)?);
+                    }
+                    [] => {},
+                    _ => losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!("document setting {} /current_material_index {} -> absent; native material {} has multiple authored appearances {:?}, so no unique target exists",setting.id(),index,record.id(),materials.target_names(ir,record.id())))),
                 }
             }
         }

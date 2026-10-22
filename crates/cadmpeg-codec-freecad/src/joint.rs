@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
@@ -13,7 +12,7 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) fn transfer(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<JointRecord>, CodecError> {
@@ -377,11 +376,12 @@ fn joint_kind(
 }
 
 fn enumeration_value(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
 ) -> Result<String, CodecError> {
+    let property_xml = ctx.property_xml(property)?;
     let document = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;
@@ -615,16 +615,20 @@ pub(crate) mod tests {
         type_name: &str,
         xml: &str,
     ) -> crate::native::PropertyRecord {
-        crate::native::PropertyRecord {
-            id: "property".into(),
-            owner: "joint".into(),
-            name: name.into(),
-            type_name: type_name.into(),
-            family: crate::native::PropertyFamily::Unknown,
-            status: None,
-            body: crate::native::PropertyBody::Transient,
-            order: 0,
-            xml: crate::native::RetainedXml::from_text(xml.into(), 0).expect("valid retained span"),
+        {
+            let property = crate::native::PropertyRecord {
+                id: "property".into(),
+                owner: "joint".into(),
+                name: name.into(),
+                type_name: type_name.into(),
+                family: crate::native::PropertyFamily::Unknown,
+                status: None,
+                body: crate::native::PropertyBody::Transient,
+                order: 0,
+            };
+            let _source =
+                crate::test_support::source_fidelity::xml_layout_fixture(&property.id, &(xml));
+            property
         }
     }
 

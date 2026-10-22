@@ -20,7 +20,9 @@ fn lane(ctx: &DecodeContext<'_>, payload: &[u8]) -> FeatureInputLane {
     let id = "lane";
     let classes = crate::resolved_features::names::class_declarations(payload, id).unwrap();
     let names = crate::resolved_features::names::object_names(ctx, payload, id).unwrap();
-    let scalars = crate::resolved_features::scalars::named_scalars(payload, id, &names).unwrap();
+    let scalars = crate::resolved_features::scalars::named_scalars(payload, id, &names)
+        .unwrap()
+        .records;
     let relation_bindings =
         crate::resolved_features::markers::relation_bindings(id, &classes, &scalars, &[]).unwrap();
     FeatureInputLane {

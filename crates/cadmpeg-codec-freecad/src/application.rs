@@ -67,8 +67,6 @@ struct ApplicationPropertyWire<'a> {
     family: PropertyFamily,
     order: usize,
     links: &'a [Option<LinkTarget>],
-    byte_len: u64,
-    sha256: String,
     payloads: Vec<ApplicationPayloadWire<'a>>,
     inert: bool,
 }
@@ -134,8 +132,6 @@ fn wire_records<'a>(
                 family: property.family,
                 order: property.order,
                 links: property.links(),
-                byte_len: property.xml.length(),
-                sha256: property.xml.sha256().to_owned(),
                 payloads,
                 inert: is_inert(property),
             });

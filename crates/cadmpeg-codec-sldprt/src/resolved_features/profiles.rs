@@ -4078,6 +4078,7 @@ mod detached_legacy_sketch_tests {
             std::slice::from_ref(&history),
             &HashSet::new(),
             &mut lane,
+            &crate::resolved_features::body_sources::BodySources::default(),
         )
         .unwrap();
 

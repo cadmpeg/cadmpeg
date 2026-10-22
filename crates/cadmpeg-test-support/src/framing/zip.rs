@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Independent ZIP32 physical framing and stored-entry CRC resealing.
+//! Independent ZIP physical framing and stored-entry CRC resealing.
 
 use std::ops::Range;
 
@@ -12,6 +12,7 @@ use layout::add;
 mod layout;
 mod members;
 mod rebuild;
+mod zip64;
 
 pub use rebuild::{rebuild, Edit};
 
@@ -26,7 +27,7 @@ pub struct ZipEntry<'a> {
     local_crc: usize,
     central_crc: usize,
     descriptor_crc: Option<usize>,
-    uncompressed: u32,
+    uncompressed: u64,
     local_flags: u16,
 }
 impl<'a> ZipEntry<'a> {
@@ -52,15 +53,15 @@ impl<'a> ZipEntry<'a> {
     }
 }
 
-/// Frame a complete single-disk ZIP32 archive from the actual source view.
+/// Frame a complete single-disk ZIP archive from the actual source view.
 ///
-/// ZIP64 and directories carrying digital signatures are outside this slice.
+/// Digital-signature bytes are preserved without cryptographic verification.
 /// Compressed entries retain their physical spans; their expanded children need
 /// genuine decompression provenance. No source bytes count as semantic reads.
 /// The returned member views can host the STEP and FreeCAD member framers.
 ///
 /// # Errors
-/// Returns ambiguous/incomplete boundaries, ZIP64/multi-disk requirements,
+/// Returns ambiguous/incomplete boundaries, multi-disk requirements,
 /// overlapping records, invalid provenance or resource/allocation refusal.
 pub fn frame<'a>(
     ctx: &DecodeContext<'_>,
@@ -91,13 +92,33 @@ pub fn frame<'a>(
             vec![],
         ),
     )?;
+    if let Some(end) = directory.zip64 {
+        push(
+            ctx,
+            source,
+            out,
+            "zip.zip64_end_locator",
+            FrameParent::Part(archive),
+            end.locator..directory.end_record,
+            (vec![end.locator..directory.end_record], vec![]),
+        )?;
+        push(
+            ctx,
+            source,
+            out,
+            "zip.zip64_end_record",
+            FrameParent::Part(archive),
+            end.start..end.locator,
+            (vec![end.start..add(end.start, 56)?], vec![]),
+        )?;
+    }
     let central = push(
         ctx,
         source,
         out,
         "zip.central_directory",
         FrameParent::Part(archive),
-        directory.start..directory.end_record,
+        directory.start..directory.central_end,
         (vec![], vec![]),
     )?;
     let mut entries = Vec::new();
@@ -107,8 +128,42 @@ pub fn frame<'a>(
         append(ctx, &mut entries, entry)?;
         at = end;
     }
+    if let Some(signature) = directory.signature {
+        let parent = if signature.inside { central } else { archive };
+        let index = push(
+            ctx,
+            source,
+            out,
+            "zip.digital_signature",
+            FrameParent::Part(parent),
+            signature.start..signature.end,
+            (vec![signature.start..add(signature.start, 6)?], vec![]),
+        )?;
+        if signature.inside {
+            let proof = DirectorySignature {
+                directory: child(source, directory.start..directory.central_end)?,
+                signature: child(source, signature.start..signature.end)?,
+            };
+            out.get_mut(index)
+                .ok_or("missing just-framed ZIP signature")?
+                .bind_zip_directory_parent(ctx, &proof, archive)?;
+        }
+    }
     PartTable::load()?.validate(ctx, out)?;
     Ok(entries)
+}
+
+pub(super) struct DirectorySignature<'a> {
+    directory: View<'a>,
+    signature: View<'a>,
+}
+impl<'a> DirectorySignature<'a> {
+    pub(super) fn directory(&self) -> View<'a> {
+        self.directory
+    }
+    pub(super) fn signature(&self) -> View<'a> {
+        self.signature
+    }
 }
 
 fn child(source: View<'_>, extent: Range<usize>) -> Result<View<'_>, String> {

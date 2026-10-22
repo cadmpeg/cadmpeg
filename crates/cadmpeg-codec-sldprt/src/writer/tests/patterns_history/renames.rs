@@ -63,6 +63,7 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
     assert_eq!(
         crate::resolved_features::scalars::named_scalars(&payload, &lane.id, &written)
             .unwrap()
+            .records
             .len(),
         scalars
     );

@@ -36,6 +36,8 @@ mod mesh_modifiers_userdata;
 mod mesh_userdata;
 mod object_attributes_userdata;
 mod settings_userdata;
+mod standalone_line;
+mod standalone_line_closure;
 mod undeclared_archive_word;
 mod unit_binding;
 mod unknown_userdata;

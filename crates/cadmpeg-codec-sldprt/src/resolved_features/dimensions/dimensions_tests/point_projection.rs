@@ -74,7 +74,6 @@ fn explicit_point_circle_input() -> (
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: Some(20),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
             class_ref: Some("class".into()),
             object_index: 0,

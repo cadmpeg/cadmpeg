@@ -24,6 +24,7 @@ pub(super) fn write(
     ir: &CadIr,
     output: &mut impl Write,
     losses: &mut Vec<LossNote>,
+    materials: &super::tables::materials::MaterialPlan,
 ) -> Result<usize, CodecError> {
     let body = &ir.model.bodies[0];
     let mut seen_vertices = BTreeSet::new();
@@ -98,6 +99,7 @@ pub(super) fn write(
                 color: body.color,
                 visible: body.visible,
             },
+            materials,
         )?)?;
         count += 1;
     }
@@ -128,6 +130,7 @@ pub(super) fn write(
                         color: body.color,
                         visible: body.visible,
                     },
+                    materials,
                 )?)?;
                 count += 1;
             }

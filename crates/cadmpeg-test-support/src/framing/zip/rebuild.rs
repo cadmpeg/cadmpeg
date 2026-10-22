@@ -16,15 +16,17 @@ pub struct Edit<'a> {
     pub replacement: &'a [u8],
 }
 
-/// Copy a ZIP32 source and reseal only its edited stored members.
+/// Copy a ZIP source and reseal only its edited stored members.
 ///
 /// Lengths, offsets and all metadata stay byte-identical. The governing central
 /// CRC and a present descriptor CRC are recomputed. A deferred zero local CRC
-/// stays zero; an actual local CRC is recomputed. Compression/encryption and
+/// stays zero; an actual local CRC is recomputed. Opaque directory signatures
+/// are preserved only while their covered central headers stay byte-identical.
+/// This function neither verifies nor renews a signature. Compression/encryption and
 /// length-changing edits need their owning rebuilders and are refused here.
 ///
 /// # Errors
-/// Returns unsupported/overlapping/out-of-member edits, invalid physical ZIP32
+/// Returns unsupported/overlapping/out-of-member edits, invalid physical ZIP
 /// framing/provenance or a caller-budget/allocation refusal.
 pub fn rebuild(
     ctx: &DecodeContext<'_>,
@@ -71,7 +73,7 @@ pub fn rebuild(
         if entry.method != 0
             || entry.flags & 1 != 0
             || entry.local_flags & 1 != 0
-            || u64_from_index(entry.payload.window().len()) != u64::from(entry.uncompressed)
+            || u64_from_index(entry.payload.window().len()) != entry.uncompressed
         {
             return Err(
                 "ZIP edit requires an unencrypted directly stored member with matching sizes"
@@ -114,6 +116,23 @@ pub fn rebuild(
         }
         if let Some(descriptor) = entry.descriptor_crc {
             put(&mut result, descriptor)?;
+        }
+    }
+    if let Some(signature) = parts
+        .iter()
+        .find(|part| part.level().as_str() == "zip.digital_signature")
+    {
+        let directory = parts
+            .iter()
+            .find(|part| part.level().as_str() == "zip.central_directory")
+            .ok_or("signed ZIP has no directory frame")?;
+        let start = directory.view().start() - source.start();
+        let end = signature.view().start() - source.start();
+        if result.get(start..end) != source.window().get(start..end) {
+            return Err(
+                "ZIP edit changes signed central-directory bytes; signature renewal is unsupported"
+                    .into(),
+            );
         }
     }
     Ok(result)

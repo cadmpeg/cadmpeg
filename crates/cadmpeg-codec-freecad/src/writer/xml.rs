@@ -249,6 +249,48 @@ fn native_values(
     {
         return Ok(None);
     }
+    let content = value_content(property.id, values, names)?;
+    let mut attributes = vec![
+        ("name", property.name.to_owned()),
+        ("type", property.type_name.to_owned()),
+    ];
+    if let Some(status) = property.status {
+        attributes.push(("status", status.to_string()));
+    }
+    if let Some(dynamic) = dynamic {
+        attributes.push(("group", dynamic.group.clone()));
+        if let Some(value) = &dynamic.documentation {
+            attributes.push(("doc", value.clone()));
+        }
+        if let Some(value) = dynamic.attributes {
+            attributes.push(("attr", value.to_string()));
+        }
+        if let Some(value) = dynamic.read_only {
+            attributes.push(("ro", u8::from(value).to_string()));
+        }
+        if let Some(value) = dynamic.hidden {
+            attributes.push(("hide", u8::from(value).to_string()));
+        }
+    }
+    let mut result = String::from("<Property");
+    for (name, value) in attributes {
+        result.push(' ');
+        result.push_str(name);
+        result.push_str("=\"");
+        result.push_str(&escaped(&value));
+        result.push('"');
+    }
+    result.push('>');
+    result.push_str(&content);
+    result.push_str("</Property>");
+    Ok(Some(result))
+}
+
+fn value_content(
+    id: &str,
+    values: &[ValueRecord],
+    names: &std::collections::HashMap<String, String>,
+) -> Result<String, CodecError> {
     let mut children = BTreeMap::<Option<usize>, Vec<usize>>::new();
     for (index, value) in values.iter().enumerate() {
         if value.order != index
@@ -258,7 +300,7 @@ fn native_values(
         {
             return Err(CodecError::malformed(format_args!(
                 "property {} has an invalid typed value tree",
-                property.id
+                id
             )));
         }
         children.entry(value.parent).or_default().push(index);
@@ -322,40 +364,22 @@ fn native_values(
             stack.extend(children.iter().rev().map(|index| (*index, false)));
         }
     }
-    let mut attributes = vec![
-        ("name", property.name.to_owned()),
-        ("type", property.type_name.to_owned()),
-    ];
-    if let Some(status) = property.status {
-        attributes.push(("status", status.to_string()));
+    Ok(content)
+}
+
+/// Native GUI state descendants have their own semantic owner, not a property wrapper.
+pub(crate) fn gui_state_content(
+    state: &crate::native::GuiStateRecord,
+) -> Result<String, CodecError> {
+    if state.values.iter().any(|value| {
+        value
+            .attributes
+            .iter()
+            .any(|(key, name)| matches!(key.as_str(), "file" | "File") && !name.is_empty())
+    }) {
+        return Ok(String::new());
     }
-    if let Some(dynamic) = dynamic {
-        attributes.push(("group", dynamic.group.clone()));
-        if let Some(value) = &dynamic.documentation {
-            attributes.push(("doc", value.clone()));
-        }
-        if let Some(value) = dynamic.attributes {
-            attributes.push(("attr", value.to_string()));
-        }
-        if let Some(value) = dynamic.read_only {
-            attributes.push(("ro", u8::from(value).to_string()));
-        }
-        if let Some(value) = dynamic.hidden {
-            attributes.push(("hide", u8::from(value).to_string()));
-        }
-    }
-    let mut result = String::from("<Property");
-    for (name, value) in attributes {
-        result.push(' ');
-        result.push_str(name);
-        result.push_str("=\"");
-        result.push_str(&escaped(&value));
-        result.push('"');
-    }
-    result.push('>');
-    result.push_str(&content);
-    result.push_str("</Property>");
-    Ok(Some(result))
+    value_content(&state.id, &state.values, &std::collections::HashMap::new())
 }
 
 #[derive(Debug, Clone)]

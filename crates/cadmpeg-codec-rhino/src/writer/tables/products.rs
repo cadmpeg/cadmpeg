@@ -145,6 +145,7 @@ pub(in crate::writer) fn definitions(
 
 pub(in crate::writer) fn references(
     ir: &CadIr,
+    materials: &super::materials::MaterialPlan,
 ) -> Result<(Vec<Vec<u8>>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
     let graph = AssemblyGraph::new(&ir.model.occurrences).map_err(CodecError::malformed)?;
     let losses = ir
@@ -210,6 +211,7 @@ pub(in crate::writer) fn references(
             &payload,
             occurrence.id.as_str(),
             display,
+            materials,
         )?);
     }
     Ok((result, losses))

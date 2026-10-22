@@ -97,6 +97,13 @@ impl<'a> BodySources<'a> {
         &self.pointers
     }
 
+    pub(crate) fn pointer(&self, id: &str) -> Option<u64> {
+        self.pointers
+            .get(id)
+            .and_then(|fields| fields.get("offset"))
+            .copied()
+    }
+
     pub(crate) fn insert(&mut self, id: String, offset: u64) -> Result<(), CodecError> {
         if self
             .pointers

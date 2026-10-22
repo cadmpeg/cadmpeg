@@ -78,13 +78,16 @@ fn malformed_unused_links_remain_explicitly_source_only() {
         ));
         assert!(graph.properties[0].links().is_empty());
         assert!(graph.properties[0].values().is_empty());
-        assert!(graph.properties[0].xml.text().contains(payload));
+        assert!(
+            document[graph.property_sources[&graph.properties[0].id].record_range()]
+                .contains(payload)
+        );
         assert!(graph.losses.iter().any(|loss| loss.code
             == crate::loss::FreecadLossCode::PersistencePayloadUnresolved
                 .note(String::new())
                 .code));
         let wire = serde_json::to_value(&graph.properties[0]).expect("serialize");
-        let mut property: crate::native::PropertyRecord =
+        let property: crate::native::PropertyRecord =
             serde_json::from_value(wire).expect("deserialize source-only property");
         let decoded = cadmpeg_ir::Codec::decode(
             &crate::FcstdCodec,
@@ -98,11 +101,9 @@ fn malformed_unused_links_remain_explicitly_source_only() {
             .expect("property source");
         let xml =
             crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), &property.id);
-        property.xml = crate::native::RetainedXml::from_source(
-            std::str::from_utf8(xml).expect("original XML"),
-            source.offset(),
-        )
-        .expect("source XML span");
+        let range = graph.property_sources[&property.id].record_range();
+        assert_eq!(xml, document[range.clone()].as_bytes());
+        assert_eq!(source.offset(), u64::try_from(range.start).unwrap());
         assert_eq!(property, graph.properties[0]);
     }
 }

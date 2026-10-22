@@ -168,7 +168,10 @@ fn dot(
     Ok(payload)
 }
 
-pub(in crate::writer) fn records(ir: &CadIr) -> Result<(Vec<Vec<u8>>, Vec<LossNote>), CodecError> {
+pub(in crate::writer) fn records(
+    ir: &CadIr,
+    materials: &super::materials::MaterialPlan,
+) -> Result<(Vec<Vec<u8>>, Vec<LossNote>), CodecError> {
     let mut output = Vec::new();
     let mut losses = Vec::new();
     for annotation in &ir.model.semantic_annotations {
@@ -252,7 +255,8 @@ pub(in crate::writer) fn records(ir: &CadIr) -> Result<(Vec<Vec<u8>>, Vec<LossNo
                 annotation.id
             )));
         }
-        let attributes = object_attributes_payload(ir, annotation.id.as_str(), None, None, None)?;
+        let attributes =
+            object_attributes_payload(ir, annotation.id.as_str(), None, None, None, materials)?;
         output.push(framed_object_record(
             if is_dot { 0x2000 } else { 0x200 },
             class,

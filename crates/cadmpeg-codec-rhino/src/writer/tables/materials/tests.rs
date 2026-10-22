@@ -75,3 +75,17 @@ fn current_material_values_override_native_copies_without_source_bytes() {
 }
 
 mod linkage;
+
+fn materials(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
+    MaterialPlan::new(ir)?.encode(ir)
+}
+
+fn native_index(ir: &CadIr, id: &str) -> Result<Option<i32>, CodecError> {
+    let plan = MaterialPlan::new(ir)?;
+    Ok(match plan.native_targets(id) {
+        [index] => Some(*index),
+        _ => None,
+    })
+}
+
+mod authoring;

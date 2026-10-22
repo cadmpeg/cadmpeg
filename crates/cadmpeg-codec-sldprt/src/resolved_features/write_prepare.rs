@@ -1262,9 +1262,9 @@ fn source_less_lanes(
         )?;
         lane.classes = class_declarations(&lane.native_payload, &lane.id)?;
         lane.names = object_names(&ctx, &lane.native_payload, &lane.id)?;
-        lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names)?;
+        lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names)?.records;
         lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &[])?;
-        lane.references = reference_cells(&lane.scalars, &lane.classes)?;
+        lane.references = reference_cells(&lane.scalars, &lane.classes)?.records;
         lane.sketch_entities = admit_sketch_input_entities(&lane.native_payload, &lane.id)?;
     }
     let bytes = lanes
@@ -1323,9 +1323,9 @@ pub(crate) fn generated_native_lane(
     )?;
     lane.classes = class_declarations(&payload, &lane.id)?;
     lane.names = object_names(&ctx, &payload, &lane.id)?;
-    lane.scalars = named_scalars(&payload, &lane.id, &lane.names)?;
+    lane.scalars = named_scalars(&payload, &lane.id, &lane.names)?.records;
     lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &[])?;
-    lane.references = reference_cells(&lane.scalars, &lane.classes)?;
+    lane.references = reference_cells(&lane.scalars, &lane.classes)?.records;
     lane.sketch_entities = admit_sketch_input_entities(&payload, &lane.id)?;
     lane.native_payload = payload.into();
     let mut body_sources = super::body_sources::BodySources::from_concatenated(&lanes, root)?;

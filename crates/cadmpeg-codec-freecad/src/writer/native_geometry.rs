@@ -22,17 +22,16 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
         return Ok(None);
     }
     let properties = namespace.arena_as::<native::PropertyRecord>("properties")?;
-    let mut typed_properties = Vec::new();
-    for mut property in properties {
-        let Some(xml) = super::xml::native(&property)? else {
-            continue;
-        };
-        property.xml = native::RetainedXml::from_source(&xml, 0)?;
-        typed_properties.push(property);
-    }
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let property_reader = crate::property_reader::PropertyReader::typed(&ctx);
+    let mut typed_properties = Vec::new();
+    for property in properties {
+        if super::xml::native(&property)?.is_some() {
+            typed_properties.push(property);
+        }
+    }
     let mut projected = ir.clone();
     let mut scope = projected.scope;
     scope.model = true;
@@ -62,7 +61,7 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
     let products = namespace.arena_as::<native::ProductNodeRecord>("product_nodes")?;
     let joints = namespace.arena_as::<native::joint::JointRecord>("joints")?;
     let (definitions, occurrences) = crate::product::transfer_neutral(
-        &ctx,
+        &property_reader,
         &products,
         &joints,
         &objects,
@@ -76,9 +75,14 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
         crate::joint::transfer_neutral(&joints, &projected.model.occurrences)?;
     let drawings = namespace.arena_as::<native::DrawingRecord>("drawings")?;
     let annotations = namespace.arena_as::<native::SemanticAnnotationRecord>("annotations")?;
-    crate::drawing::transfer_neutral(&ctx, &mut projected.model, &drawings, &typed_properties)?;
+    crate::drawing::transfer_neutral(
+        &property_reader,
+        &mut projected.model,
+        &drawings,
+        &typed_properties,
+    )?;
     crate::annotation::transfer_neutral(
-        &ctx,
+        &property_reader,
         &mut projected.model,
         &annotations,
         &typed_properties,

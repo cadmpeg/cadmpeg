@@ -745,9 +745,6 @@ pub(crate) struct FeatureInputGeneratedSurfaceIdentity {
     pub(crate) ordinal: u32,
     /// Order among the lane\'s typed content records.
     pub(crate) sequence: u32,
-    /// Byte offset of the first component type signature.
-    #[serde(skip)]
-    pub(crate) offset: Option<u64>,
     /// Four-byte serialized surface identity type family.
     pub(crate) type_prefix: NativeBytes<[u8; 4]>,
     /// Source identifier of the feature that produced the terminal surface.
@@ -939,9 +936,6 @@ pub(crate) struct FeatureInputReference {
     pub(crate) ordinal: u32,
     /// Order among the lane\'s typed content records.
     pub(crate) sequence: u32,
-    /// Byte offset of the reference cell.
-    #[serde(skip)]
-    pub(crate) offset: Option<u64>,
     /// Native reference-cell family.
     pub(crate) kind: FeatureInputOperandKind,
     /// Class declaration assigned to this lane-local token, when unique.

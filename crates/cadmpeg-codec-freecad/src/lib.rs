@@ -38,6 +38,7 @@ mod persistence;
 mod placement;
 mod product;
 mod property_policy;
+mod property_reader;
 mod topology_transfer;
 mod writer;
 
@@ -897,10 +898,21 @@ impl CodecBackend for FcstdCodec {
             )?;
             scan.losses.extend(graph.losses);
             persistence::resolve_side_entries(&mut graph.properties, &scan.data, &mut scan.losses)?;
+            let property_reader = property_reader::PropertyReader::source(
+                ctx,
+                *scan
+                    .data
+                    .get("Document.xml")
+                    .ok_or_else(|| CodecError::malformed("properties have no document source"))?,
+                &graph.property_sources,
+            )?;
             for property in &graph.properties {
-                if let Some(class) =
-                    fidelity::property(&mut source_fidelity, property, &graph.objects)?
-                {
+                if let Some(class) = fidelity::property(
+                    &property_reader,
+                    &mut source_fidelity,
+                    property,
+                    &graph.objects,
+                )? {
                     let code = match class {
                         cadmpeg_ir::ArenaClass::Model => {
                             FreecadLossCode::SourceModelPayloadUnrepresented
@@ -925,8 +937,13 @@ impl CodecBackend for FcstdCodec {
                     &mut layout_pointers,
                 )?;
             }
-            for source in &graph.value_sources {
-                fidelity::value_layout_payloads(
+            for source in graph.value_sources.iter().chain(
+                graph
+                    .property_sources
+                    .values()
+                    .filter(|source| !source.has_values()),
+            ) {
+                fidelity::property_layout_payloads(
                     ctx,
                     *scan
                         .data
@@ -934,6 +951,7 @@ impl CodecBackend for FcstdCodec {
                         .ok_or_else(|| CodecError::malformed("property has no source entry"))?,
                     source,
                     &mut layout_payloads,
+                    &mut layout_pointers,
                 )?;
             }
             for (id, range) in &graph.extension_sources {
@@ -949,9 +967,10 @@ impl CodecBackend for FcstdCodec {
                 )?;
             }
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
-            let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
+            let shape_payloads =
+                brep::parse_payloads(&property_reader, &graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(
-                ctx,
+                &property_reader,
                 document_xml,
                 scan.document.file_version.value(),
                 &graph.properties,
@@ -978,14 +997,21 @@ impl CodecBackend for FcstdCodec {
             namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
             let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;
             namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
-            let joint_records = joint::transfer(ctx, &graph.objects, &graph.properties)?;
+            let joint_records =
+                joint::transfer(&property_reader, &graph.objects, &graph.properties)?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
-            let drawings = drawing::transfer(ctx, &graph.objects, &graph.properties)?;
-            drawing::transfer_neutral(ctx, &mut ir.model, &drawings, &graph.properties)?;
+            let drawings = drawing::transfer(&property_reader, &graph.objects, &graph.properties)?;
+            drawing::transfer_neutral(
+                &property_reader,
+                &mut ir.model,
+                &drawings,
+                &graph.properties,
+            )?;
             namespace.set_arena(ctx, "drawings", &drawings)?;
-            let annotations = annotation::transfer(ctx, &graph.objects, &graph.properties)?;
+            let annotations =
+                annotation::transfer(&property_reader, &graph.objects, &graph.properties)?;
             annotation::transfer_neutral(
-                ctx,
+                &property_reader,
                 &mut ir.model,
                 &annotations,
                 &graph.properties,
@@ -1020,7 +1046,7 @@ impl CodecBackend for FcstdCodec {
                 .add_procedural_surfaces(surface_transfer.procedural)?
                 .map_err(CodecError::malformed)?;
             geometry_transferred |= application_geometry::transfer(
-                ctx,
+                &property_reader,
                 &mut ir,
                 &graph.properties,
                 &entry_records,
@@ -1036,7 +1062,7 @@ impl CodecBackend for FcstdCodec {
             topology_transfer::apply_body_names(&mut ir, &shape_payloads, &graph.properties);
             if ctx.depth() == DecodeDepth::Full {
                 let (cycle_affected, design_losses) = design::transfer(
-                    ctx,
+                    &property_reader,
                     &mut ir,
                     &graph.objects,
                     &graph.properties,
@@ -1061,7 +1087,7 @@ impl CodecBackend for FcstdCodec {
                 "admit FCStd link occurrences",
             )?;
             let (product_definitions, occurrences) = product::transfer_neutral(
-                ctx,
+                &property_reader,
                 &product_nodes,
                 &joint_records,
                 &graph.objects,
@@ -1221,6 +1247,7 @@ impl CodecBackend for FcstdCodec {
             let logical_ledger = container::logical_ledger(
                 &entry_records,
                 &graph.properties,
+                &graph.property_sources,
                 &gui_graph,
                 &shape_payloads,
                 string_tables.as_slice(),

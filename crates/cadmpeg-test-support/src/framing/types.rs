@@ -11,7 +11,7 @@ use cadmpeg_ir::source_fidelity::parts::{PartLevel, PartSpec};
 pub enum FrameParent {
     /// This row is directly contained by the physical input file.
     File,
-    /// One declared `parent` alternative contains this part.
+    /// The physical containing frame; a source proof can bind a declared ancestor.
     Part(usize),
     /// An embedding unit hosts a row whose declared parent is `file`.
     Host(usize),
@@ -28,10 +28,17 @@ pub struct FramedPart<'a> {
     dispatch: Vec<Range<u64>>,
     external_dispatch: Vec<View<'a>>,
     xml_containment: Option<XmlContainment>,
+    zip_containment: Option<ZipContainment>,
 }
 
 #[derive(Debug)]
 pub(super) struct XmlContainment {
+    pub(super) owner: usize,
+    pub(super) parent: PartCapture,
+}
+
+#[derive(Debug)]
+pub(super) struct ZipContainment {
     pub(super) owner: usize,
     pub(super) parent: PartCapture,
 }
@@ -58,6 +65,7 @@ impl<'a> FramedPart<'a> {
             dispatch,
             external_dispatch: Vec::new(),
             xml_containment: None,
+            zip_containment: None,
         })
     }
 
@@ -115,6 +123,36 @@ impl<'a> FramedPart<'a> {
         self.xml_containment.as_ref()
     }
 
+    pub(super) fn bind_zip_directory_parent(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        proof: &super::zip::DirectorySignature<'a>,
+        declared_owner: usize,
+    ) -> Result<(), String> {
+        if self.level.as_str() != "zip.digital_signature"
+            || !matches!(self.parent, FrameParent::Part(_))
+        {
+            return Err("ZIP directory proof requires a physical signature child".into());
+        }
+        let actual = ctx
+            .capture_part_extent(proof.signature())
+            .map_err(|error| error.to_string())?;
+        if !same_extent(&actual, &self.capture) {
+            return Err("ZIP signature proof describes a different source part".into());
+        }
+        self.zip_containment = Some(ZipContainment {
+            owner: declared_owner,
+            parent: ctx
+                .capture_part_extent(proof.directory())
+                .map_err(|error| error.to_string())?,
+        });
+        Ok(())
+    }
+
+    pub(super) fn zip_containment(&self) -> Option<&ZipContainment> {
+        self.zip_containment.as_ref()
+    }
+
     /// Exact qualified table level.
     pub fn level(&self) -> PartLevel {
         self.level
@@ -130,7 +168,7 @@ impl<'a> FramedPart<'a> {
         &self.capture
     }
 
-    /// Declared enclosing frame or physical file.
+    /// Actual enclosing frame or physical file.
     pub fn parent(&self) -> FrameParent {
         self.parent
     }

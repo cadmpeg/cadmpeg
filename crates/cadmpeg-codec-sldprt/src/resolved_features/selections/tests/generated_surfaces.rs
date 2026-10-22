@@ -4,6 +4,30 @@ use super::super::generated_surface_identities;
 use crate::records::{FeatureInputClass, FeatureInputLane};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
+fn captured_identities(
+    ctx: &DecodeContext<'_>,
+    source: cadmpeg_core::decode::View<'_>,
+    lane: &FeatureInputLane,
+) -> (
+    Vec<crate::records::FeatureInputGeneratedSurfaceIdentity>,
+    cadmpeg_ir::SourceFidelity,
+) {
+    let parsed =
+        generated_surface_identities(&lane.id, &lane.classes, &lane.native_payload).unwrap();
+    let mut staged = lane.clone();
+    staged.generated_surface_identities = parsed.records;
+    let mut sources = crate::resolved_features::body_sources::BodySources::from_views([(
+        lane.id.clone(),
+        source,
+    )])
+    .unwrap();
+    crate::resolved_features::generated_surface_layout::capture(ctx, &staged, &mut sources)
+        .unwrap();
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    crate::pmi::layout::install(ctx, sources.into_pointers(), &mut fidelity).unwrap();
+    (staged.generated_surface_identities, fidelity)
+}
+
 #[test]
 fn generated_surface_identity_path_keeps_absent_source_component() {
     let class_name = "moWzdHoleSurfIdRep_c";
@@ -46,10 +70,20 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    let identities = generated_surface_identities(&lane).unwrap();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
+    let (identities, fidelity) = captured_identities(&ctx, root, &lane);
     assert_eq!(identities.len(), 1);
     let identity = &identities[0];
-    assert_eq!(identity.offset, Some(u64::try_from(offset).unwrap()));
+    assert_eq!(
+        fidelity.record_layout()[&identity.id]
+            .pointers()
+            .get("offset")
+            .copied(),
+        Some(u64::try_from(offset).unwrap())
+    );
     assert_eq!(identity.feature_source_id.value(), 89);
     assert_eq!(identity.local_identity, 0x85b5);
     assert_eq!(identity.components.len(), 2);
@@ -106,12 +140,16 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
     };
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let identities = generated_surface_identities(&lane).unwrap();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
+    let (identities, fidelity) = captured_identities(&ctx, root, &lane);
     assert_eq!(identities.len(), 2048);
     for (index, identity) in identities.iter().enumerate() {
         assert_eq!(
-            identity.offset,
+            fidelity.record_layout()[&identity.id]
+                .pointers()
+                .get("offset")
+                .copied(),
             Some(u64::try_from(first + index * 16).unwrap())
         );
         assert_eq!(identity.feature_source_id.value(), 89);

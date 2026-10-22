@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Material values survive inward projection and current-state synthesis.
 
-use super::super::{materials, native_complete, native_index};
+use super::super::{native_complete, MaterialPlan};
+use super::{materials, native_index};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::NativeDisposition;
 use cadmpeg_ir::native::bytes::NativeBytes;
@@ -33,7 +34,7 @@ fn material() -> NativeRecord {
     ).expect("native material")
 }
 
-fn read(records: &[Vec<u8>], project: bool) -> CadIr {
+pub(super) fn read(records: &[Vec<u8>], project: bool) -> CadIr {
     let archive = crate::test_support::test_dump::minimal_document(
         "80",
         &[
@@ -71,11 +72,11 @@ fn read(records: &[Vec<u8>], project: bool) -> CadIr {
     ir
 }
 
-fn source() -> CadIr {
+pub(super) fn source() -> CadIr {
     let record = material();
     assert!(native_complete(&record));
     let fields = record.fields().expect("source fields");
-    let encoded = super::super::encode_material(record.id(), 0, None, Some(&fields))
+    let encoded = super::super::encode_material(record.id(), 0, None, Some(&fields), None)
         .expect("simple native material");
     read(&[encoded], true)
 }
@@ -256,9 +257,13 @@ fn current_material_setting_resolves_inward_and_survives_a_native_only_material(
         &[0_i32.to_le_bytes(), 2_i32.to_le_bytes()].concat(),
     )
     .expect("expected setting");
-    assert!(crate::writer::tables::document::settings(&ir)
-        .expect("linked setting")
-        .contains(&expected));
+    assert!(crate::writer::tables::document::settings(
+        &ir,
+        &MaterialPlan::new(&ir).expect("material plan"),
+        &mut Vec::new()
+    )
+    .expect("linked setting")
+    .contains(&expected));
     let mut other = ir.model.appearances[0].clone();
     other.id = "test:appearance:material#unlinked"
         .try_into()
@@ -270,17 +275,25 @@ fn current_material_setting_resolves_inward_and_survives_a_native_only_material(
         &[1_i32.to_le_bytes(), 2_i32.to_le_bytes()].concat(),
     )
     .expect("reordered current setting");
-    assert!(crate::writer::tables::document::settings(&ir)
-        .expect("reordered inward setting")
-        .contains(&reordered));
+    assert!(crate::writer::tables::document::settings(
+        &ir,
+        &MaterialPlan::new(&ir).expect("material plan"),
+        &mut Vec::new()
+    )
+    .expect("reordered inward setting")
+    .contains(&reordered));
     ir.model.appearances.clear();
     assert_eq!(
         native_index(&ir, &source_id).expect("material index"),
         Some(0)
     );
-    assert!(crate::writer::tables::document::settings(&ir)
-        .expect("native-only setting")
-        .contains(&expected));
+    assert!(crate::writer::tables::document::settings(
+        &ir,
+        &MaterialPlan::new(&ir).expect("material plan"),
+        &mut Vec::new()
+    )
+    .expect("native-only setting")
+    .contains(&expected));
 }
 
 #[test]

@@ -612,6 +612,7 @@ fn metadata_attribute(
 pub(crate) fn logical_ledger(
     entries: &[EntryRecord],
     properties: &[PropertyRecord],
+    property_sources: &BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     gui: &gui::Graph,
     shape_payloads: &[ShapePayloadRecord],
     string_tables: &[StringTableRecord],
@@ -649,9 +650,15 @@ pub(crate) fn logical_ledger(
             let mut ranges = Vec::new();
             if entry.name() == "Document.xml" {
                 for property in properties {
+                    let range = property_sources
+                        .get(&property.id)
+                        .ok_or_else(|| {
+                            CodecError::malformed("property has no original source range")
+                        })?
+                        .record_range();
                     ranges.push((
-                        property.xml.start(),
-                        property.xml.end(),
+                        cadmpeg_core::decode::u64_from_index(range.start),
+                        cadmpeg_core::decode::u64_from_index(range.end),
                         if property.family == PropertyFamily::Unknown {
                             "named_opaque"
                         } else {

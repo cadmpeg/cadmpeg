@@ -119,12 +119,25 @@ pub(crate) fn value_layout_fixture(owner: &str, raw_values: &[&str]) -> cadmpeg_
             text: node.text().map(str::to_owned),
         })
         .collect::<Vec<_>>();
-    let retained = crate::native::RetainedXml::from_source(&xml, 0).expect("fixture source extent");
-    let sources = crate::fidelity::value_sources(
-        &document,
-        std::iter::once((owner, &retained, values.as_slice())),
-    )
-    .expect("fixture value ranges");
+    let property = crate::native::PropertyRecord {
+        id: owner.into(),
+        owner: "fixture".into(),
+        name: "fixture".into(),
+        type_name: "fixture".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        order: 0,
+        body: crate::native::PropertyBody::Persisted {
+            values,
+            links: Vec::new(),
+            side_entries: Vec::new(),
+            dynamic: None,
+        },
+    };
+    let sources = [
+        crate::fidelity::property_source(document.root_element(), &property)
+            .expect("fixture value ranges"),
+    ];
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service())
@@ -165,4 +178,77 @@ pub(crate) fn xml_layout_fixture(owner: &str, xml: &str) -> cadmpeg_ir::SourceFi
         xml.as_bytes()
     );
     fidelity
+}
+
+/// An authored test source kept outside the semantic native record.
+#[derive(Clone)]
+pub(crate) struct PropertyFixture {
+    pub(crate) property: crate::native::PropertyRecord,
+    pub(crate) source: String,
+}
+
+impl PropertyFixture {
+    pub(crate) fn new(property: crate::native::PropertyRecord, source: impl Into<String>) -> Self {
+        Self {
+            property,
+            source: source.into(),
+        }
+    }
+}
+
+impl std::ops::Deref for PropertyFixture {
+    type Target = crate::native::PropertyRecord;
+    fn deref(&self) -> &Self::Target {
+        &self.property
+    }
+}
+
+impl std::ops::DerefMut for PropertyFixture {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.property
+    }
+}
+
+pub(crate) fn with_property_reader<T>(
+    input: &[u8],
+    properties: &[&PropertyFixture],
+    policy: &cadmpeg_core::decode::DecodePolicy,
+    use_reader: impl FnOnce(&crate::property_reader::PropertyReader<'_, '_>) -> T,
+) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    use std::collections::BTreeMap;
+    let mut bytes = input.to_vec();
+    let mut ranges = BTreeMap::new();
+    for property in properties {
+        let range = if let Some(start) = input
+            .windows(property.source.len())
+            .position(|window| window == property.source.as_bytes())
+        {
+            start..start + property.source.len()
+        } else {
+            let start = bytes.len();
+            bytes.extend_from_slice(property.source.as_bytes());
+            start..bytes.len()
+        };
+        assert!(
+            ranges.insert(property.id.clone(), range).is_none(),
+            "unique source fixture id"
+        );
+    }
+    let arena = DecodeArena::new();
+    let (context, root) = DecodeContext::from_root_bytes(&bytes, &arena, policy)
+        .expect("authored source bytes fit the test policy");
+    let sources = ranges
+        .into_iter()
+        .map(|(id, range)| {
+            (
+                id,
+                root.child(range.start, range.end)
+                    .expect("original fixture source extent"),
+            )
+        })
+        .collect();
+    let reader = crate::property_reader::PropertyReader::fixtures(&context, sources)
+        .expect("fixture Views belong to the real source session");
+    use_reader(&reader)
 }

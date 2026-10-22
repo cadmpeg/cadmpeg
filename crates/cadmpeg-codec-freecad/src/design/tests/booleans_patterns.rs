@@ -2,10 +2,10 @@
 //! Design booleans-patterns transfer unit tests.
 
 use crate::design::tests::definition;
-use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
+use crate::native::{PropertyBody, PropertyFamily, PropertyRecord};
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodePolicy;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
@@ -13,37 +13,42 @@ use std::io::Cursor;
 const EPS_PATTERN_ANGLE: f64 = 1.0e-12;
 const EPS_PATTERN_ANGLE_DEGREES: f64 = 1.0e-12;
 
-fn pattern_scalar(name: &str, value: f64) -> PropertyRecord {
+fn pattern_scalar(name: &str, value: f64) -> crate::test_support::source_fidelity::PropertyFixture {
     let xml = format!("<Property><Float value=\"{value}\"/></Property>");
-    PropertyRecord {
-        id: name.to_owned(),
-        owner: "Pattern".to_owned(),
-        name: name.to_owned(),
-        type_name: "App::PropertyLength".to_owned(),
-        family: PropertyFamily::Quantity,
-        status: None,
-        body: PropertyBody::Persisted {
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: Vec::new(),
-            dynamic: None,
+    crate::test_support::source_fidelity::PropertyFixture::new(
+        PropertyRecord {
+            id: name.to_owned(),
+            owner: "Pattern".to_owned(),
+            name: name.to_owned(),
+            type_name: "App::PropertyLength".to_owned(),
+            family: PropertyFamily::Quantity,
+            status: None,
+            body: PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: Vec::new(),
+                dynamic: None,
+            },
+            order: 0,
         },
-        order: 0,
-        xml: RetainedXml::from_text(xml, 0).expect("test scalar XML"),
-    }
+        xml,
+    )
 }
 
 #[test]
 fn uniform_pattern_intervals_yield_one_location_per_occurrence() {
     let length = pattern_scalar("Length", 12.0);
-    let properties = [&length];
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("context");
-    let admitted =
-        crate::design::pattern_locations(&ctx, &properties, "", 4, 0, ("Length", "Offset"), &[])
-            .expect("compute the pattern locations")
-            .expect("uniform locations");
+    let properties = [&length.property];
+    let admitted = crate::test_support::source_fidelity::with_property_reader(
+        &[0],
+        &[&length],
+        &DecodePolicy::default(),
+        |ctx| {
+            crate::design::pattern_locations(ctx, &properties, "", 4, 0, ("Length", "Offset"), &[])
+                .expect("compute the pattern locations")
+                .expect("uniform locations")
+        },
+    );
     assert_eq!(admitted.len(), 4);
 }
 

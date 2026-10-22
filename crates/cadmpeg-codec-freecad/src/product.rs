@@ -197,7 +197,7 @@ fn product_record_index(
 
 /// Project the lossless native product records into reusable definitions and placed uses.
 pub(crate) fn transfer_neutral(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     records: &[ProductNodeRecord],
     joints: &[JointRecord],
     objects: &[ObjectRecord],
@@ -1016,7 +1016,7 @@ fn product_kind(kind: &str) -> Option<ProductKind> {
 }
 
 fn metadata_string(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<String>, CodecError> {
@@ -1026,7 +1026,8 @@ fn metadata_string(
     if property.type_name != "App::PropertyString" {
         return Ok(None);
     }
-    let document = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
+    let property_xml = ctx.property_xml(property)?;
+    let document = match ctx.parse_xml(property_xml.as_ref(), "FreeCAD XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {

@@ -347,10 +347,19 @@ fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="0" EndY="0"/></Geometry>
 </GeometryList></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        document.as_bytes(),
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("document source");
     let xml = crate::container::admit_document(&ctx, document.as_bytes()).expect("document XML");
     let graph = crate::persistence::parse_document(&xml, crate::persistence::Vocabulary::Objects)
         .expect("persistence graph");
+    let reader =
+        crate::property_reader::PropertyReader::source(&ctx, source, &graph.property_sources)
+            .expect("original property ranges");
     let sketch = &graph.objects[0];
     let owned = graph
         .properties
@@ -360,7 +369,7 @@ fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
     let decode = |limit| {
         let mut losses = Vec::new();
         let decoded = super::super::parse_sketch(
-            &ctx,
+            &reader,
             sketch,
             &owned,
             &cadmpeg_core::decode::WorkBudget::new(limit),
