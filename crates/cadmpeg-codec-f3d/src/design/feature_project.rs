@@ -7852,18 +7852,38 @@ fn project_extrude(
                 .ok()
         };
     let fixed_lanes = scope.fixed_extrude_parameters();
-    let profile_offset = match or_none!(unique("ProfileOffset")) {
+    // When a parameter and a fixed lane both carry an offset, they agree.
+    let offset = |parameter: Option<Length>, lane: Option<Length>| match (parameter, lane) {
+        (Some(parameter), Some(lane))
+            if (parameter.get() - lane.get()).abs() > EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9 =>
+        {
+            Err(())
+        }
+        (Some(value), _) | (None, Some(value)) => Ok(Some(value)),
+        (None, None) => Ok(None),
+    };
+    let parameter_profile_offset = match or_none!(unique("ProfileOffset")) {
         Some(parameter) => Some(or_none!(design_length(parameter))),
-        None => or_none!(fixed_length(
+        None => None,
+    };
+    let profile_offset = or_none!(offset(
+        parameter_profile_offset,
+        or_none!(fixed_length(
             fixed_lanes.and_then(|fixed| fixed.profile_offset.as_ref())
         )),
-    };
-    let side_one_offset = match or_none!(unique("Side1Offset")) {
+    )
+    .ok());
+    let parameter_side_one_offset = match or_none!(unique("Side1Offset")) {
         Some(parameter) => Some(or_none!(design_length(parameter))),
-        None => or_none!(fixed_length(
+        None => None,
+    };
+    let side_one_offset = or_none!(offset(
+        parameter_side_one_offset,
+        or_none!(fixed_length(
             fixed_lanes.and_then(|fixed| fixed.side_one_offset.as_ref())
         )),
-    };
+    )
+    .ok());
     let side_one_offset_count = parameters
         .iter()
         .filter(|(_, parameter)| parameter.source_kind() == "Side1Offset")

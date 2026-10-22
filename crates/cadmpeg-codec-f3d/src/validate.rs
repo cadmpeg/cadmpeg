@@ -5163,10 +5163,32 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let along_count = parameter_kind_count("AlongDistance");
             let against_count = parameter_kind_count("AgainstDistance");
             let fixed_lanes = scope.fixed_extrude_parameters();
-            let profile_offset_count = parameter_kind_count("ProfileOffset")
-                + usize::from(fixed_lanes.is_some_and(|fixed| fixed.profile_offset.is_some()));
-            let side_one_offset_count = parameter_kind_count("Side1Offset")
-                + usize::from(fixed_lanes.is_some_and(|fixed| fixed.side_one_offset.is_some()));
+            // A fixed lane is usually also the parameter owner of its source
+            // kind; it adds a carrier only when it is not.
+            let lane_count = |source_kind: &str,
+                              lane: Option<
+                &records::feature::fixed_parameters::DesignFixedExtrudeScalar,
+            >| {
+                let lane_is_owner = lane.is_some_and(|lane| {
+                    native.design_parameter_owners.iter().any(|owner| {
+                        design_stream(owner.id()) == native_stream
+                            && owner.scope_record_index() == scope.record_index
+                            && owner.record_index() == lane.record_index
+                            && parameters_by_index
+                                .get(&(native_stream, owner.parameter_record_index()))
+                                .is_some_and(|parameter| parameter.source_kind() == source_kind)
+                    })
+                });
+                parameter_kind_count(source_kind) + usize::from(lane.is_some() && !lane_is_owner)
+            };
+            let profile_offset_count = lane_count(
+                "ProfileOffset",
+                fixed_lanes.and_then(|fixed| fixed.profile_offset.as_ref()),
+            );
+            let side_one_offset_count = lane_count(
+                "Side1Offset",
+                fixed_lanes.and_then(|fixed| fixed.side_one_offset.as_ref()),
+            );
             // A to-face Extrude's fixed lanes carry only its termination
             // offset and taper.
             let fixed_lanes_are_to_face_lanes = fixed_lanes.is_none_or(|fixed| {

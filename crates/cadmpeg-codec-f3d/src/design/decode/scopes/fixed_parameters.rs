@@ -43,7 +43,13 @@ pub(super) fn exact_fixed_extrude_parameters(
     exact_ordered_fixed_extrude_lanes(bytes, records, scope, parameters, parameter_owners).or_else(
         || {
             let owners = reference_aware_lane_owners(bytes, scope.extrude_prologue()?)?;
-            exact_named_fixed_extrude_lanes(bytes, records, scope, &owners)
+            exact_named_fixed_extrude_lanes(
+                bytes,
+                records,
+                scope,
+                &owners,
+                (parameters, parameter_owners),
+            )
         },
     )
 }
@@ -236,13 +242,33 @@ fn reference_aware_lane_owners(
 }
 
 /// Assign every fixed scalar lane owned by the scope to the prologue slot
-/// that names it. A lane that no slot names leaves the lanes unassigned.
+/// that names it. A lane that no slot names, or whose linked parameter has
+/// another source kind, leaves the lanes unassigned.
 fn exact_named_fixed_extrude_lanes(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     owners: &ReferenceAwareLaneOwners,
+    (parameters, parameter_owners): (&[DesignParameter], &[DesignParameterOwner]),
 ) -> Option<DesignFixedExtrudeParameters> {
+    let linked_source_kind = |record_index: u32| {
+        parameter_owners
+            .iter()
+            .find(|owner| {
+                native_stream(owner.id()) == native_stream(&scope.id)
+                    && owner.scope_record_index() == scope.record_index
+                    && owner.record_index() == record_index
+            })
+            .and_then(|owner| {
+                parameters
+                    .iter()
+                    .find(|parameter| {
+                        native_stream(&parameter.id) == native_stream(&scope.id)
+                            && parameter.record_index == owner.parameter_record_index()
+                    })
+                    .map(DesignParameter::source_kind)
+            })
+    };
     let mut parameters = DesignFixedExtrudeParameters {
         along_distance: None,
         taper_angle: None,
@@ -264,6 +290,20 @@ fn exact_named_fixed_extrude_lanes(
             record_index: *record_index,
             value_offset: lane.value_offset,
         };
+        let expected_kind = if owners.along_distance == Some(*record_index) {
+            "AlongDistance"
+        } else if owners.taper_angle == Some(*record_index) {
+            "TaperAngle"
+        } else if owners.profile_offset == Some(*record_index) {
+            "ProfileOffset"
+        } else if owners.side_one_offset == Some(*record_index) {
+            "Side1Offset"
+        } else {
+            return None;
+        };
+        if linked_source_kind(*record_index).is_some_and(|kind| kind.as_str() != expected_kind) {
+            return None;
+        }
         let slot = if owners.along_distance == Some(*record_index) {
             &mut parameters.along_distance
         } else {
