@@ -197,3 +197,16 @@ fn absent_normal_lane_preserves_unshaded_geometry_and_raw_channel() {
     assert_eq!(summary.opaque_extended_tables, 1);
     assert!(faces[0].mesh.channels[2].data().is_empty());
 }
+
+#[test]
+fn contradictory_later_header_still_bounds_the_previous_metadata() {
+    let mut first = record(0x0020_1e96, [0, 1, 1], &varying());
+    first.truncate(first.len() - 8);
+    let mut second = record(0x0020_1a96, [0, 0, 1], &varying());
+    second[..4].copy_from_slice(&2_u32.to_le_bytes());
+    let (faces, summary) = decode(&[first, second]);
+    assert_eq!(faces.len(), 2);
+    assert_eq!(summary.triangles, 2);
+    assert_eq!(summary.extended_forms, [0; 4]);
+    assert_eq!(summary.opaque_extended_tables, 2);
+}

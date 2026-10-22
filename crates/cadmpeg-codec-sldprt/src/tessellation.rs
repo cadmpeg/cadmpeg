@@ -847,9 +847,8 @@ fn table_counts_match(payload: &[u8], at: usize, face: &DisplayFace) -> bool {
 
 fn extended_header_word(payload: &[u8], face: &DisplayFace) -> Option<u32> {
     let header = face.table.start().checked_sub(extended_face::LEN)?;
-    (descriptor_table_offset(payload, header) == extended_face::LEN
-        && table_counts_match(payload, header, face))
-    .then(|| View::u32_le_at(payload, header + extended_face::FORM_TOKEN))?
+    (descriptor_table_offset(payload, header) == extended_face::LEN)
+        .then(|| View::u32_le_at(payload, header + extended_face::FORM_TOKEN))?
 }
 
 fn table_header_start(payload: &[u8], face: &DisplayFace) -> usize {
@@ -869,6 +868,10 @@ fn known_extended_form(
     word: u32,
     metadata_end: usize,
 ) -> Option<usize> {
+    let header = face.table.start().checked_sub(extended_face::LEN)?;
+    if !table_counts_match(payload, header, face) {
+        return None;
+    }
     let start = face.metadata.start();
     let end = start.checked_add(extended_meta::LEN)?;
     if end > metadata_end {
