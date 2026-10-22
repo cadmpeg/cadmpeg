@@ -4498,27 +4498,20 @@ mod shape_association_tests {
     use crate::native::{PropertyFamily, PropertyRecord};
 
     fn shape_property(id: &str) -> PropertyRecord {
-        {
-            let property = PropertyRecord {
-                dynamic: None,
-                id: id.into(),
-                owner: "object".into(),
-                name: "Shape".into(),
-                type_name: "Part::PropertyPartShape".into(),
-                family: PropertyFamily::Geometry,
-                status: None,
-                body: Some(crate::native::PropertyBody::Persisted {
-                    values: Vec::new(),
-                    links: Vec::new(),
-                    side_entries: Vec::new(),
-                }),
-                order: 0,
-            };
-            let _source = crate::test_support::source_fidelity::xml_layout_fixture(
-                &property.id,
-                &("<Property/>"),
-            );
-            property
+        PropertyRecord {
+            dynamic: None,
+            id: id.into(),
+            owner: "object".into(),
+            name: "Shape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: PropertyFamily::Geometry,
+            status: None,
+            body: Some(crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: Vec::new(),
+            }),
+            order: 0,
         }
     }
 

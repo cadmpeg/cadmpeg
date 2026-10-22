@@ -605,3 +605,28 @@ fn part_limit_keeps_attempted_owner_after_the_resource_fuse_is_acknowledged() {
     ctx.record("next", root, || Ok(())).unwrap();
     assert_eq!(ctx.take_record_captures().unwrap().len(), 1);
 }
+
+#[test]
+fn a_record_attempt_is_charged_the_same_at_every_part_depth() {
+    fn charge_inside<'a>(
+        ctx: &DecodeContext<'a>,
+        root: crate::decode::View<'a>,
+        depth: usize,
+    ) -> Result<u64, CodecError> {
+        if depth == 0 {
+            let before = ctx.retained_bytes_available();
+            ctx.record("attempted", root, || Ok(()))?;
+            return Ok(before - ctx.retained_bytes_available());
+        }
+        ctx.part_transaction(root, || charge_inside(ctx, root, depth - 1))?
+            .into_parts()
+            .1
+    }
+    let charges = [1, 2, 4].map(|depth| {
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(b"ABC", &arena, &DecodePolicy::service()).unwrap();
+        charge_inside(&ctx, root, depth).unwrap()
+    });
+    assert_eq!(charges, [charges[0]; 3]);
+}

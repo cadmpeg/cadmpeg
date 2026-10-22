@@ -51,10 +51,7 @@ pub(crate) fn selected(node: roxmltree::Node<'_, '_>) -> bool {
         && ["ro", "hide"].into_iter().any(|key| {
             node.attributes()
                 .find(|attribute| attribute.namespace().is_none() && attribute.name() == key)
-                .is_some_and(|attribute| {
-                    crate::native::parse_bool(attribute.value())
-                        != super::bool_attr(Some(attribute.value()))
-                })
+                .is_some_and(|attribute| crate::native::parse_bool(attribute.value()).is_none())
         })
     {
         return false;

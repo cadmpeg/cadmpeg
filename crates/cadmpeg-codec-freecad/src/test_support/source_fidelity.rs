@@ -191,27 +191,6 @@ pub(crate) fn layout<T: serde::de::DeserializeOwned>(
     serde_json::from_value(value).expect("source layout has its declared typed shape")
 }
 
-/// Preserve an authored source-XML fixture after its native wrapper is removed.
-pub(crate) fn xml_layout_fixture(owner: &str, xml: &str) -> cadmpeg_ir::SourceFidelity {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use std::collections::BTreeMap;
-    let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service())
-            .expect("fixture source");
-    let mut payloads = BTreeMap::new();
-    crate::fidelity::xml_layout_payload(&ctx, root, owner, 0..xml.len(), &mut payloads)
-        .expect("fixture XML payload");
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    crate::fidelity::install_layouts(&ctx, &mut fidelity, payloads, BTreeMap::new())
-        .expect("fixture XML layout");
-    assert_eq!(
-        fidelity.record_layout()[owner].payloads()["raw_xml"].as_ref(),
-        xml.as_bytes()
-    );
-    fidelity
-}
-
 /// An authored test source kept outside the semantic native record.
 #[derive(Clone)]
 pub(crate) struct PropertyFixture {

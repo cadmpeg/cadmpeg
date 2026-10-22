@@ -398,13 +398,15 @@ fn unsupported_scalar_shapes_and_dynamic_fallbacks_retain_the_generic_native_mea
             if !dynamic.is_empty() {
                 let layout = &decoded.source_fidelity().record_layout()[properties[0].id.as_str()];
                 let reads = &layout.reads()[layout.stream()];
-                for text in ["TrUe", "unknown"] {
+                let range = |text: &str| {
                     let start = u64::try_from(xml.find(text).unwrap()).unwrap();
-                    let end = start + u64::try_from(text.len()).unwrap();
-                    assert!(reads
-                        .iter()
-                        .all(|read| read.end <= start || end <= read.start));
-                }
+                    start..start + u64::try_from(text.len()).unwrap()
+                };
+                assert!(reads.contains(&range("TrUe")));
+                let unknown = range("unknown");
+                assert!(reads
+                    .iter()
+                    .all(|read| read.end <= unknown.start || unknown.end <= read.start));
             }
         }
     }

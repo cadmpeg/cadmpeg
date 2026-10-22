@@ -615,31 +615,22 @@ pub(crate) mod tests {
     use crate::test_support::test_archive::{archive, assert_valid_document};
     use crate::FcstdCodec;
 
-    fn diagnostic_property(
-        name: &str,
-        type_name: &str,
-        xml: &str,
-    ) -> crate::native::PropertyRecord {
-        {
-            let property = crate::native::PropertyRecord {
-                dynamic: None,
-                id: "property".into(),
-                owner: "joint".into(),
-                name: name.into(),
-                type_name: type_name.into(),
-                family: crate::native::PropertyFamily::Unknown,
-                status: None,
-                body: Some(crate::native::PropertyBody::Transient),
-                order: 0,
-            };
-            let _source =
-                crate::test_support::source_fidelity::xml_layout_fixture(&property.id, &(xml));
-            property
+    fn diagnostic_property(name: &str, type_name: &str) -> crate::native::PropertyRecord {
+        crate::native::PropertyRecord {
+            dynamic: None,
+            id: "property".into(),
+            owner: "joint".into(),
+            name: name.into(),
+            type_name: type_name.into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            body: Some(crate::native::PropertyBody::Transient),
+            order: 0,
         }
     }
 
     fn scalar_property(type_name: &str, xml: &str) -> crate::native::PropertyRecord {
-        let mut property = diagnostic_property("Angle", type_name, xml);
+        let mut property = diagnostic_property("Angle", type_name);
         let document = roxmltree::Document::parse(xml).expect("valid scalar property XML");
         let values = document
             .root_element()
