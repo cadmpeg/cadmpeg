@@ -117,7 +117,7 @@ fn unreadable_design_property_has_an_unrepresented_design_payload() {
     let properties = namespace.arena_as::<PropertyRecord>("properties").unwrap();
     assert!(matches!(
         properties[0].body,
-        crate::native::PropertyBody::Unreadable(_)
+        Some(crate::native::PropertyBody::Unreadable(_))
     ));
     assert!(decoded
         .report()

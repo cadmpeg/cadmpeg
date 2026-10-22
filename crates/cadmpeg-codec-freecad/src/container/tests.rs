@@ -85,22 +85,23 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
             .into_iter()
             .map(|name| {
                 let property = crate::native::PropertyRecord {
+                    dynamic: None,
                     id: format!("fcstd:native:property#{name}"),
                     owner: "fcstd:native:object#Owner".into(),
                     name: name.into(),
                     type_name: "App::PropertyFileIncluded".into(),
                     family: crate::native::PropertyFamily::File,
                     status: None,
-                    body: crate::native::PropertyBody::Persisted {
+                    body: Some(crate::native::PropertyBody::Persisted {
                         values: Vec::new(),
                         links: Vec::new(),
-                        dynamic: None,
+
                         side_entries: vec![
                             scan.entries[0].name.clone(),
                             "Missing.bin".into(),
                             scan.entries[0].name.clone(),
                         ],
-                    },
+                    }),
                     order: 0,
                 };
                 let _fidelity = crate::test_support::source_fidelity::xml_layout_fixture(

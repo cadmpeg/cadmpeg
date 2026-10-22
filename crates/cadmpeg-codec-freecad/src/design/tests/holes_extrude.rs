@@ -1049,7 +1049,10 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
     assert!(properties.iter().any(|property| property.owner
         == crate::native::native_id("object", "Profile")
         && property.name == "Placement"
-        && matches!(property.body, crate::native::PropertyBody::Persisted { .. })));
+        && matches!(
+            property.body,
+            Some(crate::native::PropertyBody::Persisted { .. })
+        )));
     assert_valid_document(result.ir());
 }
 

@@ -937,12 +937,10 @@ impl CodecBackend for FcstdCodec {
                     &mut layout_pointers,
                 )?;
             }
-            for source in graph.value_sources.iter().chain(
-                graph
-                    .property_sources
-                    .values()
-                    .filter(|source| !source.has_values()),
-            ) {
+            for property in &graph.properties {
+                let source = graph.property_sources.get(&property.id).ok_or_else(|| {
+                    CodecError::malformed("property has no original source range")
+                })?;
                 fidelity::captured_property_layout_payloads(
                     ctx,
                     *scan
@@ -950,6 +948,7 @@ impl CodecBackend for FcstdCodec {
                         .get("Document.xml")
                         .ok_or_else(|| CodecError::malformed("property has no source entry"))?,
                     source,
+                    property,
                     &mut layout_payloads,
                     &mut layout_pointers,
                 )?;

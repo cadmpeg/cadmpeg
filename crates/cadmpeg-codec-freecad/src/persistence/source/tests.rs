@@ -111,7 +111,7 @@ fn unreadable_and_opaque_property_values_receive_no_scalar_read_credit() {
     let graph = parse_document_source(&ctx, source, &dom, Vocabulary::Objects).unwrap();
     assert!(matches!(
         graph.properties[0].body,
-        crate::native::PropertyBody::Unreadable(_)
+        Some(crate::native::PropertyBody::Unreadable(_))
     ));
     assert_eq!(
         graph.properties[1].values()[0].attributes["value"],

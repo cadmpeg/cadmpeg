@@ -99,6 +99,8 @@ fn rse_native_projection_projects_malformed_unpaired_and_unframed_segments() {
         .identity_issues
         .push("identity issue".into());
     container.rse.segments[0].meta = SegmentMetaState::Malformed {
+        source: None,
+        framing: None,
         declared: None,
         detail: "metadata issue".into(),
     };
@@ -609,7 +611,7 @@ fn native_rse_projection_refuses_entity_limit_at_record_creation() {
         &cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor)
     )
     .is_ok());
-    assert!(decode_container(&setup_ctx, &container).is_ok());
+    assert!(decode_container(&setup_ctx, container).is_ok());
 }
 
 #[test]
@@ -735,7 +737,7 @@ fn nonfinite_assembly_placement_transform_is_rejected_at_parse() {
         .expect("container fixture");
     let container = InventorContainer::open(&ctx, root).expect("container fixture");
     let decoded =
-        decode_container(&ctx, &container).expect("invalid placement must not fail decode");
+        decode_container(&ctx, container).expect("invalid placement must not fail decode");
     let namespace = decoded
         .ir
         .native
@@ -927,7 +929,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
     edit(&mut document);
     container.ufrx = UfrxState::Parsed(Box::new(document));
     let decoded =
-        decode_container(&ctx, &container).expect("rejected native record must not fail decode");
+        decode_container(&ctx, container).expect("rejected native record must not fail decode");
     assert!(decoded
         .body
         .losses

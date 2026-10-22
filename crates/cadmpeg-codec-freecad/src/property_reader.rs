@@ -69,6 +69,9 @@ impl<'ctx, 'arena> PropertyReader<'ctx, 'arena> {
         &self,
         property: &PropertyRecord,
     ) -> Result<Cow<'_, str>, CodecError> {
+        if property.body.is_none() {
+            return Err(CodecError::malformed("property body is not held"));
+        }
         match &self.trees {
             PropertyTrees::Source { document, ranges } => {
                 let source = ranges.get(&property.id).ok_or_else(|| {

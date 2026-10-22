@@ -17,18 +17,18 @@ fn pattern_scalar(name: &str, value: f64) -> crate::test_support::source_fidelit
     let xml = format!("<Property><Float value=\"{value}\"/></Property>");
     crate::test_support::source_fidelity::PropertyFixture::new(
         PropertyRecord {
+            dynamic: None,
             id: name.to_owned(),
             owner: "Pattern".to_owned(),
             name: name.to_owned(),
             type_name: "App::PropertyLength".to_owned(),
             family: PropertyFamily::Quantity,
             status: None,
-            body: PropertyBody::Persisted {
+            body: Some(PropertyBody::Persisted {
                 values: Vec::new(),
                 links: Vec::new(),
                 side_entries: Vec::new(),
-                dynamic: None,
-            },
+            }),
             order: 0,
         },
         xml,

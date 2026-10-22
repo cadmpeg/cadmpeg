@@ -17,7 +17,7 @@ pub(super) fn validate<'source>(
             part.state() == &PartState::GivenUp {}
                 && matches!(
                     part.level().as_str(),
-                    "freecad.properties" | "freecad.property"
+                    "freecad.properties" | "freecad.property" | "freecad.property_value"
                 )
         })
     };
@@ -26,18 +26,31 @@ pub(super) fn validate<'source>(
     }
     let document = archive.open(ctx, "Document.xml")?;
     let xml = crate::container::admit_document(ctx, document.window())?;
-    let count = xml
-        .root_element()
-        .children()
-        .filter(|node| node.has_tag_name("Properties"))
-        .try_fold(0usize, |sum, container| {
-            sum.checked_add(1)?.checked_add(
-                container
-                    .children()
-                    .filter(|node| crate::persistence::document_properties::selected(*node))
-                    .count(),
-            )
-        })
+    let nodes = || {
+        xml.root_element()
+            .children()
+            .filter(|node| node.has_tag_name("Properties"))
+            .flat_map(|container| {
+                std::iter::once(("freecad.properties", container)).chain(
+                    container
+                        .children()
+                        .filter(|node| crate::persistence::document_properties::selected(*node))
+                        .flat_map(|node| {
+                            std::iter::once(("freecad.property", node)).chain(
+                                node.children()
+                                    .filter(move |value| {
+                                        node.attribute("type")
+                                            == Some("App::PropertyIntegerConstraint")
+                                            && value.is_element()
+                                    })
+                                    .map(|value| ("freecad.property_value", value)),
+                            )
+                        }),
+                )
+            })
+    };
+    let count = nodes()
+        .try_fold(0usize, |sum, _| sum.checked_add(1))
         .ok_or_else(|| CodecError::malformed("property source inventory count overflows"))?;
     let bytes = count
         .checked_mul(size_of::<(&str, u64, u64, View<'_>)>())
@@ -48,23 +61,10 @@ pub(super) fn validate<'source>(
         ("", 0, 0, document),
         "FreeCAD property source integrity",
     )?;
-    let mut index = 0;
-    for container in xml
-        .root_element()
-        .children()
-        .filter(|node| node.has_tag_name("Properties"))
-    {
-        for (level, node) in std::iter::once(("freecad.properties", container)).chain(
-            container
-                .children()
-                .filter(|node| crate::persistence::document_properties::selected(*node))
-                .map(|node| ("freecad.property", node)),
-        ) {
-            let extent = crate::fidelity::relative_xml_extent(document, node.range())?;
-            let capture = ctx.capture_part_extent(extent)?;
-            actual[index] = (level, capture.offset(), capture.byte_len(), extent);
-            index += 1;
-        }
+    for (index, (level, node)) in nodes().enumerate() {
+        let extent = crate::fidelity::relative_xml_extent(document, node.range())?;
+        let capture = ctx.capture_part_extent(extent)?;
+        actual[index] = (level, capture.offset(), capture.byte_len(), extent);
     }
     actual.sort_unstable_by_key(|entry| (entry.0, entry.1, entry.2));
     for (id, part) in failures() {

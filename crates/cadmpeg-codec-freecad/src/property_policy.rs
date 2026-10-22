@@ -199,7 +199,10 @@ pub(crate) fn has_neutral_form(name: &str) -> bool {
 /// Only fields emitted by this codec are projection framing. A user's property
 /// sharing a prefix remains content and receives an ordinary neutral home.
 pub(crate) fn is_projection_metadata(property: &crate::native::PropertyRecord) -> bool {
-    if !matches!(&property.body, crate::native::PropertyBody::Persisted { dynamic: Some(dynamic), .. } if dynamic.group == "CADIR")
+    if !property
+        .dynamic
+        .as_ref()
+        .is_some_and(|dynamic| dynamic.group == "CADIR")
     {
         return false;
     }

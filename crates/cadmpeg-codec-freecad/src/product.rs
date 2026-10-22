@@ -54,7 +54,11 @@ pub(crate) fn transfer(
         let mut owned = Vec::new();
         owned.extend_from_slice(source);
         if owned.iter().any(|property| {
-            matches!(property.body, crate::native::PropertyBody::Unreadable(_))
+            (property.body.is_none()
+                || matches!(
+                    property.body,
+                    Some(crate::native::PropertyBody::Unreadable(_))
+                ))
                 && matches!(
                     property.name.as_str(),
                     "Group"

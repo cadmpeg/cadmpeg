@@ -56,3 +56,5 @@ assembly_owner!(super::PmAppRenderingStyleRecord);
 assembly_owner!(super::PmGraphicsPrimaryColorStyleRecord);
 
 assembly_owner!(super::RevisionRecord);
+
+assembly_owner!(super::MetaTypeRecord);

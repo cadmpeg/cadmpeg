@@ -28,11 +28,11 @@ fn changed_group_and_documentation_strings_feed_kept_fields_with_exact_nonzero_s
         let graph = parse_document_source(&ctx, view, &dom, Vocabulary::Objects).unwrap();
         assert_eq!(graph.properties, pure.properties);
         let property = &graph.properties[0];
-        let crate::native::PropertyBody::Persisted {
-            dynamic: Some(metadata),
-            ..
-        } = &property.body
-        else {
+        assert!(matches!(
+            &property.body,
+            Some(crate::native::PropertyBody::Persisted { .. })
+        ));
+        let Some(metadata) = &property.dynamic else {
             panic!("actual kept dynamic metadata: {property:?}")
         };
         assert_eq!(metadata.group, group);
@@ -98,13 +98,14 @@ fn absent_group_namespace_lookalikes_and_unreadable_bodies_keep_strings_uncredit
         if readable {
             assert!(matches!(
                 &property.body,
-                crate::native::PropertyBody::Persisted { dynamic: None, .. }
+                Some(crate::native::PropertyBody::Persisted { .. })
             ));
+            assert!(property.dynamic.is_none());
             assert_eq!(property.values()[0].attributes["value"], "7.5");
         } else {
             assert!(matches!(
                 &property.body,
-                crate::native::PropertyBody::Unreadable(_)
+                Some(crate::native::PropertyBody::Unreadable(_))
             ));
             assert!(property.values().is_empty());
         }
@@ -140,11 +141,11 @@ fn abandoned_actual_dynamic_property_producer_rolls_back_group_doc_and_value_rea
                 Some(&source),
                 false,
             )?;
-            let crate::native::PropertyBody::Persisted {
-                dynamic: Some(metadata),
-                ..
-            } = &property.body
-            else {
+            assert!(matches!(
+                &property.body,
+                Some(crate::native::PropertyBody::Persisted { .. })
+            ));
+            let Some(metadata) = &property.dynamic else {
                 panic!("kept metadata")
             };
             assert_eq!(metadata.group, "Custom");

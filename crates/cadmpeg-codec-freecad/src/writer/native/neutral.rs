@@ -80,7 +80,10 @@ pub(super) fn property_held(
     if !ir.scope.design {
         return true;
     }
-    let custom = matches!(&property.body,crate::native::PropertyBody::Persisted {dynamic:Some(dynamic),..} if dynamic.group!="CADIR");
+    let custom = property
+        .dynamic
+        .as_ref()
+        .is_some_and(|dynamic| dynamic.group != "CADIR");
     let variable = objects
         .iter()
         .any(|object| object.id().as_str() == property.owner && object.type_name == "App::VarSet");

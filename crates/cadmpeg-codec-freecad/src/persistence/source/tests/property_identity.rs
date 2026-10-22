@@ -59,7 +59,7 @@ fn invalid_status_and_unreadable_payload_bytes_do_not_gain_identity_read_credit(
         assert_eq!(graph.properties[0].status, None);
         assert!(matches!(
             graph.properties[0].body,
-            crate::native::PropertyBody::Unreadable(_)
+            Some(crate::native::PropertyBody::Unreadable(_))
         ));
         let captures = property_captures(&ctx, &graph);
         assert_eq!(captures.len(), 1);

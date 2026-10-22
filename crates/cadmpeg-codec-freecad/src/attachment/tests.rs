@@ -11,18 +11,18 @@ fn diagnostic_property(
     values: Vec<crate::native::ValueRecord>,
 ) -> crate::native::PropertyRecord {
     let property = crate::native::PropertyRecord {
+        dynamic: None,
         id: "fcstd:native:property#Attachment:MapMode".into(),
         owner: "fcstd:native:object#Attachment".into(),
         name: "MapMode".into(),
         type_name: type_name.into(),
         family: crate::native::PropertyFamily::Unknown,
         status: None,
-        body: crate::native::PropertyBody::Persisted {
+        body: Some(crate::native::PropertyBody::Persisted {
             values,
             links: Vec::new(),
             side_entries: Vec::new(),
-            dynamic: None,
-        },
+        }),
         order: 0,
     };
     let _fidelity =

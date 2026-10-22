@@ -87,7 +87,7 @@ fn partial_nonfinite_nested_multiple_vendor_and_overwritten_vectors_get_no_compo
         let dom = roxmltree::Document::parse(&xml).unwrap();
         let graph = parse_document_source(&ctx, view, &dom, Vocabulary::Objects).unwrap();
         let property = &graph.properties[0];
-        assert!(matches!(property.body, crate::native::PropertyBody::Persisted { .. }));
+        assert!(matches!(property.body, Some(crate::native::PropertyBody::Persisted { .. })));
         assert_eq!(property.values().len(), value_count, "{carrier}");
         assert!(property.values().iter().any(|value| value.attributes.values().any(|text| text == kept_text)), "original native field stays: {carrier}");
         let captures = property_captures(&ctx, &graph);

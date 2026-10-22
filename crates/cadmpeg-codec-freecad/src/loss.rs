@@ -537,7 +537,7 @@ pub(crate) fn unrepresented(
         }
     };
     for property in &properties {
-        if matches!(property.body, PropertyBody::Unreadable(_)) {
+        if matches!(property.body, Some(PropertyBody::Unreadable(_))) {
             classes.insert(property_class(property));
         }
         // Missing optional side entries remain in typed filename attributes,
@@ -739,7 +739,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             properties[0].body,
-            crate::native::PropertyBody::Unreadable(_)
+            Some(crate::native::PropertyBody::Unreadable(_))
         ));
         assert_eq!(
             super::unrepresented(&[], namespace).unwrap(),

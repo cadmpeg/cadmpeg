@@ -1173,15 +1173,7 @@ fn append_custom_parameters(
         {
             continue;
         }
-        if owner.is_some()
-            && !matches!(
-                &property.body,
-                crate::native::PropertyBody::Persisted {
-                    dynamic: Some(_),
-                    ..
-                }
-            )
-        {
+        if owner.is_some() && property.dynamic.is_none() {
             continue;
         }
         let Some(tag) = crate::persistence::scalar_value_tag(&property.type_name) else {
@@ -1349,13 +1341,7 @@ fn append_operation_parameters(
         if property.name == "FuzzyTolerance"
             && value.get() <= 0.0
             && expression.is_none()
-            && !matches!(
-                &property.body,
-                crate::native::PropertyBody::Persisted {
-                    dynamic: Some(_),
-                    ..
-                }
-            )
+            && property.dynamic.is_none()
         {
             continue;
         }

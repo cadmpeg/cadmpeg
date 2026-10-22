@@ -2,7 +2,7 @@
 //! Actual compressed AmDc bodies, recoverable damage, and exact peer survival.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::source_fidelity::parts::PartState;
+use cadmpeg_ir::source_fidelity::parts::{PartOutput, PartState};
 use cadmpeg_ir::NativeUnknownRecord;
 
 use crate::assembly::{inventory, tests::occurrence_fixture, OCCURRENCE_TYPE};
@@ -21,7 +21,7 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
+    let mut container = InventorContainer::open(&ctx, root).unwrap();
     let segment = container
         .rse
         .segments
@@ -54,7 +54,11 @@ fn damaged_occurrence_body_has_one_home_and_its_readable_peer_is_exact() {
         .iter()
         .map(|r| r.trailer.window().to_vec())
         .collect::<Vec<_>>();
-    let inventory = inventory(&ctx, &container.rse).unwrap();
+    let parts = std::mem::replace(
+        &mut container.rse.source_parts,
+        PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
+    );
+    let inventory = inventory(&ctx, &container.rse, parts).unwrap();
     assert!(!inventory
         .parts
         .native()
@@ -194,7 +198,7 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let container = InventorContainer::open(&ctx, root).unwrap();
+    let mut container = InventorContainer::open(&ctx, root).unwrap();
     let segment = container
         .rse
         .segments
@@ -221,7 +225,11 @@ fn placement_parse_and_conversion_failures_share_the_helper_and_keep_the_exact_p
                 .to_vec()
         })
         .collect::<Vec<_>>();
-    let inventory = inventory(&ctx, &container.rse).unwrap();
+    let parts = std::mem::replace(
+        &mut container.rse.source_parts,
+        PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
+    );
+    let inventory = inventory(&ctx, &container.rse, parts).unwrap();
     assert!(inventory.occurrences.is_empty());
     assert_eq!(inventory.placements.len(), 1);
     let expected = AssemblyPlacementRecord::try_from(AssemblyPlacementRecordWire::from_placement(

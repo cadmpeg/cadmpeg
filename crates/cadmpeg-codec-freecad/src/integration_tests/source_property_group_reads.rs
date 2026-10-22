@@ -25,11 +25,11 @@ fn current_group_and_documentation_fields_keep_exact_source_ownership_and_dynami
     let [native] = properties.as_slice() else {
         panic!("one property: {properties:?}")
     };
-    let crate::native::PropertyBody::Persisted {
-        dynamic: Some(metadata),
-        ..
-    } = &native.body
-    else {
+    assert!(matches!(
+        &native.body,
+        Some(crate::native::PropertyBody::Persisted { .. })
+    ));
+    let Some(metadata) = &native.dynamic else {
         panic!("actual typed metadata")
     };
     assert_eq!(metadata.group, "Custom&Parameters");

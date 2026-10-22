@@ -736,7 +736,7 @@ pub(crate) fn logical_ledger(
                     ranges.push((
                         cadmpeg_core::decode::u64_from_index(range.start),
                         cadmpeg_core::decode::u64_from_index(range.end),
-                        if property.family == PropertyFamily::Unknown {
+                        if property.body.is_none() || property.family == PropertyFamily::Unknown {
                             "named_opaque"
                         } else {
                             "typed"

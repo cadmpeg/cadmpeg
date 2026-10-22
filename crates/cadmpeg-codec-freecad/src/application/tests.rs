@@ -392,18 +392,18 @@ fn repeated_application_payloads_borrow_entry_identity_without_source_evidence()
     };
     let properties = ["First", "Second"].map(|name| {
         let property = crate::native::PropertyRecord {
+            dynamic: None,
             id: format!("fcstd:native:property#Owner:{name}"),
             owner: object.id().clone(),
             name: name.into(),
             type_name: "App::PropertyFileIncluded".into(),
             family: crate::native::PropertyFamily::File,
             status: None,
-            body: crate::native::PropertyBody::Persisted {
+            body: Some(crate::native::PropertyBody::Persisted {
                 values: Vec::new(),
                 links: Vec::new(),
                 side_entries: vec!["shared.bin".into()],
-                dynamic: None,
-            },
+            }),
             order: 0,
         };
         let _fidelity =

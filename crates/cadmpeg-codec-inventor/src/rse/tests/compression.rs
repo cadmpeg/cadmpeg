@@ -66,7 +66,7 @@ fn dispatch_rejects_unknown_methods_and_mismatched_payloads() {
             .expect("context");
         assert!(
             matches!(parse_meta_stream(&ctx, root).expect("declaration"),
-            SegmentMetaState::Malformed { declared: Some(_), detail }
+            SegmentMetaState::Malformed { declared: Some(_), detail, .. }
                 if detail.contains("unsupported RSe compression method"))
         );
         let mut bytes = bulk(1);

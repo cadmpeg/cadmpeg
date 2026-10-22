@@ -24,11 +24,11 @@ fn valid_flag_changes_and_entities_feed_kept_fields_with_exact_nonzero_source_re
         let graph = parse_document_source(&ctx, view, &dom, Vocabulary::Objects).unwrap();
         assert_eq!(graph.properties, pure.properties);
         let property = &graph.properties[0];
-        let crate::native::PropertyBody::Persisted {
-            dynamic: Some(metadata),
-            ..
-        } = &property.body
-        else {
+        assert!(matches!(
+            &property.body,
+            Some(crate::native::PropertyBody::Persisted { .. })
+        ));
+        let Some(metadata) = &property.dynamic else {
             panic!("kept flags")
         };
         assert_eq!(metadata.group, "Custom");
@@ -87,11 +87,11 @@ fn invalid_overflow_and_namespace_flag_values_preserve_legacy_fields_without_rea
         let pure = crate::persistence::parse_document(&dom, Vocabulary::Objects).unwrap();
         let graph = parse_document_source(&ctx, view, &dom, Vocabulary::Objects).unwrap();
         assert_eq!(graph.properties, pure.properties);
-        let crate::native::PropertyBody::Persisted {
-            dynamic: Some(metadata),
-            ..
-        } = &graph.properties[0].body
-        else {
+        assert!(matches!(
+            &graph.properties[0].body,
+            Some(crate::native::PropertyBody::Persisted { .. })
+        ));
+        let Some(metadata) = &graph.properties[0].dynamic else {
             panic!("kept fallback flags")
         };
         assert_eq!(metadata.attributes, flags);
@@ -129,12 +129,13 @@ fn absent_metadata_or_unreadable_body_cannot_credit_otherwise_valid_flag_bytes()
         if readable {
             assert!(matches!(
                 &graph.properties[0].body,
-                crate::native::PropertyBody::Persisted { dynamic: None, .. }
+                Some(crate::native::PropertyBody::Persisted { .. })
             ));
+            assert!(graph.properties[0].dynamic.is_none());
         } else {
             assert!(matches!(
                 &graph.properties[0].body,
-                crate::native::PropertyBody::Unreadable(_)
+                Some(crate::native::PropertyBody::Unreadable(_))
             ));
         }
         let captures = property_captures(&ctx, &graph);
@@ -169,11 +170,11 @@ fn discarded_actual_flag_producer_rolls_back_numeric_boolean_and_other_field_rea
                 Some(&source),
                 false,
             )?;
-            let crate::native::PropertyBody::Persisted {
-                dynamic: Some(metadata),
-                ..
-            } = &property.body
-            else {
+            assert!(matches!(
+                &property.body,
+                Some(crate::native::PropertyBody::Persisted { .. })
+            ));
+            let Some(metadata) = &property.dynamic else {
                 panic!("actual kept flags")
             };
             assert_eq!(metadata.attributes, Some(12));

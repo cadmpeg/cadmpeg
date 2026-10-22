@@ -5,7 +5,7 @@
 //! typed `ExpressionEngine` expression; the row contains no identity, value,
 //! cached definition, source digest, or historical authority.
 
-use crate::native::{PropertyBody, PropertyRecord};
+use crate::native::PropertyRecord;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Expression, ExpressionToken, ParameterId, ParameterValue};
 use cadmpeg_ir::{report::loss::LossNote, CadIr};
@@ -152,26 +152,50 @@ pub(crate) fn apply(
         .collect::<BTreeMap<_, _>>();
     for property in properties.iter().filter(|property| {
         property.name == PROPERTY
-            && matches!(&property.body, PropertyBody::Persisted { dynamic: Some(dynamic), .. } if dynamic.group == "CADIR")
+            && property
+                .dynamic
+                .as_ref()
+                .is_some_and(|dynamic| dynamic.group == "CADIR")
     }) {
         let mut controls = BTreeSet::new();
-        for value in property.values().iter().filter(|value| value.tag == "String") {
-            let row: ControlLink = serde_json::from_str(value.attributes.get("value").ok_or_else(|| {
-                CodecError::malformed("control-link row lacks its typed value")
-            })?).map_err(CodecError::malformed)?;
+        for value in property
+            .values()
+            .iter()
+            .filter(|value| value.tag == "String")
+        {
+            let row: ControlLink =
+                serde_json::from_str(value.attributes.get("value").ok_or_else(|| {
+                    CodecError::malformed("control-link row lacks its typed value")
+                })?)
+                .map_err(CodecError::malformed)?;
             if !controls.insert(row.control.clone()) {
                 return Err(CodecError::malformed("duplicate native control link"));
             }
-            let control = source_controls.get(&(property.owner.as_str(), row.control.as_str()))
+            let control = source_controls
+                .get(&(property.owner.as_str(), row.control.as_str()))
                 .and_then(|native| parameters_by_native.get(native).copied());
             let verified = control.and_then(|control| {
                 let target = target(&control.expression, row.measurement)?;
                 let parameter = parameters_by_id.get(target)?;
-                let stale = control.owner.as_ref().is_some_and(|owner| ir.model.features.iter().any(|feature| feature.id == *owner && feature.needs_recompute));
+                let stale = control.owner.as_ref().is_some_and(|owner| {
+                    ir.model
+                        .features
+                        .iter()
+                        .any(|feature| feature.id == *owner && feature.needs_recompute)
+                });
                 (target != &control.id
-                    && cache_quantity_matches(control.value.as_ref(), parameter.value.as_ref(), row.measurement)
-                    && (stale || cache_agrees(control.value.as_ref(), parameter.value.as_ref(), row.measurement)))
-                    .then(|| (control.id.clone(), target.clone(), row.measurement))
+                    && cache_quantity_matches(
+                        control.value.as_ref(),
+                        parameter.value.as_ref(),
+                        row.measurement,
+                    )
+                    && (stale
+                        || cache_agrees(
+                            control.value.as_ref(),
+                            parameter.value.as_ref(),
+                            row.measurement,
+                        )))
+                .then(|| (control.id.clone(), target.clone(), row.measurement))
             });
             if let Some((control, parameter, measurement)) = verified {
                 aliases.insert(control, (parameter, measurement));

@@ -52,7 +52,7 @@ fn persistence_link_diagnostics_become_unreadable_payloads() {
         .expect("bounded invalid link");
         assert!(matches!(
             graph.properties[0].body,
-            crate::native::PropertyBody::Unreadable(_)
+            Some(crate::native::PropertyBody::Unreadable(_))
         ));
         assert!(graph
             .losses
@@ -251,7 +251,7 @@ fn retains_nested_xlink_value_children_as_unreadable_source() {
             .expect("properties");
         assert!(matches!(
             properties[0].body,
-            crate::native::PropertyBody::Unreadable(_)
+            Some(crate::native::PropertyBody::Unreadable(_))
         ));
         assert!(decoded.report().losses.iter().any(|loss| loss.code
             == crate::loss::FreecadLossCode::PersistencePayloadUnresolved
@@ -352,7 +352,12 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         support.links()[0].as_ref().expect("link").subelements(),
         vec!["Face1"]
     );
-    let crate::native::PropertyBody::Persisted { dynamic, .. } = &support.body else {
+    assert!(matches!(
+        &support.body,
+        Some(crate::native::PropertyBody::Persisted { .. })
+    ));
+    let dynamic = &support.dynamic;
+    let Some(_) = &support.body else {
         panic!("support property is not persisted");
     };
     assert_eq!(dynamic.as_ref().and_then(|meta| meta.read_only), Some(true));
@@ -814,7 +819,7 @@ fn property_value_xml_above_the_copy_bound_is_unreadable_with_a_loss() {
     .expect("a value copy above the bound skips the values");
     assert!(matches!(
         &properties[0].body,
-        crate::native::PropertyBody::Unreadable(detail)
+        Some(crate::native::PropertyBody::Unreadable(detail))
             if detail.contains("value copy bound")
     ));
     assert_eq!(

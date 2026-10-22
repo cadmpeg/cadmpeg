@@ -171,9 +171,20 @@ fn python_and_nested_value_xml_move_to_their_real_property_layouts() {
         crate::persistence::parse_document(&document, crate::persistence::Vocabulary::Objects)
             .unwrap();
     assert_eq!(graph.properties.len(), 2);
-    assert_eq!(graph.value_sources.len(), 2);
+    assert_eq!(
+        graph
+            .property_sources
+            .values()
+            .filter(|source| source.has_values())
+            .count(),
+        2
+    );
     let mut pending = BTreeMap::new();
-    for source in &graph.value_sources {
+    for source in graph
+        .property_sources
+        .values()
+        .filter(|source| source.has_values())
+    {
         super::value_layout_payloads(&ctx, view, source, &mut pending).unwrap();
     }
     let mut fidelity = SourceFidelity::default();

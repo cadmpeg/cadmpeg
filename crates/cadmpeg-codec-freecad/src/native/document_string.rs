@@ -13,7 +13,7 @@ pub(crate) struct DocumentString(PropertyRecord);
 impl DocumentString {
     pub(crate) fn new(property: PropertyRecord) -> Result<Self, CodecError> {
         if property.type_name != "App::PropertyString"
-            || !matches!(&property.body, PropertyBody::Persisted { links, side_entries, .. } if links.is_empty() && side_entries.is_empty())
+            || !matches!(&property.body, Some(PropertyBody::Persisted { links, side_entries, .. }) if links.is_empty() && side_entries.is_empty())
         {
             return Err(CodecError::malformed(
                 "document string has a different property grammar",

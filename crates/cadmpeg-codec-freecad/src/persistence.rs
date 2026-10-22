@@ -59,7 +59,6 @@ pub(crate) struct Graph {
     /// Dynamic extensions.
     pub(crate) extensions: Vec<ExtensionRecord>,
     pub(crate) extension_sources: Vec<(String, std::ops::Range<usize>)>,
-    pub(crate) value_sources: Vec<crate::fidelity::ValueSourceRanges>,
     /// Document and object properties.
     pub(crate) properties: Vec<PropertyRecord>,
     /// Diagnostics for source-only persistence metadata.
@@ -74,11 +73,11 @@ pub(crate) fn resolve_side_entries(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     for property in properties {
-        let crate::native::PropertyBody::Persisted {
+        let Some(crate::native::PropertyBody::Persisted {
             values,
             side_entries,
             ..
-        } = &mut property.body
+        }) = &mut property.body
         else {
             continue;
         };
@@ -482,7 +481,7 @@ fn parse_document_impl(
         }
     }
     for property in &mut properties {
-        let crate::native::PropertyBody::Persisted { links, .. } = &mut property.body else {
+        let Some(crate::native::PropertyBody::Persisted { links, .. }) = &mut property.body else {
             continue;
         };
         for link in links.iter_mut().flatten() {
@@ -504,18 +503,12 @@ fn parse_document_impl(
         }
     }
 
-    let value_sources = property_sources
-        .values()
-        .filter(|source| source.has_values())
-        .cloned()
-        .collect();
     Ok(Graph {
         objects,
         object_sources,
         property_sources,
         extensions,
         extension_sources,
-        value_sources,
         properties,
         losses,
     })
@@ -675,13 +668,14 @@ fn parse_properties_impl(
                 ),
             };
             Ok(PropertyRecord {
+                dynamic: None,
                 id: crate::native::native_child_id("property", owner, &name),
                 owner: owner.to_owned(),
                 name,
                 family: property_family(&type_name),
                 type_name,
                 status,
-                body: crate::native::PropertyBody::Transient,
+                body: Some(crate::native::PropertyBody::Transient),
                 order,
             })
         };
@@ -715,13 +709,11 @@ fn parse_properties_impl(
     Ok(())
 }
 
-fn parse_persisted_property(
+fn property_header(
     node: roxmltree::Node<'_, '_>,
     owner: &str,
     order: usize,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source: Option<&source::Source<'_, '_>>,
-    read_retained_attributes: bool,
 ) -> Result<PropertyRecord, CodecError> {
     let (name, type_name, status) = match source {
         Some(source) => (
@@ -736,9 +728,56 @@ fn parse_persisted_property(
                 .and_then(|value| value.parse().ok()),
         ),
     };
+    Ok(PropertyRecord {
+        id: crate::native::native_child_id("property", owner, &name),
+        owner: owner.to_owned(),
+        name,
+        family: property_family(&type_name),
+        type_name,
+        status,
+        dynamic: None,
+        body: None,
+        order,
+    })
+}
+
+fn parse_persisted_property(
+    node: roxmltree::Node<'_, '_>,
+    owner: &str,
+    order: usize,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source: Option<&source::Source<'_, '_>>,
+    read_retained_attributes: bool,
+) -> Result<PropertyRecord, CodecError> {
+    let mut property = property_header(node, owner, order, source)?;
+    let body = property_body(
+        node,
+        owner,
+        &property.name,
+        &property.type_name,
+        losses,
+        source,
+        read_retained_attributes,
+    )?;
+    if !matches!(body, crate::native::PropertyBody::Unreadable(_)) {
+        property.dynamic = dynamic_property_metadata(node, source)?;
+    }
+    property.body = Some(body);
+    Ok(property)
+}
+
+fn property_body(
+    node: roxmltree::Node<'_, '_>,
+    owner: &str,
+    name: &str,
+    type_name: &str,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source: Option<&source::Source<'_, '_>>,
+    read_retained_attributes: bool,
+) -> Result<crate::native::PropertyBody, CodecError> {
     let mut payload_error = None;
-    let links = if link_grammar(&type_name).is_some() {
-        match parse_link_targets(node, &type_name) {
+    let links = if link_grammar(type_name).is_some() {
+        match parse_link_targets(node, type_name) {
             Ok(links) => links,
             Err(CodecError::Malformed(detail)) => {
                 losses.push(
@@ -755,7 +794,7 @@ fn parse_persisted_property(
         Vec::new()
     };
     if payload_error.is_none() {
-        if let Err(error) = validate_scalar_payload(node, &type_name) {
+        if let Err(error) = validate_scalar_payload(node, type_name) {
             let detail = error.to_string();
             losses.push(
                 crate::loss::FreecadLossCode::PersistencePayloadUnresolved.note(format!(
@@ -800,10 +839,10 @@ fn parse_persisted_property(
     };
     let string_list = source
         .filter(|_| payload_error.is_none())
-        .and_then(|_| direct_string_list(node, &type_name));
+        .and_then(|_| direct_string_list(node, type_name));
     let vector_value = payload_error
         .is_none()
-        .then(|| direct_vector_value(node, &type_name))
+        .then(|| direct_vector_value(node, type_name))
         .flatten();
     let mut values = Vec::new();
     let mut value_indices = HashMap::new();
@@ -827,7 +866,7 @@ fn parse_persisted_property(
                     .map(|attribute| {
                         let text = match source.filter(|_| {
                             attribute.namespace().is_none()
-                                && (constraint_attribute(node, value, &type_name, &attribute)
+                                && (constraint_attribute(node, value, type_name, &attribute)
                                     || vector_value == Some(value)
                                         && matches!(
                                             attribute.name(),
@@ -839,7 +878,7 @@ fn parse_persisted_property(
                                             || value.parent() == Some(node)
                                                 && (string_value == Some(value)
                                                     || type_name != "App::PropertyEnumeration"
-                                                        && scalar_value_tag(&type_name)
+                                                        && scalar_value_tag(type_name)
                                                             == Some(value.tag_name().name()))))
                         }) {
                             Some(source) => source.attribute(&attribute)?,
@@ -859,32 +898,22 @@ fn parse_persisted_property(
     let mut side_entries = Vec::new();
     for value in &values {
         for (name, entry_name) in &value.attributes {
-            let selected = (matches!(name.as_str(), "file" | "File") && !is_xlink_type(&type_name))
-                || (property_family(&type_name) == PropertyFamily::File
+            let selected = (matches!(name.as_str(), "file" | "File") && !is_xlink_type(type_name))
+                || (property_family(type_name) == PropertyFamily::File
                     && matches!(name.as_str(), "name" | "Name"));
             if selected && !entry_name.is_empty() {
                 side_entries.push(entry_name.to_owned());
             }
         }
     }
-    Ok(PropertyRecord {
-        id: crate::native::native_child_id("property", owner, &name),
-        owner: owner.to_owned(),
-        name,
-        family: property_family(&type_name),
-        type_name,
-        status,
-        body: if let Some(detail) = payload_error {
-            crate::native::PropertyBody::Unreadable(detail)
-        } else {
-            crate::native::PropertyBody::Persisted {
-                values,
-                links,
-                side_entries,
-                dynamic: dynamic_property_metadata(node, source)?,
-            }
-        },
-        order,
+    Ok(if let Some(detail) = payload_error {
+        crate::native::PropertyBody::Unreadable(detail)
+    } else {
+        crate::native::PropertyBody::Persisted {
+            values,
+            links,
+            side_entries,
+        }
     })
 }
 

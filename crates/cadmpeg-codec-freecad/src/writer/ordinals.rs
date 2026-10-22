@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 
 use super::xml::Object;
-use crate::native::{PropertyBody, PropertyRecord};
+use crate::native::PropertyRecord;
 
 const FEATURE: &str = "CadmpegFeatureOrdinal";
 const PARAMETERS: &str = "CadmpegParameterOrdinals";
@@ -104,8 +104,14 @@ fn properties<'a>(
     owner: &str,
     name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let mut matching = records.iter().filter(|property| property.owner == owner && property.name == name
-        && matches!(&property.body, PropertyBody::Persisted { dynamic: Some(dynamic), .. } if dynamic.group == "CADIR"));
+    let mut matching = records.iter().filter(|property| {
+        property.owner == owner
+            && property.name == name
+            && property
+                .dynamic
+                .as_ref()
+                .is_some_and(|dynamic| dynamic.group == "CADIR")
+    });
     let first = matching.next();
     if matching.next().is_some() {
         return Err(CodecError::malformed(format_args!(
@@ -173,18 +179,53 @@ pub(crate) fn apply(records: &[PropertyRecord], ir: &mut CadIr) -> Result<(), Co
         }
     }
     let mut parameter_ordinals = HashMap::new();
-    for property in records.iter().filter(|property| property.name == PARAMETERS
-        && matches!(&property.body, PropertyBody::Persisted { dynamic: Some(dynamic), .. } if dynamic.group == "CADIR")) {
-        if property.type_name != "App::PropertyStringList" { return Err(CodecError::malformed("CADIR parameter ordinals require a string list")); }
+    for property in records.iter().filter(|property| {
+        property.name == PARAMETERS
+            && property
+                .dynamic
+                .as_ref()
+                .is_some_and(|dynamic| dynamic.group == "CADIR")
+    }) {
+        if property.type_name != "App::PropertyStringList" {
+            return Err(CodecError::malformed(
+                "CADIR parameter ordinals require a string list",
+            ));
+        }
         let mut rows = property.values().iter();
-        let root = rows.next().filter(|value| value.tag == "StringList").ok_or_else(|| CodecError::malformed("CADIR parameter ordinals lack a string-list root"))?;
-        let count = root.attributes.get("count").and_then(|value| value.parse::<usize>().ok()).ok_or_else(|| CodecError::malformed("CADIR parameter ordinal count is invalid"))?;
-        if property.values().len().checked_sub(1) != Some(count) { return Err(CodecError::malformed("CADIR parameter ordinal count disagrees")); }
+        let root = rows
+            .next()
+            .filter(|value| value.tag == "StringList")
+            .ok_or_else(|| {
+                CodecError::malformed("CADIR parameter ordinals lack a string-list root")
+            })?;
+        let count = root
+            .attributes
+            .get("count")
+            .and_then(|value| value.parse::<usize>().ok())
+            .ok_or_else(|| CodecError::malformed("CADIR parameter ordinal count is invalid"))?;
+        if property.values().len().checked_sub(1) != Some(count) {
+            return Err(CodecError::malformed(
+                "CADIR parameter ordinal count disagrees",
+            ));
+        }
         for row in rows {
-            if row.tag != "String" || row.parent != Some(0) { return Err(CodecError::malformed("CADIR parameter ordinal entry is invalid")); }
-            let (name, ordinal) = row.attributes.get("value").and_then(|value| value.rsplit_once('=')).ok_or_else(|| CodecError::malformed("CADIR parameter ordinal lacks its name"))?;
+            if row.tag != "String" || row.parent != Some(0) {
+                return Err(CodecError::malformed(
+                    "CADIR parameter ordinal entry is invalid",
+                ));
+            }
+            let (name, ordinal) = row
+                .attributes
+                .get("value")
+                .and_then(|value| value.rsplit_once('='))
+                .ok_or_else(|| CodecError::malformed("CADIR parameter ordinal lacks its name"))?;
             let ordinal = ordinal.parse::<u32>().map_err(CodecError::malformed)?;
-            if parameter_ordinals.insert((property.owner.as_str(), name), ordinal).is_some() { return Err(CodecError::malformed("duplicate CADIR parameter ordinal")); }
+            if parameter_ordinals
+                .insert((property.owner.as_str(), name), ordinal)
+                .is_some()
+            {
+                return Err(CodecError::malformed("duplicate CADIR parameter ordinal"));
+            }
         }
     }
     for parameter in &mut ir.model.parameters {

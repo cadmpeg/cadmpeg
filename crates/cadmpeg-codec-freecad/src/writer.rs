@@ -306,27 +306,29 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
         || left.type_name != right.type_name
         || left.family != right.family
         || left.status != right.status
+        || left.dynamic != right.dynamic
         || left.order != right.order
         || left.is_transient() != right.is_transient()
     {
         return false;
     }
     match (&left.body, &right.body) {
-        (PropertyBody::Transient, PropertyBody::Transient) => true,
-        (PropertyBody::Unreadable(left), PropertyBody::Unreadable(right)) => left == right,
+        (None, None) => true,
+        (Some(PropertyBody::Transient), Some(PropertyBody::Transient)) => true,
+        (Some(PropertyBody::Unreadable(left)), Some(PropertyBody::Unreadable(right))) => {
+            left == right
+        }
         (
-            PropertyBody::Persisted {
+            Some(PropertyBody::Persisted {
                 values: left_values,
                 links: left_links,
                 side_entries: left_side_entries,
-                dynamic: left_dynamic,
-            },
-            PropertyBody::Persisted {
+            }),
+            Some(PropertyBody::Persisted {
                 values: right_values,
                 links: right_links,
                 side_entries: right_side_entries,
-                dynamic: right_dynamic,
-            },
+            }),
         ) => {
             left_values.len() == right_values.len()
                 && left_values.iter().zip(right_values).all(|(left, right)| {
@@ -334,7 +336,6 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
                 })
                 && left_links == right_links
                 && left_side_entries == right_side_entries
-                && left_dynamic == right_dynamic
         }
         _ => false,
     }

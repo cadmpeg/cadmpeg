@@ -203,9 +203,10 @@ fn public_decode_keeps_the_good_property_attribute_and_unrelated_integer_once() 
             .collect::<Vec<_>>(),
         ["Bad", "Good", "Other"]
     );
-    assert!(properties
-        .iter()
-        .all(|property| !matches!(property.body, crate::native::PropertyBody::Unreadable(_))));
+    assert!(properties.iter().all(|property| !matches!(
+        property.body,
+        Some(crate::native::PropertyBody::Unreadable(_))
+    )));
     assert_eq!(
         native
             .arena_as::<crate::native::EntryRecord>("entries")
@@ -391,11 +392,11 @@ fn unsupported_dynamic_flag_spellings_keep_legacy_fields_without_read_credit() {
     let [property] = properties.as_slice() else {
         panic!("one held property")
     };
-    let crate::native::PropertyBody::Persisted {
-        dynamic: Some(dynamic),
-        ..
-    } = &property.body
-    else {
+    assert!(matches!(
+        &property.body,
+        Some(crate::native::PropertyBody::Persisted { .. })
+    ));
+    let Some(dynamic) = &property.dynamic else {
         panic!("dynamic flags held")
     };
     assert_eq!(dynamic.read_only, Some(false));
@@ -438,11 +439,11 @@ fn recognized_dynamic_flags_keep_their_values_inside_the_actual_property_scope()
     let [property] = properties.as_slice() else {
         panic!("one held property")
     };
-    let crate::native::PropertyBody::Persisted {
-        dynamic: Some(dynamic),
-        ..
-    } = &property.body
-    else {
+    assert!(matches!(
+        &property.body,
+        Some(crate::native::PropertyBody::Persisted { .. })
+    ));
+    let Some(dynamic) = &property.dynamic else {
         panic!("recognized dynamic fields")
     };
     assert_eq!(dynamic.read_only, Some(true));

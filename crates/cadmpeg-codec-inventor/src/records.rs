@@ -247,23 +247,12 @@ pub(crate) fn parse_meta_tables(body: View<'_>) -> Result<MetaTables<'_>, CodecE
             (index + 1) * type_desc::LEN,
             "type descriptor",
         )?;
-        let mut entry = crate::pmdc::Cursor::new(entry);
-        types.push(TypeDescriptor {
-            index: u32::try_from(index).map_err(|_| {
+        types.push(parse_type_descriptor(
+            entry,
+            u32::try_from(index).map_err(|_| {
                 CodecError::Malformed("Inventor numeric value exceeds target range".into())
             })?,
-            id: entry.take_array("type descriptor id")?,
-            fields: [
-                (
-                    entry.u16("type descriptor field 0 key")?,
-                    entry.u32("type descriptor field 0 value")?,
-                ),
-                (
-                    entry.u16("type descriptor field 1 key")?,
-                    entry.u32("type descriptor field 1 value")?,
-                ),
-            ],
-        });
+        )?);
     }
 
     let section_4 = MetaSection {
@@ -313,6 +302,28 @@ pub(crate) fn frame_bulk_records<'a>(
     tables: &MetaTables<'a>,
     segment_version_major: u8,
 ) -> Result<RseRecordTable<'a>, CodecError> {
+    frame_bulk_records_with(bulk, tables, segment_version_major, |index| {
+        tables.types.get(usize::from(index)).copied()
+    })
+}
+
+pub(crate) fn frame_admitted_bulk_records<'a>(
+    bulk: View<'a>,
+    tables: &MetaTables<'a>,
+    admitted: &[Option<TypeDescriptor>],
+    segment_version_major: u8,
+) -> Result<RseRecordTable<'a>, CodecError> {
+    frame_bulk_records_with(bulk, tables, segment_version_major, |index| {
+        admitted.get(usize::from(index)).copied().flatten()
+    })
+}
+
+fn frame_bulk_records_with<'a>(
+    bulk: View<'a>,
+    tables: &MetaTables<'a>,
+    segment_version_major: u8,
+    mut descriptor_at: impl FnMut(u8) -> Option<TypeDescriptor>,
+) -> Result<RseRecordTable<'a>, CodecError> {
     let mut cursor = Cursor::new(bulk);
     let mut records = Vec::new();
     for block in tables.blocks.iter().filter(|block| block.stored) {
@@ -320,42 +331,143 @@ pub(crate) fn frame_bulk_records<'a>(
         let type_index = u8::try_from(selector & 0xff).map_err(|_| {
             CodecError::Malformed("Inventor numeric value exceeds target range".into())
         })?;
-        let descriptor = tables.types.get(usize::from(type_index)).ok_or_else(|| {
+        let descriptor = descriptor_at(type_index).ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "RSe record {} selects absent type index {type_index}",
                 block.ordinal
             ))
         })?;
-        let payload_offset = cadmpeg_core::decode::u64_from_index(cursor.position());
-        let payload = cursor.view(
-            usize::try_from(block.payload_len).map_err(|_| {
-                CodecError::Malformed("Inventor numeric value exceeds target range".into())
-            })?,
-            "record payload",
-        )?;
-        let trailing_payload_len = cursor.u32("record trailing payload length")?;
-        if trailing_payload_len != 0 && trailing_payload_len != block.payload_len {
-            return Err(CodecError::malformed(format_args!(
-                "RSe record {} declares payload length {} but trails with {trailing_payload_len}",
-                block.ordinal, block.payload_len
-            )));
-        }
-        let trailer_start = cursor.position();
-        if uses_extended_record_trailer(segment_version_major) {
-            parse_extended_record_trailer(&mut cursor)?;
-        }
-        let trailer = child(bulk, trailer_start, cursor.position(), "record trailer")?;
+        let source = frame_record_source(&mut cursor, bulk, block, segment_version_major, true)?;
         records.push(RseRecordFrame {
             block_descriptor_source: block.source,
             ordinal: block.ordinal,
             selector,
             type_id: descriptor.id,
-            payload_offset,
-            payload,
-            trailing_length_written: trailing_payload_len != 0,
-            trailer,
+            payload_offset: source.payload_offset,
+            payload: source.payload,
+            trailing_length_written: source.trailing_length_written,
+            trailer: source.trailer,
         });
     }
+    let stream_trailer = frame_stream_trailer(&mut cursor, bulk)?;
+    Ok(RseRecordTable {
+        records,
+        stream_trailer,
+    })
+}
+
+#[derive(Debug)]
+pub(crate) struct RseSourceFraming<'a> {
+    pub(crate) record_count: usize,
+    pub(crate) stream_trailer: View<'a>,
+}
+
+pub(crate) fn frame_bulk_sources<'a>(
+    bulk: View<'a>,
+    tables: &MetaTables<'a>,
+    segment_version_major: u8,
+    mut record: impl FnMut(u32, &BlockDescriptor<'a>, RecordSource<'a>) -> Result<(), CodecError>,
+) -> Result<RseSourceFraming<'a>, CodecError> {
+    let mut cursor = Cursor::new(bulk);
+    let mut record_count = 0;
+    for block in tables.blocks.iter().filter(|block| block.stored) {
+        let selector = cursor.u32("record type selector")?;
+        let source = frame_record_source(&mut cursor, bulk, block, segment_version_major, false)?;
+        record(selector, block, source)?;
+        record_count += 1;
+    }
+    let stream_trailer = frame_stream_trailer(&mut cursor, bulk)?;
+    Ok(RseSourceFraming {
+        record_count,
+        stream_trailer,
+    })
+}
+
+pub(crate) struct RecordSource<'a> {
+    pub(crate) body: View<'a>,
+    payload: View<'a>,
+    payload_offset: u64,
+    trailing_length_written: bool,
+    trailing_payload_len: u32,
+    pub(crate) trailer: View<'a>,
+}
+
+impl<'a> RecordSource<'a> {
+    pub(crate) fn into_typed(
+        self,
+        block: &BlockDescriptor<'a>,
+        selector: u32,
+        descriptor: TypeDescriptor,
+    ) -> Result<RseRecordFrame<'a>, CodecError> {
+        validate_trailing_length(block, self.trailing_payload_len)?;
+        Ok(RseRecordFrame {
+            block_descriptor_source: block.source,
+            ordinal: block.ordinal,
+            selector,
+            type_id: descriptor.id,
+            payload_offset: self.payload_offset,
+            payload: self.payload,
+            trailing_length_written: self.trailing_length_written,
+            trailer: self.trailer,
+        })
+    }
+}
+
+fn frame_record_source<'a>(
+    cursor: &mut Cursor<'a>,
+    bulk: View<'a>,
+    block: &BlockDescriptor<'a>,
+    segment_version_major: u8,
+    validate_content: bool,
+) -> Result<RecordSource<'a>, CodecError> {
+    let start = cursor
+        .position()
+        .checked_sub(4)
+        .ok_or_else(|| CodecError::malformed("RSe body has no selector"))?;
+    let payload_offset = cadmpeg_core::decode::u64_from_index(cursor.position());
+    let payload = cursor.view(
+        usize::try_from(block.payload_len).map_err(|_| {
+            CodecError::Malformed("Inventor numeric value exceeds target range".into())
+        })?,
+        "record payload",
+    )?;
+    let trailing_payload_len = cursor.u32("record trailing payload length")?;
+    if validate_content {
+        validate_trailing_length(block, trailing_payload_len)?;
+    }
+    let trailer_start = cursor.position();
+    let body = child(bulk, start, trailer_start, "record body")?;
+    if uses_extended_record_trailer(segment_version_major) {
+        parse_extended_record_trailer(cursor)?;
+    }
+    let trailer = child(bulk, trailer_start, cursor.position(), "record trailer")?;
+    Ok(RecordSource {
+        body,
+        payload,
+        payload_offset,
+        trailing_length_written: trailing_payload_len != 0,
+        trailing_payload_len,
+        trailer,
+    })
+}
+
+fn validate_trailing_length(
+    block: &BlockDescriptor<'_>,
+    trailing_payload_len: u32,
+) -> Result<(), CodecError> {
+    if trailing_payload_len != 0 && trailing_payload_len != block.payload_len {
+        return Err(CodecError::malformed(format_args!(
+            "RSe record {} declares payload length {} but trails with {trailing_payload_len}",
+            block.ordinal, block.payload_len
+        )));
+    }
+    Ok(())
+}
+
+fn frame_stream_trailer<'a>(
+    cursor: &mut Cursor<'a>,
+    bulk: View<'a>,
+) -> Result<View<'a>, CodecError> {
     let trailer_start = cursor.position();
     let trailer_marker = cursor.u32("stream trailer marker")?;
     if trailer_marker != u32::MAX {
@@ -363,10 +475,63 @@ pub(crate) fn frame_bulk_records<'a>(
             "RSe stream trailer marker is {trailer_marker:#010x}"
         )));
     }
-    let stream_trailer = child(bulk, trailer_start, bulk.window().len(), "stream trailer")?;
-    Ok(RseRecordTable {
-        records,
-        stream_trailer,
+    child(bulk, trailer_start, bulk.window().len(), "stream trailer")
+}
+
+pub(crate) fn parse_type_descriptor(
+    source: View<'_>,
+    index: u32,
+) -> Result<TypeDescriptor, CodecError> {
+    let mut entry = crate::pmdc::Cursor::new(source);
+    let descriptor = TypeDescriptor {
+        index,
+        id: entry.take_array("type descriptor id")?,
+        fields: [
+            (
+                entry.u16("type descriptor field 0 key")?,
+                entry.u32("type descriptor field 0 value")?,
+            ),
+            (
+                entry.u16("type descriptor field 1 key")?,
+                entry.u32("type descriptor field 1 value")?,
+            ),
+        ],
+    };
+    entry.finish("type descriptor")?;
+    Ok(descriptor)
+}
+
+pub(crate) struct TypeTableFrame<'a> {
+    pub(crate) extent: View<'a>,
+    pub(crate) count_source: View<'a>,
+    pub(crate) span_source: View<'a>,
+    pub(crate) payload: View<'a>,
+    pub(crate) count: usize,
+}
+
+pub(crate) fn frame_type_table(body: View<'_>) -> Result<TypeTableFrame<'_>, CodecError> {
+    let mut view = body;
+    crate::reader::take_child(&mut view, meta_prefix::LEN, "metadata prefix")?;
+    counted_section(&mut view, 4, "block-size table")?;
+    counted_section(&mut view, 10, "section 2")?;
+    counted_section(&mut view, 28, "section 3")?;
+    let start = view.position();
+    let (count, payload, _) = counted_section(&mut view, type_desc::LEN, "type table")?;
+    let extent = body
+        .child(start, view.position())
+        .ok_or_else(|| CodecError::malformed("metadata type table extent leaves its source"))?;
+    let count_source = extent
+        .child(extent.start(), payload.start())
+        .ok_or_else(|| CodecError::malformed("metadata type count leaves its frame"))?;
+    let span_source = extent
+        .child(payload.end(), extent.end())
+        .ok_or_else(|| CodecError::malformed("metadata type span leaves its frame"))?;
+    Ok(TypeTableFrame {
+        extent,
+        count_source,
+        span_source,
+        payload,
+        count,
     })
 }
 
@@ -695,6 +860,7 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
+    mod source_frames;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
     use super::{

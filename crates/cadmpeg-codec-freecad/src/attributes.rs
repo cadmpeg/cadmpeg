@@ -71,8 +71,10 @@ pub(crate) fn consumed(ir: &CadIr, property: &PropertyRecord, objects: &[ObjectR
             .iter()
             .find(|object| object.id().as_str() == property.owner)
         {
-            let dynamic_parameter = matches!(&property.body,
-                PropertyBody::Persisted {dynamic:Some(dynamic),..} if dynamic.group != "CADIR")
+            let dynamic_parameter = property
+                .dynamic
+                .as_ref()
+                .is_some_and(|dynamic| dynamic.group != "CADIR")
                 || object.type_name == "App::VarSet";
             if dynamic_parameter
                 && (crate::design::is_design_object(&object.type_name)
@@ -227,12 +229,12 @@ pub(crate) fn target(ir: &CadIr, owner: &str) -> AttributeTarget {
 /// A property's value order is retained. Container/count and transport fields
 /// are framing; only admitted scalar, vector, and reference values project.
 pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<AttributeValue>> {
-    let PropertyBody::Persisted {
+    let Some(PropertyBody::Persisted {
         values,
         links,
         side_entries,
         ..
-    } = &property.body
+    }) = &property.body
     else {
         return None;
     };
@@ -392,7 +394,7 @@ fn transfer_impl(
             || consumed(ir, property, objects)
             || matches!(
                 property.body,
-                PropertyBody::Transient | PropertyBody::Unreadable(_)
+                Some(PropertyBody::Transient) | Some(PropertyBody::Unreadable(_)) | None
             )
         {
             continue;

@@ -7,6 +7,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartLevel, PartOutput, PartSpec};
 use std::collections::BTreeMap;
 
+mod value_parts;
+
 #[derive(Default)]
 pub(crate) struct RootProperties {
     pub(crate) properties: Vec<PropertyRecord>,
@@ -17,7 +19,7 @@ pub(crate) struct RootProperties {
 pub(crate) fn selected(node: roxmltree::Node<'_, '_>) -> bool {
     let tag = match node.attribute("type") {
         Some("App::PropertyString") => "String",
-        Some("App::PropertyInteger") => "Integer",
+        Some("App::PropertyInteger" | "App::PropertyIntegerConstraint") => "Integer",
         Some("App::PropertyBool") => "Bool",
         Some("App::PropertyFloat") => "Float",
         Some("App::PropertyVector") => "PropertyVector",
@@ -157,6 +159,9 @@ pub(crate) fn decode<'source>(
                         let name = super::required_attr(node, "name")?;
                         let id = crate::native::native_child_id("property", &owner, name);
                         source.record(&id, node, || {
+                            if node.attribute("type") == Some("App::PropertyIntegerConstraint") {
+                                return value_parts::decode(ctx, view, &source, node, &owner, order, stage);
+                            }
                             let mut losses = Vec::new();
                             let property = super::parse_persisted_property(
                                 node,
@@ -166,7 +171,7 @@ pub(crate) fn decode<'source>(
                                 Some(&source),
                                 true,
                             )?;
-                            if let PropertyBody::Unreadable(detail) = &property.body {
+                            if let Some(PropertyBody::Unreadable(detail)) = &property.body {
                                 return Err(CodecError::malformed(detail));
                             }
                             if let Some(attribute) = crate::attributes::document_property(&property)?

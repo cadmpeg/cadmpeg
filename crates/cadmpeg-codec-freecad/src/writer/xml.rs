@@ -125,7 +125,7 @@ pub(crate) fn native(property_record: &PropertyRecord) -> Result<Option<String>,
 }
 
 pub(crate) fn validate(property_record: &PropertyRecord) -> Result<(), CodecError> {
-    if !matches!(property_record.body, PropertyBody::Persisted { .. }) {
+    if !matches!(property_record.body, Some(PropertyBody::Persisted { .. })) {
         return Ok(());
     }
     let Some(xml) = native(property_record)? else {
@@ -163,15 +163,14 @@ pub(crate) fn native_named(
     property_record: &PropertyRecord,
     names: &std::collections::HashMap<String, String>,
 ) -> Result<Option<String>, CodecError> {
-    let PropertyBody::Persisted {
+    let Some(PropertyBody::Persisted {
         values,
         side_entries,
-        dynamic,
         ..
-    } = &property_record.body
+    }) = &property_record.body
     else {
         return Ok(
-            matches!(property_record.body, PropertyBody::Transient).then(|| {
+            matches!(property_record.body, Some(PropertyBody::Transient)).then(|| {
                 format!(
                     "<_Property name=\"{}\" type=\"{}\"/>",
                     escaped(&property_record.name),
@@ -189,7 +188,7 @@ pub(crate) fn native_named(
             status: property_record.status,
             values,
             side_entries,
-            dynamic: dynamic.as_ref(),
+            dynamic: property_record.dynamic.as_ref(),
         },
         names,
     )

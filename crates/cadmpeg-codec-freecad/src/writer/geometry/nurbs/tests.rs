@@ -20,18 +20,18 @@ fn read(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) 
     let text = format!("CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves {curve_count}\n{curves}\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces {surface_count}\n{surfaces}\nTriangulations 0\nTShapes 0\n*");
     let property = crate::test_support::source_fidelity::PropertyFixture::new(
         PropertyRecord {
+            dynamic: None,
             id: crate::native::native_id("property", "Shape:Shape"),
             owner: crate::native::native_id("object", "Shape"),
             name: "Shape".into(),
             type_name: "Part::PropertyPartShape".into(),
             family: PropertyFamily::Geometry,
             status: None,
-            body: PropertyBody::Persisted {
+            body: Some(PropertyBody::Persisted {
                 values: Vec::new(),
                 links: Vec::new(),
                 side_entries: vec!["Shape.brp".into()],
-                dynamic: None,
-            },
+            }),
             order: 0,
         },
         r#"<Property><Part file="Shape.brp"/></Property>"#,

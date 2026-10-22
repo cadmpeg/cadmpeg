@@ -18,7 +18,7 @@ use cadmpeg_ir::source_fidelity::parts::PartOutput;
 
 pub(crate) mod native;
 mod parts;
-use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
+use crate::rse::{RseInventory, SegmentBulkState, SegmentKind};
 
 const DEFAULT_STYLE_TYPE: [u8; 16] = [
     0xcd, 0xec, 0xfb, 0x11, 0xd1, 0x11, 0x6b, 0x25, 0x00, 0x08, 0xeb, 0xbb, 0x21, 0xed, 0xdc, 0x09,
@@ -525,7 +525,7 @@ pub(crate) fn inventory<'a>(
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
             continue;
         };
-        let RecordFrameState::Framed(table) = &bulk.records else {
+        let Some(table) = bulk.records.table() else {
             continue;
         };
         for record in &table.records {

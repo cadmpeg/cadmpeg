@@ -25,18 +25,18 @@ fn singular_reference_link_keeps_one_selector_and_rejects_two() {
         .expect("valid link");
         {
             let property = crate::native::PropertyRecord {
+                dynamic: None,
                 id: "reference".into(),
                 owner: "owner".into(),
                 name: "ReferenceAxis".into(),
                 type_name: "App::PropertyLinkSub".into(),
                 family: crate::native::PropertyFamily::Unknown,
                 status: None,
-                body: crate::native::PropertyBody::Persisted {
+                body: Some(crate::native::PropertyBody::Persisted {
                     values: Vec::new(),
                     links: vec![link],
                     side_entries: Vec::new(),
-                    dynamic: None,
-                },
+                }),
                 order: 0,
             };
             let _source = crate::test_support::source_fidelity::xml_layout_fixture(
@@ -59,13 +59,14 @@ fn singular_reference_link_keeps_one_selector_and_rejects_two() {
 fn sketch_placement_runtime_type_error_is_malformed() {
     let property = {
         let property = crate::native::PropertyRecord {
+            dynamic: None,
             id: "placement-property".into(),
             owner: "sketch".into(),
             name: "Placement".into(),
             type_name: "App::PropertyString".into(),
             family: crate::native::PropertyFamily::Unknown,
             status: None,
-            body: crate::native::PropertyBody::Transient,
+            body: Some(crate::native::PropertyBody::Transient),
             order: 0,
         };
         let _source = crate::test_support::source_fidelity::xml_layout_fixture(
@@ -151,7 +152,7 @@ fn assert_native_retention(result: &cadmpeg_ir::codec::DecodeResult, expected: u
     }
     let unreadable = properties
         .iter()
-        .filter(|property| matches!(property.body, PropertyBody::Unreadable(_)))
+        .filter(|property| matches!(property.body, Some(PropertyBody::Unreadable(_))))
         .collect::<Vec<_>>();
     let losses = &result.report().losses;
     assert_eq!(
@@ -202,7 +203,12 @@ fn assert_unreadable_properties(
         .expect("typed properties");
     let actual = properties
         .iter()
-        .filter(|property| matches!(property.body, crate::native::PropertyBody::Unreadable(_)))
+        .filter(|property| {
+            matches!(
+                property.body,
+                Some(crate::native::PropertyBody::Unreadable(_))
+            )
+        })
         .map(|property| (property.owner.clone(), property.name.clone()))
         .collect::<std::collections::BTreeSet<_>>();
     let expected: std::collections::BTreeSet<_> = expected

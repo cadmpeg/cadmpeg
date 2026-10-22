@@ -484,13 +484,14 @@ pub(crate) mod tests {
     fn resource_test_property() -> crate::test_support::source_fidelity::PropertyFixture {
         crate::test_support::source_fidelity::PropertyFixture::new(
             PropertyRecord {
+                dynamic: None,
                 id: "fcstd:native:property#Geometry".to_owned(),
                 owner: "fcstd:native:object#Geometry".to_owned(),
                 name: "Geometry".to_owned(),
                 type_name: "Points::PropertyPointKernel".to_owned(),
                 family: PropertyFamily::Unknown,
                 status: None,
-                body: PropertyBody::Transient,
+                body: Some(PropertyBody::Transient),
                 order: 0,
             },
             "<Property><Points/></Property>".to_owned(),

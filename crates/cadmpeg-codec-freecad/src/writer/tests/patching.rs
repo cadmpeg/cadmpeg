@@ -86,18 +86,18 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
         .insert("value".into(), "changed".into());
     let property = {
         let property = PropertyRecord {
+            dynamic: None,
             id: "test:property#values".into(),
             owner: "test:object#owner".into(),
             name: "Values".into(),
             type_name: "App::PropertyStringList".into(),
             family: crate::native::PropertyFamily::List,
             status: None,
-            body: crate::native::PropertyBody::Persisted {
+            body: Some(crate::native::PropertyBody::Persisted {
                 values,
                 links: Vec::new(),
                 side_entries: Vec::new(),
-                dynamic: None,
-            },
+            }),
             order: 0,
         };
         let _source = crate::test_support::source_fidelity::xml_layout_fixture(
@@ -129,6 +129,7 @@ fn xml_serialization_preserves_normalized_whitespace() {
     };
     let property = {
         let property = PropertyRecord {
+            dynamic: None,
             id: "test:property#whitespace".into(),
             owner: "test:object#owner".into(),
             name: "Text".into(),
@@ -136,12 +137,11 @@ fn xml_serialization_preserves_normalized_whitespace() {
             family: crate::native::PropertyFamily::String,
             status: None,
             order: 0,
-            body: crate::native::PropertyBody::Persisted {
+            body: Some(crate::native::PropertyBody::Persisted {
                 values: vec![value],
                 links: Vec::new(),
                 side_entries: Vec::new(),
-                dynamic: None,
-            },
+            }),
         };
         let _source = crate::test_support::source_fidelity::xml_layout_fixture(
             &property.id,

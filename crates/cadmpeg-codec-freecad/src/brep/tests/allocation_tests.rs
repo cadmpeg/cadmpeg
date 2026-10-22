@@ -105,13 +105,14 @@ fn transferred_nurbs_surface_keeps_one_geometry_copy() {
 fn shape_property(xml: &str) -> crate::test_support::source_fidelity::PropertyFixture {
     crate::test_support::source_fidelity::PropertyFixture::new(
         PropertyRecord {
+            dynamic: None,
             id: "fcstd:native:property#Owner:Shape".into(),
             owner: "fcstd:native:object#Owner".into(),
             name: "Shape".into(),
             type_name: "Part::PropertyPartShape".into(),
             family: PropertyFamily::Geometry,
             status: None,
-            body: PropertyBody::Transient,
+            body: Some(PropertyBody::Transient),
             order: 0,
         },
         xml,

@@ -74,7 +74,7 @@ fn malformed_unused_links_remain_explicitly_source_only() {
         .expect("source-only link");
         assert!(matches!(
             graph.properties[0].body,
-            PropertyBody::Unreadable(_)
+            Some(PropertyBody::Unreadable(_))
         ));
         assert!(graph.properties[0].links().is_empty());
         assert!(graph.properties[0].values().is_empty());

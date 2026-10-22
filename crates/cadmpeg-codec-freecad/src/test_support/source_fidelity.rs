@@ -215,6 +215,7 @@ pub(crate) fn value_layout_fixture(owner: &str, raw_values: &[&str]) -> cadmpeg_
         })
         .collect::<Vec<_>>();
     let property = crate::native::PropertyRecord {
+        dynamic: None,
         id: owner.into(),
         owner: "fixture".into(),
         name: "fixture".into(),
@@ -222,12 +223,11 @@ pub(crate) fn value_layout_fixture(owner: &str, raw_values: &[&str]) -> cadmpeg_
         family: crate::native::PropertyFamily::Unknown,
         status: None,
         order: 0,
-        body: crate::native::PropertyBody::Persisted {
+        body: Some(crate::native::PropertyBody::Persisted {
             values,
             links: Vec::new(),
             side_entries: Vec::new(),
-            dynamic: None,
-        },
+        }),
     };
     let sources = [
         crate::fidelity::property_source(document.root_element(), &property)

@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::native::{PropertyBody, PropertyRecord};
+use crate::native::PropertyRecord;
 use crate::writer::xml::{self, Object};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{products::Occurrence, products::ProductDefinition, CadIr};
@@ -23,7 +23,14 @@ fn property<'a>(
     owner: &str,
     name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let mut records = records.iter().filter(|record| record.owner == owner && record.name == name && matches!(&record.body, PropertyBody::Persisted {dynamic:Some(dynamic),..} if dynamic.group=="CADIR"));
+    let mut records = records.iter().filter(|record| {
+        record.owner == owner
+            && record.name == name
+            && record
+                .dynamic
+                .as_ref()
+                .is_some_and(|dynamic| dynamic.group == "CADIR")
+    });
     let first = records.next();
     if records.next().is_some() {
         return Err(CodecError::malformed("duplicate CADIR product metadata"));

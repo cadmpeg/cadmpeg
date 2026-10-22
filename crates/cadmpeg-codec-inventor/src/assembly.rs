@@ -17,7 +17,7 @@ pub(crate) mod parts;
 use crate::compact_matrix::CompactMatrix;
 use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
 use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
-use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
+use crate::rse::{RseInventory, SegmentBulkState, SegmentKind};
 
 const SUPPRESSED_REFERENCE_STATE: u16 = 0x2000;
 const INVENTOR_LENGTH_TO_MILLIMETRES: f64 = 10.0;
@@ -258,10 +258,10 @@ pub(crate) fn owns_record(kind: &SegmentKind, type_id: [u8; 16]) -> bool {
 pub(crate) fn inventory<'a>(
     ctx: &DecodeContext<'a>,
     document: &RseInventory<'a>,
+    mut parts: PartOutput,
 ) -> Result<AssemblyInventory<'a>, CodecError> {
     let mut occurrences = Vec::new();
     let mut placements = Vec::new();
-    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor);
     for segment in &document.segments {
         let relevant = matches!(segment.kind, SegmentKind::AmDc | SegmentKind::AmGraphics);
         if !relevant {
@@ -270,7 +270,7 @@ pub(crate) fn inventory<'a>(
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
             continue;
         };
-        let RecordFrameState::Framed(table) = &bulk.records else {
+        let Some(table) = bulk.records.table() else {
             continue;
         };
         for record in &table.records {
@@ -667,9 +667,12 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, source) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
-        let container =
-            InventorContainer::open(&ctx, source).expect("actual framed assembly source");
-        let result = inventory(&ctx, &container.rse)?;
+        let mut container = InventorContainer::open(&ctx, source)?;
+        let parts = std::mem::replace(
+            &mut container.rse.source_parts,
+            super::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
+        );
+        let result = inventory(&ctx, &container.rse, parts)?;
         let token = result
             .occurrences
             .first()

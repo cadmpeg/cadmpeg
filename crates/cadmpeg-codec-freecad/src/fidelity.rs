@@ -73,6 +73,9 @@ pub(crate) fn property(
     objects: &[crate::native::ObjectRecord],
     legacy_evidence: bool,
 ) -> Result<Option<cadmpeg_ir::ArenaClass>, CodecError> {
+    if property.body.is_none() {
+        return Ok(None);
+    }
     let opaque = crate::persistence::opaque_python_payload(property);
     let mut classes = ArenaClasses::new();
     let class = if property.type_name == "Part::PropertyPartShape" {
@@ -87,7 +90,12 @@ pub(crate) fn property(
     } else {
         cadmpeg_ir::ArenaClass::Model
     };
-    if opaque || matches!(property.body, crate::native::PropertyBody::Unreadable(_)) {
+    if opaque
+        || matches!(
+            property.body,
+            Some(crate::native::PropertyBody::Unreadable(_))
+        )
+    {
         classes.insert(class);
     }
     if legacy_evidence {
@@ -132,7 +140,10 @@ pub(crate) fn mark_unreadable(
         }
     };
     for property in &properties {
-        if matches!(property.body, crate::native::PropertyBody::Unreadable(_)) {
+        if matches!(
+            property.body,
+            Some(crate::native::PropertyBody::Unreadable(_))
+        ) {
             fidelity
                 .mark_untyped(&property.id, [class(property)])
                 .map_err(CodecError::malformed)?;
@@ -220,7 +231,10 @@ pub(crate) fn property_source(
     node: roxmltree::Node<'_, '_>,
     property: &crate::native::PropertyRecord,
 ) -> Result<ValueSourceRanges, CodecError> {
-    if !matches!(property.body, crate::native::PropertyBody::Persisted { .. }) {
+    if !matches!(
+        property.body,
+        Some(crate::native::PropertyBody::Persisted { .. })
+    ) {
         return Ok(ValueSourceRanges {
             id: property.id.clone(),
             record: node.range(),
@@ -373,10 +387,15 @@ pub(crate) fn captured_property_layout_payloads(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     ranges: &ValueSourceRanges,
+    property: &crate::native::PropertyRecord,
     payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
     pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<(), CodecError> {
-    let fields = copy_xml_value_layout(ctx, source, ranges)?;
+    let fields = if property.body.is_none() {
+        BTreeMap::new()
+    } else {
+        copy_xml_value_layout(ctx, source, ranges)?
+    };
     install_xml_value_fields(ranges, fields, payloads, pointers)
 }
 

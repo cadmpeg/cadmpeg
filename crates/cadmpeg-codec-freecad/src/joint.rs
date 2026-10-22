@@ -507,7 +507,12 @@ fn enumeration_value(
 fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
     // Persistence admission already reported this unreadable scalar. Keep the
     // independently typed joint relation without inventing its missing value.
-    if matches!(property.body, crate::native::PropertyBody::Unreadable(_)) {
+    if property.body.is_none()
+        || matches!(
+            property.body,
+            Some(crate::native::PropertyBody::Unreadable(_))
+        )
+    {
         return Ok(None);
     }
     let (expected_type, expected_tag) = match property.name.as_str() {
@@ -617,13 +622,14 @@ pub(crate) mod tests {
     ) -> crate::native::PropertyRecord {
         {
             let property = crate::native::PropertyRecord {
+                dynamic: None,
                 id: "property".into(),
                 owner: "joint".into(),
                 name: name.into(),
                 type_name: type_name.into(),
                 family: crate::native::PropertyFamily::Unknown,
                 status: None,
-                body: crate::native::PropertyBody::Transient,
+                body: Some(crate::native::PropertyBody::Transient),
                 order: 0,
             };
             let _source =
@@ -652,12 +658,11 @@ pub(crate) mod tests {
                 text: None,
             })
             .collect();
-        property.body = crate::native::PropertyBody::Persisted {
+        property.body = Some(crate::native::PropertyBody::Persisted {
             values,
             links: Vec::new(),
             side_entries: Vec::new(),
-            dynamic: None,
-        };
+        });
         property
     }
 

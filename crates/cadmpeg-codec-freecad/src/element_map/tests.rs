@@ -74,18 +74,18 @@ fn test_property(
 ) -> crate::test_support::source_fidelity::PropertyFixture {
     crate::test_support::source_fidelity::PropertyFixture::new(
         PropertyRecord {
+            dynamic: None,
             id: "fcstd:test:property#Shape".into(),
             owner: "fcstd:test:object#Shape".into(),
             name: "Shape".into(),
             type_name: type_name.into(),
             family: crate::native::PropertyFamily::Unknown,
             status: None,
-            body: crate::native::PropertyBody::Persisted {
+            body: Some(crate::native::PropertyBody::Persisted {
                 values: Vec::new(),
                 links: Vec::new(),
                 side_entries: Vec::new(),
-                dynamic: None,
-            },
+            }),
             order: 0,
         },
         raw_xml,

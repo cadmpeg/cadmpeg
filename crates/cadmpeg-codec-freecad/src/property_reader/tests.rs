@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 fn property() -> PropertyRecord {
     PropertyRecord {
+        dynamic: None,
         id: "property".into(),
         owner: "owner".into(),
         name: "Label".into(),
@@ -15,7 +16,7 @@ fn property() -> PropertyRecord {
         family: PropertyFamily::String,
         status: None,
         order: 0,
-        body: PropertyBody::Persisted {
+        body: Some(PropertyBody::Persisted {
             values: vec![ValueRecord {
                 tag: "String".into(),
                 order: 0,
@@ -26,8 +27,7 @@ fn property() -> PropertyRecord {
             }],
             links: Vec::new(),
             side_entries: Vec::new(),
-            dynamic: None,
-        },
+        }),
     }
 }
 
@@ -61,14 +61,14 @@ fn typed_reader_uses_current_values_after_an_edit_and_deletion() {
     let reader = PropertyReader::typed(&context);
     let mut property = property();
     assert!(reader.property_xml(&property).unwrap().contains("old"));
-    let PropertyBody::Persisted { values, .. } = &mut property.body else {
+    let Some(PropertyBody::Persisted { values, .. }) = &mut property.body else {
         panic!("persisted fixture")
     };
     values[0].attributes.insert("value".into(), "new Ω".into());
     let edited = reader.property_xml(&property).unwrap();
     assert!(edited.contains("new Ω"));
     assert!(!edited.contains("old"));
-    let PropertyBody::Persisted { values, .. } = &mut property.body else {
+    let Some(PropertyBody::Persisted { values, .. }) = &mut property.body else {
         panic!("persisted fixture")
     };
     values.clear();

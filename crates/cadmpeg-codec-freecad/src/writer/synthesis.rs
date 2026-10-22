@@ -43,7 +43,13 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
     let mut entries = BTreeMap::<String, Vec<u8>>::new();
     let unreadable_owners: HashSet<_> = native_properties
         .iter()
-        .filter(|property| matches!(property.body, crate::native::PropertyBody::Unreadable(_)))
+        .filter(|property| {
+            property.body.is_none()
+                || matches!(
+                    property.body,
+                    Some(crate::native::PropertyBody::Unreadable(_))
+                )
+        })
         .map(|property| property.owner.as_str())
         .collect();
     // Source-only objects remain typed content. A neutral counterpart owns its

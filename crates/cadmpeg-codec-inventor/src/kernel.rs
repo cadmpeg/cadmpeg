@@ -12,9 +12,7 @@ use cadmpeg_asm::{acis_header, asm_header};
 
 use crate::layout::kernel_carrier_header as carrier_header;
 use crate::records::RseRecordFrame;
-use crate::rse::{
-    DocumentKind, RecordFrameState, SegmentBulkState, SegmentDescriptor, SegmentKind,
-};
+use crate::rse::{DocumentKind, SegmentBulkState, SegmentDescriptor, SegmentKind};
 
 const KERNEL_RECORD_TYPE_ID: [u8; 16] = [
     0x5c, 0x59, 0x45, 0xf6, 0xd5, 0x11, 0x33, 0x13, 0x10, 0x00, 0x60, 0xa6, 0xbb, 0xa6, 0x47, 0xb5,
@@ -158,13 +156,8 @@ pub(crate) fn select_active_carrier<'a>(
     let SegmentBulkState::Framed(bulk) = &segment.bulk else {
         return ActiveCarrierState::Unavailable("PmBRep bulk stream is unavailable".to_owned());
     };
-    let table = match &bulk.records {
-        RecordFrameState::Framed(table) => table,
-        RecordFrameState::Unavailable(_) => {
-            return ActiveCarrierState::Unavailable(
-                "PmBRep record table is unavailable".to_owned(),
-            );
-        }
+    let Some(table) = bulk.records.table() else {
+        return ActiveCarrierState::Unavailable("PmBRep record table is unavailable".to_owned());
     };
     let is_carrier = |record: &&RseRecordFrame<'a>| record.type_id == KERNEL_RECORD_TYPE_ID;
     let carrier_count = table.records.iter().filter(is_carrier).count();

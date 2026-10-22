@@ -3,6 +3,7 @@
 
 mod database_parts;
 mod document_native_projection;
+pub(super) mod meta_type_parts;
 mod property_sections;
 mod property_streams;
 mod revision_parts;
@@ -51,20 +52,24 @@ use crate::protein::ProteinState;
 use crate::rse::{DatabaseState, DocumentKind, ParsedState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    decode_container(ctx, &InventorContainer::open(ctx, root)?)
+    decode_container(ctx, InventorContainer::open(ctx, root)?)
 }
 
 fn decode_container<'a>(
     ctx: &DecodeContext<'a>,
-    container: &InventorContainer<'a>,
+    mut container: InventorContainer<'a>,
 ) -> Result<Decoded, CodecError> {
     // One predicate, read once from the parsed declarations: it decides the
     // admission in `primary` and the dialect-unverified loss below, and neither
     // recomputes the other.
-    let recovery = DialectRecovery::of(container);
+    let recovery = DialectRecovery::of(&container);
     let matched = recovery.classify();
     let dialects = crate::dialect::layers(&matched, &container.rse.active_carrier)?;
-    let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
+    let source_parts = std::mem::replace(
+        &mut container.rse.source_parts,
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
+    );
+    let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse, source_parts)?;
     let presentation_inventory =
         crate::presentation::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
@@ -436,12 +441,12 @@ fn decode_container<'a>(
             structural_issues.push(structural_issue(ctx, "revision_table", detail)?);
         }
     }
-    let projection = rse_native_projection::project(ctx, container, &assembly_inventory.parts)?;
+    let source_meta_type_count = container.rse.source_meta_type_count;
+    let projection = rse_native_projection::project(ctx, &container, &assembly_inventory.parts)?;
     structural_issues.extend(projection.identity_issues);
     let segment_pairs = projection.segment_pairs;
     let segment_meta = projection.segment_meta;
     let meta_sections = projection.meta_sections;
-    let meta_types = projection.meta_types;
     let segment_meta_issues = projection.segment_meta_issues;
     let source_layout = projection.layout;
     let rse_records = projection.rse_records;
@@ -588,7 +593,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "segment_pairs", &segment_pairs)?;
     namespace.set_arena(ctx, "segment_meta", &segment_meta)?;
     namespace.set_arena(ctx, "meta_sections", &meta_sections)?;
-    namespace.set_arena(ctx, "meta_types", &meta_types)?;
+    namespace.set_arena(ctx, "meta_types", &[] as &[crate::native::MetaTypeRecord])?;
     namespace.set_arena(ctx, "segment_meta_issues", &segment_meta_issues)?;
     namespace.set_arena(ctx, "segment_bulk", &segment_bulk)?;
     namespace.set_arena(ctx, "rse_records", &rse_records)?;
@@ -1158,7 +1163,7 @@ fn decode_container<'a>(
         ),
         (crate::coverage::RSE_SEGMENT_PAIRS, segment_pairs.len()),
         (crate::coverage::RSE_SEGMENT_META, segment_meta.len()),
-        (crate::coverage::RSE_META_TYPES, meta_types.len()),
+        (crate::coverage::RSE_META_TYPES, source_meta_type_count),
         (
             crate::coverage::RSE_SEGMENT_META_ISSUES,
             segment_meta_issues.len(),

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native record invariants and exact value-text tests.
 
+mod property_body;
 mod value_text;
 
 use super::{model_id, native_child_id, native_id, ValueRecord};
@@ -83,13 +84,14 @@ fn entries_check_names_identities_references_and_cache_the_digest() {
 #[test]
 fn duplicate_property_is_malformed() {
     let property = super::PropertyRecord {
+        dynamic: None,
         id: "fcstd:native:property#LongProperty".into(),
         owner: "fcstd:native:object#Owner".into(),
         name: "LongProperty".into(),
         type_name: "App::PropertyString".into(),
         family: super::PropertyFamily::Unknown,
         status: None,
-        body: super::PropertyBody::Transient,
+        body: Some(super::PropertyBody::Transient),
         order: 0,
     };
     let _fidelity =

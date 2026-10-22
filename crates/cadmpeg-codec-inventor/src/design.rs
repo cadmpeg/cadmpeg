@@ -18,7 +18,7 @@ use crate::loss::InventorLossCode;
 use crate::pmdc::{inventor_id, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference};
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
-use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind, SegmentMetaState};
+use crate::rse::{RseInventory, SegmentBulkState, SegmentKind, SegmentMetaState};
 
 pub(crate) mod scope;
 
@@ -363,7 +363,7 @@ pub(crate) fn inventory(
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
             continue;
         };
-        let RecordFrameState::Framed(table) = &bulk.records else {
+        let Some(table) = bulk.records.table() else {
             continue;
         };
         for record in &table.records {

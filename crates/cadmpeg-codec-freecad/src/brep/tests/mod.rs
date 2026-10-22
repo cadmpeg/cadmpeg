@@ -565,18 +565,18 @@ fn retains_indirect_analytic_surface_parameter_frames() {
 fn binds_only_the_direct_shape_entry_as_typed_payload() {
     let property = crate::test_support::source_fidelity::PropertyFixture::new(
         PropertyRecord {
+            dynamic: None,
             id: crate::native::native_id("property", "Shape:SuppressedShape"),
             owner: crate::native::native_id("object", "Shape"),
             name: "SuppressedShape".into(),
             type_name: "Part::PropertyPartShape".into(),
             family: crate::native::PropertyFamily::Geometry,
             status: None,
-            body: crate::native::PropertyBody::Persisted {
+            body: Some(crate::native::PropertyBody::Persisted {
                 values: Vec::new(),
                 links: Vec::new(),
                 side_entries: vec!["empty.brp".into(), "empty-2.brp".into()],
-                dynamic: None,
-            },
+            }),
             order: 0,
         },
         r#"<Property><Part file="empty.brp"/><Extra file="empty-2.brp"/></Property>"#,
@@ -606,18 +606,18 @@ fn binds_only_the_direct_shape_entry_as_typed_payload() {
 fn ignores_nested_shape_part_carriers() {
     let property = crate::test_support::source_fidelity::PropertyFixture::new(
         PropertyRecord {
+            dynamic: None,
             id: crate::native::native_id("property", "Shape:Nested"),
             owner: crate::native::native_id("object", "Shape"),
             name: "Nested".into(),
             type_name: "Part::PropertyPartShape".into(),
             family: crate::native::PropertyFamily::Geometry,
             status: None,
-            body: crate::native::PropertyBody::Persisted {
+            body: Some(crate::native::PropertyBody::Persisted {
                 values: Vec::new(),
                 links: Vec::new(),
                 side_entries: vec!["nested.brp".into()],
-                dynamic: None,
-            },
+            }),
             order: 0,
         },
         r#"<Property><Wrapper><Part file="nested.brp"/></Wrapper></Property>"#,
@@ -630,18 +630,18 @@ fn ignores_nested_shape_part_carriers() {
 fn rejects_duplicate_direct_shape_part_carriers() {
     let property = crate::test_support::source_fidelity::PropertyFixture::new(
         PropertyRecord {
+            dynamic: None,
             id: crate::native::native_id("property", "Shape:Duplicate"),
             owner: crate::native::native_id("object", "Shape"),
             name: "Duplicate".into(),
             type_name: "Part::PropertyPartShape".into(),
             family: crate::native::PropertyFamily::Geometry,
             status: None,
-            body: crate::native::PropertyBody::Persisted {
+            body: Some(crate::native::PropertyBody::Persisted {
                 values: Vec::new(),
                 links: Vec::new(),
                 side_entries: vec!["first.brp".into(), "second.brp".into()],
-                dynamic: None,
-            },
+            }),
             order: 0,
         },
         r#"<Property><Part file="first.brp"/><Part file="second.brp"/></Property>"#,
@@ -653,13 +653,14 @@ fn rejects_duplicate_direct_shape_part_carriers() {
 fn retains_transient_shape_without_a_carrier() {
     let property = crate::test_support::source_fidelity::PropertyFixture::new(
         PropertyRecord {
+            dynamic: None,
             id: crate::native::native_id("property", "Shape:PreviewShape"),
             owner: crate::native::native_id("object", "Shape"),
             name: "PreviewShape".into(),
             type_name: "Part::PropertyPartShape".into(),
             family: crate::native::PropertyFamily::Geometry,
             status: Some(152),
-            body: crate::native::PropertyBody::Transient,
+            body: Some(crate::native::PropertyBody::Transient),
             order: 0,
         },
         r#"<_Property name="PreviewShape" type="Part::PropertyPartShape" status="152"/>"#,
@@ -672,18 +673,18 @@ fn retains_transient_shape_without_a_carrier() {
 fn ignores_non_shape_runtime_names_when_framing_payloads() {
     let property = crate::test_support::source_fidelity::PropertyFixture::new(
         PropertyRecord {
+            dynamic: None,
             id: crate::native::native_id("property", "Shape:Custom"),
             owner: crate::native::native_id("object", "Shape"),
             name: "Custom".into(),
             type_name: "Custom::PropertyPartShape".into(),
             family: crate::native::PropertyFamily::Unknown,
             status: None,
-            body: crate::native::PropertyBody::Persisted {
+            body: Some(crate::native::PropertyBody::Persisted {
                 values: Vec::new(),
                 links: Vec::new(),
                 side_entries: vec!["custom.brp".into()],
-                dynamic: None,
-            },
+            }),
             order: 0,
         },
         "<Property/>",

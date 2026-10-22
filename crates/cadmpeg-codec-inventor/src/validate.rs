@@ -1893,10 +1893,10 @@ fn validate_segment_states<'a>(
         states.iter().copied(),
         &format!("segment {member} state"),
     );
-    if states.into_iter().collect::<HashSet<_>>() != *pairs {
+    if states.into_iter().any(|token| !pairs.contains(token)) {
         findings.push(finding(
             Check::NativeLinks,
-            format!("Inventor segment {member} states do not cover paired segments exactly"),
+            format!("Inventor segment {member} state has no paired segment"),
             None,
         ));
     }
@@ -2312,3 +2312,6 @@ fn finding(check: Check, message: String, entity: Option<String>) -> Finding {
         entity,
     }
 }
+
+#[cfg(test)]
+mod tests;

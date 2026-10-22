@@ -161,7 +161,7 @@ fn json_python_values_are_typed_editable_data_not_encoded_content_sources() {
         .iter_mut()
         .find(|property| property.name == "InertValue")
         .unwrap();
-    let crate::native::PropertyBody::Persisted { values, .. } = &mut property.body else {
+    let Some(crate::native::PropertyBody::Persisted { values, .. }) = &mut property.body else {
         panic!("typed JSON property")
     };
     assert_eq!(

@@ -244,7 +244,7 @@ fn incomplete_nonfinite_text_and_dynamic_fallback_vectors_keep_the_generic_nativ
         assert_eq!(properties, pure.properties);
         assert!(matches!(
             properties[0].body,
-            crate::native::PropertyBody::Persisted { .. }
+            Some(crate::native::PropertyBody::Persisted { .. })
         ));
         assert!(!decoded
             .source_fidelity()

@@ -59,15 +59,24 @@ impl<'a> InventorContainer<'a> {
                 continue;
             };
             match &segment.meta {
-                SegmentMetaState::Parsed(meta) => {
+                SegmentMetaState::Parsed(meta)
+                | SegmentMetaState::Malformed {
+                    framing: Some(meta),
+                    ..
+                } => {
                     insert_attribute(entry, "inner_framing", "zlib");
                     insert_attribute(entry, "expanded_size", meta.body.window().len());
                     insert_attribute(entry, "meta_marker", &meta.declared.marker);
                     insert_attribute(entry, "meta_stream_version", meta.declared.version);
                     insert_attribute(entry, "segment_kind", segment.kind.label());
                     insert_attribute(entry, "display_name", &meta.display_name);
+                    if let SegmentMetaState::Malformed { detail, .. } = &segment.meta {
+                        insert_attribute(entry, "framing_error", detail);
+                    }
                 }
-                SegmentMetaState::Malformed { declared, detail } => {
+                SegmentMetaState::Malformed {
+                    declared, detail, ..
+                } => {
                     if let Some(declared) = declared {
                         insert_attribute(entry, "meta_marker", &declared.marker);
                         insert_attribute(entry, "meta_stream_version", declared.version);
