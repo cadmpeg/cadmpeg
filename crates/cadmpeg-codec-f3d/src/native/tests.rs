@@ -46,12 +46,37 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 #[test]
 fn null_locus_native_retained_limit_refuses_before_owned_wire_conversion() {
     use crate::records::dimension_null_locus_wire::{Wire, OWNED_WIRE_CONVERSIONS};
-    use crate::records::dimensions::DesignDimensionLocusPair;
+    use crate::records::dimensions::{
+        DesignDimensionAnnotationOperand, DesignDimensionLocusPair, DesignDimensionLocusPairDraft,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let pair: DesignDimensionLocusPair = serde_json::from_str(
-        r#"{"id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80,"first_geometry_record_index":0,"first_geometry_reference_offset":35,"first_role":0,"first_role_offset":45,"second_geometry_record_index":41,"second_geometry_reference_offset":50,"second_role":1,"second_role_offset":60,"paired_class_tag":"273","paired_byte_offset":90}"#,
-    )
+    let pair = DesignDimensionLocusPair::try_new(DesignDimensionLocusPairDraft {
+        id: "f3d:test:dimension-locus-pair#0".into(),
+        companion_record_index: 1,
+        governing_companion_record_index: 2,
+        byte_offset: 10,
+        class_tag: "274".to_owned().try_into().unwrap(),
+        record_index: 3,
+        frame_length: 80,
+        opaque_index: None,
+        loci: [
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: None,
+                geometry_reference_offset: Some(35),
+                role: 0,
+                role_offset: Some(45),
+            },
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: std::num::NonZeroU32::new(41),
+                geometry_reference_offset: Some(50),
+                role: 1,
+                role_offset: Some(60),
+            },
+        ],
+        paired_class_tag: "273".to_owned().try_into().unwrap(),
+        paired_byte_offset: 90,
+    })
     .unwrap();
     let record_bytes = serde_json::to_vec(&Wire::from(&pair)).unwrap().len();
     let native = super::F3dNative {
@@ -100,7 +125,7 @@ fn native_load_refuses_orphan_history_row_with_child_and_parent() {
     let board = crate::history_records::AsmBulletinBoard {
         id: "f3d:native:bulletin#1".into(),
         parent: "f3d:native:missing-state#1".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         owner_ref: 0,
         number: 0,
         changes: Vec::new(),
@@ -125,10 +150,12 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 80);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 81);
+    assert!(catalogue_names.contains("act_tables"));
+    assert!(catalogue_names.contains("act_types"));
     assert!(catalogue_names.contains("asm_face_boundaries"));
-    assert!(catalogue_names.contains("design_intent_failures"));
     assert!(catalogue_names.contains("design_sheet_metal_settings"));
+    assert!(!catalogue_names.contains("design_intent_failures"));
     assert_eq!(
         catalogue_names,
         crate::native::F3D_ARENA_NAMES
@@ -525,9 +552,14 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     let preserved = F3dCodec
         .decode(&mut Cursor::new(preserved), &DecodeOptions::default())
         .expect("embedded use-curve edit round trip");
-    assert!(preserved.ir().model.curves.iter().any(|curve| {
-        curve.id == use_curve
-            && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref curve)) if *curve == expected)
+    assert!(preserved.ir().model.coedges.iter().any(|coedge| {
+        coedge.use_curve.as_ref().is_some_and(|use_| {
+            use_.parameter_range.endpoints() == [-2.0, 3.0]
+                && preserved.ir().model.curves.iter().any(|curve| {
+                    curve.id == use_.curve
+                        && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref nurbs)) if *nurbs == expected)
+                })
+        })
     }));
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");

@@ -2,7 +2,7 @@ use super::{planar_fixture, project_relation_bindings};
 use crate::records::{FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId, ParameterValue};
+use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchLocus,
@@ -14,7 +14,7 @@ fn project_roster_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
     lane.relation_instances[0].family = FeatureInputRelationFamily::PointPointDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: u64::from(index),
+            offset: Some(u64::from(index)),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::Native(
                 crate::records::operand_tag::NativeOperandTag::try_from(0x812a).unwrap(),
@@ -36,6 +36,7 @@ fn project_roster_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
         })
         .collect();
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#roster-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -45,7 +46,6 @@ fn project_roster_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -53,7 +53,7 @@ fn project_roster_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
     let expected = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Entity(entities[0].id().clone()),
         second: SketchLocus::Entity(entities[1].id().clone()),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -82,7 +82,7 @@ fn project_roster_point_line_with_policy(policy: &DecodePolicy) -> Result<(), Co
     lane.relation_instances[0].family = FeatureInputRelationFamily::PointLineDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: u64::from(index),
+            offset: Some(u64::from(index)),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::Native(
                 crate::records::operand_tag::NativeOperandTag::try_from(0x812a).unwrap(),
@@ -109,6 +109,7 @@ fn project_roster_point_line_with_policy(policy: &DecodePolicy) -> Result<(), Co
         .unwrap(),
     );
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#roster-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -118,7 +119,6 @@ fn project_roster_point_line_with_policy(policy: &DecodePolicy) -> Result<(), Co
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -126,7 +126,7 @@ fn project_roster_point_line_with_policy(policy: &DecodePolicy) -> Result<(), Co
     let expected = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Entity(point.id().clone()),
         second: SketchLocus::Entity(line.id().clone()),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;

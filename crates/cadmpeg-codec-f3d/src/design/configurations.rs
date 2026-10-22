@@ -252,25 +252,119 @@ pub(crate) fn project_configurations(
 pub(crate) fn bind_configuration_parameter_overrides(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     parameters: &[cadmpeg_ir::features::DesignParameter],
-) {
+) -> Result<(), CodecError> {
     for configuration in configurations {
-        configuration.properties.retain(|key, expression| {
+        let mut resolved = Vec::new();
+        for (key, expression) in &configuration.properties {
             let Some(name) = key.as_str().strip_prefix("parameter:") else {
-                return true;
+                continue;
             };
             let mut matches = parameters.iter().filter(|parameter| parameter.name == name);
             let Some(parameter) = matches.next() else {
-                return true;
+                continue;
             };
             if matches.next().is_some() {
-                return true;
+                continue;
             }
+            let spans = crate::design::dimensions::expression_identifier_spans(expression)
+                .filter_map(|(span, name)| {
+                    let mut candidates =
+                        parameters.iter().filter(|candidate| candidate.name == name);
+                    let candidate = candidates.next()?;
+                    candidates
+                        .next()
+                        .is_none()
+                        .then(|| (span, candidate.id.clone()))
+                });
+            let expression = cadmpeg_ir::features::Expression::from_spans(expression, spans)
+                .map_err(|error| CodecError::Malformed(error.to_string()))?;
+            resolved.push((key.clone(), parameter.id.clone(), expression));
+        }
+        for (key, parameter, expression) in resolved {
+            configuration.properties.remove(&key);
             configuration
                 .parameter_overrides
-                .insert(parameter.id.clone(), std::mem::take(expression));
-            false
+                .insert(parameter, expression);
+        }
+    }
+    Ok(())
+}
+
+/// Active source assignments define the base state. Variants retain only
+/// assignments which differ from that base; evaluated active caches are absent.
+pub(crate) fn canonicalize_active_configuration(
+    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    parameters: &mut [cadmpeg_ir::features::DesignParameter],
+    features: &mut [cadmpeg_ir::features::Feature],
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::ConfigurationFeatureState;
+    let mut active = configurations
+        .iter()
+        .filter(|configuration| configuration.active);
+    let current = active.next();
+    if active.next().is_some() {
+        return Err(CodecError::Malformed(
+            "multiple F3D configurations are active".into(),
+        ));
+    }
+    let overrides = current
+        .map(|configuration| configuration.parameter_overrides.clone())
+        .unwrap_or_default();
+    let states = current
+        .map(|configuration| configuration.feature_states.clone())
+        .unwrap_or_default();
+    for parameter in parameters.iter_mut() {
+        if let Some(expression) = overrides.get(&parameter.id) {
+            parameter.expression.clone_from(expression);
+        }
+    }
+    for feature in features.iter_mut() {
+        match states.get(&feature.id) {
+            Some(ConfigurationFeatureState::Suppressed {}) => feature.suppressed = Some(true),
+            Some(ConfigurationFeatureState::Active {}) => feature.suppressed = Some(false),
+            Some(ConfigurationFeatureState::Definition { definition }) => {
+                feature
+                    .evaluation
+                    .set_definition(definition.as_ref().clone());
+            }
+            None => {}
+        }
+    }
+    for configuration in configurations {
+        if configuration.active {
+            configuration.parameter_overrides.clear();
+            configuration.parameter_values.clear();
+            configuration.feature_states.clear();
+            configuration.bodies = None;
+            continue;
+        }
+        configuration.parameter_overrides.retain(|id, expression| {
+            !parameters
+                .iter()
+                .any(|parameter| &parameter.id == id && &parameter.expression == expression)
+        });
+        configuration.parameter_values.retain(|id, value| {
+            configuration.parameter_overrides.contains_key(id)
+                || !parameters
+                    .iter()
+                    .any(|parameter| &parameter.id == id && parameter.value.as_ref() == Some(value))
+        });
+        configuration.feature_states.retain(|id, state| {
+            !features.iter().any(|feature| {
+                &feature.id == id
+                    && match state {
+                        ConfigurationFeatureState::Suppressed {} => {
+                            feature.suppressed == Some(true)
+                        }
+                        ConfigurationFeatureState::Active {} => feature.suppressed != Some(true),
+                        ConfigurationFeatureState::Definition { definition } => {
+                            feature.evaluation.definition() == definition.as_ref()
+                        }
+                    }
+            })
         });
     }
+    Ok(())
 }
 
 /// Replace name-keyed suppression properties with stable feature references
@@ -295,11 +389,7 @@ pub(crate) fn bind_configuration_suppressed_features(
             }
             configuration.feature_states.insert(
                 feature.id.clone(),
-                cadmpeg_ir::features::ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
-                    dependencies: feature.dependencies.clone(),
-                    definition: feature.evaluation.definition().clone(),
-                },
+                cadmpeg_ir::features::ConfigurationFeatureState::Suppressed {},
             );
             false
         });
@@ -533,6 +623,7 @@ mod tests {
         )
         .unwrap();
         let parameter = NeutralParameter {
+            driving: true,
             id: ParameterId::mint("f3d:model:parameter#width").expect("identity grammar"),
             owner: None,
             ordinal: 0,
@@ -540,14 +631,18 @@ mod tests {
             expression: "10 mm".into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
         };
         let mut projected = project_configurations(&[table]).expect("ordered configuration table");
-        bind_configuration_parameter_overrides(&mut projected, std::slice::from_ref(&parameter));
-        assert_eq!(projected[0].parameter_overrides[&parameter.id], "25 mm");
+        bind_configuration_parameter_overrides(&mut projected, std::slice::from_ref(&parameter))
+            .unwrap();
+        assert_eq!(
+            projected[0].parameter_overrides[&parameter.id],
+            "25 mm".into()
+        );
         assert!(projected[0].properties.is_empty());
         assert_eq!(
             unresolved_configuration_parameter_override_count(&projected),
@@ -571,7 +666,7 @@ mod tests {
         )
         .unwrap()])
         .expect("ordered configuration table");
-        bind_configuration_parameter_overrides(&mut ambiguous, &[parameter, duplicate]);
+        bind_configuration_parameter_overrides(&mut ambiguous, &[parameter, duplicate]).unwrap();
         assert!(ambiguous[0].parameter_overrides.is_empty());
         assert_eq!(
             unresolved_configuration_parameter_override_count(&ambiguous),
@@ -594,6 +689,7 @@ mod tests {
         )
         .unwrap();
         let feature = Feature {
+            needs_recompute: false,
             id: FeatureId::mint("f3d:model:feature#fillet-1").expect("identity grammar"),
             ordinal: 0,
             name: Some("Fillet 1".into()),
@@ -625,6 +721,7 @@ mod tests {
         );
 
         let duplicate = Feature {
+            needs_recompute: false,
             id: FeatureId::mint("f3d:model:feature#other-fillet-1").expect("identity grammar"),
             ..feature.clone()
         };

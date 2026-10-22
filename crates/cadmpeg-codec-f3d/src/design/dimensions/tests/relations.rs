@@ -1,3 +1,4 @@
+const EPS_OFFSET_DISTANCE: f64 = 1.0e-9;
 // SPDX-License-Identifier: Apache-2.0
 use super::project_dimension_constraints;
 use crate::design::decode::parameters::parse_design_parameter_record;
@@ -459,7 +460,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
                     reference: crate::records::sketch_relations::SketchRelationReference::Index(
                         record_index,
                     ),
-                    offset,
+                    offset: Some(offset),
                     relation_ordinal: Some(relation_ordinal),
                 }
             })
@@ -485,7 +486,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
                 reference: crate::records::sketch_relations::SketchRelationReference::Resolved(
                     resolved,
                 ),
-                offset,
+                offset: Some(offset),
             }
         })
         .collect::<Vec<_>>())
@@ -502,12 +503,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     ]);
 
     let definition = exact_offset_constraint(&relation, "native", &projected).unwrap();
-    let SketchConstraintDefinitionInput::Offset {
-        pairs,
-        distance,
-        parameter,
-    } = definition
-    else {
+    let SketchConstraintDefinitionInput::Offset { pairs, distance } = definition else {
         panic!("expected neutral offset constraint")
     };
     assert_eq!(pairs.len(), 2);
@@ -515,10 +511,10 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     assert_eq!(pairs[0].result, result_horizontal.id().clone());
     assert_eq!(pairs[1].source, source_vertical.id().clone());
     assert_eq!(pairs[1].result, result_vertical.id().clone());
-    assert!((distance.get() - 2.0).abs() <= 1.0e-9);
+    assert!((distance.literal().unwrap().get() - 2.0).abs() <= EPS_OFFSET_DISTANCE);
     assert!(pairs[0].source_reversed);
     assert!(!pairs[1].source_reversed);
-    assert_eq!(parameter, None);
+    assert_eq!(distance.parameter(), None);
 
     let mut repeated_pair = relation;
     let mut returned = repeated_pair.return_members().to_vec();
@@ -527,13 +523,13 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
             reference: crate::records::sketch_relations::SketchRelationReference::Resolved(curve(
                 1, 10,
             )),
-            offset: 0,
+            offset: Some(0),
         },
         crate::records::sketch_relations::SketchRelationReturnMember {
             reference: crate::records::sketch_relations::SketchRelationReference::Resolved(curve(
                 3, 30,
             )),
-            offset: 0,
+            offset: Some(0),
         },
     ]);
     repeated_pair
@@ -555,8 +551,8 @@ fn single_curve_annotation_projects_parameterized_offset() {
         record_index,
         owner_reference: Some(100),
         class_tag: crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap(),
-        byte_offset: 0,
-        geometry_offset: 0,
+        byte_offset: None,
+        geometry_offset: None,
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
         secondary_id,
@@ -629,15 +625,15 @@ fn single_curve_annotation_projects_parameterized_offset() {
             operands: vec![
                 DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(0),
-                    geometry_reference_offset: 25,
+                    geometry_reference_offset: Some(25),
                     role: 3,
-                    role_offset: 35,
+                    role_offset: Some(35),
                 },
                 DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(10),
-                    geometry_reference_offset: 40,
+                    geometry_reference_offset: Some(40),
                     role: 2,
-                    role_offset: 50,
+                    role_offset: Some(50),
                 },
             ],
             entity_genesis: 0x80,
@@ -672,21 +668,18 @@ fn single_curve_annotation_projects_parameterized_offset() {
         1.0e-6,
     )
     .expect("single-curve annotation offset");
+    let ir = super::length_parameter_document(parameter_id.clone(), 2.0);
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::Offset {
             pairs,
             distance,
-            parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
-                id: actual_parameter,
-                negated: false,
-            }),
         } if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
             source: source.id().clone(),
             result: result.id().clone(),
             source_reversed: true,
-        }] && (distance.get() - 2.0).abs() <= 1.0e-9
-            && actual_parameter == parameter_id
+        }] && (ir.dimension_value(&distance).unwrap().get() - 2.0).abs() <= EPS_OFFSET_DISTANCE
+            && distance.parameter() == Some(&parameter_id)
     ));
 
     let explicit_frame = DesignDimensionAnnotationFrame::try_new(
@@ -694,21 +687,21 @@ fn single_curve_annotation_projects_parameterized_offset() {
             operands: vec![
                 DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(0),
-                    geometry_reference_offset: 25,
+                    geometry_reference_offset: Some(25),
                     role: 3,
-                    role_offset: 35,
+                    role_offset: Some(35),
                 },
                 DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(11),
-                    geometry_reference_offset: 40,
+                    geometry_reference_offset: Some(40),
                     role: 1,
-                    role_offset: 50,
+                    role_offset: Some(50),
                 },
                 DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(10),
-                    geometry_reference_offset: 55,
+                    geometry_reference_offset: Some(55),
                     role: 2,
-                    role_offset: 65,
+                    role_offset: Some(65),
                 },
             ],
             return_members: vec![
@@ -723,7 +716,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
             ],
             annotation_byte_offset: 126,
             governing_owner_reference_offset: 127,
-            ..frame.clone().into_draft()
+            ..frame.clone().into_draft().unwrap()
         },
     )
     .unwrap();
@@ -740,16 +733,12 @@ fn single_curve_annotation_projects_parameterized_offset() {
         explicit_definition,
         SketchConstraintDefinitionInput::Offset {
             pairs,
-            parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
-                id: actual_parameter,
-                negated: false,
-            }),
-            ..
+            distance,
         } if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
             source: source.id().clone(),
             result: result.id().clone(),
             source_reversed: true,
-        }] && actual_parameter == parameter_id
+        }] && distance.parameter() == Some(&parameter_id)
     ));
 
     let duplicate_curve_id = format!("{stream}:sketch-curve#12");
@@ -999,49 +988,49 @@ fn counted_angular_group_projects_unique_point_selected_line() {
     let group = DesignDimensionLocusGroup {
         id: format!("{stream}:design-dimension-locus-group#30"),
         companion_record_index: 22,
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 30,
-        frame_length: 100,
+        frame_length: Some(100),
         loci: vec![
             DesignDimensionLocus {
                 returned: crate::records::identity::Located {
                     value: 40,
-                    offset: 0,
+                    offset: Some(0),
                 },
                 geometry_record_index: 40,
-                geometry_reference_offset: 0,
+                geometry_reference_offset: Some(0),
                 role: 0,
-                role_offset: 0,
+                role_offset: Some(0),
             },
             DesignDimensionLocus {
                 returned: crate::records::identity::Located {
                     value: 41,
-                    offset: 0,
+                    offset: Some(0),
                 },
                 geometry_record_index: 41,
-                geometry_reference_offset: 0,
+                geometry_reference_offset: Some(0),
                 role: 0,
-                role_offset: 0,
+                role_offset: Some(0),
             },
         ],
         owner_reference: 100,
-        owner_reference_offset: 0,
+        owner_reference_offset: Some(0),
         owner_role: 1,
-        owner_role_offset: 0,
+        owner_role_offset: Some(0),
         state: 0,
-        state_offset: 0,
+        state_offset: Some(0),
         next_class_tag: crate::records::references::DesignClassTag::try_from("273".to_owned())
             .unwrap(),
         next_record_index: 31,
-        next_byte_offset: 100,
+        next_byte_offset: Some(100),
     };
     let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
         id: format!("{stream}:sketch-point#40"),
         record_index: 40,
         owner_reference: Some(100),
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         coordinate_offset: 0,
         companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),
@@ -1066,8 +1055,8 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             owner_reference: Some(100),
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
                 .unwrap(),
-            byte_offset: 0,
-            geometry_offset: 0,
+            byte_offset: None,
+            geometry_offset: None,
             entity_genesis: None,
             primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
             secondary_id: 0,
@@ -1143,7 +1132,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             parameter: actual_parameter,
         } if first == entities[2].id()
             && second == entities[1].id()
-            && actual_parameter == &neutral_parameter_id_parts(stream, 20)
+            && actual_parameter.parameter() == Some(&neutral_parameter_id_parts(stream, 20))
     ));
 }
 
@@ -1182,7 +1171,7 @@ fn parallel_group_binds_one_common_axis_angle() {
             entity,
             axis: SketchAxis::Horizontal,
             parameter,
-        }) if entity == first.id().clone() && parameter == parameter_id
+        }) if entity == first.id().clone() && parameter == cadmpeg_ir::Dimension::Parameter(parameter_id.clone())
     ));
     assert!(
         crate::design::dimensions::parallel_group_axis_angle_definition(

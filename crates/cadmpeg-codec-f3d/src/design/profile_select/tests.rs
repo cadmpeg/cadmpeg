@@ -171,8 +171,8 @@ fn curve(record_index: u32, primary_id: u64, secondary_id: u64) -> SketchCurveId
         record_index,
         owner_reference: Some(42),
         class_tag: crate::records::references::DesignClassTag::try_from("450".to_owned()).unwrap(),
-        byte_offset: 0,
-        geometry_offset: 0,
+        byte_offset: None,
+        geometry_offset: None,
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
         secondary_id,
@@ -203,12 +203,12 @@ fn planar_resolution<'a>(
 
 fn profile_region_member(curve_primary_id: u32) -> DesignSketchProfileRegionMember {
     DesignSketchProfileRegionMember {
-        kind_offset: 0,
+        kind_offset: Some(0),
         curve_primary_id: std::num::NonZeroU32::new(curve_primary_id).expect("curve identity"),
-        curve_primary_id_offset: 0,
+        curve_primary_id_offset: Some(0),
         incidence_flag: false,
         incidence_values: [crate::records::topology::sketch_profile::DesignRegionIncidence::One; 2],
-        incidence_words_offset: 0,
+        incidence_words_offset: Some(0),
     }
 }
 
@@ -458,7 +458,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         profiles: vec![profile(100), profile(200), profile(201)],
         native_ref: None,
     }];
-    let profile_operand = DesignSketchProfileOperand::try_new(
+    let mut source_operand =
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             scope_reference_ordinal: 0,
             record_index: 10,
@@ -474,17 +474,17 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             entity_reference_offset: 80,
             region_selection: Some(DesignSketchProfileRegionSelection {
                 record_index: 13,
-                byte_offset: 0,
+                byte_offset: Some(0),
                 class_tag: crate::records::references::DesignClassTag::try_from("303".to_owned())
                     .unwrap(),
-                region_count_offset: 0,
+                region_count_offset: Some(0),
                 regions: vec![
                     DesignSketchProfileRegion {
-                        member_count_offset: 0,
+                        member_count_offset: Some(0),
                         members: vec![profile_region_member(100)],
                     },
                     DesignSketchProfileRegion {
-                        member_count_offset: 0,
+                        member_count_offset: Some(0),
                         members: vec![
                             profile_region_member(200),
                             profile_region_member(201),
@@ -496,16 +496,21 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                     "304".to_owned(),
                 )
                 .unwrap(),
-                companion_byte_offset: 0,
+                companion_byte_offset: Some(0),
             }),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "301".to_owned(),
             )
             .unwrap(),
             paired_byte_offset: 160,
-        },
-    )
-    .unwrap();
+        };
+    // The legacy fixture claims every nested source member is at byte zero.
+    // Keep that incoherent source frame as a negative admission control.
+    assert!(DesignSketchProfileOperand::try_new(source_operand.clone()).is_err());
+    let selection = source_operand.region_selection.as_mut().unwrap();
+    *selection = serde_json::from_value(serde_json::to_value(&*selection).unwrap()).unwrap();
+    assert!(selection.byte_offset.is_none());
+    let profile_operand = DesignSketchProfileOperand::try_new(source_operand).unwrap();
     let placements = [placement];
     let resolution = SketchProfileResolution {
         entities: &[],
@@ -533,7 +538,10 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     let whole_sketch_operand = DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             region_selection: None,
-            ..profile_operand.clone().into_draft()
+            ..profile_operand
+                .clone()
+                .into_draft()
+                .expect("retained test source")
         },
     )
     .unwrap();
@@ -946,7 +954,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         .unwrap(),
         native_ref: None,
     };
-    let operand = DesignSketchProfileOperand::try_new(
+    let mut source_operand =
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             scope_reference_ordinal: 0,
             record_index: 10,
@@ -962,17 +970,17 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
             entity_reference_offset: 80,
             region_selection: Some(DesignSketchProfileRegionSelection {
                 record_index: 11,
-                byte_offset: 0,
+                byte_offset: Some(0),
                 class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
                     .unwrap(),
-                region_count_offset: 0,
+                region_count_offset: Some(0),
                 regions: vec![
                     DesignSketchProfileRegion {
-                        member_count_offset: 0,
+                        member_count_offset: Some(0),
                         members: vec![profile_region_member(200)],
                     },
                     DesignSketchProfileRegion {
-                        member_count_offset: 0,
+                        member_count_offset: Some(0),
                         members: vec![profile_region_member(100)],
                     },
                 ],
@@ -980,16 +988,29 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
                     "302".to_owned(),
                 )
                 .unwrap(),
-                companion_byte_offset: 0,
+                companion_byte_offset: Some(0),
             }),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "303".to_owned(),
             )
             .unwrap(),
             paired_byte_offset: 160,
-        },
-    )
-    .unwrap();
+        };
+    // The legacy fixture claims every nested source member is at byte zero.
+    // Keep that incoherent source frame as a negative admission control.
+    assert!(DesignSketchProfileOperand::try_new(source_operand.clone()).is_err());
+    let selection = source_operand.region_selection.as_mut().unwrap();
+    *selection = serde_json::from_value(serde_json::to_value(&*selection).unwrap()).unwrap();
+    assert!(selection.byte_offset.is_none());
+    // A profile region follows the operand and its two same-index companions.
+    assert_eq!(selection.record_index, 11);
+    assert!(DesignSketchProfileOperand::try_new(source_operand.clone()).is_err());
+    source_operand
+        .region_selection
+        .as_mut()
+        .unwrap()
+        .record_index = 13;
+    let operand = DesignSketchProfileOperand::try_new(source_operand).unwrap();
 
     assert_eq!(
         resolved_sketch_profile_regions("stream", &operand, &source, &curves, &sketch_entities),
@@ -1003,7 +1024,10 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         .expect("region selection")
         .regions[0]
         .members
-        .push(profile_region_member(100));
+        .push(
+            serde_json::from_value(serde_json::to_value(profile_region_member(100)).unwrap())
+                .unwrap(),
+        );
     assert!(resolved_sketch_profile_regions(
         "stream",
         &mixed_region,

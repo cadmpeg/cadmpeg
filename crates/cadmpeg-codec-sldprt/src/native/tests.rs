@@ -45,6 +45,14 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
             sldprt_native(decoded.ir())
         })
         .collect::<Vec<_>>();
+        models[0]
+            .document_metadata
+            .push(crate::native::DocumentMetadata {
+                id: cadmpeg_core::nonblank_literal!("sldprt:metadata:document#0"),
+                attributes: Vec::new(),
+                pmi: Vec::new(),
+                semantic_annotations: Vec::new(),
+            });
         let lane = models
             .iter_mut()
             .flat_map(|model| &mut model.feature_input_lanes)
@@ -58,7 +66,7 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
                 id: "sldprt:native:body-selection#0".into(),
                 parent: parent.clone(),
                 ordinal: 0,
-                offset: 0,
+                sequence: 0,
                 object_name_ref: object_name_ref.clone(),
                 feature_ref: feature_ref.clone(),
                 local_body_ids: vec![1],
@@ -70,7 +78,7 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
                 id: "sldprt:native:edge-selection#0".into(),
                 parent: parent.clone(),
                 ordinal: 0,
-                offset: 0,
+                sequence: 0,
                 object_name_ref: object_name_ref.clone(),
                 feature_ref: feature_ref.clone(),
                 local_edge_ids: vec![1],
@@ -84,7 +92,8 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
                 id: "sldprt:native:surface-selection#0".into(),
                 parent: parent.clone(),
                 ordinal: 0,
-                offset: 0,
+                sequence: 0,
+                offset: Some(0),
                 selector: 0,
                 kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
                 object_name_ref,
@@ -98,7 +107,7 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
                 id: "sldprt:native:generated-surface#0".into(),
                 parent: parent.clone(),
                 ordinal: 0,
-                offset: 0,
+                sequence: 0,
                 type_prefix: (*b"FACE").into(),
                 feature_source_id: crate::brep::feature_source::FeatureSourceId::try_from(1_u32)
                     .unwrap(),
@@ -111,7 +120,8 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
                 id: "sldprt:native:relation-instance#0".into(),
                 parent,
                 ordinal: 0,
-                offset: 0,
+                sequence: 0,
+                offset: Some(0),
                 family: crate::records::FeatureInputRelationFamily::CircleDiameter,
                 class_ref: "sldprt:native:class#0".into(),
                 feature_ref,
@@ -171,6 +181,10 @@ macro_rules! child_emitter_test {
     };
 }
 
+child_emitter_test!(
+    native_document_metadata_emitter_writes_each_record,
+    "document_metadata"
+);
 child_emitter_test!(
     native_pmi_dimension_emitter_writes_each_record,
     "pmi_dimensions"
@@ -564,25 +578,41 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     );
     let lane = &mut native.feature_input_lanes[0];
     for (index, local_id) in [(1, 7u32), (2, 8u32)] {
-        let offset = usize::try_from(lane.sketch_entities[index].offset()).unwrap() + 88;
+        let offset = usize::try_from(lane.sketch_entities[index].offset().expect("source offset"))
+            .unwrap()
+            + 88;
         lane.native_payload[offset..offset + 4].copy_from_slice(&local_id.to_le_bytes());
     }
     for entity in &mut lane.sketch_entities {
         *entity = entity.with_test_identity(
             crate::resolved_features::markers::marker_object_index(
                 &lane.native_payload,
-                usize::try_from(entity.offset()).unwrap(),
+                usize::try_from(entity.offset().expect("source offset")).unwrap(),
             ),
             entity.local_id(),
         );
     }
-    let expected = crate::native::lanes::expected_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        &native,
+    let source = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .unwrap()
-    .remove(0)
-    .1;
+    .unwrap();
+    let mut body_sources = crate::resolved_features::body_sources::BodySources::from_concatenated(
+        &native.feature_input_lanes,
+        root,
+    )
+    .unwrap();
+    let expected = crate::native::lanes::expected_lanes(&ctx, &native, &mut body_sources)
+        .unwrap()
+        .remove(0)
+        .1;
     let lane = &mut native.feature_input_lanes[0];
     lane.scalars = expected.scalars;
     lane.relation_bindings = expected.relation_bindings;
@@ -786,7 +816,8 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
         .with_test_identity(lane.sketch_entities[1].object_index(), Some(local_id));
     let local_id_offset = crate::resolved_features::markers::marker_local_id_offset(
         &lane.native_payload,
-        usize::try_from(lane.sketch_entities[1].offset()).expect("marker offset"),
+        usize::try_from(lane.sketch_entities[1].offset().expect("source offset"))
+            .expect("marker offset"),
     )
     .expect("local id offset");
     lane.native_payload[local_id_offset..local_id_offset + 4]
@@ -1043,7 +1074,13 @@ fn native_load_refuses_a_forged_object_name_length_byte_after_a_store() {
 
     // Byte five of an object-name record is its UTF-16 length; the name's own
     // `value` and every later record's offset derive from it.
-    let length_byte = usize::try_from(typed.feature_input_lanes[0].names[0].offset).unwrap() + 5;
+    let length_byte = usize::try_from(
+        typed.feature_input_lanes[0].names[0]
+            .offset
+            .expect("source offset"),
+    )
+    .unwrap()
+        + 5;
     let stated = typed.feature_input_lanes[0].native_payload[length_byte];
     typed.feature_input_lanes[0].native_payload[length_byte] = stated + 1;
 
@@ -1179,10 +1216,12 @@ fn repeated_circle_display_shape_requires_distinct_display_entities() {
     };
 
     let names = [FeatureInputName {
+        feature_ref: None,
         id: "name".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 0,
+        sequence: 0,
+        offset: Some(0),
         object_id: None,
         value: "D1".into(),
     }];
@@ -1191,13 +1230,14 @@ fn repeated_circle_display_shape_requires_distinct_display_entities() {
         parent: "lane".into(),
         feature_ref: Some("sketch".into()),
         ordinal,
-        offset: 100 + u64::from(ordinal),
+        sequence: ordinal,
+        offset: Some(100 + u64::from(ordinal)),
         object_id: 1,
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         role: FeatureInputScalarRole::Display,
         operands: vec![FeatureInputOperand {
-            offset: 200 + u64::from(ordinal),
+            offset: Some(200 + u64::from(ordinal)),
             reference_ref: format!("reference-{ordinal}"),
             kind: FeatureInputOperandKind::E1,
             entity_index,
@@ -1208,7 +1248,8 @@ fn repeated_circle_display_shape_requires_distinct_display_entities() {
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 100,
+        sequence: 0,
+        offset: Some(100),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "sketch".into(),
@@ -1247,4 +1288,13 @@ fn records_grouped_by_parent_keep_source_order() {
         [("lane-b", 1), ("lane-b", 3)]
     );
     assert!(super::children(&groups, "lane-c").is_empty());
+}
+
+#[test]
+fn native_metadata_rejects_unknown_fields_in_typed_records() {
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    namespace.set_arena(&cadmpeg_test_support::service_decode_context(), "document_metadata", &[serde_json::json!({
+        "id": "sldprt:metadata:document#0", "attributes": [], "pmi": [], "semantic_annotations": [], "unexpected": true
+    })]).unwrap();
+    assert!(crate::native::SldprtNative::load(&namespace).is_err());
 }

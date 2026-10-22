@@ -6,7 +6,10 @@ use super::super::feature_definition_is_incomplete;
 #[test]
 fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
@@ -254,7 +257,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::Sphere {
             center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
-            radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap().into(),
             op: BooleanOp::NewBody,
         })
     ));
@@ -263,8 +266,8 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         &FeatureDefinition::Operation(FeatureOperation::Torus {
             center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
             axis: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
-            major_radius: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
-            minor_radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+            major_radius: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap().into(),
+            minor_radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap().into(),
             op: BooleanOp::Join,
         })
     ));
@@ -273,7 +276,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         &FeatureDefinition::Operation(FeatureOperation::MoveFace {
             faces: faces.clone(),
             motion: FaceMotion::Offset {
-                distance: Length::new(-2.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(-2.0).unwrap()),
             },
         })
     ));
@@ -281,14 +284,16 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         &FeatureDefinition::Operation(FeatureOperation::MoveFace {
             faces: FaceSelection::Native("native:faces".into()),
             motion: FaceMotion::Offset {
-                distance: Length::new(2.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(2.0).unwrap()),
             },
         })
     ));
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: faces.clone(),
-            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()),
+            thickness: Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()
+            )),
             side: Some(ThickenSide::Forward),
         })
     ));
@@ -297,7 +302,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         FeatureDefinition::Operation(FeatureOperation::Shell {
             bodies,
             removed_faces,
-            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()),
+            thickness: Some(Into::into(
+                cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+            )),
             outward: Some(true),
             mode: None,
             join: None,
@@ -327,8 +334,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: bodies.clone(),
-            translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 2.0, 3.0))
-                .unwrap(),
+            translation: [1.0, 2.0, 3.0].map(|value| cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::Length::new(value).unwrap()
+            )),
             rotation: Some(AxisAngle {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .unwrap(),
@@ -336,9 +344,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
                     0.0, 0.0, 1.0
                 ))
                 .unwrap(),
-                angle: cadmpeg_ir::scalar::Angle::new(0.5).unwrap(),
+                angle: cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Angle::new(0.5).unwrap()),
             }),
-            copies: 0,
+            copies: cadmpeg_ir::Dimension::Literal(0),
         })
     ));
 
@@ -353,7 +361,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
             ),
             center: Some(ScaleCenter::ModelOrigin),
             factors: ScaleFactors::Uniform {
-                factor: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()
+                factor: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()
+                )
             },
         })
     ));
@@ -368,7 +378,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
             ),
             center: Some(ScaleCenter::Native("native:center".into())),
             factors: ScaleFactors::Uniform {
-                factor: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()
+                factor: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()
+                )
             },
         })
     ));
@@ -379,14 +391,15 @@ fn knit_surfaces_require_resolved_faces_and_operation_settings() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::scalar::NonNegativeLength;
 
-    let complete = |faces, merge_entities, create_solid, gap_tolerance| {
-        FeatureDefinition::Operation(FeatureOperation::KnitSurface {
-            faces,
-            merge_entities,
-            create_solid,
-            gap_tolerance,
-        })
-    };
+    let complete =
+        |faces, merge_entities, create_solid, gap_tolerance: Option<NonNegativeLength>| {
+            FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+                faces,
+                merge_entities,
+                create_solid,
+                gap_tolerance: (gap_tolerance).map(Into::into),
+            })
+        };
     let faces = FaceSelection::Faces(vec!["test:model:face#1"
         .try_into()
         .expect("valid identity")]);
@@ -433,4 +446,68 @@ fn knit_surfaces_require_resolved_faces_and_operation_settings() {
         Some(true),
         None,
     )));
+}
+
+#[test]
+fn knit_completeness_resolves_the_canonical_bound_gap_tolerance() {
+    use cadmpeg_ir::features::{
+        DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureEvaluation,
+        FeatureOperation, ParameterValue,
+    };
+    let parameter_id: cadmpeg_ir::features::ParameterId =
+        "test:model:parameter#knit-gap".try_into().unwrap();
+    for value in [0.0, 0.1] {
+        let value = ParameterValue::Length(cadmpeg_ir::scalar::Length::new(value).unwrap());
+        let parameter = DesignParameter {
+            id: parameter_id.clone(),
+            owner: None,
+            ordinal: 0,
+            name: "Gap".into(),
+            expression: value.literal_expression(),
+            driving: true,
+            display: None,
+            value: Some(value.clone()),
+            properties: Default::default(),
+            pmi: None,
+            native_ref: None,
+        };
+        let definition = FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+            faces: FaceSelection::Faces(vec!["test:model:face#1".try_into().unwrap()]),
+            merge_entities: Some(true),
+            create_solid: Some(true),
+            gap_tolerance: Some(cadmpeg_ir::Dimension::Parameter(parameter_id.clone())),
+        });
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.parameters.push(parameter);
+        ir.model.features.push(Feature {
+            id: "test:model:feature#knit".try_into().unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            needs_recompute: false,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: Some("SurfaceStitch".into()),
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: FeatureEvaluation::from_definition(definition.clone()),
+            native_ref: None,
+        });
+        let incomplete = matches!(value, ParameterValue::Length(value) if value.get() == 0.0);
+        assert_eq!(
+            super::super::feature_definition_is_incomplete_with_parameters(
+                &definition,
+                &ir.model.parameters,
+            ),
+            incomplete
+        );
+        assert_eq!(
+            super::super::incomplete_feature_families(&ir)
+                .get("SurfaceStitch")
+                .copied()
+                .unwrap_or(0),
+            usize::from(incomplete)
+        );
+        assert!(super::super::feature_definition_is_incomplete_with_parameters(&definition, &[],));
+    }
 }

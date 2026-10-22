@@ -215,7 +215,7 @@ const WIDE_DISCRIMINATED_SHIFT: usize = 4;
 
 /// Parse one indexed parameter frame in a Design `BulkStream` test fixture.
 #[cfg(test)]
-pub(in crate::design) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignParameter> {
+pub(crate) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignParameter> {
     parse_design_parameter(payload)
         .unwrap()?
         .into_record(TEST_PARAMETER_STREAM, 0)
@@ -687,6 +687,7 @@ fn parse_legacy_design_parameter(
     parsed.transpose()
 }
 
+#[cfg(test)]
 pub(crate) fn design_parameter_discriminator(source_kind: &str) -> u64 {
     match source_kind {
         "ScaleFactor" => 5,
@@ -803,7 +804,10 @@ pub(crate) fn decode_parameter_owners(
             .get(scope)
             .ok_or_else(|| malformed("has no containing Design BulkStream"))?;
         let bytes = scan.entry_bytes(&entry.name)?;
-        let at = usize::try_from(header.byte_offset)
+        let header_offset = header
+            .byte_offset
+            .ok_or_else(|| malformed("has no actual source header position"))?;
+        let at = usize::try_from(header_offset)
             .map_err(|_| malformed("primary header offset exceeds the platform address space"))?;
         let end = records
             .frames(owner_index)
@@ -814,13 +818,15 @@ pub(crate) fn decode_parameter_owners(
             .ok_or_else(|| malformed("frame lies outside its Design BulkStream"))?;
         let evaluated = crate::records::identity::Located {
             value: parameter.evaluated_value().get(),
-            offset: parameter.evaluated_value_offset(),
+            offset: parameter
+                .evaluated_value_offset()
+                .ok_or_else(|| malformed("has no source evaluated-value location"))?,
         };
         let owner = parse_parameter_owner(frame)
-            .or_else(|| parse_legacy_parameter_owner_68(frame, evaluated, header.byte_offset))
-            .or_else(|| parse_legacy_parameter_owner_88(frame, evaluated, header.byte_offset))
+            .or_else(|| parse_legacy_parameter_owner_68(frame, evaluated, header_offset))
+            .or_else(|| parse_legacy_parameter_owner_88(frame, evaluated, header_offset))
             .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?
-            .into_record(&entry.name, header.byte_offset)
+            .into_record(&entry.name, header_offset)
             .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
         if owner.record_index() != owner_index
             || owner.parameter_record_index() != parameter.record_index
@@ -1194,7 +1200,10 @@ pub(crate) fn decode_parameter_companions(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let at = usize::try_from(header.byte_offset).ok();
+        let Some(header_offset) = header.byte_offset else {
+            continue;
+        };
+        let at = usize::try_from(header_offset).ok();
         let prefix = at.and_then(|at| at.checked_add(58).and_then(|end| bytes.get(at..end)));
         let Some(parsed) = prefix.and_then(parse_parameter_companion) else {
             continue;
@@ -1204,7 +1213,7 @@ pub(crate) fn decode_parameter_companions(
         {
             continue;
         }
-        let Some(companion) = parsed.into_record(&entry.name, header.byte_offset) else {
+        let Some(companion) = parsed.into_record(&entry.name, header_offset) else {
             continue;
         };
 
@@ -1357,10 +1366,18 @@ fn companion_payload<S: std::hash::BuildHasher>(
                         && scope.sketch_entity().is_some_and(|binding| {
                             binding.entity_id.suffix() == entity.entity_id.suffix()
                         })
-                        && entity.byte_offset >= u64_from_index(start)
-                        && entity.byte_offset < u64_from_index(end)
+                        && entity
+                            .byte_offset
+                            .is_some_and(|offset| offset >= u64_from_index(start))
+                        && entity
+                            .byte_offset
+                            .is_some_and(|offset| offset < u64_from_index(end))
                 })
-                .filter_map(|entity| usize::try_from(entity.byte_offset).ok())
+                .filter_map(|entity| {
+                    entity
+                        .byte_offset
+                        .and_then(|offset| usize::try_from(offset).ok())
+                })
                 .min()
         })
         .min()
@@ -1374,8 +1391,12 @@ fn companion_payload<S: std::hash::BuildHasher>(
     let mut owned = Vec::new();
     for recipe in recipes.iter().filter(|recipe| {
         native_stream(&recipe.id) == Some(stream)
-            && recipe.byte_offset >= u64_from_index(start)
-            && recipe.byte_offset < u64_from_index(end)
+            && recipe
+                .byte_offset
+                .is_some_and(|offset| offset >= u64_from_index(start))
+            && recipe
+                .byte_offset
+                .is_some_and(|offset| offset < u64_from_index(end))
     }) {
         owned.push(recipe);
     }

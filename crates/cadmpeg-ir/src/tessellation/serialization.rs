@@ -17,6 +17,8 @@ impl Serialize for Tessellation {
         struct Wire<'a> {
             id: &'a TessellationId,
             #[serde(skip_serializing_if = "Option::is_none")]
+            native_ref: &'a Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             body: Option<&'a BodyId>,
             #[serde(skip_serializing_if = "Vec::is_empty")]
             faces: &'a Vec<FaceId>,
@@ -35,6 +37,7 @@ impl Serialize for Tessellation {
         }
         Wire {
             id: &self.id,
+            native_ref: &self.native_ref,
             body: self.body.as_ref(),
             faces: &self.faces,
             chordal_deflection: self.chordal_deflection.map(NonNegativeReal::get),

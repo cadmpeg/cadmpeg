@@ -53,7 +53,8 @@ fn dynamic_relation(
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 0,
+        sequence: 0,
+        offset: Some(0),
         family,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -67,7 +68,7 @@ fn dynamic_relation(
             .into_iter()
             .enumerate()
             .map(|(index, entity_index)| FeatureInputOperand {
-                offset: cadmpeg_core::decode::u64_from_index(index),
+                offset: Some(cadmpeg_core::decode::u64_from_index(index)),
                 reference_ref: format!("reference-{index}"),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
                 entity_index,
@@ -79,14 +80,14 @@ fn dynamic_relation(
 
 fn length_parameter(value: f64) -> DesignParameter {
     DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),
-        expression: value.to_string(),
+        expression: value.to_string().into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(value).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -116,6 +117,7 @@ fn point_operand_requires_one_profile_locus() {
 fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -123,7 +125,6 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -218,7 +219,8 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 0,
+        sequence: 0,
+        offset: Some(0),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -229,7 +231,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: 0,
+            offset: Some(0),
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::E1,
             entity_index: 0,
@@ -237,6 +239,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         }],
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
@@ -244,7 +247,6 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -264,7 +266,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         Some(
             cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Diameter {
                 entity: circle.id().clone(),
-                parameter: parameter.id,
+                parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
             }
         )
     );
@@ -352,7 +354,7 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(second_line.id().clone()),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -414,7 +416,7 @@ fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(intended_line.id().clone()),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -454,7 +456,9 @@ fn dynamic_point_line_relation_uses_unique_complete_roster_line() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }
@@ -601,7 +605,7 @@ fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -667,7 +671,9 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
         .unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first_line.id().clone(), second_line.id().clone()],
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
     assert_eq!(
@@ -733,7 +739,7 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(second.id().clone()),
-            parameter: parameter.id.clone(),
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
         })
     );
 
@@ -757,7 +763,7 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
         second: SketchLocus::Entity(
             SketchEntityId::mint("synthetic:test:id#second-point").unwrap(),
         ),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     assert!(!relation_constraint_is_inactive(
         Some(&parameter),
@@ -883,7 +889,9 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: first_locus.clone(),
             second: second_locus.clone(),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 
@@ -905,7 +913,9 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
         Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: first_locus.clone(),
             second: second_locus.clone(),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 
@@ -927,7 +937,9 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
         Some(SketchConstraintDefinitionInput::VerticalDistance {
             first: first_locus,
             second: second_locus,
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }
@@ -964,7 +976,7 @@ fn dynamic_point_distance_uses_unique_complete_roster() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
             second: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap()),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -1004,7 +1016,7 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
         Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
             second: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap()),
-            parameter: parameter.id.clone(),
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
         })
     );
 
@@ -1038,7 +1050,9 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
             second: SketchLocus::Entity(
                 SketchEntityId::mint("synthetic:test:id#vertical-second").unwrap()
             ),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }
@@ -1128,7 +1142,7 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
         Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(second.id().clone()),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -1201,7 +1215,7 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Center(arc.id().clone()),
-            parameter: parameter.id,
+            parameter: cadmpeg_ir::Dimension::Parameter(parameter.id),
         })
     );
 }
@@ -1362,7 +1376,9 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(alternate_line.id().clone()),
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }
@@ -1463,7 +1479,9 @@ fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
         .unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first_alternate.id().clone(), second_line.id().clone()],
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
     assert_eq!(
@@ -1517,7 +1535,9 @@ fn dynamic_line_distance_uses_unique_complete_roster() {
         .unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
-            parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
+            ),
         })
     );
 }

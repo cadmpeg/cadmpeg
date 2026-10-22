@@ -17,9 +17,10 @@ use crate::records::{
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
     SketchRelationKind,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_ir::features::{
     DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
-    ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype,
+    ParameterId, ParameterValue,
 };
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
@@ -59,6 +60,8 @@ fn conflicting_display_reference_retains_exact_text() {
 
 #[test]
 fn native_planar_and_spatial_sketch_geometry_is_reported() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     ir.model.sketch_entities.push(
         SketchEntity::new(
@@ -86,6 +89,7 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -111,6 +115,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -146,7 +151,8 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         id: "relation-instance".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 0,
+        sequence: 0,
+        offset: Some(0),
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -163,7 +169,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
             id: id.into(),
             parent: "lane".into(),
             ordinal,
-            offset: u64::from(ordinal),
+            sequence: ordinal,
             class_ref: class_ref.into(),
             family: FeatureInputRelationFamily::PointPointDistance,
             scalar_ref: scalar_ref.into(),
@@ -317,23 +323,31 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
 
 #[test]
 fn direct_feature_input_operations_require_unique_history_bindings() {
+    let class_sources = ClassSources::default();
+
     let class_name = "moExtrusion_c";
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
         native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
+            sequence: 10,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 10,
             name: class_name.into(),
         }],
         names: vec![FeatureInputName {
+            sequence: u32::try_from(
+                10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len()),
+            )
+            .unwrap(),
+            feature_ref: None,
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len()),
+            offset: Some(10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len())),
             object_id: ObjectId::from_value(42),
             value: "Boss".into(),
         }],
@@ -351,7 +365,10 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         feature_input_lanes: vec![lane.clone()],
         ..SldprtNative::default()
     };
-    assert_eq!(unbound_feature_input_operation_objects(&native), 1);
+    assert_eq!(
+        unbound_feature_input_operation_objects(&class_sources, &native),
+        1
+    );
 
     native.feature_histories.push(FeatureHistory {
         id: "history".into(),
@@ -377,43 +394,66 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
             content: Vec::new(),
         }],
     });
-    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    assert_eq!(
+        unbound_feature_input_operation_objects(&class_sources, &native),
+        0
+    );
     native.feature_histories[0].features[0].input_class = None;
-    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    assert_eq!(
+        unbound_feature_input_operation_objects(&class_sources, &native),
+        0
+    );
     native.feature_histories[0].features[0].xml_tag = "Sketch".into();
     native.feature_histories[0].features[0].kind = "Sketch".into();
     native.feature_histories[0].features[0].name = "Profile".into();
     lane.classes[0].name = "moProfileFeature_c".into();
     lane.names[0].offset =
-        10 + 6 + cadmpeg_core::decode::u64_from_index("moProfileFeature_c".len());
+        Some(10 + 6 + cadmpeg_core::decode::u64_from_index("moProfileFeature_c".len()));
     lane.names[0].value = "Profile".into();
     native.feature_input_lanes = vec![lane.clone()];
-    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    assert_eq!(
+        unbound_feature_input_operation_objects(&class_sources, &native),
+        0
+    );
     native.feature_histories[0].features[0].xml_tag = "Extrusion".into();
     native.feature_histories[0].features[0].kind = "Extrusion".into();
     native.feature_histories[0].features[0].name = "Boss".into();
     native.feature_histories[0].features[0].input_class = Some(class_name.into());
     lane.classes[0].name = class_name.into();
-    lane.names[0].offset = 10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len());
+    lane.names[0].offset = Some(10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len()));
     lane.names[0].value = "Boss".into();
     native.feature_input_lanes = vec![lane.clone()];
     native.feature_histories[0].features[0].input_class = Some("moSweep_c".into());
-    assert_eq!(unbound_feature_input_operation_objects(&native), 1);
+    assert_eq!(
+        unbound_feature_input_operation_objects(&class_sources, &native),
+        1
+    );
     native.feature_histories[0].features[0].input_class = Some(class_name.into());
     native.feature_histories[0].features[0].source_id = None;
-    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    assert_eq!(
+        unbound_feature_input_operation_objects(&class_sources, &native),
+        0
+    );
     let mut duplicate = native.feature_histories[0].features[0].clone();
     duplicate.id = "duplicate-feature".into();
     native.feature_histories[0].features.push(duplicate);
-    assert_eq!(unbound_feature_input_operation_objects(&native), 1);
+    assert_eq!(
+        unbound_feature_input_operation_objects(&class_sources, &native),
+        1
+    );
 
-    lane.names[0].offset += 1;
+    lane.names[0].offset = lane.names[0].offset.map(|offset| offset + 1);
     native.feature_input_lanes = vec![lane];
-    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    assert_eq!(
+        unbound_feature_input_operation_objects(&class_sources, &native),
+        0
+    );
 }
 
 #[test]
-fn native_dimension_subtypes_are_reported() {
+fn authored_other_pmi_does_not_record_a_historical_decode_failure() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let owner = FeatureId::mint("synthetic:test:id#owner").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -426,6 +466,7 @@ fn native_dimension_subtypes_are_reported() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -435,6 +476,7 @@ fn native_dimension_subtypes_are_reported() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
@@ -444,32 +486,42 @@ fn native_dimension_subtypes_are_reported() {
         value: Some(ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
-        pmi: Some(ParameterPmi {
-            subtype: PmiDimensionSubtype::Native("Ordinate".into()),
-            precision: 3,
-            display_text: None,
-            basic: false,
-            inspection: false,
-            reference_only: false,
-            native_ref: "native:pmi".into(),
-        }),
+        pmi: Some(cadmpeg_ir::ids::PmiId::mint("synthetic:test:pmi#other").unwrap()),
         native_ref: None,
+    });
+    ir.model.pmi.push(cadmpeg_ir::pmi::PmiAnnotation {
+        native_ref: None,
+        id: cadmpeg_ir::ids::PmiId::mint("synthetic:test:pmi#other").unwrap(),
+        name: None,
+        visible: None,
+        targets: Vec::new(),
+        definition: cadmpeg_ir::pmi::PmiDefinition::Dimension(
+            cadmpeg_ir::pmi::PmiDimension::new(
+                cadmpeg_ir::pmi::DimensionKind::Other("Future dimension".into()),
+                None,
+                None,
+            )
+            .unwrap(),
+        ),
     });
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
     )
     .unwrap();
 
-    assert!(report.losses.iter().any(|loss| {
-        loss.message
-            == "0 semantic dimension record(s) are not bound to parameters; 1 parameter dimension(s) retain native subtypes."
-    }));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::SldprtLossCode::PmiDimensionUnbound.kind()));
+    assert!(
+        matches!(&ir.model.pmi[0].definition, cadmpeg_ir::pmi::PmiDefinition::Dimension(dimension) if dimension.kind() == &cadmpeg_ir::pmi::DimensionKind::Other("Future dimension".into()))
+    );
 }
 
 #[test]
@@ -478,9 +530,11 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
         source_image: &[],
         version: 0,
         blocks: Vec::new(),
+        block_views: std::collections::BTreeMap::new(),
         directory: Vec::new(),
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
+        compound_views: std::collections::BTreeMap::new(),
         solidworks: crate::container::SolidWorksEnvelopeScan::default(),
     };
     let mut decoded = Brep::default();
@@ -507,9 +561,11 @@ fn geometry_report_aggregates_surface_solver_caps_across_partitions() {
         source_image: &[],
         version: 0,
         blocks: Vec::new(),
+        block_views: std::collections::BTreeMap::new(),
         directory: Vec::new(),
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
+        compound_views: std::collections::BTreeMap::new(),
         solidworks: crate::container::SolidWorksEnvelopeScan::default(),
     };
     let mut decoded = Brep::default();

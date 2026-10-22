@@ -51,8 +51,11 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// fidelity. A decode error is frozen too: refusing a document is
 /// contract-relevant behavior, so this never panics on codec output.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match CreoCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    {
+    let value = match cadmpeg_test_support::golden::decode(
+        &CreoCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             serde_json::json!({
@@ -83,9 +86,26 @@ fn golden_output_is_deterministic() {
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
+        &CreoCodec,
+        &harness().fixture_inputs(),
+        |result| {
+            let expected = crate::loss::unrepresented(
+                &result.report().losses,
+                result.ir().native.namespace("creo"),
+            );
+            assert!(expected.iter().all(|class| result.source_fidelity().unrepresented().contains(class)), "every source-only loss must have retained source evidence carrying its arena class");
+        },
+    );
+    assert_eq!(summary.cut, 0, "{summary:?}");
+}
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(
         &CreoCodec,
         &harness().fixture_inputs(),
     );
-    assert_eq!(summary.cut, 0, "{summary:?}");
 }

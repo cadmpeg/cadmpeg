@@ -80,16 +80,16 @@ fn history_state_predecessors_are_component_qualified() {
         })
         .unwrap();
     let scopes = vec![first, local_predecessor.clone(), second.clone()];
-    let naming_space = |component_record_index, context_uuid: &str| {
+    let naming_space = |component_record_index: u64, context_uuid: &str| {
         crate::records::recipes::DesignComponentNamingSpace {
             id: crate::ids::native_design_component_naming_space_id(
                 bulk_stream,
                 component_record_index,
             ),
-            byte_offset: component_record_index,
+            byte_offset: Some(component_record_index),
             component_record_index,
             context_uuid: context_uuid.to_owned().try_into().expect("GUID"),
-            context_uuid_offset: component_record_index + 12,
+            context_uuid_offset: Some(component_record_index + 12),
         }
     };
     let naming_spaces = [
@@ -196,7 +196,10 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     let unrelated = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream("f3d:Other/BulkStream.dat", 10),
         crate::records::entity_header::DesignTimelineFrame::test_items(
-            authored.frame().byte_offset(),
+            authored
+                .frame()
+                .byte_offset()
+                .expect("retained test source"),
             vec![crate::records::identity::Located {
                 value: 9000,
                 offset: 0,
@@ -217,15 +220,30 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     assert_eq!(ordinals[&(stream, 200)], 2);
 
     let reversed = timeline(vec![200, 150, 100]);
-    let error = project(&reversed).expect_err("forward history edge must be rejected");
-    assert!(error
-        .to_string()
-        .contains("dependency does not precede its authored timeline position"));
+    let reversed_features = project(&reversed)
+        .expect("forward source edges remain held")
+        .features;
+    let reversed_earlier = reversed_features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(&earlier.id))
+        .unwrap();
+    let reversed_later = reversed_features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(&later.id))
+        .unwrap();
+    assert!(reversed_later.ordinal < reversed_earlier.ordinal);
+    assert_eq!(
+        reversed_later.dependencies.as_slice(),
+        [reversed_earlier.id.clone()]
+    );
 
     let second = DesignFeatureTimeline::try_new(
         authored.id().clone(),
         crate::records::entity_header::DesignTimelineFrame::test_items(
-            authored.frame().byte_offset(),
+            authored
+                .frame()
+                .byte_offset()
+                .expect("retained test source"),
             vec![crate::records::identity::Located {
                 value: 300,
                 offset: 0,
@@ -328,7 +346,12 @@ fn feature_projection_collapses_internal_scope_history_chains() {
             crate::records::parameters::DesignParameterSource::new(
                 parameter.source_kind_str().to_owned(),
                 Some(40),
-                parameter.family_discriminator(),
+                parameter
+                    .family_discriminator()
+                    .map(|located| crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }),
             )
             .unwrap(),
         )
@@ -483,13 +506,22 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     let mut items = directly_listed.frame().items().to_vec();
     items.push(crate::records::identity::Located {
         value: origin.record_index.into(),
-        offset: 0,
+        offset: Some(0),
     });
     directly_listed = crate::records::entity_header::DesignFeatureTimeline::try_new(
         directly_listed.id().clone(),
         crate::records::entity_header::DesignTimelineFrame::test_items(
-            directly_listed.frame().byte_offset(),
-            items,
+            directly_listed
+                .frame()
+                .byte_offset()
+                .expect("retained test source"),
+            items
+                .into_iter()
+                .map(|item| crate::records::identity::Located {
+                    value: item.value,
+                    offset: item.offset.unwrap(),
+                })
+                .collect(),
         ),
         directly_listed.class_tag.clone(),
         directly_listed.record_index,
@@ -585,7 +617,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
 }
 
 #[test]
-fn feature_projection_rejects_a_cyclic_internal_scope_history() {
+fn feature_projection_retains_a_consumer_of_cyclic_internal_history() {
     let stream = "f3d:Design/BulkStream.dat";
     let mut first_internal = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#10"),
@@ -649,10 +681,15 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
             },
         )
     });
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    let projected = result.expect("ambiguous internal history does not erase the authored feature");
+    assert_eq!(projected.features.len(), 1);
+    assert_eq!(
+        projected.features[0].native_ref.as_deref(),
+        Some(scopes[2].id.as_str())
+    );
+    assert!(projected.features[0].dependencies.is_empty());
+    assert_eq!(scopes[0].previous_history_state_id(), Some(2));
+    assert_eq!(scopes[1].previous_history_state_id(), Some(1));
 }
 
 #[test]
@@ -811,7 +848,7 @@ fn move_matrix_decomposes_to_translation_and_axis_angle() {
     ];
     let rotation = crate::design::feature_project::matrix_axis_angle(&transform)
         .expect("nonidentity rotation");
-    assert!((rotation.angle.get() - angle).abs() <= 1.0e-12);
+    assert!((rotation.angle.literal().unwrap().get() - angle).abs() <= 1.0e-12);
     assert!((rotation.direction.x - 0.0).abs() <= 1.0e-12);
     assert!((rotation.direction.y - 1.0).abs() <= 1.0e-12);
     assert!((rotation.direction.z - 0.0).abs() <= 1.0e-12);
@@ -965,7 +1002,10 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         .iter()
         .find(|parameter| parameter.name == "Depth")
         .expect("successor Depth parameter");
-    assert_eq!(depth.dependencies.as_slice(), [width.id.clone()]);
+    assert_eq!(
+        depth.expression.dependencies().collect::<Vec<_>>(),
+        [&width.id]
+    );
 }
 
 #[test]
@@ -977,7 +1017,10 @@ fn numerical_audit_half_turn_recovers_axis_with_zero_x() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     let rotation = crate::design::feature_project::matrix_axis_angle(&transform).unwrap();
-    assert_eq!(rotation.angle.get(), std::f64::consts::PI);
+    assert_eq!(
+        rotation.angle.literal().unwrap().get(),
+        std::f64::consts::PI
+    );
     let axis = [
         rotation.direction.x,
         rotation.direction.y,
@@ -1008,7 +1051,10 @@ fn numerical_seventh_matrix_angle_preserves_shallow_rotations() {
             [0.0, 0.0, 0.0, 1.0],
         ];
         let rotation = crate::design::feature_project::matrix_axis_angle(&matrix).unwrap();
-        assert!((rotation.angle.get() - angle.abs()).abs() <= 8.0 * f64::EPSILON * angle.abs());
+        assert!(
+            (rotation.angle.literal().unwrap().get() - angle.abs()).abs()
+                <= 8.0 * f64::EPSILON * angle.abs()
+        );
         if angle.abs() < 1.0 {
             assert_eq!(rotation.direction.get().z.signum(), angle.signum());
         }

@@ -1453,6 +1453,7 @@ struct ProjectionIndex<'a> {
     properties: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
     parameters: HashMap<(&'a str, u32), Option<&'a crate::design::PmDcParameter>>,
     parameter_values: HashMap<&'a str, &'a ParameterValue>,
+    parameter_ids: HashMap<&'a str, &'a cadmpeg_ir::features::ParameterId>,
     sketches: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketch>>,
     sketch_ids: HashMap<&'a str, cadmpeg_ir::sketches::SketchId>,
     directions: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcDirection>>,
@@ -1550,6 +1551,10 @@ pub(crate) fn project(
     let index = ProjectionIndex {
         properties: unique_properties,
         parameters: unique_parameters,
+        parameter_ids: parameters
+            .iter()
+            .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, &parameter.id)))
+            .collect(),
         parameter_values: {
             parameters
                 .iter()
@@ -1869,6 +1874,7 @@ fn native_feature(
     let kind = native_kind(label.map(|label| label.class_id()));
     Ok(Feature {
         id: history_feature_id(identity)?,
+        needs_recompute: false,
         ordinal: label.map_or(0, |label| u64::from(label.index)),
         name: label.and_then(|label| label.name()).map(str::to_owned),
         suppressed: None,
@@ -1899,6 +1905,7 @@ fn sketch_feature(
     let sketch = index.sketch_ids.get(native_id.as_str()).cloned();
     Ok(Feature {
         id: history_feature_id(&record.identity)?,
+        needs_recompute: false,
         ordinal: label.map_or(0, |label| u64::from(label.index)),
         name: label.and_then(|label| label.name()).map(str::to_owned),
         suppressed: None,
@@ -2058,6 +2065,7 @@ fn project_extrusion(
         ordinal: u64::from(label.index),
         name: label.name().map(str::to_owned),
         suppressed: None,
+        needs_recompute: false,
         dependencies: DistinctMembers::default(),
         source_properties,
         source_tag: Some("extrude".into()),
@@ -2122,14 +2130,15 @@ fn extrusion_side(
             .ok()?;
     let termination = match extent {
         EXTENT_DISTANCE | EXTENT_SYMMETRIC_DISTANCE => LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::from(
+            length: {
                 cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(
                     source,
                     slots.length,
                     index,
                 )?)
-                .ok()?,
-            ),
+                .ok()?;
+                parameter_binding(source, slots.length, index)?
+            },
         },
         EXTENT_THROUGH_NEXT => LinearTermination::ThroughNext {},
         EXTENT_THROUGH_ALL => LinearTermination::ThroughAll {},
@@ -2141,7 +2150,9 @@ fn extrusion_side(
     };
     Some(ExtrudeSide {
         termination,
-        draft: (taper.get() != 0.0).then_some(taper),
+        draft: (taper.get() != 0.0)
+            .then(|| parameter_binding(source, slots.taper, index))
+            .flatten(),
     })
 }
 
@@ -2245,7 +2256,8 @@ fn project_fillet(
         if !closed_edge_items(source.identity.segment_token.as_str(), items, index) {
             return None;
         }
-        let radius = cadmpeg_ir::scalar::PositiveLength::new(
+        let radius_reference = radius.index();
+        cadmpeg_ir::scalar::PositiveLength::new(
             length_reference(
                 source.identity.segment_token.as_str(),
                 radius.index(),
@@ -2255,7 +2267,13 @@ fn project_fillet(
         )?;
         groups.push(FilletGroup {
             edges: EdgeSelection::Native(edge_collection.id()),
-            radius: RadiusSpec::Constant { radius },
+            radius: RadiusSpec::Constant {
+                radius: reference_binding(
+                    source.identity.segment_token.as_str(),
+                    radius_reference,
+                    index,
+                )?,
+            },
             tangency_weight: None,
         });
     }
@@ -2276,6 +2294,7 @@ fn project_fillet(
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
             suppressed: None,
+            needs_recompute: false,
             dependencies: DistinctMembers::default(),
             source_properties,
             source_tag: Some("fillet".into()),
@@ -2313,8 +2332,8 @@ fn project_chamfer(
     if !closed_edge_items(source.identity.segment_token.as_str(), items, index) {
         return None;
     }
-    let distance =
-        cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(source, 2, index)?).ok()?;
+    cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(source, 2, index)?).ok()?;
+    let distance = parameter_binding(source, 2, index)?;
     let flip_direction = boolean(source, 5, index)?;
     let (feature_id, result) = match feature_result(ctx, source, 11, index)? {
         Ok(value) => value,
@@ -2330,6 +2349,7 @@ fn project_chamfer(
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
             suppressed: None,
+            needs_recompute: false,
             dependencies: DistinctMembers::default(),
             source_properties,
             source_tag: Some("chamfer".into()),
@@ -2370,28 +2390,53 @@ fn project_hole(
     let kind = match hole_form {
         0 if point_angle.get() == 0.0 => HoleKind::Simple,
         0 => HoleKind::SimpleDrilled {
-            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?,
+            drill_point_angle: {
+                cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
+                parameter_binding(source, 6, index)?
+            },
         },
         1 => HoleKind::Countersink {
-            diameter: cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?,
-            angle: cadmpeg_ir::scalar::InteriorAngle::try_from(head_angle).ok()?,
+            diameter: {
+                cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
+                parameter_binding(source, 3, index)?
+            },
+            angle: {
+                cadmpeg_ir::scalar::InteriorAngle::try_from(head_angle).ok()?;
+                parameter_binding(source, 5, index)?
+            },
         },
         2 if point_angle.get() == 0.0 => HoleKind::Counterbore {
-            diameter: cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?,
-            depth: cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?,
+            diameter: {
+                cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
+                parameter_binding(source, 3, index)?
+            },
+            depth: {
+                cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
+                parameter_binding(source, 4, index)?
+            },
         },
         2 => HoleKind::CounterboreDrilled {
-            diameter: cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?,
-            depth: cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?,
-            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?,
+            diameter: {
+                cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
+                parameter_binding(source, 3, index)?
+            },
+            depth: {
+                cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
+                parameter_binding(source, 4, index)?
+            },
+            drill_point_angle: {
+                cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
+                parameter_binding(source, 6, index)?
+            },
         },
         _ => return None,
     };
     let extent = match enum16(source, 9, PmDcFeatureEnumFamily::Extent, index)? {
         1 => LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::from(
-                cadmpeg_ir::scalar::PositiveLength::try_from(depth).ok()?,
-            ),
+            length: {
+                cadmpeg_ir::scalar::PositiveLength::try_from(depth).ok()?;
+                parameter_binding(source, 2, index)?
+            },
         },
         4 => LinearTermination::ThroughNext {},
         5 => LinearTermination::ThroughAll {},
@@ -2444,7 +2489,10 @@ fn project_hole(
             specification: None,
         },
         None,
-        Some(cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()?),
+        Some({
+            cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()?;
+            parameter_binding(source, 1, index)?
+        }),
     )
     .ok()?;
     let (feature_id, result) = match feature_result(ctx, source, 24, index)? {
@@ -2460,6 +2508,7 @@ fn project_hole(
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
             suppressed: None,
+            needs_recompute: false,
             dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("hole".into()),
@@ -2643,6 +2692,32 @@ fn resolve_direction<'a>(
         ))
         .and_then(Option::as_ref)
         .copied()
+}
+
+fn parameter_binding<Q>(
+    source: &PmDcFeature,
+    slot: usize,
+    index: &ProjectionIndex<'_>,
+) -> Option<cadmpeg_ir::features::Dimension<Q>> {
+    reference_binding(
+        source.identity.segment_token.as_str(),
+        source.properties.references().get(slot)?.index(),
+        index,
+    )
+}
+
+fn reference_binding<Q>(
+    token: &str,
+    reference: u32,
+    index: &ProjectionIndex<'_>,
+) -> Option<cadmpeg_ir::features::Dimension<Q>> {
+    let parameter = index
+        .parameters
+        .get(&(token, reference.checked_sub(1)?))
+        .and_then(Option::as_ref)?;
+    Some(cadmpeg_ir::features::Dimension::Parameter(
+        (*index.parameter_ids.get(parameter.id().as_str())?).clone(),
+    ))
 }
 
 fn length_parameter(
@@ -3164,6 +3239,7 @@ mod tests {
         value: ParameterValue,
     ) -> DesignParameter {
         DesignParameter {
+            driving: true,
             id: ParameterId::mint(format!(
                 "inventor:design:parameter#{}",
                 raw.identity.record_ordinal
@@ -3172,10 +3248,10 @@ mod tests {
             owner: None,
             ordinal: raw.identity.record_ordinal,
             name: raw.name.clone(),
-            expression: String::new(),
+            expression: cadmpeg_ir::features::Expression::text(String::new()),
             display: None,
             value: Some(value),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some(raw.id()),
@@ -3218,6 +3294,10 @@ mod tests {
                         Some(record),
                     )
                 })
+                .collect(),
+            parameter_ids: neutral_parameters
+                .iter()
+                .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, &parameter.id)))
                 .collect(),
             parameter_values: neutral_parameters
                 .iter()
@@ -3569,7 +3649,7 @@ mod tests {
         assert!(matches!(
             projected.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-                if matches!(groups[0].radius, RadiusSpec::Constant { radius: actual_radius } if actual_radius.get() == 2.5)
+                if matches!(&groups[0].radius, RadiusSpec::Constant { radius: actual_radius } if actual_radius.value_from(std::slice::from_ref(&neutral_radius)).expect("bound radius").get() == 2.5)
         ));
         assert_eq!(
             result
@@ -3659,14 +3739,16 @@ mod tests {
             FeatureDefinition::Operation(FeatureOperation::Chamfer {
                 groups,
                 flip_direction: true
-            }) if matches!(groups[0].spec, ChamferSpec::Distance { distance: actual_distance } if actual_distance.get() == 1.25)
+            }) if matches!(&groups[0].spec, ChamferSpec::Distance { distance: actual_distance } if actual_distance.value_from(std::slice::from_ref(&neutral_distance)).expect("bound distance").get() == 1.25)
         ));
     }
+
+    type GeneratedExtrusion = (Feature, FeatureResultTopology, Vec<DesignParameter>);
 
     fn generated_extrusion(
         selections: &[u32],
         policy: DecodePolicy,
-    ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    ) -> Option<Result<GeneratedExtrusion, CodecError>> {
         let raw_length = raw_parameter(70);
         let raw_taper = raw_parameter(71);
         let neutral_parameters = vec![
@@ -3845,6 +3927,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         project_extrusion(&ctx, &feature, &label, &index)
+            .map(|result| result.map(|(feature, topology)| (feature, topology, neutral_parameters)))
     }
 
     #[test]
@@ -3856,7 +3939,7 @@ mod tests {
 
     #[test]
     fn projects_generated_extrusion() {
-        let (projected, _) = generated_extrusion(&[4], DecodePolicy::service())
+        let (projected, _, neutral_parameters) = generated_extrusion(&[4], DecodePolicy::service())
             .expect("extrusion candidate")
             .expect("extrusion projection");
         assert!(matches!(
@@ -3877,7 +3960,7 @@ mod tests {
                 },
                 op: BooleanOp::NewBody,
                 ..
-            }) if ( actual_length.get() == 12.0 && actual_draft.get() == 0.1) && matches!(geometry_1.get(), Vector3 { z: -1.0, .. })
+            }) if ( actual_length.value_from(&neutral_parameters).expect("bound extrusion length").get() == 12.0 && actual_draft.value_from(&neutral_parameters).expect("bound draft").get() == 0.1) && matches!(geometry_1.get(), Vector3 { z: -1.0, .. })
         ));
     }
 
@@ -4043,7 +4126,7 @@ mod tests {
                     position: geometry_1,
                     direction: geometry_2
                 }])
-             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: -1.0, .. }))) && actual_diameter.get() == 9.0 && actual_depth.get() == 3.0 && actual_drill_point_angle.get() == 2.0 && actual_diameter_2.get() == 5.0)));
+             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: -1.0, .. }))) && actual_diameter.value_from(&neutral_parameters).expect("bound hole dimension").get() == 9.0 && actual_depth.value_from(&neutral_parameters).expect("bound hole dimension").get() == 3.0 && actual_drill_point_angle.value_from(&neutral_parameters).expect("bound hole dimension").get() == 2.0 && actual_diameter_2.value_from(&neutral_parameters).expect("bound hole dimension").get() == 5.0)));
     }
 
     #[test]

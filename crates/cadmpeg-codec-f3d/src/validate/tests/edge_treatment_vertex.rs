@@ -65,11 +65,11 @@ fn vertex_recipe_valid_at(recipe_offset: u64) -> bool {
                 id: "f3d:Design/BulkStream.dat:header#100".into(),
                 record_index: 100,
                 class_tag: vertex.class_tag.clone(),
-                byte_offset: vertex.byte_offset(),
+                byte_offset: Some(vertex.byte_offset()),
             }],
             construction_recipes: vec![ConstructionRecipe {
                 id: vertex.recipe_id.clone(),
-                byte_offset: recipe_offset,
+                byte_offset: Some(recipe_offset),
                 kind: ConstructionRecipeKind::Vertex,
                 design: None,
                 recipe_index: 0,

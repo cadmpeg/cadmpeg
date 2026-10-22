@@ -5,9 +5,9 @@ use super::{
     append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, coedge_sense,
     edge_param_range, edge_vertices, face_components, face_sense, hatch_plane_transform,
     region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
-    set_exactness, stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface,
-    with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
-    CommittedExtrusionBoundary, DecodeContext, ReferenceFailure, ReportBuckets,
+    set_exactness, stage_brep, stage_extrusion_caps, transform_decoded_curve, with_expand,
+    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    CommittedExtrusionBoundary, DecodeContext, ReferenceFailure,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
@@ -90,7 +90,7 @@ fn point_commit_propagates_entity_limit() {
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "rhino_instance_entities"
+            if limit.operation == "rhino_object_entities"
     ));
     with_entity_limit(&scan, 5, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
@@ -117,7 +117,7 @@ fn mesh_commit_propagates_entity_limit() {
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "rhino_instance_entities"
+            if limit.operation == "rhino_object_entities"
     ));
     with_entity_limit(&scan, 1, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
@@ -192,10 +192,6 @@ fn candidate_validation_propagates_entity_limit() {
                         format: cadmpeg_ir::CodecFormat::Rhino,
                         object_id: cadmpeg_core::text::NonBlankString::new("point-limited")
                             .expect("nonblank source id"),
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 ));
@@ -206,7 +202,7 @@ fn candidate_validation_propagates_entity_limit() {
         matches!(
             refusal,
             CandidateError::Codec(cadmpeg_core::CodecError::ResourceLimit(ref limit))
-                if limit.operation == "rhino_instance_entities"
+                if limit.operation == "rhino_object_entities"
         ),
         "{refusal:?}"
     );
@@ -231,37 +227,6 @@ fn a_brep_staging_refusal_names_no_byte() {
         error.to_string(),
         "framing error: scaled tolerance is invalid"
     );
-}
-
-#[test]
-fn rejected_expansion_discards_every_report_bucket() {
-    let mut report = ReportBuckets::default();
-    report.phase_warnings.push("existing warning".to_string());
-    report
-        .phase_losses
-        .push(RhinoLossCode::ContainerScanDiagnostic.note("existing parse-phase loss"));
-    report
-        .typed_losses
-        .push(RhinoLossCode::IntegrityFailure.note("existing typed loss"));
-    let checkpoint = report.checkpoint();
-
-    report.phase_warnings.push("rejected warning".to_string());
-    report
-        .phase_losses
-        .push(RhinoLossCode::ContainerScanDiagnostic.note("rejected parse-phase loss"));
-    report
-        .typed_losses
-        .push(RhinoLossCode::IntegrityFailure.note("rejected typed loss"));
-    report.rollback(checkpoint);
-
-    assert_eq!(
-        report.phase_warnings.messages().collect::<Vec<_>>(),
-        ["existing warning"]
-    );
-    assert_eq!(report.phase_losses.len(), 1);
-    assert_eq!(report.phase_losses[0].message, "existing parse-phase loss");
-    assert_eq!(report.typed_losses.len(), 1);
-    assert_eq!(report.typed_losses[0].message, "existing typed loss");
 }
 
 #[test]
@@ -368,53 +333,6 @@ fn instance_line_transform_keeps_component_division_and_collapse_refusal() {
         Err(ReferenceFailure::Semantic(message))
             if message == "instance line transform collapsed its direction"
     ));
-}
-
-#[test]
-fn instance_plane_transform_keeps_component_division() {
-    use cadmpeg_ir::features::FinitePoint3;
-    use cadmpeg_ir::geometry::analytic::PlaneSurface;
-    use cadmpeg_ir::geometry::SurfaceGeometry;
-    use cadmpeg_ir::transform::Transform;
-    use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
-
-    let frame = OrthonormalFrame3::from_units(
-        UnitVector3::Z_AXIS,
-        UnitVector3::new(Vector3::new(0.6, 0.8, 0.0)).expect("unit reference"),
-    )
-    .expect("orthogonal frame");
-    let mut surface = Surface {
-        id: "rhino:object:surface#normalized"
-            .try_into()
-            .expect("surface id"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
-            FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite origin"),
-            frame,
-        ))),
-        source_object: None,
-    };
-    let transform = Transform::affine([
-        [2.0, 0.0, 0.0, 4.0],
-        [0.0, 3.0, 0.0, 5.0],
-        [0.0, 0.0, 4.0, 6.0],
-    ])
-    .expect("finite affine transform");
-    transform_surface(&mut surface, transform).expect("transformed plane");
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface.geometry else {
-        panic!("plane remains solved");
-    };
-    assert_eq!(plane.origin().get(), Point3::new(6.0, 11.0, 18.0));
-    let delta = Vector3::new(
-        (1.0 + 0.6) * 2.0 + 4.0 - 6.0,
-        (2.0 + 0.8) * 3.0 + 5.0 - 11.0,
-        0.0,
-    );
-    let length = delta.norm();
-    let reference = plane.frame().reference().as_raw();
-    assert_eq!(
-        [reference.x, reference.y, reference.z].map(f64::to_bits),
-        [delta.x / length, delta.y / length, delta.z / length].map(f64::to_bits)
-    );
 }
 
 /// The region fixture resolved the way validation resolves it.
@@ -1049,17 +967,18 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
     }
 }
 
-fn test_association() -> SourceObjectAssociation {
-    SourceObjectAssociation {
-        geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("extrusion".to_string())
-            .expect("nonempty source identity"),
+fn test_association() -> crate::decode::ObjectContext {
+    crate::decode::ObjectContext {
+        identity: SourceObjectAssociation {
+            geometry_role: None,
+            format: cadmpeg_ir::CodecFormat::Rhino,
+            object_id: cadmpeg_core::text::NonBlankString::new("extrusion".to_string())
+                .expect("nonempty source identity"),
+            instance_path: Vec::new(),
+        },
         name: Some("Extrusion".to_string()),
         color: None,
         visible: Some(true),
-        layer: None,
-        instance_path: Vec::new(),
     }
 }
 
@@ -1128,7 +1047,6 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
             let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
             let before_ir = context.session.document().clone();
             let before_annotations = context.annotations.clone();
-            let before_budget = context.expansion_budget.entities;
             let result = context.validate_candidate_fallible(|candidate, annotations| {
                 candidate.model.assets.push(Asset {
                     id: "rhino:test:asset#rejected".try_into().unwrap(),
@@ -1166,7 +1084,6 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
             assert!(result.is_err());
             assert_eq!(context.session.document(), &before_ir);
             assert_eq!(context.annotations, before_annotations);
-            assert_eq!(context.expansion_budget.entities, before_budget);
             let decoded = context
                 .commit()
                 .expect("rejected candidate remains committable");
@@ -1211,10 +1128,6 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                     format: cadmpeg_ir::CodecFormat::Rhino,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!("point-{key}"))
                         .unwrap(),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             )
@@ -1269,7 +1182,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         boundary.start_nurbs.clone(),
                     )),
-                    source_object: Some(association.clone()),
+                    source_object: Some(association.identity.clone()),
                 });
                 CommittedExtrusionBoundary {
                     boundary,
@@ -1436,70 +1349,6 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model");
         assert_eq!(validation.error_count(), 0);
-    });
-}
-
-#[test]
-fn expansion_undo_restores_touched_links_and_statuses_exactly() {
-    let archive = ArchiveVersion::V5;
-    let objects = [
-        object_record(archive, 1, [0; 16]),
-        object_record(archive, 1, [0; 16]),
-        object_record(archive, 1, [0; 16]),
-    ];
-    let bytes = minimal_document(
-        "50",
-        &[
-            table(archive, 0x1000_0014, &[]),
-            table(archive, 0x1000_0015, &[]),
-            table(archive, 0x1000_0013, &objects),
-        ],
-    );
-    let scan = crate::container::scan_owned(bytes).expect("required invariant");
-    with_expand(&scan, |expand| {
-        let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
-        context
-            .append_links(0, &["rhino:curve#5", "rhino:curve#1"])
-            .expect("admitted links");
-        assert!(context.mark_decoded(2));
-        let links = |context: &DecodeContext<'_>| {
-            (0..3)
-                .map(|order| {
-                    context
-                        .unknown(order)
-                        .expect("required invariant")
-                        .links()
-                        .to_vec()
-                })
-                .collect::<Vec<_>>()
-        };
-        let before = links(&context);
-
-        context.expansion_undo = Some(super::ExpansionUndo::default());
-        context
-            .append_links(
-                0,
-                &[
-                    "rhino:curve#9",
-                    "rhino:curve#1",
-                    "rhino:curve#3",
-                    "rhino:curve#3",
-                ],
-            )
-            .expect("admitted links");
-        context
-            .append_link(1, "rhino:curve#0")
-            .expect("admitted link");
-        assert!(context.mark_decoded(1));
-        assert!(!context.mark_failed(2));
-        assert_ne!(links(&context), before);
-        let undo = context.expansion_undo.take().expect("active undo log");
-        assert_eq!(undo.links.len(), 3);
-        context.undo_expansion(undo).expect("undo expansion");
-
-        assert_eq!(links(&context), before);
-        assert!(context.mark_failed(1));
-        assert!(!context.mark_decoded(2));
     });
 }
 
@@ -1726,12 +1575,31 @@ fn class_report_counts_terminal_outcomes_once() {
         assert!(!context.mark_decoded(2));
         let result = seal_for_test(context.commit().expect("test decode commit"), false);
         for (code, message) in [
-            (RhinoLossCode::ObjectRecordCensus, "decoded 1/5 Rhino object records".to_string()),
-            (RhinoLossCode::HatchFillNotTransferred, format!("framed and read 2 object record(s) for class {class}; construction state is retained as native passthrough")),
-            (RhinoLossCode::ObjectFamilyNotTransferred, format!("retained 1 object record(s) for class {class}; geometry is not decoded")),
-            (RhinoLossCode::ObjectFramingUndecodable, format!("1 framed object record(s) for class {class} could not be decoded")),
+            (
+                RhinoLossCode::ObjectRecordCensus,
+                "decoded 1/5 Rhino object records".to_string(),
+            ),
+            (
+                RhinoLossCode::HatchFillNotTransferred,
+                format!(
+                    "framed and read 2 object record(s) for class {class}; construction state is retained as native passthrough"
+                ),
+            ),
+            (
+                RhinoLossCode::ObjectFamilyNotTransferred,
+                format!("retained 1 object record(s) for class {class}; geometry is not decoded"),
+            ),
+            (
+                RhinoLossCode::ObjectFramingUndecodable,
+                format!("1 framed object record(s) for class {class} could not be decoded"),
+            ),
         ] {
-            let losses = result.report().losses.iter().filter(|loss| loss.code == code.kind()).collect::<Vec<_>>();
+            let losses = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code == code.kind())
+                .collect::<Vec<_>>();
             assert_eq!(losses.len(), 1);
             assert_eq!(losses[0].message, message);
         }

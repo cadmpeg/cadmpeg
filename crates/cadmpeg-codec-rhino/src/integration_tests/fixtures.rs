@@ -35,7 +35,7 @@ pub(super) fn anonymous_major(
 /// The native parameters of the one typed hatch feature in `result`.
 pub(super) fn hatch_parameters(
     result: &EditableDecodeResult,
-) -> &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String> {
+) -> std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String> {
     result
         .ir()
         .model
@@ -50,4 +50,13 @@ pub(super) fn hatch_parameters(
             _ => None,
         })
         .expect("typed hatch feature")
+        .iter()
+        .map(|(key, dimension)| {
+            let text = dimension
+                .value_from(&result.ir().model.parameters)
+                .and_then(|expression| expression.literal_text())
+                .expect("resolved hatch value");
+            (key.clone(), text)
+        })
+        .collect()
 }

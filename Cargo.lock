@@ -195,6 +195,7 @@ dependencies = [
  "assert_cmd",
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
+ "cadmpeg-codec-f3d",
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
  "cadmpeg-codec-nx",
@@ -285,6 +286,7 @@ dependencies = [
 name = "cadmpeg-codec-freecad"
 version = "0.6.3"
 dependencies = [
+ "base64",
  "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",

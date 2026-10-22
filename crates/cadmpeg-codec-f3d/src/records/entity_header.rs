@@ -10,23 +10,9 @@ use super::references::DesignClassTag;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_base_type_guid, String, "base_type_guid");
-cadmpeg_core::named_optional_field!(
-    deserialize_base_type_guid_offset,
-    u64,
-    "base_type_guid_offset"
-);
-cadmpeg_core::named_optional_field!(
-    deserialize_declared_reference_count,
-    usize,
-    "declared_reference_count"
-);
+
 cadmpeg_core::named_optional_field!(deserialize_module, String, "module");
 cadmpeg_core::named_optional_field!(deserialize_record_reference, u32, "record_reference");
-cadmpeg_core::named_optional_field!(
-    deserialize_record_reference_offset,
-    u64,
-    "record_reference_offset"
-);
 /// Add-in module that registers the Design sketch types.
 pub(crate) const DESIGN_MODULE_SKETCH: &str = "MSketch";
 
@@ -50,14 +36,14 @@ pub(crate) enum BaseTypeGuid {
     /// The entry stores an explicit empty root GUID at this location.
     EmptyRoot {
         /// Byte offset of the empty base-GUID bytes in the `MetaStream`.
-        offset: u64,
+        offset: Option<u64>,
     },
     /// The entry names a base type at this location.
     Guid {
         /// GUID naming the base type.
         value: DesignRelaxedGuidText,
         /// Byte offset of the base-GUID bytes in the `MetaStream`.
-        offset: u64,
+        offset: Option<u64>,
     },
 }
 
@@ -74,30 +60,27 @@ impl BaseTypeGuid {
     pub(crate) fn offset(&self) -> Option<u64> {
         match *self {
             Self::Absent => None,
-            Self::EmptyRoot { offset } | Self::Guid { offset, .. } => Some(offset),
+            Self::EmptyRoot { offset } | Self::Guid { offset, .. } => offset,
         }
     }
 
-    fn from_wire(value: Option<String>, offset: Option<u64>) -> Result<Self, String> {
-        match (value, offset) {
-            (None, None) => Ok(Self::Absent),
-            (Some(value), Some(offset)) if value.is_empty() => Ok(Self::EmptyRoot { offset }),
-            (Some(value), Some(offset)) => Ok(Self::Guid {
+    fn from_content(value: Option<String>) -> Result<Self, String> {
+        match value {
+            None => Ok(Self::Absent),
+            Some(value) if value.is_empty() => Ok(Self::EmptyRoot { offset: None }),
+            Some(value) => Ok(Self::Guid {
                 value: DesignRelaxedGuidText::try_from(value)
                     .map_err(|error| format!("base_type_guid: {error}"))?,
-                offset,
+                offset: None,
             }),
-            (Some(_), None) => Err("base_type_guid requires base_type_guid_offset".into()),
-            (None, Some(_)) => Err("base_type_guid_offset requires base_type_guid".into()),
         }
     }
-
     #[cfg(test)]
-    fn into_wire(self) -> (Option<String>, Option<u64>) {
+    fn into_content(self) -> Option<String> {
         match self {
-            Self::Absent => (None, None),
-            Self::EmptyRoot { offset } => (Some(String::new()), Some(offset)),
-            Self::Guid { value, offset } => (Some(value.into()), Some(offset)),
+            Self::Absent => None,
+            Self::EmptyRoot { .. } => Some(String::new()),
+            Self::Guid { value, .. } => Some(value.into()),
         }
     }
 }
@@ -105,19 +88,21 @@ impl BaseTypeGuid {
 /// One framed type registration before it receives an archive-scoped identity.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SegmentTypeData {
+    /// Segment-local dynamic discriminator used by typed records.
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this type-table entry in its `MetaStream`.
-    pub(crate) byte_offset: u64,
+    pub(crate) byte_offset: Option<u64>,
     /// GUID naming this entry's record type. Class tags are segment-local, so
     /// this GUID is the only discriminator that is stable across files.
     pub(crate) type_guid: DesignRelaxedGuidText,
     /// Byte offset of the type-GUID bytes in the `MetaStream`.
-    pub(crate) type_guid_offset: u64,
+    pub(crate) type_guid_offset: Option<u64>,
     /// Base-type-GUID field and location.
     pub(crate) base_type_guid: BaseTypeGuid,
     /// Record version of this type.
     pub(crate) version: u32,
     /// Byte offset of `version` in the Design `MetaStream`.
-    pub(crate) version_offset: u64,
+    pub(crate) version_offset: Option<u64>,
     /// Add-in module that registers this type, e.g. `Fusion`, `MSketch`, or
     /// `Body`. Every type a module registers repeats the module name, so it
     /// classifies a type but does not identify one. Some types record no module.
@@ -138,7 +123,12 @@ pub(crate) struct SegmentType {
 
 impl SegmentType {
     pub(crate) fn try_new(id: String, data: SegmentTypeData) -> Result<Self, String> {
-        let id = NativeRecordId::try_f3d_new(id, "design-type", data.byte_offset)?;
+        let id = NativeRecordId::try_f3d_new(
+            id,
+            "design-type",
+            data.byte_offset
+                .ok_or("source type registration requires actual byte_offset")?,
+        )?;
         if !id.stream().ends_with("/MetaStream.dat") {
             return Err("type id must name its containing MetaStream".into());
         }
@@ -151,7 +141,6 @@ impl SegmentType {
     pub(crate) fn set_module(&mut self, module: String) {
         self.data.module = module;
     }
-    #[cfg(test)]
     pub(crate) fn set_entities(&mut self, entities: ReferenceRun<u64>) {
         self.data.entities = entities;
     }
@@ -200,31 +189,17 @@ impl Serialize for SegmentValues<'_> {
     }
 }
 
-struct SegmentOffsets<'a>(&'a ReferenceRun<u64>);
-
-impl Serialize for SegmentOffsets<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.0.offsets())
-    }
-}
-
 #[derive(Serialize)]
 struct SegmentTypeWireRef<'a> {
     id: &'a str,
-    byte_offset: u64,
+    class_tag: &'a DesignClassTag,
     type_guid: &'a DesignRelaxedGuidText,
-    type_guid_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     base_type_guid: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    base_type_guid_offset: Option<u64>,
     version: u32,
-    version_offset: u64,
     module: &'a str,
     entity_ids: SegmentValues<'a>,
-    entity_id_offsets: SegmentOffsets<'a>,
 }
-
 impl Serialize for SegmentType {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let base_type_guid = match &self.base_type_guid {
@@ -234,16 +209,12 @@ impl Serialize for SegmentType {
         };
         SegmentTypeWireRef {
             id: self.id.text(),
-            byte_offset: self.byte_offset,
+            class_tag: &self.class_tag,
             type_guid: &self.type_guid,
-            type_guid_offset: self.type_guid_offset,
             base_type_guid,
-            base_type_guid_offset: self.base_type_guid.offset(),
             version: self.version,
-            version_offset: self.version_offset,
             module: &self.module,
             entity_ids: SegmentValues(&self.entities),
-            entity_id_offsets: SegmentOffsets(&self.entities),
         }
         .serialize(serializer)
     }
@@ -254,92 +225,80 @@ impl Serialize for SegmentType {
 /// carry it.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
+#[serde(deny_unknown_fields)]
 struct SegmentTypeWire {
-    /// Globally unique deterministic identifier for this native record.
     id: String,
-    /// Byte offset of this type-table entry in its `MetaStream`.
-    byte_offset: u64,
-    /// GUID naming this entry's record type. Class tags are segment-local, so
-    /// this GUID is the only discriminator that is stable across files.
+    class_tag: DesignClassTag,
     type_guid: DesignRelaxedGuidText,
-    /// Byte offset of the type-GUID bytes in the `MetaStream`.
-    type_guid_offset: u64,
-    /// GUID of this type's base type; `None` for a root type, whose stored base
-    /// GUID is the empty string.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_base_type_guid"
     )]
     base_type_guid: Option<String>,
-    /// Byte offset of the base-type-GUID bytes, when the entry names one.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_base_type_guid_offset"
-    )]
-    base_type_guid_offset: Option<u64>,
-    /// Record version of this type.
     version: u32,
-    /// Byte offset of `version` in the Design `MetaStream`.
-    version_offset: u64,
-    /// Add-in module that registers this type, e.g. `Fusion`, `MSketch`, or
-    /// `Body`. Every type a module registers repeats the module name, so it
-    /// classifies a type but does not identify one. Some types record no module.
     module: String,
-    /// Entity ids whose records carry this type, in source `MetaStream` order;
-    /// a count rather than a fixed-arity list, so length varies per entry.
     entity_ids: Vec<u64>,
-    /// Byte offsets parallel to `entity_ids`.
-    entity_id_offsets: Vec<u64>,
 }
 
 impl TryFrom<SegmentTypeWire> for SegmentType {
     type Error = String;
-    /// Nonempty `base_type_guid` text outside the relaxed GUID domain is not decoder-producible and is rejected deliberately.
-    fn try_from(wire: SegmentTypeWire) -> Result<Self, Self::Error> {
-        Self::try_new(
-            wire.id,
-            SegmentTypeData {
-                byte_offset: wire.byte_offset,
+    fn try_from(wire: SegmentTypeWire) -> Result<Self, String> {
+        let id = NativeRecordId::from_content(wire.id, "design-type")?;
+        if !id.stream().ends_with("/MetaStream.dat") {
+            return Err("type id must name its containing MetaStream".into());
+        }
+        Ok(Self {
+            id,
+            data: SegmentTypeData {
+                class_tag: wire.class_tag,
+                byte_offset: None,
                 type_guid: wire.type_guid,
-                type_guid_offset: wire.type_guid_offset,
+                type_guid_offset: None,
+                base_type_guid: BaseTypeGuid::from_content(wire.base_type_guid)?,
                 version: wire.version,
-                version_offset: wire.version_offset,
+                version_offset: None,
                 module: wire.module,
-                entities: ReferenceRun::from_columns(
-                    wire.entity_ids,
-                    wire.entity_id_offsets,
-                    "entity_ids/entity_id_offsets",
-                )?,
-                base_type_guid: BaseTypeGuid::from_wire(
-                    wire.base_type_guid,
-                    wire.base_type_guid_offset,
-                )?,
+                entities: ReferenceRun::unlocated(wire.entity_ids),
             },
-        )
+        })
     }
 }
-
 #[cfg(test)]
 impl From<SegmentType> for SegmentTypeWire {
     fn from(value: SegmentType) -> Self {
-        let id = value.id.into_string();
-        let value = value.data;
-        let (entity_ids, entity_id_offsets) = value.entities.into_wire();
-        let (base_type_guid, base_type_guid_offset) = value.base_type_guid.into_wire();
         Self {
-            id,
-            byte_offset: value.byte_offset,
-            type_guid: value.type_guid,
-            type_guid_offset: value.type_guid_offset,
-            version: value.version,
-            version_offset: value.version_offset,
-            module: value.module,
-            entity_ids,
-            entity_id_offsets,
-            base_type_guid_offset,
-            base_type_guid,
+            id: value.id.into_string(),
+            class_tag: value.data.class_tag,
+            type_guid: value.data.type_guid,
+            base_type_guid: value.data.base_type_guid.into_content(),
+            version: value.data.version,
+            module: value.data.module,
+            entity_ids: value.data.entities.values().copied().collect(),
+        }
+    }
+}
+impl SegmentType {
+    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
+        for (name, offset) in [
+            ("byte_offset", self.byte_offset),
+            ("type_guid_offset", self.type_guid_offset),
+            ("base_type_guid_offset", self.base_type_guid.offset()),
+            ("version_offset", self.version_offset),
+        ] {
+            if let Some(offset) = offset {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.{name}", self.id()), offset.to_string());
+            }
+        }
+        if let Some(rows) = self.entities.located_rows() {
+            for (index, row) in rows.iter().enumerate() {
+                fidelity.metadata.insert(
+                    format!("{}.entity_id_offsets.{index}", self.id()),
+                    row.offset.to_string(),
+                );
+            }
         }
     }
 }
@@ -347,11 +306,11 @@ impl From<SegmentType> for SegmentTypeWire {
 /// Source timeline frame with bounded, ordered reference locations.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignTimelineFrame {
-    byte_offset: u64,
-    frame_length: u64,
-    context_record_index_offset: u64,
-    item_count_offset: u64,
-    items: Vec<Located<u64>>,
+    byte_offset: Option<u64>,
+    frame_length: Option<u64>,
+    context_record_index_offset: Option<u64>,
+    item_count_offset: Option<u64>,
+    items: Vec<Located<u64, Option<u64>>>,
 }
 
 impl DesignTimelineFrame {
@@ -406,21 +365,27 @@ impl DesignTimelineFrame {
             }
         }
         Ok(Self {
-            byte_offset,
-            frame_length,
-            context_record_index_offset,
-            item_count_offset,
-            items,
+            byte_offset: Some(byte_offset),
+            frame_length: Some(frame_length),
+            context_record_index_offset: Some(context_record_index_offset),
+            item_count_offset: Some(item_count_offset),
+            items: items
+                .into_iter()
+                .map(|item| Located {
+                    value: item.value,
+                    offset: Some(item.offset),
+                })
+                .collect(),
         })
     }
-    pub(crate) fn byte_offset(&self) -> u64 {
+    pub(crate) fn byte_offset(&self) -> Option<u64> {
         self.byte_offset
     }
     #[cfg(test)]
-    pub(crate) fn frame_length(&self) -> u64 {
+    pub(crate) fn frame_length(&self) -> Option<u64> {
         self.frame_length
     }
-    pub(crate) fn items(&self) -> &[Located<u64>] {
+    pub(crate) fn items(&self) -> &[Located<u64, Option<u64>>] {
         &self.items
     }
 
@@ -508,7 +473,13 @@ impl DesignFeatureTimeline {
         source_ordinal: u32,
         context_record_index: std::num::NonZeroU64,
     ) -> Result<Self, String> {
-        let id = NativeRecordId::try_new(id, "design-feature-timeline", frame.byte_offset())?;
+        let id = NativeRecordId::try_new(
+            id,
+            "design-feature-timeline",
+            frame
+                .byte_offset()
+                .ok_or("source timeline requires actual byte_offset")?,
+        )?;
         let segment_end = crate::ids::design_segment(id.text())
             .ok_or("timeline.id must contain a Design segment")?
             .len();
@@ -524,138 +495,128 @@ impl DesignFeatureTimeline {
     }
 }
 
-/// Counted Design timeline-item list that carries authored feature order.
-struct TimelineValues<'a>(&'a [Located<u64>]);
-
+struct TimelineValues<'a>(&'a [Located<u64, Option<u64>>]);
 impl Serialize for TimelineValues<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_seq(self.0.iter().map(|item| item.value))
     }
 }
-
-struct TimelineOffsets<'a>(&'a [Located<u64>]);
-
-impl Serialize for TimelineOffsets<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.0.iter().map(|item| item.offset))
-    }
-}
-
 #[derive(Serialize)]
 struct DesignFeatureTimelineWireRef<'a> {
     id: &'a str,
-    byte_offset: u64,
     class_tag: &'a str,
     record_index: u64,
     source_ordinal: u32,
-    frame_length: u64,
     context_record_index: u64,
-    context_record_index_offset: u64,
-    item_count_offset: u64,
     item_record_indices: TimelineValues<'a>,
-    item_record_index_offsets: TimelineOffsets<'a>,
 }
-
 impl Serialize for DesignFeatureTimeline {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         DesignFeatureTimelineWireRef {
             id: self.id.text(),
-            byte_offset: self.frame.byte_offset,
             class_tag: self.class_tag.as_str(),
             record_index: self.record_index.get(),
             source_ordinal: self.source_ordinal,
-            frame_length: self.frame.frame_length,
             context_record_index: self.context_record_index.get(),
-            context_record_index_offset: self.frame.context_record_index_offset,
-            item_count_offset: self.frame.item_count_offset,
             item_record_indices: TimelineValues(&self.frame.items),
-            item_record_index_offsets: TimelineOffsets(&self.frame.items),
         }
         .serialize(serializer)
     }
 }
-
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
+#[serde(deny_unknown_fields)]
 struct DesignFeatureTimelineWire {
-    /// Globally unique deterministic identifier for this native record.
     id: String,
-    /// Byte offset of this record in its Design `BulkStream`.
-    byte_offset: u64,
-    /// Source per-file dynamic three-digit ASCII class tag.
     class_tag: String,
-    /// Design entity identity of the timeline record.
     record_index: u64,
-    /// Zero-based position in the `MetaStream` timeline-record list.
     source_ordinal: u32,
-    /// Complete top-level record length.
-    frame_length: u64,
-    /// Same-segment context record referenced before the scope list.
     context_record_index: u64,
-    /// Byte offset of `context_record_index`.
-    context_record_index_offset: u64,
-    /// Byte offset of the timeline-item count.
-    item_count_offset: u64,
-    /// Design record indices in authored timeline order.
     item_record_indices: Vec<u64>,
-    /// Byte offsets parallel to `item_record_indices`.
-    item_record_index_offsets: Vec<u64>,
 }
-
 impl TryFrom<DesignFeatureTimelineWire> for DesignFeatureTimeline {
     type Error = String;
-    fn try_from(wire: DesignFeatureTimelineWire) -> Result<Self, Self::Error> {
-        if wire.item_record_indices.len() != wire.item_record_index_offsets.len() {
-            return Err(
-                "item_record_indices and item_record_index_offsets must have equal lengths".into(),
-            );
-        }
-        let items = wire
+    fn try_from(wire: DesignFeatureTimelineWire) -> Result<Self, String> {
+        let id = NativeRecordId::from_content(wire.id, "design-feature-timeline")?;
+        let segment_end = crate::ids::design_segment(id.text())
+            .ok_or("timeline.id must contain a Design segment")?
+            .len();
+        let mut seen = std::collections::BTreeSet::new();
+        if wire
             .item_record_indices
-            .into_iter()
-            .zip(wire.item_record_index_offsets)
-            .map(|(value, offset)| Located { value, offset })
-            .collect();
-        Self::try_new(
-            wire.id,
-            DesignTimelineFrame::new(
-                wire.byte_offset,
-                wire.frame_length,
-                wire.context_record_index_offset,
-                wire.item_count_offset,
-                items,
-            )?,
-            DesignClassTag::try_from(wire.class_tag)?,
-            std::num::NonZeroU64::new(wire.record_index)
+            .iter()
+            .any(|value| *value == 0 || !seen.insert(*value))
+        {
+            return Err("timeline.item_record_indices must be nonzero and unique".into());
+        }
+        Ok(Self {
+            id,
+            segment_end,
+            class_tag: DesignClassTag::try_from(wire.class_tag)?,
+            record_index: std::num::NonZeroU64::new(wire.record_index)
                 .ok_or("timeline.record_index must be nonzero")?,
-            wire.source_ordinal,
-            std::num::NonZeroU64::new(wire.context_record_index)
+            source_ordinal: wire.source_ordinal,
+            context_record_index: std::num::NonZeroU64::new(wire.context_record_index)
                 .ok_or("timeline.context_record_index must be nonzero")?,
-        )
+            frame: DesignTimelineFrame {
+                byte_offset: None,
+                frame_length: None,
+                context_record_index_offset: None,
+                item_count_offset: None,
+                items: wire
+                    .item_record_indices
+                    .into_iter()
+                    .map(|value| Located {
+                        value,
+                        offset: None,
+                    })
+                    .collect(),
+            },
+        })
     }
 }
-
 #[cfg(test)]
 impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
     fn from(value: DesignFeatureTimeline) -> Self {
-        let (item_record_indices, item_record_index_offsets) = value
-            .frame
-            .items
-            .into_iter()
-            .map(|item| (item.value, item.offset))
-            .unzip();
         Self {
-            item_record_indices,
-            item_record_index_offsets,
             id: value.id.into_string(),
-            byte_offset: value.frame.byte_offset,
             class_tag: value.class_tag.into(),
             record_index: value.record_index.get(),
             source_ordinal: value.source_ordinal,
-            frame_length: value.frame.frame_length,
             context_record_index: value.context_record_index.get(),
-            context_record_index_offset: value.frame.context_record_index_offset,
-            item_count_offset: value.frame.item_count_offset,
+            item_record_indices: value
+                .frame
+                .items
+                .into_iter()
+                .map(|item| item.value)
+                .collect(),
+        }
+    }
+}
+impl DesignFeatureTimeline {
+    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
+        for (name, offset) in [
+            ("byte_offset", self.frame.byte_offset),
+            ("frame_length", self.frame.frame_length),
+            (
+                "context_record_index_offset",
+                self.frame.context_record_index_offset,
+            ),
+            ("item_count_offset", self.frame.item_count_offset),
+        ] {
+            if let Some(offset) = offset {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.{name}", self.id()), offset.to_string());
+            }
+        }
+        for (index, item) in self.frame.items.iter().enumerate() {
+            if let Some(offset) = item.offset {
+                fidelity.metadata.insert(
+                    format!("{}.item_record_index_offsets.{index}", self.id()),
+                    offset.to_string(),
+                );
+            }
         }
     }
 }
@@ -668,13 +629,13 @@ pub(crate) struct DesignEntityHeader {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Byte offset of this entity header in its Design `BulkStream`.
-    pub(crate) byte_offset: u64,
+    pub(crate) byte_offset: Option<u64>,
     /// Full UTF-16LE-decoded design-entity id string for this header.
     pub(crate) entity_id: DesignEntityId,
     /// Source per-file dynamic three-digit ASCII class tag naming this header's record type.
     pub(crate) class_tag: DesignClassTag,
     /// Whether the flag-selected four-byte optional slot is present.
-    pub(crate) optional_slot_present: bool,
+    pub(crate) optional_slot_present: Option<bool>,
     /// Module registration and its sketch-owned data.
     pub(crate) registration: DesignEntityRegistration,
 }
@@ -705,9 +666,9 @@ pub(crate) struct SketchHeaderReferences {
     /// Owning record, absent for the no-base-record sentinel.
     pub(crate) record_reference: Option<u32>,
     /// Byte offset of the owning-record slot.
-    pub(crate) record_reference_offset: u64,
+    pub(crate) record_reference_offset: Option<u64>,
     /// Located references in the counted list.
-    pub(crate) references: Vec<Located<u32>>,
+    pub(crate) references: Vec<Located<u32, Option<u64>>>,
 }
 
 /// Module registration with data owned only by sketch headers.
@@ -745,6 +706,7 @@ impl DesignEntityRegistration {
 
 impl DesignEntityHeader {
     /// Declared reference count for a present sketch reference list.
+    #[cfg(test)]
     pub(crate) fn declared_reference_count(&self) -> Option<usize> {
         self.sketch_references().map(|list| list.references.len())
     }
@@ -799,82 +761,37 @@ impl DesignEntityHeader {
     }
 }
 
-/// Self-validating entity-bound header in the Design `BulkStream`.
-struct HeaderReferenceValues<'a>(Option<&'a SketchHeaderReferences>);
-
+struct HeaderReferenceValues<'a>(&'a SketchHeaderReferences);
 impl Serialize for HeaderReferenceValues<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(
-            self.0
-                .into_iter()
-                .flat_map(|list| list.references.iter().map(|item| item.value)),
-        )
+        serializer.collect_seq(self.0.references.iter().map(|item| item.value))
     }
 }
-
-struct HeaderReferenceOffsets<'a>(Option<&'a SketchHeaderReferences>);
-
-impl Serialize for HeaderReferenceOffsets<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(
-            self.0
-                .into_iter()
-                .flat_map(|list| list.references.iter().map(|item| item.offset)),
-        )
-    }
-}
-
 struct HeaderMemberValues<'a>(Option<&'a ReferenceRun<u32>>);
-
 impl HeaderMemberValues<'_> {
     fn is_empty(&self) -> bool {
         self.0.is_none_or(ReferenceRun::is_empty)
     }
 }
-
 impl Serialize for HeaderMemberValues<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_seq(self.0.into_iter().flat_map(ReferenceRun::values))
     }
 }
-
-struct HeaderMemberOffsets<'a>(Option<&'a ReferenceRun<u32>>);
-
-impl HeaderMemberOffsets<'_> {
-    fn is_empty(&self) -> bool {
-        self.0.is_none_or(|members| members.offsets().len() == 0)
-    }
-}
-
-impl Serialize for HeaderMemberOffsets<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.0.into_iter().flat_map(ReferenceRun::offsets))
-    }
-}
-
 #[derive(Serialize)]
 struct DesignEntityHeaderWireRef<'a> {
     id: &'a str,
-    byte_offset: u64,
     entity_id: &'a str,
     class_tag: &'a str,
-    optional_slot_present: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     module: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     record_reference: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    record_reference_offset: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    declared_reference_count: Option<usize>,
-    reference_indices: HeaderReferenceValues<'a>,
-    reference_offsets: HeaderReferenceOffsets<'a>,
+    reference_indices: Option<HeaderReferenceValues<'a>>,
     #[serde(skip_serializing_if = "HeaderMemberValues::is_empty")]
     member_indices: HeaderMemberValues<'a>,
-    #[serde(skip_serializing_if = "HeaderMemberOffsets::is_empty")]
-    member_offsets: HeaderMemberOffsets<'a>,
 }
-
 impl Serialize for DesignEntityHeader {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let references = self.sketch_references();
@@ -884,126 +801,78 @@ impl Serialize for DesignEntityHeader {
         };
         DesignEntityHeaderWireRef {
             id: &self.id,
-            byte_offset: self.byte_offset,
             entity_id: self.entity_id.as_str(),
             class_tag: self.class_tag.as_str(),
-            optional_slot_present: self.optional_slot_present,
             module: self.module(),
             record_reference: references.and_then(|list| list.record_reference),
-            record_reference_offset: references.map(|list| list.record_reference_offset),
-            declared_reference_count: self.declared_reference_count(),
-            reference_indices: HeaderReferenceValues(references),
-            reference_offsets: HeaderReferenceOffsets(references),
+            reference_indices: references.map(HeaderReferenceValues),
             member_indices: HeaderMemberValues(members),
-            member_offsets: HeaderMemberOffsets(members),
         }
         .serialize(serializer)
     }
 }
-
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
+#[serde(deny_unknown_fields)]
 struct DesignEntityHeaderWire {
-    /// Globally unique deterministic identifier for this native record.
     id: String,
-    /// Byte offset of this entity header in its Design `BulkStream`.
-    byte_offset: u64,
-    /// Full UTF-16LE-decoded design-entity id string for this header.
     entity_id: String,
-    /// Source per-file dynamic three-digit ASCII class tag naming this header's record type.
     class_tag: String,
-    /// Whether the flag-selected four-byte optional slot is present.
-    optional_slot_present: bool,
-    /// Add-in module of the `MetaStream` type whose entity-id list contains this
-    /// header's entity, when the `MetaStream` registers that entity.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_module"
     )]
     module: Option<String>,
-    /// Index of an associated `BulkStream` record, when the header carries one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_record_reference"
     )]
     record_reference: Option<u32>,
-    /// Byte offset of `record_reference` in the Design `BulkStream`, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_record_reference_offset"
+        deserialize_with = "deserialize_reference_indices"
     )]
-    record_reference_offset: Option<u64>,
-    /// Declared count of reference entries the header claims to own, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_declared_reference_count"
-    )]
-    declared_reference_count: Option<usize>,
-    /// Padded record-reference run owned by a sketch entity container.
-    #[serde(default)]
-    reference_indices: Vec<u32>,
-    /// Byte offsets parallel to `reference_indices`.
-    #[serde(default)]
-    reference_offsets: Vec<u64>,
-    /// Counted member-record run from the paired same-index container record
-    /// of an `EntityGenesis`-form sketch entity header.
+    reference_indices: Option<Vec<u32>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     member_indices: Vec<u32>,
-    /// Byte offsets parallel to `member_indices`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    member_offsets: Vec<u64>,
 }
-
 impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
     type Error = String;
-    /// Header references without paired `record_reference_offset` and `declared_reference_count` metadata are not decoder-producible and are rejected deliberately.
-    fn try_from(wire: DesignEntityHeaderWire) -> Result<Self, Self::Error> {
-        if wire
-            .declared_reference_count
-            .is_some_and(|count| count != wire.reference_indices.len())
-        {
-            return Err("declared_reference_count must match reference_indices".into());
+    fn try_from(wire: DesignEntityHeaderWire) -> Result<Self, String> {
+        if wire.record_reference.is_some() && wire.reference_indices.is_none() {
+            return Err("record_reference requires a reference_indices list".into());
         }
-        let entity_id = DesignEntityId::try_from(wire.entity_id)?;
-        let references = match (wire.record_reference_offset, wire.declared_reference_count) {
-            (Some(offset), Some(_)) => {
-                if wire.reference_indices.len() != wire.reference_offsets.len() {
-                    return Err("reference_offsets must locate every reference_indices entry".into());
-                }
-                Some(SketchHeaderReferences {
-                    record_reference: wire.record_reference,
-                    record_reference_offset: offset,
-                    references: wire.reference_indices.into_iter().zip(wire.reference_offsets)
-                        .map(|(value, offset)| Located { value, offset }).collect(),
+        let references = wire.reference_indices.map(|values| SketchHeaderReferences {
+            record_reference: wire.record_reference,
+            record_reference_offset: None,
+            references: values
+                .into_iter()
+                .map(|value| Located {
+                    value,
+                    offset: None,
                 })
-            }
-            (None, None) if wire.record_reference.is_none() && wire.reference_indices.is_empty() && wire.reference_offsets.is_empty() => None,
-            _ => return Err("record_reference_offset and declared_reference_count must accompany reference_indices and record_reference".into()),
-        };
-        let members = ReferenceRun::from_columns(
-            wire.member_indices,
-            wire.member_offsets,
-            "member_indices/member_offsets",
-        )?;
+                .collect(),
+        });
         Ok(Self {
-            registration: DesignEntityRegistration::new(wire.module, references, members)?,
+            registration: DesignEntityRegistration::new(
+                wire.module,
+                references,
+                ReferenceRun::unlocated(wire.member_indices),
+            )?,
             id: wire.id,
-            byte_offset: wire.byte_offset,
-            entity_id,
+            byte_offset: None,
+            entity_id: DesignEntityId::try_from(wire.entity_id)?,
             class_tag: DesignClassTag::try_from(wire.class_tag)?,
-            optional_slot_present: wire.optional_slot_present,
+            optional_slot_present: None,
         })
     }
 }
-
 #[cfg(test)]
 impl From<DesignEntityHeader> for DesignEntityHeaderWire {
     fn from(header: DesignEntityHeader) -> Self {
-        let declared_reference_count = header.declared_reference_count();
         let (module, references, members) = match header.registration.0 {
             DesignEntityRegistrationKind::Other(module) => {
                 (module, None, ReferenceRun::unlocated(Vec::new()))
@@ -1013,41 +882,78 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
                 members,
             } => (Some(DESIGN_MODULE_SKETCH.to_owned()), references, members),
         };
-        let (record_reference, record_reference_offset, reference_indices, reference_offsets) =
-            match references {
-                Some(list) => {
-                    let (values, offsets) = list
-                        .references
-                        .into_iter()
-                        .map(|row| (row.value, row.offset))
-                        .unzip();
-                    (
-                        list.record_reference,
-                        Some(list.record_reference_offset),
-                        values,
-                        offsets,
-                    )
-                }
-                None => (None, None, Vec::new(), Vec::new()),
-            };
-        let (member_indices, member_offsets) = members.into_wire();
         Self {
-            declared_reference_count,
-            reference_indices,
-            reference_offsets,
-            member_indices,
-            member_offsets,
             id: header.id,
-            byte_offset: header.byte_offset,
             entity_id: header.entity_id.into_string(),
             class_tag: header.class_tag.into(),
-            optional_slot_present: header.optional_slot_present,
             module,
-            record_reference,
-            record_reference_offset,
+            record_reference: references.as_ref().and_then(|list| list.record_reference),
+            reference_indices: references
+                .map(|list| list.references.into_iter().map(|row| row.value).collect()),
+            member_indices: members.values().copied().collect(),
         }
     }
 }
-
+impl DesignEntityHeader {
+    pub(crate) fn content_eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.entity_id == other.entity_id
+            && self.class_tag == other.class_tag
+            && self.module() == other.module()
+            && self.member_values().eq(other.member_values())
+            && match (self.sketch_references(), other.sketch_references()) {
+                (None, None) => true,
+                (Some(left), Some(right)) => {
+                    left.record_reference == right.record_reference
+                        && left
+                            .references
+                            .iter()
+                            .map(|row| row.value)
+                            .eq(right.references.iter().map(|row| row.value))
+                }
+                _ => false,
+            }
+    }
+    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
+        if let Some(offset) = self.byte_offset {
+            fidelity
+                .metadata
+                .insert(format!("{}.byte_offset", self.id), offset.to_string());
+        }
+        if let Some(flag) = self.optional_slot_present {
+            fidelity.metadata.insert(
+                format!("{}.optional_slot_present", self.id),
+                flag.to_string(),
+            );
+        }
+        if let Some(list) = self.sketch_references() {
+            if let Some(offset) = list.record_reference_offset {
+                fidelity.metadata.insert(
+                    format!("{}.record_reference_offset", self.id),
+                    offset.to_string(),
+                );
+            }
+            for (index, row) in list.references.iter().enumerate() {
+                if let Some(offset) = row.offset {
+                    fidelity.metadata.insert(
+                        format!("{}.reference_offsets.{index}", self.id),
+                        offset.to_string(),
+                    );
+                }
+            }
+        }
+        if let DesignEntityRegistrationKind::Sketch { members, .. } = &self.registration.0 {
+            if let Some(rows) = members.located_rows() {
+                for (index, row) in rows.iter().enumerate() {
+                    fidelity.metadata.insert(
+                        format!("{}.member_offsets.{index}", self.id),
+                        row.offset.to_string(),
+                    );
+                }
+            }
+        }
+    }
+}
+cadmpeg_core::named_optional_field!(deserialize_reference_indices, Vec<u32>, "reference_indices");
 #[cfg(test)]
 mod tests;

@@ -48,10 +48,6 @@ pub(crate) fn cgm_source_key(
         geometry_role: None,
         format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
         object_id,
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     })
 }
@@ -740,7 +736,10 @@ pub(crate) fn build_geometry_report(
     );
 
     DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::full(),
+            geometry_transferred: true,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: Vec::new(),
@@ -871,7 +870,10 @@ pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {
     );
 
     DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::full(),
+            geometry_transferred: false,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: Vec::new(),

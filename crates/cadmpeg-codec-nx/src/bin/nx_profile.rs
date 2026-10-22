@@ -1043,6 +1043,7 @@ mod tests {
             visible: None,
         });
         ir.model.features.push(Feature {
+            needs_recompute: false,
             id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
@@ -1055,11 +1056,12 @@ mod tests {
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::Block {
-                    dimensions: Some([
+                    dimensions: (Some([
                         cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("valid block fixture"),
                         cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("valid block fixture"),
                         cadmpeg_ir::scalar::PositiveLength::new(3.0).expect("valid block fixture"),
-                    ]),
+                    ]))
+                    .map(|values| values.map(Into::into)),
                     placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                     op: cadmpeg_ir::features::BooleanOp::NewBody,
                 }),
@@ -1081,6 +1083,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
+            needs_recompute: false,
             id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 17,
             name: Some("BLOCK".to_string()),
@@ -1166,6 +1169,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
+            needs_recompute: false,
             id: FeatureId::mint("synthetic:test:id#feature".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
@@ -1235,6 +1239,7 @@ mod tests {
             .expect("identity grammar");
         ir.model.bodies.push(body.clone());
         ir.model.appearances.push(Appearance {
+            native_ref: None,
             id: appearance_id.clone(),
             name: None,
             asset_guid: None,
@@ -1248,6 +1253,7 @@ mod tests {
             textures: Vec::new(),
         });
         ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: "test:model:binding#binding"
                 .try_into()
                 .expect("valid identity"),
@@ -1306,6 +1312,7 @@ mod tests {
             .expect("identity grammar");
         ir.model.bodies.push(body.clone());
         ir.model.appearances.push(Appearance {
+            native_ref: None,
             id: appearance_id.clone(),
             name: None,
             asset_guid: None,
@@ -1320,6 +1327,7 @@ mod tests {
         });
         let target = AppearanceTarget::Body(body.id.clone());
         ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: "test:model:binding#binding-1"
                 .try_into()
                 .expect("valid identity"),
@@ -1335,6 +1343,7 @@ mod tests {
         ir.model.appearances[0].base_color =
             Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color"));
         ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: "test:model:binding#binding-2"
                 .try_into()
                 .expect("valid identity"),

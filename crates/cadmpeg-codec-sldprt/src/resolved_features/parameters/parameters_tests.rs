@@ -2,8 +2,8 @@
 
 use super::{
     enrich_history_parameters, native_scalar_matches_discrete_parameter,
-    scalar_unit_from_feature_parameter, sync_changed_feature_scalars, DeclaredParameters,
-    ScalarOwners, ScalarUnit,
+    scalar_unit_from_feature_parameter, sync_feature_scalars, DeclaredParameters, ScalarOwners,
+    ScalarUnit,
 };
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
@@ -11,7 +11,8 @@ use crate::records::{
     FeatureContent, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
     FeatureInputScalar, FeatureInputScalarRole,
 };
-use std::collections::{BTreeMap, HashSet};
+use crate::resolved_features::class_sources::ClassSources;
+use std::collections::BTreeMap;
 
 #[test]
 fn native_scalar_must_match_an_existing_discrete_parameter() {
@@ -224,36 +225,43 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "feature-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 0,
+                offset: Some(0),
                 object_id: ObjectId::from_value(1738),
                 value: "Sketch".into(),
             },
             FeatureInputName {
+                sequence: 64,
+                feature_ref: None,
                 id: "later-feature-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 64,
+                offset: Some(64),
                 object_id: ObjectId::from_value(2000),
                 value: "Later".into(),
             },
             FeatureInputName {
+                sequence: 100,
+                feature_ref: None,
                 id: "d1-name".into(),
                 parent: "lane".into(),
                 ordinal: 2,
-                offset: 100,
+                offset: Some(100),
                 object_id: None,
                 value: "D1".into(),
             },
         ],
         scalars: vec![FeatureInputScalar {
+            sequence: 128,
             id: "scalar".into(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: 128,
+            offset: Some(128),
             object_id: 1739,
             name: "d1-name".into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(0.007_137_4).expect("finite test scalar"),
@@ -269,26 +277,59 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    enrich_history_parameters(&mut histories, [&lane], true);
+    enrich_history_parameters(
+        &crate::test_support::native::class_sources(&[&lane]),
+        &mut histories,
+        [&lane],
+        true,
+    );
     assert_eq!(
         histories[0].features[0].parameters["D1"],
         "<MOD-DIAM>7.1374"
     );
+    // A semantic native load has no source offsets. Two unavailable offsets
+    // are not evidence that this scalar has the value-only wire framing.
+    let mut semantic_lane = lane.clone();
+    for name in &mut semantic_lane.names {
+        name.offset = None;
+    }
+    semantic_lane.scalars[0].offset = None;
+    histories[0].features[0].dimension_properties.insert(
+        "D1".to_owned(),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("Value"),
+            "<MOD-DIAM>25".into(),
+        )]),
+    );
+    enrich_history_parameters(
+        &crate::test_support::native::class_sources(&[&semantic_lane]),
+        &mut histories,
+        [&semantic_lane],
+        true,
+    );
+    assert_eq!(
+        histories[0].features[0].dimension_properties["D1"]["Value"],
+        "<MOD-DIAM>7.1374"
+    );
+    assert_eq!(
+        crate::history::parameters::source_parameter_value(&histories[0].features[0], "D1"),
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(7.1374).unwrap()
+        ))
+    );
     histories[0].features[0]
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "<MOD-DIAM>8".into());
-    sync_changed_feature_scalars(
-        &histories,
-        std::slice::from_mut(&mut lane),
-        &HashSet::from([("feature".into(), cadmpeg_core::nonblank_literal!("D1"))]),
-    )
-    .expect("explicit scalar owner is writable");
+    sync_feature_scalars(&histories, std::slice::from_mut(&mut lane))
+        .expect("explicit scalar owner is writable");
     assert_eq!(lane.scalars[0].value.get(), 0.008);
     assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
 }
 
 #[test]
 fn parameter_indexes_match_the_class_name_and_scalar_scans() {
+    let class_sources = ClassSources::default();
+
     let mut state = 0x2545_f491_u64;
     let mut next = |bound: u64| {
         state = state
@@ -316,19 +357,23 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
     for _ in 0..256 {
         lane.classes = (0..next(6))
             .map(|ordinal| FeatureInputClass {
+                feature_ref: None,
                 id: format!("class-{ordinal}"),
                 parent: "lane".into(),
                 ordinal: u32::try_from(ordinal).unwrap(),
-                offset: next(40),
+                sequence: u32::try_from(ordinal).unwrap(),
+
                 name: "moLengthParameter_c".into(),
             })
             .collect();
         lane.names = (0..next(8))
             .map(|ordinal| FeatureInputName {
+                feature_ref: None,
                 id: format!("name-{ordinal}"),
                 parent: "lane".into(),
                 ordinal: u32::try_from(ordinal).unwrap(),
-                offset: next(40),
+                sequence: u32::try_from(ordinal).unwrap(),
+                offset: Some(next(40)),
                 object_id: None,
                 value: "D1".into(),
             })
@@ -340,7 +385,8 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
                 feature_ref: (next(3) == 0)
                     .then(|| features[usize::try_from(next(3)).unwrap()].to_owned()),
                 ordinal: u32::try_from(ordinal).unwrap(),
-                offset: next(40),
+                sequence: u32::try_from(ordinal).unwrap(),
+                offset: Some(next(40)),
                 object_id: 0,
                 name: "name".into(),
                 value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
@@ -349,16 +395,33 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
             })
             .collect();
 
+        for class in &mut lane.classes {
+            class.sequence = u32::try_from(
+                class_sources
+                    .position(class)
+                    .expect("fixture source position"),
+            )
+            .unwrap();
+        }
+        for name in &mut lane.names {
+            name.sequence = u32::try_from(name.offset.expect("fixture source position")).unwrap();
+        }
+        for scalar in &mut lane.scalars {
+            scalar.sequence =
+                u32::try_from(scalar.offset.expect("fixture source position")).unwrap();
+        }
+
         let declared = DeclaredParameters::new(&lane);
         for name in &lane.names {
             let expected = lane
                 .classes
                 .iter()
-                .filter(|class| class.offset < name.offset)
-                .max_by_key(|class| class.offset)
+                .filter(|class| class_sources.position(class) < name.offset)
+                .max_by_key(|class| class_sources.position(class))
                 .filter(|class| {
                     !lane.names.iter().any(|intervening| {
-                        intervening.offset > class.offset && intervening.offset < name.offset
+                        intervening.offset > class_sources.position(class)
+                            && intervening.offset < name.offset
                     })
                 });
             assert_eq!(
@@ -368,8 +431,8 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
         }
         let owners = ScalarOwners::new(&lane.scalars);
         for feature in features {
-            let start = next(40);
-            let end = (next(4) != 0).then(|| start + next(20));
+            let start = u32::try_from(next(40)).unwrap();
+            let end = (next(4) != 0).then(|| start + u32::try_from(next(20)).unwrap());
             let expected = lane
                 .scalars
                 .iter()
@@ -377,8 +440,8 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
                 .filter(|(_, scalar)| {
                     scalar.feature_ref.as_deref() == Some(feature)
                         || (scalar.feature_ref.is_none()
-                            && scalar.offset > start
-                            && end.is_none_or(|end| scalar.offset < end))
+                            && scalar.sequence > start
+                            && end.is_none_or(|end| scalar.sequence < end))
                 })
                 .map(|(index, _)| index)
                 .collect::<Vec<_>>();

@@ -15,6 +15,7 @@ use super::selections::{
 };
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -172,7 +173,11 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let Some(scalar) = lane
                 .scalars
                 .iter()
-                .filter(|scalar| scalar.offset > u64_from_index(offset))
+                .filter(|scalar| {
+                    scalar
+                        .offset
+                        .is_some_and(|position| position > u64_from_index(offset))
+                })
                 .min_by_key(|scalar| scalar.offset)
             else {
                 continue;
@@ -273,8 +278,10 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                 .scalars
                                 .iter()
                                 .filter(|scalar| {
-                                    scalar.offset > u64_from_index(offset)
-                                        && scalar.offset < u64_from_index(end)
+                                    scalar.offset.is_some_and(|position| {
+                                        position > u64_from_index(offset)
+                                            && position < u64_from_index(end)
+                                    })
                                 })
                                 .filter_map(|scalar| {
                                     let name = names_by_id.get(scalar.name.as_str())?;
@@ -283,7 +290,9 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                 })
                                 .filter(|(scalar, name)| {
                                     value_only_scalar_offset(&lane.native_payload, name)
-                                        == usize::try_from(scalar.offset).ok()
+                                        == scalar
+                                            .offset
+                                            .and_then(|offset| usize::try_from(offset).ok())
                                 })
                                 .min_by_key(|(scalar, _)| scalar.offset)
                                 .map(|(scalar, _)| scalar.value.get());
@@ -468,7 +477,10 @@ fn compact_termination_face_vote(
     let reference = format!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}");
     let selection = lane.surface_selections.iter().find(|selection| {
         selection.feature_ref == feature_ref
-            && usize::try_from(selection.offset).ok() == Some(offset)
+            && selection
+                .offset
+                .and_then(|offset| usize::try_from(offset).ok())
+                == Some(offset)
     });
     let canonical_reference =
         selection.map(|selection| compact_surface_selection_value(&selection.components));
@@ -652,6 +664,7 @@ fn compact_combine_operation_at(payload: &[u8], name_offset: usize) -> Option<&'
 
 /// Add compact general-curve reference identities carried by solid sweeps.
 pub(crate) fn enrich_history_sweep_paths(
+    class_sources: &ClassSources,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
@@ -705,12 +718,19 @@ pub(crate) fn enrich_history_sweep_paths(
             };
             for class in &lane.classes {
                 if class.name != "moGeneralCurveRef_w"
-                    || class.offset < u64_from_index(start)
-                    || class.offset >= u64_from_index(end)
+                    || class_sources
+                        .position(class)
+                        .is_some_and(|position| position < u64_from_index(start))
+                    || class_sources
+                        .position(class)
+                        .is_some_and(|position| position >= u64_from_index(end))
                 {
                     continue;
                 }
-                let Ok(offset) = usize::try_from(class.offset) else {
+                let Some(offset) = class_sources
+                    .position(class)
+                    .and_then(|offset| usize::try_from(offset).ok())
+                else {
                     continue;
                 };
                 observe_offset(offset);
@@ -793,7 +813,9 @@ fn history_object_offsets(
             continue;
         };
         let id = feature.id.clone();
-        objects.push((name.offset, id));
+        if let Some(position) = name.offset {
+            objects.push((position, id));
+        }
     }
     objects.sort_unstable_by_key(|left| left.0);
     objects
@@ -815,6 +837,7 @@ fn component_local_ids(components: &[FeatureInputComponentPathEntry]) -> String 
 
 /// Bind reference-curve cross sections consumed by surface sweeps.
 pub(crate) fn project_surface_sweep_profiles(
+    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -840,7 +863,10 @@ pub(crate) fn project_surface_sweep_profiles(
         else {
             continue;
         };
-        let Some(class_offset) = usize::try_from(reference_class.offset).ok() else {
+        let Some(class_offset) = class_sources
+            .position(reference_class)
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
             continue;
         };
         let Some(wrapper_token) = class_offset
@@ -858,8 +884,8 @@ pub(crate) fn project_surface_sweep_profiles(
         let names = FeatureObjectNames::new(&lane.names);
         let mut objects = Vec::new();
         for feature in &history_features {
-            if let Some(name) = names.of(feature) {
-                objects.push((name.offset, *feature));
+            if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                objects.push((position, *feature));
             }
         }
         objects.sort_unstable_by_key(|(left, _)| *left);

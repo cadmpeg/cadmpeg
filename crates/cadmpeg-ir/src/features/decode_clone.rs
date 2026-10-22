@@ -87,7 +87,7 @@ rewrite_enum!(DatumPlaneReference, []; {
     Feature { feature },
     Face { face },
     ResolvedPlane { frame },
-});
+}; reference_leaf true; string_references {  });
 
 rewrite_enum!(DatumPointConstruction, []; {
     CircleCenter { edge },
@@ -99,7 +99,7 @@ rewrite_enum!(DatumPointConstruction, []; {
     DistanceOnEdge { edge, fraction },
 });
 
-rewrite_record!(DistinctMembers<T>, [T]; (field0));
+rewrite_record!(DistinctMembers<T>, [T]; (field0); allow_list_pruning);
 
 rewrite_enum!(DraftAnchor, []; {
     NeutralPlane { plane, pull },
@@ -212,8 +212,8 @@ rewrite_enum!(FeatureOperation, []; {
     ProjectedCurve { source, target_faces, direction, bidirectional },
     ProjectOnSurface { sources, support_face, direction, mode, height, offset },
     CompositeCurve { segments, closed },
-    Helix { axis_origin, axis_direction, radius, shape, revolutions, start_angle, clockwise, segment_turns, construction_style },
-    HelixNativeAxis { axis_native_ref, axial_rise, pitch, revolutions, start_angle, clockwise },
+    Helix { axis_origin, axis_direction, radius, shape, start_angle, clockwise, segment_turns, construction_style },
+    HelixNativeAxis { axis_native_ref, law, start_angle, clockwise },
     Coil { construction, result },
     Sphere { center, radius, op },
     Torus { center, axis, major_radius, minor_radius, op },
@@ -551,10 +551,9 @@ rewrite_enum!(VertexSelection, []; {
     Native(field0),
 });
 
-rewrite_enum!(super::ConfigurationEvaluation, []; { Suppressed {}, Active { outputs } });
-rewrite_record!(super::ConfigurationFeatureState, []; { evaluation, dependencies, definition });
+rewrite_enum!(super::ConfigurationFeatureState, []; { Suppressed {}, Active {}, Definition { definition } });
 rewrite_record!(super::FeatureEvaluation, []; { definition, outputs });
-rewrite_record!(super::Feature, []; { id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
+rewrite_record!(super::Feature, []; { id, ordinal, name, suppressed, needs_recompute, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
 rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
 rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });

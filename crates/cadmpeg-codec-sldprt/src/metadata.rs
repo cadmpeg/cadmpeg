@@ -367,6 +367,7 @@ fn attribute(
         Exactness::ByteExact,
     )?;
     Ok(SourceAttribute {
+        native_ref: None,
         id,
         target: AttributeTarget::Document,
         name: name.as_str().into(),

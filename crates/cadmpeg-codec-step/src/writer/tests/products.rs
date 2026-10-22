@@ -44,9 +44,8 @@ fn unnamed_occurrence(
             }
         }),
         ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
         linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
         name: None,
         visible: None,
         link: None,

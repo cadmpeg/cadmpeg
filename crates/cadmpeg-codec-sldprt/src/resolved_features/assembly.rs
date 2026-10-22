@@ -14,9 +14,10 @@ pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
     lane.id.contains(":config-objects#")
 }
 
-pub(crate) fn lanes(
+pub(crate) fn lanes<'a>(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
+    scan: &ContainerScan<'a>,
+    sources: &mut super::body_sources::BodySources<'a>,
     annotations: &mut Annotations,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
     let has_explicit_lanes = scan.sections().any(|source| {
@@ -36,15 +37,24 @@ pub(crate) fn lanes(
         } {
             continue;
         }
-        let lane = feature_input_lane(ctx, source, section, "resolved-features", annotations)?;
+        let lane = feature_input_lane(
+            ctx,
+            source,
+            scan.section_view(source),
+            sources,
+            section,
+            "resolved-features",
+            annotations,
+        )?;
         result.push(lane);
     }
     Ok(result)
 }
 
-pub(crate) fn supplemental_config_lanes(
+pub(crate) fn supplemental_config_lanes<'a>(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
+    scan: &ContainerScan<'a>,
+    sources: &mut super::body_sources::BodySources<'a>,
     annotations: &mut Annotations,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
     let has_explicit_lanes = scan.sections().any(|source| {
@@ -64,6 +74,8 @@ pub(crate) fn supplemental_config_lanes(
             lanes.push(feature_input_lane(
                 ctx,
                 source,
+                scan.section_view(source),
+                sources,
                 section,
                 "config-objects",
                 annotations,
@@ -73,24 +85,32 @@ pub(crate) fn supplemental_config_lanes(
     Ok(lanes)
 }
 
-fn feature_input_lane(
+pub(super) fn source_id(source: crate::container::Section<'_>, family: &str) -> String {
+    format!("sldprt:feature-input:{family}#{}", source.ordinal())
+}
+
+fn feature_input_lane<'a>(
     ctx: &DecodeContext<'_>,
     source: crate::container::Section<'_>,
+    source_view: Option<cadmpeg_core::decode::View<'a>>,
+    sources: &mut super::body_sources::BodySources<'a>,
     section: &str,
     family: &str,
     annotations: &mut Annotations,
 ) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
-    let parent = format!("sldprt:feature-input:{family}#{}", source.ordinal());
+    let parent = source_id(source, family);
     let payload = source.payload();
     let classes = class_declarations(payload, &parent)?;
     let names = object_names(ctx, payload, &parent)?;
-    let scalars = named_scalars(payload, &parent, &names)?;
-    let relation_bindings = relation_bindings(&parent, &classes, &scalars, &[])?;
-    let references = reference_cells(&scalars, &classes)?;
+    let scalars = named_scalars(payload, &parent, &names)?.records;
     let sketch_entities = admit_sketch_input_entities(payload, &parent)?;
     for entity in &sketch_entities {
-        let signature = usize::try_from(entity.offset())
-            .ok()
+        let Some(position) = entity.offset() else {
+            continue;
+        };
+        let signature = entity
+            .offset()
+            .and_then(|offset| usize::try_from(offset).ok())
             .and_then(|offset| payload.get(offset..offset + SKETCH_MARKER.len()))
             .map_or("sketch-marker", |prefix| {
                 if prefix == LEGACY_SKETCH_MARKER {
@@ -105,7 +125,7 @@ fn feature_input_lane(
             annotations,
             entity.id(),
             source.source_stream(),
-            entity.offset(),
+            position,
             signature,
             Exactness::ByteExact,
         )?;
@@ -126,22 +146,32 @@ fn feature_input_lane(
         u64_from_index(payload.len()),
         "retain SLDPRT feature input payload",
     )?;
-    Ok(FeatureInputLane {
+    let mut lane = FeatureInputLane {
         id: parent,
         configuration: configuration(section),
         native_payload: payload.to_vec().into(),
         classes,
         names,
         scalars,
-        relation_bindings,
+        relation_bindings: Vec::new(),
         relation_instances: Vec::new(),
         body_selections: Vec::new(),
         edge_selections: Vec::new(),
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
-        references,
+        references: Vec::new(),
         sketch_entities,
-    })
+    };
+    let source_view = source_view.ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("feature-input lane lacks its source View")
+    })?;
+    sources.admit_view(lane.id.clone(), source_view)?;
+    sources.capture_classes(ctx, [&lane])?;
+    let class_sources = sources.class_sources();
+    lane.relation_bindings =
+        relation_bindings(&class_sources, &lane.id, &lane.classes, &lane.scalars, &[])?;
+    lane.references = reference_cells(&class_sources, &lane.scalars, &lane.classes)?.records;
+    Ok(lane)
 }
 
 fn legacy_feature_input_section(section: &str) -> bool {

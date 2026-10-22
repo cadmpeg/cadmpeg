@@ -306,7 +306,9 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
         .unwrap(),
         Some(SketchConstraintDefinitionInput::ArcAngle {
             entity: SketchEntityId::mint("synthetic:test:id#operand-entity").unwrap(),
-            angle: PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            angle: cadmpeg_ir::Dimension::Literal(
+                PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap()
+            ),
         })
     );
 }
@@ -770,7 +772,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
         let mut second_center = marker("second-center", Some([0.0015, 0.0]));
         second_center = second_center.with_test_position(second_center.ordinal(), 3);
         let operand = |index, marker: Option<&str>| FeatureInputOperand {
-            offset: u64::from(index),
+            offset: Some(u64::from(index)),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::Native(tag.try_into().unwrap()),
             entity_index: index,
@@ -781,7 +783,8 @@ fn driving_point_distances_resolve_omitted_solver_points() {
             parent: "lane".into(),
             feature_ref: Some("feature-native".into()),
             ordinal: 0,
-            offset: 0,
+            sequence: 0,
+            offset: Some(0),
             object_id: 0,
             name: "name".into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
@@ -847,7 +850,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
     let mut third = marker("third", Some([2.0, 0.0]));
     third = third.with_test_position(third.ordinal(), 2);
     let operand = |index| FeatureInputOperand {
-        offset: u64::from(index),
+        offset: Some(u64::from(index)),
         reference_ref: format!("reference-{index}"),
         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
         entity_index: index,
@@ -860,11 +863,12 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
         classes: Vec::new(),
         names: Vec::new(),
         scalars: vec![FeatureInputScalar {
+            sequence: 0,
             id: "distance".into(),
             parent: "lane".into(),
             feature_ref: Some("feature-native".into()),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             object_id: 0,
             name: "name".into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),

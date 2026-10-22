@@ -71,9 +71,9 @@ fn form33_without_unique_body_proof_remains_unresolved() {
             references: vec![
                 crate::records::topology::body_recipe::DesignBodyRecipeReference {
                     design_reference: 301,
-                    design_reference_offset: 25,
+                    design_reference_offset: Some(25),
                     form: 33,
-                    form_offset: 33,
+                    form_offset: Some(33),
                     candidate_faces: vec![
                         FaceId::mint("test:model:face#1").expect("identity grammar"),
                         FaceId::mint("test:model:face#2").expect("identity grammar"),
@@ -118,6 +118,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     );
     let native = "f3d:Design/BulkStream.dat:design-record#1".to_owned();
     let inputs = FeatureBodySelectionInputs {
+        parameters: &[],
         scopes: std::slice::from_ref(&scope),
         groups: &[],
         body_recipe_operands: std::slice::from_ref(&operand),

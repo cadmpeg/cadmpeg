@@ -693,6 +693,7 @@ impl CatiaNative {
             }
         }
         Ok(Self {
+            display_colors: namespace.arena_as("display_colors")?,
             sampled_parameter_maps,
             alias_rows,
             inline_fields,

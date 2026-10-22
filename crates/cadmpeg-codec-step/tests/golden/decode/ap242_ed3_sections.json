@@ -1,11 +1,20 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
+      "assets": [
+        {
+          "content": {
+            "kind": "external",
+            "uri": "https://example.invalid/external-part"
+          },
+          "id": "step:data:external-resource#0",
+          "name": "#100"
+        }
+      ],
       "attributes": [],
       "bodies": [],
       "coedges": [],
@@ -65,16 +74,12 @@
         ]
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
-      "attributes": {
-        "bytes_named_opaque": "28",
-        "bytes_structural": "539",
-        "bytes_typed": "30",
-        "bytes_unclassified": "0",
-        "data_sections": "2",
-        "entity_instances": "2",
-        "schema": "AP242"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -182,11 +187,23 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
     "annotations": {},
+    "metadata": {
+      "bytes_named_opaque": "28",
+      "bytes_structural": "539",
+      "bytes_typed": "30",
+      "bytes_unclassified": "0",
+      "data_sections": "2",
+      "entity_instances": "2",
+      "schema": "AP242"
+    },
     "retained_records": {
       "step:data:example_record#2": {
         "bytes": {
@@ -194,7 +211,10 @@
           "retention": "inline"
         },
         "offset": 398,
-        "stream": ""
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
       },
       "step:file:signature#0": {
         "bytes": {
@@ -202,8 +222,12 @@
           "retention": "inline"
         },
         "offset": 453,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

@@ -62,7 +62,7 @@ fn persistence_link_diagnostics_become_unreadable_payloads() {
 }
 
 #[test]
-fn x63_decode_counts_object_copies_in_retained_budget() {
+fn x63_decode_counts_source_image_in_retained_budget() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let bytes = archive(document);
     FcstdCodec
@@ -74,14 +74,14 @@ fn x63_decode_counts_object_copies_in_retained_budget() {
         &bytes,
         &mut DecodeOptions::default(),
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain FCStd entry",
+        "retain FCStd source image",
         0,
     );
     assert_eq!(
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::RetainedBytes
     );
-    assert_eq!(limit.operation, "retain FCStd entry");
+    assert_eq!(limit.operation, "retain FCStd source image");
 }
 
 fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::CodecError> {
@@ -500,10 +500,21 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .find(|entry| entry.name() == "Payload.bin")
         .expect("payload entry");
     assert_eq!(payload_entry.referenced_by(), vec![payload.id.clone()]);
-    assert_eq!(payload_entry.data(), b"payload");
-    let ledger = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    assert_eq!(
+        crate::test_support::source_fidelity::entry_bytes(
+            result.source_fidelity(),
+            payload_entry.id()
+        ),
+        b"payload"
+    );
+    let ledger = result
+        .source_fidelity()
+        .freecad_ledgers()
+        .values()
+        .next()
+        .expect("FCStd source ledgers")
+        .logical_ledger
+        .clone();
     for entry in &entries {
         let mut spans = ledger
             .iter()
@@ -513,7 +524,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         assert_eq!(spans.first().map(|span| span.span.start()), Some(0));
         assert_eq!(
             spans.last().map(|span| span.span.end()),
-            Some(entry.byte_len())
+            Some(result.source_fidelity().record_layout()[entry.id()].byte_len())
         );
         assert!(spans
             .windows(2)
@@ -533,9 +544,14 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(ledger.iter().any(|span| {
         span.entry == "Document.xml" && span.classification.as_str() == "structural"
     }));
-    let coverage = namespace
-        .arena_as::<crate::native::ByteCoverageRecord>("byte_coverage")
-        .expect("byte coverage");
+    let coverage = vec![result
+        .source_fidelity()
+        .freecad_ledgers()
+        .values()
+        .next()
+        .expect("FCStd source ledgers")
+        .byte_coverage
+        .clone()];
     assert_eq!(coverage.len(), 1);
     assert!(coverage[0].exact);
     assert_eq!(coverage[0].logical_entry_count, entries.len());
@@ -543,7 +559,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         coverage[0].logical_byte_len,
         entries
             .iter()
-            .map(super::super::native::EntryRecord::byte_len)
+            .map(|entry| result.source_fidelity().record_layout()[entry.id()].byte_len())
             .sum::<u64>()
     );
     assert_eq!(
@@ -786,12 +802,14 @@ fn property_value_xml_above_the_copy_bound_is_unreadable_with_a_loss() {
     let xml = roxmltree::Document::parse(&document).expect("XML");
     let mut properties = Vec::new();
     let mut losses = Vec::new();
+    let mut property_sources = std::collections::BTreeMap::new();
     super::parse_properties(
-        &document,
         xml.root_element(),
         "owner",
         &mut properties,
+        &mut property_sources,
         &mut losses,
+        None,
     )
     .expect("a value copy above the bound skips the values");
     assert!(matches!(
@@ -800,7 +818,7 @@ fn property_value_xml_above_the_copy_bound_is_unreadable_with_a_loss() {
             if detail.contains("value copy bound")
     ));
     assert_eq!(
-        properties[0].xml.text(),
+        &document[property_sources[&properties[0].id].record_range()],
         &document[xml
             .root_element()
             .first_element_child()

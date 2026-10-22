@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [
@@ -221,6 +220,7 @@
     "native": {
       "sldprt": {
         "configurations": [],
+        "document_metadata": [],
         "feature_histories": [],
         "feature_input_body_selections": [],
         "feature_input_classes": [],
@@ -246,33 +246,16 @@
         ]
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
-        "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "2",
         "bmp_thumbnail_count": "0",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "compound_stream_count": "0",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "png_preview_count": "0",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#partition:0",
-        "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_swobjects_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_swobjects_material_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_swobjects_metadata_identity_local_sha256": "<elided: digest over tolerantly compared geometry>"
+        "png_preview_count": "0"
       },
       "identity": {
         "classification": "classified",
@@ -362,7 +345,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -500,6 +486,17 @@
         }
       }
     },
+    "metadata": {
+      "active_parasolid_block": "Contents/Config-0-Partition",
+      "block_count": "2",
+      "brep_local_sha256": "99515efff73d48415f7fadfea5439d9758fdc4538ace29a4f2e41e397705b946",
+      "compound_stream_count": "0",
+      "document_local_sha256": "b99da13572bef12f8e63ad55798ae939b9b0664cb5b61df11c58b86f7310206c",
+      "outer_version": "0x00000004",
+      "sldprt_swobjects_local_sha256": "62c41aa01e83565d19622afea6515389f6ec460751a192c91b61640fd7293fc6",
+      "sldprt_swobjects_material_local_sha256": "c93f9abd6289c56212cb25d546123fd91f33244027d80e371b992c4757808a4f",
+      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "retained_records": {
       "sldprt:file:block#247": {
         "bytes": {
@@ -507,7 +504,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "SWObjects"
+        "stream": "SWObjects",
+        "untyped": []
       },
       "sldprt:file:block#8": {
         "bytes": {
@@ -515,7 +513,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": []
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -523,8 +522,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

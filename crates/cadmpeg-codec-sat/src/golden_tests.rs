@@ -31,6 +31,10 @@ fn branches() -> [Branch; 2] {
 fn inputs() -> Vec<(String, Vec<u8>)> {
     vec![
         (
+            "attributed_sphere".to_string(),
+            crate::test_support::test_streams::attributed_sphere_stream(),
+        ),
+        (
             "text_sphere".to_string(),
             crate::test_support::test_streams::text_sphere_stream(1.0),
         ),
@@ -54,7 +58,11 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 }
 
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match SatCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
+    let value = match cadmpeg_test_support::golden::decode(
+        &SatCodec,
+        &mut Cursor::new(bytes),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             serde_json::json!({
@@ -82,7 +90,44 @@ fn golden_output_is_deterministic() {
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary =
-        cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&SatCodec, &inputs());
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
+        &SatCodec,
+        &inputs(),
+        |result| {
+            let expected = crate::loss::unrepresented(
+                &result.report().losses,
+                result.ir().native.namespace("sat"),
+            );
+            assert!(expected.iter().all(|class| result.source_fidelity().unrepresented().contains(class)), "every source-only loss must have retained source evidence carrying its arena class");
+        },
+    );
     assert_eq!(summary.cut, 0, "{summary:?}");
+}
+
+/// Attributes have a neutral home; direct ASM colors remain display colors.
+#[test]
+fn asm_attributes_and_display_color_have_distinct_neutral_homes() {
+    let bytes = crate::test_support::test_streams::attributed_sphere_stream();
+    let result = cadmpeg_test_support::golden::decode(
+        &SatCodec,
+        &mut Cursor::new(bytes),
+        &DecodeOptions::default(),
+    )
+    .expect("attributed sphere decodes");
+    assert!(!result.ir().model.attributes.is_empty());
+    assert!(result.ir().model.appearances.is_empty());
+    assert!(result.ir().model.appearance_bindings.is_empty());
+    assert!(result
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.color.is_some()));
+}
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(&SatCodec, &inputs());
 }

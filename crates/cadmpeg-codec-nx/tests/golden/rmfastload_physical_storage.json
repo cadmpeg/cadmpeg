@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -52,9 +51,7 @@
                 120,
                 132
               ],
-              "boundary_source_offset": 157,
               "byte_len": 174,
-              "header_source_offset": 121,
               "header_words": [
                 3,
                 7,
@@ -70,24 +67,19 @@
               "physical_spans": [
                 {
                   "byte_len": 112,
-                  "sha256": "6a4441a1fd4254d5e7b4a526fdebd174081149909108518ce4dd52353c4c634d",
-                  "source_offset": 80
+                  "sha256": "6a4441a1fd4254d5e7b4a526fdebd174081149909108518ce4dd52353c4c634d"
                 },
                 {
                   "byte_len": 8,
-                  "sha256": "f86e5d761fad6ec0e9ab3196f73eb1c5a9e9fca61e75a07e50a28f05d6253c82",
-                  "source_offset": 192
+                  "sha256": "f86e5d761fad6ec0e9ab3196f73eb1c5a9e9fca61e75a07e50a28f05d6253c82"
                 },
                 {
                   "byte_len": 12,
-                  "sha256": "1acd855e4657b0c3f4e203d3452dbfd1cf66eff0101b0ac539f0570f06990f9c",
-                  "source_offset": 200
+                  "sha256": "1acd855e4657b0c3f4e203d3452dbfd1cf66eff0101b0ac539f0570f06990f9c"
                 }
               ],
               "sha256": "e632a479a01db344a7f10b6daa505c11763d9f232dce8b7826b5d0c6cca9f4d9",
               "source_entry": "/Root/FastLoad/RMFastLoad",
-              "source_offset": 80,
-              "table_count_source_offset": 173,
               "table_words": [
                 1,
                 17,
@@ -96,7 +88,6 @@
               "terminal_preamble": "000000000000000000000000",
               "terminal_rows": [
                 {
-                  "source_offset": 224,
                   "tokens": [
                     "01",
                     "8000",
@@ -104,7 +95,6 @@
                   ]
                 },
                 {
-                  "source_offset": 233,
                   "tokens": [
                     "c0000000",
                     "01",
@@ -117,6 +107,10 @@
           ]
         }
       },
+      "scope": {
+        "design": false,
+        "model": false
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -124,7 +118,6 @@
           "file_size": "268",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "254",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -177,6 +170,17 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -186,11 +190,38 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": false,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
-      "annotations": {}
+      "annotations": {},
+      "metadata": {
+        "native.nx.rmfastload_physical_storages.nx:rmfastload:physical-storage#0000000000.boundary_source_offset": "157",
+        "native.nx.rmfastload_physical_storages.nx:rmfastload:physical-storage#0000000000.header_source_offset": "121",
+        "native.nx.rmfastload_physical_storages.nx:rmfastload:physical-storage#0000000000.physical_spans[0].source_offset": "80",
+        "native.nx.rmfastload_physical_storages.nx:rmfastload:physical-storage#0000000000.physical_spans[1].source_offset": "192",
+        "native.nx.rmfastload_physical_storages.nx:rmfastload:physical-storage#0000000000.physical_spans[2].source_offset": "200",
+        "native.nx.rmfastload_physical_storages.nx:rmfastload:physical-storage#0000000000.source_offset": "80",
+        "native.nx.rmfastload_physical_storages.nx:rmfastload:physical-storage#0000000000.table_count_source_offset": "173",
+        "native.nx.rmfastload_physical_storages.nx:rmfastload:physical-storage#0000000000.terminal_rows[0].source_offset": "224",
+        "native.nx.rmfastload_physical_storages.nx:rmfastload:physical-storage#0000000000.terminal_rows[1].source_offset": "233",
+        "source.footer_offset": "254"
+      },
+      "retained_records": {
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAAD+AAAAAAAAAEhFQURFUgEAAAAZAAAAL1Jvb3QvRmFzdExvYWQvUk1GYXN0TG9hZFAAAAAAAAAArgAAAAAAAAD/////AAAAAAAAAKJPTQEBAAAAAAAAAAAAAAAAAAAAAQAAAHgBAAAAcAMAAAAHAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAhAAAAAAAAABwAAAAeAAAAIQAAAADAAAAAQAAABEAAABjAAAABAEGTlggeAABwEQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAGAAKAAAE4FAMAAAAABAk7///////////////9GT09URVIAAAAAAAAAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
+        }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

@@ -1,6 +1,7 @@
 //! Dimensioned sketch geometry and radial circle records.
 
 use super::grid::GridCoordinate;
+use crate::resolved_features::class_sources::ClassSources;
 
 use super::endpoints::{
     compact_indexed_curve_record_end, marker_profile_curve_role, minor_arc_angles,
@@ -171,7 +172,9 @@ fn native_radial_record_for_marker(
             .markers
             .iter()
             .find(|marker| marker.id() == marker_id)?;
-        let offset = usize::try_from(marker.offset()).ok()?;
+        let offset = marker
+            .offset()
+            .and_then(|offset| usize::try_from(offset).ok())?;
         compact_radial_circle_index(&lane.native_payload, offset)
             .or_else(|| {
                 extended_terminal_repeated_radial_circle_index(&lane.native_payload, offset)
@@ -183,7 +186,9 @@ fn native_radial_record_for_marker(
                 )
             })
             .or_else(|| {
-                let offset = usize::try_from(marker.offset()).ok()?;
+                let offset = marker
+                    .offset()
+                    .and_then(|offset| usize::try_from(offset).ok())?;
                 extended_radial_circle_index(&lane.native_payload, offset)
                     .map(|radial_index| (radial_index, false))
             })
@@ -275,8 +280,9 @@ fn dimensioned_arc_native_geometry(
         &markers_by_id,
         &object_markers,
     );
-    let inline = usize::try_from(marker.offset())
-        .ok()
+    let inline = marker
+        .offset()
+        .and_then(|offset| usize::try_from(offset).ok())
         .and_then(|offset| inline_arc_coordinates(&lane.native_payload, offset))
         .map(|coordinates| coordinates.map(cadmpeg_ir::units::FiniteVector::get));
     let [center, start, end] = if let Some(coordinates) = inline {
@@ -385,6 +391,7 @@ fn unique_linked_declared_entity_handle_arc_carrier<'a>(
 }
 
 fn unique_declared_entity_handle_circular_carrier<'a>(
+    class_sources: &ClassSources,
     lanes: &'a [FeatureInputLane],
     feature: &str,
     operand: &FeatureInputOperand,
@@ -398,7 +405,7 @@ fn unique_declared_entity_handle_circular_carrier<'a>(
     {
         return Some(carrier);
     }
-    if declared_entity_handle_has_resolved_pair(lanes, feature, operand) {
+    if declared_entity_handle_has_resolved_pair(class_sources, lanes, feature, operand) {
         return None;
     }
     let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
@@ -441,6 +448,7 @@ fn unique_declared_entity_handle_circular_carrier<'a>(
 }
 
 fn dimensioned_relation_carrier<'a>(
+    class_sources: &ClassSources,
     lanes: &'a [FeatureInputLane],
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     feature: &str,
@@ -457,7 +465,9 @@ fn dimensioned_relation_carrier<'a>(
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
         )
     });
-    if let Some((marker, center)) = declared_slot_handle_dimension_center(lanes, feature, operand) {
+    if let Some((marker, center)) =
+        declared_slot_handle_dimension_center(class_sources, lanes, feature, operand)
+    {
         let center = center
             .coordinates_m
             .map(cadmpeg_ir::units::FiniteVector::get)?;
@@ -504,8 +514,9 @@ fn dimensioned_relation_carrier<'a>(
     if let Some((marker, offset)) = explicit
         .filter(|_| explicit_point_marker)
         .and_then(|marker| {
-            usize::try_from(marker.offset())
-                .ok()
+            marker
+                .offset()
+                .and_then(|offset| usize::try_from(offset).ok())
                 .map(|offset| (marker, offset))
         })
     {
@@ -520,7 +531,8 @@ fn dimensioned_relation_carrier<'a>(
         }
     }
     let declared_owner = declared_entity_handle_owner(lanes, operand);
-    let declared = declared_entity_handle_circular_marker(lanes, feature, operand, radius);
+    let declared =
+        declared_entity_handle_circular_marker(class_sources, lanes, feature, operand, radius);
     let declared_entity_handle = !matches!(declared_owner, DeclaredEntityHandleOwner::Absent);
     let (marker, encoded_radius, fallback_curve) = if let Some((marker, radius)) = declared {
         (marker, Some(radius), None)
@@ -529,13 +541,22 @@ fn dimensioned_relation_carrier<'a>(
         (marker, None, None)
     } else if declared_entity_handle && !explicit_circular_marker {
         if explicit.is_none() || explicit_point_marker {
-            if let Some((marker, curve)) =
-                unique_declared_entity_handle_circular_carrier(lanes, feature, operand, radius)
-            {
+            if let Some((marker, curve)) = unique_declared_entity_handle_circular_carrier(
+                class_sources,
+                lanes,
+                feature,
+                operand,
+                radius,
+            ) {
                 (marker, None, Some(curve))
             } else if matches!(operand.kind, FeatureInputOperandKind::Native(_))
                 && explicit_point_marker
-                && !declared_entity_handle_point_is_declared_radial(lanes, feature, operand)
+                && !declared_entity_handle_point_is_declared_radial(
+                    class_sources,
+                    lanes,
+                    feature,
+                    operand,
+                )
             {
                 let marker =
                     declared_entity_handle_point_dimension_center(lanes, feature, operand)?;
@@ -611,7 +632,8 @@ fn dimensioned_relation_carrier<'a>(
         native_dimensioned_circle_construction_state(lanes, feature, marker, radius);
     if construction.is_none() {
         construction =
-            direct_point_dimension_center(lanes, feature, operand, radius).map(|_| false);
+            direct_point_dimension_center(class_sources, lanes, feature, operand, radius)
+                .map(|_| false);
     }
     let construction = construction.or_else(|| {
         declared_entity_handle.then_some(false).or_else(|| {
@@ -709,6 +731,7 @@ fn transformed_dimensioned_arc(
 
 /// Materialize dimensioned circular sketch geometry omitted by a selected-profile stream.
 pub(crate) fn project_dimensioned_sketch_geometry(
+    class_sources: &ClassSources,
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     surfaces: &[cadmpeg_ir::geometry::Surface],
@@ -783,6 +806,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 continue;
             }
             let Some(carrier) = dimensioned_relation_carrier(
+                class_sources,
                 lanes,
                 &markers_by_id,
                 relation.feature_ref.as_str(),
@@ -855,6 +879,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 continue;
             }
             let carrier = dimensioned_relation_carrier(
+                class_sources,
                 lanes,
                 &markers_by_id,
                 relation.feature_ref.as_str(),
@@ -939,7 +964,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             };
             let entity_text = format!(
                 "sldprt:model:sketch-entity#dimension:{lane_key}:{}",
-                relation.offset
+                relation.ordinal
             );
             let Ok(entity_id) = SketchEntityId::mint(entity_text) else {
                 continue;
@@ -972,6 +997,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
 /// relation-point projector has established one same-sketch neutral point;
 /// ambiguous or missing witnesses remain native.
 pub(crate) fn project_relation_point_dimensioned_circles(
+    class_sources: &ClassSources,
     entities: &mut Vec<SketchEntity>,
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
@@ -1082,6 +1108,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                     )
                     .is_some()
                         || direct_point_dimension_center(
+                            class_sources,
                             lanes,
                             relation.feature_ref.as_str(),
                             operand,
@@ -1089,6 +1116,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                         )
                         .is_some())
                     && !declared_entity_handle_point_is_declared_radial(
+                        class_sources,
                         lanes,
                         relation.feature_ref.as_str(),
                         operand,
@@ -1117,7 +1145,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             }
             let entity_id = format!(
                 "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}",
-                relation.offset
+                relation.ordinal
             );
             let Ok(entity_id) = SketchEntityId::mint(entity_id) else {
                 continue;
@@ -1864,11 +1892,14 @@ pub(crate) fn project_marker_dimensioned_circles(
             let lane = group.lane;
             let mut range: Option<(usize, usize)> = None;
             for marker in &group.markers {
-                let offset = usize::try_from(marker.offset()).map_err(|_| {
-                    cadmpeg_core::CodecError::malformed(
-                        "SLDPRT sketch marker offset exceeds the address space",
-                    )
-                })?;
+                let offset = marker
+                    .offset()
+                    .and_then(|offset| usize::try_from(offset).ok())
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "SLDPRT sketch marker offset exceeds the address space",
+                        )
+                    })?;
                 range = Some(range.map_or((offset, offset), |(start, end)| {
                     (start.min(offset), end.max(offset))
                 }));
@@ -1972,13 +2003,13 @@ pub(crate) fn project_marker_dimensioned_circles(
                     }
                     let candidate_offset_u64 =
                         cadmpeg_core::decode::u64_from_index(*candidate_offset);
-                    if group
-                        .markers
-                        .iter()
-                        .any(|marker| marker.offset() == candidate_offset_u64)
-                        && (*candidate_offset == *offset
-                            || id_from_index(*candidate_radial_index)
-                                .is_some_and(|index| pair_radial_object_indices.contains(&index)))
+                    if group.markers.iter().any(|marker| {
+                        marker
+                            .offset()
+                            .is_some_and(|position| position == candidate_offset_u64)
+                    }) && (*candidate_offset == *offset
+                        || id_from_index(*candidate_radial_index)
+                            .is_some_and(|index| pair_radial_object_indices.contains(&index)))
                     {
                         let reference =
                             marker_circle_carrier_reference(lane_key, *candidate_offset);

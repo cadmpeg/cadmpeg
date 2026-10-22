@@ -62,5 +62,5 @@ fn dispatcher_projects_perpendicular_surface_extend() {
         panic!("perpendicular SurfaceExtend did not project as a typed feature");
     };
     assert!(native.ends_with(":design-record#500"));
-    assert!((distance.get() - 0.4).abs() < EPS_SURFACE_DISTANCE_MM);
+    assert!((distance.literal().unwrap().get() - 0.4).abs() < EPS_SURFACE_DISTANCE_MM);
 }

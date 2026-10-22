@@ -108,16 +108,6 @@ pub(super) enum DesignPath {
     Bodyless,
 }
 
-/// A contained phase-2 failure. A document that carries one keeps its product
-/// and geometry records and holds none of the records phase 2 produces.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct DesignIntentFailure {
-    /// Globally unique deterministic identifier for this native record.
-    pub(crate) id: String,
-    /// The error that stopped design-intent decoding.
-    pub(crate) reason: String,
-}
-
 /// Native Design records that phase 2 produces.
 #[derive(Debug, Default)]
 pub(super) struct DesignNative {
@@ -257,6 +247,8 @@ impl DesignNative {
 /// phase 2 reads them and does not change them.
 #[derive(Debug, Default)]
 pub(super) struct DesignModel {
+    /// Product joints updated by the active Design configuration.
+    pub(super) assembly_joints: Vec<AssemblyJoint>,
     pub(super) configurations: Vec<DesignConfiguration>,
     pub(super) features: Vec<Feature>,
     pub(super) parameters: Vec<DesignParameter>,
@@ -275,6 +267,7 @@ impl DesignModel {
     /// Move every arena into the neutral model.
     pub(super) fn store(self, model: &mut Model) {
         let Self {
+            assembly_joints,
             configurations,
             features,
             parameters,
@@ -287,6 +280,7 @@ impl DesignModel {
             spatial_sketch_entities,
             spatial_sketch_constraints,
         } = self;
+        model.assembly_joints = assembly_joints;
         model.configurations = configurations;
         model.features = features;
         model.parameters = parameters;
@@ -547,7 +541,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &mut losses,
             F3dLossCode::ParameterOrderBudgetExceeded,
             format_args!(
-                "{} Design parameter owner scope(s) keep their source ordinals and drop their same-scope dependency edges because ordering exceeded the local work cap PARAMETER_ORDER_WORK ({}).",
+                "{} Design parameter owner scope(s) keep their source ordinals and all expression references because ordering exceeded the local work cap PARAMETER_ORDER_WORK ({}).",
                 projected.unordered_parameter_scopes,
                 crate::design::feature_project::PARAMETER_ORDER_WORK,
             ),
@@ -602,7 +596,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     crate::design::configurations::bind_configuration_parameter_overrides(
         &mut model.configurations,
         &model.parameters,
-    );
+    )?;
     let scope_histories = crate::history::bind_scope_histories(
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
@@ -626,6 +620,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     crate::history::bind_feature_body_selections(
         &mut model.features,
         &crate::history::FeatureBodySelectionInputs {
+            parameters: &model.parameters,
             scopes: &design.design_parameter_scopes,
             groups: &design.design_construction_operand_groups,
             body_recipe_operands: &design.design_body_recipe_operands,
@@ -819,6 +814,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.sketches,
         &mut extrude_face_resolution,
     );
+    crate::design::constraints::bind_pattern_count_caches(
+        &mut model.parameters,
+        &prereqs.design_parameters,
+        &design.sketch_relations,
+    );
     model.sketch_constraints = crate::design::constraints::project_sketch_constraints(
         ctx,
         &design.design_sketch_placements,
@@ -874,6 +874,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.sketch_constraints,
         &prereqs.design_parameters,
     );
+    crate::design::constraints::canonicalize_parameter_driving(
+        &mut model.parameters,
+        &mut model.sketch_constraints,
+        &model.spatial_sketch_constraints,
+    );
     model.sketch_constraints.sort_by(|a, b| a.id.cmp(&b.id));
     model
         .spatial_sketch_constraints
@@ -888,6 +893,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.configurations,
         &model.features,
     );
+    crate::design::configurations::canonicalize_active_configuration(
+        &mut model.configurations,
+        &mut model.parameters,
+        &mut model.features,
+    )?;
     if let Some(table) = prereqs.xref_table() {
         crate::xref::bind_component_insert_features(
             &mut model.features,
@@ -904,9 +914,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         products.occurrences,
     );
+    model.assembly_joints = products.assembly_joints.to_vec();
     crate::design::assembly::bind_assembly_joint_features(
         &mut model.features,
-        products.assembly_joints,
+        &mut model.assembly_joints,
     );
     let phase_one_headers = prereqs
         .design_record_headers
@@ -970,10 +981,12 @@ fn extend_related_design_records(
             let scope = crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
             [
                 owner.scope_record_index(),
-                owner.parameter_record_index(),
-                owner.companion_record_index(),
+                Some(owner.parameter_record_index()),
+                Some(owner.companion_record_index()),
             ]
-            .map(|record_index| (scope, record_index))
+            .into_iter()
+            .flatten()
+            .map(move |record_index| (scope, record_index))
         }));
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     design.design_parameter_companions =
@@ -1011,7 +1024,7 @@ fn extend_related_design_records(
                 id,
                 record_index: scope.record_index,
                 class_tag: scope.class_tag.clone(),
-                byte_offset: scope.byte_offset(),
+                byte_offset: Some(scope.byte_offset()),
             });
         }
         if let Some(operation) = scope.copy_paste_bodies_operation() {
@@ -1025,7 +1038,7 @@ fn extend_related_design_records(
                     id,
                     record_index: operation.relation_record_index,
                     class_tag: operation.relation_class_tag.clone(),
-                    byte_offset: operation.relation_byte_offset(),
+                    byte_offset: Some(operation.relation_byte_offset()),
                 });
             }
         }

@@ -28,4 +28,4 @@ rewrite_enum!(RadiusSpec, []; {
 
 rewrite_record!(VariableRadii, []; (field0));
 
-rewrite_record!(VariableRadius<P, L>, [P, L]; { parameter, radius });
+rewrite_record!(VariableRadius<P, L>, [P, L: crate::features::DimensionValue]; { parameter, radius });

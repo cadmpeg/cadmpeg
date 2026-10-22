@@ -36,7 +36,7 @@ fn extent_extrusion(
     symmetric: bool,
     slots: &[(usize, u32)],
     extra: Vec<PmDcFeatureProperty>,
-) -> Option<Feature> {
+) -> Option<(Feature, Vec<DesignParameter>)> {
     let raw_parameters = vec![raw_parameter(70), raw_parameter(71), raw_parameter(72)];
     let neutral_parameters = vec![
         neutral_parameter(
@@ -207,12 +207,18 @@ fn extent_extrusion(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("projection context");
-    project_extrusion(&ctx, &feature, &label, &index)
-        .map(|projected| projected.expect("extrusion projection").0)
+    project_extrusion(&ctx, &feature, &label, &index).map(|projected| {
+        (
+            projected.expect("extrusion projection").0,
+            neutral_parameters,
+        )
+    })
 }
 
-fn extrude_definition(feature: &Feature) -> (&ExtrudeExtent, &cadmpeg_ir::features::ExtrudeStart) {
-    match feature.evaluation.definition() {
+fn extrude_definition(
+    projected: &(Feature, Vec<DesignParameter>),
+) -> (&ExtrudeExtent, &cadmpeg_ir::features::ExtrudeStart) {
+    match projected.0.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::Extrude { extent, start, .. }) => {
             (extent, start)
         }
@@ -264,7 +270,7 @@ fn extrusion_extent_branches_project_exactly() {
                 termination: LinearTermination::Blind { length },
                 draft: None,
             }
-        } if length.get() == 12.0
+        } if length.value_from(&symmetric.1).expect("bound symmetric length").get() == 12.0
     ));
     assert!(extent_extrusion(2, false, &[], Vec::new()).is_none());
     assert!(extent_extrusion(7, true, &[(11, 40)], Vec::new()).is_none());
@@ -353,7 +359,7 @@ fn extrusion_extent_branches_project_exactly() {
                 termination: LinearTermination::Blind { length: second },
                 ..
             },
-        } if first.get() == 12.0 && second.get() == 3.0
+        } if first.value_from(&two_sided.1).expect("bound first length").get() == 12.0 && second.value_from(&two_sided.1).expect("bound second length").get() == 3.0
     ));
     assert!(extent_extrusion(
         1,

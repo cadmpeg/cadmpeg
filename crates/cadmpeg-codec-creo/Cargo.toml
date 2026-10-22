@@ -23,12 +23,12 @@ categories = ["encoding", "parser-implementations", "graphics"]
 cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 regex.workspace = true
 
 [dev-dependencies]
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }
-serde_json.workspace = true
 
 [lints]
 workspace = true

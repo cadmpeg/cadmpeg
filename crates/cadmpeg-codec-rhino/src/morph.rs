@@ -90,7 +90,6 @@ pub(crate) struct Localizer {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Morph {
-    source_range: Range<usize>,
     pub(crate) control: Control,
     pub(crate) captive_ids: Vec<Uuid>,
     pub(crate) localizers: Vec<Localizer>,
@@ -330,7 +329,6 @@ pub(crate) fn decode(
         let start_transform = scaled_transform(&mut outer, scale)?;
         outer.skip_remaining()?;
         return Ok(Morph {
-            source_range: range,
             control: Control::Cage {
                 start_transform,
                 end,
@@ -376,7 +374,7 @@ pub(crate) fn decode(
             return Err(GeometryError::malformed(
                 outer.position() - 4,
                 "invalid morph-control variant",
-            ))
+            ));
         }
     };
     let captive_ids = captive_ids(data, &mut outer, archive)?;
@@ -394,7 +392,6 @@ pub(crate) fn decode(
     };
     outer.skip_remaining()?;
     Ok(Morph {
-        source_range: range,
         control,
         captive_ids,
         localizers,
@@ -682,6 +679,7 @@ pub(crate) fn project(
     key: &str,
     name: Option<String>,
     native_ref: String,
+    ordinal: u64,
     mut resolve_captive: impl FnMut(Uuid) -> Option<String>,
 ) -> Result<cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
@@ -752,7 +750,6 @@ pub(crate) fn project(
         &cadmpeg_ir::identity_namespace!("rhino", "morph", "feature"),
         key,
     );
-    let ordinal = cadmpeg_core::decode::u64_from_index(morph.source_range.start);
     let mut parameters = BTreeMap::new();
     insert_property(
         &mut parameters,
@@ -793,6 +790,7 @@ pub(crate) fn project(
         ordinal,
         name,
         suppressed: Some(false),
+        needs_recompute: false,
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: properties,
         source_tag: Some("RhinoMorphControl".to_string()),
@@ -802,7 +800,17 @@ pub(crate) fn project(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "morph_control".into(),
-                parameters,
+                parameters: parameters
+                    .into_iter()
+                    .map(|(name, expression)| {
+                        (
+                            name,
+                            cadmpeg_ir::features::Dimension::Literal(
+                                cadmpeg_ir::features::Expression::text(expression),
+                            ),
+                        )
+                    })
+                    .collect(),
             }),
         ),
         native_ref: Some(native_ref),
@@ -810,7 +818,7 @@ pub(crate) fn project(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{decode, localizer, project, Control, LocalizerKind, ANONYMOUS};
     use crate::chunks::{ArchiveVersion, BoundedReader};
     use crate::curves::GeometryError;
@@ -857,6 +865,30 @@ mod tests {
         }
         bytes.push(0);
         bytes
+    }
+
+    pub(crate) fn cage_morph_payload() -> Vec<u8> {
+        let mut transform = Vec::new();
+        for value in [
+            1.0_f64, 0.0, 0.0, 2.0, 0.0, 1.0, 0.0, 3.0, 0.0, 0.0, 1.0, 4.0, 0.0, 0.0, 0.0, 1.0,
+        ] {
+            transform.extend(value.to_le_bytes());
+        }
+        let start = anonymous(1, 0, &transform);
+        let end = anonymous(1, 0, &cage());
+        let mut captives = 1_i32.to_le_bytes().to_vec();
+        captives.extend([0; 16]);
+        let captives = anonymous(1, 0, &captives);
+        let localizers = anonymous(1, 0, &0_i32.to_le_bytes());
+        let mut content = 3_i32.to_le_bytes().to_vec();
+        content.extend(start);
+        content.extend(end);
+        content.extend(captives);
+        content.extend(localizers);
+        content.extend(0.01_f64.to_le_bytes());
+        content.extend([1, 0]);
+        content.extend(0x1234_5678_i32.to_le_bytes());
+        anonymous(2, 2, &content)
     }
 
     #[test]
@@ -909,7 +941,7 @@ mod tests {
         assert_eq!(end.control_points[7][0].get(), 70.0);
         // One nil captive: no resolved identity and no charge.
         assert_eq!(morph.captive_ids.len(), 1);
-        let feature = project(&morph, "test", None, "native".to_string(), |_| None)
+        let feature = project(&morph, "test", None, "native".to_string(), 0, |_| None)
             .expect("the fixture states named properties");
         assert_eq!(feature.source_tag.as_deref(), Some("RhinoMorphControl"));
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -919,7 +951,7 @@ mod tests {
             panic!("expected a native morph definition");
         };
         assert!(!parameters.contains_key("captive_0_object"));
-        let resolved = project(&morph, "test", None, "native".to_string(), |_| {
+        let resolved = project(&morph, "test", None, "native".to_string(), 0, |_| {
             Some("rhino:object:record#000007".to_string())
         })
         .expect("the fixture states named properties");
@@ -929,7 +961,13 @@ mod tests {
         else {
             panic!("expected a native morph definition");
         };
-        assert_eq!(parameters["captive_0_object"], "rhino:object:record#000007");
+        assert_eq!(
+            parameters["captive_0_object"]
+                .literal()
+                .and_then(cadmpeg_ir::Expression::literal_text)
+                .as_deref(),
+            Some("rhino:object:record#000007")
+        );
     }
 
     #[test]
@@ -946,7 +984,6 @@ mod tests {
         )
         .expect("valid test curve");
         let morph = super::Morph {
-            source_range: 0..1,
             control: super::Control::Curve {
                 start: curve.clone(),
                 end: curve,
@@ -957,7 +994,7 @@ mod tests {
             quick_preview: false,
             preserve_structure: false,
         };
-        let feature = super::project(&morph, "fixture", None, "native".into(), |_| None)
+        let feature = super::project(&morph, "fixture", None, "native".into(), 0, |_| None)
             .expect("morph projection");
         assert_eq!(feature.source_properties["start_degree"], "1");
     }

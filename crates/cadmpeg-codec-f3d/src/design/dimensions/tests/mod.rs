@@ -75,3 +75,29 @@ fn planar_dimension_output_keeps_unplaced_constraints() {
     );
     assert_eq!(output, [constraint]);
 }
+
+fn length_parameter_document(
+    id: cadmpeg_ir::features::ParameterId,
+    value: f64,
+) -> cadmpeg_ir::CadIr {
+    let value = cadmpeg_ir::features::ParameterValue::Length(
+        cadmpeg_ir::scalar::Length::new(value).unwrap(),
+    );
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::DesignParameter {
+            id,
+            owner: None,
+            ordinal: 0,
+            name: "Offset".into(),
+            expression: value.literal_expression(),
+            driving: true,
+            display: None,
+            value: Some(value),
+            properties: Default::default(),
+            pmi: None,
+            native_ref: None,
+        });
+    ir
+}

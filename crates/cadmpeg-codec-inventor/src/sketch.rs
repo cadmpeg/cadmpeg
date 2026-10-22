@@ -1424,7 +1424,7 @@ fn project_constraint(
                 SketchConstraintDefinitionInput::HorizontalDistance {
                     first: SketchLocus::Entity(members[0].id().clone()),
                     second: SketchLocus::Entity(members[1].id().clone()),
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 },
                 None,
                 members,
@@ -1442,7 +1442,7 @@ fn project_constraint(
                 SketchConstraintDefinitionInput::VerticalDistance {
                     first: SketchLocus::Entity(members[0].id().clone()),
                     second: SketchLocus::Entity(members[1].id().clone()),
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 },
                 None,
                 members,
@@ -1454,7 +1454,7 @@ fn project_constraint(
             (
                 SketchConstraintDefinitionInput::Radius {
                     entity: member.id().clone(),
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 },
                 None,
                 [member, member],
@@ -1466,7 +1466,7 @@ fn project_constraint(
             (
                 SketchConstraintDefinitionInput::Diameter {
                     entity: member.id().clone(),
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 },
                 None,
                 [member, member],

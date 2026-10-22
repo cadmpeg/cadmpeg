@@ -11,11 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
-use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::native_test::{f3d_native_mut, update_f3d_native};
@@ -24,7 +21,7 @@ use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
 #[test]
-fn generated_source_less_rejects_act_without_segment_metadata() {
+fn generated_source_less_omits_act_without_segment_metadata_with_a_loss() {
     use crate::records::act::ActEntity;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -54,17 +51,19 @@ fn generated_source_less_rejects_act_without_segment_metadata() {
     )
     .unwrap()];
     drop(native);
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("ACT generation without its record registry must fail atomically");
-    assert!(error
-        .to_string()
-        .contains("requires a retained MetaStream record registry"));
+    let (output, report) = super::source_less_analytic::synthesize_document(&source_less, None);
+    super::source_less_analytic::assert_native_omission(&report);
+    assert!(crate::test_support::native_test::f3d_native(output.ir())
+        .act_entities
+        .is_empty());
+    assert_eq!(
+        output.ir().model.bodies.len(),
+        source_less.model.bodies.len()
+    );
 }
 
 #[test]
-fn generated_f3d_rejects_act_binding_divergence() {
+fn generated_f3d_regenerates_neutral_content_when_act_binding_diverges() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -81,13 +80,21 @@ fn generated_f3d_rejects_act_binding_divergence() {
             .unwrap();
     });
 
-    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
-        .expect_err("divergent ACT and appearance binding must fail");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let (output, report) =
+        super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
+    super::source_less_analytic::assert_native_omission(&report);
+    assert!(crate::test_support::native_test::f3d_native(output.ir())
+        .act_entities
+        .is_empty());
+    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
+    assert_eq!(
+        output.ir().model.appearances[0].base_color,
+        edited.model.appearances[0].base_color
+    );
 }
 
 #[test]
-fn generated_f3d_rejects_act_record_index_edit_without_metastream_edit() {
+fn generated_f3d_synthesizes_an_act_record_index_edit_without_metastream_edit() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -97,11 +104,15 @@ fn generated_f3d_rejects_act_record_index_edit_without_metastream_edit() {
         native.act_root_components[0].record_index += 1;
     });
 
-    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
-        .expect_err("an ACT record-index edit without its MetaStream index must fail");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::NotImplemented(message)
-            if message.contains("ACT root edit changes fields")
-    ));
+    let (output, report) =
+        super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
+    super::source_less_analytic::assert_native_omission(&report);
+    assert!(crate::test_support::native_test::f3d_native(output.ir())
+        .act_entities
+        .is_empty());
+    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
+    assert_eq!(
+        output.ir().model.appearances[0].base_color,
+        edited.model.appearances[0].base_color
+    );
 }

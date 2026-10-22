@@ -51,6 +51,7 @@ pub(super) fn recover(
         entries,
         by_name,
         recovery: Some(Box::new(Recovery { reason, tail })),
+        footer: None,
     })
 }
 

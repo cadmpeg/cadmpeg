@@ -96,13 +96,13 @@ pub(crate) fn project_canvas_images(
                             "Canvas bounds must have finite corners and nonzero extents",
                         )
                     })?,
-                    opacity: Some(
+                    opacity: Some(Into::into(
                         cadmpeg_ir::scalar::Fraction::new(f64::from(opacity)).ok_or_else(|| {
                             CodecError::malformed(
                                 "Canvas opacity must be finite and between zero and one",
                             )
                         })?,
-                    ),
+                    )),
                 },
             ));
     }
@@ -353,6 +353,7 @@ mod tests {
             .unwrap()
             .unwrap();
         let feature = || Feature {
+            needs_recompute: false,
             id: crate::ids::neutral_feature_id(&scope),
             ordinal: 0,
             name: None,

@@ -24,10 +24,11 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
         scalars: Vec::new(),
         relation_bindings: Vec::new(),
         relation_instances: vec![FeatureInputRelationInstance {
+            sequence: 0,
             id: relation.into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             family: FeatureInputRelationFamily::CircleDiameter,
             class_ref: "circle-class".into(),
             feature_ref: feature.into(),
@@ -38,7 +39,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
             )
             .unwrap(),
             operands: vec![FeatureInputOperand {
-                offset: 0,
+                offset: Some(0),
                 reference_ref: "reference".into(),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
                 entity_index: 0,
@@ -80,6 +81,7 @@ fn feature(feature_ref: &str, sketch: &SketchId) -> Feature {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),

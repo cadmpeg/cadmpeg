@@ -43,10 +43,6 @@ fn sourced_point(id: &str) -> crate::topology::Point {
         format: crate::CodecFormat::Rhino,
         geometry_role: None,
         object_id: cadmpeg_core::nonblank_literal!("synthetic"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     });
     point

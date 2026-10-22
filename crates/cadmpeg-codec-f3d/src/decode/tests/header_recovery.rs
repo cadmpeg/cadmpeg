@@ -174,7 +174,8 @@ fn invalid_binary_kernel_tolerances_keep_independent_geometry() {
 }
 
 #[test]
-fn manifest_metadata_recovery_preserves_geometry_and_exact_archive() {
+fn manifest_metadata_recovery_preserves_geometry_before_honest_synthesis() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use std::io::{Read, Write};
     let original = crate::test_support::zip_test::f3d_with_smbh(
         &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
@@ -234,13 +235,31 @@ fn manifest_metadata_recovery_preserves_geometry_and_exact_archive() {
         assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
             .unwrap()
             .is_ok());
-        let mut replay = Vec::new();
-        crate::test_support::plan_inherited_write(
+        let plan = F3dCodec
+            .plan(
+                EncodeInput::new(recovered.ir(), Some(recovered.source_fidelity())),
+                TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+            )
+            .expect("recovered content can be synthesized at an explicit target");
+        assert!(matches!(
+            plan.report().write_path(),
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        ));
+        let mut synthesized = Vec::new();
+        let report = plan
+            .write_to(&mut synthesized)
+            .expect("write recovered content");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(synthesized), &DecodeOptions::default())
+            .expect("synthesized recovered content decodes");
+        cadmpeg_test_support::contract::assert_written_arenas_agree(
+            &report,
             recovered.ir(),
-            recovered.source_fidelity(),
-            &mut replay,
-        )
-        .unwrap();
-        assert_eq!(replay, bytes);
+            round_trip.ir(),
+        );
+        assert!(
+            !report.losses.is_empty(),
+            "source-only content must be reported"
+        );
     }
 }

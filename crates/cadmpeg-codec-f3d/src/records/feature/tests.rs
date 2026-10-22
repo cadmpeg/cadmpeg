@@ -1274,15 +1274,26 @@ fn coil_selection_preserves_wire_and_rejects_dependent_fields_without_identity()
         for fields in [
             "",
             ",\"design_id\":\"body\"",
-            ",\"design_id\":\"body\",\"design_selector\":{\"value\":2,\"byte_offset\":60}",
+            ",\"design_id\":\"body\",\"design_selector\":{\"value\":2}",
         ] {
             let wire = format!("{face}\"{kind}\"{fields}}}");
-            let selection: crate::records::feature::coil::DesignCoilSelection =
+            let mut selection: crate::records::feature::coil::DesignCoilSelection =
                 serde_json::from_str(&wire).unwrap();
+            if let crate::records::feature::coil::DesignCoilSelection::FaceRecipe {
+                design: Some(design),
+                ..
+            } = &mut selection
+            {
+                if let Some(selector) = &mut design.selector {
+                    selector.byte_offset = Some(60);
+                    assert_eq!(selector.value, 2);
+                    assert_eq!(selector.byte_offset, Some(60));
+                }
+            }
             assert_eq!(serde_json::to_string(&selection).unwrap(), wire);
         }
     }
-    let wire = format!("{face}\"face\",\"design_selector\":{{\"value\":2,\"byte_offset\":60}}}}");
+    let wire = format!("{face}\"face\",\"design_selector\":{{\"value\":2}}}}");
     let error = serde_json::from_str::<crate::records::feature::coil::DesignCoilSelection>(&wire)
         .unwrap_err()
         .to_string();

@@ -50,10 +50,12 @@ fn reference_point_lane(layout: usize, form: u16, point: [f64; 3]) -> FeatureInp
         native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 0,
+            feature_ref: None,
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             object_id: ObjectId::from_value(2080),
             value: name.into(),
         }],
@@ -107,7 +109,7 @@ fn solved_reference_point_layouts_project_to_a_datum_point() {
             Some(&"125mm,-250mm,0mm".to_string())
         );
         assert!(matches!(
-           crate::history::project::project_features(&histories).unwrap()[0].evaluation.definition(),
+           crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap()[0].evaluation.definition(),
            FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                position: geometry_1,
                ..
@@ -440,17 +442,20 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: String::from_utf8(class_name.to_vec()).unwrap(),
         }],
         names: vec![FeatureInputName {
+            sequence: 0,
+            feature_ref: None,
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             object_id: ObjectId::from_value(2080),
             value: "Axis1".into(),
         }],
@@ -465,7 +470,13 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
         sketch_entities: Vec::new(),
     };
 
-    super::enrich_history_reference_axes(&mut histories, &[lane]);
+    super::enrich_history_reference_axes(
+        &crate::test_support::native::class_sources(&[&lane]),
+        &cadmpeg_test_support::service_decode_context(),
+        &mut histories,
+        &[lane],
+    )
+    .unwrap();
 
     assert_eq!(
         histories[0].features[0].properties.get("Origin"),
@@ -1039,10 +1050,12 @@ fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
         native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 0,
+            feature_ref: None,
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            offset: Some(0),
             object_id: ObjectId::from_value(2080),
             value: "MidPlane".into(),
         }],
@@ -1058,6 +1071,7 @@ fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
     };
 
     super::enrich_history_reference_planes(
+        &crate::test_support::native::class_sources(&[&lane]),
         &cadmpeg_test_support::service_decode_context(),
         &mut histories,
         &[lane],

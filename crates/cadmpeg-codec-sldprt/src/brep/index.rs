@@ -39,6 +39,8 @@ pub(super) struct CarrierIndex {
     /// Spline carriers whose pole and weight lanes do not pair, each a loss
     /// naming its attribute id and the pairing's own refusal.
     pub(super) lane_refusals: Vec<LossNote>,
+    /// At least one source carrier failed admission and has no typed payload.
+    pub(super) untyped_model: bool,
 }
 
 impl CarrierIndex {
@@ -104,6 +106,7 @@ impl CarrierIndex {
         merge_missing_map(&mut self.blends, other.blends);
         merge_missing_map(&mut self.offsets, other.offsets);
         merge_missing_map(&mut self.blend_support_pairs, other.blend_support_pairs);
+        self.untyped_model |= other.untyped_model;
         self.lane_refusals.extend(other.lane_refusals);
     }
 }
@@ -153,6 +156,9 @@ pub(super) fn scan_carriers(
     {
         out.insert_intersection(intersection);
     }
+    // This is the parser's withheld-record sink, before its events become a
+    // decode report. Preserve that projection cut independently of loss codes.
+    out.untyped_model = !lane_refusals.is_empty();
     out.lane_refusals = lane_refusals;
     Ok(out)
 }

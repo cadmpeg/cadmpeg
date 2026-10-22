@@ -6,14 +6,14 @@ use super::{
 
 fn timeline() -> DesignFeatureTimeline {
     serde_json::from_str(
-        r#"{"id":"f3d:Design/BulkStream.dat:design-feature-timeline#200","byte_offset":200,"class_tag":"256","record_index":35,"source_ordinal":0,"frame_length":100,"context_record_index":17,"context_record_index_offset":220,"item_count_offset":240,"item_record_indices":[101,102],"item_record_index_offsets":[245,256]}"#,
+        r#"{"id":"f3d:Design/BulkStream.dat:design-feature-timeline#200","class_tag":"256","record_index":35,"source_ordinal":0,"context_record_index":17,"item_record_indices":[101,102]}"#,
     )
     .unwrap()
 }
 
 fn header() -> DesignEntityHeader {
     serde_json::from_str(
-        r#"{"id":"f3d:Design/BulkStream.dat:design-entity-header#0","byte_offset":0,"entity_id":"0_1","class_tag":"256","optional_slot_present":false,"module":"MSketch","record_reference":33,"record_reference_offset":40,"declared_reference_count":2,"reference_indices":[34,35],"reference_offsets":[50,61],"member_indices":[11],"member_offsets":[0]}"#,
+        r#"{"id":"f3d:Design/BulkStream.dat:design-entity-header#0","entity_id":"0_1","class_tag":"256","module":"MSketch","record_reference":33,"reference_indices":[34,35],"member_indices":[11]}"#,
     )
     .unwrap()
 }
@@ -62,8 +62,8 @@ fn feature_timeline_native_retained_limit_refuses_before_record_clone() {
 #[test]
 fn entity_header_borrowed_wire_matches_owned_wire_bytes() {
     for wire in [
-        r#"{"id":"header","byte_offset":0,"entity_id":"0_1","class_tag":"256","optional_slot_present":false,"reference_indices":[],"reference_offsets":[]}"#,
-        r#"{"id":"header","byte_offset":0,"entity_id":"0_1","class_tag":"256","optional_slot_present":false,"module":"MSketch","record_reference":33,"record_reference_offset":40,"declared_reference_count":2,"reference_indices":[34,35],"reference_offsets":[50,61],"member_indices":[11],"member_offsets":[0]}"#,
+        r#"{"id":"header","entity_id":"0_1","class_tag":"256"}"#,
+        r#"{"id":"header","entity_id":"0_1","class_tag":"256","module":"MSketch","record_reference":33,"reference_indices":[34,35],"member_indices":[11]}"#,
     ] {
         let record: DesignEntityHeader = serde_json::from_str(wire).unwrap();
         let owned = DesignEntityHeaderWire::from(record.clone());
@@ -107,7 +107,7 @@ fn entity_header_native_retained_limit_refuses_before_record_clone() {
 
 fn segment(base_fields: &str) -> SegmentType {
     let wire = format!(
-        r#"{{"id":"f3d:native/MetaStream.dat:design-type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4{base_fields},"version":1,"version_offset":80,"module":"Fusion","entity_ids":[10,11],"entity_id_offsets":[90,98]}}"#
+        r#"{{"id":"f3d:native/MetaStream.dat:design-type#0","type_guid":"11111111-2222-3333-4444-555555555555","class_tag":"256"{base_fields},"version":1,"module":"Fusion","entity_ids":[10,11]}}"#
     );
     serde_json::from_str(&wire).unwrap()
 }
@@ -116,8 +116,8 @@ fn segment(base_fields: &str) -> SegmentType {
 fn segment_type_borrowed_wire_matches_owned_wire_bytes() {
     for base_fields in [
         "",
-        r#", "base_type_guid":"","base_type_guid_offset":44"#,
-        r#", "base_type_guid":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","base_type_guid_offset":44"#,
+        r#", "base_type_guid":"""#,
+        r#", "base_type_guid":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee""#,
     ] {
         let entry = segment(base_fields);
         let owned = SegmentTypeWire::from(entry.clone());
@@ -132,9 +132,7 @@ fn segment_type_borrowed_wire_matches_owned_wire_bytes() {
 fn segment_type_native_retained_limit_refuses_before_record_clone() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let entry = segment(
-        r#", "base_type_guid":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","base_type_guid_offset":44"#,
-    );
+    let entry = segment(r#", "base_type_guid":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee""#);
     let arena_name = "design_types";
     let needed = serde_json::to_vec(&entry).unwrap().len();
     let arena = DecodeArena::new();
@@ -168,9 +166,24 @@ fn segment_type_native_retained_limit_refuses_before_record_clone() {
 #[test]
 fn segment_type_rejects_unbound_native_identity() {
     let valid = segment("");
+    let mut source = (*valid).clone();
+    source.byte_offset = Some(0);
+    assert!(SegmentType::try_new(
+        "f3d:native/MetaStream.dat:design-type#0".into(),
+        source.clone()
+    )
+    .is_ok());
+    assert!(
+        SegmentType::try_new("f3d:native/MetaStream.dat:design-type#1".into(), source).is_err()
+    );
+    let mut independent = SegmentTypeWire::from(valid.clone());
+    independent.id = "f3d:native/MetaStream.dat:design-type#1".into();
+    assert_eq!(
+        SegmentType::try_from(independent).unwrap().id(),
+        "f3d:native/MetaStream.dat:design-type#1"
+    );
     for id in [
         "",
-        "f3d:native/MetaStream.dat:design-type#1",
         "f3d:native/MetaStream.dat:other#0",
         "f3d:native/BulkStream.dat:design-type#0",
     ] {
@@ -181,4 +194,39 @@ fn segment_type_rejects_unbound_native_identity() {
         wire["id"] = serde_json::json!(id);
         assert!(serde_json::from_value::<SegmentType>(wire).is_err());
     }
+}
+
+#[test]
+fn semantic_registry_keeps_dynamic_discriminator_without_source_positions() {
+    let value = segment("");
+    assert_eq!(value.class_tag.as_str(), "256");
+    assert!(value.byte_offset.is_none());
+    assert!(value.type_guid_offset.is_none());
+    assert!(value.version_offset.is_none());
+    assert!(value.entities.located_rows().is_none());
+    let mut wire = serde_json::to_value(value).unwrap();
+    wire["byte_offset"] = serde_json::json!(0);
+    assert!(serde_json::from_value::<SegmentType>(wire).is_err());
+}
+#[test]
+fn semantic_timeline_keeps_order_and_rejects_duplicate_items() {
+    let value = timeline();
+    assert!(value.frame().byte_offset().is_none());
+    assert!(value
+        .frame()
+        .items()
+        .iter()
+        .all(|item| item.offset.is_none()));
+    assert_eq!(
+        value
+            .frame()
+            .items()
+            .iter()
+            .map(|item| item.value)
+            .collect::<Vec<_>>(),
+        [101, 102]
+    );
+    let mut wire = serde_json::to_value(value).unwrap();
+    wire["item_record_indices"] = serde_json::json!([101, 101]);
+    assert!(serde_json::from_value::<DesignFeatureTimeline>(wire).is_err());
 }

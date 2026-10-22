@@ -671,7 +671,7 @@ fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
 }
 
 #[test]
-fn intersection_chart_parser_uses_only_the_explicit_row_layout() {
+fn intersection_chart_layout_is_selected_by_stream_kind() {
     let ext11 = ext11_charted_intersection_curve_stream();
 
     crate::test_support::with_decode_context(|_ctx| {

@@ -198,16 +198,19 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let cadmpeg_ir::features::SheetMetalFlangeHeight::Distance(height) = height else {
         panic!("expected a distance flange height");
     };
-    assert!((height.get() - 25.0).abs() < 1.0e-12);
-    assert!((angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!((super::dimension_value(&height, &parameters).get() - 25.0).abs() < 1.0e-12);
+    assert!(
+        (super::dimension_value(&angle, &parameters).get() - std::f64::consts::FRAC_PI_2).abs()
+            < 1.0e-12
+    );
     assert_eq!(height_datum, SheetMetalHeightDatum::InnerFaces);
     assert_eq!(bend_position, SheetMetalBendPosition::Adjacent);
-    assert!((bend_radius.get() - 2.5).abs() < 1.0e-12);
+    assert!((super::dimension_value(&bend_radius, &parameters).get() - 2.5).abs() < 1.0e-12);
     let SheetMetalFlangeWidth::TwoSides { first, second } = width else {
         panic!("expected a two-sided flange width");
     };
-    assert!((first.get() - 30.0).abs() < 1.0e-12);
-    assert!((second.get() - 15.0).abs() < 1.0e-12);
+    assert!((super::dimension_value(&first, &parameters).get() - 30.0).abs() < 1.0e-12);
+    assert!((super::dimension_value(&second, &parameters).get() - 15.0).abs() < 1.0e-12);
 
     let mut offset_scope = scope.clone();
     let mut offset_operation = offset_scope
@@ -242,7 +245,12 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             crate::records::parameters::DesignParameterSource::new(
                 "EdgeOffset_1".into(),
                 offset_parameters[0].owner_record_index(),
-                offset_parameters[0].family_discriminator(),
+                offset_parameters[0].family_discriminator().map(|located| {
+                    crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }
+                }),
             )
             .unwrap(),
         )
@@ -253,7 +261,12 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             crate::records::parameters::DesignParameterSource::new(
                 "EdgeOffset_2".into(),
                 offset_parameters[1].owner_record_index(),
-                offset_parameters[1].family_discriminator(),
+                offset_parameters[1].family_discriminator().map(|located| {
+                    crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }
+                }),
             )
             .unwrap(),
         )
@@ -284,8 +297,12 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         SheetMetalFlangeWidth::TwoSidesPerEdge {
             widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(vec![
                 SheetMetalFlangeTwoSidedWidth {
-                    first: cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap(),
-                    second: cadmpeg_ir::scalar::PositiveLength::new(15.0).unwrap(),
+                    first: cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap()
+                    ),
+                    second: cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(15.0).unwrap()
+                    ),
                 }
             ])
             .unwrap(),
@@ -324,7 +341,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     second_group
         .try_set_members(vec![crate::records::identity::Located {
             value: 418,
-            offset: second_group.members()[0].offset,
+            offset: second_group.members()[0]
+                .offset
+                .expect("retained test source"),
         }])
         .unwrap();
     let multi_groups = [group, second_group];
@@ -355,7 +374,12 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             crate::records::parameters::DesignParameterSource::new(
                 "EdgeWidth".into(),
                 per_edge_parameters[0].owner_record_index(),
-                per_edge_parameters[0].family_discriminator(),
+                per_edge_parameters[0]
+                    .family_discriminator()
+                    .map(|located| crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }),
             )
             .unwrap(),
         )
@@ -365,7 +389,12 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             crate::records::parameters::DesignParameterSource::new(
                 "EdgeWidth".into(),
                 per_edge_parameters[1].owner_record_index(),
-                per_edge_parameters[1].family_discriminator(),
+                per_edge_parameters[1]
+                    .family_discriminator()
+                    .map(|located| crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }),
             )
             .unwrap(),
         )
@@ -423,7 +452,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     assert_eq!(
         width,
         SheetMetalFlangeWidth::Symmetric {
-            width: cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap(),
+            width: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap()
+            ),
         }
     );
     let mut distinct_parameters = per_edge_parameters.clone();
@@ -510,12 +541,20 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         SheetMetalFlangeWidth::TwoSidesPerEdge {
             widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(vec![
                 SheetMetalFlangeTwoSidedWidth {
-                    first: cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap(),
-                    second: cadmpeg_ir::scalar::PositiveLength::new(15.0).unwrap(),
+                    first: cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap()
+                    ),
+                    second: cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(15.0).unwrap()
+                    ),
                 },
                 SheetMetalFlangeTwoSidedWidth {
-                    first: cadmpeg_ir::scalar::PositiveLength::new(20.0).unwrap(),
-                    second: cadmpeg_ir::scalar::PositiveLength::new(40.0).unwrap(),
+                    first: cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(20.0).unwrap()
+                    ),
+                    second: cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(40.0).unwrap()
+                    ),
                 },
             ])
             .unwrap(),
@@ -531,6 +570,7 @@ fn edge_flange_to_object_fixture(
     Option<(
         cadmpeg_ir::features::FeatureDefinition,
         crate::records::feature::scope::DesignParameterScope,
+        cadmpeg_ir::CadIr,
     )>,
     cadmpeg_core::CodecError,
 > {
@@ -710,7 +750,9 @@ fn edge_flange_to_object_fixture(
     target_group
         .try_set_members(vec![crate::records::identity::Located {
             value: 424,
-            offset: target_group.members()[0].offset,
+            offset: target_group.members()[0]
+                .offset
+                .expect("retained test source"),
         }])
         .unwrap();
     target_group.operand_role =
@@ -784,7 +826,13 @@ fn edge_flange_to_object_fixture(
         ..Default::default()
     };
     let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, ctx)?;
-    Ok(definition.map(|definition| (definition, target_scope)))
+    Ok(definition.map(|definition| {
+        (
+            definition,
+            target_scope,
+            super::parameter_document(&parameters),
+        )
+    }))
 }
 
 #[test]
@@ -792,7 +840,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
-    let (definition, target_scope) = crate::test_support::with_decode_context(|decode_ctx| {
+    let (definition, target_scope, ir) = crate::test_support::with_decode_context(|decode_ctx| {
         edge_flange_to_object_fixture(decode_ctx, true, false)
     })
     .unwrap()
@@ -809,7 +857,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         target,
         SheetMetalFlangeHeightTarget::Feature(crate::ids::neutral_feature_id(&target_scope))
     );
-    assert_eq!(offset.get(), 15.0);
+    assert_eq!(ir.dimension_value(&offset).unwrap().get(), 15.0);
 }
 
 #[test]
@@ -818,7 +866,7 @@ fn edge_flange_unresolved_to_object_keeps_native_target() {
         FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
 
-    let (definition, _) = crate::test_support::with_decode_context(|decode_ctx| {
+    let (definition, _, _) = crate::test_support::with_decode_context(|decode_ctx| {
         edge_flange_to_object_fixture(decode_ctx, false, false)
     })
     .unwrap()
@@ -837,17 +885,23 @@ fn edge_flange_unresolved_to_object_keeps_native_target() {
 
 #[test]
 fn edge_flange_two_sided_projects() {
+    use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
+
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
         SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
     };
     use cadmpeg_ir::scalar::PositiveLength;
 
-    let (definition, _) = crate::test_support::with_decode_context(|decode_ctx| {
+    let (definition, _, ir) = crate::test_support::with_decode_context(|decode_ctx| {
         edge_flange_to_object_fixture(decode_ctx, true, true)
     })
     .unwrap()
     .expect("two-sided EdgeFlange definition");
+
+    let definition =
+        crate::test_support::with_decode_context(|ctx| definition.resolve_dimensions(&ir, ctx))
+            .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
         height, width, ..
     }) = definition
@@ -859,15 +913,17 @@ fn edge_flange_two_sided_projects() {
         width,
         SheetMetalFlangeWidth::TwoSidesPerEdge {
             widths: SheetMetalFlangeEdgeWidths::new(vec![SheetMetalFlangeTwoSidedWidth {
-                first: PositiveLength::new(30.0).unwrap(),
-                second: PositiveLength::new(15.0).unwrap(),
+                first: cadmpeg_ir::Dimension::Literal(PositiveLength::new(30.0).unwrap()),
+                second: cadmpeg_ir::Dimension::Literal(PositiveLength::new(15.0).unwrap()),
             }])
             .unwrap(),
         }
     );
     assert_eq!(
         height,
-        SheetMetalFlangeHeight::Distance(PositiveLength::new(25.0).unwrap())
+        SheetMetalFlangeHeight::Distance(cadmpeg_ir::Dimension::Literal(
+            PositiveLength::new(25.0).unwrap()
+        ))
     );
 }
 
@@ -1513,14 +1569,18 @@ fn hem_scope_projects_each_decoded_owner_layout() {
     assert_eq!(
         form,
         SheetMetalHemForm::GapLength {
-            gap: cadmpeg_ir::scalar::NonNegativeLength::new(0.2).unwrap(),
-            length: cadmpeg_ir::scalar::PositiveLength::new(100.0).unwrap(),
+            gap: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonNegativeLength::new(0.2).unwrap()
+            ),
+            length: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(100.0).unwrap()
+            ),
         }
     );
     assert_eq!(direction, SheetMetalHemDirection::Forward);
     assert_eq!(
         bend_radius,
-        cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap()
+        cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap())
     );
 
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalHem { form, .. }) = rolled else {
@@ -1529,8 +1589,12 @@ fn hem_scope_projects_each_decoded_owner_layout() {
     assert_eq!(
         form,
         SheetMetalHemForm::Rolled {
-            radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
-            angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            radius: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()
+            ),
+            angle: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap()
+            ),
         }
     );
 
@@ -1541,9 +1605,15 @@ fn hem_scope_projects_each_decoded_owner_layout() {
     assert_eq!(
         form,
         SheetMetalHemForm::Teardrop {
-            gap: cadmpeg_ir::scalar::NonNegativeLength::new(2.5).unwrap(),
-            length: cadmpeg_ir::scalar::PositiveLength::new(100.0).unwrap(),
-            radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+            gap: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonNegativeLength::new(2.5).unwrap()
+            ),
+            length: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(100.0).unwrap()
+            ),
+            radius: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()
+            ),
         }
     );
 }

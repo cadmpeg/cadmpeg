@@ -19,7 +19,7 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
         &records,
         headers[0].record_index,
         &headers[0].class_tag,
-        headers[0].byte_offset,
+        headers[0].byte_offset.expect("retained test source"),
     )
     .unwrap()
     .expect("scope");
@@ -75,6 +75,7 @@ fn generated_copy_paste_bodies_decode_parameter_scopes() {
                 &crate::design::decode::scopes::parameter_scope::ParameterScopeSources::default(),
             )
             .unwrap()
+            .records
             .is_empty()
         );
     });

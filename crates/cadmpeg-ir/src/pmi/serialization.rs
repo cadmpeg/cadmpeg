@@ -16,13 +16,13 @@ impl Serialize for PmiDimension {
         struct Wire<'a> {
             dimension: &'a DimensionKind,
             #[serde(skip_serializing_if = "Option::is_none")]
-            nominal: Option<PmiValue>,
+            nominal: Option<&'a crate::features::Dimension<PmiValue>>,
             #[serde(skip_serializing_if = "Option::is_none")]
             tolerance: Option<&'a DimensionTolerance>,
         }
         Wire {
             dimension: &self.kind,
-            nominal: self.nominal,
+            nominal: self.nominal.as_ref(),
             tolerance: self.tolerance.as_ref(),
         }
         .serialize(serializer)

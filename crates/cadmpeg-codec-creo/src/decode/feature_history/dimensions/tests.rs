@@ -12,7 +12,7 @@ use cadmpeg_ir::AnnotationBuilder;
 use super::super::dimensions::{
     dimension_expression, feature_dimension_parameter_row_id, insert_dimension_property,
     planned_feature_dimension_parameter_ids, push_feature_source_parameter,
-    transfer_feature_dimensions, HexToken,
+    transfer_feature_dimensions,
 };
 
 fn layout_key() -> cadmpeg_ir::sketches::SketchId {
@@ -72,6 +72,7 @@ fn one_dimension_transfer() -> (crate::container::ContainerScan<'static>, CadIr)
         });
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: cadmpeg_ir::features::FeatureId::mint("creo:model:sketch_feature#917")
             .expect("feature ID"),
         ordinal: 0,
@@ -137,7 +138,11 @@ fn dimension_hex_token_keeps_lowercase_byte_order() {
     insert_dimension_property(
         &mut properties,
         "value_token",
-        HexToken(&[0x00, 0xf1, 0x7f]),
+        serde_json::to_string(&cadmpeg_ir::native::bytes::NativeBytes::from([
+            0x00_u8, 0xf1, 0x7f,
+        ]))
+        .expect("native bytes serialize")
+        .trim_matches('"'),
     );
     assert_eq!(properties["value_token"], "00f17f");
     assert_eq!(
@@ -247,6 +252,7 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
     let mut ir = CadIr::empty();
     for ordinal in 0..2 {
         ir.model.features.push(Feature {
+            needs_recompute: false,
             id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
                 .expect("identity grammar"),
             ordinal,

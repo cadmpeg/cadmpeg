@@ -73,6 +73,22 @@ before the parent charges again.
 `WorkBudget::recursion_guard` bounds recursion inside a local search; at its
 depth it exhausts the work budget and does not touch the session.
 
+The document records the content delivered, independently of why a phase
+stopped. A completely omitted or failed class has `scope.model = false` or
+`scope.design = false` and empty neutral arenas for that class. A partial
+projection holds the class and reports each omitted record as a decode loss.
+`report.transfer.scope` mirrors the document's `scope`; the request remains
+`DecodeDepth`, and `decode/depth.not-delivered` names required classes that
+were not delivered. No failure-diagnostic arena substitutes for this state.
+
+The codec also declares `SourceFidelity.unrepresented`: classes whose source
+records survive in no typed neutral or native arena. Resource containment that
+leaves only source bytes or unreadable blobs adds the affected class to that
+set. A patch or replay cannot use those bytes to recover content; the writer
+synthesizes from the document and reports any export loss. Retaining a typed
+native record can avoid an unrepresented class even when neutral projection
+was skipped.
+
 A per-input bound refuses or skips one record, or refuses the decode as
 malformed or unsupported. It does not fuse the session, so the decode can
 continue with other records when the codec allows it.
@@ -251,11 +267,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                                      | `MAX_DIMENSION`                           | `10_000`                                                | 2    | NURBS cage dimension. Excess is `Malformed`.                                                                                                                                                                                                                                 |
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                                      | `MAX_CONTROL_POINTS`                      | `1 << 20`                                               | 2    | Cage control-point product. Excess is `Malformed`.                                                                                                                                                                                                                           |
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                                      | `MAX_SCALARS`                             | `1 << 24`                                               | 2    | Cage scalar count, also checked against `remaining / 8` and `View::counted`.                                                                                                                                                                                                 |
-| `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_REFERENCES`                 | `1 << 20`                                               | 4    | `ExpansionBudget` reference counter for instance expansion. At the limit the reference is kept unexpanded and the expansion is rolled back with a phase warning, which becomes a loss.                                                                                       |
-| `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_MEMBERS`                    | `1 << 20`                                               | 4    | `ExpansionBudget` member counter. Same skip and warning.                                                                                                                                                                                                                     |
-| `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_ENTITIES`                   | `1 << 20`                                               | 4    | `ExpansionBudget` count of entities emitted by expansion. At the limit the object is skipped with `document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)`.                                                                                                        |
-| `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_DEPTH`                      | `64`                                                    | 4    | Instance nesting; each level also charges `enter_nested`. At the limit the reference is retained unexpanded with a warning.                                                                                                                                                  |
-| `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_COPY_ELEMENTS`              | `1 << 26`                                               | 4    | `ExpansionBudget` count of member visits, copied entities, points, control points, mesh vertices and triangles, and cage vertices across the document. Rejected expansions stay charged; at the limit the expansion is rolled back with a warning naming the constant, which becomes a loss. |
+| `cadmpeg-codec-rhino` | `src/product/neutral.rs` | `MAX_OCCURRENCES` | `1 << 20` | 4 | Total product occurrence projection. Reaching the bound retains the native reference and reports a loss. |
+| `cadmpeg-codec-rhino` | `src/product/neutral.rs` | `MAX_INSTANCE_DEPTH` | `64` | 4 | Prototype occurrence nesting. A deeper reference remains unexpanded and produces a loss. |
 | `cadmpeg-codec-rhino`    | `src/chunks.rs`                                    | `MAX_HEADER_SEARCH`                       | `33_554_432 + MAGIC.len()`                              | 1    | Window in which the 3DM file header must start.                                                                                                                                                                                                                              |
 | `cadmpeg-codec-rhino`    | `src/subd.rs`                                      | `MAX_LEVELS`                              | `64`                                                    | 2    | SubD level count (`capped_u32`). Excess is `Malformed`.                                                                                                                                                                                                                      |
 | `cadmpeg-codec-rhino`    | `src/subd.rs`                                      | `MAX_COMPONENTS_PER_LEVEL`                | `4_000_000`                                             | 2    | Vertex, edge and face count per level and per archive-ID partition. Excess is `Malformed`.                                                                                                                                                                                   |
@@ -291,7 +304,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d`      | `src/design/decode/sketch.rs`                      | `MAX_RELATION_RUN`                        | `4096`                                                  | 1    | Counted runs in sketch relation, text and pattern records. A larger count rejects the framing candidate (`None`).                                                                                                                                                            |
 | `cadmpeg-codec-f3d`      | `src/design/decode/scopes/sheet_metal.rs`          | `MAX_EDGE_WIDTH_DISTANCE_OWNERS`          | `2`                                                     | 1    | Width-distance owners in the single-edge flange frame. A frame with more is not recognized.                                                                                                                                                                                  |
 | `cadmpeg-codec-f3d`      | `src/design/decode/presentation.rs`                | `MAX_ENVELOPE_GAP`                        | `8`                                                     | 1    | Zero padding admitted while a presentation envelope is located.                                                                                                                                                                                                              |
-| `cadmpeg-codec-f3d`      | `src/writer/generate/native_geometry.rs`           | `MAX_GENERATED_CONIC_SPANS`               | `1 << 16`                                               | N    | Encode path: spans generated for a source-less conic. Excess returns `NotImplemented`.                                                                                                                                                                                       |
+| `cadmpeg-codec-f3d`      | `src/writer/generate/native_geometry.rs`           | `MAX_GENERATED_CONIC_SPANS`               | `1 << 16`                                               | N    | Encode path: spans generated for a source-less conic. Excess is an addressable NURBS capacity refusal (`InvalidInput`).                                                                                                                                                                                       |
 | `cadmpeg-codec-nx`       | `src/jt.rs`                                        | `MAX_ARITHMETIC_VALUES`                   | `1_000_000`                                             | 2    | Value count of one JT integer packet or arithmetic lane. Symbols can use zero bits, so there is no byte floor; excess leaves the lane undecoded (`None`).                                                                                                                    |
 | `cadmpeg-codec-nx`       | `src/jt.rs`                                        | `MAX_ARITHMETIC_WORK`                     | `64_000_000`                                            | 4    | Probability-entry × value lookup work of one arithmetic lane. Above it the lane is left undecoded (`None`) and the shared `ArithmeticWorkBound` is marked; `native/attach.rs` reports `container.display-jt-arithmetic-lane-bounded`.                                        |
 | `cadmpeg-codec-nx`       | `src/om.rs`                                        | `MAX_INDEXED_SECTION_REGISTRY_WORK`       | `1 << 28`                                               | 4    | `WorkBudget` per directory entry for the indexed object-model section search (`container.rs`). Exhaustion skips the remaining sections; `decode.rs` reports `source.scan-bounded`.                                                                                           |
@@ -441,16 +454,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 226.
+Production `MAX_*` constants: 223.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 30    |
 | 2    | Per-input bound            | 69    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 106   |
+| 4    | Local work cap             | 103   |
 | N    | Not a decode bound         | 21    |
-|      | Total                      | 226   |
+|      | Total                      | 223   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -458,7 +471,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
+`cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 18,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 13,
 and `cadmpeg-codec-catia` 57.
 

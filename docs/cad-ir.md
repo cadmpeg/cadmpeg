@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"7"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"8"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -10,7 +10,7 @@ A product document has three semantic layers:
 
 ```text
 CadIr
-├── ir_version, decode_depth, source?, units, tolerances
+├── ir_version, scope, source?, units, tolerances
 ├── model
 │   ├── topology and geometry carriers
 │   ├── procedural constructions and neutral features
@@ -18,9 +18,9 @@ CadIr
 └── native
 ```
 
-`model` is format-neutral. `native` is a map keyed by format ID. Each value is a map of arena name to arena. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the `SourceFidelity` sidecar. Namespace retention is settled in [native-arena-disposition.md](native-arena-disposition.md): retain every listed arena.
+`model` is format-neutral. `native` is a map keyed by format ID. Each value is a map of arena name to arena. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores opaque format-specific records; these do not count as typed content for patch eligibility. Decode-time source locations, exactness, and retained source records belong to the `SourceFidelity` sidecar. Namespace retention is settled in [native-arena-disposition.md](native-arena-disposition.md): retain every listed arena.
 
-`decode_depth` is required. It records how much of the source the decode transferred: `container`, `geometry`, or `full`. Each model arena is classed as model or design. The design arenas are `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, the six sketch arenas, and `spreadsheets`. A document below `full` holds no record in a design arena, and readers and writers refuse one that does. Configurations are design because they key parameter overrides and feature states by design IDs. `assets` is model because tessellation texture assignments reference assets.
+`scope` is required and holds one required boolean per arena class: `{"model": true, "design": false}`. Unknown scope keys are rejected. A false class has no populated neutral arena; true means its arenas are meaningful, including complete-and-empty arenas. Model and design are independent. The design arenas are features, input/result topologies, configurations, parameters, the six sketch arenas, and spreadsheets; all other neutral arenas are model. Serialization, parsing, decode admission, and `CadIr::set_scope` enforce this invariant. The setter refuses to drop a populated class atomically. `CadIr::empty()` declares full scope because an authored document is complete by definition. Scope participates in the content digest. The [document contract](document-contract.md) defines writer and sidecar semantics.
 
 `source` is absent when the document has no source-container metadata. A present source block contains `format`, `attributes`, and `dialects`. `dialects` is always serialized. It is `null` for an unclassified source and otherwise contains the complete source `DialectLayers`, including the primary and every nested or carried layer. The primary dialect namespace equals `source.format`.
 
@@ -170,6 +170,8 @@ Procedural curve definitions are intersection, projection, offset, blend spine, 
 
 ## Source-fidelity annotations
 
+`SourceFidelity.unrepresented` is a sorted array of arena classes whose source records have no typed neutral or native representation. It is not digested. Nonempty sets forbid patch and replay; synthesis consumes no retained bytes. Scope and unrepresented are independent: typed native content can survive without a neutral projection.
+
 `SourceFidelity.annotations.streams` interns source stream names. `SourceFidelity.annotations.provenance` maps a product or retained-record ID to a stream index, byte offset, and optional source tag. Stream indices must resolve.
 
 `SourceFidelity.annotations.exactness` maps an entity ID to entity exactness plus field overrides keyed by serialized field path. Exactness values are:
@@ -286,11 +288,17 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "7"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers provide no migration.
+
+Readers accept exactly `ir_version: "8"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
 JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`, which requires the crate's `schema` feature.
+
+## Version history
+
+Version 6 was written inconsistently by releases 0.6.0–0.6.1 and 0.6.2. Version 7 records `decode_depth` instead of `scope`. Version 8 replaces that historical depth field with content scope and changes decode transfer to carry scope. Readers refuse every earlier wire version.
 
 ## Worked cube
 
@@ -300,8 +308,8 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "7",
-  "decode_depth": "full",
+  "ir_version": "8",
+  "scope": { "model": true, "design": true },
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {

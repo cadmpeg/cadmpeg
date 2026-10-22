@@ -171,7 +171,7 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
         id: "generated:scope-header#class-296-symmetric".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("296".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let parse = |bytes: &[u8]| {
         parse_parameter_scope(
@@ -179,7 +179,7 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("class-296 symmetric-distance scope envelope")
@@ -310,7 +310,7 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
         id: "generated:scope-header#class-296-two-sided-to-faces".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("296".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let parse = |bytes: &[u8]| {
         parse_parameter_scope(
@@ -318,7 +318,7 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("class-296 two-sided-to-faces scope envelope")
@@ -481,7 +481,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
         id: "generated:scope-header#class-296-legacy-one-sided".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("296".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let prologue = |bytes: &[u8]| {
         parse_parameter_scope(
@@ -489,7 +489,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .and_then(|scope| scope.extrude_prologue())
@@ -506,7 +506,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("class-296 legacy one-sided scope");

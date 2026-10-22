@@ -91,11 +91,11 @@ fn index_fixture(kind: usize) -> crate::CadIr {
                 ordinal: 0,
                 name: key.into(),
                 expression: "1 mm".into(),
+                driving: true,
                 display: None,
                 value: Some(crate::features::ParameterValue::Length(
                     crate::scalar::Length::new(1.0).unwrap(),
                 )),
-                dependencies: crate::features::DistinctMembers::default(),
                 properties: std::collections::BTreeMap::default(),
                 pmi: None,
                 native_ref: None,
@@ -194,24 +194,36 @@ fn sketch_index_helpers_keep_last_duplicate_values() {
         Some("sketch midpoint constraint references an entity that is not a bounded curve")
     );
     let parameter: ParameterId = "test:model:parameter#same".try_into().unwrap();
-    let first = Some(ParameterValue::Length(
-        crate::scalar::Length::new(1.0).unwrap(),
-    ));
-    let last = Some(ParameterValue::Length(
-        crate::scalar::Length::new(2.0).unwrap(),
-    ));
-    let parameters = BorrowedIdentities::build(|add| {
-        add(parameter.as_str(), &first);
-        add(parameter.as_str(), &last);
+    let mut ir = crate::CadIr::empty();
+    ir.model.parameters.push(crate::features::DesignParameter {
+        id: parameter.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "distance".into(),
+        expression: "2 mm".into(),
+        driving: true,
+        display: None,
+        value: Some(ParameterValue::Length(
+            crate::scalar::Length::new(2.0).unwrap(),
+        )),
+        properties: std::collections::BTreeMap::default(),
+        pmi: None,
+        native_ref: None,
     });
+    let binding = crate::features::Dimension::Parameter(parameter);
     assert!(super::super::spatial_length_parameter_matches(
         Some(2.0),
-        &parameter,
-        &parameters
+        &binding,
+        &ir
     ));
     assert!(!super::super::spatial_length_parameter_matches(
         Some(1.0),
-        &parameter,
-        &parameters
+        &binding,
+        &ir
     ));
+    ir.model.parameters[0].value = None;
+    assert!(
+        super::super::spatial_length_parameter_matches(Some(1.0), &binding, &ir),
+        "an unevaluated parameter is legal and is not a contradictory cache"
+    );
 }

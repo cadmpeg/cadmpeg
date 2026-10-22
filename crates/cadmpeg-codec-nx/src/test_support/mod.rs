@@ -14,6 +14,7 @@ pub(crate) mod studio_surface;
 pub(crate) mod test_bytes;
 pub(crate) mod test_cfb;
 pub(crate) mod test_deltas;
+pub(crate) mod test_jt_mesh;
 pub(crate) mod test_om;
 pub(crate) mod test_pmarks;
 pub(crate) mod test_prt;
@@ -52,4 +53,20 @@ pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
                 .expect("test Parasolid streams")
         },
     )
+}
+
+/// Render current parameter names without recreating a duplicate dependency list.
+pub(crate) fn parameter_expression_text(
+    ir: &cadmpeg_ir::CadIr,
+    expression: &cadmpeg_ir::features::Expression,
+) -> String {
+    expression
+        .render_with(|id| {
+            ir.model
+                .parameters
+                .iter()
+                .find(|parameter| &parameter.id == id)
+                .map(|parameter| parameter.name.clone())
+        })
+        .expect("expression references resolve")
 }

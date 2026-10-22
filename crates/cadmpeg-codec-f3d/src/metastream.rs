@@ -324,7 +324,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
 
     let mut types = Vec::new();
 
-    for _ in 0..count {
+    for ordinal in 0..count {
         let entry_at = at;
         let type_guid_offset = require(at.checked_add(4), "type GUID", at)?;
         let (type_guid, next) = require(
@@ -401,18 +401,25 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         }
         at = ids_end;
         types.push(SegmentTypeData {
-            byte_offset: u64_from_index(entry_at),
+            class_tag: require(
+                ordinal.checked_add(256).and_then(|code| {
+                    crate::records::references::DesignClassTag::try_from(code.to_string()).ok()
+                }),
+                "type class tag",
+                entry_at,
+            )?,
+            byte_offset: Some(u64_from_index(entry_at)),
             type_guid,
-            type_guid_offset: u64_from_index(type_guid_offset),
+            type_guid_offset: Some(u64_from_index(type_guid_offset)),
             base_type_guid: base_type_guid.map_or(
                 crate::records::entity_header::BaseTypeGuid::Absent,
                 |value| crate::records::entity_header::BaseTypeGuid::Guid {
                     value,
-                    offset: u64_from_index(base_type_guid_offset),
+                    offset: Some(u64_from_index(base_type_guid_offset)),
                 },
             ),
             version,
-            version_offset: u64_from_index(version_offset),
+            version_offset: Some(u64_from_index(version_offset)),
             module: module.to_owned(),
             entities: crate::records::identity::ReferenceRun::located(entity_rows),
         });
@@ -783,14 +790,23 @@ mod tests {
         for design_type in &types {
             assert!(design_type.byte_offset < design_type.type_guid_offset);
             assert_eq!(
-                string_at(design_type.type_guid_offset, 36),
+                string_at(
+                    design_type.type_guid_offset.expect("retained test source"),
+                    36
+                ),
                 design_type.type_guid.as_str()
             );
-            assert_eq!(u32_at(design_type.version_offset), design_type.version);
+            assert_eq!(
+                u32_at(design_type.version_offset.expect("retained test source")),
+                design_type.version
+            );
             if let crate::records::entity_header::BaseTypeGuid::Guid { value, offset } =
                 &design_type.base_type_guid
             {
-                assert_eq!(string_at(*offset, 36), value.as_str());
+                assert_eq!(
+                    string_at(offset.expect("retained test source"), 36),
+                    value.as_str()
+                );
             }
             let Some(entities) = design_type.entities.located_rows() else {
                 panic!("parsed entity locations");

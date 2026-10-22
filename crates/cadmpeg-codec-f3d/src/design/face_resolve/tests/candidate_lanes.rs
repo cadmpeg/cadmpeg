@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::records::identity::Located;
+use crate::records::topology::construction::{
+    DesignConstructionOperandGroupDraft, DesignConstructionOperandGroupFrame,
+    DesignConstructionOperandGroupFrameDraft, DesignConstructionOperandRole,
+};
+use crate::records::topology::extrude_selection::DesignOperandRole as SourceOperandRole;
+
 use super::super::{
     legacy_face_recipe_reference_candidates, resolved_explicit_bounded_face_group,
     resolved_extrude_profile_face_group, resolved_face_group,
@@ -65,31 +72,45 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
             reference(20, "selected-b", 201),
         ];
 
-        let mut group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:construction-group#150",
-            "scope_record_index": 100,
-            "scope_reference_ordinal": 0,
-            "record_index": 150,
-            "byte_offset": 0,
-            "class_tag": "346",
-            "role": 0x0000_0010_0000_0000_u64,
-            "members": [200],
-            "member_offsets": [0],
-            "frame": {
-                "member_count_offset": 0,
-                "opaque_index": 1,
-                "opaque_index_offset": 18,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 22,
-                "variant": false
-            },
-            "role_offset": 0,
-            "paired_class_tag": "262",
-            "paired_byte_offset": 325,
-            "next_record_index": 151,
-            "next_byte_offset": 0
-        }))
-        .expect("legacy Draft face group");
+        let mut group: DesignConstructionOperandGroup =
+            DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+                scope_record_index: 100,
+                scope_reference_ordinal: 0,
+                record_index: 150,
+                byte_offset: 0,
+                role_offset: 0,
+                paired_byte_offset: 325,
+                id: "f3d:test:construction-group#150".to_owned(),
+                class_tag: "346".to_owned().try_into().expect("source class tag"),
+                paired_class_tag: "262".to_owned().try_into().expect("source class tag"),
+                members: [200]
+                    .into_iter()
+                    .zip([0])
+                    .map(|(value, offset)| Located { value, offset })
+                    .collect(),
+                lost_edge_references: Vec::new(),
+                operand_role: DesignConstructionOperandRole::Other(SourceOperandRole::from_raw(
+                    0x0000_0010_0000_0000_u64,
+                )),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 0,
+                        opaque_index: 1,
+                        opaque_index_offset: 18,
+                        opaque_scalar: 0.0,
+                        opaque_scalar_offset: 22,
+                        variant: false,
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: Vec::new(),
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                    },
+                )
+                .expect("source construction frame"),
+            })
+            .expect("legacy Draft face group");
 
         assert_eq!(
             resolved_explicit_bounded_face_group(&group, &[operand.clone()])
@@ -99,8 +120,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
                 native: group.id.clone(),
             })
         );
-        group.operand_role =
-            crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeProfile;
+        group.operand_role = DesignConstructionOperandRole::ExtrudeProfile;
         let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
             "id": "f3d:test:scope#100",
             "byte_offset": 0,

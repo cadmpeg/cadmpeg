@@ -66,6 +66,16 @@ record scanning, so records may cross frame boundaries. Every section is
 extracted independently, including partition and deltas sections. A section
 with one frame is the degenerate chained form.
 
+`PMISemanticDataDB` is an UnQLite linear-hash database. Its integer fields are big-endian. The pager header starts with the seven bytes `unqlite`, magic u32 `db7c2712` at +7, DOS creation time u32 at +11, sector size u32 at +15, page size u32 at +19, engine-name length u16 at +23, and engine name at +25. The hash engine name is `hash`. Page and sector sizes are powers of two; the page size is from 512 through 65536 bytes. Page numbers start at zero and select `page_number * page_size`.
+
+Hash page 1 starts with magic u32 `fa782dcb` at +0, hash-function check u32 at +4, free-page head u64 at +8, split bucket u64 at +16, maximum split bucket u64 at +24, next bucket-map page u64 at +32, and bucket-map count u32 at +40. The hash check is the 32-bit DJB hash of `chm@symisc`, starting at 5381 and applying `hash = hash * 33 + byte`. A bucket-map record stores logical bucket u64 at +0 and physical page u64 at +8. Map records start at +44 in page 1. Further map pages start with next-map-page u64 at +0 and map-count u32 at +8, followed by records at +12. A zero next-page number ends a chain.
+
+A bucket-page header stores first-cell offset u16 at +0, first-free-block offset u16 at +2, and slave-page number u64 at +4. A cell header stores key hash u32 at +0, key byte length u32 at +4, value byte length u64 at +8, next-cell offset u16 at +16, and overflow-page number u64 at +18. Local key bytes start at cell +26 and value bytes immediately follow the key. A free block stores next-free offset u16 at +0 and free-block byte length u16 at +2. Each cell key uses the same DJB hash, limited to its first 2048 bytes.
+
+When a cell has overflow, its first overflow page stores next-overflow-page u64 at +0, value-start page u64 at +8, and value-start offset u16 at +16. Key bytes start at +18, followed by the value. Later overflow pages store the next-page number at +0 and continuation bytes at +8. The cell lengths delimit key and value bytes across the page chain. GUID keys identify semantic dimension maps; their values use the MessagePack grammar in §2.
+
+The UnQLite page semantics are defined by the [public Symisc UnQLite implementation](https://github.com/symisc/unqlite/blob/master/unqlite.c), functions `pager_write_db_header`, `lhash_write_header`, `lhCellWriteHeader`, and `lhCellWriteOvflPayload` (BSD-2-Clause).
+
 ### 1.1 Outer header and block frame
 
 The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**, value `0x00000004`). The rest is a sequence of compressed blocks.
@@ -140,6 +150,8 @@ Payload kind is determined from **decompressed bytes**, not from `type_id`.
 | `unqlite`                                       | UnQLite database            |
 
 PNG preview dimensions and encoding fields are in `IHDR`. BMP thumbnail width, height, planes, bit depth, compression, and image size are in the 40-byte BITMAPINFOHEADER after the leading file-size word. The `swSolidWorks` XML root carries version, creation time, and path; its `swModel` child carries model and configuration names.
+
+
 
 `Contents/Config-0-Partition` and `Contents/Config-0-Deltas` carry body B-rep records. `Contents/Config-0-ResolvedFeatures` carries feature-input sketch profiles. Legacy compound documents with no `ResolvedFeatures` stream store the same feature-input arena directly in the numeric `Contents/Config-N` stream. When explicit `ResolvedFeatures` streams exist, plain `Config-N` streams do not supply modeling-operation classes, parameters, configuration state, or history feature classes. A numeric `Config-N` stream containing `sgSketch` and at least one sketch-entity class is a supplemental config-object lane. Its complete persistent component paths remain operation operands when they bind uniquely to an already classified history feature. When `moFeatureDimHandle_c` is present, only sketch markers before its first declaration belong to user sketch objects; later markers belong to display state. Without that declaration, the sketch-marker interval extends to the end of the lane. Runs separated by at least 4096 bytes are distinct sketch objects. The runs bind in stream order to otherwise unrepresented non-origin sketch history objects in ascending source-identifier order, and only when the run and owner counts are equal. Constraint-bearing markers in a bound run belong to the same sketch object as the run's geometry markers. `Config-0-GhostPartition`, `Contents/Definition`, and `Config-0-LWDATA` are separate payload families.
 
@@ -771,10 +783,13 @@ configuration identity, including when the manifest contains several
 when the manifest does not provide a name. A missing or unmatched active name
 leaves the Keywords configuration identity unresolved.
 
-`swConfigurationNeedsUpdate="YES"` states that the document carries no
-current evaluated snapshot for that configuration; its feature and parameter
-state requires regeneration. `swConfigurationNeedsUpdate="NO"` states that
-its cached state is current. `swConfigurationFlags` and
+`swConfigurationNeedsUpdate="YES"` warns that the configuration's cached
+geometry may require regeneration. For the active configuration the decoder
+conservatively marks every current feature `needs_recompute`, because this
+source flag has configuration granularity. It retains readable cached geometry
+and parameter values. A writer sets the active configuration flag to `YES`
+when any current feature is stale; this coarse flag does not preserve exact
+per-feature recompute state. `swConfigurationFlags` and
 `swConfigurationAlternateName` are configuration-manifest metadata.
 
 Keywords `Feature` elements use the `Type` attribute as their operation-family token. All feature instances with the same exact `Type` token use the same feature-input class. A directly object-ID-bound class instance therefore supplies the class of the other instances carrying that token. `Helix/Spiral`, `Surface-Sweep`, and `Thicken` denote helix, surface-sweep, and face-thickening operations independently of the localized display name in `Name`.
@@ -867,13 +882,18 @@ A nonempty Keywords parameter value with no scalar literal, operator, grouping d
 
 A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot `N`. Scalars from configuration-scoped lanes do not replace the document-level parameter value or its native identity. Every evaluable document expression and every scalar resolved in the scoped lane contributes its typed value to that configuration's parameter state. A dependency-free document expression has the same evaluated value in every resolved configuration unless that configuration supplies a typed scalar override.
 
-The same lane supplies configuration-local feature operation state. Feature classes, operation discriminators, compact termination records, profile adjacency, path references, and selection records are evaluated within their `Config-N-ResolvedFeatures` lane. Sketch geometry and relation records in the lane belong to the configuration-local sketch owner and sketch identity. Configuration-local records do not define document-global feature semantics unless every applicable lane yields the same state. A resolved configuration carries one evaluated feature state for every document feature.
+The same lane supplies configuration-local feature operation state. Feature classes, operation discriminators, compact termination records, profile adjacency, path references, and selection records are evaluated within their `Config-N-ResolvedFeatures` lane. Sketch geometry and relation records in the lane belong to the configuration-local sketch owner and sketch identity. Configuration-local records do not define document-global feature semantics unless every applicable lane yields the same state. An inactive configuration stores only structural, suppression, expression,
+and evaluated parameter differences from the document's active state.
 
 A configuration-local offset datum plane that omits its support reference, or retains a valid support frame with an unresolved face selector, reuses the document-level datum reference when that reference is resolved and its support frame matches. A feature reference includes its preceding datum-plane dependency. A resolved face reference preserves its selected face identity. A missing or nonmatching frame remains unresolved.
 
 A Keywords configuration's decimal `id` attribute is the slot identity for `Config-N-ResolvedFeatures`. It is independent of `Config-N-Partition`. The stored configuration id selects the same-numbered resolved-features lane before regeneration ordinal fallback. A configuration with an explicit stored id does not participate in ordinal fallback.
 
-When exactly one configuration is active and no configuration-scoped lane supplies its state, the document-level feature and parameter projections are its evaluated state. Its snapshot contains the final document-level state of every feature and every parameter with an evaluated value. Configuration-scoped lanes take precedence and supply independently evaluated snapshots.
+The active configuration uses the document-level feature definitions and
+canonical parameters directly, so its configuration difference maps are empty.
+Configuration-scoped lanes supply inactive alternatives. Differences identical
+to the active state are omitted; an overriding expression with an unknown
+value remains unknown rather than borrowing the active cached value.
 
 An unquoted Keywords expression identifier does not begin with an ASCII digit or `.`. A numeric-leading token is a numeric literal, including when a parameter in the same owner has that token as its name. A numeric parameter name is referenced with double quotes.
 
@@ -948,6 +968,14 @@ Native-class principal-plane roles require the source IDs `2`, `3`, and `4`. A n
 Among classless, parameterless, propertyless history records, `Feature` source ID `1` is the annotations container and `Sketch` source ID `5` is the model origin. Other source IDs are positions in an optional-node sequence rather than role codes.
 
 A classless Keywords `Feature` whose `Type` token is `EquationDriven` is the equation container node. The token is a role code and identifies the container independently of its source identifier, its display name, and its dimension children. The container's dimensions are document-global: an unqualified expression identifier that names no dimension of the referencing feature resolves to the same-named container dimension.
+
+An equation container does not require a result body. A `CustomProperty`
+element uses its `Name` attribute as the document property key and its text as
+the string value. It does not require a source identifier and is metadata,
+not a construction feature. XML character escaping applies to names, property
+values, expressions, and dimension text. Construction records and Parasolid
+result records occupy separate sections; changing a Keywords dimension does
+not change the stored B-rep coordinates.
 
 A complete native-class roster selects one feature-manager allocation layout. The current layout has `moDocsFolder_c`, `moCommentsFolder_c`, `moSolidBodyFolder_c`, and `moSurfaceBodyFolder_c` at source IDs `7`, `8`, `9`, and `10`. The legacy layout has `moOriginProfileFeature_c`, `moSurfaceBodyFolder_c`, `moSolidBodyFolder_c`, `moDocsFolder_c`, and `moCommentsFolder_c` at source IDs `6`, `9`, `10`, `12`, and `13`. The default-frame layouts have `moDetailCabinet_c`, three `moRefPlane_c` records, and `moOriginProfileFeature_c` at source IDs `1` through `5`. One default-frame layout has classless light nodes at `6`, `7`, and `8`. Another also has `moSolidBodyFolder_c` and `moSurfaceBodyFolder_c` at `7` and `8`, with classless light nodes at `6`, `10`, `11`, and `12`. The origin-at-six layout has `moDetailCabinet_c` at `1`, three `moRefPlane_c` records at `3`, `4`, and `5`, `moOriginProfileFeature_c` at `6`, and classless light nodes at `2`, `7`, and `8`. A layout is valid only when exactly one complete roster matches.
 

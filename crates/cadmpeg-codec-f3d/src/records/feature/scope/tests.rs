@@ -291,19 +291,40 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
         DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRule,
         DesignWorkPointRuleForm,
     };
-    let reference = serde_json::json!({
-        "selector": 1, "selector_offset": 1, "token": "f3d:model:face#one", "token_offset": 2,
-        "design_reference": 1, "design_reference_offset": 3,
-        "candidate_faces": ["f3d:model:face#one"], "candidate_edges": ["f3d:model:edge#one"],
-        "alternate_selector_faces": ["f3d:model:face#one"], "alternate_selector_edges": ["f3d:model:edge#one"]
-    });
-    let recipe: DesignVertexRecipe = serde_json::from_value(serde_json::json!({
-        "record_index": 2, "byte_offset": 10, "class_tag": "369", "paired_byte_offset": 20,
-        "paired_class_tag": "261", "recipe_record_index": 5, "recipe_record_byte_offset": 30,
-        "recipe_id": "f3d:design:recipe#1", "recipe_prefix_offset": 41,
-        "recipe_prefix_bytes": "00ff", "recipe_references": [reference],
-        "recipe_program_offset": 43, "recipe_program": [0], "next_record_index": 7, "next_byte_offset": 50
-    })).unwrap();
+    let reference = crate::records::dimensions::DesignRecipeReference {
+        clause_index: 0,
+        selector: 1,
+        selector_offset: Some(1),
+        token: "f3d:model:face#one".into(),
+        token_offset: Some(2),
+        design_reference: 1,
+        design_reference_offset: Some(3),
+        candidate_faces: vec![cadmpeg_ir::ids::FaceId::mint("f3d:model:face#one").unwrap()],
+        candidate_edges: vec![cadmpeg_ir::ids::EdgeId::mint("f3d:model:edge#one").unwrap()],
+        alternate_selector_faces: vec![cadmpeg_ir::ids::FaceId::mint("f3d:model:face#one").unwrap()],
+        alternate_selector_edges: vec![cadmpeg_ir::ids::EdgeId::mint("f3d:model:edge#one").unwrap()],
+    };
+    let recipe = DesignVertexRecipe::try_new(
+        crate::records::feature::work_geometry::DesignVertexRecipeDraft {
+            record_index: 2,
+            byte_offset: 10,
+            class_tag: "369".to_owned().try_into().unwrap(),
+            paired_byte_offset: 20,
+            paired_class_tag: "261".to_owned().try_into().unwrap(),
+            recipe_record_index: 5,
+            recipe_record_byte_offset: 30,
+            recipe_id: "f3d:design:recipe#1".into(),
+            recipe_prefix_offset: 41,
+            recipe_prefix_bytes: vec![0, 255],
+            recipe_references: vec![reference],
+            recipe_program_offset: 43,
+            recipe_program: vec![0],
+            resolution: None,
+            next_record_index: 7,
+            next_byte_offset: 50,
+        },
+    )
+    .unwrap();
     let plane = DesignWorkPlaneConstruction::try_new(
         21,
         Box::new([recipe.clone(), recipe.clone(), recipe.clone()]),

@@ -40,7 +40,7 @@ fn generated_f3d_rewrites_plane_frame() {
 }
 
 #[test]
-fn generated_f3d_rejects_analytic_surface_family_changes() {
+fn generated_f3d_synthesizes_analytic_surface_family_changes() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let decoded = EditableDecodeResult::from(
@@ -62,13 +62,21 @@ fn generated_f3d_rejects_analytic_surface_family_changes() {
         .unwrap(),
     ));
 
-    let error = crate::test_support::plan_inherited_write(
-        &edited,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .expect_err("native plane record cannot silently retain a sphere edit");
-    assert!(error
-        .to_string()
-        .contains("does not support edits to surface"));
+    let (output, report) = super::synthesize_document(&edited, Some(decoded.source_fidelity()));
+    if output.ir().model.surfaces.is_empty() {
+        assert!(report
+            .losses
+            .iter()
+            .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
+    } else {
+        assert!(
+            output.ir().model.surfaces.iter().all(|surface| {
+                matches!(
+                    surface.geometry,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+                )
+            }),
+            "the retained plane must not override the authored sphere"
+        );
+    }
 }

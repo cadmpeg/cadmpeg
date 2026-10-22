@@ -21,48 +21,43 @@ use crate::report::{
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
-use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_core::decode::{DecodeDepth, ResourceLimits};
 use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
 mod carried;
 mod coverage;
+mod error;
 mod loss;
 pub mod target;
 
+pub use crate::validate::ValidatedFinding;
+pub use cadmpeg_core::encode::{EncodeBuffer, EncodeSession};
 use carried::{EntityLocation, FindingLocator};
 pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
+pub use error::{CapacityField, EncodeError};
+pub use loss::ExportLossCode;
+pub use native::{
+    NativeArenaDisposition, NativeDisposition, NativeDispositions, NativeNamespaceDispositions,
+};
+mod native;
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
-/// How much of its source a document must record for an encoder to plan it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DepthNeed {
-    /// The encoder reads nothing a shallower decode leaves out and refuses a
-    /// document that records less than this depth.
-    AtLeast(DecodeDepth),
-    /// The encoder writes the document at whatever depth it records, so it
-    /// refuses none; a caller decodes at [`DecodeDepth::Full`] for it.
-    Recorded,
-}
-
-impl DepthNeed {
-    /// The depth a caller decodes at to satisfy this need.
-    #[must_use]
-    pub const fn request(self) -> DecodeDepth {
-        match self {
-            Self::AtLeast(depth) => depth,
-            Self::Recorded => DecodeDepth::Full,
-        }
-    }
-
-    /// Whether a document recording `depth` satisfies this need.
-    #[must_use]
-    pub fn admits(self, depth: DecodeDepth) -> bool {
-        match self {
-            Self::AtLeast(needed) => depth >= needed,
-            Self::Recorded => true,
-        }
-    }
+/// Why a writer synthesized a payload instead of patching retained layout.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(tag = "cause", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SynthesisCause {
+    /// Retained source content is absent from the typed document.
+    SourceUnrepresented {
+        /// Classes of content that make source-byte reuse ineligible.
+        classes: crate::document::ArenaClasses,
+    },
+    /// The patch path could not express the edited document.
+    PatchDeclined {
+        /// The precondition or edit that declined the patch path.
+        reason: String,
+    },
 }
 
 /// Implementation surface for one output format.
@@ -73,9 +68,14 @@ pub trait EncoderBackend {
     /// Stable output format id, taken from the codec that reads the format.
     const FORMAT: FormatId;
 
-    /// The decode depth this backend plans from. [`Encoder::plan`] refuses a
-    /// shallower document before the backend runs.
-    const NEEDS: DepthNeed;
+    /// The decode depth a caller requests for complete output.
+    const REQUEST: DecodeDepth;
+
+    /// Whether this backend can patch or replay retained source bytes.
+    const REUSES_SOURCE: bool;
+
+    /// Whether this format writes the document's recompute state as its own flag.
+    const WRITES_RECOMPUTE: bool = false;
 
     /// The domain this backend's targets come from.
     type Target: TargetDomain;
@@ -104,22 +104,16 @@ pub trait Encoder: encoder_sealed::Sealed {
 
     /// The static catalog of output flavors this encoder can produce.
     ///
-    /// Whether a given input reaches one is resolution's answer, not the
-    /// catalog's: a patch-only writer's row is reachable only from a retained
-    /// source of that flavor, and `plan` refuses by name where it cannot
-    /// deliver. Preservation of dialects outside the catalog is not listed
-    /// here; [`TargetRequest::Inherit`] asks for it. Ids come from this
+    /// Every native writer synthesizes its catalog targets from the document.
+    /// Preservation of dialects outside the catalog is not listed here;
+    /// [`TargetRequest::Inherit`] asks for it. Ids come from this
     /// encoder's own format namespace only.
     fn targets(&self) -> TargetCatalog;
 
-    /// The decode depth this encoder plans from, [`EncoderBackend::NEEDS`].
-    /// A caller decodes at [`DepthNeed::request`].
-    fn needs(&self) -> DepthNeed;
+    /// The decode depth a caller requests for complete output.
+    fn request(&self) -> DecodeDepth;
 
     /// Plans one export without writing to the destination.
-    ///
-    /// Refuses with [`CodecError::InsufficientDepth`] a document that records
-    /// less depth than [`Self::needs`] admits.
     fn plan(
         &self,
         input: EncodeInput<'_>,
@@ -136,8 +130,8 @@ impl<E: EncoderBackend> Encoder for E {
         E::TARGET.targets(E::FORMAT)
     }
 
-    fn needs(&self) -> DepthNeed {
-        E::NEEDS
+    fn request(&self) -> DecodeDepth {
+        E::REQUEST
     }
 
     fn plan(
@@ -145,31 +139,89 @@ impl<E: EncoderBackend> Encoder for E {
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan, CodecError> {
-        let recorded = input.ir.decode_depth();
-        if !E::NEEDS.admits(recorded) {
-            return Err(CodecError::InsufficientDepth {
-                format: E::FORMAT.as_str(),
-                needed: E::NEEDS.request(),
-                recorded,
-            });
-        }
+        // (C) Excluded populated arenas contradict the document declaration.
+        // Valid partial scopes remain writable; this is the state invariant.
+        input.ir.check_scope().map_err(CodecError::malformed)?;
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
-        let body = self.plan_resolved(input, target)?;
+        let synthesis_identity = target.synthesis_target().map(|target| target.cloned());
+        let unrepresented = input.source_unrepresented();
+        // Retained bytes and their eligibility travel together. A backend sees
+        // no source bytes when the document does not represent their content.
+        let backend_input = if unrepresented.is_empty() {
+            input
+        } else {
+            EncodeInput {
+                fidelity: None,
+                ..input
+            }
+        };
+        let mut body = self.plan_resolved(backend_input, target)?;
+        if E::REUSES_SOURCE && !unrepresented.is_empty() {
+            body.synthesis_cause = Some(SynthesisCause::SourceUnrepresented {
+                classes: unrepresented,
+            });
+        }
+        if backend_input.fidelity.is_none()
+            && !matches!(body.write_path, WritePath::Synthesized { .. })
+        {
+            return Err(CodecError::InvalidInput(format!(
+                "encoder {} reported source-byte reuse without source fidelity",
+                E::FORMAT.as_str(),
+            )));
+        }
         let ExportBody {
             bytes,
             census,
             write_path,
             coverage,
+            mut native_dispositions,
+            synthesis_cause,
             mut losses,
-            notes,
+            mut notes,
         } = body;
+        if matches!(write_path, WritePath::Synthesized { .. }) {
+            let required = E::REQUEST.required_scope();
+            let missing = input.ir.scope.missing_from(required);
+            if !missing.is_empty() {
+                notes.push(format!(
+                    "the document's neutral scope excludes {missing}; no neutral records of those classes are supplied."
+                ));
+            }
+        }
         losses.extend(coverage.omission_losses(&input.ir.model, E::FORMAT.as_str()));
+        native_dispositions.complete(input.ir);
+        losses.extend(native_dispositions.omission_losses(input.ir, E::FORMAT.as_str()));
+        if !E::WRITES_RECOMPUTE {
+            let stale: Vec<_> = input
+                .ir
+                .model
+                .features
+                .iter()
+                .filter(|feature| feature.needs_recompute)
+                .map(|feature| feature.id.as_str())
+                .collect();
+            if !stale.is_empty() {
+                losses.push(loss::ExportLossCode::EvaluationStale.note(format!(
+                    "the {} output carries stored evaluation that needs recompute for features: {}",
+                    E::FORMAT.as_str(),
+                    stale.join(", "),
+                )));
+            }
+        }
+        let identity = if matches!(write_path, WritePath::Synthesized { .. }) {
+            synthesis_identity?
+        } else {
+            identity
+        };
         let write_path = write_path.into_report(input.fidelity.is_some());
-        let report = match identity {
+        let mut report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),
             Some(target) => ExportReport::native(target, census, write_path, losses, notes),
         };
+        report.coverage = coverage;
+        report.native_dispositions = native_dispositions;
+        report.synthesis_cause = synthesis_cause;
         Ok(ExportPlan {
             report,
             bytes,
@@ -186,13 +238,51 @@ pub struct EncodeInput<'a> {
     pub ir: &'a CadIr,
     /// Decode-time fidelity state, when available.
     pub fidelity: Option<&'a SourceFidelity>,
+    /// Caller ceilings for work performed while encoding.
+    pub limits: ResourceLimits,
 }
 
 impl<'a> EncodeInput<'a> {
-    /// Borrows a document and its decode-time fidelity for one export.
+    /// Borrows a document and its fidelity with desktop resource ceilings.
     #[must_use]
     pub const fn new(ir: &'a CadIr, fidelity: Option<&'a SourceFidelity>) -> Self {
-        Self { ir, fidelity }
+        Self {
+            ir,
+            fidelity,
+            limits: ResourceLimits::desktop(),
+        }
+    }
+
+    /// Whether another format owns typed native content in this document.
+    ///
+    /// This is the same arena-level distinction used by native export coverage:
+    /// the reserved `unknowns` arena holds opaque retained bytes and is excluded.
+    /// Empty arenas and this writer's own namespace do not contribute. Codecs
+    /// use this query instead of inspecting another codec's native records.
+    #[must_use]
+    pub fn has_foreign_native_content(self, format: FormatId) -> bool {
+        self.ir.native.0.iter().any(|(namespace, native)| {
+            namespace.as_str() != format.as_str()
+                && native
+                    .arenas()
+                    .iter()
+                    .any(|(arena, records)| arena.as_str() != "unknowns" && !records.is_empty())
+        })
+    }
+
+    /// Classes of source content not held in any typed document arena.
+    pub fn source_unrepresented(self) -> crate::document::ArenaClasses {
+        self.fidelity.map_or_else(
+            crate::document::ArenaClasses::new,
+            SourceFidelity::unrepresented,
+        )
+    }
+
+    /// Whether a patch or replay is eligible to consume retained source bytes.
+    ///
+    /// Ineligibility selects synthesis; it is not a writer refusal.
+    pub fn can_reuse_source(self) -> bool {
+        self.fidelity.is_some() && self.source_unrepresented().is_empty()
     }
 }
 
@@ -246,7 +336,8 @@ pub enum PatchConsumption {
 /// Structurally valid backend write paths and their fidelity consumption.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WritePath {
-    /// The writer authored every output byte from neutral IR.
+    /// The writer authored output from neutral arenas and its own typed native
+    /// namespace, consuming no retained source bytes.
     Synthesized {
         /// How the synthesized write handled available source fidelity.
         consumption: Consumption,
@@ -314,6 +405,10 @@ pub struct ExportBody {
     /// Which model arenas the payload carries. The wrapper charges a loss for
     /// every non-empty arena this coverage omits.
     pub coverage: ArenaCoverage,
+    /// Coverage of the output format's own typed native arenas.
+    pub native_dispositions: NativeDispositions,
+    /// Why a retained-source patch was replaced by synthesis, when applicable.
+    pub synthesis_cause: Option<SynthesisCause>,
     /// Losses charged while planning.
     pub losses: Vec<LossNote>,
     /// Free-form notes.
@@ -334,6 +429,8 @@ impl ExportBody {
                 consumption: Consumption::NotConsumed,
             },
             coverage,
+            native_dispositions: NativeDispositions::default(),
+            synthesis_cause: None,
             losses: Vec::new(),
             notes: Vec::new(),
         }
@@ -353,6 +450,18 @@ pub struct ExportPlan {
 }
 
 impl ExportPlan {
+    /// Records the caller's empty-output observation without changing the payload.
+    pub fn note_empty_output(&mut self) {
+        if !self.report.losses.iter().any(|loss| {
+            loss.code.namespace() == "export" && loss.code.local_code() == "output.empty"
+        }) {
+            self.report.losses.push(
+                ExportLossCode::OutputEmpty
+                    .note("output contains no decoded or exportable geometry"),
+            );
+        }
+    }
+
     /// Returns the complete plan-time export report.
     pub fn report(&self) -> &ExportReport {
         &self.report
@@ -410,10 +519,11 @@ impl ExportPlan {
 pub struct CadirEncoder;
 
 impl EncoderBackend for CadirEncoder {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: FormatId = FormatId::new("cadir");
-    /// The document states its own depth, so a container-only dump is a
-    /// faithful CADIR document.
-    const NEEDS: DepthNeed = DepthNeed::Recorded;
+    /// A full decode requests all content CADIR can hold.
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const WRITES_RECOMPUTE: bool = true;
 
     /// CADIR writes the neutral document. Its version identifies the CADIR
     /// schema. The serialized export report uses the `cadir` identity variant,
@@ -422,18 +532,27 @@ impl EncoderBackend for CadirEncoder {
     const TARGET: DialectFree = DialectFree;
 
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        let mut bytes = crate::hash::finite_json::to_canonical_json_string(input.ir)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?
-            .into_bytes();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy {
+            mode: cadmpeg_core::decode::DecodeMode::Salvage,
+            limits: input.limits,
+        };
+        let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+        let mut bytes = Vec::new();
+        crate::hash::finite_json::write_cadir_json(&ctx, &mut bytes, input.ir).map_err(
+            |error| match error {
+                crate::hash::finite_json::CanonicalJsonError::Resource(error) => error,
+                error => CodecError::Malformed(error.to_string()),
+            },
+        )?;
+        ctx.finish_session()?;
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
         // replay or patch, so this encoder has one path and states it. The
         // serialization carries every arena.
-        Ok(ExportBody::synthesized(
-            bytes,
-            input.ir,
-            ArenaCoverage::Complete,
-        ))
+        let mut body = ExportBody::synthesized(bytes, input.ir, ArenaCoverage::Complete);
+        body.native_dispositions = NativeDispositions::written(input.ir);
+        Ok(body)
     }
 }
 

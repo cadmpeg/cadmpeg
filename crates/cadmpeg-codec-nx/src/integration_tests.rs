@@ -82,8 +82,8 @@ fn assert_valid(result: &EditableDecodeResult) {
 }
 
 fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
-    crate::decode::Scan {
-        container: crate::container::Container {
+    crate::decode::Scan::new(
+        crate::container::Container {
             data: Vec::new().into(),
             physical_size: 0,
             layout: crate::container::test_modern_layout(0x06),
@@ -92,13 +92,13 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         },
-        streams: vec![crate::parasolid::Stream {
+        vec![crate::parasolid::Stream {
             file_offset: 0,
             consumed: 0,
             inflated: Vec::new(),
             body: crate::parasolid::StreamBody::Preview,
         }],
-    }
+    )
 }
 
 #[test]

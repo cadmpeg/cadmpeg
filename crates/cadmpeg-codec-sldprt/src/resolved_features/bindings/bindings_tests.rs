@@ -1,5 +1,8 @@
 //! Tests for the `bindings` module.
 
+use crate::resolved_features::class_sources::ClassSources;
+use crate::test_support::dimensions::source_value;
+
 use super::super::{LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::{
     bind_detached_legacy_sketch_objects, bind_mirror_surface_planes, bind_pattern_inputs,
@@ -25,11 +28,17 @@ use cadmpeg_ir::topology::{Face, Sense};
 use std::collections::{BTreeMap, HashSet};
 
 fn bind_pattern_inputs_test(
+    _class_sources: &ClassSources,
     features: &mut [Feature],
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    bind_pattern_inputs(features, histories, lanes)
+    bind_pattern_inputs(
+        &crate::test_support::native::class_sources(lanes),
+        features,
+        histories,
+        lanes,
+    )
 }
 
 #[test]
@@ -90,10 +99,12 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         features: vec![extrusion, child, following, attribute],
     };
     let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
+        feature_ref: None,
         id: id.into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset,
+        sequence: 0,
+        offset: Some(offset),
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
@@ -102,7 +113,8 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         parent: "lane".into(),
         feature_ref: None,
         ordinal: 0,
-        offset,
+        sequence: 0,
+        offset: Some(offset),
         object_id: 20,
         name: name.into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(0.001).expect("finite test scalar"),
@@ -151,10 +163,22 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         }],
     };
 
+    let source = lane.native_payload.to_vec();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut body_sources =
+        crate::resolved_features::body_sources::BodySources::from_views([(lane.id.clone(), root)])
+            .unwrap();
     bind_scalar_operands(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
+        &mut body_sources,
     )
     .unwrap();
 
@@ -180,7 +204,8 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         id: "selection".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 0,
+        sequence: 0,
+        offset: Some(0),
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
         object_name_ref: "name".into(),
@@ -219,6 +244,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
@@ -300,8 +326,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         )],
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
-    )
-    .unwrap();
+    );
     assert!(matches!(&(feature.evaluation.definition()),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
@@ -335,8 +360,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         )],
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
-    )
-    .unwrap();
+    );
     assert!(matches!(&(feature.evaluation.definition()),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
@@ -371,8 +395,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         ],
         &[face, second_face],
         std::slice::from_ref(&surface),
-    )
-    .unwrap();
+    );
     assert!(matches!(&(feature.evaluation.definition()),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
@@ -437,10 +460,12 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         native_payload: vec![0; 256].into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 100,
+            feature_ref: None,
             id: "pattern-name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 100,
+            offset: Some(100),
             object_id: ObjectId::from_value(228),
             value: "CirPattern1".into(),
         }],
@@ -451,10 +476,10 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         edge_selections: Vec::new(),
         surface_selections: Vec::new(),
         generated_surface_identities: vec![FeatureInputGeneratedSurfaceIdentity {
+            sequence: 150,
             id: "identity".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 150,
             type_prefix: [0xc2, 0x83, 0xfb, 0x08].into(),
             feature_source_id: 224_u32.try_into().unwrap(),
             local_identity: 2,
@@ -485,6 +510,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
@@ -503,6 +529,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
@@ -514,6 +541,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     ];
 
     bind_pattern_inputs_test(
+        &crate::test_support::native::class_sources(std::slice::from_mut(&mut lane)),
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
@@ -608,10 +636,12 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 100,
+            feature_ref: None,
             id: "pattern-name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 100,
+            offset: Some(100),
             object_id: ObjectId::from_value(228),
             value: "CirPattern1".into(),
         }],
@@ -639,6 +669,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(
@@ -650,7 +681,13 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         native_ref: Some("pattern-native".into()),
     }];
 
-    bind_pattern_inputs_test(&mut features, std::slice::from_ref(&history), &[lane]).unwrap();
+    bind_pattern_inputs_test(
+        &crate::test_support::native::class_sources(&[&lane]),
+        &mut features,
+        std::slice::from_ref(&history),
+        &[lane],
+    )
+    .unwrap();
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -664,8 +701,8 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
                 count,
             } if *axis_origin == Point3::new(12.0, -34.0, 56.0)
             && *axis_dir == Vector3::new(0.0, 1.0, 0.0)
-            && angle.get() == std::f64::consts::FRAC_PI_2
-            && *count == 4)
+            && source_value(angle.dimension(), &history.features).get() == std::f64::consts::FRAC_PI_2
+            && source_value(count, &history.features) == 4)
     ));
 }
 
@@ -840,17 +877,21 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         content: Vec::new(),
     };
     let class = |offset, name: &str| FeatureInputClass {
+        feature_ref: None,
         id: format!("class-{offset}"),
         parent: "sldprt:feature-input:config-objects#1".into(),
         ordinal: 0,
-        offset,
+        sequence: 0,
+
         name: name.into(),
     };
     let name = |index, value: &str| FeatureInputName {
+        feature_ref: None,
         id: format!("name-{index}"),
         parent: "sldprt:feature-input:config-objects#1".into(),
         ordinal: index,
-        offset: 250 + u64::from(index),
+        sequence: index,
+        offset: Some(250 + u64::from(index)),
         object_id: None,
         value: value.into(),
     };
@@ -859,7 +900,8 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         parent: "sldprt:feature-input:config-objects#1".into(),
         feature_ref: None,
         ordinal: index,
-        offset: 300 + 20 * u64::from(index),
+        sequence: index,
+        offset: Some(300 + 20 * u64::from(index)),
         object_id: index,
         name: format!("name-{index}"),
         value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
@@ -912,6 +954,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         std::slice::from_ref(&history),
         &HashSet::default(),
         &mut lane,
+        &crate::resolved_features::body_sources::BodySources::default(),
     )
     .unwrap();
     assert_eq!(
@@ -940,6 +983,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         std::slice::from_ref(&ambiguous_history),
         &HashSet::default(),
         &mut ambiguous,
+        &crate::resolved_features::body_sources::BodySources::default(),
     )
     .unwrap();
     assert!(ambiguous

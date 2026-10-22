@@ -41,7 +41,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
                 AsmDeltaState {
                     id: format!("{id}:state#{state_id}"),
                     parent: id.clone(),
-                    byte_offset: 0,
+                    byte_offset: Some(0),
                     state_id,
                     version_flag: 1,
                     state_flag: 0,
@@ -64,28 +64,29 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
     let naming_spaces = vec![
         crate::records::recipes::DesignComponentNamingSpace {
             id: crate::ids::native_design_component_naming_space_id(design_stream, 0),
-            byte_offset: 0,
+            byte_offset: Some(0),
             component_record_index: 10,
             context_uuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            context_uuid_offset: 12,
+            context_uuid_offset: Some(12),
         },
         crate::records::recipes::DesignComponentNamingSpace {
             id: crate::ids::native_design_component_naming_space_id(design_stream, 100),
-            byte_offset: 100,
+            byte_offset: Some(100),
             component_record_index: 20,
             context_uuid: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            context_uuid_offset: 112,
+            context_uuid_offset: Some(112),
         },
     ];
-    let binding = |at, entity_suffix, blob_name: &str| {
+    let binding = |map_ordinal, at, entity_suffix, blob_name: &str| {
         crate::records::bodies::DesignBodyBinding::try_from(
             crate::records::bodies::DesignBodyBindingWire {
+                map_ordinal,
                 id: crate::ids::native_design_body_binding_id(design_stream, at),
                 stream: design_stream.into(),
                 pair_count: 1,
@@ -102,8 +103,8 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         .unwrap()
     };
     let body_bindings = vec![
-        binding(200, 15, "BREP.a.smbh"),
-        binding(300, 25, "BREP.b.smbh"),
+        binding(0, 200, 15, "BREP.a.smbh"),
+        binding(1, 300, 25, "BREP.b.smbh"),
     ];
     let histories = vec![
         history("BREP.a.smbh", 1, AsmHistoricalEntityKind::Edge),
@@ -183,12 +184,13 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
         tag(AsmHistoricalEntityKind::Edge, 20, 11, vec![301]),
     ];
     let mut reference = crate::records::dimensions::DesignRecipeReference {
+        clause_index: 0,
         selector: 0x0100_0080,
-        selector_offset: 0,
+        selector_offset: Some(0),
         token: "rim".into(),
-        token_offset: 4,
+        token_offset: Some(4),
         design_reference: 301,
-        design_reference_offset: 8,
+        design_reference_offset: Some(8),
         candidate_faces: vec![
             cadmpeg_ir::ids::FaceId::mint("test:model:face#wrong-active-face")
                 .expect("identity grammar"),
@@ -231,12 +233,13 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
 fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
     let reference =
         |design_reference, faces: &[i64]| crate::records::dimensions::DesignRecipeReference {
+            clause_index: 0,
             selector: 0,
-            selector_offset: 0,
+            selector_offset: Some(0),
             token: "face".into(),
-            token_offset: 0,
+            token_offset: Some(0),
             design_reference,
-            design_reference_offset: 0,
+            design_reference_offset: Some(0),
             candidate_faces: faces
                 .iter()
                 .map(|face| {
@@ -314,12 +317,13 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
     };
     let reference =
         |token: &str, faces: &[i64]| crate::records::dimensions::DesignRecipeReference {
+            clause_index: 0,
             selector: 0,
-            selector_offset: 0,
+            selector_offset: Some(0),
             token: token.into(),
-            token_offset: 0,
+            token_offset: Some(0),
             design_reference: 301,
-            design_reference_offset: 0,
+            design_reference_offset: Some(0),
             candidate_faces: faces
                 .iter()
                 .map(|face| {

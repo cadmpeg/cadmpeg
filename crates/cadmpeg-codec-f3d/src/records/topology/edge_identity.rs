@@ -51,14 +51,9 @@ impl DesignEdgeIdentityLayout {
     }
 
     /// The two shortened framings share the on-wire `compact_layout` flag.
+    #[cfg(test)]
     pub(crate) fn is_compact(self) -> bool {
         !matches!(self, Self::Full)
-    }
-
-    fn from_local_id_delta(delta: u64) -> Option<Self> {
-        [Self::Full, Self::Compact, Self::Shortest]
-            .into_iter()
-            .find(|layout| layout.local_id_offset() == delta)
     }
 }
 
@@ -66,7 +61,8 @@ impl DesignEdgeIdentityLayout {
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "DesignEdgeIdentityOperandWire")]
 pub(crate) struct DesignEdgeIdentityOperand {
-    frame: crate::records::frame_chain::RecordFrameChain,
+    record_index: u32,
+    frame: Option<crate::records::frame_chain::RecordFrameChain>,
     /// Globally unique deterministic identifier for this native operand.
     pub(crate) id: String,
     /// Owning parameter-scope record.
@@ -79,7 +75,7 @@ pub(crate) struct DesignEdgeIdentityOperand {
     pub(crate) class_tag: DesignClassTag,
     /// Prologue framing, which fixes `local_id_offset` relative to
     /// `byte_offset`.
-    layout: DesignEdgeIdentityLayout,
+    layout: Option<DesignEdgeIdentityLayout>,
     /// Local persistent selection identity preceding the two UUID fields.
     pub(crate) local_id: u64,
     /// Asset UUID qualifying the local selection identity.
@@ -114,6 +110,7 @@ impl Clone for DesignEdgeIdentityOperand {
         #[cfg(test)]
         EDGE_IDENTITY_OPERAND_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
+            record_index: self.record_index,
             frame: self.frame,
             id: self.id.clone(),
             scope_record_index: self.scope_record_index,
@@ -134,6 +131,27 @@ impl Clone for DesignEdgeIdentityOperand {
     }
 }
 
+impl DesignEdgeIdentityOperand {
+    /// Compare document semantics independently of transient source framing.
+    pub(crate) fn same_content(&self, other: &Self) -> bool {
+        self.record_index == other.record_index
+            && self.id == other.id
+            && self.scope_record_index == other.scope_record_index
+            && self.group_record_index == other.group_record_index
+            && self.group_member_ordinal == other.group_member_ordinal
+            && self.class_tag == other.class_tag
+            && self.local_id == other.local_id
+            && self.asset_id == other.asset_id
+            && self.context_id == other.context_id
+            && self.historical == other.historical
+            && self.treatment_radius_candidates == other.treatment_radius_candidates
+            && self.transition_edge_candidates == other.transition_edge_candidates
+            && self.resolved_edge_slots == other.resolved_edge_slots
+            && self.resolved_edge_slot == other.resolved_edge_slot
+            && self.resolution_identity_id == other.resolution_identity_id
+    }
+}
+
 impl Serialize for DesignEdgeIdentityOperand {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
@@ -143,15 +161,10 @@ impl Serialize for DesignEdgeIdentityOperand {
             group_record_index: u32,
             group_member_ordinal: u32,
             record_index: u32,
-            byte_offset: u64,
             class_tag: &'a str,
-            compact_layout: bool,
             local_id: u64,
-            local_id_offset: u64,
             asset_id: &'a str,
-            asset_id_offset: u64,
             context_id: &'a str,
-            context_id_offset: u64,
             #[serde(flatten, skip_serializing_if = "Option::is_none")]
             historical: Option<&'a HistoricalBinding>,
             #[serde(skip_serializing_if = "<[DesignEdgeTreatmentRadiusCandidate]>::is_empty")]
@@ -171,15 +184,10 @@ impl Serialize for DesignEdgeIdentityOperand {
             group_record_index: self.group_record_index,
             group_member_ordinal: self.group_member_ordinal,
             record_index: self.record_index(),
-            byte_offset: self.byte_offset(),
             class_tag: self.class_tag.as_str(),
-            compact_layout: self.layout.is_compact(),
             local_id: self.local_id,
-            local_id_offset: self.local_id_offset(),
             asset_id: self.asset_id.as_str(),
-            asset_id_offset: self.asset_id_offset(),
             context_id: self.context_id.as_str(),
-            context_id_offset: self.context_id_offset(),
             historical: self.historical.as_ref(),
             treatment_radius_candidates: &self.treatment_radius_candidates,
             transition_edge_candidates: &self.transition_edge_candidates,
@@ -200,13 +208,14 @@ impl DesignEdgeIdentityOperand {
             draft.layout.local_id_offset() + 94,
         )?;
         let value = Self {
-            frame,
+            record_index: draft.record_index,
+            frame: Some(frame),
             id: draft.id,
             scope_record_index: draft.scope_record_index,
             group_record_index: draft.group_record_index,
             group_member_ordinal: draft.group_member_ordinal,
             class_tag: draft.class_tag,
-            layout: draft.layout,
+            layout: Some(draft.layout),
             local_id: draft.local_id,
             asset_id: draft.asset_id,
             context_id: draft.context_id,
@@ -217,21 +226,27 @@ impl DesignEdgeIdentityOperand {
             resolved_edge_slot: draft.resolved_edge_slot,
             resolution_identity_id: draft.resolution_identity_id,
         };
-        if value.asset_id_offset() != draft.asset_id_offset {
+        if value.asset_id_offset() != Some(draft.asset_id_offset) {
             return Err("asset_id_offset disagrees with frame layout".into());
         }
-        if value.context_id_offset() != draft.context_id_offset {
+        if value.context_id_offset() != Some(draft.context_id_offset) {
             return Err("context_id_offset disagrees with frame layout".into());
         }
         Ok(value)
     }
     #[cfg(test)]
-    pub(crate) fn into_draft(self) -> DesignEdgeIdentityOperandDraft {
+    pub(crate) fn into_draft(self) -> Result<DesignEdgeIdentityOperandDraft, String> {
         let record_index = self.record_index();
-        let byte_offset = self.byte_offset();
-        let asset_id_offset = self.asset_id_offset();
-        let context_id_offset = self.context_id_offset();
-        DesignEdgeIdentityOperandDraft {
+        let byte_offset = self
+            .byte_offset()
+            .ok_or("edge identity has no source frame")?;
+        let asset_id_offset = self
+            .asset_id_offset()
+            .ok_or("edge identity has no source asset position")?;
+        let context_id_offset = self
+            .context_id_offset()
+            .ok_or("edge identity has no source context position")?;
+        Ok(DesignEdgeIdentityOperandDraft {
             id: self.id,
             scope_record_index: self.scope_record_index,
             group_record_index: self.group_record_index,
@@ -239,7 +254,7 @@ impl DesignEdgeIdentityOperand {
             record_index,
             byte_offset,
             class_tag: self.class_tag,
-            layout: self.layout,
+            layout: self.layout.ok_or("edge identity has no source prologue")?,
             local_id: self.local_id,
             asset_id: self.asset_id,
             asset_id_offset,
@@ -251,22 +266,23 @@ impl DesignEdgeIdentityOperand {
             resolved_edge_slots: self.resolved_edge_slots,
             resolved_edge_slot: self.resolved_edge_slot,
             resolution_identity_id: self.resolution_identity_id,
-        }
+        })
     }
     pub(crate) fn record_index(&self) -> u32 {
-        self.frame.index(0)
+        self.record_index
     }
-    pub(crate) fn byte_offset(&self) -> u64 {
-        self.frame.offset(0)
+    pub(crate) fn byte_offset(&self) -> Option<u64> {
+        self.frame.map(|frame| frame.offset(0))
     }
-    pub(crate) fn layout(&self) -> DesignEdgeIdentityLayout {
+    #[cfg(test)]
+    pub(crate) fn layout(&self) -> Option<DesignEdgeIdentityLayout> {
         self.layout
     }
-    fn asset_id_offset(&self) -> u64 {
-        self.local_id_offset() + 18
+    fn asset_id_offset(&self) -> Option<u64> {
+        self.local_id_offset()?.checked_add(18)
     }
-    fn context_id_offset(&self) -> u64 {
-        self.local_id_offset() + 94
+    fn context_id_offset(&self) -> Option<u64> {
+        self.local_id_offset()?.checked_add(94)
     }
 }
 
@@ -320,79 +336,63 @@ pub(crate) struct DesignEdgeIdentityOperandDraft {
 
 impl DesignEdgeIdentityOperand {
     /// Byte offset of `local_id`, fixed by the prologue framing.
-    pub(super) fn local_id_offset(&self) -> u64 {
-        self.byte_offset() + self.layout.local_id_offset()
+    pub(super) fn local_id_offset(&self) -> Option<u64> {
+        self.byte_offset()?
+            .checked_add(self.layout?.local_id_offset())
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct DesignEdgeIdentityOperandWire {
-    id: String,
-    scope_record_index: u32,
-    group_record_index: u32,
-    group_member_ordinal: u32,
-    record_index: u32,
-    byte_offset: u64,
-    class_tag: String,
-    #[serde(default)]
-    compact_layout: bool,
-    local_id: u64,
-    local_id_offset: u64,
-    asset_id: String,
-    asset_id_offset: u64,
-    context_id: String,
-    context_id_offset: u64,
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignEdgeIdentityOperandWire {
+    pub(crate) id: String,
+    pub(crate) scope_record_index: u32,
+    pub(crate) group_record_index: u32,
+    pub(crate) group_member_ordinal: u32,
+    pub(crate) record_index: u32,
+    pub(crate) class_tag: String,
+    pub(crate) local_id: u64,
+    pub(crate) asset_id: String,
+    pub(crate) context_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(flatten, deserialize_with = "deserialize_historical_binding")]
-    historical: Option<HistoricalBinding>,
+    pub(crate) historical: Option<HistoricalBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
+    pub(crate) treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    transition_edge_candidates: Vec<i64>,
+    pub(crate) transition_edge_candidates: Vec<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    resolved_edge_slots: Vec<i64>,
+    pub(crate) resolved_edge_slots: Vec<i64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_resolved_edge_slot"
     )]
-    resolved_edge_slot: Option<i64>,
+    pub(crate) resolved_edge_slot: Option<i64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_resolution_identity_id"
     )]
-    resolution_identity_id: Option<String>,
+    pub(crate) resolution_identity_id: Option<String>,
 }
 
 impl TryFrom<DesignEdgeIdentityOperandWire> for DesignEdgeIdentityOperand {
     type Error = String;
 
     fn try_from(wire: DesignEdgeIdentityOperandWire) -> Result<Self, Self::Error> {
-        let layout = wire
-            .local_id_offset
-            .checked_sub(wire.byte_offset)
-            .and_then(DesignEdgeIdentityLayout::from_local_id_delta)
-            .ok_or("local_id_offset does not name an edge-identity prologue framing")?;
-        if layout.is_compact() != wire.compact_layout {
-            return Err(
-                "compact_layout disagrees with the framing local_id_offset names".to_owned(),
-            );
-        }
-        Self::try_new(DesignEdgeIdentityOperandDraft {
+        Ok(Self {
+            frame: None,
+            layout: None,
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             group_record_index: wire.group_record_index,
             group_member_ordinal: wire.group_member_ordinal,
             record_index: wire.record_index,
-            byte_offset: wire.byte_offset,
             class_tag: wire.class_tag.try_into()?,
-            layout,
             local_id: wire.local_id,
             asset_id: wire.asset_id.try_into()?,
-            asset_id_offset: wire.asset_id_offset,
             context_id: wire.context_id.try_into()?,
-            context_id_offset: wire.context_id_offset,
             historical: wire.historical,
             treatment_radius_candidates: wire.treatment_radius_candidates,
             transition_edge_candidates: wire.transition_edge_candidates,
@@ -406,29 +406,51 @@ impl TryFrom<DesignEdgeIdentityOperandWire> for DesignEdgeIdentityOperand {
 #[cfg(test)]
 impl From<DesignEdgeIdentityOperand> for DesignEdgeIdentityOperandWire {
     fn from(operand: DesignEdgeIdentityOperand) -> Self {
-        let local_id_offset = operand.local_id_offset();
-        let operand = operand.into_draft();
+        let record_index = operand.record_index();
         Self {
             id: operand.id,
             scope_record_index: operand.scope_record_index,
             group_record_index: operand.group_record_index,
             group_member_ordinal: operand.group_member_ordinal,
-            record_index: operand.record_index,
-            byte_offset: operand.byte_offset,
+            record_index,
             class_tag: operand.class_tag.into(),
-            compact_layout: operand.layout.is_compact(),
             local_id: operand.local_id,
-            local_id_offset,
             asset_id: operand.asset_id.into(),
-            asset_id_offset: operand.asset_id_offset,
             context_id: operand.context_id.into(),
-            context_id_offset: operand.context_id_offset,
             historical: operand.historical,
             treatment_radius_candidates: operand.treatment_radius_candidates,
             transition_edge_candidates: operand.transition_edge_candidates,
             resolved_edge_slots: operand.resolved_edge_slots,
             resolved_edge_slot: operand.resolved_edge_slot,
             resolution_identity_id: operand.resolution_identity_id,
+        }
+    }
+}
+
+impl DesignEdgeIdentityOperand {
+    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
+        for (field, offset) in [
+            ("byte_offset", self.byte_offset()),
+            ("local_id_offset", self.local_id_offset()),
+            ("asset_id_offset", self.asset_id_offset()),
+            ("context_id_offset", self.context_id_offset()),
+        ] {
+            if let Some(offset) = offset {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.{field}", self.id), offset.to_string());
+            }
+        }
+        if let Some(layout) = self.layout {
+            fidelity.metadata.insert(
+                format!("{}.prologue_layout", self.id),
+                match layout {
+                    DesignEdgeIdentityLayout::Full => "full",
+                    DesignEdgeIdentityLayout::Compact => "compact",
+                    DesignEdgeIdentityLayout::Shortest => "shortest",
+                }
+                .into(),
+            );
         }
     }
 }

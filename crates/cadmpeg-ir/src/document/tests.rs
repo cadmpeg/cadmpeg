@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::DecodeDepth;
+use crate::document::ContentScope;
 
 use crate::document::{ArenaClass, ArenaName, EntityRewrite, Model, SourceMeta};
 use crate::examples::unit_cube;
@@ -19,6 +19,7 @@ use crate::{diff, CadIr};
 
 mod append;
 mod feature_parents;
+mod record_targets;
 mod unknowns;
 
 #[test]
@@ -256,6 +257,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -278,6 +280,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
@@ -310,6 +313,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
@@ -325,6 +329,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
@@ -356,6 +361,7 @@ fn feature_wire_refuses_the_deleted_parent_key() {
                 "id": "test:model:feature#parent",
                 "ordinal": 0,
                 "suppressed": null,
+                "needs_recompute": false,
                 "definition": {
                     "definition": "tree_node",
                     "role": "history",
@@ -366,6 +372,7 @@ fn feature_wire_refuses_the_deleted_parent_key() {
                 "id": "test:model:feature#child",
                 "ordinal": 1,
                 "suppressed": null,
+                "needs_recompute": false,
                 "parent": "test:model:feature#parent",
                 "definition": {"definition": "stored_geometry"}
             }
@@ -399,6 +406,7 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::TreeNode {
                         role: FeatureTreeNodeRole::History,
@@ -418,6 +426,7 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
@@ -433,6 +442,7 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
@@ -736,6 +746,25 @@ fn parser_distinguishes_malformed_json_from_version_rejection() {
 }
 
 #[test]
+fn unsupported_version_after_changed_model_shape_keeps_version_diagnostic() {
+    for version in ["6", "7"] {
+        let json = format!(
+            r#"{{"model":{{"features":{{"legacy":true}}}},"ir_version":"{version}","decode_depth":"full"}}"#
+        );
+        let error = CadIr::from_json(&json).unwrap_err().to_string();
+        for expected in [
+            "unsupported ir_version",
+            "expected 8",
+            "decode_depth",
+            "scope",
+            "report",
+        ] {
+            assert!(error.contains(expected), "{error}");
+        }
+    }
+}
+
+#[test]
 fn current_document_excludes_source_byte_accounting() {
     let ir = CadIr::empty();
     let json = serde_json::to_value(&ir).unwrap();
@@ -751,77 +780,117 @@ fn parameter(id: &str) -> crate::features::DesignParameter {
         ordinal: 0,
         name: "D1".into(),
         expression: "1mm".into(),
+        driving: true,
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
         properties: std::collections::BTreeMap::new(),
         pmi: None,
         native_ref: None,
     }
 }
 
-fn with_decode_depth(ir: &CadIr, depth: &str) -> String {
+fn with_scope(ir: &CadIr, scope: ContentScope) -> String {
     let mut value = serde_json::to_value(ir).unwrap();
-    value["decode_depth"] = serde_json::Value::String(depth.into());
+    value["scope"] = serde_json::to_value(scope).unwrap();
     serde_json::to_string(&value).unwrap()
 }
 
 #[test]
-fn decode_depth_is_a_required_wire_field() {
-    let ir = unit_cube().expect("valid unit cube fixture");
-    assert_eq!(ir.decode_depth(), DecodeDepth::Full);
+fn scope_and_each_class_are_required_wire_fields() {
+    let ir = CadIr::empty();
+    assert_eq!(ir.scope, ContentScope::full());
     let mut value = serde_json::to_value(&ir).unwrap();
-    assert_eq!(value["decode_depth"], "full");
-
-    value.as_object_mut().unwrap().remove("decode_depth");
-    let json = serde_json::to_string(&value).unwrap();
-    let error = CadIr::from_json(&json).unwrap_err();
-    assert!(error.to_string().contains("decode_depth"), "{error}");
+    value.as_object_mut().unwrap().remove("scope");
+    assert!(serde_json::from_value::<CadIr>(value)
+        .unwrap_err()
+        .to_string()
+        .contains("scope"));
+    for key in ["model", "design"] {
+        let mut value = serde_json::to_value(&ir).unwrap();
+        value["scope"].as_object_mut().unwrap().remove(key);
+        assert!(serde_json::from_value::<CadIr>(value)
+            .unwrap_err()
+            .to_string()
+            .contains(key));
+    }
 }
 
 #[test]
 fn a_geometry_document_without_design_records_round_trips() {
-    let json = with_decode_depth(&unit_cube().expect("valid unit cube fixture"), "geometry");
+    let json = with_scope(
+        &unit_cube().expect("valid unit cube fixture"),
+        ContentScope::geometry(),
+    );
     let parsed = CadIr::from_json(&json).unwrap();
-    assert_eq!(parsed.decode_depth(), DecodeDepth::Geometry);
+    assert_eq!(parsed.scope, ContentScope::geometry());
     let reparsed = serde_json::from_str::<CadIr>(&parsed.to_canonical_json().unwrap()).unwrap();
     assert_eq!(reparsed, parsed);
 }
 
 #[test]
-fn a_geometry_document_with_a_design_arena_fails_to_parse() {
-    let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.model
-        .parameters
-        .push(parameter("synthetic:test:parameter#depth"));
-    assert_eq!(
-        ir.model.populated_design_arena().map(ArenaName::as_str),
-        Some("parameters")
-    );
-    for depth in ["container", "geometry"] {
-        let json = with_decode_depth(&ir, depth);
-        let expected =
-            format!("a {depth}-depth document holds records in design arena `parameters`");
-        let error = CadIr::from_json(&json).unwrap_err();
-        assert!(error.to_string().contains(&expected), "{error}");
-        let direct = serde_json::from_str::<CadIr>(&json).unwrap_err();
-        assert!(direct.to_string().contains(&expected), "{direct}");
+fn excluded_populated_classes_fail_all_admission_paths() {
+    for (mut ir, scope, arena, class) in [
+        (
+            unit_cube().unwrap(),
+            ContentScope::container(),
+            "bodies",
+            ArenaClass::Model,
+        ),
+        (
+            {
+                let mut ir = CadIr::empty();
+                ir.model
+                    .parameters
+                    .push(parameter("synthetic:test:parameter#scope"));
+                ir
+            },
+            ContentScope::geometry(),
+            "parameters",
+            ArenaClass::Design,
+        ),
+    ] {
+        let original = ir.scope;
+        let error = ir.set_scope(scope).unwrap_err();
+        assert_eq!(error.class, class);
+        assert_eq!(error.arena.as_str(), arena);
+        assert_eq!(ir.scope, original);
+        let json = with_scope(&ir, scope);
+        assert!(CadIr::from_json(&json)
+            .unwrap_err()
+            .to_string()
+            .contains(arena));
+        assert!(serde_json::from_str::<CadIr>(&json)
+            .unwrap_err()
+            .to_string()
+            .contains(arena));
+        ir.scope = scope;
+        assert!(serde_json::to_value(&ir)
+            .unwrap_err()
+            .to_string()
+            .contains(arena));
     }
-    assert!(CadIr::from_json(&with_decode_depth(&ir, "full")).is_ok());
 }
 
 #[test]
-fn serialization_refuses_design_records_below_full_depth() {
-    let mut ir = unit_cube().expect("valid unit cube fixture");
+fn scope_classes_match_registered_arena_classes() {
+    let classes = ArenaName::ALL
+        .iter()
+        .map(|arena| arena.class())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(classes, ContentScope::full().classes().collect());
+    let design_only = ContentScope {
+        model: false,
+        design: true,
+    };
+    let mut ir = CadIr::empty();
+    ir.set_scope(design_only).unwrap();
     ir.model
         .parameters
-        .push(parameter("synthetic:test:parameter#depth"));
-    ir.set_decode_depth(DecodeDepth::Geometry);
-    let error = serde_json::to_string(&ir).unwrap_err();
-    assert!(
-        error.to_string().contains("design arena `parameters`"),
-        "{error}"
-    );
+        .push(parameter("synthetic:test:parameter#design-only"));
+    assert!(serde_json::to_value(&ir).is_ok());
+    assert!(design_only
+        .missing_from(ContentScope::full())
+        .contains(&ArenaClass::Model));
 }
 
 #[test]
@@ -945,6 +1014,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::TreeNode {
                         role: FeatureTreeNodeRole::SolidBodies,
@@ -963,6 +1033,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
@@ -1022,6 +1093,7 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),

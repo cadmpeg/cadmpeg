@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! High-level Inventor structural decode.
 
+mod document_native_projection;
 mod presentation_native_projection;
 mod rse_native_projection;
 
@@ -72,6 +73,11 @@ fn decode_container<'a>(
         DecodeDepth::Container
     } else {
         DecodeDepth::Full
+    };
+    ir.scope = if ctx.container_only() {
+        cadmpeg_ir::ContentScope::container()
+    } else {
+        cadmpeg_ir::ContentScope::full()
     };
     let unresolved = if delivered == DecodeDepth::Full {
         project_design(
@@ -265,7 +271,6 @@ fn decode_container<'a>(
         "document_kind".to_owned(),
         document_kind.label().to_string(),
     );
-    metadata.apply_attributes(&mut attributes);
     ir.source = Some(SourceMeta::classified(
         dialects,
         cadmpeg_core::text::named_entries("the inventor document", attributes)?,
@@ -386,6 +391,7 @@ fn decode_container<'a>(
     let meta_sections = projection.meta_sections;
     let meta_types = projection.meta_types;
     let segment_meta_issues = projection.segment_meta_issues;
+    let source_layout = projection.layout;
     let rse_records = projection.rse_records;
     let segment_bulk = projection.segment_bulk;
     let segment_bulk_issues = projection.segment_bulk_issues;
@@ -528,30 +534,43 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "active_carrier", std::slice::from_ref(&active_carrier))?;
 
     let mut losses = crate::container::deviation_losses(&container.snapshot);
+    let mut untyped = cadmpeg_ir::ArenaClasses::default();
+    if !ctx.container_only() {
+        document_native_projection::project(
+            ctx,
+            &mut ir,
+            &ufrx,
+            &properties,
+            &mut losses,
+            &mut untyped,
+        )?;
+    }
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {
-        ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
-            Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
-                Ok(decoded) => {
-                    apply_kernel_header(
-                        &mut ir,
-                        carrier.family,
-                        &decoded.header.metadata,
-                        &mut losses,
-                    );
-                    Some(decoded.brep)
-                }
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(error) => {
-                    geometry_failure = Some(format!("{error}"));
+        ActiveCarrierState::Selected(carrier) if !ctx.container_only() => {
+            match carrier.header.as_ref() {
+                Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
+                    Ok(decoded) => {
+                        apply_kernel_header(
+                            &mut ir,
+                            carrier.family,
+                            &decoded.header.metadata,
+                            &mut losses,
+                        );
+                        Some(decoded.brep)
+                    }
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(error) => {
+                        geometry_failure = Some(format!("{error}"));
+                        None
+                    }
+                },
+                Err(detail) => {
+                    geometry_failure = Some(detail.to_owned());
                     None
                 }
-            },
-            Err(detail) => {
-                geometry_failure = Some(detail.to_owned());
-                None
             }
-        },
+        }
         _ => None,
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
@@ -629,9 +648,9 @@ fn decode_container<'a>(
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
     if protein_admission_issue_count != 0 {
-        losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
+        losses.push(InventorLossCode::ProteinAssetRejected.note({ untyped.insert(cadmpeg_ir::ArenaClass::Model); format!(
             "Rejected {protein_admission_issue_count} Protein native record(s); retained the remaining records."
-        )));
+        ) }));
     }
     losses.extend(dialect_loss(&matched, &recovery));
     if let Some(kernel) = ir
@@ -664,58 +683,85 @@ fn decode_container<'a>(
                 }
             },
         };
-        losses.push(InventorLossCode::GeometryKernelCarrierNotTransferred.note(detail.clone()));
+        losses.push(InventorLossCode::GeometryKernelCarrierNotTransferred.note({
+            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+            detail.clone()
+        }));
     }
     if !ctx.container_only() {
         if kernel_stats.unknown_surface_faces() != 0 {
             losses.push(
-                InventorLossCode::GeometryProceduralSurfaceNotTransferred.note(format!(
-                    "{} face(s) use procedural surfaces without a decoded carrier.",
-                    kernel_stats.unknown_surface_faces()
-                )),
+                InventorLossCode::GeometryProceduralSurfaceNotTransferred.note({
+                    untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                    format!(
+                        "{} face(s) use procedural surfaces without a decoded carrier.",
+                        kernel_stats.unknown_surface_faces()
+                    )
+                }),
             );
         }
         if !segment_pairs.is_empty() {
-            losses.push(InventorLossCode::RseSegmentPairUntyped.note(format!(
-                "Retained {} structurally paired RSe segment(s) without record semantics.",
-                segment_pairs.len()
-            )));
+            losses.push(InventorLossCode::RseSegmentPairUntyped.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                {
+                    untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                    format!(
+                        "Retained {} structurally paired RSe segment(s) without record semantics.",
+                        segment_pairs.len()
+                    )
+                }
+            }));
         }
         if !segment_meta_issues.is_empty() {
-            losses.push(InventorLossCode::RseMetadataStreamMalformed.note(format!(
+            losses.push(InventorLossCode::RseMetadataStreamMalformed.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                {
+                    untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                    format!(
                 "{} RSe metadata stream(s) are malformed or outside the implemented envelope.",
                 segment_meta_issues.len()
-            )));
+            )
+                }
+            }));
         }
         if !segment_bulk_issues.is_empty() {
-            losses.push(InventorLossCode::RseBulkStreamMalformed.note(format!(
-                "{} RSe bulk stream(s) have invalid envelope or zlib framing.",
-                segment_bulk_issues.len()
-            )));
+            losses.push(InventorLossCode::RseBulkStreamMalformed.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                {
+                    untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                    format!(
+                        "{} RSe bulk stream(s) have invalid envelope or zlib framing.",
+                        segment_bulk_issues.len()
+                    )
+                }
+            }));
         }
         if !assembly_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::AssemblyRecordMalformed.note(format!(
+            losses.push(InventorLossCode::AssemblyRecordMalformed.note({ untyped.insert(cadmpeg_ir::ArenaClass::Model); format!(
                 "{} typed Inventor assembly record(s) are malformed or outside the implemented branch.",
                 assembly_inventory.issues.len()
-            )));
+            ) }));
         }
         if !presentation_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::PresentationRecordMalformed.note(format!(
+            losses.push(InventorLossCode::PresentationRecordMalformed.note({ untyped.insert(cadmpeg_ir::ArenaClass::Model); format!(
                 "{} typed Inventor presentation record(s) are malformed or outside the implemented branch.",
                 presentation_inventory.issues.len()
-            )));
+            ) }));
         }
         if !design_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::DesignRecordMalformed.note(format!(
+            losses.push(InventorLossCode::DesignRecordMalformed.note({ untyped.insert(cadmpeg_ir::ArenaClass::Design); format!(
                 "{} typed Inventor design record(s) are malformed or outside the implemented branch.",
                 design_inventory.issues.len()
-            )));
+            ) }));
         }
         if !sketch_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::SketchRecordMalformed.note(format!(
-                "{} typed Inventor sketch record(s) could not be parsed exactly.",
-                sketch_inventory.issues.len()
-            )));
+            losses.push(InventorLossCode::SketchRecordMalformed.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                format!(
+                    "{} typed Inventor sketch record(s) could not be parsed exactly.",
+                    sketch_inventory.issues.len()
+                )
+            }));
         }
         let unnamed_labels = feature_inventory
             .labels
@@ -728,16 +774,21 @@ fn decode_container<'a>(
             )));
         }
         if !feature_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::FeatureRecordMalformed.note(format!(
-                "{} typed Inventor feature record(s) could not be parsed exactly.",
-                feature_inventory.issues.len()
-            )));
+            losses.push(InventorLossCode::FeatureRecordMalformed.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                format!(
+                    "{} typed Inventor feature record(s) could not be parsed exactly.",
+                    feature_inventory.issues.len()
+                )
+            }));
         }
         if unresolved.features != 0 {
-            losses.push(InventorLossCode::FeatureOperationGraphOpen.note(format!(
+            losses.push(InventorLossCode::FeatureOperationGraphOpen.note({
+                format!(
                 "Retained {} typed Inventor feature record(s) whose operation graph is not closed.",
                 unresolved.features
-            )));
+            )
+            }));
         }
         if unresolved.feature_states != 0 {
             losses.push(InventorLossCode::FeatureStateUnresolved.note(format!(
@@ -752,10 +803,10 @@ fn decode_container<'a>(
             )));
         }
         if unresolved.parameters != 0 {
-            losses.push(InventorLossCode::ParameterGraphOpen.note(format!(
+            losses.push(InventorLossCode::ParameterGraphOpen.note({ format!(
                 "Retained {} Inventor parameter record(s) whose unit or expression graph is not closed.",
                 unresolved.parameters
-            )));
+            ) }));
         }
         losses.extend(crate::design::bounded_expression_loss(
             unresolved.bounded_parameters,
@@ -764,17 +815,23 @@ fn decode_container<'a>(
             || unresolved.sketch_entities != 0
             || unresolved.sketch_constraints != 0
         {
-            losses.push(InventorLossCode::SketchGraphOpen.note(format!(
+            losses.push(InventorLossCode::SketchGraphOpen.note({ format!(
                 "Retained {} Inventor sketch record(s), {} sketch-entity record(s), and {} sketch-constraint record(s) whose neutral graph is not closed.",
                 unresolved.sketches, unresolved.sketch_entities, unresolved.sketch_constraints
-            )));
+            ) }));
         }
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
-            losses.push(InventorLossCode::RseStreamUnpaired.note(format!(
+            losses.push(InventorLossCode::RseStreamUnpaired.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                {
+                    untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                    format!(
                 "RSe contains {} unpaired metadata stream(s) and {} unpaired bulk stream(s).",
                 container.rse.unpaired_metadata.len(),
                 container.rse.unpaired_bulk.len()
-            )));
+            )
+                }
+            }));
         }
         if !property_set_issues.is_empty() {
             losses.push(InventorLossCode::PropertySetStreamMalformed.note(format!(
@@ -791,28 +848,30 @@ fn decode_container<'a>(
         match &container.protein {
             ProteinState::Package(_) => {
                 if let Some(detail) = &protein_semantic_issue {
-                    losses.push(InventorLossCode::ProteinCatalogUndecodable.note(format!(
-                        "The Protein asset catalog could not be decoded: {detail}"
-                    )));
+                    losses.push(InventorLossCode::ProteinCatalogUndecodable.note({
+                        untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                        format!("The Protein asset catalog could not be decoded: {detail}")
+                    }));
                 } else {
                     if !protein_rejections.is_empty() {
-                        losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
+                        losses.push(InventorLossCode::ProteinAssetRejected.note({ untyped.insert(cadmpeg_ir::ArenaClass::Model); format!(
                             "Rejected {} malformed Protein asset record(s); later framed records remain decoded.",
                             protein_rejections.len()
-                        )));
+                        ) }));
                     }
                     if ir.model.appearances.is_empty() {
-                        losses.push(
-                            InventorLossCode::ProteinAppearanceAbsent.note(
-                                "The Protein package contains no decoded appearance assets."
-                                    .to_string(),
-                            ),
-                        );
+                        losses.push(InventorLossCode::ProteinAppearanceAbsent.note({
+                            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                            "The Protein package contains no decoded appearance assets.".to_string()
+                        }));
                     } else if presentation_projection.unresolved_defaults != 0 {
-                        losses.push(InventorLossCode::AppearanceDefaultUnresolved.note(format!(
+                        losses.push(InventorLossCode::AppearanceDefaultUnresolved.note({
+                            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                            format!(
                             "Could not resolve {} PmApp document-default appearance assignment(s).",
                             presentation_projection.unresolved_defaults
-                        )));
+                        )
+                        }));
                     }
                 }
                 if !material_catalog.duplicate_guids.is_empty() {
@@ -835,17 +894,19 @@ fn decode_container<'a>(
             ProteinState::Absent | ProteinState::Empty { .. } => {}
         }
         for (cause, count) in &presentation_projection.unresolved_face_overrides {
-            losses.push(
-                InventorLossCode::AppearanceFaceOverrideUnresolved.note(format!(
+            losses.push(InventorLossCode::AppearanceFaceOverrideUnresolved.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                format!(
                     "Could not resolve {count} PmGraphics face appearance override(s): {}.",
                     cause.description()
-                )),
-            );
+                )
+            }));
         }
         if ufrx_issue_count != 0 {
-            losses.push(InventorLossCode::UfrxTableMalformed.note(format!(
-                "Skipped {ufrx_issue_count} invalid UFRxDoc native record(s)."
-            )));
+            losses.push(InventorLossCode::UfrxTableMalformed.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                format!("Skipped {ufrx_issue_count} invalid UFRxDoc native record(s).")
+            }));
         }
         match &container.ufrx {
             UfrxState::Malformed { .. } => losses.push(
@@ -864,25 +925,41 @@ fn decode_container<'a>(
             }
             UfrxState::Parsed(_) if matches!(document_kind, DocumentKind::Assembly) => {
                 if !external_references.is_empty() {
-                    losses.push(InventorLossCode::AssemblyComponentExternal.note(format!(
-                        "Retained {} unresolved external component reference(s).",
-                        external_references.len()
-                    )));
+                    losses.push(InventorLossCode::AssemblyComponentExternal.note({
+                        format!(
+                            "Retained {} unresolved external component reference(s).",
+                            external_references.len()
+                        )
+                    }));
                 }
                 for (cause, count) in &assembly_projection.unresolved_placements {
-                    losses.push(
-                        InventorLossCode::AssemblyPlacementNotTransferred.note(format!(
+                    losses.push(InventorLossCode::AssemblyPlacementNotTransferred.note({
+                        untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                        format!(
                             "Could not transfer {count} assembly occurrence placement(s): {}.",
                             cause.description()
-                        )),
-                    );
+                        )
+                    }));
                 }
             }
             UfrxState::Absent | UfrxState::Parsed(_) => {}
         }
     }
+    // A container document holds only the typed native inventory. Analytic
+    // kernel carriers have no native copy, so retain their source below.
+    let omitted_model = ctx.container_only() && ir.model.entity_count() != 0;
+    if ctx.container_only() {
+        ir.model = cadmpeg_ir::document::Model::default();
+    }
     let preview_asset_count = ir.model.assets.len();
     let mut source_fidelity = SourceFidelity::default();
+    source_fidelity.metadata = source_layout;
+    if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
+        source_fidelity.metadata.insert(
+            "inventor:kernel:carrier.carrier_offset".into(),
+            carrier.carrier_offset.to_string(),
+        );
+    }
     let mut annotations = AnnotationBuilder::new();
     for record in kernel_annotations {
         admit_kernel_annotation(&mut annotations, &record)?;
@@ -1133,8 +1210,62 @@ fn decode_container<'a>(
         ),
     ];
     let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries.into_iter().collect();
+    if !ctx.container_only()
+        && !geometry_transferred
+        && carrier_read_no_geometry
+        && ir
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Model)
+            .is_none()
+    {
+        ir.scope.model = false;
+    }
+    if ctx.container_only()
+        && (omitted_model
+            || matches!(
+                container.rse.active_carrier,
+                ActiveCarrierState::Selected(_)
+            ))
+    {
+        untyped.insert(cadmpeg_ir::ArenaClass::Model);
+    }
+    let source_id =
+        UnknownId::mint("inventor:source:image#whole").map_err(CodecError::malformed)?;
+    // Raw style headers and embedded-reference evidence moved out of native
+    // records. Retain their real containing image; otherwise a digest suffices
+    // for source records that were omitted altogether.
+    let source_bytes = if !presentation_inventory
+        .graphics_primary_color_styles
+        .is_empty()
+        || !embedded_references.is_empty()
+    {
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(container.root.window().len()),
+            "retain Inventor source evidence outside CADIR",
+        )?;
+        cadmpeg_ir::source_fidelity::RetainedBytes::Inline {
+            data: container.root.window().to_vec(),
+        }
+    } else {
+        cadmpeg_ir::source_fidelity::RetainedBytes::Digest {
+            byte_len: cadmpeg_core::decode::u64_from_index(container.root.window().len()),
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(container.root.window()),
+        }
+    };
+    source_fidelity.insert_retained_record(
+        source_id,
+        cadmpeg_ir::source_fidelity::RetainedSourceRecord::from_bytes(
+            "inventor:source",
+            0,
+            source_bytes,
+        )?
+        .with_untyped(untyped),
+    )?;
     let body = DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: ir.scope,
+            geometry_transferred,
+        },
         coverage,
         losses,
         notes: Vec::new(),
@@ -1233,7 +1364,7 @@ fn project_root_product(
         "admit Inventor root product",
     )?;
     let source_name = metadata.title.as_deref().map(str::to_owned);
-    let label = metadata.title.as_deref().map(str::to_owned);
+    let label = None;
     let description = metadata.description.as_deref().map(str::to_owned);
     let part_number = metadata.part_number.as_deref().map(str::to_owned);
     Ok(ProductDefinition {
@@ -1634,7 +1765,8 @@ fn project_ufrx_embedded_reference(
         library_name: reference.library_name.clone(),
         state: reference.state,
         display_name: reference.display_name.clone(),
-        state_values: reference.state_values.into(),
+        state_values_len: 8,
+        state_values_sha256: cadmpeg_ir::hash::sha256_hex(&reference.state_values),
         record_len: cadmpeg_core::decode::u64_from_index(reference.source.window().len()),
         record_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest(
             reference.source.window(),
@@ -1917,24 +2049,32 @@ impl MetadataProjection {
             return;
         }
         if let Some(name) = name {
-            self.bom_properties.insert(name.into(), value.into());
+            if is_bom_property_name(name) {
+                self.bom_properties.insert(name.into(), value.into());
+            }
         } else {
             self.unmapped += 1;
         }
     }
+}
 
-    fn apply_attributes(&self, attributes: &mut BTreeMap<String, String>) {
-        for (name, value) in [
-            ("title", &self.title),
-            ("author", &self.author),
-            ("description", &self.description),
-            ("part_number", &self.part_number),
-        ] {
-            if let Some(value) = value {
-                attributes.insert(name.into(), value.clone());
-            }
-        }
-    }
+/// Source keys consumed by the root product identity/BOM projection.
+fn is_bom_property_name(name: &str) -> bool {
+    matches!(
+        normalize_property_name(name).as_str(),
+        "title"
+            | "description"
+            | "comments"
+            | "partnumber"
+            | "stocknumber"
+            | "documentkind"
+            | "documenttype"
+            | "revisionnumber"
+            | "project"
+            | "costcenter"
+            | "vendor"
+            | "company"
+    )
 }
 
 fn normalize_property_name(name: &str) -> String {

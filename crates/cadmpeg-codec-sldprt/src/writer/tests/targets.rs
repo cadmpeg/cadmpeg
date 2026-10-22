@@ -35,12 +35,13 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
         cadmpeg_core::dialect::DialectLayers::of(SldprtDialect::classify(None)),
         attributes,
     ));
-    let records = crate::source_records(&ir, &fidelity).expect("source records join");
+    let records = crate::source_records(&ir, &fidelity);
     let mut written = Vec::new();
     let dialect = crate::writer::write_semantic_with_records(
         &ir,
         &fidelity.annotations,
         &records,
+        Some(&fidelity),
         &mut written,
     )
     .expect("semantic write succeeds")
@@ -166,3 +167,5 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
         .expect("missing sidecar charges image unavailability");
     assert!(unavailable.message.contains("regenerated from IR"));
 }
+
+mod fallback;

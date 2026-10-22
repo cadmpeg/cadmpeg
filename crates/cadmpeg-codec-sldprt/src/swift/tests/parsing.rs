@@ -290,7 +290,9 @@ fn parses_and_projects_semantic_graph() {
     let nominal = relation.nominal().expect("angular nominal");
     assert_eq!(
         *nominal,
-        PmiValue::new(0.0, PmiQuantity::Angle).expect("finite angle")
+        cadmpeg_ir::Dimension::Literal(
+            PmiValue::new(0.0, PmiQuantity::Angle).expect("finite angle")
+        )
     );
 }
 

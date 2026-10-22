@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -51,7 +50,6 @@
         "active_carrier": [
           {
             "carrier_len": 95,
-            "carrier_offset": 18,
             "carrier_sha256": "a7035f79b059782669443978e618f275354009908bdcc551817b03b87532ca0d",
             "delta_state": -1,
             "detail": null,
@@ -262,7 +260,6 @@
             "id": "inventor:rse:record#seg-0",
             "ordinal": 0,
             "payload_len": 126,
-            "payload_offset": 4,
             "payload_sha256": "4474a8a9e83fcd67903be2ef864c2282573f36f4f0c3b65aa468486f1932d865",
             "selector": 0,
             "token": "seg",
@@ -393,6 +390,10 @@
         "vertex_ownerships": [],
         "wire_topologies": []
       }
+    },
+    "scope": {
+      "design": true,
+      "model": true
     },
     "source": {
       "attributes": {
@@ -559,11 +560,18 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
     "annotations": {},
+    "metadata": {
+      "inventor:kernel:carrier.carrier_offset": "18",
+      "inventor:rse:record#seg-0.payload_offset": "4"
+    },
     "retained_records": {
       "inventor:kernel:carrier#seg-0": {
         "bytes": {
@@ -571,8 +579,26 @@
           "retention": "inline"
         },
         "offset": 18,
-        "stream": "RSeStorage/Bseg:expanded"
+        "stream": "RSeStorage/Bseg:expanded",
+        "untyped": []
+      },
+      "inventor:source:image#whole": {
+        "bytes": {
+          "byte_len": 4096,
+          "retention": "digest",
+          "sha256": "e531689d06aa6dd0b5465c36aeb99b62e52deedf5cde9f56b1db50cda72bb02a"
+        },
+        "offset": 0,
+        "stream": "inventor:source",
+        "untyped": [
+          "model",
+          "design"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

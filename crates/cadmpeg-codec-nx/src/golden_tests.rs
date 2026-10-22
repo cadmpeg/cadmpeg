@@ -422,6 +422,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
     // Self-contained `.prt` images.
     f.push(("single_part_prt", single_part_prt()));
     f.push((
+        "display_jt_tetrahedron",
+        crate::test_support::test_jt_mesh::tetrahedron_prt(),
+    ));
+    f.push((
         "studio_complete_storage_allocation",
         crate::test_support::studio_surface::prt(),
     ));
@@ -993,7 +997,11 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
 
 /// Serialize decode + inspect output as stable pretty JSON. Errors are frozen.
 fn snapshot(bytes: &[u8]) -> String {
-    let decode = match NxCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
+    let decode = match cadmpeg_test_support::golden::decode(
+        &NxCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             serde_json::json!({
@@ -1042,7 +1050,11 @@ fn golden_output_is_deterministic() {
 fn covered_arenas() -> BTreeSet<String> {
     let mut covered = BTreeSet::new();
     for (_, bytes) in fixtures() {
-        let Ok(result) = NxCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) else {
+        let Ok(result) = cadmpeg_test_support::golden::decode(
+            &NxCodec,
+            &mut Cursor::new(bytes),
+            &DecodeOptions::default(),
+        ) else {
             continue;
         };
         if let Some(namespace) = result.ir().native.namespace("nx") {
@@ -1157,7 +1169,49 @@ fn catalogue_arenas_match_known_arenas() {
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary =
-        cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&NxCodec, &inputs());
-    assert_eq!(summary.cut, 0, "{summary:?}");
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
+        &NxCodec,
+        &inputs(),
+        |result| {
+            // #209 §1.3: B1 is concrete retained source state, independent of losses.
+            let fidelity = result.source_fidelity();
+            let expected: cadmpeg_ir::ArenaClasses = fidelity
+                .retained_records()
+                .values()
+                .flat_map(|record| record.untyped().iter().copied())
+                .collect();
+            assert_eq!(fidelity.unrepresented(), expected);
+            let restored: cadmpeg_ir::SourceFidelity =
+                serde_json::from_value(serde_json::to_value(fidelity).unwrap()).unwrap();
+            assert_eq!(restored.retained_records(), fidelity.retained_records());
+            assert_eq!(restored.unrepresented(), fidelity.unrepresented());
+        },
+    );
+    // The mesh-only JT source has no located design content (§1.1).
+    assert_eq!(summary.cut, 1, "{summary:?}");
+}
+
+#[test]
+fn golden_mesh_only_jt_keeps_projected_neutral_content() {
+    let result = cadmpeg_test_support::golden::decode(
+        &NxCodec,
+        &mut Cursor::new(crate::test_support::test_jt_mesh::tetrahedron_prt()),
+        &DecodeOptions::default(),
+    )
+    .expect("authored mesh-only JT part");
+    assert!(result.ir().scope.model);
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(result.ir().model.tessellations[0].triangle_count(), 4);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code().contains("tessellation-dropped")));
+}
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(&NxCodec, &inputs());
 }

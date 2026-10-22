@@ -21,6 +21,7 @@ fn input_fixture() -> (
         })
         .unwrap();
     let feature = Feature {
+        needs_recompute: false,
         id: "f3d:model:feature#input".to_owned().try_into().unwrap(),
         ordinal: 0,
         name: None,
@@ -46,7 +47,7 @@ fn input_fixture() -> (
             AsmDeltaState {
                 id: "f3d:history:state#4".into(),
                 parent: "f3d:history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id: 4,
                 version_flag: 1,
                 state_flag: 0,
@@ -107,7 +108,7 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
     let topology = history.topology(&history.states()[0]).unwrap().clone();
     history = crate::test_support::history::history(
         history.id.clone(),
-        history.byte_offset,
+        history.byte_offset.expect("retained test source"),
         history.preamble,
         false,
         vec![

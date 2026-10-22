@@ -159,7 +159,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
     assert!(matches!(
         factors,
         cadmpeg_ir::features::ScaleFactors::Uniform { factor: uniform }
-            if (uniform.get() - 2.5).abs() < f64::EPSILON
+            if (uniform.literal().unwrap().get() - 2.5).abs() < f64::EPSILON
     ));
 }
 
@@ -920,7 +920,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("BaseFlange"),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(neutral_sketch_id(&placement)),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+            thickness: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()
+            ),
             side: SheetMetalThicknessSide::Forward,
         })
     );
@@ -937,7 +939,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             faces: FaceSelection::Native(scopes[2].id.clone()),
             merge_entities: Some(true),
             create_solid: Some(true),
-            gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()),
+            gap_tolerance: Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()
+            )),
         })
     );
     assert_eq!(
@@ -967,7 +971,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("Thread"),
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Native(groups[3].id.clone()),
-            diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap()),
+            diameter: Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap()
+            )),
             extent: Some(cadmpeg_ir::features::CosmeticThreadExtent::Through {}),
         })
     );
@@ -1059,6 +1065,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         .unwrap();
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
+        needs_recompute: false,
         id: feature_id,
         ordinal: 0,
         name: None,
@@ -1186,6 +1193,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         .unwrap();
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
+        needs_recompute: false,
         id: feature_id,
         ordinal: 0,
         name: None,

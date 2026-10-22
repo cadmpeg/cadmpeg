@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::DecodeDepth;
+use crate::document::ContentScope;
 use cadmpeg_core::dialect::{DialectLayers, FormatIdentity};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -28,82 +28,27 @@ pub struct DecodeReport {
     pub transfer_ledger: TransferLedger,
 }
 
-/// Mutually exclusive source-transfer states for a decode report.
+/// Delivered content scope and B-rep geometry outcome.
 ///
-/// The backend reports the state it delivered; the sealed decode wrapper
-/// records its [`depth`](Self::depth) on the document.
+/// The sealed wrapper derives `scope` from the document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "transfer", rename_all = "snake_case", deny_unknown_fields)]
-#[non_exhaustive]
-pub enum DecodeTransfer {
-    /// The decoder stopped after container inspection and transferred no
-    /// semantic geometry.
-    #[serde(rename = "container")]
-    ContainerOnly {},
-    /// The decoder transferred the model and left every design arena empty,
-    /// with the recorded B-rep geometry outcome.
-    Geometry {
-        /// Whether B-rep geometry was transferred into the IR.
-        geometry_transferred: bool,
-    },
-    /// The decoder transferred the model and its design, with the recorded
-    /// B-rep geometry outcome.
-    Full {
-        /// Whether B-rep geometry was transferred into the IR.
-        geometry_transferred: bool,
-    },
+#[serde(deny_unknown_fields)]
+pub struct DecodeTransfer {
+    /// Classes held by the decoded document.
+    pub scope: ContentScope,
+    /// Whether any B-rep geometry was transferred into the document.
+    pub geometry_transferred: bool,
 }
 
 impl DecodeTransfer {
-    /// Constructs the state for a full decode with its geometry outcome.
-    #[must_use]
-    pub const fn full(geometry_transferred: bool) -> Self {
-        Self::Full {
-            geometry_transferred,
-        }
-    }
-
-    /// Constructs the state for a decode that delivered `depth`, with its
-    /// geometry outcome. A container decode carries no geometry outcome.
-    #[must_use]
-    pub const fn at(depth: DecodeDepth, geometry_transferred: bool) -> Self {
-        match depth {
-            DecodeDepth::Container => Self::ContainerOnly {},
-            DecodeDepth::Geometry => Self::Geometry {
-                geometry_transferred,
-            },
-            DecodeDepth::Full => Self::full(geometry_transferred),
-        }
-    }
-
-    /// The depth this state delivered.
-    #[must_use]
-    pub const fn depth(self) -> DecodeDepth {
-        match self {
-            Self::ContainerOnly {} => DecodeDepth::Container,
-            Self::Geometry { .. } => DecodeDepth::Geometry,
-            Self::Full { .. } => DecodeDepth::Full,
-        }
-    }
-
-    /// Returns whether the decode stopped at the container layer.
-    #[must_use]
+    /// Whether the document holds no neutral class.
     pub const fn container_only(self) -> bool {
-        matches!(self, Self::ContainerOnly {})
+        self.scope.is_empty()
     }
-
-    /// Returns whether B-rep geometry was transferred into the IR.
-    #[must_use]
+    /// Whether B-rep geometry was transferred into the document.
     pub const fn geometry_transferred(self) -> bool {
-        matches!(
-            self,
-            Self::Geometry {
-                geometry_transferred: true
-            } | Self::Full {
-                geometry_transferred: true
-            }
-        )
+        self.geometry_transferred
     }
 }
 
@@ -437,6 +382,22 @@ impl std::ops::Deref for Coverage {
 }
 
 impl DecodeReport {
+    /// Reports a discarded stale sidecar during a current neutral CADIR parse.
+    #[must_use]
+    pub fn stale_sidecar(ir: &crate::CadIr, message: impl Into<String>) -> Self {
+        Self {
+            classification: FormatIdentity::unclassified("cadir"),
+            transfer: DecodeTransfer {
+                scope: ir.scope,
+                geometry_transferred: !ir.model.bodies.is_empty(),
+            },
+            coverage: Coverage::default(),
+            losses: vec![crate::codec::DecodeLossCode::SidecarStale.note(message)],
+            notes: Vec::new(),
+            transfer_ledger: TransferLedger::default(),
+        }
+    }
+
     /// Stamps a classification onto a report body.
     ///
     /// The sealed decode wrapper is the production caller: the classification
@@ -516,10 +477,10 @@ impl DecodeReport {
         self.transfer.container_only()
     }
 
-    /// The depth the decode delivered.
+    /// Classes held by the decoded document.
     #[must_use]
-    pub const fn depth(&self) -> DecodeDepth {
-        self.transfer.depth()
+    pub const fn scope(&self) -> ContentScope {
+        self.transfer.scope
     }
 
     /// Returns whether B-rep geometry was transferred into the IR.

@@ -347,10 +347,19 @@ fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="0" EndY="0"/></Geometry>
 </GeometryList></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        document.as_bytes(),
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("document source");
     let xml = crate::container::admit_document(&ctx, document.as_bytes()).expect("document XML");
     let graph = crate::persistence::parse_document(&xml, crate::persistence::Vocabulary::Objects)
         .expect("persistence graph");
+    let reader =
+        crate::property_reader::PropertyReader::source(&ctx, source, &graph.property_sources)
+            .expect("original property ranges");
     let sketch = &graph.objects[0];
     let owned = graph
         .properties
@@ -360,7 +369,7 @@ fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
     let decode = |limit| {
         let mut losses = Vec::new();
         let decoded = super::super::parse_sketch(
-            &ctx,
+            &reader,
             sketch,
             &owned,
             &cadmpeg_core::decode::WorkBudget::new(limit),
@@ -1025,17 +1034,26 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
         } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.as_str().ends_with(":reference-root-point"))
             && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.as_str().ends_with(":4"))
     ));
+    let repeated_constraint_parameters = result
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| constraint.name.as_deref() == Some("Repeated"))
+        .flat_map(|constraint| {
+            constraint
+                .definition
+                .kind()
+                .dimension_parameters()
+                .expect("dimensional source constraint")
+        })
+        .collect::<Vec<_>>();
     let repeated_parameters = result
         .ir()
         .model
         .parameters
         .iter()
-        .filter(|parameter| {
-            parameter
-                .properties
-                .get("source_name")
-                .is_some_and(|name| name == "Repeated")
-        })
+        .filter(|parameter| repeated_constraint_parameters.contains(&parameter.id))
         .collect::<Vec<_>>();
     assert_eq!(repeated_parameters.len(), 2);
     assert_eq!(repeated_parameters[0].name, "Constraint14");
@@ -1138,7 +1156,52 @@ fn neutralizes_line_midpoint_coincidence() {
         result.ir().model.sketch_constraints[0].definition.kind(),
         cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Midpoint { .. }
     ));
-    assert_valid_document(result.ir());
+    // #209 §2.1 D9 / #210: retain the authored conflicting second equation
+    // and report its clean solved-locus disagreement as an Error.
+    let constraints = &result.ir().model.sketch_constraints;
+    assert_eq!(constraints.len(), 2);
+    assert!(matches!(
+        constraints[1].definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::CoincidentLoci { loci }
+            if matches!(loci.as_slice(), [
+                cadmpeg_ir::sketches::SketchLocus::End(_),
+                cadmpeg_ir::sketches::SketchLocus::Entity(_),
+            ])
+    ));
+    let errors = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .unwrap()
+        .findings
+        .into_iter()
+        .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
+        .collect::<Vec<_>>();
+    assert_eq!(errors.len(), 1, "{errors:#?}");
+    assert_eq!(
+        errors[0].check,
+        cadmpeg_ir::report::check::Check::GeometricConsistency
+    );
+    assert_eq!(errors[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert_eq!(
+        errors[0].entity.as_deref(),
+        Some(constraints[1].id.as_str())
+    );
+    assert!(
+        matches!(*result.ir().model.sketch_entities[0].geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end }
+            if (start.get().u, start.get().v, end.get().u, end.get().v) == (0.0, 0.0, 2.0, 0.0)
+        )
+    );
+    assert!(
+        matches!(*result.ir().model.sketch_entities[1].geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Point { position }
+            if (position.get().u, position.get().v) == (1.0, 0.0)
+        )
+    );
+    assert!(result
+        .ir()
+        .model
+        .features
+        .iter()
+        .all(|feature| !feature.needs_recompute));
 }
 
 #[test]

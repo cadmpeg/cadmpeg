@@ -2,7 +2,7 @@
 //! Pattern operands, admitted transforms, and stage composition.
 
 use super::{
-    BodySelection, FaceSelection, FeatureDirection3, FeatureId, FinitePoint3, PathRef,
+    BodySelection, Dimension, FaceSelection, FeatureDirection3, FeatureId, FinitePoint3, PathRef,
     SelectionMembers,
 };
 use crate::ids::OccurrenceId;
@@ -11,6 +11,172 @@ use crate::units::UnitVector3;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+/// Whether a total circular span includes its final endpoint or closes periodically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CircularPatternDistribution {
+    /// The first and last instances lie at the two authored endpoints.
+    Inclusive,
+    /// Instances divide the span periodically; the last endpoint is not repeated.
+    Periodic,
+}
+
+/// The authored linear distance control of an evenly distributed pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PatternDistance<Q = Length> {
+    /// Distance between adjacent instances.
+    Spacing {
+        /// Literal distance or its sole canonical parameter binding.
+        distance: Dimension<Q>,
+    },
+    /// Total distance from the first instance to the last instance.
+    Span {
+        /// Literal total distance or its sole canonical parameter binding.
+        distance: Dimension<Q>,
+    },
+}
+
+impl<Q> PatternDistance<Q> {
+    /// The sole authored distance, independent of its distribution form.
+    pub const fn dimension(&self) -> &Dimension<Q> {
+        match self {
+            Self::Spacing { distance } | Self::Span { distance } => distance,
+        }
+    }
+
+    /// Edit the sole authored distance without creating an evaluated copy.
+    pub fn dimension_mut(&mut self) -> &mut Dimension<Q> {
+        match self {
+            Self::Spacing { distance } | Self::Span { distance } => distance,
+        }
+    }
+}
+
+impl<Q: super::DimensionValue> PatternDistance<Q> {
+    /// Evaluate adjacent spacing from the canonical distance and count.
+    /// A one-instance span has no adjacent spacing.
+    pub fn resolved_spacing(&self, ir: &crate::CadIr, count: &Dimension<u32>) -> Option<Q> {
+        let value = ir.dimension_value(self.dimension())?;
+        if matches!(self, Self::Spacing { .. }) {
+            return Some(value);
+        }
+        let intervals = ir.dimension_value(count)?.checked_sub(1)?;
+        if intervals == 0 {
+            return None;
+        }
+        let super::ParameterValue::Length(value) = value.to_parameter_value()? else {
+            return None;
+        };
+        Q::from_parameter_value(&super::ParameterValue::Length(Length::new(
+            value.get() / f64::from(intervals),
+        )?))
+    }
+}
+
+impl<Q> From<Dimension<Q>> for PatternDistance<Q> {
+    fn from(distance: Dimension<Q>) -> Self {
+        Self::Spacing { distance }
+    }
+}
+
+impl<Q> From<Q> for PatternDistance<Q> {
+    fn from(distance: Q) -> Self {
+        Self::Spacing {
+            distance: Dimension::Literal(distance),
+        }
+    }
+}
+
+impl From<PositiveLength> for PatternDistance<Length> {
+    fn from(distance: PositiveLength) -> Self {
+        Self::Spacing {
+            distance: Dimension::Literal(distance.into()),
+        }
+    }
+}
+
+impl From<Dimension<PositiveLength>> for PatternDistance<Length> {
+    fn from(distance: Dimension<PositiveLength>) -> Self {
+        Self::Spacing {
+            distance: distance.map_literal(Into::into),
+        }
+    }
+}
+
+/// The authored angular control of an evenly distributed circular pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PatternAngle<Q = PositiveAngle> {
+    /// Angle between adjacent instances.
+    Spacing {
+        /// Literal angle or its sole canonical parameter binding.
+        angle: Dimension<Q>,
+    },
+    /// Total angle covered by the distributed instances.
+    Span {
+        /// Literal total angle or its sole canonical parameter binding.
+        angle: Dimension<Q>,
+        /// Whether the final endpoint is represented or closes periodically.
+        distribution: CircularPatternDistribution,
+    },
+}
+
+impl<Q> PatternAngle<Q> {
+    /// The sole authored angle, independent of its distribution form.
+    pub const fn dimension(&self) -> &Dimension<Q> {
+        match self {
+            Self::Spacing { angle } | Self::Span { angle, .. } => angle,
+        }
+    }
+}
+
+impl<Q: super::DimensionValue> PatternAngle<Q> {
+    /// Evaluate adjacent angular spacing from the canonical angle and count.
+    /// An inclusive one-instance span has no adjacent angular spacing.
+    pub fn resolved_spacing(&self, ir: &crate::CadIr, count: &Dimension<u32>) -> Option<Q> {
+        let value = ir.dimension_value(self.dimension())?;
+        let Self::Span { distribution, .. } = self else {
+            return Some(value);
+        };
+        let count = ir.dimension_value(count)?;
+        let intervals = match distribution {
+            CircularPatternDistribution::Inclusive => count.checked_sub(1)?,
+            CircularPatternDistribution::Periodic => count,
+        };
+        if intervals == 0 {
+            return None;
+        }
+        let super::ParameterValue::Angle(value) = value.to_parameter_value()? else {
+            return None;
+        };
+        Q::from_parameter_value(&super::ParameterValue::Angle(Angle::new(
+            value.get() / f64::from(intervals),
+        )?))
+    }
+}
+
+impl<Q> From<Dimension<Q>> for PatternAngle<Q> {
+    fn from(angle: Dimension<Q>) -> Self {
+        Self::Span {
+            angle,
+            distribution: CircularPatternDistribution::Inclusive,
+        }
+    }
+}
+
+impl<Q> From<Q> for PatternAngle<Q> {
+    fn from(angle: Q) -> Self {
+        Self::Span {
+            angle: Dimension::Literal(angle),
+            distribution: CircularPatternDistribution::Inclusive,
+        }
+    }
+}
 
 /// One geometric selection repeated or reflected by a pattern operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -176,29 +342,41 @@ impl<C: CompositeStages> PatternKind<C> {
         let mut transform = self.0;
         match &mut transform {
             PatternTransform::Linear {
-                spacing, second, ..
+                distance, second, ..
             } => {
-                edit(PatternLengthField::PositiveLength(spacing))
-                    .map_err(PatternLengthEditError::Field)?;
-                if let Some(second) = second {
-                    edit(PatternLengthField::PositiveLength(&mut second.spacing))
+                if let Dimension::Literal(spacing) = distance.dimension_mut() {
+                    edit(PatternLengthField::Length(spacing))
                         .map_err(PatternLengthEditError::Field)?;
+                }
+                if let Some(second) = second {
+                    if let Dimension::Literal(spacing) = second.distance.dimension_mut() {
+                        edit(PatternLengthField::Length(spacing))
+                            .map_err(PatternLengthEditError::Field)?;
+                    }
                 }
             }
             PatternTransform::LinearOffsets { offsets, .. } => {
                 for offset in offsets.iter_mut() {
-                    edit(PatternLengthField::Length(offset))
-                        .map_err(PatternLengthEditError::Field)?;
+                    if let Dimension::Literal(offset) = offset {
+                        edit(PatternLengthField::Length(offset))
+                            .map_err(PatternLengthEditError::Field)?;
+                    }
                 }
-                if !valid_increasing_locations(offsets.iter().map(|offset| offset.get())) {
+                if !valid_dimension_locations(
+                    offsets
+                        .iter()
+                        .map(|offset| offset.literal().map(|value| value.get())),
+                ) {
                     return Err(PatternLengthEditError::Offsets(
                         "pattern offsets must start at zero and strictly increase",
                     ));
                 }
             }
             PatternTransform::CurveDriven { spacing, .. } => {
-                edit(PatternLengthField::PositiveLength(spacing))
-                    .map_err(PatternLengthEditError::Field)?;
+                if let Dimension::Literal(spacing) = spacing {
+                    edit(PatternLengthField::PositiveLength(spacing))
+                        .map_err(PatternLengthEditError::Field)?;
+                }
             }
             PatternTransform::Circular { axis_origin, .. }
             | PatternTransform::CircularAngles { axis_origin, .. } => {
@@ -271,29 +449,62 @@ impl<C> PatternKind<C> {
             |condition: bool, message: &'static str| condition.then_some(()).ok_or(message);
         match &transform {
             PatternTransform::Unresolved { .. } => {}
-            PatternTransform::Linear { count, second, .. } => {
-                require(*count > 0, "pattern count must be positive")?;
+            PatternTransform::Linear {
+                distance,
+                count,
+                second,
+                ..
+            } => {
+                require(
+                    !matches!(distance, PatternDistance::Spacing { distance: Dimension::Literal(value) } if value.get() <= 0.0),
+                    "pattern spacing must be positive",
+                )?;
+                require(
+                    count.literal().is_none_or(|value| *value > 0),
+                    "pattern count must be positive",
+                )?;
                 if let Some(second) = second {
-                    require(second.count > 0, "pattern second.count must be positive")?;
+                    require(
+                        !matches!(&second.distance, PatternDistance::Spacing { distance: Dimension::Literal(value) } if value.get() <= 0.0),
+                        "pattern second.spacing must be positive",
+                    )?;
+                    require(
+                        second.count.literal().is_none_or(|value| *value > 0),
+                        "pattern second.count must be positive",
+                    )?;
                 }
             }
             PatternTransform::LinearOffsets { offsets, .. } => {
                 require(
-                    valid_increasing_locations(offsets.iter().map(|offset| offset.get())),
+                    valid_dimension_locations(
+                        offsets
+                            .iter()
+                            .map(|offset| offset.literal().map(|value| value.get())),
+                    ),
                     "pattern offsets must start at zero and strictly increase",
                 )?;
             }
             PatternTransform::Circular { count, .. } => {
-                require(*count > 0, "pattern count must be positive")?;
+                require(
+                    count.literal().is_none_or(|value| *value > 0),
+                    "pattern count must be positive",
+                )?;
             }
             PatternTransform::CircularAngles { angles, .. } => {
                 require(
-                    valid_increasing_locations(angles.iter().map(|angle| angle.get())),
+                    valid_dimension_locations(
+                        angles
+                            .iter()
+                            .map(|angle| angle.literal().map(|value| value.get())),
+                    ),
                     "pattern angles must start at zero and strictly increase",
                 )?;
             }
             PatternTransform::CurveDriven { count, .. } => {
-                require(*count > 0, "pattern count must be positive")?;
+                require(
+                    count.literal().is_none_or(|value| *value > 0),
+                    "pattern count must be positive",
+                )?;
             }
             PatternTransform::Mirror { .. } => {}
             PatternTransform::MirrorReference {
@@ -306,7 +517,10 @@ impl<C> PatternKind<C> {
             }
             PatternTransform::MirrorReference { .. } => {}
             PatternTransform::Scale { count, .. } => {
-                require(*count >= 2, "scale pattern count must be at least two")?;
+                require(
+                    count.literal().is_none_or(|value| *value >= 2),
+                    "scale pattern count must be at least two",
+                )?;
             }
             PatternTransform::Composite { .. } => {}
         }
@@ -340,12 +554,12 @@ impl PatternTransform<NoNestedComposite> {
             Self::Unresolved { form } => PatternTransform::Unresolved { form },
             Self::Linear {
                 direction,
-                spacing,
+                distance,
                 count,
                 second,
             } => PatternTransform::Linear {
                 direction,
-                spacing,
+                distance,
                 count,
                 second,
             },
@@ -456,10 +670,10 @@ pub enum PatternTransform<C = CompositePattern> {
             deserialize_with = "deserialize_direction"
         )]
         direction: Option<FeatureDirection3>,
-        /// Distance between consecutive instances.
-        spacing: PositiveLength,
+        /// Authored adjacent spacing or total distance from first to last instance.
+        distance: PatternDistance,
         /// Total number of instances, including the original.
-        count: u32,
+        count: Dimension<u32>,
         /// Optional complete second translation direction.
         #[serde(
             default,
@@ -478,7 +692,7 @@ pub enum PatternTransform<C = CompositePattern> {
         )]
         direction: Option<FeatureDirection3>,
         /// Cumulative distances from the original instance, beginning with zero.
-        offsets: Vec<Length>,
+        offsets: Vec<Dimension<Length>>,
     },
     /// Repeats seeds evenly around an axis.
     Circular {
@@ -487,9 +701,9 @@ pub enum PatternTransform<C = CompositePattern> {
         /// Direction of the pattern axis with a finite nonzero norm.
         axis_dir: FeatureDirection3,
         /// Angular span covered by the pattern.
-        angle: PositiveAngle,
+        angle: PatternAngle,
         /// Total number of instances, including the original.
-        count: u32,
+        count: Dimension<u32>,
     },
     /// Repeats seeds at explicitly located angles around an axis.
     CircularAngles {
@@ -498,7 +712,7 @@ pub enum PatternTransform<C = CompositePattern> {
         /// Unit direction of the pattern axis.
         axis_dir: UnitVector3,
         /// Cumulative angles from the original instance, beginning with zero.
-        angles: Vec<Angle>,
+        angles: Vec<Dimension<Angle>>,
     },
     /// Repeats seeds at fixed arc-length spacing along a curve.
     CurveDriven {
@@ -510,9 +724,9 @@ pub enum PatternTransform<C = CompositePattern> {
         )]
         path: Option<PathRef>,
         /// Arc-length spacing between consecutive instances.
-        spacing: PositiveLength,
+        spacing: Dimension<PositiveLength>,
         /// Total number of instances, including the original.
-        count: u32,
+        count: Dimension<u32>,
     },
     /// Reflects seeds across a plane.
     Mirror {
@@ -531,9 +745,9 @@ pub enum PatternTransform<C = CompositePattern> {
         /// Fixed locus used by every scale transform.
         center: PatternScaleCenter,
         /// Scale factor of the final instance relative to the original.
-        final_factor: PositiveReal,
+        final_factor: Dimension<PositiveReal>,
         /// Total number of instances, including the original.
-        count: u32,
+        count: Dimension<u32>,
     },
     /// Applies an ordered sequence of pattern stages.
     Composite {
@@ -638,6 +852,8 @@ fn composite_composition_is_valid(stages: &[crate::features::patterns::PatternSt
     let mut occurrences = None;
     stages.iter().enumerate().all(|(index, stage)| {
         let Some(stage_count) = pattern_occurrence_count(stage.pattern.definition()) else {
+            // An unevaluated bound count does not imply any later product size.
+            occurrences = None;
             return true;
         };
         if index == 0 {
@@ -666,7 +882,9 @@ fn pattern_occurrence_count<C>(pattern: &PatternTransform<C>) -> Option<usize> {
         PatternTransform::Linear { count, .. }
         | PatternTransform::Circular { count, .. }
         | PatternTransform::CurveDriven { count, .. }
-        | PatternTransform::Scale { count, .. } => usize::try_from(*count).ok(),
+        | PatternTransform::Scale { count, .. } => count
+            .literal()
+            .and_then(|value| usize::try_from(*value).ok()),
         PatternTransform::LinearOffsets { offsets, .. } => Some(offsets.len()),
         PatternTransform::CircularAngles { angles, .. } => Some(angles.len()),
         PatternTransform::Mirror { .. } | PatternTransform::MirrorReference { .. } => Some(2),
@@ -674,17 +892,27 @@ fn pattern_occurrence_count<C>(pattern: &PatternTransform<C>) -> Option<usize> {
     }
 }
 
-fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
+fn valid_dimension_locations(locations: impl Iterator<Item = Option<f64>>) -> bool {
     let mut locations = locations;
     let Some(first) = locations.next() else {
         return false;
     };
-    first == 0.0
-        && locations
-            .try_fold(first, |previous, location| {
-                (location.is_finite() && location > previous).then_some(location)
-            })
-            .is_some()
+    if first.is_some_and(|value| value != 0.0) {
+        return false;
+    }
+    locations
+        .try_fold(first, |previous, location| {
+            if location.is_some_and(|value| !value.is_finite())
+                || previous
+                    .zip(location)
+                    .is_some_and(|(before, after)| after <= before)
+            {
+                None
+            } else {
+                Some(location)
+            }
+        })
+        .is_some()
 }
 
 /// Fixed locus for a progressive pattern scale.
@@ -731,10 +959,10 @@ pub enum PatternStageCombination {
 pub struct LinearPatternDirection {
     /// Translation direction with a finite nonzero norm.
     pub direction: FeatureDirection3,
-    /// Distance between consecutive instances.
-    pub spacing: PositiveLength,
+    /// Authored adjacent spacing or total distance from first to last instance.
+    pub distance: PatternDistance,
     /// Total number of instances, including the original.
-    pub count: u32,
+    pub count: Dimension<u32>,
 }
 
 // Each optional key below names itself in whatever it refuses.

@@ -133,6 +133,52 @@ mod tests {
     }
 
     #[test]
+    fn completed_prefix_becomes_a_tracked_root_without_losing_acquired_bytes() {
+        let arena = crate::decode::DecodeArena::new();
+        let ctx = DecodeContext::new(
+            &arena,
+            &DecodePolicy::default(),
+            crate::decode::DecodeDepth::Full,
+        );
+        let mut reader = std::io::Cursor::new([7_u8, 8, 9]);
+        let mut prefix = Vec::new();
+        ctx.extend_input_prefix(&mut reader, &mut prefix, 2)
+            .unwrap();
+        let mut root = ctx.complete_root_input(&mut reader, prefix).unwrap();
+        assert_eq!(root.window(), &[7, 8, 9]);
+        ctx.record("value", root, || Ok(root.req_u8()?)).unwrap();
+        let captures = ctx.take_record_captures().unwrap();
+        assert_eq!(captures.len(), 1);
+        assert_eq!(
+            captures[0].reads(),
+            &std::collections::BTreeMap::from([("file".to_owned(), vec![0..1]),])
+        );
+    }
+
+    #[test]
+    fn root_completion_refuses_replacement_and_unacquired_prefixes() {
+        let arena = crate::decode::DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(b"abc", &arena, &DecodePolicy::default()).unwrap();
+        assert!(ctx
+            .complete_root_input(&mut std::io::empty(), b"xyz".to_vec())
+            .is_err());
+        ctx.record("original", root, || Ok(root.read_at(0, 1).unwrap()[0]))
+            .unwrap();
+        let captures = ctx.take_record_captures().unwrap();
+        assert_eq!(captures[0].reads()["file"], vec![0..1]);
+        assert_eq!(root.window(), b"abc");
+        let ctx = DecodeContext::new(
+            &arena,
+            &DecodePolicy::default(),
+            crate::decode::DecodeDepth::Full,
+        );
+        assert!(ctx
+            .complete_root_input(&mut std::io::empty(), b"xyz".to_vec())
+            .is_err());
+    }
+
+    #[test]
     fn complete_input_preserves_large_policy_and_prefix() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

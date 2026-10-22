@@ -261,6 +261,7 @@ fn project_default_bindings(
     for body in bodies {
         ctx.charge_entities(1, "project Inventor default appearance binding")?;
         bindings.push(AppearanceBinding {
+            native_ref: None,
             id: AppearanceBindingId::compose(
                 &cadmpeg_ir::identity_namespace!("inventor", "presentation", "body-default"),
                 short_digest_key(body.as_str().as_bytes()),
@@ -397,6 +398,7 @@ fn project_face_bindings(
                 style.identity.key()?,
             );
             projection.appearances.push(Appearance {
+                native_ref: None,
                 id: id.clone(),
                 name: None,
                 asset_guid: None,
@@ -414,6 +416,7 @@ fn project_face_bindings(
         };
         ctx.charge_entities(1, "project Inventor face appearance binding")?;
         projection.bindings.push(AppearanceBinding {
+            native_ref: None,
             id: AppearanceBindingId::compose(
                 &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-override"),
                 short_digest_key(face_id.as_str().as_bytes()),
@@ -1231,6 +1234,7 @@ mod tests {
             issues: Vec::new(),
         };
         let appearance = Appearance {
+            native_ref: None,
             id: AppearanceId::mint("inventor:test:appearance#1").expect("appearance id"),
             name: None,
             asset_guid: Some("d3c6130d-6c0f-4525-b268-53517ab46a78".into()),
@@ -1466,6 +1470,7 @@ mod tests {
             issues: Vec::new(),
         };
         let appearance = Appearance {
+            native_ref: None,
             id: AppearanceId::mint("inventor:test:appearance#1").expect("identity grammar"),
             name: None,
             asset_guid: Some("d3c6130d-6c0f-4525-b268-53517ab46a78".into()),

@@ -56,9 +56,9 @@ fn body_recipe_limit_fixture() -> (
             selector_tail: None,
             references: vec![DesignBodyRecipeReference {
                 design_reference: 326,
-                design_reference_offset: 25,
+                design_reference_offset: Some(25),
                 form: 33,
-                form_offset: 33,
+                form_offset: Some(33),
                 candidate_faces: Vec::new(),
                 preceding_candidate_faces: Vec::new(),
                 preceding_body_slots: Vec::new(),
@@ -190,9 +190,9 @@ fn replace_face_projects_role_order_and_historical_inputs() {
 
             references: vec![DesignBodyRecipeReference {
                 design_reference: 326,
-                design_reference_offset: 25,
+                design_reference_offset: Some(25),
                 form: 33,
-                form_offset: 33,
+                form_offset: Some(33),
                 candidate_faces: Vec::new(),
                 preceding_candidate_faces: Vec::new(),
                 preceding_body_slots: Vec::new(),
@@ -361,9 +361,9 @@ fn surface_trim_fixture() -> (
 
             references: vec![DesignBodyRecipeReference {
                 design_reference: 326,
-                design_reference_offset: 25,
+                design_reference_offset: Some(25),
                 form: 33,
-                form_offset: 33,
+                form_offset: Some(33),
                 candidate_faces: Vec::new(),
                 preceding_candidate_faces: Vec::new(),
                 preceding_body_slots: Vec::new(),
@@ -412,6 +412,7 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         1200,
     );
     let mut feature = cadmpeg_ir::features::Feature {
+        needs_recompute: false,
         id: cadmpeg_ir::features::FeatureId::mint("f3d:test:feature#1200")
             .expect("identity grammar"),
         ordinal: 0,
@@ -511,6 +512,7 @@ fn surface_trim_selected_cells_keep_cells() {
         1200,
     );
     let feature = cadmpeg_ir::features::Feature {
+        needs_recompute: false,
         id: cadmpeg_ir::features::FeatureId::mint("f3d:test:feature#1200").unwrap(),
         ordinal: 0,
         name: None,

@@ -38,13 +38,14 @@ fn view_attributes_projection_emits_the_documented_keys_in_order() {
     let json = serde_json::to_string(&AttributesField(Some(&attributes)))
         .expect("view attributes serialize");
     let keys = [
-        "\"view_type\":1",
-        "\"page_width_mm\":210.0",
-        "\"page_height_mm\":297.0",
-        "\"display_mode_uuid\":\"display-uuid\"",
-        "\"attributes_version\":\"0102\"",
         "\"attributes\":{",
+        "\"view_type\":1",
+        "\"width\":210.0",
+        "\"height\":297.0",
+        "\"display\":\"display-uuid\"",
     ];
+    assert!(!json.contains("version"));
+    assert!(!json.contains("page_width_mm"));
     let mut cursor = 0;
     for key in keys {
         let found = json[cursor..]
@@ -57,15 +58,5 @@ fn view_attributes_projection_emits_the_documented_keys_in_order() {
 #[test]
 fn view_attributes_projection_emits_null_keys_when_absent() {
     let json = serde_json::to_string(&AttributesField(None)).expect("view attributes serialize");
-    assert_eq!(
-        json,
-        concat!(
-            "{\"view_type\":null,",
-            "\"page_width_mm\":null,",
-            "\"page_height_mm\":null,",
-            "\"display_mode_uuid\":null,",
-            "\"attributes_version\":null,",
-            "\"attributes\":null}"
-        )
-    );
+    assert_eq!(json, "{\"attributes\":null}");
 }

@@ -42,8 +42,8 @@ pub(crate) fn matches_native(
     Ok(actual.next().is_none())
 }
 
-// Census records refer to authoritative bytes through identities, ranges and digests.
-// Absent object data uses zero offsets and the empty-byte digest.
+// Census records describe authoritative typed objects and their owned properties.
+// Object source bytes and physical extent belong to the object RecordLayout.
 #[derive(Serialize)]
 struct ApplicationRecordWire<'a> {
     id: String,
@@ -55,10 +55,6 @@ struct ApplicationRecordWire<'a> {
     side_entries: Vec<&'a str>,
     inert_payload: bool,
     order: usize,
-    byte_start: u64,
-    byte_end: u64,
-    byte_len: u64,
-    sha256: String,
     property_records: Vec<ApplicationPropertyWire<'a>>,
 }
 
@@ -71,10 +67,6 @@ struct ApplicationPropertyWire<'a> {
     family: PropertyFamily,
     order: usize,
     links: &'a [Option<LinkTarget>],
-    byte_start: u64,
-    byte_end: u64,
-    byte_len: u64,
-    sha256: String,
     payloads: Vec<ApplicationPayloadWire<'a>>,
     inert: bool,
 }
@@ -83,8 +75,6 @@ struct ApplicationPropertyWire<'a> {
 struct ApplicationPayloadWire<'a> {
     entry: &'a str,
     name: &'a str,
-    byte_len: u64,
-    sha256: &'a str,
 }
 
 fn wire_records<'a>(
@@ -106,13 +96,10 @@ fn wire_records<'a>(
     let mut records = Vec::new();
     for object in objects {
         let mut owned = by_owner.remove(object.id().as_str()).unwrap_or_default();
-        owned.sort_by(|left, right| {
-            (left.xml.start(), left.xml.end()).cmp(&(right.xml.start(), right.xml.end()))
-        });
-        let data = object
-            .data
-            .as_ref()
-            .map_or(&[][..], |data| data.text().as_bytes());
+        // Transient declarations and persisted values have independent source
+        // order domains. Equal ordinals use the typed property identity so the
+        // census is identical before and after native arenas sort their rows.
+        owned.sort_by(|left, right| (left.order, &left.id).cmp(&(right.order, &right.id)));
         let property_ids = owned.iter().map(|property| property.id.as_str()).collect();
         let side_entries = owned
             .iter()
@@ -120,15 +107,12 @@ fn wire_records<'a>(
             .collect();
         let mut property_records = Vec::new();
         for property in owned {
-            let data = property.xml.text().as_bytes();
             let mut payloads = Vec::new();
             for name in property.side_entries() {
                 if let Some(entry) = entry_index.get(name.as_str()) {
                     payloads.push(ApplicationPayloadWire {
                         entry: entry.id(),
                         name: entry.name(),
-                        byte_len: entry.byte_len(),
-                        sha256: entry.sha256(),
                     });
                 }
             }
@@ -144,10 +128,6 @@ fn wire_records<'a>(
                 family: property.family,
                 order: property.order,
                 links: property.links(),
-                byte_start: property.xml.start(),
-                byte_end: property.xml.end(),
-                byte_len: cadmpeg_core::decode::u64_from_index(data.len()),
-                sha256: cadmpeg_ir::hash::sha256_hex(data),
                 payloads,
                 inert: is_inert(property),
             });
@@ -165,16 +145,6 @@ fn wire_records<'a>(
             side_entries,
             inert_payload: property_records.iter().any(|property| property.inert),
             order: object.order,
-            byte_start: object
-                .data
-                .as_ref()
-                .map_or(0, crate::native::RetainedXml::start),
-            byte_end: object
-                .data
-                .as_ref()
-                .map_or(0, crate::native::RetainedXml::end),
-            byte_len: cadmpeg_core::decode::u64_from_index(data.len()),
-            sha256: cadmpeg_ir::hash::sha256_hex(data),
             property_records,
         });
     }

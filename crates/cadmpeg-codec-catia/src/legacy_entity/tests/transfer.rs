@@ -178,11 +178,12 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
     );
 
     let native = crate::native::CatiaNative::load(
-        decoded
+        &decoded
             .ir()
             .native
             .namespace("catia")
-            .expect("CATIA native namespace"),
+            .expect("catia namespace")
+            .clone(),
     )
     .expect("load compound legacy fields");
     assert!(native.legacy_entity_runs[0]
@@ -292,11 +293,12 @@ fn decode_retains_legacy_relation_synchronous_states() {
         4
     );
     let native = crate::native::CatiaNative::load(
-        decoded
+        &decoded
             .ir()
             .native
             .namespace("catia")
-            .expect("CATIA native namespace"),
+            .expect("catia namespace")
+            .clone(),
     )
     .expect("load retained update states");
     assert_eq!(
@@ -385,7 +387,10 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
             cadmpeg_ir::scalar::Length::new(12.5).unwrap()
         ))
     );
-    assert_eq!(parameter.expression, "12.5 mm");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), parameter),
+        "12.5 mm"
+    );
     assert!(parameter
         .native_ref
         .as_deref()
@@ -438,7 +443,10 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
             "Cilas Evans".to_string()
         ))
     );
-    assert_eq!(parameter.expression, "\"Cilas Evans\"");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), parameter),
+        "\"Cilas Evans\""
+    );
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
@@ -519,10 +527,13 @@ fn decode_transfers_an_input_bound_legacy_string_formula() {
         result.value,
         Some(cadmpeg_ir::ParameterValue::String("left-right".to_string()))
     );
-    assert_eq!(result.expression, "#1_ + \"-\" + #2_");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), result),
+        "#1_ + \"-\" + #2_"
+    );
     let dependency_names = result
-        .dependencies
-        .iter()
+        .expression
+        .dependencies()
         .map(|dependency| {
             decoded
                 .ir()
@@ -577,7 +588,10 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_integer() {
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Integer(11))
     );
-    assert_eq!(parameter.expression, "11");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), parameter),
+        "11"
+    );
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
@@ -618,7 +632,11 @@ fn decode_transfers_an_unset_typed_legacy_parameter() {
     };
     assert_eq!(parameter.name, "Width");
     assert_eq!(parameter.value, None);
-    assert!(parameter.expression.is_empty());
+    assert!(parameter
+        .expression
+        .literal_text()
+        .expect("literal expression")
+        .is_empty());
     assert_eq!(parameter.properties["value_type"], "LENGTH");
     assert_eq!(
         wire::coverage_count(
@@ -661,7 +679,11 @@ fn decode_transfers_unset_non_numeric_legacy_parameters() {
 
         assert_eq!(parameter.name, "Value");
         assert_eq!(parameter.value, None);
-        assert!(parameter.expression.is_empty());
+        assert!(parameter
+            .expression
+            .literal_text()
+            .expect("literal expression")
+            .is_empty());
         assert_eq!(parameter.properties["value_type"], parameter_type);
         assert!(
             cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
@@ -709,7 +731,10 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
             "Revision-1".to_string()
         ))
     );
-    assert_eq!(string.expression, "\"Revision-1\"");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), string),
+        "\"Revision-1\""
+    );
     assert_eq!(string.properties["value_type"], "String");
     assert_eq!(integer.name, "Search");
     assert_eq!(
@@ -923,7 +948,10 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     let [parameter] = decoded.ir().model.parameters.as_slice() else {
         panic!("one legacy formula parameter")
     };
-    assert_eq!(parameter.expression, "2+3");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), parameter),
+        "2+3"
+    );
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
@@ -941,7 +969,13 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode mismatched legacy formula");
-    assert_eq!(mismatched.ir().model.parameters[0].expression, "6");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(
+            mismatched.ir(),
+            &mismatched.ir().model.parameters[0]
+        ),
+        "6"
+    );
     assert_eq!(
         wire::coverage_count(
             mismatched.report(),
@@ -959,7 +993,10 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     let [parameter] = unset.ir().model.parameters.as_slice() else {
         panic!("one unset legacy formula parameter")
     };
-    assert_eq!(parameter.expression, "2+3");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), parameter),
+        "2+3"
+    );
     assert_eq!(parameter.value, None);
     assert_eq!(
         wire::coverage_count(
@@ -978,7 +1015,11 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     let [parameter] = mismatched_unset.ir().model.parameters.as_slice() else {
         panic!("one unset legacy parameter")
     };
-    assert!(parameter.expression.is_empty());
+    assert!(parameter
+        .expression
+        .literal_text()
+        .expect("literal expression")
+        .is_empty());
     assert_eq!(parameter.value, None);
     assert_eq!(
         wire::coverage_count(
@@ -997,7 +1038,10 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     let [parameter] = boolean.ir().model.parameters.as_slice() else {
         panic!("one Boolean formula parameter")
     };
-    assert_eq!(parameter.expression, "not false");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), parameter),
+        "not false"
+    );
     assert_eq!(parameter.value, None);
     assert_eq!(
         parameter.properties.get("value_type").map(String::as_str),
@@ -1025,7 +1069,10 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     let [parameter] = conditional.ir().model.parameters.as_slice() else {
         panic!("one conditional formula parameter")
     };
-    assert_eq!(parameter.expression, "true ? 5 ; 1 / 0");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), parameter),
+        "true ? 5 ; 1 / 0"
+    );
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
@@ -1104,7 +1151,10 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
     let [parameter] = transferred.ir().model.parameters.as_slice() else {
         panic!("one legacy output parameter")
     };
-    assert_eq!(parameter.expression, "2+3");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(transferred.ir(), parameter),
+        "2+3"
+    );
     assert_eq!(
         wire::coverage_count(
             transferred.report(),
@@ -1119,7 +1169,13 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
             &DecodeOptions::default(),
         )
         .expect("decode unset output assignment");
-    assert_eq!(unset.ir().model.parameters[0].expression, "2+3");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(
+            unset.ir(),
+            &unset.ir().model.parameters[0]
+        ),
+        "2+3"
+    );
     assert_eq!(unset.ir().model.parameters[0].value, None);
 
     let mismatched_value = CatiaCodec
@@ -1133,7 +1189,13 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
             &DecodeOptions::default(),
         )
         .expect("decode mismatched output assignment");
-    assert_eq!(mismatched_value.ir().model.parameters[0].expression, "6");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(
+            mismatched_value.ir(),
+            &mismatched_value.ir().model.parameters[0]
+        ),
+        "6"
+    );
     assert_eq!(
         wire::coverage_count(
             mismatched_value.report(),
@@ -1155,6 +1217,8 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
         .expect("decode type-mismatched output assignment");
     assert!(mismatched_type.ir().model.parameters[0]
         .expression
+        .literal_text()
+        .expect("literal expression")
         .is_empty());
     assert_eq!(
         wire::coverage_count(
@@ -1214,7 +1278,7 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         panic!("one legacy string formula parameter")
     };
     assert_eq!(
-        parameter.expression,
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), parameter),
         "ReplaceSubText(\"Cilas Evans\",\"Cilas\",\"Easy\")"
     );
     assert_eq!(
@@ -1244,7 +1308,10 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         )
         .expect("decode mismatched legacy string formula");
     assert_eq!(
-        mismatched.ir().model.parameters[0].expression,
+        crate::test_support::parameter_projection::expression_text(
+            mismatched.ir(),
+            &mismatched.ir().model.parameters[0]
+        ),
         "\"Cilas Evans\""
     );
     assert_eq!(
@@ -1268,7 +1335,7 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         panic!("one legacy string-method formula parameter")
     };
     assert_eq!(
-        parameter.expression,
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), parameter),
         "ToLower(\"MIXED\").Extract(1,4) - \"x\""
     );
     assert_eq!(

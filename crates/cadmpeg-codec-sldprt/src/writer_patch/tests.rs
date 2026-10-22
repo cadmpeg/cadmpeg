@@ -6,6 +6,7 @@ use cadmpeg_test_support::{edit, EditableDecodeResult};
 
 use std::io::Cursor;
 
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::container::make_block;
@@ -13,7 +14,6 @@ use crate::test_support::container::make_cache_cell;
 use crate::test_support::container::make_directory_entry;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::history::sldprt_with_body_and_history;
-use crate::test_support::native::sldprt_native;
 use crate::test_support::native::update_sldprt_native;
 use crate::test_support::parasolid::bridge;
 use crate::test_support::parasolid::coedge;
@@ -127,7 +127,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
 }
 
 #[test]
-fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
+fn synthesis_preserves_edited_nurbs_beside_omitted_untyped_surfaces() {
     use cadmpeg_ir::geometry::{
         CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
@@ -161,6 +161,10 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
+    // A sheet retains its independent supported face when another face has no carrier.
+    for body in &mut decoded.ir_mut().model.bodies {
+        body.kind = cadmpeg_ir::topology::BodyKind::Sheet;
+    }
     let (expected_curve, expected_surface) = {
         let mut ir_edit = decoded.ir_mut();
         let curve = ir_edit
@@ -263,13 +267,21 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
     };
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
-    assert!(crate::test_support::container::scan(&encoded)
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SldprtLossCode::WriterEntityOmitted.kind()
+        && loss.severity == cadmpeg_ir::report::Severity::Error));
+    plan.write_to(&mut encoded).unwrap();
+    assert!(!crate::test_support::container::scan(&encoded)
         .blocks
         .iter()
         .flat_map(|block| block.ps_streams.iter())
@@ -287,7 +299,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
     assert!(regenerated.ir().model.surfaces.iter().any(
         |surface| matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(value)) if value == &expected_surface)
     ));
-    assert!(regenerated
+    assert!(!regenerated
         .ir()
         .model
         .surfaces
@@ -299,9 +311,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
 }
 
 #[test]
-fn native_patch_edits_points_without_dropping_untyped_surfaces() {
-    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-
+fn untyped_surface_content_cannot_reenter_through_a_point_patch() {
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
     body.extend(loop_head(20, 30, 10));
@@ -350,25 +360,21 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
             .unwrap(),
     );
 
-    assert_eq!(regenerated.ir().model.points[1].position().get().x, 1_250.0);
-    assert!(matches!(
-        regenerated.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-    ));
-    assert_eq!(regenerated.ir().model.faces.len(), 1);
+    assert!(regenerated.ir().model.bodies.is_empty());
+    assert!(regenerated.ir().model.faces.is_empty());
     let written = regenerated
         .source_fidelity()
         .retained_record("sldprt:file:source-image#0")
         .and_then(|record| record.data())
         .unwrap();
     let scan = crate::test_support::container::scan(written);
-    assert!(scan.blocks.iter().any(|block| {
+    assert!(!scan.blocks.iter().any(|block| {
         block.section.name() == Some("Contents/Config-0-Deltas") && block.payload == deltas
     }));
 }
 
 #[test]
-fn native_patch_requires_point_provenance_annotation() {
+fn unrepresented_source_synthesizes_without_patch_provenance() {
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
     body.extend(loop_head(20, 30, 10));
@@ -411,21 +417,20 @@ fn native_patch_requires_point_provenance_annotation() {
         .provenance
         .remove(&point_id);
 
-    let error = crate::test_support::plan_inherited_write(
+    let path = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),
     )
-    .unwrap_err();
+    .expect("unrepresented retained content selects synthesis");
     assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::Malformed(message)
-            if message.contains("requires provenance annotation") && message.contains(&point_id)
+        path,
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
 }
 
 #[test]
-fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
+fn synthesis_preserves_edited_analytic_carriers_beside_omitted_untyped_surfaces() {
     use cadmpeg_ir::geometry::{
         CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
@@ -455,6 +460,10 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
+    // A sheet retains its independent supported face when another face has no carrier.
+    for body in &mut decoded.ir_mut().model.bodies {
+        body.kind = cadmpeg_ir::topology::BodyKind::Sheet;
+    }
     {
         let mut ir_edit = decoded.ir_mut();
         let plane = ir_edit
@@ -504,12 +513,20 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SldprtLossCode::WriterEntityOmitted.kind()
+        && loss.severity == cadmpeg_ir::report::Severity::Error));
+    plan.write_to(&mut encoded).unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -521,7 +538,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
             origin.x == 25.0
         })
     ));
-    assert!(regenerated
+    assert!(!regenerated
         .ir()
         .model
         .surfaces
@@ -540,7 +557,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
 }
 
 #[test]
-fn auxiliary_edit_retains_opaque_partition_payload() {
+fn auxiliary_edit_synthesizes_without_opaque_partition_content() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = Vec::new();
@@ -619,13 +636,35 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("Depth"), "30000mm".into());
     });
-    decoded.ir_mut().model.configurations[0]
-        .parameter_values
-        .insert(
-            cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#configuration-only")
-                .expect("identity grammar"),
-            cadmpeg_ir::features::ParameterValue::Integer(3),
+    let depth = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .expect("held depth parameter")
+        .id
+        .clone();
+    {
+        let mut ir = decoded.ir_mut();
+        let parameter = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.id == depth)
+            .unwrap();
+        parameter.expression = "30000mm".into();
+        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(30000.0).unwrap(),
+        ));
+        ir.model.configurations[0].parameter_values.insert(
+            depth,
+            cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(30000.0).unwrap(),
+            ),
         );
+    }
+
     {
         let source_fidelity = decoded.source_fidelity_mut();
         let mut annotations =
@@ -643,69 +682,57 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SldprtLossCode::WriterEntityOmitted.kind()
+        && loss.severity == cadmpeg_ir::report::Severity::Error));
+    plan.write_to(&mut encoded).unwrap();
     let written_scan = crate::test_support::container::scan(&encoded);
-    let written_partition = written_scan
+    assert!(!written_scan
         .blocks
         .iter()
-        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
-        .unwrap();
-    assert_eq!(written_partition.payload, source_partition);
-    assert!(written_scan.blocks.iter().any(|block| {
-        block.section.name() == Some("Contents/Config-0-Deltas")
-            && block.payload == b"opaque-deltas"
-    }));
-    assert_eq!(written_scan.cache_cells.len(), 1);
-    assert_eq!(
-        written_scan.cache_cells[0].name,
-        "Contents/Config-0-Partition"
-    );
-    assert_eq!(written_scan.cache_cells[0].logical_len, 90);
-    let partition_directory = written_scan
-        .directory
-        .iter()
-        .find(|entry| entry.name == "Contents/Config-0-Partition")
-        .unwrap();
-    assert_eq!(encoded[partition_directory.offset + 26], 0xab);
-    let trailer = partition_directory.offset + 40 + partition_directory.name.len();
-    assert_eq!(&encoded[trailer..trailer + 4], &[0x11, 0x22, 0x33, 0x44]);
-    assert!(written_scan
-        .directory
-        .iter()
-        .all(|entry| entry.trailer == [0x11, 0x22, 0x33, 0x44, 0, 0]));
-    let keywords_directory = written_scan
-        .directory
-        .iter()
-        .find(|entry| entry.name == "Contents/Keywords")
-        .unwrap();
-    assert_eq!(
-        keywords_directory.descriptor,
-        [0xcd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    );
-    assert!(written_scan.blocks.iter().any(|block| {
-        block.section.name() == Some("Contents/Config-0-GhostPartition")
-            && block.payload == b"opaque-ghost"
-    }));
+        .any(|block| block.payload == source_partition));
+    for name in [
+        "Contents/Config-0-Deltas",
+        "Contents/Config-0-GhostPartition",
+    ] {
+        assert!(!written_scan
+            .blocks
+            .iter()
+            .any(|block| block.section.name() == Some(name)));
+    }
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert!(matches!(
-        regenerated.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-    ));
-    assert_eq!(
-        sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
-        "30000mm"
-    );
+    assert!(regenerated.ir().model.bodies.is_empty());
+    assert!(!regenerated
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        )));
+    assert!(regenerated
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Depth" && parameter.expression == "30000mm".into()));
 }
 
 #[test]
-fn opaque_curve_is_retained_and_does_not_block_point_edits() {
+fn opaque_curve_cannot_reenter_through_a_point_edit() {
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
     let mut body = triangle_body();
@@ -752,18 +779,27 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .expect("a finite position is a point"),
     );
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SldprtLossCode::WriterEntityOmitted.kind()
+        && loss.severity == cadmpeg_ir::report::Severity::Error));
+    plan.write_to(&mut encoded).unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir().model.points[1].position().get().x, 1_500.0);
-    assert!(regenerated.ir().model.curves.iter().any(|curve| matches!(
+    assert!(regenerated.ir().model.bodies.is_empty());
+    assert!(regenerated.ir().model.faces.is_empty());
+    assert!(!regenerated.ir().model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
     )));
@@ -800,7 +836,7 @@ fn deltas_stream_whose_header_overruns_its_payload() -> Vec<u8> {
 }
 
 #[test]
-fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
+fn unrepresented_source_does_not_redecode_retained_bytes_for_content() {
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
     body.extend(loop_head(20, 30, 10));
@@ -861,21 +897,16 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
         )
         .expect("the source image record was removed first");
 
-    let error = crate::test_support::plan_inherited_write(
+    let path = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),
     )
-    .unwrap_err();
-    assert!(
-        matches!(
-            &error,
-            cadmpeg_core::CodecError::Malformed(message)
-                if message.contains("states body offset")
-                    && message.contains("past its")
-        ),
-        "the write must state the baseline decode's cause, not report no patch: {error}"
-    );
+    .expect("unrepresented retained content selects synthesis");
+    assert!(matches!(
+        path,
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
 }
 
 #[test]
@@ -934,7 +965,7 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
         )
         .unwrap();
     let decoded = EditableDecodeResult::from(decoded);
-    let records = crate::source_records(decoded.ir(), decoded.source_fidelity()).unwrap();
+    let records = crate::source_records(decoded.ir(), decoded.source_fidelity());
     let annotations = &decoded.source_fidelity().annotations;
     assert!(
         super::patch_partition(decoded.ir(), annotations, &records, 0.001)

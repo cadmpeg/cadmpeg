@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::annotations::StreamHandle;
-use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId, ParameterValue};
+use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
 use cadmpeg_ir::AnnotationBuilder;
 
 #[test]
@@ -18,7 +18,7 @@ fn configuration_attachment_preserves_active_relation() {
             value: Some(ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(7.5).unwrap(),
             )),
-            dependencies: DistinctMembers::default(),
+            driving: true,
             properties: std::collections::BTreeMap::default(),
             pmi: None,
             native_ref: None,

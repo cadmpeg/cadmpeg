@@ -6,8 +6,8 @@ use crate::records::{
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    DesignParameter, DistinctMembers, FeatureDefinition, FeatureEvaluation, FeatureOperation,
-    ParameterId, ParameterValue, SketchFeatureBinding,
+    DesignParameter, FeatureDefinition, FeatureEvaluation, FeatureOperation, ParameterId,
+    ParameterValue, SketchFeatureBinding,
 };
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
@@ -27,7 +27,7 @@ fn project_compact_operand_markers_with_policy(policy: &DecodePolicy) -> Result<
     lane.relation_instances[0].family = FeatureInputRelationFamily::PointPointDistance;
     lane.relation_instances[0].operands = (0u16..2)
         .map(|index| FeatureInputOperand {
-            offset: u64::from(index),
+            offset: Some(u64::from(index)),
             reference_ref: format!("reference-{index}"),
             kind: FeatureInputOperandKind::D6,
             entity_index: index,
@@ -61,6 +61,7 @@ fn project_compact_operand_markers_with_policy(policy: &DecodePolicy) -> Result<
         );
     }
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#compact-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -70,7 +71,6 @@ fn project_compact_operand_markers_with_policy(policy: &DecodePolicy) -> Result<
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -78,7 +78,7 @@ fn project_compact_operand_markers_with_policy(policy: &DecodePolicy) -> Result<
     let expected = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Entity(entities[0].id().clone()),
         second: SketchLocus::Entity(entities[1].id().clone()),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;

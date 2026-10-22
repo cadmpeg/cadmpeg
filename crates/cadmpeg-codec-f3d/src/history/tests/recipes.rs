@@ -88,12 +88,13 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         })
         .unwrap();
     let reference = |face: i64| DesignRecipeReference {
+        clause_index: 0,
         selector: 1,
-        selector_offset: 0,
+        selector_offset: Some(0),
         token: face.to_string(),
-        token_offset: 0,
+        token_offset: Some(0),
         design_reference: 200,
-        design_reference_offset: 0,
+        design_reference_offset: Some(0),
         candidate_faces: vec![
             FaceId::mint(crate::ids::brep_entity_id(face)).expect("identity grammar")
         ],
@@ -230,7 +231,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
             AsmDeltaState {
                 id: "f3d:history:state#4".into(),
                 parent: "f3d:history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id: 4,
                 version_flag: 1,
                 state_flag: 0,
@@ -347,6 +348,7 @@ fn feature_input_topology_projects_historical_vertices() {
         })
         .unwrap();
     let feature = Feature {
+        needs_recompute: false,
         id: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#work-point")
             .expect("identity grammar"),
         ordinal: 0,
@@ -374,7 +376,7 @@ fn feature_input_topology_projects_historical_vertices() {
             AsmDeltaState {
                 id: "f3d:history:state#4".into(),
                 parent: "f3d:history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id: 4,
                 version_flag: 1,
                 state_flag: 0,
@@ -438,12 +440,13 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         clauses: [clause([1, 2], [0, 3]), clause([4, 1], [0, 5])],
     };
     let reference = |candidate_faces, candidate_edges| DesignRecipeReference {
+        clause_index: 0,
         selector: 0,
-        selector_offset: 0,
+        selector_offset: Some(0),
         token: String::new(),
-        token_offset: 0,
+        token_offset: Some(0),
         design_reference: 0,
-        design_reference_offset: 0,
+        design_reference_offset: Some(0),
         candidate_faces,
         candidate_edges,
         alternate_selector_faces: Vec::new(),
@@ -525,9 +528,9 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     let reference =
         |faces: &[&str]| crate::records::topology::body_recipe::DesignBodyRecipeReference {
             design_reference: 1,
-            design_reference_offset: 25,
+            design_reference_offset: Some(25),
             form: 3,
-            form_offset: 33,
+            form_offset: Some(33),
             candidate_faces: faces
                 .iter()
                 .map(|face| FaceId::mint((*face).to_owned()).expect("identity grammar"))
@@ -657,11 +660,11 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         .unwrap()
         .candidate_faces
         .retain(|face| !face.as_str().contains("/cache/"));
-    let mut draft = operand.into_draft();
+    let mut draft = operand.into_draft().unwrap();
     let mut added = reference(&["f3d:brep/cache/brep:face#1"]);
     added.design_reference_offset =
-        draft.byte_offset + 25 + u64_from_index(draft.references.len()) * 12;
-    added.form_offset = added.design_reference_offset + 8;
+        Some(draft.byte_offset + 25 + u64_from_index(draft.references.len()) * 12);
+    added.form_offset = added.design_reference_offset.map(|offset| offset + 8);
     draft.references.push(added);
     draft.nested_record_index_offset =
         draft.byte_offset + 26 + u64_from_index(draft.references.len()) * 12;
@@ -722,9 +725,9 @@ fn body_recipe_history_fixture() -> (
                 references: vec![
                     crate::records::topology::body_recipe::DesignBodyRecipeReference {
                         design_reference: 301,
-                        design_reference_offset: 25,
+                        design_reference_offset: Some(25),
                         form: 33,
-                        form_offset: 33,
+                        form_offset: Some(33),
                         candidate_faces: vec![candidate.clone()],
                         preceding_candidate_faces: Vec::new(),
                         preceding_body_slots: Vec::new(),
@@ -789,7 +792,7 @@ fn body_recipe_history_fixture() -> (
             AsmDeltaState {
                 id: format!("f3d:Breps.BlobParts/BREP.input:asm-delta-state#{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -963,9 +966,9 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             references: vec![
                 crate::records::topology::body_recipe::DesignBodyRecipeReference {
                     design_reference: 301,
-                    design_reference_offset: 25,
+                    design_reference_offset: Some(25),
                     form: 33,
-                    form_offset: 33,
+                    form_offset: Some(33),
                     candidate_faces: vec![
                         FaceId::mint("f3d:brep:entity#7").expect("identity grammar")
                     ],
@@ -1005,6 +1008,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         FaceId::mint("f3d:brep:entity#7").expect("identity grammar"),
     );
     let inputs = super::super::FeatureBodySelectionInputs {
+        parameters: &[],
         scopes: std::slice::from_ref(&scope),
         groups: std::slice::from_ref(&group),
         body_recipe_operands: std::slice::from_ref(&operand),
@@ -1042,22 +1046,22 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
 
     let recipe = crate::records::recipes::ConstructionRecipe {
         id: operand.recipe_id.clone(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         kind: crate::records::recipes::ConstructionRecipeKind::Body,
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
                 value: "301".into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 9,
-                byte_offset: 0,
+                byte_offset: Some(0),
             }),
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let link = crate::records::sketch_links::PersistentDesignLink {
@@ -1149,6 +1153,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             scope_reference_ordinal: 0,
         };
     let direct_inputs = super::super::FeatureBodySelectionInputs {
+        parameters: &[],
         scopes: std::slice::from_ref(&scope),
         groups: &[],
         body_recipe_operands: std::slice::from_ref(&direct_operand),
@@ -1206,6 +1211,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             DesignOperandRole::BODIES_A,
         );
     let scale_inputs = super::super::FeatureBodySelectionInputs {
+        parameters: &[],
         scopes: std::slice::from_ref(&scale_scope),
         groups: std::slice::from_ref(&scale_group),
         body_recipe_operands: std::slice::from_ref(&operand),
@@ -1217,6 +1223,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         shells: std::slice::from_ref(&shell),
     };
     let mut feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("f3d:test:feature#scale").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1231,7 +1238,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
                 bodies: BodySelection::Native(group_id.into()),
                 center: Some(ScaleCenter::ModelOrigin),
                 factors: ScaleFactors::Uniform {
-                    factor: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap(),
+                    factor: (cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()).into(),
                 },
             }),
         ),
@@ -1262,6 +1269,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let move_history =
         crate::test_support::history::history("f3d:history".into(), 0, None, false, Vec::new());
     let move_inputs = super::super::FeatureBodySelectionInputs {
+        parameters: &[],
         scopes: std::slice::from_ref(&move_scope),
         groups: std::slice::from_ref(&scale_group),
         body_recipe_operands: std::slice::from_ref(&operand),
@@ -1273,6 +1281,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         shells: std::slice::from_ref(&shell),
     };
     let mut move_feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1285,12 +1294,11 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::MoveBody {
                 bodies: BodySelection::Native(group_id.into()),
-                translation: cadmpeg_ir::features::FiniteVector3::new(
-                    cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
-                )
-                .unwrap(),
+                translation: [1.0, 2.0, 3.0].map(|value| {
+                    cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::new(value).unwrap())
+                }),
                 rotation: None,
-                copies: 0,
+                copies: (0).into(),
             }),
         ),
         native_ref: None,
@@ -1318,6 +1326,7 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
     use cadmpeg_ir::ids::BodyId;
 
     let mut feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:model:feature#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,

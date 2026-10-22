@@ -252,6 +252,54 @@ pub(super) fn check_native_links(
     findings: &mut Vec<Finding>,
 ) {
     let ir = view.ir;
+    for (owner, target) in ir
+        .model
+        .appearances
+        .iter()
+        .map(|row| (row.id.as_str(), row.native_ref.as_deref()))
+        .chain(
+            ir.model
+                .appearance_bindings
+                .iter()
+                .map(|row| (row.id.as_str(), row.native_ref.as_deref())),
+        )
+        .chain(
+            ir.model
+                .attributes
+                .iter()
+                .map(|row| (row.id.as_str(), row.native_ref.as_deref())),
+        )
+        .chain(
+            ir.model
+                .presentation_layers
+                .iter()
+                .map(|row| (row.id.as_str(), row.native_ref.as_deref())),
+        )
+        .chain(
+            ir.model
+                .pmi
+                .iter()
+                .map(|row| (row.id.as_str(), row.native_ref.as_deref())),
+        )
+        .chain(
+            ir.model
+                .tessellations
+                .iter()
+                .map(|row| (row.id.as_str(), row.native_ref.as_deref())),
+        )
+    {
+        if let Some(target) = target {
+            if !all_ids.native_record_owns(target) {
+                super::record_finding(
+                    findings,
+                    Check::NativeLinks,
+                    Severity::Error,
+                    Some(owner),
+                    format_args!("native_ref `{target}` does not resolve"),
+                );
+            }
+        }
+    }
     for feature in &ir.model.features {
         if let Some(target) = &feature.native_ref {
             if !all_ids.native_record_owns(target.as_str()) {
@@ -291,17 +339,6 @@ pub(super) fn check_native_links(
                     Severity::Error,
                     Some(parameter.id.as_str()),
                     format_args!("native_ref `{target}` does not resolve"),
-                );
-            }
-        }
-        if let Some(semantic) = &parameter.pmi {
-            if !all_ids.native_record_owns(semantic.native_ref.as_str()) {
-                super::record_finding(
-                    findings,
-                    Check::NativeLinks,
-                    Severity::Error,
-                    Some(parameter.id.as_str()),
-                    format_args!("PMI native_ref `{}` does not resolve", semantic.native_ref),
                 );
             }
         }

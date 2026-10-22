@@ -123,7 +123,7 @@ fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
             AsmDeltaState {
                 id: format!("history:state-{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 0,
                 state_flag: 0,

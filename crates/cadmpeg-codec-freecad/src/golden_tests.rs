@@ -22,7 +22,7 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::texts_agree;
 use cadmpeg_test_support::golden::{
-    elide_local_digests, snapshot_text, Branch, Harness, NATIVE_ELISION_KEY, NATIVE_ELISION_MARKER,
+    artifact_names, snapshot_text, Branch, Harness, NATIVE_ELISION_KEY, NATIVE_ELISION_MARKER,
 };
 
 use super::FcstdCodec;
@@ -75,13 +75,13 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// descends only what the snapshot keeps. The digest reads the typed arenas, so
 /// it is unaffected by either step.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    {
+    let value = match cadmpeg_test_support::golden::decode(
+        &FcstdCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
-            let mut result = EditableDecodeResult::from(result);
-            if let Some(source) = result.ir_mut().source.as_mut() {
-                elide_local_digests(&mut source.attributes);
-            }
+            let result = EditableDecodeResult::from(result);
             let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
             if let Some(native) = ir.get_mut("native") {
                 *native = elided_native(&result.ir().native);
@@ -244,9 +244,12 @@ fn encode_once(
     bytes: &[u8],
 ) -> Result<(cadmpeg_ir::report::export::ExportReport, Vec<u8>), String> {
     let decoded = EditableDecodeResult::from(
-        FcstdCodec
-            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-            .map_err(|error| error.to_string())?,
+        cadmpeg_test_support::golden::decode(
+            &FcstdCodec,
+            &mut Cursor::new(bytes.to_vec()),
+            &DecodeOptions::default(),
+        )
+        .map_err(|error| error.to_string())?,
     );
     let mut produced = Vec::new();
     let report = Encoder::plan(
@@ -303,7 +306,11 @@ fn golden_output_is_deterministic() {
 /// frozen too.
 fn step_snapshot(bytes: &[u8]) -> String {
     let decoded = EditableDecodeResult::from(
-        match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
+        match cadmpeg_test_support::golden::decode(
+            &FcstdCodec,
+            &mut Cursor::new(bytes.to_vec()),
+            &DecodeOptions::default(),
+        ) {
             Ok(decoded) => decoded,
             Err(error) => return format!("decode_error: {error}\n"),
         },
@@ -383,16 +390,16 @@ fn check_step_branch(update: bool) -> Vec<String> {
         };
         let Some(failure) = failure else { continue };
         if update {
+            std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
+                .expect("create golden branch directory");
             std::fs::write(&path, actual.as_bytes())
                 .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
         } else {
             failures.push(failure);
         }
     }
-    for orphan in std::fs::read_dir(&dir)
-        .unwrap_or_else(|error| panic!("read {}: {error}", dir.display()))
-        .map(|entry| entry.expect("directory entry").file_name())
-        .map(|name| name.to_string_lossy().into_owned())
+    for orphan in artifact_names(&dir)
+        .into_iter()
         .filter(|name| !produced.contains(name))
     {
         failures.push(format!(
@@ -652,9 +659,35 @@ mod native_elision {
 /// arenas. Every input the codec admits is cut to geometry depth.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
+    let summary =
+        cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
+            &FcstdCodec,
+            &harness().fixture_inputs(),
+            |decoded| {
+                let declared = crate::loss::unrepresented(
+                    &decoded.report().losses,
+                    decoded
+                        .ir()
+                        .native
+                        .namespace("fcstd")
+                        .expect("FreeCAD native source records"),
+                )
+                .expect("classify retained source records");
+                for class in declared {
+                    assert!(decoded.source_fidelity().unrepresented().contains(&class),
+                    "source loss left class {class} unrepresented without a fidelity declaration");
+                }
+            },
+        );
+    assert_eq!(summary.cut, summary.inputs - summary.refused, "{summary:?}");
+}
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(
         &FcstdCodec,
         &harness().fixture_inputs(),
     );
-    assert_eq!(summary.cut, summary.inputs - summary.refused, "{summary:?}");
 }

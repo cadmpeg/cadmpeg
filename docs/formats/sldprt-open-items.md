@@ -518,7 +518,7 @@ unrelated preceding feature as the pattern seed.
 
 **Known.** Configuration-manager values occur at offsets `+66`, `+107`, and `+117`; `moPart_c` has two defined fields; and `moVisualProperties_c` defines colour and name fields. The remaining bytes, the complete record lengths, and the role of `0x00c0_c0c0` in material records are undefined.
 
-**Need.** We must know what the undecoded bytes hold before the writer can edit a retained record or claim that a generated record is complete.
+**Need.** We must define the remaining fields before the complete metadata record can be generated from typed content. The defined color, name, unit, and configuration fields do not supply those remaining fields.
 
 ### EV-04. Tail-directory descriptor semantics
 

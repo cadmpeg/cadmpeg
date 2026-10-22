@@ -864,13 +864,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                             SketchConstraintDefinitionInput::HorizontalDistance {
                                 first,
                                 second,
-                                parameter: parameter_id,
+                                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
                             }
                         } else {
                             SketchConstraintDefinitionInput::VerticalDistance {
                                 first,
                                 second,
-                                parameter: parameter_id,
+                                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
                             }
                         }));
                     }
@@ -878,7 +878,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                         return Ok(Some(SketchConstraintDefinitionInput::DistanceLoci {
                             first,
                             second,
-                            parameter: parameter_id,
+                            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
                         }));
                     }
                     (first, second) =
@@ -894,7 +894,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             Some(SketchConstraintDefinitionInput::DistanceLoci {
                 first,
                 second,
-                parameter: parameter_id,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
             })
         }
         PointPointHorizontalDistance | PointPointVerticalDistance => {
@@ -976,13 +976,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 SketchConstraintDefinitionInput::HorizontalDistance {
                     first,
                     second,
-                    parameter: parameter_id,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
                 }
             } else {
                 SketchConstraintDefinitionInput::VerticalDistance {
                     first,
                     second,
-                    parameter: parameter_id,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
                 }
             })
         }
@@ -1048,7 +1048,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             Some(SketchConstraintDefinitionInput::DistanceLoci {
                 first: point,
                 second: SketchLocus::Entity(line),
-                parameter: parameter_id,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
             })
         }
         LineLineDistance => {
@@ -1195,7 +1195,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             }
             Some(SketchConstraintDefinitionInput::Distance {
                 entities: vec![first, second],
-                parameter: parameter_id,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
             })
         }
         Angle => {
@@ -1267,7 +1267,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             Some(SketchConstraintDefinitionInput::Angle {
                 first,
                 second,
-                parameter: parameter_id,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
             })
         }
         CircleDiameter => {
@@ -1278,13 +1278,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
                         SketchConstraintDefinitionInput::RepeatedRadius {
                             entities,
-                            parameter: parameter_id,
+                            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
                         }
                     }
                     Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => {
                         SketchConstraintDefinitionInput::RepeatedDiameter {
                             entities,
-                            parameter: parameter_id,
+                            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
                         }
                     }
                     None => return Ok(None),
@@ -1354,13 +1354,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
                     Some(SketchConstraintDefinitionInput::Radius {
                         entity,
-                        parameter: parameter_id,
+                        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
                     })
                 }
                 Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => {
                     Some(SketchConstraintDefinitionInput::Diameter {
                         entity,
-                        parameter: parameter_id,
+                        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
                     })
                 }
                 None => None,
@@ -4071,8 +4071,9 @@ pub(super) fn profile_loci_by_marker(
                 else {
                     continue;
                 };
-                let primary_geometry_locus = usize::try_from(marker.offset())
-                    .ok()
+                let primary_geometry_locus = marker
+                    .offset()
+                    .and_then(|offset| usize::try_from(offset).ok())
                     .is_some_and(|offset| marker_is_geometry_locus(&lane.native_payload, offset));
                 let point = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
                 let translated_points = transforms
@@ -4519,9 +4520,12 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
                         continue;
                     };
                     if primary_only
-                        && index_from_u64(marker.offset()).is_none_or(|offset| {
-                            !marker_is_geometry_locus(&lane.native_payload, offset)
-                        })
+                        && marker
+                            .offset()
+                            .and_then(index_from_u64)
+                            .is_none_or(|offset| {
+                                !marker_is_geometry_locus(&lane.native_payload, offset)
+                            })
                     {
                         continue;
                     }

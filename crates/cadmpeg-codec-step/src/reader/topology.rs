@@ -2648,6 +2648,7 @@ fn build_one(
             continue;
         }
         used_shells.insert(shell_step);
+        let shell_face_start = faces.len();
         let sr = require_carrier(
             exchange.records().get(&shell_step),
             failure,
@@ -3340,7 +3341,7 @@ fn build_one(
             let mut component_faces = Vec::new();
             for face_index in component {
                 let face_id = face_ids[face_index].clone();
-                faces[face_index].shell = component_shell.clone();
+                faces[shell_face_start + face_index].shell = component_shell.clone();
                 component_faces.push(face_id);
             }
 

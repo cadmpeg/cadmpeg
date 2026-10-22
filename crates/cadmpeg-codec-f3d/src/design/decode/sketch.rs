@@ -246,11 +246,11 @@ pub(crate) fn decode_sketch_placements(
             let Some(mut placement) = candidates.pop() else {
                 continue;
             };
-            placement.id = design_record_id(
-                &entry.name,
-                ":design-sketch-placement#",
-                placement.byte_offset(),
-            );
+            let Some(placement_offset) = placement.byte_offset() else {
+                continue;
+            };
+            placement.id =
+                design_record_id(&entry.name, ":design-sketch-placement#", placement_offset);
 
             out.push(placement);
         }
@@ -278,8 +278,11 @@ pub(crate) fn decode_sketch_placements(
         let Some(records) = record_offsets.get(stream) else {
             continue;
         };
+        let Some(entity_offset) = entity.byte_offset else {
+            continue;
+        };
         let Some(mut placement) =
-            parse_member_run_head_placement(bytes, entity.byte_offset, &entity.entity_id, records)
+            parse_member_run_head_placement(bytes, entity_offset, &entity.entity_id, records)
         else {
             continue;
         };
@@ -290,22 +293,21 @@ pub(crate) fn decode_sketch_placements(
                     && native_stream(&candidate.id) == Some(stream)
                     && candidate.byte_offset > entity.byte_offset
             })
-            .map(|candidate| candidate.byte_offset)
+            .filter_map(|candidate| candidate.byte_offset)
             .min();
         let mut matching_scopes = scopes.iter().filter(|scope| {
             design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
                 && native_stream(&scope.id) == Some(stream)
-                && scope.byte_offset() > entity.byte_offset
+                && scope.byte_offset() > entity_offset
                 && next_entity_offset.is_none_or(|end| scope.byte_offset() < end)
         });
         if let (Some(scope), None) = (matching_scopes.next(), matching_scopes.next()) {
             placement.scope_record_index = Some(scope.record_index);
         }
-        placement.id = design_record_id(
-            entry_name,
-            ":design-sketch-placement#",
-            placement.byte_offset(),
-        );
+        let Some(placement_offset) = placement.byte_offset() else {
+            continue;
+        };
+        placement.id = design_record_id(entry_name, ":design-sketch-placement#", placement_offset);
 
         out.push(placement);
     }
@@ -779,12 +781,12 @@ fn decode_persistent_references_from_stream(
                         ":persistent-reference#",
                         u64_from_index(offset),
                     ),
-                    byte_offset: u64_from_index(offset),
-                    value_offset: u32::try_from(value_offset - offset).map_err(|_| {
+                    byte_offset: Some(u64_from_index(offset)),
+                    value_offset: Some(u32::try_from(value_offset - offset).map_err(|_| {
                         CodecError::malformed(
                             "f3d persistent reference relative offset exceeds u32",
                         )
-                    })?,
+                    })?),
                     kind,
                     value,
                 },
@@ -1178,8 +1180,15 @@ pub(crate) fn decode_entity_headers(
                 list.map(
                     |list| crate::records::entity_header::SketchHeaderReferences {
                         record_reference: list.record_reference.value,
-                        record_reference_offset: list.record_reference.offset,
-                        references: list.references,
+                        record_reference_offset: Some(list.record_reference.offset),
+                        references: list
+                            .references
+                            .into_iter()
+                            .map(|reference| crate::records::identity::Located {
+                                value: reference.value,
+                                offset: Some(reference.offset),
+                            })
+                            .collect(),
                     },
                 );
             let members = if genesis_form && in_sketch_module {
@@ -1189,10 +1198,10 @@ pub(crate) fn decode_entity_headers(
             };
             out.push(DesignEntityHeader {
                 id: design_record_id(&entry.name, ":design-entity-header#", u64_from_index(start)),
-                byte_offset: u64_from_index(start),
+                byte_offset: Some(u64_from_index(start)),
                 entity_id,
                 class_tag,
-                optional_slot_present,
+                optional_slot_present: Some(optional_slot_present),
                 registration: crate::records::entity_header::DesignEntityRegistration::new(
                     module,
                     references,
@@ -1240,13 +1249,13 @@ pub(crate) fn decode_entity_headers(
             existing.insert(entity_suffix);
             out.push(DesignEntityHeader {
                 id: design_record_id(&entry.name, ":design-entity-header#", u64_from_index(start)),
-                byte_offset: u64_from_index(start),
+                byte_offset: Some(u64_from_index(start)),
                 entity_id: crate::records::identity::DesignEntityId::from_parts(
                     "Sketch",
                     u64::from(entity_suffix),
                 ),
                 class_tag,
-                optional_slot_present: false,
+                optional_slot_present: Some(false),
                 registration: crate::records::entity_header::DesignEntityRegistration::new(
                     Some(DESIGN_MODULE_SKETCH.to_owned()),
                     None,
@@ -1369,7 +1378,7 @@ fn decode_headers_for_indices_from_stream(
                 ),
                 record_index,
                 class_tag: header.class_tag,
-                byte_offset: u64_from_index(position),
+                byte_offset: Some(u64_from_index(position)),
             });
         }
     }
@@ -1400,7 +1409,10 @@ pub(crate) fn decode_sketch_relations(
             .iter()
             .filter(|record| native_stream(&record.id) == Some(scope.as_str()))
         {
-            let Ok(at) = usize::try_from(record.byte_offset) else {
+            let Some(record_offset) = record.byte_offset else {
+                continue;
+            };
+            let Ok(at) = usize::try_from(record_offset) else {
                 continue;
             };
             let record_end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
@@ -1482,7 +1494,9 @@ fn admit_sketch_relation(
         id: design_record_id(stream, ":sketch-relation#", u64::from(record.record_index)),
         record_index: record.record_index,
         class_tag: record.class_tag.clone(),
-        byte_offset: record.byte_offset,
+        byte_offset: record.byte_offset.ok_or_else(|| {
+            CodecError::malformed("F3D sketch relation has no actual scanner position")
+        })?,
         state_offset: u32::try_from(parsed.state_offset)
             .map_err(|_| CodecError::malformed("f3d sketch relation state offset exceeds u32"))?,
         owner_reference: parsed.owner_reference,
@@ -1700,7 +1714,7 @@ fn decode_sketch_points_from_stream(
                 record_index,
                 owner_reference: decoded.owner_reference,
                 class_tag: frame.class_tag.clone(),
-                byte_offset: u64_from_index(frame.start),
+                byte_offset: Some(u64_from_index(frame.start)),
                 coordinate_offset: decoded.coordinate_offset,
                 record_form,
                 companion,
@@ -2440,7 +2454,7 @@ fn assemble_sketch_text(
         owner_reference: tail.owner_reference,
         class_tag,
         class_version,
-        byte_offset: u64_from_index(byte_offset),
+        byte_offset: Some(u64_from_index(byte_offset)),
         entity_genesis: head.entity_genesis,
         persistent_id: head.persistent_id,
         base_id: head.base_id,
@@ -3008,10 +3022,15 @@ fn decode_sketch_curve_identities_from_stream(
         } else {
             None
         };
-        let (geometry, geometry_offset) = parsed_geometry
-            .map_or((None, geometry_shift + 133), |parsed| {
-                (Some(parsed.geometry), parsed.geometry_offset)
-            });
+        let (geometry, geometry_offset) = match parsed_geometry {
+            Some(parsed) => (
+                Some(parsed.geometry),
+                Some(u32::try_from(parsed.geometry_offset).map_err(|_| {
+                    CodecError::malformed("f3d sketch curve geometry offset exceeds u32")
+                })?),
+            ),
+            None => (None, None),
+        };
 
         out.push(SketchCurveIdentity {
             id: design_record_id(
@@ -3022,10 +3041,8 @@ fn decode_sketch_curve_identities_from_stream(
             record_index,
             owner_reference: trailing_sketch_owner_reference(payload),
             class_tag: frame.class_tag,
-            byte_offset: u64_from_index(frame.start),
-            geometry_offset: u32::try_from(geometry_offset).map_err(|_| {
-                CodecError::malformed("f3d sketch curve geometry offset exceeds u32")
-            })?,
+            byte_offset: Some(u64_from_index(frame.start)),
+            geometry_offset,
             entity_genesis,
             primary_id,
             secondary_id,

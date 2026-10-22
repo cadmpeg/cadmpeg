@@ -1,12 +1,725 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "fcstd:model:attribute#0:Comment:property",
+          "name": "Comment",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Company:property",
+          "name": "Company",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:CreatedBy:property",
+          "name": "CreatedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:CreationDate:property",
+          "name": "CreationDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-01-01T00:00:00Z"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Id:property",
+          "name": "Id",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Label:property",
+          "name": "Label",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "application_payloads"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LastModifiedBy:property",
+          "name": "LastModifiedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LastModifiedDate:property",
+          "name": "LastModifiedDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-01-01T00:00:00Z"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:License:property",
+          "name": "License",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "All rights reserved"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LicenseURL:property",
+          "name": "LicenseURL",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "__elided_authoring_path_sha256:ec1ef47ab3cdc361e6423591cb34d5619dbc08299f8f3761ee9fb45645a3314c"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:ShowHidden:property",
+          "name": "ShowHidden",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:TipName:property",
+          "name": "TipName",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:UseHasher:property",
+          "name": "UseHasher",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Label2:property",
+          "name": "Label2",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Label:property",
+          "name": "Label",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CorpusMetadata"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:License:property",
+          "name": "License",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CC0-1.0"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
+          "name": "Purpose",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Mesh, points, FEM, CAM, embedded bytes, and inert extension data"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Visibility:property",
+          "name": "Visibility",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ExtensionPayload:Domain:property",
+          "name": "Domain",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#ExtensionPayload"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Extension retention fixture"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ExtensionPayload:Label2:property",
+          "name": "Label2",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#ExtensionPayload"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ExtensionPayload:Label:property",
+          "name": "Label",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#ExtensionPayload"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "ExtensionPayload"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ExtensionPayload:Members:property",
+          "name": "Members",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#ExtensionPayload"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "fcstd:native:object#Mesh"
+            },
+            {
+              "kind": "reference",
+              "value": "fcstd:native:object#PointCloud"
+            },
+            {
+              "kind": "reference",
+              "value": "fcstd:native:object#FemAnalysis"
+            },
+            {
+              "kind": "reference",
+              "value": "fcstd:native:object#Toolpath"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ExtensionPayload:Visibility:property",
+          "name": "Visibility",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#ExtensionPayload"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#FemAnalysis:Group:property",
+          "name": "Group",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#FemAnalysis"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "fcstd:native:object#TemperatureConstraint"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#FemAnalysis:Label2:property",
+          "name": "Label2",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#FemAnalysis"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#FemAnalysis:Label:property",
+          "name": "Label",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#FemAnalysis"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "FemAnalysis"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#FemAnalysis:Visibility:property",
+          "name": "Visibility",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#FemAnalysis"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Mesh:Label2:property",
+          "name": "Label2",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#Mesh"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Mesh:Label:property",
+          "name": "Label",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#Mesh"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Mesh"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Mesh:Visibility:property",
+          "name": "Visibility",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#Mesh"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PointCloud:Label2:property",
+          "name": "Label2",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#PointCloud"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PointCloud:Label:property",
+          "name": "Label",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#PointCloud"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "PointCloud"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PointCloud:Visibility:property",
+          "name": "Visibility",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#PointCloud"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#TemperatureConstraint:CFlux:property",
+          "name": "CFlux",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#TemperatureConstraint"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 0.0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#TemperatureConstraint:ConstraintType:property",
+          "name": "ConstraintType",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#TemperatureConstraint"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#TemperatureConstraint:EnableAmplitude:property",
+          "name": "EnableAmplitude",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#TemperatureConstraint"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#TemperatureConstraint:Label2:property",
+          "name": "Label2",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#TemperatureConstraint"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#TemperatureConstraint:Label:property",
+          "name": "Label",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#TemperatureConstraint"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "TemperatureConstraint"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#TemperatureConstraint:NormalDirection:property",
+          "name": "NormalDirection",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#TemperatureConstraint"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "vector",
+              "value": [
+                0.0,
+                0.0,
+                1.0
+              ]
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#TemperatureConstraint:Scale:property",
+          "name": "Scale",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#TemperatureConstraint"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 1.0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#TemperatureConstraint:Suppressed:property",
+          "name": "Suppressed",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#TemperatureConstraint"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#TemperatureConstraint:Temperature:property",
+          "name": "Temperature",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#TemperatureConstraint"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 80.0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#TemperatureConstraint:Visibility:property",
+          "name": "Visibility",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#TemperatureConstraint"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Toolpath:Label2:property",
+          "name": "Label2",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#Toolpath"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Toolpath:Label:property",
+          "name": "Label",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#Toolpath"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Toolpath"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Toolpath:Visibility:property",
+          "name": "Visibility",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#Toolpath"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        }
+      ],
       "bodies": [],
       "coedges": [],
       "configurations": [],
@@ -30,7 +743,6 @@
           },
           "source_object": {
             "format": "fcstd",
-            "name": "Points",
             "object_id": "fcstd:native:object#PointCloud"
           }
         },
@@ -43,7 +755,6 @@
           },
           "source_object": {
             "format": "fcstd",
-            "name": "Points",
             "object_id": "fcstd:native:object#PointCloud"
           }
         },
@@ -56,7 +767,6 @@
           },
           "source_object": {
             "format": "fcstd",
-            "name": "Points",
             "object_id": "fcstd:native:object#PointCloud"
           }
         }
@@ -120,7 +830,6 @@
           },
           "source_object": {
             "format": "fcstd",
-            "name": "Mesh",
             "object_id": "fcstd:native:object#Mesh"
           }
         }
@@ -134,7 +843,6 @@
           "annotations": 0,
           "applications": 7,
           "attachments": 3,
-          "byte_coverage": 1,
           "carrier_census": 0,
           "design_census": 0,
           "document": 1,
@@ -146,9 +854,7 @@
           "gui_properties": 0,
           "gui_view_providers": 0,
           "joints": 0,
-          "logical_ledger": 167,
           "objects": 7,
-          "physical_ledger": 50,
           "product_nodes": 0,
           "properties": 80,
           "shape_payloads": 0,
@@ -158,24 +864,21 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "27a25dfd9dccfeb74dcefd12037b85366034b9564202f32625e74466debac8e1",
-          "byte_coverage": "5a8cbbb48bcbd893fb276dc4bd91327db3e1bd737d5268bb23903cae58260af2",
+          "applications": "8c73a49a41a8884ca68f7240332395d7fc372619da27ade788cdda0ce1e33f43",
           "carrier_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "design_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "document": "d93178e2ae60a752308667e099e054b0413f4e1d2aca58c574989f415af65261",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "entries": "d9df3a634ee01904724187cc40cc0f419b60f4e6d20ad6ba915a4254783fac27",
-          "extensions": "4a687d9465bc165df55b4403c9d267999cf68850c2a6265722bd8ed29f4af771",
+          "entries": "15f8fc648f81a970f14533fcb447e7735131bc57ec56fb32bbac0cbd0ae0c494",
+          "extensions": "838944162c9aa7dd92b5f11c68155697179dce1ec54400eeff6bc6479a93228f",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "logical_ledger": "ca3a84e0adcf4b900c74fd1a8aefb509ca2938fbb734c569e0a4f0e766018a1b",
-          "objects": "6338648b21365176155fcac3d5e0f8a5a12d2ea9817f1504eaaaa6c458e63471",
-          "physical_ledger": "3587acc910720985251ef0031d8b1cadb72049ee4fcd75821917eca11d93519b",
+          "objects": "705b7571adcdb66deb6e970f89dac80664522ba892f21e6ae96014c7f052324c",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "properties": "28dc01e3fb7e658ed454c9ea478b1a8252f36f57441cddea07ee21abea67b03b",
+          "properties": "1cb2378f422ae4125f6d45408e3939777129313000ea582a3d32e810a35325cf",
           "shape_payloads": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
@@ -365,16 +1068,15 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "application_domains": "App,Fem,Mesh,Path,Points",
-        "archive_entry_count": "7",
         "document_kind": "application-document",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "7",
-        "physical_archive_bytes": "3219",
-        "physical_ledger_spans": "50",
         "program_version": "1.1R20260414 (Git shallow)"
       },
       "identity": {
@@ -417,7 +1119,298 @@
         }
       }
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "feature.object-unprojected",
+          "kind": "feature_history_retained",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "design object FemAnalysis of type Fem::FemAnalysis was not projected into neutral features; its typed native object and properties remain",
+        "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "feature.object-unprojected",
+          "kind": "feature_history_retained",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "design object TemperatureConstraint of type Fem::ConstraintTemperature was not projected into neutral features; its typed native object and properties remain",
+        "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "feature.object-unprojected",
+          "kind": "feature_history_retained",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "design object Toolpath of type Path::Feature was not projected into neutral features; its typed native object and properties remain",
+        "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:InertValue (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ExtensionPayload:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ExtensionPayload:Payload (App::PropertyFileIncluded) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ExtensionPayload:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ExtensionPayload:SerializedState (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#FemAnalysis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#FemAnalysis:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Mesh:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#PointCloud:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#TemperatureConstraint:AmplitudeValues (App::PropertyStringList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#TemperatureConstraint:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#TemperatureConstraint:Normals (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#TemperatureConstraint:Points (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#TemperatureConstraint:References (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Toolpath:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#Toolpath:Path (Path::PropertyPath) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.design-payload-unrepresented",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "opaque payload Normals survives only as source bytes; its Design content has no typed representation",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.design-payload-unrepresented",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "opaque payload Points survives only as source bytes; its Design content has no typed representation",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.design-payload-unrepresented",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "opaque payload Toolpath.nc survives only as source bytes; its Design content has no typed representation",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.model-payload-unrepresented",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "opaque payload cc0_payload.bin survives only as source bytes; its Model content has no typed representation",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",
@@ -429,10 +1422,1023 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "metadata": {
+      "document_local_sha256": "3a4cb9e9a464472455380a2b6b50e7bb047edca59c65aaae171bd93eafead306",
+      "fcstd.archive_entry_count": "7",
+      "fcstd.object_count": "7",
+      "fcstd.physical_archive_bytes": "3219",
+      "fcstd.physical_ledger_spans": "50"
+    },
+    "retained_records": {
+      "fcstd:native:entry#Document.xml": {
+        "bytes": {
+          "data": "PD94bWwgdmVyc2lvbj0nMS4wJyBlbmNvZGluZz0ndXRmLTgnPz4KPCEtLQogRnJlZUNBRCBEb2N1bWVudCwgc2VlIGh0dHBzOi8vd3d3LmZyZWVjYWQub3JnIGZvciBtb3JlIGluZm9ybWF0aW9uLi4uCi0tPgo8RG9jdW1lbnQgU2NoZW1hVmVyc2lvbj0iNCIgUHJvZ3JhbVZlcnNpb249IjEuMVIyMDI2MDQxNCAoR2l0IHNoYWxsb3cpIiBGaWxlVmVyc2lvbj0iMSIgU3RyaW5nSGFzaGVyPSIxIj4KICAgIDxTdHJpbmdIYXNoZXIgc2F2ZWFsbD0iMCIgdGhyZXNob2xkPSIwIiBjb3VudD0iMCI+PC9TdHJpbmdIYXNoZXI+CiAgICA8UHJvcGVydGllcyBDb3VudD0iMTciIFRyYW5zaWVudENvdW50PSIzIj4KICAgICAgICA8X1Byb3BlcnR5IG5hbWU9IkZpbGVOYW1lIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjUwMzMxNjQ5Ii8+CiAgICAgICAgPF9Qcm9wZXJ0eSBuYW1lPSJUaXAiIHR5cGU9IkFwcDo6UHJvcGVydHlMaW5rIiBzdGF0dXM9IjMzNTU0NDMzIi8+CiAgICAgICAgPF9Qcm9wZXJ0eSBuYW1lPSJUcmFuc2llbnREaXIiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iNTAzMzE2NDkiLz4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iQ29tbWVudCIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyI+CiAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IiIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IkNvbXBhbnkiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJDcmVhdGVkQnkiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJDcmVhdGlvbkRhdGUiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMTY3NzcyMTciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIyMDI2LTAxLTAxVDAwOjAwOjAwWiIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IklkIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIj4KICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iIi8+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iTGFiZWwiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMTY3NzcyMTciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSJhcHBsaWNhdGlvbl9wYXlsb2FkcyIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9Ikxhc3RNb2RpZmllZEJ5IiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIj4KICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iIi8+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iTGFzdE1vZGlmaWVkRGF0ZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSIxNjc3NzIxNyI+CiAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IjIwMjYtMDEtMDFUMDA6MDA6MDBaIi8+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iTGljZW5zZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSIxIj4KICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iQWxsIHJpZ2h0cyByZXNlcnZlZCIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxpY2Vuc2VVUkwiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMSI+CiAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9Imh0dHBzOi8vZW4ud2lraXBlZGlhLm9yZy93aWtpL0FsbF9yaWdodHNfcmVzZXJ2ZWQiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJNYXRlcmlhbCIgdHlwZT0iQXBwOjpQcm9wZXJ0eU1hcCI+CiAgICAgICAgICAgIDxNYXAgY291bnQ9IjAiPgogICAgICAgICAgICA8L01hcD4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJNZXRhIiB0eXBlPSJBcHA6OlByb3BlcnR5TWFwIj4KICAgICAgICAgICAgPE1hcCBjb3VudD0iMCI+CiAgICAgICAgICAgIDwvTWFwPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IlNob3dIaWRkZW4iIHR5cGU9IkFwcDo6UHJvcGVydHlCb29sIiBzdGF0dXM9IjEiPgogICAgICAgICAgICA8Qm9vbCB2YWx1ZT0iZmFsc2UiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJUaXBOYW1lIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjgzODg2MDgwIj4KICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iIi8+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iVWlkIiB0eXBlPSJBcHA6OlByb3BlcnR5VVVJRCIgc3RhdHVzPSIxNjc3NzIxNyI+CiAgICAgICAgICAgIDxVdWlkIHZhbHVlPSIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJVbml0U3lzdGVtIiB0eXBlPSJBcHA6OlByb3BlcnR5RW51bWVyYXRpb24iIHN0YXR1cz0iMSI+CiAgICAgICAgICAgIDxJbnRlZ2VyIHZhbHVlPSIwIiBDdXN0b21FbnVtPSJ0cnVlIi8+CiAgICAgICAgICAgIDxDdXN0b21FbnVtTGlzdCBjb3VudD0iMTAiPgogICAgICAgICAgICAgICAgPEVudW0gdmFsdWU9IlN0YW5kYXJkIChtbSwga2csIHMsIMKwKSIvPgogICAgICAgICAgICAgICAgPEVudW0gdmFsdWU9Ik1LUyAobSwga2csIHMsIMKwKSIvPgogICAgICAgICAgICAgICAgPEVudW0gdmFsdWU9IlVTIGN1c3RvbWFyeSAoaW4sIGxiKSIvPgogICAgICAgICAgICAgICAgPEVudW0gdmFsdWU9IkltcGVyaWFsIGRlY2ltYWwgKGluLCBsYikiLz4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJCdWlsZGluZyBFdXJvIChjbSwgbcKyLCBtwrMpIi8+CiAgICAgICAgICAgICAgICA8RW51bSB2YWx1ZT0iQnVpbGRpbmcgVVMgKGZ0LWluLCBzcWZ0LCBjZnQpIi8+CiAgICAgICAgICAgICAgICA8RW51bSB2YWx1ZT0iTWV0cmljIHNtYWxsIHBhcnRzICZhbXA7IENOQyAobW0sIG1tL21pbikiLz4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJJbXBlcmlhbCBmb3IgQ2l2aWwgRW5nIChmdCwgbGIsIG1waCkiLz4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJGRU0gKG1tLCBOLCBzKSIvPgogICAgICAgICAgICAgICAgPEVudW0gdmFsdWU9Ik1ldGVyIGRlY2ltYWwgKG0sIG3CsiwgbcKzKSIvPgogICAgICAgICAgICA8L0N1c3RvbUVudW1MaXN0PgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IlVzZUhhc2hlciIgdHlwZT0iQXBwOjpQcm9wZXJ0eUJvb2wiIHN0YXR1cz0iNjcxMDg4NjUiPgogICAgICAgICAgICA8Qm9vbCB2YWx1ZT0idHJ1ZSIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICA8L1Byb3BlcnRpZXM+CiAgICA8T2JqZWN0cyBDb3VudD0iNyIgRGVwZW5kZW5jaWVzPSIxIj4KICAgICAgICA8T2JqZWN0RGVwcyBOYW1lPSJDb3JwdXNNZXRhZGF0YSIgQ291bnQ9IjAiLz4KICAgICAgICA8T2JqZWN0RGVwcyBOYW1lPSJNZXNoIiBDb3VudD0iMCIvPgogICAgICAgIDxPYmplY3REZXBzIE5hbWU9IlBvaW50Q2xvdWQiIENvdW50PSIwIi8+CiAgICAgICAgPE9iamVjdERlcHMgTmFtZT0iRmVtQW5hbHlzaXMiIENvdW50PSIxIj4KICAgICAgICAgICAgPERlcCBOYW1lPSJUZW1wZXJhdHVyZUNvbnN0cmFpbnQiLz4KICAgICAgICA8L09iamVjdERlcHM+CiAgICAgICAgPE9iamVjdERlcHMgTmFtZT0iVGVtcGVyYXR1cmVDb25zdHJhaW50IiBDb3VudD0iMCIvPgogICAgICAgIDxPYmplY3REZXBzIE5hbWU9IlRvb2xwYXRoIiBDb3VudD0iMCIvPgogICAgICAgIDxPYmplY3REZXBzIE5hbWU9IkV4dGVuc2lvblBheWxvYWQiIENvdW50PSI0Ij4KICAgICAgICAgICAgPERlcCBOYW1lPSJNZXNoIi8+CiAgICAgICAgICAgIDxEZXAgTmFtZT0iUG9pbnRDbG91ZCIvPgogICAgICAgICAgICA8RGVwIE5hbWU9IkZlbUFuYWx5c2lzIi8+CiAgICAgICAgICAgIDxEZXAgTmFtZT0iVG9vbHBhdGgiLz4KICAgICAgICA8L09iamVjdERlcHM+CiAgICAgICAgPE9iamVjdCB0eXBlPSJBcHA6OkZlYXR1cmVQeXRob24iIG5hbWU9IkNvcnB1c01ldGFkYXRhIiBpZD0iMSIgLz4KICAgICAgICA8T2JqZWN0IHR5cGU9Ik1lc2g6OkZlYXR1cmUiIG5hbWU9Ik1lc2giIGlkPSIyIiAvPgogICAgICAgIDxPYmplY3QgdHlwZT0iUG9pbnRzOjpGZWF0dXJlIiBuYW1lPSJQb2ludENsb3VkIiBpZD0iMyIgLz4KICAgICAgICA8T2JqZWN0IHR5cGU9IkZlbTo6RmVtQW5hbHlzaXMiIG5hbWU9IkZlbUFuYWx5c2lzIiBpZD0iNCIgLz4KICAgICAgICA8T2JqZWN0IHR5cGU9IkZlbTo6Q29uc3RyYWludFRlbXBlcmF0dXJlIiBuYW1lPSJUZW1wZXJhdHVyZUNvbnN0cmFpbnQiIGlkPSI1IiAvPgogICAgICAgIDxPYmplY3QgdHlwZT0iUGF0aDo6RmVhdHVyZSIgbmFtZT0iVG9vbHBhdGgiIGlkPSI2IiAvPgogICAgICAgIDxPYmplY3QgdHlwZT0iQXBwOjpGZWF0dXJlUHl0aG9uIiBuYW1lPSJFeHRlbnNpb25QYXlsb2FkIiBpZD0iNyIgLz4KICAgIDwvT2JqZWN0cz4KICAgIDxPYmplY3REYXRhIENvdW50PSI3Ij4KICAgICAgICA8T2JqZWN0IG5hbWU9IkNvcnB1c01ldGFkYXRhIj4KICAgICAgICAgICAgPFByb3BlcnRpZXMgQ291bnQ9IjgiIFRyYW5zaWVudENvdW50PSIwIj4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJFeHByZXNzaW9uRW5naW5lIiB0eXBlPSJBcHA6OlByb3BlcnR5RXhwcmVzc2lvbkVuZ2luZSIgc3RhdHVzPSI2NzEwODg2NCI+CiAgICAgICAgICAgICAgICAgICAgPEV4cHJlc3Npb25FbmdpbmUgY291bnQ9IjAiPgogICAgICAgICAgICAgICAgICAgIDwvRXhwcmVzc2lvbkVuZ2luZT4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iSW5lcnRWYWx1ZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVB5dGhvbk9iamVjdCIgZ3JvdXA9IkNvcnB1cyIgZG9jPSIiIGF0dHI9IjAiIHJvPSIwIiBoaWRlPSIwIiBzdGF0dXM9IjIwOTcxNTIiPgogICAgICAgICAgICAgICAgICAgIDxQeXRob24gdmFsdWU9ImV5SnpZV1psSWpvZ2RISjFaU3dnSW1WNFpXTjFkR1VpT2lCbVlXeHpaWDA9IiBlbmNvZGVkPSJ5ZXMiIGpzb249InllcyIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMYWJlbCIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSIxMzQyMTc3MjgiPgogICAgICAgICAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IkNvcnB1c01ldGFkYXRhIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxhYmVsMiIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSI2NzEwODk5MiI+CiAgICAgICAgICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxpY2Vuc2UiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIGdyb3VwPSJDb3JwdXMiIGRvYz0iIiBhdHRyPSIwIiBybz0iMCIgaGlkZT0iMCIgc3RhdHVzPSIyMDk3MTUyIj4KICAgICAgICAgICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSJDQzAtMS4wIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IlByb3h5IiB0eXBlPSJBcHA6OlByb3BlcnR5UHl0aG9uT2JqZWN0Ij4KICAgICAgICAgICAgICAgICAgICA8UHl0aG9uIHZhbHVlPSJiblZzYkE9PSIgZW5jb2RlZD0ieWVzIiBqc29uPSJ5ZXMiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iUHVycG9zZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgZ3JvdXA9IkNvcnB1cyIgZG9jPSIiIGF0dHI9IjAiIHJvPSIwIiBoaWRlPSIwIiBzdGF0dXM9IjIwOTcxNTIiPgogICAgICAgICAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9Ik1lc2gsIHBvaW50cywgRkVNLCBDQU0sIGVtYmVkZGVkIGJ5dGVzLCBhbmQgaW5lcnQgZXh0ZW5zaW9uIGRhdGEiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iVmlzaWJpbGl0eSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUJvb2wiIHN0YXR1cz0iNjQ4Ij4KICAgICAgICAgICAgICAgICAgICA8Qm9vbCB2YWx1ZT0idHJ1ZSIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgPC9Qcm9wZXJ0aWVzPgogICAgICAgIDwvT2JqZWN0PgogICAgICAgIDxPYmplY3QgbmFtZT0iTWVzaCI+CiAgICAgICAgICAgIDxQcm9wZXJ0aWVzIENvdW50PSI2IiBUcmFuc2llbnRDb3VudD0iMSI+CiAgICAgICAgICAgICAgICA8X1Byb3BlcnR5IG5hbWU9Il9FbGVtZW50TWFwVmVyc2lvbiIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSIyMzQ4ODEwMjQiLz4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJFeHByZXNzaW9uRW5naW5lIiB0eXBlPSJBcHA6OlByb3BlcnR5RXhwcmVzc2lvbkVuZ2luZSIgc3RhdHVzPSI2NzEwODg2NCI+CiAgICAgICAgICAgICAgICAgICAgPEV4cHJlc3Npb25FbmdpbmUgY291bnQ9IjAiPgogICAgICAgICAgICAgICAgICAgIDwvRXhwcmVzc2lvbkVuZ2luZT4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iTGFiZWwiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMTM0MjE3NzI5Ij4KICAgICAgICAgICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSJNZXNoIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxhYmVsMiIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSI2NzEwODk5MiI+CiAgICAgICAgICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9Ik1lc2giIHR5cGU9Ik1lc2g6OlByb3BlcnR5TWVzaEtlcm5lbCIgc3RhdHVzPSIxMzQyMTc3MjkiPgogICAgICAgICAgICAgICAgICAgIDxNZXNoIGZpbGU9Ik1lc2hLZXJuZWwuYm1zIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IlBsYWNlbWVudCIgdHlwZT0iQXBwOjpQcm9wZXJ0eVBsYWNlbWVudCIgc3RhdHVzPSI4Mzg4NjA5Ij4KICAgICAgICAgICAgICAgICAgICA8UHJvcGVydHlQbGFjZW1lbnQgUHg9IjAuMDAwMDAwMDAwMDAwMDAwMCIgUHk9IjAuMDAwMDAwMDAwMDAwMDAwMCIgUHo9IjAuMDAwMDAwMDAwMDAwMDAwMCIgUTA9IjAuMDAwMDAwMDAwMDAwMDAwMCIgUTE9IjAuMDAwMDAwMDAwMDAwMDAwMCIgUTI9IjAuMDAwMDAwMDAwMDAwMDAwMCIgUTM9IjEuMDAwMDAwMDAwMDAwMDAwMCIgQT0iMC4wMDAwMDAwMDAwMDAwMDAwIiBPeD0iMC4wMDAwMDAwMDAwMDAwMDAwIiBPeT0iMC4wMDAwMDAwMDAwMDAwMDAwIiBPej0iMS4wMDAwMDAwMDAwMDAwMDAwIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IlZpc2liaWxpdHkiIHR5cGU9IkFwcDo6UHJvcGVydHlCb29sIiBzdGF0dXM9IjY0OSI+CiAgICAgICAgICAgICAgICAgICAgPEJvb2wgdmFsdWU9InRydWUiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgIDwvUHJvcGVydGllcz4KICAgICAgICA8L09iamVjdD4KICAgICAgICA8T2JqZWN0IG5hbWU9IlBvaW50Q2xvdWQiPgogICAgICAgICAgICA8UHJvcGVydGllcyBDb3VudD0iNiIgVHJhbnNpZW50Q291bnQ9IjEiPgogICAgICAgICAgICAgICAgPF9Qcm9wZXJ0eSBuYW1lPSJfRWxlbWVudE1hcFZlcnNpb24iIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMjM0ODgxMDI0Ii8+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iRXhwcmVzc2lvbkVuZ2luZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUV4cHJlc3Npb25FbmdpbmUiIHN0YXR1cz0iNjcxMDg4NjQiPgogICAgICAgICAgICAgICAgICAgIDxFeHByZXNzaW9uRW5naW5lIGNvdW50PSIwIj4KICAgICAgICAgICAgICAgICAgICA8L0V4cHJlc3Npb25FbmdpbmU+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxhYmVsIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjEzNDIxNzcyOCI+CiAgICAgICAgICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iUG9pbnRDbG91ZCIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMYWJlbDIiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iNjcxMDg5OTIiPgogICAgICAgICAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IiIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJQbGFjZW1lbnQiIHR5cGU9IkFwcDo6UHJvcGVydHlQbGFjZW1lbnQiIHN0YXR1cz0iODM4ODYwOCI+CiAgICAgICAgICAgICAgICAgICAgPFByb3BlcnR5UGxhY2VtZW50IFB4PSIwLjAwMDAwMDAwMDAwMDAwMDAiIFB5PSIwLjAwMDAwMDAwMDAwMDAwMDAiIFB6PSIwLjAwMDAwMDAwMDAwMDAwMDAiIFEwPSIwLjAwMDAwMDAwMDAwMDAwMDAiIFExPSIwLjAwMDAwMDAwMDAwMDAwMDAiIFEyPSIwLjAwMDAwMDAwMDAwMDAwMDAiIFEzPSIxLjAwMDAwMDAwMDAwMDAwMDAiIEE9IjAuMDAwMDAwMDAwMDAwMDAwMCIgT3g9IjAuMDAwMDAwMDAwMDAwMDAwMCIgT3k9IjAuMDAwMDAwMDAwMDAwMDAwMCIgT3o9IjEuMDAwMDAwMDAwMDAwMDAwMCIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJQb2ludHMiIHR5cGU9IlBvaW50czo6UHJvcGVydHlQb2ludEtlcm5lbCI+CiAgICAgICAgICAgICAgICAgICAgPFBvaW50cyBmaWxlPSJQb2ludENsb3VkIiBtdHJ4PSIxIDAgMCAwIDAgMSAwIDAgMCAwIDEgMCAwIDAgMCAxICIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJWaXNpYmlsaXR5IiB0eXBlPSJBcHA6OlByb3BlcnR5Qm9vbCIgc3RhdHVzPSI2NDgiPgogICAgICAgICAgICAgICAgICAgIDxCb29sIHZhbHVlPSJ0cnVlIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICA8L1Byb3BlcnRpZXM+CiAgICAgICAgPC9PYmplY3Q+CiAgICAgICAgPE9iamVjdCBuYW1lPSJGZW1BbmFseXNpcyIgRXh0ZW5zaW9ucz0iVHJ1ZSI+CiAgICAgICAgICAgIDxFeHRlbnNpb25zIENvdW50PSIxIj4KICAgICAgICAgICAgICAgIDxFeHRlbnNpb24gdHlwZT0iQXBwOjpHcm91cEV4dGVuc2lvbiIgbmFtZT0iR3JvdXBFeHRlbnNpb24iPgogICAgICAgICAgICAgICAgPC9FeHRlbnNpb24+CiAgICAgICAgICAgIDwvRXh0ZW5zaW9ucz4KICAgICAgICAgICAgPFByb3BlcnRpZXMgQ291bnQ9IjYiIFRyYW5zaWVudENvdW50PSIxIj4KICAgICAgICAgICAgICAgIDxfUHJvcGVydHkgbmFtZT0iX0dyb3VwVG91Y2hlZCIgdHlwZT0iQXBwOjpQcm9wZXJ0eUJvb2wiIHN0YXR1cz0iMTAwNjYzNDI0Ii8+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iRXhwcmVzc2lvbkVuZ2luZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUV4cHJlc3Npb25FbmdpbmUiIHN0YXR1cz0iNjcxMDg4NjQiPgogICAgICAgICAgICAgICAgICAgIDxFeHByZXNzaW9uRW5naW5lIGNvdW50PSIwIj4KICAgICAgICAgICAgICAgICAgICA8L0V4cHJlc3Npb25FbmdpbmU+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9Ikdyb3VwIiB0eXBlPSJBcHA6OlByb3BlcnR5TGlua0xpc3QiPgogICAgICAgICAgICAgICAgICAgIDxMaW5rTGlzdCBjb3VudD0iMSI+CiAgICAgICAgICAgICAgICAgICAgICAgIDxMaW5rIHZhbHVlPSJUZW1wZXJhdHVyZUNvbnN0cmFpbnQiLz4KICAgICAgICAgICAgICAgICAgICA8L0xpbmtMaXN0PgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMYWJlbCIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSIxMzQyMTc3MjgiPgogICAgICAgICAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IkZlbUFuYWx5c2lzIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxhYmVsMiIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSI2NzEwODk5MiI+CiAgICAgICAgICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IlVpZCIgdHlwZT0iQXBwOjpQcm9wZXJ0eVVVSUQiPgogICAgICAgICAgICAgICAgICAgIDxVdWlkIHZhbHVlPSIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDIiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iVmlzaWJpbGl0eSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUJvb2wiIHN0YXR1cz0iNjQ4Ij4KICAgICAgICAgICAgICAgICAgICA8Qm9vbCB2YWx1ZT0idHJ1ZSIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgPC9Qcm9wZXJ0aWVzPgogICAgICAgIDwvT2JqZWN0PgogICAgICAgIDxPYmplY3QgbmFtZT0iVGVtcGVyYXR1cmVDb25zdHJhaW50IiBFeHRlbnNpb25zPSJUcnVlIj4KICAgICAgICAgICAgPEV4dGVuc2lvbnMgQ291bnQ9IjEiPgogICAgICAgICAgICAgICAgPEV4dGVuc2lvbiB0eXBlPSJBcHA6OlN1cHByZXNzaWJsZUV4dGVuc2lvbiIgbmFtZT0iU3VwcHJlc3NpYmxlRXh0ZW5zaW9uIj4KICAgICAgICAgICAgICAgIDwvRXh0ZW5zaW9uPgogICAgICAgICAgICA8L0V4dGVuc2lvbnM+CiAgICAgICAgICAgIDxQcm9wZXJ0aWVzIENvdW50PSIxNSIgVHJhbnNpZW50Q291bnQ9IjAiPgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkFtcGxpdHVkZVZhbHVlcyIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZ0xpc3QiPgogICAgICAgICAgICAgICAgICAgIDxTdHJpbmdMaXN0IGNvdW50PSIyIj4KICAgICAgICAgICAgICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iMCwgMCIvPgogICAgICAgICAgICAgICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIxLCAxIi8+CiAgICAgICAgICAgICAgICAgICAgPC9TdHJpbmdMaXN0PgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJDRmx1eCIgdHlwZT0iQXBwOjpQcm9wZXJ0eVBvd2VyIj4KICAgICAgICAgICAgICAgICAgICA8RmxvYXQgdmFsdWU9IjAuMDAwMDAwMDAwMDAwMDAwMCIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJDb25zdHJhaW50VHlwZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUVudW1lcmF0aW9uIj4KICAgICAgICAgICAgICAgICAgICA8SW50ZWdlciB2YWx1ZT0iMSIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJFbmFibGVBbXBsaXR1ZGUiIHR5cGU9IkFwcDo6UHJvcGVydHlCb29sIj4KICAgICAgICAgICAgICAgICAgICA8Qm9vbCB2YWx1ZT0iZmFsc2UiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iRXhwcmVzc2lvbkVuZ2luZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUV4cHJlc3Npb25FbmdpbmUiIHN0YXR1cz0iNjcxMDg4NjQiPgogICAgICAgICAgICAgICAgICAgIDxFeHByZXNzaW9uRW5naW5lIGNvdW50PSIwIj4KICAgICAgICAgICAgICAgICAgICA8L0V4cHJlc3Npb25FbmdpbmU+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxhYmVsIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjEzNDIxNzcyOCI+CiAgICAgICAgICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iVGVtcGVyYXR1cmVDb25zdHJhaW50Ii8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxhYmVsMiIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSI2NzEwODk5MiI+CiAgICAgICAgICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9Ik5vcm1hbERpcmVjdGlvbiIgdHlwZT0iQXBwOjpQcm9wZXJ0eVZlY3RvciIgc3RhdHVzPSIxNTA5OTQ5NDQiPgogICAgICAgICAgICAgICAgICAgIDxQcm9wZXJ0eVZlY3RvciB2YWx1ZVg9IjAuMDAwMDAwMDAwMDAwMDAwMCIgdmFsdWVZPSIwLjAwMDAwMDAwMDAwMDAwMDAiIHZhbHVlWj0iMS4wMDAwMDAwMDAwMDAwMDAwIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9Ik5vcm1hbHMiIHR5cGU9IkFwcDo6UHJvcGVydHlWZWN0b3JMaXN0IiBzdGF0dXM9IjIxODEwMzgwOCI+CiAgICAgICAgICAgICAgICAgICAgPFZlY3Rvckxpc3QgZmlsZT0iTm9ybWFscyIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJQb2ludHMiIHR5cGU9IkFwcDo6UHJvcGVydHlWZWN0b3JMaXN0IiBzdGF0dXM9IjIxODEwMzgwOCI+CiAgICAgICAgICAgICAgICAgICAgPFZlY3Rvckxpc3QgZmlsZT0iUG9pbnRzIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IlJlZmVyZW5jZXMiIHR5cGU9IkFwcDo6UHJvcGVydHlMaW5rU3ViTGlzdCI+CiAgICAgICAgICAgICAgICAgICAgPExpbmtTdWJMaXN0IGNvdW50PSIwIj4KICAgICAgICAgICAgICAgICAgICA8L0xpbmtTdWJMaXN0PgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJTY2FsZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUZsb2F0Q29uc3RyYWludCI+CiAgICAgICAgICAgICAgICAgICAgPEZsb2F0IHZhbHVlPSIxLjAwMDAwMDAwMDAwMDAwMDAiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iU3VwcHJlc3NlZCIgdHlwZT0iQXBwOjpQcm9wZXJ0eUJvb2wiPgogICAgICAgICAgICAgICAgICAgIDxCb29sIHZhbHVlPSJmYWxzZSIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJUZW1wZXJhdHVyZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVRlbXBlcmF0dXJlIj4KICAgICAgICAgICAgICAgICAgICA8RmxvYXQgdmFsdWU9IjgwLjAwMDAwMDAwMDAwMDAwMDAiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iVmlzaWJpbGl0eSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUJvb2wiIHN0YXR1cz0iNjQ4Ij4KICAgICAgICAgICAgICAgICAgICA8Qm9vbCB2YWx1ZT0idHJ1ZSIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgPC9Qcm9wZXJ0aWVzPgogICAgICAgIDwvT2JqZWN0PgogICAgICAgIDxPYmplY3QgbmFtZT0iVG9vbHBhdGgiPgogICAgICAgICAgICA8UHJvcGVydGllcyBDb3VudD0iNiIgVHJhbnNpZW50Q291bnQ9IjEiPgogICAgICAgICAgICAgICAgPF9Qcm9wZXJ0eSBuYW1lPSJfRWxlbWVudE1hcFZlcnNpb24iIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMjM0ODgxMDI0Ii8+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iRXhwcmVzc2lvbkVuZ2luZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUV4cHJlc3Npb25FbmdpbmUiIHN0YXR1cz0iNjcxMDg4NjQiPgogICAgICAgICAgICAgICAgICAgIDxFeHByZXNzaW9uRW5naW5lIGNvdW50PSIwIj4KICAgICAgICAgICAgICAgICAgICA8L0V4cHJlc3Npb25FbmdpbmU+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxhYmVsIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjEzNDIxNzcyOCI+CiAgICAgICAgICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iVG9vbHBhdGgiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iTGFiZWwyIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjY3MTA4OTkyIj4KICAgICAgICAgICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iUGF0aCIgdHlwZT0iUGF0aDo6UHJvcGVydHlQYXRoIj4KICAgICAgICAgICAgICAgICAgICA8UGF0aCBmaWxlPSJUb29scGF0aC5uYyIgdmVyc2lvbj0iMiI+CiAgICAgICAgICAgICAgICAgICAgICAgIDxDZW50ZXIgeD0iMC4wMDAwMDAwMDAwMDAwMDAwIiB5PSIwLjAwMDAwMDAwMDAwMDAwMDAiIHo9IjAuMDAwMDAwMDAwMDAwMDAwMCIvPgogICAgICAgICAgICAgICAgICAgIDwvUGF0aD4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iUGxhY2VtZW50IiB0eXBlPSJBcHA6OlByb3BlcnR5UGxhY2VtZW50IiBzdGF0dXM9IjgzODg2MDgiPgogICAgICAgICAgICAgICAgICAgIDxQcm9wZXJ0eVBsYWNlbWVudCBQeD0iMC4wMDAwMDAwMDAwMDAwMDAwIiBQeT0iMC4wMDAwMDAwMDAwMDAwMDAwIiBQej0iMC4wMDAwMDAwMDAwMDAwMDAwIiBRMD0iMC4wMDAwMDAwMDAwMDAwMDAwIiBRMT0iMC4wMDAwMDAwMDAwMDAwMDAwIiBRMj0iMC4wMDAwMDAwMDAwMDAwMDAwIiBRMz0iMS4wMDAwMDAwMDAwMDAwMDAwIiBBPSIwLjAwMDAwMDAwMDAwMDAwMDAiIE94PSIwLjAwMDAwMDAwMDAwMDAwMDAiIE95PSIwLjAwMDAwMDAwMDAwMDAwMDAiIE96PSIxLjAwMDAwMDAwMDAwMDAwMDAiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iVmlzaWJpbGl0eSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUJvb2wiIHN0YXR1cz0iNjQ4Ij4KICAgICAgICAgICAgICAgICAgICA8Qm9vbCB2YWx1ZT0idHJ1ZSIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgPC9Qcm9wZXJ0aWVzPgogICAgICAgIDwvT2JqZWN0PgogICAgICAgIDxPYmplY3QgbmFtZT0iRXh0ZW5zaW9uUGF5bG9hZCI+CiAgICAgICAgICAgIDxQcm9wZXJ0aWVzIENvdW50PSI5IiBUcmFuc2llbnRDb3VudD0iMCI+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iRG9tYWluIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBncm91cD0iQXBwbGljYXRpb24iIGRvYz0iIiBhdHRyPSIwIiBybz0iMCIgaGlkZT0iMCIgc3RhdHVzPSIyMDk3MTUyIj4KICAgICAgICAgICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSJFeHRlbnNpb24gcmV0ZW50aW9uIGZpeHR1cmUiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iRXhwcmVzc2lvbkVuZ2luZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUV4cHJlc3Npb25FbmdpbmUiIHN0YXR1cz0iNjcxMDg4NjQiPgogICAgICAgICAgICAgICAgICAgIDxFeHByZXNzaW9uRW5naW5lIGNvdW50PSIwIj4KICAgICAgICAgICAgICAgICAgICA8L0V4cHJlc3Npb25FbmdpbmU+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxhYmVsIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjEzNDIxNzcyOCI+CiAgICAgICAgICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iRXh0ZW5zaW9uUGF5bG9hZCIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMYWJlbDIiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iNjcxMDg5OTIiPgogICAgICAgICAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IiIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJNZW1iZXJzIiB0eXBlPSJBcHA6OlByb3BlcnR5TGlua0xpc3QiIGdyb3VwPSJBcHBsaWNhdGlvbiIgZG9jPSIiIGF0dHI9IjAiIHJvPSIwIiBoaWRlPSIwIiBzdGF0dXM9IjIwOTcxNTIiPgogICAgICAgICAgICAgICAgICAgIDxMaW5rTGlzdCBjb3VudD0iNCI+CiAgICAgICAgICAgICAgICAgICAgICAgIDxMaW5rIHZhbHVlPSJNZXNoIi8+CiAgICAgICAgICAgICAgICAgICAgICAgIDxMaW5rIHZhbHVlPSJQb2ludENsb3VkIi8+CiAgICAgICAgICAgICAgICAgICAgICAgIDxMaW5rIHZhbHVlPSJGZW1BbmFseXNpcyIvPgogICAgICAgICAgICAgICAgICAgICAgICA8TGluayB2YWx1ZT0iVG9vbHBhdGgiLz4KICAgICAgICAgICAgICAgICAgICA8L0xpbmtMaXN0PgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJQYXlsb2FkIiB0eXBlPSJBcHA6OlByb3BlcnR5RmlsZUluY2x1ZGVkIiBncm91cD0iQXBwbGljYXRpb24iIGRvYz0iIiBhdHRyPSIwIiBybz0iMCIgaGlkZT0iMCIgc3RhdHVzPSIyMDk3MTUyIj4KICAgICAgICAgICAgICAgICAgICA8RmlsZUluY2x1ZGVkIGZpbGU9ImNjMF9wYXlsb2FkLmJpbiIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJQcm94eSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVB5dGhvbk9iamVjdCI+CiAgICAgICAgICAgICAgICAgICAgPFB5dGhvbiB2YWx1ZT0iYm5Wc2JBPT0iIGVuY29kZWQ9InllcyIganNvbj0ieWVzIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IlNlcmlhbGl6ZWRTdGF0ZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVB5dGhvbk9iamVjdCIgZ3JvdXA9IkFwcGxpY2F0aW9uIiBkb2M9IiIgYXR0cj0iMCIgcm89IjAiIGhpZGU9IjAiIHN0YXR1cz0iMjA5NzE1MiI+CiAgICAgICAgICAgICAgICAgICAgPFB5dGhvbiB2YWx1ZT0iZXlKcGRHVnlZWFJwYjI1eklqb2dNeXdnSW1OdmJXMWhibVFpT2lCdWRXeHNmUT09IiBlbmNvZGVkPSJ5ZXMiIGpzb249InllcyIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJWaXNpYmlsaXR5IiB0eXBlPSJBcHA6OlByb3BlcnR5Qm9vbCIgc3RhdHVzPSI2NDgiPgogICAgICAgICAgICAgICAgICAgIDxCb29sIHZhbHVlPSJ0cnVlIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICA8L1Byb3BlcnRpZXM+CiAgICAgICAgPC9PYmplY3Q+CiAgICA8L09iamVjdERhdGE+CjwvRG9jdW1lbnQ+Cg==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:entry#MeshKernel.bms": {
+        "bytes": {
+          "data": "0MCwoAAAAQBNRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC1NRVNILU1FU0gtTUVTSC0KBAAAAAIAAAAAAAAAAAAAAAAAAAAAACBBAAAAAAAAAAAAAAAAAAAgQQAAAAAAACBBAAAgQQAAAAAAAAAAAQAAAAIAAAD/////AQAAAP////8BAAAAAwAAAAIAAAD//////////wAAAAAAAAAAAAAgQQAAAAAAACBBAAAAAAAAAAA=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "MeshKernel.bms",
+        "untyped": []
+      },
+      "fcstd:native:entry#Normals": {
+        "bytes": {
+          "data": "AAAAAA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "Normals",
+        "untyped": [
+          "design"
+        ]
+      },
+      "fcstd:native:entry#PointCloud": {
+        "bytes": {
+          "data": "AwAAAAAAgD8AAABAAABAQAAAgEAAAKBAAADAQAAAgL8AAAAAAAAAQA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "PointCloud",
+        "untyped": []
+      },
+      "fcstd:native:entry#Points": {
+        "bytes": {
+          "data": "AAAAAA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "Points",
+        "untyped": [
+          "design"
+        ]
+      },
+      "fcstd:native:entry#Toolpath.nc": {
+        "bytes": {
+          "data": "RzAgWDAuMDAwMDAwIFkwLjAwMDAwMCBaNS4wMDAwMDAKRzEgRjEyMC4wMDAwMDAgWDEwLjAwMDAwMCBZMC4wMDAwMDAgWjAuMDAwMDAwCkcxIFgxMC4wMDAwMDAgWTEwLjAwMDAwMCBaMC4wMDAwMDAK",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "Toolpath.nc",
+        "untyped": [
+          "design"
+        ]
+      },
+      "fcstd:native:entry#cc0_payload.bin": {
+        "bytes": {
+          "data": "AQAAAAIAAAADAAAABAAAAA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "cc0_payload.bin",
+        "untyped": [
+          "model"
+        ]
+      },
+      "fcstd:native:extension#FemAnalysis:0%3AGroupExtension": {
+        "bytes": {
+          "byte_len": 89,
+          "retention": "digest",
+          "sha256": "5efc4462e2e521c8937fea3d1d710cfb76c924ca57989fe75618d91d128a7cd1"
+        },
+        "offset": 0,
+        "stream": "fcstd:native:extension#FemAnalysis:0%3AGroupExtension",
+        "untyped": []
+      },
+      "fcstd:native:extension#TemperatureConstraint:0%3ASuppressibleExtension": {
+        "bytes": {
+          "byte_len": 103,
+          "retention": "digest",
+          "sha256": "e4c0b7860432d36ae607fa4083c59c2efd591a68faaa9b7206574be4c2e5f01d"
+        },
+        "offset": 0,
+        "stream": "fcstd:native:extension#TemperatureConstraint:0%3ASuppressibleExtension",
+        "untyped": []
+      },
+      "fcstd:native:object#CorpusMetadata": {
+        "bytes": {
+          "byte_len": 1745,
+          "retention": "digest",
+          "sha256": "664021ff67b06213712fd0858241d3ef8644f47288e25731e0514d2c169f4b9d"
+        },
+        "offset": 4739,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:object#ExtensionPayload": {
+        "bytes": {
+          "byte_len": 2192,
+          "retention": "digest",
+          "sha256": "a102ad817fac894ecb28f1f8288d91f175708695025e0abb9a1bc26ee39f945f"
+        },
+        "offset": 15664,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:object#FemAnalysis": {
+        "bytes": {
+          "byte_len": 1492,
+          "retention": "digest",
+          "sha256": "07e145f154364a4e80e98812e5a3bd04e3f32b2ca4617ee816149ba4580a3d85"
+        },
+        "offset": 9537,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:object#Mesh": {
+        "bytes": {
+          "byte_len": 1495,
+          "retention": "digest",
+          "sha256": "e9066302e5fff9e9f88e16cfce3332a71de23d9a5b80dfeb2d1780e7311772d9"
+        },
+        "offset": 6493,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:object#PointCloud": {
+        "bytes": {
+          "byte_len": 1531,
+          "retention": "digest",
+          "sha256": "eb5116bca6deab62c5dc208358f01b66ff7cc0d7359684e74aaa8e2990b08e2b"
+        },
+        "offset": 7997,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:object#TemperatureConstraint": {
+        "bytes": {
+          "byte_len": 2991,
+          "retention": "digest",
+          "sha256": "b3b27b5e775b2837f238cd4544e752f83a5ddc24cea82d4ada02208c0fe9bfd1"
+        },
+        "offset": 11038,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:object#Toolpath": {
+        "bytes": {
+          "byte_len": 1617,
+          "retention": "digest",
+          "sha256": "7bee669b1ea1bdc29bb197bb09bf5eb3d7a336796ca24f1ed0bbcb8676dd54c9"
+        },
+        "offset": 14038,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Comment": {
+        "bytes": {
+          "byte_len": 103,
+          "retention": "digest",
+          "sha256": "81124538ed09b291d70bc9ac9462cd1c467bcf3033ca67c663d562b74dc50440"
+        },
+        "offset": 593,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Company": {
+        "bytes": {
+          "byte_len": 103,
+          "retention": "digest",
+          "sha256": "44f02c6854c0f86ffa14389e437254eed2aac3cc2e0db1dbbe11da3cc6be9b22"
+        },
+        "offset": 705,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:CreatedBy": {
+        "bytes": {
+          "byte_len": 105,
+          "retention": "digest",
+          "sha256": "a3c3a09c8f328351c2e46ac692dab754c8416e3fa368ba310019e2fb092b249e"
+        },
+        "offset": 817,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:CreationDate": {
+        "bytes": {
+          "byte_len": 146,
+          "retention": "digest",
+          "sha256": "2bb34c364b7f7aa886b71212ad61dab00c939bd1ce2a18b6f1b58115d78a027e"
+        },
+        "offset": 931,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:FileName": {
+        "bytes": {
+          "byte_len": 73,
+          "retention": "digest",
+          "sha256": "1a74759ded01a03fb074b4c490f3fe5a99a36052c10e1c6df2092c6a261fb6a4"
+        },
+        "offset": 350,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Id": {
+        "bytes": {
+          "byte_len": 98,
+          "retention": "digest",
+          "sha256": "7f28bf82f4ee28ada89f86c3a007cf30297e70587afa2a74f5dcbe6131a0c468"
+        },
+        "offset": 1086,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Label": {
+        "bytes": {
+          "byte_len": 139,
+          "retention": "digest",
+          "sha256": "9379dcd8ac9972d231aaa023a97d84811ea63675c4174eff1e5213abcaa3cbea"
+        },
+        "offset": 1193,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:LastModifiedBy": {
+        "bytes": {
+          "byte_len": 110,
+          "retention": "digest",
+          "sha256": "8038637fe707078432aae5f0c68987aa5c250728dd0d5cb037f634fe431f74d9"
+        },
+        "offset": 1341,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:LastModifiedDate": {
+        "bytes": {
+          "byte_len": 150,
+          "retention": "digest",
+          "sha256": "01c595b1311b777c80ce22a1a69f514e61c15465eb0993f1f8d5a3303fd8fb8f"
+        },
+        "offset": 1460,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:License": {
+        "bytes": {
+          "byte_len": 133,
+          "retention": "digest",
+          "sha256": "56918949c4ee74fc2f0e7c90e7aa0a8849a8f71b54d2e67f09c5ffcbd036e12c"
+        },
+        "offset": 1619,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:LicenseURL": {
+        "bytes": {
+          "byte_len": 166,
+          "retention": "digest",
+          "sha256": "d2f644b986ade74581eb859ee372b49af2e92410b346d84c5c742053eef6c048"
+        },
+        "offset": 1761,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Material": {
+        "bytes": {
+          "byte_len": 117,
+          "retention": "digest",
+          "sha256": "1eb11d240b90531c8d4b67faedf4fe6834d37f0f883c0cd2a0f29ce361701f1c"
+        },
+        "offset": 1936,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Meta": {
+        "bytes": {
+          "byte_len": 113,
+          "retention": "digest",
+          "sha256": "5b0e7329af6d40f05da7f11059a927f27551c39a1ad891c608716244da6b2a8f"
+        },
+        "offset": 2062,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:ShowHidden": {
+        "bytes": {
+          "byte_len": 118,
+          "retention": "digest",
+          "sha256": "bd21890fd64a4853f84432035466a00a94db93f4a7b40b919a495ae9e882f9e8"
+        },
+        "offset": 2184,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Tip": {
+        "bytes": {
+          "byte_len": 66,
+          "retention": "digest",
+          "sha256": "8dbe602eb052759405ecb01e2ddb0f0b69b713a0b64d04e3813d852107e0deaf"
+        },
+        "offset": 432,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:TipName": {
+        "bytes": {
+          "byte_len": 121,
+          "retention": "digest",
+          "sha256": "9f97e3fd4713f12f797a72c2556ef6048bb1380c697f94f7e1e48741a10459b0"
+        },
+        "offset": 2311,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:TransientDir": {
+        "bytes": {
+          "byte_len": 77,
+          "retention": "digest",
+          "sha256": "097b6a607235ec5dddae51f6c00ef818d25af322f539e6175925017dde3a0a9b"
+        },
+        "offset": 507,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Uid": {
+        "bytes": {
+          "byte_len": 149,
+          "retention": "digest",
+          "sha256": "9ecbdbef9a52f0b35488e6a73a03b5dc6a88385180d6feb4aa5726c571057f0f"
+        },
+        "offset": 2441,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:UnitSystem": {
+        "bytes": {
+          "byte_len": 806,
+          "retention": "digest",
+          "sha256": "263748bf16c3b7e13b4f62452dd4429b922d231491401dcbc1a7012b885c3caf"
+        },
+        "offset": 2599,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:UseHasher": {
+        "bytes": {
+          "byte_len": 123,
+          "retention": "digest",
+          "sha256": "3d08f21449e454c0a39a959edd5b987a6e3e2caa78aa43932261ab5f238bbd98"
+        },
+        "offset": 3414,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:ExpressionEngine": {
+        "bytes": {
+          "byte_len": 206,
+          "retention": "digest",
+          "sha256": "2d18f041cf9dbfe93eed1614973fea4bda64fda22bf51471a177a7cad5840585"
+        },
+        "offset": 4840,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:InertValue": {
+        "bytes": {
+          "byte_len": 261,
+          "retention": "digest",
+          "sha256": "47491600b345460b6e2ff4be256d0b5d58a8d42411817970d8300a39b29690e6"
+        },
+        "offset": 5063,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:Label": {
+        "bytes": {
+          "byte_len": 150,
+          "retention": "digest",
+          "sha256": "f727f7767009773a347de7927ce7840a2c753fba0017c1a34f7d6d1187695047"
+        },
+        "offset": 5341,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:Label2": {
+        "bytes": {
+          "byte_len": 136,
+          "retention": "digest",
+          "sha256": "2cf8abec9aa59d488e7fc2f840fce10a81844b388e5fe2f9a184f6213b0efa50"
+        },
+        "offset": 5508,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:License": {
+        "bytes": {
+          "byte_len": 190,
+          "retention": "digest",
+          "sha256": "286ca45e000cc5697761b4c77fdc7d9a55f06e14e9969a16ff52a2b6c418794e"
+        },
+        "offset": 5661,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:Proxy": {
+        "bytes": {
+          "byte_len": 156,
+          "retention": "digest",
+          "sha256": "f38f40f5b2e32a92b784707f882c172210552c61adef3f4c1adbec9e2b970c9c"
+        },
+        "offset": 5868,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:Purpose": {
+        "bytes": {
+          "byte_len": 247,
+          "retention": "digest",
+          "sha256": "ef3f4398364685661a043f9ec49a24c65365b16bdb2f4526ee80f69d583128e2"
+        },
+        "offset": 6041,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:Visibility": {
+        "bytes": {
+          "byte_len": 135,
+          "retention": "digest",
+          "sha256": "eeec0388283602194a17f18feabf7df8b684994afecac6bd6bd19e1eed6ce8c1"
+        },
+        "offset": 6305,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#ExtensionPayload:Domain": {
+        "bytes": {
+          "byte_len": 214,
+          "retention": "digest",
+          "sha256": "52ece93757319f2e74408369fd315069d89fa88e90de0bf596ca419f59d44576"
+        },
+        "offset": 15767,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#ExtensionPayload:ExpressionEngine": {
+        "bytes": {
+          "byte_len": 206,
+          "retention": "digest",
+          "sha256": "2d18f041cf9dbfe93eed1614973fea4bda64fda22bf51471a177a7cad5840585"
+        },
+        "offset": 15998,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#ExtensionPayload:Label": {
+        "bytes": {
+          "byte_len": 152,
+          "retention": "digest",
+          "sha256": "360fd09dce16ed877cc3ad99fc39c1689afd7e2d0ad94b9f7c8a7082daba7f17"
+        },
+        "offset": 16221,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#ExtensionPayload:Label2": {
+        "bytes": {
+          "byte_len": 136,
+          "retention": "digest",
+          "sha256": "2cf8abec9aa59d488e7fc2f840fce10a81844b388e5fe2f9a184f6213b0efa50"
+        },
+        "offset": 16390,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#ExtensionPayload:Members": {
+        "bytes": {
+          "byte_len": 421,
+          "retention": "digest",
+          "sha256": "4870c51116bb7694ec26076eda5943cc3ada37e7400657eb570c35fd0391564e"
+        },
+        "offset": 16543,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#ExtensionPayload:Payload": {
+        "bytes": {
+          "byte_len": 214,
+          "retention": "digest",
+          "sha256": "f34b248083c08484263e76c4334f554c289f51ee63ff0ab11146d860993b9fde"
+        },
+        "offset": 16981,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#ExtensionPayload:Proxy": {
+        "bytes": {
+          "byte_len": 156,
+          "retention": "digest",
+          "sha256": "f38f40f5b2e32a92b784707f882c172210552c61adef3f4c1adbec9e2b970c9c"
+        },
+        "offset": 17212,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#ExtensionPayload:SerializedState": {
+        "bytes": {
+          "byte_len": 275,
+          "retention": "digest",
+          "sha256": "96757475abb7a88fbe6fb49cada09ca5175123edf25652d8105a4168c2c68038"
+        },
+        "offset": 17385,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#ExtensionPayload:Visibility": {
+        "bytes": {
+          "byte_len": 135,
+          "retention": "digest",
+          "sha256": "eeec0388283602194a17f18feabf7df8b684994afecac6bd6bd19e1eed6ce8c1"
+        },
+        "offset": 17677,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#FemAnalysis:ExpressionEngine": {
+        "bytes": {
+          "byte_len": 206,
+          "retention": "digest",
+          "sha256": "2d18f041cf9dbfe93eed1614973fea4bda64fda22bf51471a177a7cad5840585"
+        },
+        "offset": 9914,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#FemAnalysis:Group": {
+        "bytes": {
+          "byte_len": 215,
+          "retention": "digest",
+          "sha256": "4f0c45b380f6b02079ceff690b5e44d7314a2738e96fa55d3d8c83c78fafad3d"
+        },
+        "offset": 10137,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#FemAnalysis:Label": {
+        "bytes": {
+          "byte_len": 147,
+          "retention": "digest",
+          "sha256": "927867f9686dbd3843b2f079cf9a12441840344a445c448a8b456c0ff7f95db9"
+        },
+        "offset": 10369,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#FemAnalysis:Label2": {
+        "bytes": {
+          "byte_len": 136,
+          "retention": "digest",
+          "sha256": "2cf8abec9aa59d488e7fc2f840fce10a81844b388e5fe2f9a184f6213b0efa50"
+        },
+        "offset": 10533,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#FemAnalysis:Uid": {
+        "bytes": {
+          "byte_len": 147,
+          "retention": "digest",
+          "sha256": "a1037312f83728439f3e0cd63e7ac0699abd0b1e0d1443a9d4eae3a6b949d3b8"
+        },
+        "offset": 10686,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#FemAnalysis:Visibility": {
+        "bytes": {
+          "byte_len": 135,
+          "retention": "digest",
+          "sha256": "eeec0388283602194a17f18feabf7df8b684994afecac6bd6bd19e1eed6ce8c1"
+        },
+        "offset": 10850,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#FemAnalysis:_GroupTouched": {
+        "bytes": {
+          "byte_len": 77,
+          "retention": "digest",
+          "sha256": "a43827fac695f41edda1afb84b01fc1ba592fcdd211f5b24465ed4527e3a929b"
+        },
+        "offset": 9820,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Mesh:ExpressionEngine": {
+        "bytes": {
+          "byte_len": 206,
+          "retention": "digest",
+          "sha256": "2d18f041cf9dbfe93eed1614973fea4bda64fda22bf51471a177a7cad5840585"
+        },
+        "offset": 6685,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Mesh:Label": {
+        "bytes": {
+          "byte_len": 140,
+          "retention": "digest",
+          "sha256": "fa6755f4e00cdd9af15460f7a3a2c06c7f8bd2c02879600112a0e0b4b6484d56"
+        },
+        "offset": 6908,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Mesh:Label2": {
+        "bytes": {
+          "byte_len": 136,
+          "retention": "digest",
+          "sha256": "2cf8abec9aa59d488e7fc2f840fce10a81844b388e5fe2f9a184f6213b0efa50"
+        },
+        "offset": 7065,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Mesh:Mesh": {
+        "bytes": {
+          "byte_len": 151,
+          "retention": "digest",
+          "sha256": "fbc59216b5d91c4fc2ba6207df52fcbdcd536f35aa4beddb794b2e713f42de8d"
+        },
+        "offset": 7218,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Mesh:Placement": {
+        "bytes": {
+          "byte_len": 406,
+          "retention": "digest",
+          "sha256": "e9c36e8161750b9d7986370e17a8b4433f850226e0523a770cee04f2d61c89a9"
+        },
+        "offset": 7386,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Mesh:Visibility": {
+        "bytes": {
+          "byte_len": 135,
+          "retention": "digest",
+          "sha256": "9967322ba7c053a4da0729a8573f79a514f4bfadcc49e2097a8ff27424b0c5e2"
+        },
+        "offset": 7809,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Mesh:_ElementMapVersion": {
+        "bytes": {
+          "byte_len": 84,
+          "retention": "digest",
+          "sha256": "dc17ddc0dfafee7c45cbe48ab8dbe92c90f54b7847f1fa3b7b7132bb3173a98f"
+        },
+        "offset": 6584,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#PointCloud:ExpressionEngine": {
+        "bytes": {
+          "byte_len": 206,
+          "retention": "digest",
+          "sha256": "2d18f041cf9dbfe93eed1614973fea4bda64fda22bf51471a177a7cad5840585"
+        },
+        "offset": 8195,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#PointCloud:Label": {
+        "bytes": {
+          "byte_len": 146,
+          "retention": "digest",
+          "sha256": "4133c5500172eb61758a8d19785d6f6da5e1db155ae390b061088e11e888c7a6"
+        },
+        "offset": 8418,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#PointCloud:Label2": {
+        "bytes": {
+          "byte_len": 136,
+          "retention": "digest",
+          "sha256": "2cf8abec9aa59d488e7fc2f840fce10a81844b388e5fe2f9a184f6213b0efa50"
+        },
+        "offset": 8581,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#PointCloud:Placement": {
+        "bytes": {
+          "byte_len": 406,
+          "retention": "digest",
+          "sha256": "21fdbdfd27aa64029bb027393fd2adca68f76e3cc974dd7cc43787644b119ecf"
+        },
+        "offset": 8734,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#PointCloud:Points": {
+        "bytes": {
+          "byte_len": 175,
+          "retention": "digest",
+          "sha256": "49081af480cdc253ffaea98caeb253850d6b537ee4051a93778c1ebdbf35ff79"
+        },
+        "offset": 9157,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#PointCloud:Visibility": {
+        "bytes": {
+          "byte_len": 135,
+          "retention": "digest",
+          "sha256": "eeec0388283602194a17f18feabf7df8b684994afecac6bd6bd19e1eed6ce8c1"
+        },
+        "offset": 9349,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#PointCloud:_ElementMapVersion": {
+        "bytes": {
+          "byte_len": 84,
+          "retention": "digest",
+          "sha256": "dc17ddc0dfafee7c45cbe48ab8dbe92c90f54b7847f1fa3b7b7132bb3173a98f"
+        },
+        "offset": 8094,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:AmplitudeValues": {
+        "bytes": {
+          "byte_len": 263,
+          "retention": "digest",
+          "sha256": "f772f0c95e1fbc68602de57ec412f57b1aac00551cb129a2b4f4db2c5c524603"
+        },
+        "offset": 11346,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:CFlux": {
+        "bytes": {
+          "byte_len": 133,
+          "retention": "digest",
+          "sha256": "f7cbbdfbd64f4180c256aa059e4a129ceafbf577d7d8deb3e0c2509af033ce6b"
+        },
+        "offset": 11626,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:ConstraintType": {
+        "bytes": {
+          "byte_len": 133,
+          "retention": "digest",
+          "sha256": "fa0277f511810fb019a13849b1f286f473ae1bcba10fcedee24772852fd172f1"
+        },
+        "offset": 11776,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:EnableAmplitude": {
+        "bytes": {
+          "byte_len": 128,
+          "retention": "digest",
+          "sha256": "14df56b022bcf497dbd4bfb348212edc8dbe6c77659a184c54c8aaed82adf2b5"
+        },
+        "offset": 11926,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:ExpressionEngine": {
+        "bytes": {
+          "byte_len": 206,
+          "retention": "digest",
+          "sha256": "2d18f041cf9dbfe93eed1614973fea4bda64fda22bf51471a177a7cad5840585"
+        },
+        "offset": 12071,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:Label": {
+        "bytes": {
+          "byte_len": 157,
+          "retention": "digest",
+          "sha256": "3a1b6f959718a9ccbc169245b7f4baad42124c977b55c7c0efcea819d3d36490"
+        },
+        "offset": 12294,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:Label2": {
+        "bytes": {
+          "byte_len": 136,
+          "retention": "digest",
+          "sha256": "2cf8abec9aa59d488e7fc2f840fce10a81844b388e5fe2f9a184f6213b0efa50"
+        },
+        "offset": 12468,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:NormalDirection": {
+        "bytes": {
+          "byte_len": 229,
+          "retention": "digest",
+          "sha256": "d1a326e6578f9d6a0fd4063c2084d64a48c14a4a9074061b16b9a291efe9e61e"
+        },
+        "offset": 12621,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:Normals": {
+        "bytes": {
+          "byte_len": 152,
+          "retention": "digest",
+          "sha256": "e4e70ba07a8e676cc3b538e8cbc4bee04d1aa3692eeb0c895acdefafa9e121d0"
+        },
+        "offset": 12867,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:Points": {
+        "bytes": {
+          "byte_len": 150,
+          "retention": "digest",
+          "sha256": "bc0970a2e0ef7f1eda675908329293f78c3a61a73f52fd14361826a7ab454659"
+        },
+        "offset": 13036,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:References": {
+        "bytes": {
+          "byte_len": 167,
+          "retention": "digest",
+          "sha256": "0bd4a0728cc0c2f0a5138c2f97dc69aaf9223eaaf1b191eba63a457c3f8694c2"
+        },
+        "offset": 13203,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:Scale": {
+        "bytes": {
+          "byte_len": 143,
+          "retention": "digest",
+          "sha256": "04ae4339131e4e29612cfe7493b9581526324cf313f77971cd6922843202c920"
+        },
+        "offset": 13387,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:Suppressed": {
+        "bytes": {
+          "byte_len": 123,
+          "retention": "digest",
+          "sha256": "3ebad4c44ee49fa01dec329ea66ff0831df795d4716b5b34e5c385219433ad12"
+        },
+        "offset": 13547,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:Temperature": {
+        "bytes": {
+          "byte_len": 146,
+          "retention": "digest",
+          "sha256": "d5d4c904dfb9c9f31c7f9444ce07e9aae872623fbd1f0f7f2b36e248b73174c7"
+        },
+        "offset": 13687,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#TemperatureConstraint:Visibility": {
+        "bytes": {
+          "byte_len": 135,
+          "retention": "digest",
+          "sha256": "eeec0388283602194a17f18feabf7df8b684994afecac6bd6bd19e1eed6ce8c1"
+        },
+        "offset": 13850,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Toolpath:ExpressionEngine": {
+        "bytes": {
+          "byte_len": 206,
+          "retention": "digest",
+          "sha256": "2d18f041cf9dbfe93eed1614973fea4bda64fda22bf51471a177a7cad5840585"
+        },
+        "offset": 14234,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Toolpath:Label": {
+        "bytes": {
+          "byte_len": 144,
+          "retention": "digest",
+          "sha256": "dc7a4de28bc8de0994b3f311860f629b482669237bfb0e18ecca90988616e54a"
+        },
+        "offset": 14457,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Toolpath:Label2": {
+        "bytes": {
+          "byte_len": 136,
+          "retention": "digest",
+          "sha256": "2cf8abec9aa59d488e7fc2f840fce10a81844b388e5fe2f9a184f6213b0efa50"
+        },
+        "offset": 14618,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Toolpath:Path": {
+        "bytes": {
+          "byte_len": 265,
+          "retention": "digest",
+          "sha256": "013871558ebd3fef84f9a942bfd6d5a9a54ca1bc5335e75cee79d4563753cbb2"
+        },
+        "offset": 14771,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Toolpath:Placement": {
+        "bytes": {
+          "byte_len": 406,
+          "retention": "digest",
+          "sha256": "21fdbdfd27aa64029bb027393fd2adca68f76e3cc974dd7cc43787644b119ecf"
+        },
+        "offset": 15053,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Toolpath:Visibility": {
+        "bytes": {
+          "byte_len": 135,
+          "retention": "digest",
+          "sha256": "eeec0388283602194a17f18feabf7df8b684994afecac6bd6bd19e1eed6ce8c1"
+        },
+        "offset": 15476,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#Toolpath:_ElementMapVersion": {
+        "bytes": {
+          "byte_len": 84,
+          "retention": "digest",
+          "sha256": "dc17ddc0dfafee7c45cbe48ab8dbe92c90f54b7847f1fa3b7b7132bb3173a98f"
+        },
+        "offset": 14133,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:source-layout#byte-coverage": {
+        "bytes": {
+          "data": "eyJpZCI6ImZjc3RkOm5hdGl2ZTpieXRlLWNvdmVyYWdlIzAiLCJwaHlzaWNhbF9ieXRlX2xlbiI6MzIxOSwicGh5c2ljYWxfc3Bhbl9jb3VudCI6NTAsImxvZ2ljYWxfZW50cnlfY291bnQiOjcsImxvZ2ljYWxfYnl0ZV9sZW4iOjE4NDU3LCJsb2dpY2FsX3NwYW5fY291bnQiOjE2NywiY2xhc3NpZmljYXRpb25fYnl0ZXMiOnsibmFtZWRfb3BhcXVlIjo4NDksInN0cnVjdHVyYWwiOjQwOTUsInR5cGVkIjoxMzUxM30sIm5hbWVkX29wYXF1ZV9lbnRyaWVzIjpbIkRvY3VtZW50LnhtbCIsIk1lc2hLZXJuZWwuYm1zIiwiTm9ybWFscyIsIlBvaW50Q2xvdWQiLCJQb2ludHMiLCJUb29scGF0aC5uYyIsImNjMF9wYXlsb2FkLmJpbiJdLCJleGFjdCI6dHJ1ZX0=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "fcstd:source:layout#archive",
+        "untyped": []
+      },
+      "fcstd:native:source-layout#logical-ledger": {
+        "bytes": {
+          "data": "W3siaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjowLCJlbmQiOjM1MCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzEiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjozNTAsImVuZCI6NDIzLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpGaWxlTmFtZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0MjMsImVuZCI6NDMyLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjQzMiwiZW5kIjo0OTgsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOlRpcCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzQiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0OTgsImVuZCI6NTA3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjUwNywiZW5kIjo1ODQsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOlRyYW5zaWVudERpciJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzYiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1ODQsImVuZCI6NTkzLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjU5MywiZW5kIjo2OTYsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOkNvbW1lbnQifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6Njk2LCJlbmQiOjcwNSwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo3MDUsImVuZCI6ODA4LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpDb21wYW55In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo4MDgsImVuZCI6ODE3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTEiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo4MTcsImVuZCI6OTIyLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpDcmVhdGVkQnkifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjkyMiwiZW5kIjo5MzEsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjkzMSwiZW5kIjoxMDc3LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpDcmVhdGlvbkRhdGUifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxNCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEwNzcsImVuZCI6MTA4NiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE1IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTA4NiwiZW5kIjoxMTg0LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpJZCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE2IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTE4NCwiZW5kIjoxMTkzLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTciLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMTkzLCJlbmQiOjEzMzIsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOkxhYmVsIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTgiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMzMyLCJlbmQiOjEzNDEsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxOSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEzNDEsImVuZCI6MTQ1MSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5IzA6TGFzdE1vZGlmaWVkQnkifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMyMCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE0NTEsImVuZCI6MTQ2MCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzIxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTQ2MCwiZW5kIjoxNjEwLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpMYXN0TW9kaWZpZWREYXRlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMjIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNjEwLCJlbmQiOjE2MTksImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMyMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE2MTksImVuZCI6MTc1MiwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5IzA6TGljZW5zZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzI0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTc1MiwiZW5kIjoxNzYxLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMjUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNzYxLCJlbmQiOjE5MjcsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOkxpY2Vuc2VVUkwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMyNiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE5MjcsImVuZCI6MTkzNiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzI3IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTkzNiwiZW5kIjoyMDUzLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpNYXRlcmlhbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzI4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MjA1MywiZW5kIjoyMDYyLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMjkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoyMDYyLCJlbmQiOjIxNzUsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOk1ldGEifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMzMCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjIxNzUsImVuZCI6MjE4NCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzMxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MjE4NCwiZW5kIjoyMzAyLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpTaG93SGlkZGVuIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMzIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoyMzAyLCJlbmQiOjIzMTEsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMzMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjIzMTEsImVuZCI6MjQzMiwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5IzA6VGlwTmFtZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzM0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MjQzMiwiZW5kIjoyNDQxLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMzUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoyNDQxLCJlbmQiOjI1OTAsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOlVpZCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzM2IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MjU5MCwiZW5kIjoyNTk5LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMzciLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoyNTk5LCJlbmQiOjM0MDUsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOlVuaXRTeXN0ZW0ifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMzOCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjM0MDUsImVuZCI6MzQxNCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzM5IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MzQxNCwiZW5kIjozNTM3LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpVc2VIYXNoZXIifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM0MCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjM1MzcsImVuZCI6NDg0MCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzQxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NDg0MCwiZW5kIjo1MDQ2LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjQ29ycHVzTWV0YWRhdGE6RXhwcmVzc2lvbkVuZ2luZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzQyIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NTA0NiwiZW5kIjo1MDYzLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNDMiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1MDYzLCJlbmQiOjUzMjQsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNDb3JwdXNNZXRhZGF0YTpJbmVydFZhbHVlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNDQiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1MzI0LCJlbmQiOjUzNDEsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM0NSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjUzNDEsImVuZCI6NTQ5MSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0NvcnB1c01ldGFkYXRhOkxhYmVsIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNDYiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1NDkxLCJlbmQiOjU1MDgsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM0NyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjU1MDgsImVuZCI6NTY0NCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0NvcnB1c01ldGFkYXRhOkxhYmVsMiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzQ4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NTY0NCwiZW5kIjo1NjYxLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNDkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1NjYxLCJlbmQiOjU4NTEsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNDb3JwdXNNZXRhZGF0YTpMaWNlbnNlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNTAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1ODUxLCJlbmQiOjU4NjgsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM1MSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjU4NjgsImVuZCI6NjAyNCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0NvcnB1c01ldGFkYXRhOlByb3h5In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNTIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo2MDI0LCJlbmQiOjYwNDEsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM1MyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjYwNDEsImVuZCI6NjI4OCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0NvcnB1c01ldGFkYXRhOlB1cnBvc2UifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM1NCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjYyODgsImVuZCI6NjMwNSwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzU1IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NjMwNSwiZW5kIjo2NDQwLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjQ29ycHVzTWV0YWRhdGE6VmlzaWJpbGl0eSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzU2IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NjQ0MCwiZW5kIjo2NTg0LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNTciLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo2NTg0LCJlbmQiOjY2NjgsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNNZXNoOl9FbGVtZW50TWFwVmVyc2lvbiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzU4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NjY2OCwiZW5kIjo2Njg1LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNTkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo2Njg1LCJlbmQiOjY4OTEsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNNZXNoOkV4cHJlc3Npb25FbmdpbmUifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM2MCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjY4OTEsImVuZCI6NjkwOCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzYxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NjkwOCwiZW5kIjo3MDQ4LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjTWVzaDpMYWJlbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzYyIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NzA0OCwiZW5kIjo3MDY1LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNjMiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo3MDY1LCJlbmQiOjcyMDEsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNNZXNoOkxhYmVsMiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzY0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NzIwMSwiZW5kIjo3MjE4LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNjUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo3MjE4LCJlbmQiOjczNjksImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNNZXNoOk1lc2gifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM2NiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjczNjksImVuZCI6NzM4NiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzY3IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NzM4NiwiZW5kIjo3NzkyLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjTWVzaDpQbGFjZW1lbnQifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM2OCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjc3OTIsImVuZCI6NzgwOSwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzY5IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NzgwOSwiZW5kIjo3OTQ0LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjTWVzaDpWaXNpYmlsaXR5In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNzAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo3OTQ0LCJlbmQiOjgwOTQsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM3MSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjgwOTQsImVuZCI6ODE3OCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1BvaW50Q2xvdWQ6X0VsZW1lbnRNYXBWZXJzaW9uIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNzIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo4MTc4LCJlbmQiOjgxOTUsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM3MyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjgxOTUsImVuZCI6ODQwMSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1BvaW50Q2xvdWQ6RXhwcmVzc2lvbkVuZ2luZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzc0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6ODQwMSwiZW5kIjo4NDE4LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNzUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo4NDE4LCJlbmQiOjg1NjQsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNQb2ludENsb3VkOkxhYmVsIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNzYiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo4NTY0LCJlbmQiOjg1ODEsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM3NyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjg1ODEsImVuZCI6ODcxNywiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1BvaW50Q2xvdWQ6TGFiZWwyIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNzgiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo4NzE3LCJlbmQiOjg3MzQsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM3OSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjg3MzQsImVuZCI6OTE0MCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1BvaW50Q2xvdWQ6UGxhY2VtZW50In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jODAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo5MTQwLCJlbmQiOjkxNTcsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM4MSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjkxNTcsImVuZCI6OTMzMiwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1BvaW50Q2xvdWQ6UG9pbnRzIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jODIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo5MzMyLCJlbmQiOjkzNDksImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM4MyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjkzNDksImVuZCI6OTQ4NCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1BvaW50Q2xvdWQ6VmlzaWJpbGl0eSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzg0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6OTQ4NCwiZW5kIjo5ODIwLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jODUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo5ODIwLCJlbmQiOjk4OTcsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNGZW1BbmFseXNpczpfR3JvdXBUb3VjaGVkIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jODYiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo5ODk3LCJlbmQiOjk5MTQsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM4NyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjk5MTQsImVuZCI6MTAxMjAsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNGZW1BbmFseXNpczpFeHByZXNzaW9uRW5naW5lIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jODgiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMDEyMCwiZW5kIjoxMDEzNywiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzg5IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTAxMzcsImVuZCI6MTAzNTIsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNGZW1BbmFseXNpczpHcm91cCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzkwIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTAzNTIsImVuZCI6MTAzNjksImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM5MSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEwMzY5LCJlbmQiOjEwNTE2LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjRmVtQW5hbHlzaXM6TGFiZWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM5MiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEwNTE2LCJlbmQiOjEwNTMzLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jOTMiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMDUzMywiZW5kIjoxMDY2OSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0ZlbUFuYWx5c2lzOkxhYmVsMiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzk0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTA2NjksImVuZCI6MTA2ODYsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM5NSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEwNjg2LCJlbmQiOjEwODMzLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjRmVtQW5hbHlzaXM6VWlkIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jOTYiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMDgzMywiZW5kIjoxMDg1MCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzk3IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTA4NTAsImVuZCI6MTA5ODUsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNGZW1BbmFseXNpczpWaXNpYmlsaXR5In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jOTgiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMDk4NSwiZW5kIjoxMTM0NiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzk5IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTEzNDYsImVuZCI6MTE2MDksImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNUZW1wZXJhdHVyZUNvbnN0cmFpbnQ6QW1wbGl0dWRlVmFsdWVzIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTAwIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTE2MDksImVuZCI6MTE2MjYsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMDEiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMTYyNiwiZW5kIjoxMTc1OSwiY2xhc3NpZmljYXRpb24iOiJuYW1lZF9vcGFxdWUiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNUZW1wZXJhdHVyZUNvbnN0cmFpbnQ6Q0ZsdXgifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMDIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMTc1OSwiZW5kIjoxMTc3NiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzEwMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjExNzc2LCJlbmQiOjExOTA5LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjVGVtcGVyYXR1cmVDb25zdHJhaW50OkNvbnN0cmFpbnRUeXBlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTA0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTE5MDksImVuZCI6MTE5MjYsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMDUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMTkyNiwiZW5kIjoxMjA1NCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1RlbXBlcmF0dXJlQ29uc3RyYWludDpFbmFibGVBbXBsaXR1ZGUifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMDYiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMjA1NCwiZW5kIjoxMjA3MSwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzEwNyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEyMDcxLCJlbmQiOjEyMjc3LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjVGVtcGVyYXR1cmVDb25zdHJhaW50OkV4cHJlc3Npb25FbmdpbmUifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMDgiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMjI3NywiZW5kIjoxMjI5NCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzEwOSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEyMjk0LCJlbmQiOjEyNDUxLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjVGVtcGVyYXR1cmVDb25zdHJhaW50OkxhYmVsIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTEwIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTI0NTEsImVuZCI6MTI0NjgsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMTEiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMjQ2OCwiZW5kIjoxMjYwNCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1RlbXBlcmF0dXJlQ29uc3RyYWludDpMYWJlbDIifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMTIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMjYwNCwiZW5kIjoxMjYyMSwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzExMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEyNjIxLCJlbmQiOjEyODUwLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjVGVtcGVyYXR1cmVDb25zdHJhaW50Ok5vcm1hbERpcmVjdGlvbiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzExNCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEyODUwLCJlbmQiOjEyODY3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTE1IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTI4NjcsImVuZCI6MTMwMTksImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNUZW1wZXJhdHVyZUNvbnN0cmFpbnQ6Tm9ybWFscyJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzExNiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEzMDE5LCJlbmQiOjEzMDM2LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTE3IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTMwMzYsImVuZCI6MTMxODYsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNUZW1wZXJhdHVyZUNvbnN0cmFpbnQ6UG9pbnRzIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTE4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTMxODYsImVuZCI6MTMyMDMsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMTkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMzIwMywiZW5kIjoxMzM3MCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1RlbXBlcmF0dXJlQ29uc3RyYWludDpSZWZlcmVuY2VzIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTIwIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTMzNzAsImVuZCI6MTMzODcsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMjEiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMzM4NywiZW5kIjoxMzUzMCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1RlbXBlcmF0dXJlQ29uc3RyYWludDpTY2FsZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzEyMiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEzNTMwLCJlbmQiOjEzNTQ3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTIzIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTM1NDcsImVuZCI6MTM2NzAsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNUZW1wZXJhdHVyZUNvbnN0cmFpbnQ6U3VwcHJlc3NlZCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzEyNCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEzNjcwLCJlbmQiOjEzNjg3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTI1IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTM2ODcsImVuZCI6MTM4MzMsImNsYXNzaWZpY2F0aW9uIjoibmFtZWRfb3BhcXVlIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjVGVtcGVyYXR1cmVDb25zdHJhaW50OlRlbXBlcmF0dXJlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTI2IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTM4MzMsImVuZCI6MTM4NTAsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMjciLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMzg1MCwiZW5kIjoxMzk4NSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1RlbXBlcmF0dXJlQ29uc3RyYWludDpWaXNpYmlsaXR5In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTI4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTM5ODUsImVuZCI6MTQxMzMsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMjkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNDEzMywiZW5kIjoxNDIxNywiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1Rvb2xwYXRoOl9FbGVtZW50TWFwVmVyc2lvbiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzEzMCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE0MjE3LCJlbmQiOjE0MjM0LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTMxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTQyMzQsImVuZCI6MTQ0NDAsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNUb29scGF0aDpFeHByZXNzaW9uRW5naW5lIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTMyIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTQ0NDAsImVuZCI6MTQ0NTcsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMzMiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNDQ1NywiZW5kIjoxNDYwMSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1Rvb2xwYXRoOkxhYmVsIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTM0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTQ2MDEsImVuZCI6MTQ2MTgsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMzUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNDYxOCwiZW5kIjoxNDc1NCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1Rvb2xwYXRoOkxhYmVsMiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzEzNiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE0NzU0LCJlbmQiOjE0NzcxLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTM3IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTQ3NzEsImVuZCI6MTUwMzYsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNUb29scGF0aDpQYXRoIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTM4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTUwMzYsImVuZCI6MTUwNTMsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMzkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNTA1MywiZW5kIjoxNTQ1OSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I1Rvb2xwYXRoOlBsYWNlbWVudCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE0MCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE1NDU5LCJlbmQiOjE1NDc2LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTQxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTU0NzYsImVuZCI6MTU2MTEsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNUb29scGF0aDpWaXNpYmlsaXR5In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTQyIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTU2MTEsImVuZCI6MTU3NjcsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxNDMiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNTc2NywiZW5kIjoxNTk4MSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0V4dGVuc2lvblBheWxvYWQ6RG9tYWluIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTQ0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTU5ODEsImVuZCI6MTU5OTgsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxNDUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNTk5OCwiZW5kIjoxNjIwNCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0V4dGVuc2lvblBheWxvYWQ6RXhwcmVzc2lvbkVuZ2luZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE0NiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE2MjA0LCJlbmQiOjE2MjIxLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTQ3IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTYyMjEsImVuZCI6MTYzNzMsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNFeHRlbnNpb25QYXlsb2FkOkxhYmVsIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTQ4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTYzNzMsImVuZCI6MTYzOTAsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxNDkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNjM5MCwiZW5kIjoxNjUyNiwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0V4dGVuc2lvblBheWxvYWQ6TGFiZWwyIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTUwIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTY1MjYsImVuZCI6MTY1NDMsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxNTEiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNjU0MywiZW5kIjoxNjk2NCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0V4dGVuc2lvblBheWxvYWQ6TWVtYmVycyJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE1MiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE2OTY0LCJlbmQiOjE2OTgxLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTUzIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTY5ODEsImVuZCI6MTcxOTUsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNFeHRlbnNpb25QYXlsb2FkOlBheWxvYWQifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxNTQiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNzE5NSwiZW5kIjoxNzIxMiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE1NSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE3MjEyLCJlbmQiOjE3MzY4LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjRXh0ZW5zaW9uUGF5bG9hZDpQcm94eSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE1NiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE3MzY4LCJlbmQiOjE3Mzg1LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTU3IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTczODUsImVuZCI6MTc2NjAsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNFeHRlbnNpb25QYXlsb2FkOlNlcmlhbGl6ZWRTdGF0ZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE1OCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE3NjYwLCJlbmQiOjE3Njc3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTU5IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTc2NzcsImVuZCI6MTc4MTIsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNFeHRlbnNpb25QYXlsb2FkOlZpc2liaWxpdHkifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxNjAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNzgxMiwiZW5kIjoxNzg4NywiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE2MSIsImVudHJ5IjoiTWVzaEtlcm5lbC5ibXMiLCJzdGFydCI6MCwiZW5kIjozOTIsImNsYXNzaWZpY2F0aW9uIjoibmFtZWRfb3BhcXVlIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6ZW50cnkjTWVzaEtlcm5lbC5ibXMifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxNjIiLCJlbnRyeSI6IlBvaW50Q2xvdWQiLCJzdGFydCI6MCwiZW5kIjo0MCwiY2xhc3NpZmljYXRpb24iOiJuYW1lZF9vcGFxdWUiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTplbnRyeSNQb2ludENsb3VkIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTYzIiwiZW50cnkiOiJOb3JtYWxzIiwic3RhcnQiOjAsImVuZCI6NCwiY2xhc3NpZmljYXRpb24iOiJuYW1lZF9vcGFxdWUiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTplbnRyeSNOb3JtYWxzIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTY0IiwiZW50cnkiOiJQb2ludHMiLCJzdGFydCI6MCwiZW5kIjo0LCJjbGFzc2lmaWNhdGlvbiI6Im5hbWVkX29wYXF1ZSIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOmVudHJ5I1BvaW50cyJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE2NSIsImVudHJ5IjoiVG9vbHBhdGgubmMiLCJzdGFydCI6MCwiZW5kIjoxMTQsImNsYXNzaWZpY2F0aW9uIjoibmFtZWRfb3BhcXVlIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6ZW50cnkjVG9vbHBhdGgubmMifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxNjYiLCJlbnRyeSI6ImNjMF9wYXlsb2FkLmJpbiIsInN0YXJ0IjowLCJlbmQiOjE2LCJjbGFzc2lmaWNhdGlvbiI6Im5hbWVkX29wYXF1ZSIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOmVudHJ5I2NjMF9wYXlsb2FkLmJpbiJ9XQ==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "fcstd:source:layout#archive",
+        "untyped": []
+      },
+      "fcstd:native:source-layout#physical-ledger": {
+        "bytes": {
+          "data": "W3siaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzAiLCJzdGFydCI6MCwiZW5kIjo0LCJyb2xlIjoibG9jYWwtc2lnbmF0dXJlIiwiZW50cnkiOiJEb2N1bWVudC54bWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMxIiwic3RhcnQiOjQsImVuZCI6MzAsInJvbGUiOiJsb2NhbC1maWVsZHMiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzIiLCJzdGFydCI6MzAsImVuZCI6NDIsInJvbGUiOiJsb2NhbC1uYW1lIiwiZW50cnkiOiJEb2N1bWVudC54bWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMzIiwic3RhcnQiOjQyLCJlbmQiOjIzOTMsInJvbGUiOiJjb21wcmVzc2VkLXBheWxvYWQiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzQiLCJzdGFydCI6MjM5MywiZW5kIjoyMzk3LCJyb2xlIjoibG9jYWwtc2lnbmF0dXJlIiwiZW50cnkiOiJNZXNoS2VybmVsLmJtcyJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzUiLCJzdGFydCI6MjM5NywiZW5kIjoyNDIzLCJyb2xlIjoibG9jYWwtZmllbGRzIiwiZW50cnkiOiJNZXNoS2VybmVsLmJtcyJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzYiLCJzdGFydCI6MjQyMywiZW5kIjoyNDM3LCJyb2xlIjoibG9jYWwtbmFtZSIsImVudHJ5IjoiTWVzaEtlcm5lbC5ibXMifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiM3Iiwic3RhcnQiOjI0MzcsImVuZCI6MjQ4Nywicm9sZSI6ImNvbXByZXNzZWQtcGF5bG9hZCIsImVudHJ5IjoiTWVzaEtlcm5lbC5ibXMifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiM4Iiwic3RhcnQiOjI0ODcsImVuZCI6MjQ5MSwicm9sZSI6ImxvY2FsLXNpZ25hdHVyZSIsImVudHJ5IjoiUG9pbnRDbG91ZCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzkiLCJzdGFydCI6MjQ5MSwiZW5kIjoyNTE3LCJyb2xlIjoibG9jYWwtZmllbGRzIiwiZW50cnkiOiJQb2ludENsb3VkIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jMTAiLCJzdGFydCI6MjUxNywiZW5kIjoyNTI3LCJyb2xlIjoibG9jYWwtbmFtZSIsImVudHJ5IjoiUG9pbnRDbG91ZCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzExIiwic3RhcnQiOjI1MjcsImVuZCI6MjU1Miwicm9sZSI6ImNvbXByZXNzZWQtcGF5bG9hZCIsImVudHJ5IjoiUG9pbnRDbG91ZCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzEyIiwic3RhcnQiOjI1NTIsImVuZCI6MjU1Niwicm9sZSI6ImxvY2FsLXNpZ25hdHVyZSIsImVudHJ5IjoiTm9ybWFscyJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzEzIiwic3RhcnQiOjI1NTYsImVuZCI6MjU4Miwicm9sZSI6ImxvY2FsLWZpZWxkcyIsImVudHJ5IjoiTm9ybWFscyJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzE0Iiwic3RhcnQiOjI1ODIsImVuZCI6MjU4OSwicm9sZSI6ImxvY2FsLW5hbWUiLCJlbnRyeSI6Ik5vcm1hbHMifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMxNSIsInN0YXJ0IjoyNTg5LCJlbmQiOjI1OTUsInJvbGUiOiJjb21wcmVzc2VkLXBheWxvYWQiLCJlbnRyeSI6Ik5vcm1hbHMifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMxNiIsInN0YXJ0IjoyNTk1LCJlbmQiOjI1OTksInJvbGUiOiJsb2NhbC1zaWduYXR1cmUiLCJlbnRyeSI6IlBvaW50cyJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzE3Iiwic3RhcnQiOjI1OTksImVuZCI6MjYyNSwicm9sZSI6ImxvY2FsLWZpZWxkcyIsImVudHJ5IjoiUG9pbnRzIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jMTgiLCJzdGFydCI6MjYyNSwiZW5kIjoyNjMxLCJyb2xlIjoibG9jYWwtbmFtZSIsImVudHJ5IjoiUG9pbnRzIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jMTkiLCJzdGFydCI6MjYzMSwiZW5kIjoyNjM3LCJyb2xlIjoiY29tcHJlc3NlZC1wYXlsb2FkIiwiZW50cnkiOiJQb2ludHMifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMyMCIsInN0YXJ0IjoyNjM3LCJlbmQiOjI2NDEsInJvbGUiOiJsb2NhbC1zaWduYXR1cmUiLCJlbnRyeSI6IlRvb2xwYXRoLm5jIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jMjEiLCJzdGFydCI6MjY0MSwiZW5kIjoyNjY3LCJyb2xlIjoibG9jYWwtZmllbGRzIiwiZW50cnkiOiJUb29scGF0aC5uYyJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzIyIiwic3RhcnQiOjI2NjcsImVuZCI6MjY3OCwicm9sZSI6ImxvY2FsLW5hbWUiLCJlbnRyeSI6IlRvb2xwYXRoLm5jIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jMjMiLCJzdGFydCI6MjY3OCwiZW5kIjoyNzE3LCJyb2xlIjoiY29tcHJlc3NlZC1wYXlsb2FkIiwiZW50cnkiOiJUb29scGF0aC5uYyJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzI0Iiwic3RhcnQiOjI3MTcsImVuZCI6MjcyMSwicm9sZSI6ImxvY2FsLXNpZ25hdHVyZSIsImVudHJ5IjoiY2MwX3BheWxvYWQuYmluIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jMjUiLCJzdGFydCI6MjcyMSwiZW5kIjoyNzQ3LCJyb2xlIjoibG9jYWwtZmllbGRzIiwiZW50cnkiOiJjYzBfcGF5bG9hZC5iaW4ifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMyNiIsInN0YXJ0IjoyNzQ3LCJlbmQiOjI3NjIsInJvbGUiOiJsb2NhbC1uYW1lIiwiZW50cnkiOiJjYzBfcGF5bG9hZC5iaW4ifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMyNyIsInN0YXJ0IjoyNzYyLCJlbmQiOjI3NzUsInJvbGUiOiJjb21wcmVzc2VkLXBheWxvYWQiLCJlbnRyeSI6ImNjMF9wYXlsb2FkLmJpbiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzI4Iiwic3RhcnQiOjI3NzUsImVuZCI6Mjc3OSwicm9sZSI6ImNlbnRyYWwtc2lnbmF0dXJlIiwiZW50cnkiOiJEb2N1bWVudC54bWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMyOSIsInN0YXJ0IjoyNzc5LCJlbmQiOjI4MjEsInJvbGUiOiJjZW50cmFsLWZpZWxkcyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jMzAiLCJzdGFydCI6MjgyMSwiZW5kIjoyODMzLCJyb2xlIjoiY2VudHJhbC1uYW1lIiwiZW50cnkiOiJEb2N1bWVudC54bWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMzMSIsInN0YXJ0IjoyODMzLCJlbmQiOjI4MzcsInJvbGUiOiJjZW50cmFsLXNpZ25hdHVyZSIsImVudHJ5IjoiTWVzaEtlcm5lbC5ibXMifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMzMiIsInN0YXJ0IjoyODM3LCJlbmQiOjI4NzksInJvbGUiOiJjZW50cmFsLWZpZWxkcyIsImVudHJ5IjoiTWVzaEtlcm5lbC5ibXMifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMzMyIsInN0YXJ0IjoyODc5LCJlbmQiOjI4OTMsInJvbGUiOiJjZW50cmFsLW5hbWUiLCJlbnRyeSI6Ik1lc2hLZXJuZWwuYm1zIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jMzQiLCJzdGFydCI6Mjg5MywiZW5kIjoyODk3LCJyb2xlIjoiY2VudHJhbC1zaWduYXR1cmUiLCJlbnRyeSI6IlBvaW50Q2xvdWQifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMzNSIsInN0YXJ0IjoyODk3LCJlbmQiOjI5MzksInJvbGUiOiJjZW50cmFsLWZpZWxkcyIsImVudHJ5IjoiUG9pbnRDbG91ZCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzM2Iiwic3RhcnQiOjI5MzksImVuZCI6Mjk0OSwicm9sZSI6ImNlbnRyYWwtbmFtZSIsImVudHJ5IjoiUG9pbnRDbG91ZCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzM3Iiwic3RhcnQiOjI5NDksImVuZCI6Mjk1Mywicm9sZSI6ImNlbnRyYWwtc2lnbmF0dXJlIiwiZW50cnkiOiJOb3JtYWxzIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jMzgiLCJzdGFydCI6Mjk1MywiZW5kIjoyOTk1LCJyb2xlIjoiY2VudHJhbC1maWVsZHMiLCJlbnRyeSI6Ik5vcm1hbHMifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMzOSIsInN0YXJ0IjoyOTk1LCJlbmQiOjMwMDIsInJvbGUiOiJjZW50cmFsLW5hbWUiLCJlbnRyeSI6Ik5vcm1hbHMifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiM0MCIsInN0YXJ0IjozMDAyLCJlbmQiOjMwMDYsInJvbGUiOiJjZW50cmFsLXNpZ25hdHVyZSIsImVudHJ5IjoiUG9pbnRzIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jNDEiLCJzdGFydCI6MzAwNiwiZW5kIjozMDQ4LCJyb2xlIjoiY2VudHJhbC1maWVsZHMiLCJlbnRyeSI6IlBvaW50cyJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzQyIiwic3RhcnQiOjMwNDgsImVuZCI6MzA1NCwicm9sZSI6ImNlbnRyYWwtbmFtZSIsImVudHJ5IjoiUG9pbnRzIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jNDMiLCJzdGFydCI6MzA1NCwiZW5kIjozMDU4LCJyb2xlIjoiY2VudHJhbC1zaWduYXR1cmUiLCJlbnRyeSI6IlRvb2xwYXRoLm5jIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jNDQiLCJzdGFydCI6MzA1OCwiZW5kIjozMTAwLCJyb2xlIjoiY2VudHJhbC1maWVsZHMiLCJlbnRyeSI6IlRvb2xwYXRoLm5jIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jNDUiLCJzdGFydCI6MzEwMCwiZW5kIjozMTExLCJyb2xlIjoiY2VudHJhbC1uYW1lIiwiZW50cnkiOiJUb29scGF0aC5uYyJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzQ2Iiwic3RhcnQiOjMxMTEsImVuZCI6MzExNSwicm9sZSI6ImNlbnRyYWwtc2lnbmF0dXJlIiwiZW50cnkiOiJjYzBfcGF5bG9hZC5iaW4ifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiM0NyIsInN0YXJ0IjozMTE1LCJlbmQiOjMxNTcsInJvbGUiOiJjZW50cmFsLWZpZWxkcyIsImVudHJ5IjoiY2MwX3BheWxvYWQuYmluIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jNDgiLCJzdGFydCI6MzE1NywiZW5kIjozMTcyLCJyb2xlIjoiY2VudHJhbC1uYW1lIiwiZW50cnkiOiJjYzBfcGF5bG9hZC5iaW4ifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiM0OSIsInN0YXJ0IjozMTcyLCJlbmQiOjMyMTksInJvbGUiOiJlbmQtcmVjb3JkIiwiZW50cnkiOm51bGx9XQ==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "fcstd:source:layout#archive",
+        "untyped": []
+      },
+      "fcstd:source:image#archive": {
+        "bytes": {
+          "data": "UEsDBBQAAAAIAAAAIQCUKikvLwkAAN9FAAAMAAAARG9jdW1lbnQueG1s7RzbVtu49p2v0PjhlFkLEjsJEHqAWTRAywy3NlxaXliKrRC1vo1sA+GrZs35g/mys+VbHFtynEAYCqQsiKV909bWvkhyN367s0x0Q5hHHXvznVZT3yFi645B7evNd4HfX26/+21rYeOX5eUFtMcI6WzvoB1HDyxi+0vIIwQNfN/13tfrt7e3tT5A6NioOewa9R2GLIcRRG34amEfONRqtYXlZaCXkEBdfUAsfB4LoLQUdMKca4attEmraV8aamNVbWkttPiR+sgbYNN0bn9V0B41yQhQQV2fgeCfsDcgjDdsLSD4bGSbkYdvCOBvKqqC/AEj3sAxjfBJdwLb59+2NupZlJgKCOYS5lPioU4Eqa0p6JRh26MwlLitGTMNUa5inCGysUU2FS7vEXwDzkMXnrdd9/37BCZiqSDPx37gbSorarOprbbWlXoJxVPqCokdUPvHiFSzubLSajWb5aSSkexQNruAOaIdx+LzXEZvhJyZLHSDzQAQxmjXE8xSfi62h0/HjxHsE+PDE3MEg98BvpWmSVtdW1trgK2WisGX2LKqwc+pqr4Pfy6nFW3feDItHOAeMR9x+Nh1TaqHir1y8dB0sOFNL5PnH4Lr7NMnNYgs22doFAdUJ7ZXUapycbZNEzF6PfA9BH6bsBtizCjN2ZeDxxAoiX3Ert3SH9QlBsU8+NX5Ux3EvYrEvZpV3EOYT0ax2NIPsZsXD5oyYWy8rw6dU3InPv53OHcHzu0nahjEFvL/4DhmySTx7mSK+tgE45tS7RBVK4fpdrPdXlXbhUE/bFGfUbEvPTvb35m8is8CaiSc1fizLPgVf7SppbOp3x16PrGEQu7akNyx0JmWzNK+7ZNrSMgSORXUCTzfsTj2puKzYGzaQpQRwAH1/MTetLzuQ1gOldDu+tg2MDPQomUtoR/XkLkuoX/++jXPoIB4+EcXcKZCOesiPRQTsyFapPYSMnuTsfYtN1zoyCA6teBvZcwPATV5uo52A+agRR2ktf75m//63xTIIPVi31/mTL0/+5Da632/gnoIGLmOPBDYRC5m4Jj/gy33v6hz1Il0bVl1i9pTjJ+XDR16Q020C2ItclHMHtBxB5OJ7O0eRlyPYBSVpAfzSxVepriN+rjpTblcPBJVEhWc2eqapoJDWSnzafm1kZchfYZaJW457n0nup9WLlC47BCX2OBgdQAaX50xMAB46CjOqpkbeDwcGJiHhE7i6OtlWIdQW1WFPXEolFCmExhVMfaItW1jc+hRL0Up+BiAj8FPCbcw0DEjHcf2fIaB4bgSRyzK+IoJVRT6FGbRxX5lteze+ZCugB89iXLSFK8lH2mo9rz9jrozmpYDZZUrh0pHU1WNWfPfI6EOT4b+gIcJW2ho1Ajr+qKOYkp8rCkpJU1buN1x1EYJaqgHr4CcNUROollCArTE8TN2aBdNkxNpTSIysqSMeSXkJBbHCa+UDRBmpjC8kQFy9NUSdPkkFY2S01pLaSUmMO57oDTBI/dT5Co0gJzpFbdg2sUdGGE2kPPIu3cupOR8DBBlqC3O9IpAOSedX4QptzymLDMeLZo8hmAIgkAjG96+DQ/nPFgIBxZNZ6R3BV0zJ3ATzSvIcHRIVxH2fRYmZcwJ/wyoESVpiQ4a6vqattKQjSjikUQsMvz9/tvFpbn/3bk2Pv2uXXZvr/et89blxZFmfDyjx/SD9e3i7v7yq7qpRDuQBGxqSECg7x7f3eNfRQF9Cq1MsWfQbEFWvdZoy0Y3ntznjPYxxGxUkjO0w/V16STIa5CZBKtQyc/HmHLq7qjLWk196HDg8U68SzO2PirZd88+93rbm/Oz3ZOAuc4z0D2PrUvIDWPnEoKEewl1tuEXsXoEynUD9YY+gR6otxDlXgiRJFqgx1gc59SjPWpSXzxzuVy6JV3AZen0JLmK6XXUGhmMLLKFWcnEeLZajGf5pDbEzG/eX+2ahG+0H2I3PhCp5EAazVa7ramNlnD8rytoTh8e1quvmRcbFKJkO5uNp5uE8PQHYTYxp9AcR0J9asbUIvxaz3q4AzWxTqRHUZne8X09qaAFTHRyB7ZaU3MfBZ0MJe334vbPqqRdk7Q3JO1NfnhabN8Wgx9LxD+WiH98LyT/tP5dOj1P798zheObl39JXr5iESDfV5lJxOfo62f0oVIFvvnQufjQaGdLye1zpcrmz3Fcls1LiBKH4eyGmOUzGKGG1Pif+NvrzfHHNv7SbTKP360B9jkOo37Z9vU4WFYXH3mpl/YkG3O5VtFo0978cEfSzC96hfKdOoE+IOLTzdy5rqquroITfgtb8dRKb3rxIymZIEl/eloqAUyBkyUz8cRkfCwJn2canktONGaS8TnG59JLAxIJprwq0Hi9zl1yDDNPN98N3MiJ9ExS8Pbiznk5fW1ltpOWbcuFyQ4MEh5HeCWrpsyJjSASNyZbUhnw1KyXkDCnkoBrS0iTu7mRJA9bB509M7gT59HOLWEyReyZDvbTgT166pg5hwTBJl7ukQiZu9kj1OY0Uu3aGGw8tSS546jgKwr3wWYS6GUnG3MLwpVTihcRjo/4aw/mDmUQQ2RbNefQ57CMQlfU9fXWektqG+OIkahfxdVl2PetpO9yHtVnNGqxo4+EDh39aHNKa2tqsy3fJRghxRVpwuFRy+Q5yBkzeKCYX0ifMGLrktjJ0+5u0JtUAcQgkz1JBvhhcnd1bIodYxjDMuu/Sqh7fDtN0qeyUvSp4snYpR+BMNn+KtpqP35m8BPn7cmVp7dt+deYcgjuKM4s4HPMMk7C23zZK39pIVE0+hER6IvDVKKhmq0r6aug5fVVB4wd8nvJbrdks1u8VS8ttLiEb8cVr+C44ueNLIWLsBMjzPpsmyg7jgWZUpXLX9uj9xjndANstFHFCHzjnMCR3IW5yVtZXTa8ucW4gh2+1Fh3yK8ZMnkhFFVsc1wK+cMUma2lwJPugAmBy68SCFEmHG8IccpSoxD4kc500tcERLUgpCD7tm4GBq/D5jhzWUZx4qPravKud60H7vU13Sfuhm/b0XtidH3ZO+PC1wTmMTeFdwVc4+P58NvXL26vsXLP3xk4HPL3BY5uehfaoGd95u8LBMbFndf/PEcd/SyJSfrKFfbx1sJGPfnPVbYW/g9QSwMEFAAAAAgAAAAhABjAzxQyAAAAiAEAAA4AAABNZXNoS2VybmVsLmJtc7twYMMCBgZGBl/XYA/dkUtwsTAwMDAxoAMFR+x8EI2QY4Tq/Q8EjEg0M5I4CGA3BwIAUEsDBBQAAAAIAAAAIQDkDOcMGQAAACgAAAAKAAAAUG9pbnRDbG91ZGNmAIEGeyDhAERA3ADEC4D4AIi9nwECHABQSwMEFAAAAAgAAAAhABzfRCEGAAAABAAAAAcAAABOb3JtYWxzY2BgYAAAUEsDBBQAAAAIAAAAIQAc30QhBgAAAAQAAAAGAAAAUG9pbnRzY2BgYAAAUEsDBBQAAAAIAAAAIQBtyMEbJwAAAHIAAAALAAAAVG9vbHBhdGgubmNzN1CIMNAzAAOFSDgryhTK4nI3VHAzNIJLRBhiU22ApBpZhSEWJQBQSwMEFAAAAAgAAAAhAO/UBa8NAAAAEAAAAA8AAABjYzBfcGF5bG9hZC5iaW5jZGBgYAJiZiBmAWIAUEsBAhQDFAAAAAgAAAAhAJQqKS8vCQAA30UAAAwAAAAAAAAAAAAAAKSBAAAAAERvY3VtZW50LnhtbFBLAQIUAxQAAAAIAAAAIQAYwM8UMgAAAIgBAAAOAAAAAAAAAAAAAACkgVkJAABNZXNoS2VybmVsLmJtc1BLAQIUAxQAAAAIAAAAIQDkDOcMGQAAACgAAAAKAAAAAAAAAAAAAACkgbcJAABQb2ludENsb3VkUEsBAhQDFAAAAAgAAAAhABzfRCEGAAAABAAAAAcAAAAAAAAAAAAAAKSB+AkAAE5vcm1hbHNQSwECFAMUAAAACAAAACEAHN9EIQYAAAAEAAAABgAAAAAAAAAAAAAApIEjCgAAUG9pbnRzUEsBAhQDFAAAAAgAAAAhAG3IwRsnAAAAcgAAAAsAAAAAAAAAAAAAAKSBTQoAAFRvb2xwYXRoLm5jUEsBAhQDFAAAAAgAAAAhAO/UBa8NAAAAEAAAAA8AAAAAAAAAAAAAAKSBnQoAAGNjMF9wYXlsb2FkLmJpblBLBQYAAAAABwAHAI0BAADXCgAAGQBjYWRtcGVnIENDMCBGQ1N0ZCBmaXh0dXJl",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "fcstd:source:image#archive",
+        "untyped": []
+      }
+    },
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

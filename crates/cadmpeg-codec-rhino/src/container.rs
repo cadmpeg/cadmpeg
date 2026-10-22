@@ -52,6 +52,7 @@ const TCODE_HISTORY: u32 = 0x1000_0026;
 const TCODE_USER: u32 = 0x1000_0017;
 
 const TCODE_OBJECT_RECORD: u32 = 0x2000_8070;
+const TCODE_OBJECT_RECORD_HISTORY: u32 = 0x0200_8074;
 const TCODE_USER_TABLE_UUID: u32 = 0x2000_8080;
 const TCODE_USER_TABLE_RECORD_HEADER: u32 = 0x2000_8082;
 const TCODE_BITMAP_RECORD: u32 = 0x2000_8090;
@@ -171,6 +172,8 @@ pub(crate) struct OpaqueRecord {
 /// Losses and opaque records from one native-arena install pass.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NativeInstall {
+    /// Physical positions of typed source records, retained outside CADIR.
+    pub(crate) source_layout: BTreeMap<String, String>,
     /// Losses from records that could not be transferred.
     pub(crate) losses: Vec<LossNote>,
     /// Complete records whose registered class payload was not admitted.
@@ -272,6 +275,91 @@ pub(crate) struct Scan<'a> {
     pub(crate) warnings: Diagnostics,
     /// Typed metadata decoded from property, setting, and layer records.
     pub(crate) metadata: crate::settings::DocumentMetadata,
+}
+
+impl Scan<'_> {
+    pub(crate) fn content_scope(&self, ir: &CadIr) -> cadmpeg_ir::ContentScope {
+        let model_part = self
+            .tables
+            .iter()
+            .any(|table| match table_base(table.typecode) {
+                TCODE_BITMAP
+                | TCODE_TEXTURE_MAPPING
+                | TCODE_MATERIAL
+                | TCODE_LINETYPE
+                | TCODE_LAYER
+                | TCODE_OBSOLETE_LAYERSET
+                | TCODE_GROUP
+                | TCODE_FONT
+                | TCODE_DIMSTYLE
+                | TCODE_LIGHT
+                | TCODE_HATCH_PATTERN
+                | TCODE_INSTANCE_DEFINITION
+                | TCODE_OBJECTS => true,
+                TCODE_PROPERTIES => table.records.iter().any(|record| {
+                    matches!(
+                        record.typecode,
+                        TCODE_REVISION_HISTORY
+                            | TCODE_NOTES
+                            | TCODE_PREVIEW
+                            | TCODE_APPLICATION
+                            | TCODE_COMPRESSED_PREVIEW
+                    )
+                }),
+                TCODE_SETTINGS => table
+                    .records
+                    .iter()
+                    .any(|record| expected_record(TCODE_SETTINGS, record.typecode)),
+                _ => false,
+            });
+        let design_part = self
+            .tables
+            .iter()
+            .any(|table| table_base(table.typecode) == TCODE_HISTORY)
+            || self
+                .objects
+                .iter()
+                .any(|object| self.object_history_part(object));
+        scope_from_parts(ir, model_part, design_part)
+    }
+
+    fn object_history_part(&self, object: &ObjectRecord) -> bool {
+        let range = object.range();
+        let Ok(record) = chunk_at(self.data, range.start, range.end, self.archive, false) else {
+            return false;
+        };
+        let mut offset = record.body().start;
+        while offset < record.body().end {
+            let Ok(child) = chunk_at(self.data, offset, record.body().end, self.archive, false)
+            else {
+                return false;
+            };
+            if child.typecode == TCODE_OBJECT_RECORD_HISTORY {
+                return true;
+            }
+            offset = child.next_offset();
+        }
+        false
+    }
+}
+
+pub(crate) fn scope_from_parts(
+    ir: &CadIr,
+    model_part: bool,
+    design_part: bool,
+) -> cadmpeg_ir::ContentScope {
+    cadmpeg_ir::ContentScope {
+        model: model_part
+            || ir
+                .model
+                .populated_arena(cadmpeg_ir::ArenaClass::Model)
+                .is_some(),
+        design: design_part
+            || ir
+                .model
+                .populated_arena(cadmpeg_ir::ArenaClass::Design)
+                .is_some(),
+    }
 }
 
 /// Borrows the session root bytes after the shared input budget admitted them.
@@ -1194,7 +1282,7 @@ fn scan_with_record_limit<'a>(
                 ) {
                     Ok(descriptor) => descriptor,
                     Err(FramingError::Resource(limit)) => {
-                        return Err(CodecError::ResourceLimit(limit))
+                        return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
                         warnings.push(format_args!(
@@ -1531,8 +1619,52 @@ fn chunked_source_attributes(
     Ok(())
 }
 
+pub(crate) fn source_layout(scan: &Scan<'_>) -> Result<BTreeMap<String, String>, CodecError> {
+    let tables = scan
+        .tables
+        .iter()
+        .map(|table| {
+            (
+                table.typecode,
+                table
+                    .records
+                    .iter()
+                    .map(|record| (record.typecode, record.range.start, record.range.end))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let objects = scan
+        .objects
+        .iter()
+        .map(super::objects::ObjectRecord::range)
+        .collect::<Vec<_>>();
+    let history = scan
+        .history
+        .iter()
+        .map(|record| record.source_range.clone())
+        .collect::<Vec<_>>();
+    Ok(BTreeMap::from([
+        (
+            "rhino.table_layout".to_owned(),
+            serde_json::to_string(&tables).map_err(CodecError::malformed)?,
+        ),
+        (
+            "rhino.object_layout".to_owned(),
+            serde_json::to_string(&objects).map_err(CodecError::malformed)?,
+        ),
+        (
+            "rhino.history_layout".to_owned(),
+            serde_json::to_string(&history).map_err(CodecError::malformed)?,
+        ),
+    ]))
+}
+
 /// Build an empty current-version IR and a container-only report.
-pub(crate) fn container_only_result(scan: &Scan<'_>) -> Result<Decoded, CodecError> {
+pub(crate) fn container_only_result(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan<'_>,
+) -> Result<Decoded, CodecError> {
     let mut notes = Vec::new();
     push_container_note(
         &mut notes,
@@ -1563,17 +1695,45 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Result<Decoded, CodecErr
     if let Some(loss) = crate::dialect::admission_loss(&primary) {
         losses.push(loss);
     }
-    let ir = CadIr::decoded(source_meta(primary, SourceMetaDetail::ContainerOnly(scan))?);
+    let mut ir = CadIr::decoded(source_meta(primary, SourceMetaDetail::ContainerOnly(scan))?);
+    let scope = scan.content_scope(&ir);
+    ir.scope = scope;
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut untyped = cadmpeg_ir::ArenaClasses::new();
+    if !scan.objects.is_empty() || !scan.opaque_records.is_empty() {
+        untyped.insert(cadmpeg_ir::ArenaClass::Model);
+    }
+    if !scan.history.is_empty() {
+        untyped.insert(cadmpeg_ir::ArenaClass::Design);
+    }
+    if !untyped.is_empty() {
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(scan.data.len()),
+            "rhino_container_source",
+        )?;
+        source_fidelity.insert_retained_record(
+            cadmpeg_ir::ids::UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "file", "source-image"),
+                cadmpeg_ir::identity_key!("0"),
+            ),
+            cadmpeg_ir::RetainedSourceRecord::whole("rhino", scan.data.to_vec())
+                .with_untyped(untyped),
+        )?;
+    }
+    source_fidelity.metadata.extend(source_layout(scan)?);
     Ok(Decoded {
         ir,
         body: DecodeBody {
-            transfer: cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+                scope,
+                geometry_transferred: false,
+            },
             coverage: cadmpeg_ir::report::decode::Coverage::default(),
             losses,
             notes,
             transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
         },
-        source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+        source_fidelity,
     })
 }
 
@@ -1617,7 +1777,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     }
     let scan = scan(ctx, data)?;
     if ctx.container_only() && scan.archive.is_chunked() {
-        return container_only_result(&scan);
+        return container_only_result(ctx, &scan);
     }
     crate::decode::decode(&scan, crate::mesh::MeshExpand::new(ctx, root))
 }

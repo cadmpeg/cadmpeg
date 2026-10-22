@@ -11,11 +11,12 @@ fn physical_card_id_streams_once_with_native_retained_limit() {
     assert_native_limit(
         &record,
         serde_json::json!({
-            "id": "iges:physical:card#1", "offset": 0,
-            "payload": cadmpeg_ir::hash::LowerHex(&line.physical().payload),
-            "line_ending": "0a", "section": "start", "sequence": 1,
+            "id": "iges:physical:card#1", "section": "start",
         }),
     );
+    assert_eq!(line.physical().offset, 0);
+    assert_eq!(line.physical().payload, bytes[..80]);
+    assert_eq!(line.physical().line_ending(), b"\n");
 }
 
 #[test]
@@ -58,14 +59,21 @@ fn optional_cards_keep_exact_bytes() {
         .unwrap();
     assert_eq!(result.ir().model.points.len(), 1);
     let first = &result.ir().native.namespace("iges").unwrap().arenas()["cards"][0];
-    let payload = first.field("payload").unwrap();
-    let hex = payload.as_str().unwrap();
+    assert_eq!(first.field("section").unwrap(), "start");
+    let retained = result
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .unwrap();
+    let payload = &retained[..80];
+    let hex = cadmpeg_ir::native::bytes::NativeBytes::from(payload).to_string();
     assert_eq!(hex.len(), 160);
-    let retained = hex
+    let preserved = hex
         .as_bytes()
         .chunks_exact(2)
         .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(retained, bytes[..80]);
-    assert_eq!(first.field("line_ending").unwrap(), "0a");
+    assert_eq!(preserved, bytes[..80]);
+    assert_eq!(&retained[80..81], b"\n");
 }

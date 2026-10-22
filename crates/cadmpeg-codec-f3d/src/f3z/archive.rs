@@ -293,9 +293,15 @@ mod tests {
             r#"model.f3d","extension":[[[0]]],"spare":"unused"#,
             &[("model.f3d", b"model")],
         );
-        crate::test_support::with_decode_context(|scan_ctx| {
-            let root = cadmpeg_core::decode::View::over_retained(&bytes);
-            let scan = crate::container::scan(scan_ctx, root).unwrap();
+        {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &bytes,
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .unwrap();
+            let scan = crate::container::scan(&scan_ctx, root).unwrap();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_recursion_depth = 1;
             crate::test_support::with_decode_policy(&policy, |ctx| {
@@ -310,6 +316,6 @@ mod tests {
                 assert_eq!(limit.operation, "parse F3Z manifest JSON");
                 assert_eq!(Some(limit), ctx.resource_refusal());
             });
-        });
+        }
     }
 }

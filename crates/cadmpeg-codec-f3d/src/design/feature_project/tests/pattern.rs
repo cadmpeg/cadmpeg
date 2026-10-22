@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::feature_project::{
-    project_circular_pattern, project_rectangular_pattern_scalars,
-};
+use crate::design::feature_project::project_rectangular_pattern_scalars;
 use crate::records::{
     feature::{patterns::DesignRectangularPatternConstruction, scope::DesignParameterScope},
     topology::{
@@ -148,9 +146,68 @@ fn circular_pattern_seed_role_selects_body_or_face() {
             )),
         ),
     ] {
-        let definition = project_circular_pattern(&circular_scope(), &[group(10, 20, role)], &[])
-            .expect("circular pattern");
-        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
+        let scope = circular_scope();
+        let group = group(10, 20, role);
+        let parameters = [
+            (11, "count", None, 3.0),
+            (12, "angle", Some("rad"), std::f64::consts::TAU),
+        ]
+        .map(|(owner, name, unit, value)| {
+            let mut parameter = crate::design::decode::parameters::parse_design_parameter_record(
+                &crate::design::test_support::parameter_record(
+                    Some(owner),
+                    &value.to_string(),
+                    "C-Pattern1",
+                    unit,
+                    name,
+                    value,
+                ),
+            )
+            .unwrap();
+            parameter.id = format!("f3d:Design/BulkStream.dat:design-parameter#{}", owner + 1);
+            parameter.record_index = owner + 1;
+            parameter
+        });
+        let owners = [11, 12]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, record)| {
+                let parsed = crate::design::decode::parameters::parse_parameter_owner(
+                    &crate::design::test_support::parameter_owner_frame(),
+                )
+                .unwrap()
+                .into_record("Design/BulkStream.dat", 0)
+                .unwrap();
+                let mut draft =
+                    crate::records::parameters::DesignParameterOwnerWire::try_from(parsed).unwrap();
+                draft.id = format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record}");
+                draft.record_index = record;
+                draft.parameter_record_index = record + 1;
+                draft.companion_record_index = record + 2;
+                draft.scope_record_index = 10;
+                draft.local_ordinal = u32::try_from(ordinal).unwrap();
+                crate::records::parameters::DesignParameterOwner::try_from(draft).unwrap()
+            })
+            .collect::<Vec<_>>();
+        let groups = [group];
+        let scopes = [scope];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+        let projection = crate::test_support::with_decode_context(|ctx| {
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &parameters,
+                    owners: &owners,
+                    scopes: &scopes,
+                    timelines: &timelines,
+                    construction_groups: &groups,
+                    ..Default::default()
+                },
+            )
+        })
+        .unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+            projection.features[0].evaluation.definition().clone()
         else {
             panic!("circular pattern definition");
         };
@@ -170,7 +227,7 @@ fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed)
     assert_eq!(seeds, vec![expected_seed]);
     let PatternTransform::Linear {
         direction,
-        spacing,
+        distance,
         count,
         second,
     } = pattern.definition().clone()
@@ -178,8 +235,9 @@ fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed)
         panic!("linear rectangular pattern");
     };
     assert!(direction.is_none());
-    assert!((spacing.get() - 50.0).abs() < EPS_SPACING);
-    assert_eq!(count, 3);
+    let ir = cadmpeg_ir::CadIr::empty();
+    assert!((distance.resolved_spacing(&ir, &count).unwrap().get() - 50.0).abs() < EPS_SPACING);
+    assert_eq!(count, cadmpeg_ir::Dimension::Literal(3));
     assert!(second.is_none());
 }
 
@@ -187,7 +245,7 @@ fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed)
 fn rectangular_pattern_seed_role_selects_body_or_face() {
     let body_scope = rectangular_scope();
     let body_group = group(10, 20, DesignOperandRole::BODIES_B);
-    let body_definition = project_rectangular_pattern_scalars(&body_scope, &[body_group], &[])
+    let body_definition = project_rectangular_pattern_scalars(&body_scope, &[body_group], &[], &[])
         .expect("body rectangular pattern");
     assert_linear_seed(
         body_definition,
@@ -198,7 +256,7 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
 
     let face_scope = rectangular_scope();
     let face_group = group(10, 30, DesignOperandRole::BODIES_A);
-    let face_definition = project_rectangular_pattern_scalars(&face_scope, &[face_group], &[])
+    let face_definition = project_rectangular_pattern_scalars(&face_scope, &[face_group], &[], &[])
         .expect("face rectangular pattern");
     assert_linear_seed(
         face_definition,

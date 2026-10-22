@@ -408,7 +408,7 @@ pub(super) fn fixed_kind_path_operations(
             twist: Some(actual_twist),
             taper: None,
             ..
-        })) if fraction_1.get() == 0.0 && fraction_0.get() == 0.8 && actual_twist.get() == 6.632_251_157_578_453
+        })) if fraction_1.literal().unwrap().get() == 0.0 && fraction_0.literal().unwrap().get() == 0.8 && actual_twist.literal().unwrap().get() == 6.632_251_157_578_453
     ));
     let rail = sweep_group(2, DesignOperandRole::ROLE_0X5);
     {
@@ -446,7 +446,7 @@ pub(super) fn fixed_kind_path_operations(
                 },
             }),
             ..
-        })) if fraction_5.get() == 1.0 && fraction_4.get() == 0.0 && fraction_3.get() == 1.0 && fraction_2.get() == 0.0 && path == "stream:sweep-group-1" && rail == "stream:sweep-group-2"
+        })) if fraction_5.literal().unwrap().get() == 1.0 && fraction_4.literal().unwrap().get() == 0.0 && fraction_3.literal().unwrap().get() == 1.0 && fraction_2.literal().unwrap().get() == 0.0 && path == "stream:sweep-group-1" && rail == "stream:sweep-group-2"
     ));
     let complete_sweep_values = [1.0, 1.0, 1.0, 1.0, sweep_values[4], 0.0];
     {
@@ -529,7 +529,9 @@ pub(super) fn fixed_kind_path_operations(
     selected_profile
         .try_set_members(vec![crate::records::identity::Located {
             value: 2788,
-            offset: selected_profile.members()[0].offset,
+            offset: selected_profile.members()[0]
+                .offset
+                .expect("retained test source"),
         }])
         .unwrap();
     let mut profile_carrier = profile.clone();
@@ -538,7 +540,9 @@ pub(super) fn fixed_kind_path_operations(
     profile_carrier
         .try_set_members(vec![crate::records::identity::Located {
             value: 2795,
-            offset: profile_carrier.members()[0].offset,
+            offset: profile_carrier.members()[0]
+                .offset
+                .expect("retained test source"),
         }])
         .unwrap();
     let mut guide_surface = sweep_group(4, DesignOperandRole::FACES);
@@ -783,8 +787,10 @@ pub(super) fn fixed_kind_path_operations(
         ))
     );
     let mut wrong_owner_class = owner_pipe_owners.clone();
-    let mut wire =
-        crate::records::parameters::DesignParameterOwnerWire::from(wrong_owner_class[0].clone());
+    let mut wire = crate::records::parameters::DesignParameterOwnerWire::try_from(
+        wrong_owner_class[0].clone(),
+    )
+    .unwrap();
     wire.class_tag =
         crate::records::references::DesignClassTag::try_from("341".to_owned()).unwrap();
     wrong_owner_class[0] =
@@ -975,7 +981,7 @@ pub(super) fn fixed_kind_path_operations(
         id: "f3d:native:record-header#55".into(),
         record_index: 55,
         class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        byte_offset: 70,
+        byte_offset: Some(70),
     };
     assert_eq!(
         companion_owned_interval(
@@ -1003,13 +1009,13 @@ pub(super) fn fixed_kind_path_operations(
     );
     let recipe = ConstructionRecipe {
         id: "f3d:native:construction-recipe#60".into(),
-        byte_offset: 60,
+        byte_offset: Some(60),
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 303,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let bound = bind_parameter_companion_payloads(
@@ -1026,8 +1032,8 @@ pub(super) fn fixed_kind_path_operations(
     )
     .unwrap();
     let payload = bound[0].payload().expect("bound payload");
-    assert_eq!(payload.byte_offset(), 58);
-    assert_eq!(payload.byte_length(), 7);
+    assert_eq!(payload.byte_offset(), Some(58));
+    assert_eq!(payload.byte_length(), Some(7));
     assert_eq!(payload.owned_recipe_ids(), [recipe.id]);
 
     if let crate::records::feature::scope::DesignScopePayloadMut::Sketch(slot)
@@ -1043,12 +1049,12 @@ pub(super) fn fixed_kind_path_operations(
     }
     let entity = crate::records::entity_header::DesignEntityHeader {
         id: "f3d:native:design-entity-header#70".into(),
-        byte_offset: 70,
+        byte_offset: Some(70),
 
         entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_99".to_owned())
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("366".to_owned()).unwrap(),
-        optional_slot_present: false,
+        optional_slot_present: Some(false),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some("MSketch".into()),
             None,
@@ -1070,6 +1076,6 @@ pub(super) fn fixed_kind_path_operations(
     )
     .unwrap();
     let payload = bound[0].payload().expect("bound payload");
-    assert_eq!(payload.byte_offset(), 58);
-    assert_eq!(payload.byte_length(), 12);
+    assert_eq!(payload.byte_offset(), Some(58));
+    assert_eq!(payload.byte_length(), Some(12));
 }

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design construction transfer unit tests.
 
-use cadmpeg_test_support::wire;
-
 use crate::design::tests::definition;
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
@@ -14,6 +12,7 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 mod binders;
+mod tolerance_modes;
 
 #[test]
 fn transfers_partdesign_refine_and_fuzzy_post_processing() {
@@ -69,7 +68,7 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
             operation,
             refine: false,
             fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(tolerance),
-        } if tolerance.get() == 0.01 && matches!(operation, cadmpeg_ir::features::FeatureOperation::Primitive { .. })
+        } if result.ir().dimension_value(tolerance).expect("resolved dimension").get() == 0.01 && matches!(operation, cadmpeg_ir::features::FeatureOperation::Primitive { .. })
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -163,7 +162,7 @@ fn retains_native_for_malformed_post_process_controls() {
             operation,
             refine: false,
             fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(value),
-        } if (value.get() - 0.01).abs() < f64::EPSILON
+        } if (result.ir().dimension_value(value).expect("resolved dimension").get() - 0.01).abs() < f64::EPSILON
             && matches!(operation, FeatureOperation::Primitive { .. })
     ));
     assert!(matches!(
@@ -186,12 +185,15 @@ fn retains_native_for_malformed_post_process_controls() {
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::AdditiveBox"
         ));
     }
-    assert_eq!(result.report().losses.len(), 5);
-    assert!(result.report().losses.iter().all(|loss| {
-        loss.code.namespace() == "fcstd"
-            && loss.code.local_code() == "feature.native-kind-retained"
-            && loss.severity == cadmpeg_ir::report::Severity::Blocking
-    }));
+    crate::design::tests::assert_native_retention(&result, 5);
+    crate::design::tests::assert_unreadable_properties(
+        &result,
+        &[
+            ("NestedFuzzy", "FuzzyTolerance"),
+            ("DuplicateFuzzy", "FuzzyTolerance"),
+            ("NonFiniteFuzzy", "FuzzyTolerance"),
+        ],
+    );
 }
 
 #[test]
@@ -252,13 +254,13 @@ pub(crate) fn transfers_part_construction_geometry_features() {
     assert!(matches!(
         feature("Circle").evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CircularArc { arc })
-            if ((arc.angles().endpoints()[0] - 30_f64.to_radians()).abs() < 1.0e-12
-            && (arc.angles().endpoints()[1] - 300_f64.to_radians()).abs() < 1.0e-12) && arc.radius().get() == 4.0
+            if ((result.ir().dimension_value(arc.angles().endpoints()[0]).unwrap().get() - 30_f64.to_radians()).abs() < 1.0e-12
+            && (result.ir().dimension_value(arc.angles().endpoints()[1]).unwrap().get() - 300_f64.to_radians()).abs() < 1.0e-12) && arc.radius().resolved_radius(result.ir()).expect("resolved radial control").get() == 4.0
     ));
     assert!(matches!(
         feature("Ellipse").evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::EllipticArc { arc })
-            if arc.radii()[0].get() == 6.0 && arc.radii()[1].get() == 2.0
+            if arc.radii()[0].resolved_radius(result.ir()).expect("resolved radial control").get() == 6.0 && arc.radii()[1].resolved_radius(result.ir()).expect("resolved radial control").get() == 2.0
     ));
     assert!(
         matches!(feature("Polyline").evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Polyline { chain }) if chain.closed() && chain.points().len() == 3)
@@ -268,14 +270,14 @@ pub(crate) fn transfers_part_construction_geometry_features() {
         FeatureDefinition::Operation(FeatureOperation::RegularPolygonCurve {
             sides,
             circumradius: actual_circumradius
-        }) if wire::value::<u32>(&sides) == 7 && actual_circumradius.get() == 8.0
+        }) if result.ir().dimension_value(sides) == cadmpeg_ir::features::PolygonSideCount::new(7) && result.ir().dimension_value(actual_circumradius).expect("resolved dimension").get() == 8.0
     ));
     assert!(matches!(
         feature("Plane").evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::PlanarPatch {
             length: actual_length,
             width: actual_width
-        }) if actual_length.get() == 9.0 && actual_width.get() == 10.0
+        }) if result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 9.0 && result.ir().dimension_value(actual_width).expect("resolved dimension").get() == 10.0
     ));
     assert!(
         matches!(feature("Face").evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::FaceFromShapes { sources: cadmpeg_ir::features::BodySelection::Native(source), face_maker }) if source.ends_with(":Sources") && *face_maker == cadmpeg_ir::features::FaceMaker::Unified)
@@ -448,14 +450,14 @@ fn transfers_uniform_and_anisotropic_part_scale() {
             center: Some(cadmpeg_ir::features::ScaleCenter::ModelOrigin),
             factors: cadmpeg_ir::features::ScaleFactors::Uniform { factor },
             ..
-        }) if factor.get() == -2.0
+        }) if result.ir().dimension_value(factor).expect("resolved dimension").get() == -2.0
     ));
     assert!(matches!(
         definition("Anisotropic"),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Scale {
             factors: cadmpeg_ir::features::ScaleFactors::PerAxis { factors },
             ..
-        }) if factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [2.0, 3.0, 4.0]
+        }) if factors.each_ref().map(|value| result.ir().dimension_value(value).unwrap().get()) == [2.0, 3.0, 4.0]
     ));
 }
 
@@ -494,7 +496,7 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
         FeatureDefinition::Operation(FeatureOperation::Scale {
             factors: cadmpeg_ir::features::ScaleFactors::Uniform { factor },
             ..
-        }) if factor.get() == 2.0
+        }) if absent.ir().dimension_value(factor).expect("resolved dimension").get() == 2.0
     ));
     assert_valid_document(absent.ir());
 
@@ -511,7 +513,7 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
         FeatureDefinition::Operation(FeatureOperation::Scale {
             factors: cadmpeg_ir::features::ScaleFactors::PerAxis { factors },
             ..
-        }) if factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [3.0, 4.0, 5.0]
+        }) if factors.each_ref().map(|value| valid.ir().dimension_value(value).unwrap().get()) == [3.0, 4.0, 5.0]
     ));
     assert_valid_document(valid.ir());
 
@@ -534,7 +536,7 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
             definition(&result, "Scale"),
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "Part::Scale"
         ));
-        assert_eq!(result.report().losses.len(), 1);
+        crate::design::tests::assert_native_retention(&result, 1);
         assert_valid_document(result.ir());
     }
 }
@@ -755,7 +757,7 @@ fn transfers_part_projection_on_surface_construction() {
             height: actual_height,
             offset: actual_offset,
         }) if ( (sources.ends_with(":Projection")
-            && support.ends_with(":SupportFace")) && actual_height.get() == 8.0 && actual_offset.get() == -1.5) && matches!(*geometry_1.as_raw(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
+            && support.ends_with(":SupportFace")) && result.ir().dimension_value(actual_height).expect("resolved dimension").get() == 8.0 && result.ir().dimension_value(actual_offset).expect("resolved dimension").get() == -1.5) && matches!(*geometry_1.as_raw(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert_eq!(feature.dependencies.len(), 3);
     assert!(result.report().losses.is_empty());
@@ -850,7 +852,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             max_degree: Some(degree),
             op: cadmpeg_ir::features::BooleanOp::NewBody,
             ..
-        }) if degree.get() == 7
+        }) if result.ir().dimension_value(degree).expect("resolved dimension").get() == 7
     ));
     let native_properties = result
         .ir()
@@ -865,10 +867,14 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
         .collect::<Vec<_>>();
     assert_eq!(compatibility_properties.len(), 1);
     assert_eq!(compatibility_properties[0].type_name, "App::PropertyBool");
-    assert!(compatibility_properties[0]
-        .xml
-        .text()
-        .contains("<Bool value=\"false\"/>"));
+    assert!(
+        std::str::from_utf8(crate::test_support::source_fidelity::bytes(
+            result.source_fidelity(),
+            &compatibility_properties[0].id,
+        ))
+        .expect("source compatibility XML")
+        .contains("<Bool value=\"false\"/>")
+    );
     assert!(matches!(
         feature("Pipe").evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
@@ -1211,12 +1217,14 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
             FeatureDefinition::Operation(FeatureOperation::Native { kind: actual, .. }) if actual.as_str() == kind
         ));
     }
-    assert_eq!(result.report().losses.len(), 7);
-    assert!(result.report().losses.iter().all(|loss| {
-        loss.code.namespace() == "fcstd"
-            && loss.code.local_code() == "feature.native-kind-retained"
-            && loss.severity == cadmpeg_ir::report::Severity::Blocking
-    }));
+    crate::design::tests::assert_native_retention(&result, 7);
+    crate::design::tests::assert_unreadable_properties(
+        &result,
+        &[
+            ("LoftBadAllow", "AllowMultiFace"),
+            ("SweepBadFrenet", "Frenet"),
+        ],
+    );
 }
 
 #[test]
@@ -1351,7 +1359,14 @@ fn transfers_shape_and_subshape_binder_construction() {
         cadmpeg_ir::features::BinderCopyOnChange::Mutated
     );
     assert!(*claim_children && *fuse && !*make_face && *partial_load && !*refine);
-    assert_eq!(offset.distance.get(), -2.5);
+    assert_eq!(
+        result
+            .ir()
+            .dimension_value(&offset.distance)
+            .expect("resolved dimension")
+            .get(),
+        -2.5
+    );
     assert_eq!(
         offset.join,
         cadmpeg_ir::features::BinderOffsetJoin::Intersection
@@ -1460,7 +1475,7 @@ fn transfers_complete_thickness_construction_controls() {
             resolve_intersections: Some(true),
             allow_self_intersections: Some(true),
             ..
-        }) if (selection.ends_with(":Base")) && actual_thickness.get() == 2.5
+        }) if (selection.ends_with(":Base")) && result.ir().dimension_value(actual_thickness).expect("resolved dimension").get() == 2.5
     ));
     assert_eq!(wall.dependencies.len(), 1);
     assert!(result.report().losses.is_empty());
@@ -1534,7 +1549,7 @@ fn transfers_part_thickness_and_shape_offset_construction() {
             resolve_intersections: Some(true),
             allow_self_intersections: Some(true),
             ..
-        }) if actual_thickness.get() == 2.0
+        }) if result.ir().dimension_value(actual_thickness).expect("resolved dimension").get() == 2.0
     ));
     assert!(matches!(
         definition("Offset"),
@@ -1547,7 +1562,7 @@ fn transfers_part_thickness_and_shape_offset_construction() {
             fill: true,
             planar: false,
             ..
-        }) if actual_distance.get() == -1.5
+        }) if result.ir().dimension_value(actual_distance).expect("resolved dimension").get() == -1.5
     ));
     assert!(matches!(
         definition("Offset2D"),
@@ -1558,7 +1573,7 @@ fn transfers_part_thickness_and_shape_offset_construction() {
             fill: true,
             planar: true,
             ..
-        }) if actual_distance.get() == 3.0
+        }) if result.ir().dimension_value(actual_distance).expect("resolved dimension").get() == 3.0
     ));
 }
 
@@ -1808,7 +1823,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             && (pull_direction.x - 0.0).abs() < 1.0e-12
             && (pull_direction.y + 1.0).abs() < 1.0e-12
             && pull_direction.z.abs() < 1.0e-12
-            && (angle.get() + 5f64.to_radians()).abs() < 1.0e-12
+            && (result.ir().dimension_value(&angle).expect("resolved dimension").get() + 5f64.to_radians()).abs() < 1.0e-12
     ));
     assert_eq!(draft.dependencies.len(), 3);
     let face_draft = result

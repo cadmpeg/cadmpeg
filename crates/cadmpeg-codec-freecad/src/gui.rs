@@ -2,6 +2,7 @@
 //! Transfer of `GuiDocument.xml` object appearance into neutral presentation records.
 
 mod schema;
+pub(crate) mod source;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -33,13 +34,20 @@ use schema::Admission as GuiSchemaAdmission;
 pub(crate) struct Graph {
     pub(crate) documents: Vec<GuiDocumentRecord>,
     pub(crate) providers: Vec<GuiViewProviderRecord>,
+    pub(crate) provider_sources: Vec<(String, std::ops::Range<usize>)>,
+    pub(crate) value_sources: Vec<crate::fidelity::ValueSourceRanges>,
+    pub(crate) state_sources: BTreeMap<String, crate::fidelity::ValueSourceRanges>,
+    pub(crate) property_sources: BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
     pub(crate) losses: Vec<LossNote>,
+    /// The GUI stream was not admitted into typed records.
+    pub(crate) untyped: bool,
 }
 
 #[derive(Default)]
 struct AppearancePlan {
     body_updates: Vec<BodyUpdate>,
+    body_visibility_owners: HashSet<String>,
     appearances: Vec<Appearance>,
     bindings: Vec<AppearanceBinding>,
     remove_appearances: HashSet<AppearanceId>,
@@ -192,7 +200,10 @@ pub(crate) fn transfer(
 }
 
 fn source_only_graph(schema_declaration: Option<&str>, error: &CodecError) -> Graph {
-    let mut graph = Graph::default();
+    let mut graph = Graph {
+        untyped: true,
+        ..Graph::default()
+    };
     graph.documents.push(GuiDocumentRecord {
         id: ("fcstd:gui:document#0").to_owned(),
         schema_version: schema_declaration.map(ToOwned::to_owned),
@@ -213,14 +224,29 @@ fn transfer_xml(
     bytes: &[u8],
     sources: &GuiSources<'_, '_>,
 ) -> Result<Graph, CodecError> {
+    let xml = parse_xml(ctx, bytes)?;
+    transfer_document(ir, &xml, sources)
+}
+
+fn parse_xml<'input>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'input [u8],
+) -> Result<roxmltree::Document<'input>, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
-    let xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
+    ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
         let CodecError::Malformed(error) = error else {
             return error;
         };
         CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}"))
-    })?;
+    })
+}
+
+fn transfer_document(
+    ir: &mut CadIr,
+    xml: &roxmltree::Document<'_>,
+    sources: &GuiSources<'_, '_>,
+) -> Result<Graph, CodecError> {
     let schema_declaration = crate::container::canonical_attribute(
         xml.root_element(),
         "SchemaVersion",
@@ -230,8 +256,7 @@ fn transfer_xml(
     let neutral_schema_version = admission.neutral_schema_version();
     let transferred = transfer_schema_one(
         ir,
-        text,
-        &xml,
+        xml,
         schema_declaration.as_deref(),
         neutral_schema_version,
         sources,
@@ -259,7 +284,6 @@ fn transfer_xml(
 
 fn transfer_schema_one(
     ir: &CadIr,
-    text: &str,
     xml: &roxmltree::Document<'_>,
     schema_declaration: Option<&str>,
     neutral_schema_version: Option<u32>,
@@ -277,13 +301,19 @@ fn transfer_schema_one(
         .filter(|node| node.has_tag_name("Camera"))
         .count();
     let mut states = Vec::new();
+    let mut state_sources = BTreeMap::new();
     for (order, node) in root
         .children()
         .filter(roxmltree::Node::is_element)
         .filter(|node| !node.has_tag_name("ViewProviderData"))
         .enumerate()
     {
-        states.push(gui_state(text, order, node)?);
+        let state = gui_state(order, node)?;
+        state_sources.insert(
+            state.id.clone(),
+            crate::fidelity::state_source(node, &state)?,
+        );
+        states.push(state);
     }
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
@@ -299,9 +329,12 @@ fn transfer_schema_one(
         objects_by_name.insert(object.name().as_str(), object.id().as_str());
     }
     let mut native_providers = Vec::new();
+    let mut provider_sources = Vec::new();
+    let mut property_sources = BTreeMap::new();
     let mut native_properties = Vec::new();
     let mut losses = Vec::new();
-    if camera_count != 1 {
+    // Absence declares no camera state; it does not omit a source record.
+    if camera_count > 1 {
         losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(
             format!("GuiDocument.xml contains {camera_count} Camera records; camera selection is unresolved")
         ));
@@ -358,25 +391,29 @@ fn transfer_schema_one(
                 "GuiDocument.xml has duplicate ViewProvider names".into(),
             ));
         }
+        provider_sources.push((
+            crate::native::native_id("gui-view-provider", name),
+            provider.range(),
+        ));
         let provider_key = provider_identity_key(name);
         let Some(object_id) = objects_by_name.get(name).copied() else {
             append_native_provider(
-                text,
                 provider,
                 provider_order,
                 None,
                 &mut native_providers,
                 &mut native_properties,
+                &mut property_sources,
             )?;
             continue;
         };
         append_native_provider(
-            text,
             provider,
             provider_order,
             Some(object_id),
             &mut native_providers,
             &mut native_properties,
+            &mut property_sources,
         )?;
         let properties_node = unique_child(provider, "Properties")?.ok_or_else(|| {
             CodecError::malformed(format_args!("ViewProvider {name} has no Properties"))
@@ -437,6 +474,9 @@ fn transfer_schema_one(
                     .map(|(_, _, payload)| *payload),
             )
         };
+        if !body_ids.is_empty() {
+            plan.body_visibility_owners.insert(object_id.to_owned());
+        }
         for body_id in &body_ids {
             push_body_update(
                 &mut plan,
@@ -551,12 +591,20 @@ fn transfer_schema_one(
                 &mut losses,
             )?;
         }
-        let Some(packed_color) = packed_color else {
+        // ShapeColor is the display colour stored on each body. A physical
+        // material has a distinct colour and must not inherit that display fact.
+        let Some(material) = material else {
             continue;
         };
+        let material_color = material
+            .attribute("diffuseColor")
+            .and_then(|value| value.parse::<u32>().ok())
+            .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
+            .map(|packed| decode_color(packed, None))
+            .transpose()?;
         let appearance_id = object_appearance_id(&provider_key)?;
         let mut material_properties = BTreeMap::new();
-        if let Some(material) = material {
+        {
             for (source, target) in [
                 ("shininess", cadmpeg_core::nonblank_literal!("shininess")),
                 (
@@ -574,6 +622,7 @@ fn transfer_schema_one(
             }
         }
         plan.appearances.push(Appearance {
+            native_ref: None,
             id: appearance_id.clone(),
             name: Some(format!("{name} shape appearance")),
             asset_guid: None,
@@ -582,12 +631,13 @@ fn transfer_schema_one(
             physical_token: None,
             schema: Some("FCStd ViewProvider ShapeMaterial".into()),
             category: None,
-            base_color: Some(decode_color(packed_color, transparency)?),
+            base_color: material_color,
             textures: Vec::new(),
             properties: material_properties,
         });
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
+                native_ref: None,
                 id: binding_id(format_args!(
                     "fcstd:appearance:binding#{provider_key}:{index}"
                 ))?,
@@ -600,11 +650,27 @@ fn transfer_schema_one(
             });
         }
     }
+    let mut value_sources = property_sources
+        .values()
+        .filter(|source| source.has_values())
+        .cloned()
+        .collect::<Vec<_>>();
+    value_sources.extend(
+        state_sources
+            .values()
+            .filter(|source| source.has_values())
+            .cloned(),
+    );
     let mut graph = Graph {
         documents: vec![document],
         providers: native_providers,
+        provider_sources,
+        value_sources,
+        state_sources,
+        property_sources,
         properties: native_properties,
         losses,
+        untyped: false,
     };
     let material_lists =
         validate_gui_list_payloads(&graph.properties, entries, requires_alpha_conversion)?;
@@ -801,13 +867,15 @@ fn transfer_neutral_presentation(
                 })
             })
             .transpose()?;
-        let (provider_properties, refused) = gui_named_entries(
+        let (_, refused) = gui_named_entries(
             || provider.id.clone(),
-            owned.iter().map(|property| {
-                (
-                    property.name.as_str(),
-                    gui_property_value(property).unwrap_or_else(|| property.xml.text()),
-                )
+            owned.iter().filter_map(|property| {
+                // Dedicated neutral fields own these values. Keeping another
+                // textual copy would make independent edits disagree.
+                if presentation_property_type(&property.name).is_some() {
+                    return None;
+                }
+                gui_property_value(property).map(|value| (property.name.as_str(), value))
             }),
         );
         note_refused_gui_keys(losses, &refused);
@@ -829,14 +897,24 @@ fn transfer_neutral_presentation(
                 ))
             })?,
             expanded: provider.expanded,
-            visible: property_value("Visibility", "App::PropertyBool").and_then(parse_bool),
+            visible: if provider
+                .object
+                .as_ref()
+                .is_some_and(|object| plan.body_visibility_owners.contains(object.as_str()))
+            {
+                None
+            } else {
+                property_value("Visibility", "App::PropertyBool").and_then(parse_bool)
+            },
             display_mode: property_value("DisplayMode", "App::PropertyEnumeration")
                 .map(ToOwned::to_owned),
             selection_style: property_value("SelectionStyle", "App::PropertyEnumeration")
                 .map(ToOwned::to_owned),
             line_width,
             point_size,
-            properties: provider_properties,
+            // Every original property remains typed in gui_properties. Neutral
+            // presentation owns only its dedicated semantic fields (§8).
+            properties: BTreeMap::new(),
             native_ref: Some(provider.id.clone()),
         });
     }
@@ -1113,6 +1191,7 @@ fn transfer_primitive_appearance(
         );
     }
     plan.appearances.push(Appearance {
+        native_ref: None,
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} {label} appearance")),
         asset_guid: None,
@@ -1142,6 +1221,7 @@ fn transfer_primitive_appearance(
     });
     for (index, target) in targets.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
+            native_ref: None,
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"
             ))?,
@@ -1160,26 +1240,27 @@ fn transfer_primitive_appearance(
     Ok(())
 }
 
-fn gui_state(
-    text: &str,
-    order: usize,
-    node: roxmltree::Node<'_, '_>,
-) -> Result<GuiStateRecord, CodecError> {
+fn gui_state(order: usize, node: roxmltree::Node<'_, '_>) -> Result<GuiStateRecord, CodecError> {
     let mut values = Vec::new();
+    let mut value_indices = HashMap::new();
     for (value_order, value) in node
         .descendants()
         .filter(|value| value.is_element() && *value != node)
         .enumerate()
     {
+        value_indices.insert(value.id(), value_order);
         values.push(ValueRecord {
+            parent: value
+                .parent()
+                .and_then(|parent| value_indices.get(&parent.id()).copied()),
             tag: value.tag_name().name().to_owned(),
             order: value_order,
             attributes: value
                 .attributes()
                 .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
                 .collect::<Result<_, CodecError>>()?,
+            decoded_json: None,
             text: value.text().map(ToOwned::to_owned),
-            raw_xml: text[value.range()].to_owned(),
         });
     }
     let mut side_entries = Vec::new();
@@ -1198,10 +1279,6 @@ fn gui_state(
         .attributes()
         .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
         .collect::<Result<_, CodecError>>()?;
-    let xml = crate::native::RetainedXml::from_source(
-        &text[node.range()],
-        cadmpeg_core::decode::u64_from_index(node.range().start),
-    )?;
     let key = format!("{kind}:{order}");
     Ok(GuiStateRecord {
         id: crate::native::native_id("gui-state", &key),
@@ -1209,7 +1286,6 @@ fn gui_state(
         attributes,
         values,
         side_entries,
-        xml,
     })
 }
 
@@ -1232,12 +1308,12 @@ fn unique_child<'a, 'input>(
 }
 
 fn append_native_provider(
-    text: &str,
     provider: roxmltree::Node<'_, '_>,
     order: usize,
     object: Option<&str>,
     providers: &mut Vec<GuiViewProviderRecord>,
     properties: &mut Vec<GuiPropertyRecord>,
+    property_sources: &mut BTreeMap<String, crate::fidelity::ValueSourceRanges>,
 ) -> Result<(), CodecError> {
     let name = provider
         .attribute("name")
@@ -1256,7 +1332,6 @@ fn append_native_provider(
         name: name.to_owned(),
         expanded: provider.attribute("expanded").and_then(parse_bool),
         order,
-        raw_xml: text[provider.range()].to_owned(),
     });
     let Some(container) = unique_child(provider, "Properties")? else {
         return Err(CodecError::malformed(format_args!(
@@ -1305,12 +1380,17 @@ fn append_native_provider(
         })?;
         validate_gui_property(property, property_name, type_name)?;
         let mut values = Vec::new();
+        let mut value_indices = HashMap::new();
         for (value_order, value) in property
             .descendants()
             .filter(|value| value.is_element() && *value != property)
             .enumerate()
         {
+            value_indices.insert(value.id(), value_order);
             values.push(ValueRecord {
+                parent: value
+                    .parent()
+                    .and_then(|parent| value_indices.get(&parent.id()).copied()),
                 tag: value.tag_name().name().to_owned(),
                 order: value_order,
                 attributes: value
@@ -1319,8 +1399,8 @@ fn append_native_provider(
                         Ok((attribute.name().to_owned(), attribute.value().to_owned()))
                     })
                     .collect::<Result<_, CodecError>>()?,
+                decoded_json: None,
                 text: value.text().map(ToOwned::to_owned),
-                raw_xml: text[value.range()].to_owned(),
             });
         }
         let mut side_entries = Vec::new();
@@ -1336,7 +1416,7 @@ fn append_native_provider(
         {
             side_entries.push(value.to_owned());
         }
-        properties.push(GuiPropertyRecord {
+        let record = GuiPropertyRecord {
             id: crate::native::native_child_id("gui-property", &id, property_name),
             owner: id.clone(),
             name: property_name.to_owned(),
@@ -1347,11 +1427,12 @@ fn append_native_provider(
             order: property_order,
             values,
             side_entries,
-            xml: crate::native::RetainedXml::from_source(
-                &text[property.range()],
-                cadmpeg_core::decode::u64_from_index(property.range().start),
-            )?,
-        });
+        };
+        property_sources.insert(
+            record.id.clone(),
+            crate::fidelity::gui_property_source(property, &record)?,
+        );
+        properties.push(record);
     }
     Ok(())
 }
@@ -3809,7 +3890,11 @@ fn transfer_shape_appearances(
                     ), SourceProvenance::in_stream(
                         "fcstd",
                         cadmpeg_ir::stream_name!("GuiDocument.xml"),
-                        property.xml.start(),
+                        cadmpeg_core::decode::u64_from_index(
+                            graph.property_sources.get(&property.id).ok_or_else(|| {
+                                CodecError::malformed("GUI property has no original source range")
+                            })?.record_range().start,
+                        ),
                     )
                     .with_tag(property.id.clone()));
                 continue;
@@ -3832,6 +3917,7 @@ fn transfer_shape_appearances(
                         decode_color(material.diffuse, Some(material.transparency.get())).map(Some),
                     )?;
                     plan.bindings.push(AppearanceBinding {
+                        native_ref: None,
                         id: binding_id(format_args!(
                             "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
                         ))?,
@@ -3974,6 +4060,7 @@ fn material_appearance(
             .ok_or_else(|| CodecError::malformed(format_args!("GUI material {name} is non-finite")))
     };
     Ok(Appearance {
+        native_ref: None,
         id,
         name: Some(format!("{provider_name} face {} material", index + 1)),
         asset_guid: (!material.uuid.is_empty()).then(|| material.uuid.clone()),
@@ -4041,6 +4128,7 @@ fn bind_material_faces(
         let face = face.id.clone();
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
         plan.bindings.push(AppearanceBinding {
+            native_ref: None,
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#shape-material:{provider_key}:{binding_index}"
             ))?,
@@ -4188,6 +4276,7 @@ fn transfer_topology_colors(
             }
             if !emitted_appearance {
                 plan.appearances.push(Appearance {
+                    native_ref: None,
                     id: appearance_id.clone(),
                     name: Some(format!(
                         "{provider_name} {}{} appearance",
@@ -4245,6 +4334,7 @@ fn transfer_topology_colors(
             let topology_key = crate::native::id_key(topology_id);
             let kind_key = topology_binding_kind(kind);
             plan.bindings.push(AppearanceBinding {
+                native_ref: None,
                 id: binding_id(format_args!(
                     "fcstd:appearance:binding#{kind_key}:{provider_key}:{}:{topology_key}",
                     index + 1,
@@ -4384,21 +4474,27 @@ mod shape_association_tests {
     use crate::native::{PropertyFamily, PropertyRecord};
 
     fn shape_property(id: &str) -> PropertyRecord {
-        PropertyRecord {
-            id: id.into(),
-            owner: "object".into(),
-            name: "Shape".into(),
-            type_name: "Part::PropertyPartShape".into(),
-            family: PropertyFamily::Geometry,
-            status: None,
-            body: crate::native::PropertyBody::Persisted {
-                values: Vec::new(),
-                links: Vec::new(),
-                side_entries: Vec::new(),
-                dynamic: None,
-            },
-            order: 0,
-            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
+        {
+            let property = PropertyRecord {
+                id: id.into(),
+                owner: "object".into(),
+                name: "Shape".into(),
+                type_name: "Part::PropertyPartShape".into(),
+                family: PropertyFamily::Geometry,
+                status: None,
+                body: crate::native::PropertyBody::Persisted {
+                    values: Vec::new(),
+                    links: Vec::new(),
+                    side_entries: Vec::new(),
+                    dynamic: None,
+                },
+                order: 0,
+            };
+            let _source = crate::test_support::source_fidelity::xml_layout_fixture(
+                &property.id,
+                &("<Property/>"),
+            );
+            property
         }
     }
 

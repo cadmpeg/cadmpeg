@@ -207,7 +207,10 @@ mod tests {
 
         let mut report = build_decode_report(
             &scan,
-            cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+            cadmpeg_ir::report::decode::DecodeTransfer {
+                scope: cadmpeg_ir::document::ContentScope::full(),
+                geometry_transferred: true,
+            },
             Vec::new(),
         )
         .unwrap();

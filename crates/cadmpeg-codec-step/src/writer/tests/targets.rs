@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolution of a write request against the source: the synthesis catalog and
-//! the two refusals.
+//! inherited source dialect and catalog-default synthesis.
 
 #![allow(clippy::unwrap_used)]
 
@@ -8,7 +8,6 @@ use cadmpeg_test_support::wire;
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -90,38 +89,19 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
     let plan = encoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("planning returns the representable subset and its losses");
-    assert!(
-        plan.report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
-        "{:?}",
-        plan.report().losses
+    let omitted = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.local_code() == "native.records-omitted"
+                && loss.message.contains("f3d.asm_histories")
+        })
+        .unwrap_or_else(|| panic!("{:?}", plan.report().losses));
+    assert_eq!(
+        crate::test_support::omitted_record_ids(&omitted.message),
+        ["f3d:test:asm-history#0"]
     );
-}
-
-fn refusal(
-    error: &CodecError,
-) -> (
-    &str,
-    Option<String>,
-    &'static [cadmpeg_core::target::TargetDescriptor],
-) {
-    let CodecError::UnsupportedTarget(refusal) = error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    (
-        refusal.format(),
-        {
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        },
-        refusal.available(),
-    )
 }
 
 /// The flagship case: `convert in.step -o out.step` on a file that is not the
@@ -185,17 +165,9 @@ fn inherit_round_trips_the_declaration_of_every_catalog_row() {
     }
 }
 
-/// An AP242 source that declares no edition refuses under `Inherit`, naming both
-/// its own dialect and the catalog.
-///
-/// The object identifier is optional in Part 21, so this file's declaration is
-/// complete and says the edition is unspecified. Every schema this writer emits
-/// stamps arcs, so synthesizing edition 3 would make the output declare an
-/// edition the input never did — a re-decode of it classifies `step:ap242-e3`,
-/// a different registry row. That is the silent change of what the file is that
-/// the resolution forbids.
+/// Edition-unspecified AP242 selects the catalog default and names its displacement.
 #[test]
-fn inherit_refuses_an_edition_unspecified_ap242_source() {
+fn inherit_synthesizes_the_default_for_an_edition_unspecified_ap242_source() {
     let decoded = source_declaring("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF");
     assert_eq!(
         decoded
@@ -209,26 +181,14 @@ fn inherit_refuses_an_edition_unspecified_ap242_source() {
         Some("step:ap242".to_owned())
     );
 
-    let error = inherit(&StepCodec::default(), decoded.ir())
-        .expect_err("an edition-unspecified AP242 source has no write target");
-    let (format, requested, available) = refusal(&error);
-    assert_eq!(format, "step");
-    assert_eq!(requested.as_deref(), Some("step:ap242"));
-    for schema in StepSchema::ALL {
-        assert!(
-            available
-                .iter()
-                .any(|target| target.id.as_str() == schema.descriptor().id.as_str()),
-            "{available:?}"
-        );
-    }
+    let plan = inherit(&StepCodec::default(), decoded.ir())
+        .expect("§5.0 selects catalog-default synthesis");
+    assert_default_synthesis(plan, "source dialect step:ap242 was displaced by target dialect step:ap214; the source dialect identity is not preserved");
 }
 
-/// A declaration the registry does not name lands on `step:unknown`, the
-/// totality row, which is also read-side only. `Inherit` refuses it for the same
-/// reason: there is no schema to preserve.
+/// An unrecognized declaration selects the catalog default and names its displacement.
 #[test]
-fn inherit_refuses_an_unrecognized_source_declaration() {
+fn inherit_synthesizes_the_default_for_an_unrecognized_source_declaration() {
     let decoded = source_declaring("NOT_A_DECLARED_SCHEMA");
     assert_eq!(
         decoded
@@ -242,26 +202,14 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
         Some("step:unknown".to_owned())
     );
 
-    let error =
-        inherit(&StepCodec::default(), decoded.ir()).expect_err("step:unknown has no write target");
-    let (_, requested, available) = refusal(&error);
-    assert_eq!(requested.as_deref(), Some("step:unknown"));
-    assert!(
-        available
-            .iter()
-            .any(|target| target.id.as_str() == "step:ap214"),
-        "{available:?}"
-    );
+    let plan = inherit(&StepCodec::default(), decoded.ir())
+        .expect("§5.0 selects catalog-default synthesis");
+    assert_default_synthesis(plan, "source dialect step:unknown was displaced by target dialect step:ap214; the source dialect identity is not preserved");
 }
 
-/// A STEP source that records no dialect refuses as well. Nothing names an
-/// identity to preserve, and picking one would be inventing it.
-///
-/// The refusal quotes no dialect id, because none exists. It used to pass the
-/// bare format id `"step"` in the dialect-id field the command line renders,
-/// which reads as a request for a dialect called `step`.
+/// An unrecorded source selects the catalog default without inventing a source id.
 #[test]
-fn inherit_refuses_a_step_source_that_records_no_dialect() {
+fn inherit_defaults_a_step_source_that_records_no_dialect() {
     let mut ir = CadIr::empty();
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
@@ -271,23 +219,8 @@ fn inherit_refuses_a_step_source_that_records_no_dialect() {
         .unwrap(),
     );
 
-    let error = inherit(&StepCodec::default(), &ir)
-        .expect_err("a STEP source with no dialect has nothing to preserve");
-    let (format, requested, available) = refusal(&error);
-    assert_eq!(format, "step");
-    assert_eq!(requested.as_deref(), None);
-    assert!(
-        available
-            .iter()
-            .any(|target| target.id.as_str() == "step:ap214"),
-        "{available:?}"
-    );
-    let message = error.to_string();
-    assert!(message.contains("records no dialect"), "{message}");
-    assert!(
-        !message.contains("cannot write step:"),
-        "the refusal must not quote a dialect id it does not have: {message}"
-    );
+    let plan = inherit(&StepCodec::default(), &ir).expect("§5.0 selects catalog-default synthesis");
+    assert_default_synthesis(plan, "the unrecorded same-format source dialect was displaced by target dialect step:ap214; the source dialect identity is not preserved");
 }
 
 /// The same source writes the moment the caller names a target: an explicit
@@ -521,3 +454,49 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
         );
     }
 }
+
+fn assert_default_synthesis(plan: cadmpeg_ir::codec::write::ExportPlan, message: &str) {
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert_eq!(
+        serde_json::to_value(plan.report()).expect("report")["identity"]["target"],
+        "step:ap214"
+    );
+    let displacement: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::StepLossCode::SourceDialectDisplaced.kind())
+        .collect();
+    assert_eq!(displacement.len(), 1);
+    assert_eq!(displacement[0].message, message);
+    assert!(plan.report().synthesis_cause().is_none());
+    assert_eq!(
+        wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        cadmpeg_ir::report::export::FidelityResolution::NotProvided {}
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes)
+        .expect("write the actual selected target");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("written catalog-default grammar reads");
+    assert_eq!(
+        decoded
+            .report()
+            .dialects()
+            .expect("native classification")
+            .primary()
+            .dialect()
+            .as_str(),
+        "step:ap214"
+    );
+}
+
+mod fallback;

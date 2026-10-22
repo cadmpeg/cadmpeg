@@ -46,7 +46,7 @@ fn shifted_cylinder_frame_places_the_primitive() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     let Some(FeatureDefinition::Operation(FeatureOperation::Primitive { placement, .. })) =
-        project_solid_primitive(&cylinder(Some(frame)))
+        project_solid_primitive(&cylinder(Some(frame)), &[])
     else {
         unreachable!("cylinder primitive");
     };
@@ -56,7 +56,7 @@ fn shifted_cylinder_frame_places_the_primitive() {
     assert_eq!(rows[2], [0.0, 1.0, 0.0, 30.0]);
 
     assert!(matches!(
-        project_solid_primitive(&cylinder(None)),
+        project_solid_primitive(&cylinder(None), &[]),
         Some(FeatureDefinition::Operation(FeatureOperation::Primitive {
             placement: None,
             ..

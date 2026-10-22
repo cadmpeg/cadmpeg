@@ -1,6 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Face operands, source groups and the face-recipe postlude.
 
+fn source_group(wire: &str) -> Result<super::DesignFaceSourceGroup, String> {
+    use crate::records::topology::construction::{
+        DesignConstructionPersistentIdentity, DesignConstructionPersistentIdentityDraft,
+    };
+    let mut value: serde_json::Value =
+        serde_json::from_str(wire).map_err(|error| error.to_string())?;
+    let mut identities = Vec::new();
+    for member in value["source_members"]
+        .as_array_mut()
+        .expect("source members")
+    {
+        let draft: DesignConstructionPersistentIdentityDraft =
+            serde_json::from_value(member["persistent_identity"].clone())
+                .map_err(|error| error.to_string())?;
+        let identity = DesignConstructionPersistentIdentity::try_new(draft.clone())?;
+        assert_eq!(identity.clone().into_draft().unwrap(), draft);
+        member["persistent_identity"] = serde_json::to_value(&identity).unwrap();
+        identities.push(identity);
+    }
+    let mut group: super::DesignFaceSourceGroup =
+        serde_json::from_value(value).map_err(|error| error.to_string())?;
+    for (member, identity) in group.source_members.iter_mut().zip(identities) {
+        member.value.persistent_identity = identity;
+    }
+    Ok(group)
+}
+
 #[test]
 fn face_source_group_borrowed_wire_matches_owned_wire_bytes() {
     let prefix = r#"{"id":"face-source","scope_record_index":1,"carrier_reference_ordinal":0,"carrier_record_index":2,"carrier_byte_offset":0,"carrier_class_tag":"302","carrier_frame_length":80,"paired_record_index":3,"paired_byte_offset":80,"paired_class_tag":"303""#;
@@ -10,7 +37,7 @@ fn face_source_group_borrowed_wire_matches_owned_wire_bytes() {
         (format!("[{member}]"), "[25]"),
         (format!("[{member},{member}]"), "[25,36]"),
     ] {
-        let group: super::DesignFaceSourceGroup = serde_json::from_str(&format!(
+        let group = source_group(&format!(
             "{prefix},\"source_reference_offsets\":{offsets},\"source_members\":{members}}}"
         ))
         .unwrap();
@@ -30,7 +57,7 @@ fn face_source_group_native_retained_limit_refuses_before_clone() {
         value: &'a super::DesignFaceSourceGroup,
     }
     let wire = r#"{"id":"face-source","scope_record_index":1,"carrier_reference_ordinal":0,"carrier_record_index":2,"carrier_byte_offset":0,"carrier_class_tag":"302","carrier_frame_length":80,"paired_record_index":3,"paired_byte_offset":80,"paired_class_tag":"303","source_reference_offsets":[25],"source_members":[{"record_index":100,"byte_offset":1000,"class_tag":"304","persistent_identity":{"local_id":1,"local_id_offset":1021,"asset_id":"AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE","asset_id_offset":1033,"context_id":"11111111-2222-4333-8444-555555555555","context_id_offset":1109,"tail_slot_present":false,"tail_slot_offset":1185,"next_record_index":101,"next_byte_offset":1190}}]}"#;
-    let group: super::DesignFaceSourceGroup = serde_json::from_str(wire).unwrap();
+    let group = source_group(wire).unwrap();
     let record = NestedRecord {
         id: "f3d:native:face-source#0",
         value: &group,
@@ -63,19 +90,20 @@ fn face_source_rows_preserve_wire_and_reject_unequal_offsets() {
         let wire = format!(
             "{prefix},\"source_reference_offsets\":{offsets},\"source_members\":{members}}}"
         );
-        let group: super::DesignFaceSourceGroup =
-            serde_json::from_str(&wire).expect("Face source rows");
+        let group = source_group(&wire).expect("Face source rows");
+        let canonical_member = r#"{"record_index":100,"byte_offset":1000,"class_tag":"304","persistent_identity":{"local_id":1,"asset_id":"AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE","context_id":"11111111-2222-4333-8444-555555555555","next_record_index":101}}"#;
+        let canonical = wire.replace(member, canonical_member);
         assert_eq!(
             serde_json::to_string(&group).expect("Face source wire"),
-            wire
+            canonical
         );
         let invalid = wire.replace(
             &format!("\"source_reference_offsets\":{offsets}"),
             "\"source_reference_offsets\":[25,36,47]",
         );
-        let error = serde_json::from_str::<super::DesignFaceSourceGroup>(&invalid)
+        let error = source_group(&invalid)
             .expect_err("unequal source arrays")
-            .to_string();
+            .clone();
         assert!(error.contains("source_members"));
         assert!(error.contains("source_reference_offsets"));
     }

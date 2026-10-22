@@ -667,7 +667,8 @@ fn fixed_kind_edge_and_revolve_operations(
     let mut class403_angle = indexed_angle.clone();
     {
         let mut wire =
-            crate::records::parameters::DesignParameterOwnerWire::from(class403_angle.clone());
+            crate::records::parameters::DesignParameterOwnerWire::try_from(class403_angle.clone())
+                .unwrap();
         wire.scope_record_index = class403_scope.record_index;
         wire.byte_offset = u64_from_index(class403_start);
         wire.evaluated_value_offset = u64_from_index(class403_start + 40);
@@ -916,7 +917,9 @@ fn fixed_kind_edge_and_revolve_operations(
     indexed_axis
         .try_set_members(vec![crate::records::identity::Located {
             value: 900,
-            offset: indexed_axis.members()[0].offset,
+            offset: indexed_axis.members()[0]
+                .offset
+                .expect("retained test source"),
         }])
         .unwrap();
     indexed_axis.operand_role =
@@ -995,8 +998,8 @@ fn fixed_kind_edge_and_revolve_operations(
         record_index: 905,
         owner_reference: Some(100),
         class_tag: crate::records::references::DesignClassTag::try_from("450".to_owned()).unwrap(),
-        byte_offset: 0,
-        geometry_offset: 0,
+        byte_offset: None,
+        geometry_offset: None,
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(104).unwrap(),
         secondary_id: 0,
@@ -1071,6 +1074,7 @@ fn fixed_kind_edge_and_revolve_operations(
         }) if construction.axis().is_none()
     ));
     let mut feature = cadmpeg_ir::features::Feature {
+        needs_recompute: false,
         id: crate::ids::neutral_feature_id(&indexed_revolve_scope),
         ordinal: 0,
         name: None,

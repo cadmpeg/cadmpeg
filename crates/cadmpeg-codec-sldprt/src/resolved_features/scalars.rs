@@ -16,15 +16,22 @@ use std::collections::HashMap;
 use crate::layout::feature_input_operand_cell12 as operand_cell;
 use crate::records::ObjectId;
 
+/// Native scalar values and transient frames of their physically parsed cells.
+pub(crate) struct ParsedScalars {
+    pub(crate) records: Vec<FeatureInputScalar>,
+    pub(super) cell_frames: std::collections::BTreeMap<String, std::ops::Range<usize>>,
+}
+
 pub(crate) fn named_scalars(
     payload: &[u8],
     parent: &str,
     names: &[FeatureInputName],
-) -> Result<Vec<FeatureInputScalar>, CodecError> {
+) -> Result<ParsedScalars, CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     let mut scalars = Vec::new();
+    let mut cell_frames = std::collections::BTreeMap::new();
     for name in names {
-        let Some(name_offset) = usize::try_from(name.offset).ok() else {
+        let Some(name_offset) = name.offset.and_then(|offset| usize::try_from(offset).ok()) else {
             continue;
         };
         let Some(value_offset) = scalar_value_offset(payload, name_offset) else {
@@ -44,20 +51,26 @@ pub(crate) fn named_scalars(
         };
         let ordinal = u32::try_from(scalars.len())
             .map_err(|_| CodecError::malformed("SLDPRT named scalar ordinal overflows u32"))?;
+        let operands = scalar_operands(payload, trailer_offset, parent);
+        cell_frames.extend(operands.frames);
         scalars.push(FeatureInputScalar {
             id: format!("sldprt:feature-input:scalar#{lane_key}:{value_offset}"),
             parent: parent.to_owned(),
             feature_ref: None,
             ordinal,
-            offset: u64_from_index(value_offset),
+            sequence: ordinal,
+            offset: Some(u64_from_index(value_offset)),
             object_id,
             name: name.id.clone(),
             value,
             role: scalar_role(payload, trailer_offset),
-            operands: scalar_operands(payload, trailer_offset, parent),
+            operands: operands.records,
         });
     }
-    Ok(scalars)
+    Ok(ParsedScalars {
+        records: scalars,
+        cell_frames,
+    })
 }
 
 /// The scalar payload offset that follows the serialized object name at
@@ -125,29 +138,40 @@ fn ulp_distance(left: f64, right: f64) -> u64 {
     ordered(left).abs_diff(ordered(right))
 }
 
-fn scalar_operands(
-    payload: &[u8],
-    trailer_offset: usize,
-    parent: &str,
-) -> Vec<FeatureInputOperand> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    operand_cells(payload, trailer_offset)
-        .into_iter()
-        .flatten()
-        .map(|(offset, kind, entity_index)| FeatureInputOperand {
-            offset: u64_from_index(offset),
-            reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
-            kind,
-            entity_index,
-            entity_ref: None,
-        })
-        .collect()
+struct ParsedOperands {
+    records: Vec<FeatureInputOperand>,
+    frames: std::collections::BTreeMap<String, std::ops::Range<usize>>,
 }
 
-fn operand_cells(
-    payload: &[u8],
-    trailer_offset: usize,
-) -> [Option<(usize, FeatureInputOperandKind, u16)>; 2] {
+struct OperandCell {
+    frame: std::ops::Range<usize>,
+    kind: FeatureInputOperandKind,
+    entity_index: u16,
+}
+
+fn scalar_operands(payload: &[u8], trailer_offset: usize, parent: &str) -> ParsedOperands {
+    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let mut operands = Vec::new();
+    let mut frames = std::collections::BTreeMap::new();
+    for cell in operand_cells(payload, trailer_offset).into_iter().flatten() {
+        let offset = cell.frame.start;
+        let reference_ref = format!("sldprt:feature-input:reference#{lane_key}:{offset}");
+        frames.insert(reference_ref.clone(), cell.frame);
+        operands.push(FeatureInputOperand {
+            offset: Some(u64_from_index(offset)),
+            reference_ref,
+            kind: cell.kind,
+            entity_index: cell.entity_index,
+            entity_ref: None,
+        });
+    }
+    ParsedOperands {
+        records: operands,
+        frames,
+    }
+}
+
+fn operand_cells(payload: &[u8], trailer_offset: usize) -> [Option<OperandCell>; 2] {
     let compact = compact_scalar_layout(payload, trailer_offset);
     let first = if compact || !legacy_scalar_layout(payload, trailer_offset) {
         35
@@ -161,31 +185,27 @@ fn operand_cells(
     };
     [first, second].map(|relative| {
         let offset = trailer_offset.checked_add(relative)?;
+        let len = if compact { 8 } else { operand_cell::LEN };
+        let end = offset.checked_add(len)?;
+        let cell = payload.get(offset..end)?;
         if compact {
-            let cell = payload.get(offset..offset.checked_add(8)?)?;
             if cell[4..8] != [0xff; 4] {
                 return None;
             }
-            return Some((
-                offset,
-                operand_kind([cell[0], cell[1]])?,
-                View::u16_le_at(cell, 2)?,
-            ));
-        }
-        let cell = payload.get(offset..offset.checked_add(operand_cell::LEN)?)?;
-        if cell[operand_cell::REFERENCE_SENTINEL..operand_cell::ZERO_TRAILER] != [0xff; 4]
+        } else if cell[operand_cell::REFERENCE_SENTINEL..operand_cell::ZERO_TRAILER] != [0xff; 4]
             || cell[operand_cell::ZERO_TRAILER..operand_cell::LEN] != [0; 4]
         {
             return None;
         }
-        Some((
-            offset,
-            operand_kind([
-                cell[operand_cell::CLASS_TOKEN],
-                cell[operand_cell::CLASS_TOKEN + 1],
-            ])?,
-            View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
-        ))
+        Some(OperandCell {
+            frame: offset..end,
+            kind: operand_kind(
+                cell[operand_cell::CLASS_TOKEN..operand_cell::MARKER_ADDRESS]
+                    .try_into()
+                    .ok()?,
+            )?,
+            entity_index: View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
+        })
     })
 }
 
@@ -255,7 +275,7 @@ impl FeatureObjectStarts {
             .iter()
             .flat_map(|history| &history.features)
             .filter_map(|feature| names.of(feature))
-            .map(|name| name.offset)
+            .filter_map(|name| name.offset)
             .collect::<Vec<_>>();
         starts.sort_unstable();
         Self(starts)
@@ -263,7 +283,10 @@ impl FeatureObjectStarts {
 
     /// End of the feature object named at `start`: the next feature object
     /// start after it, else `payload_len`.
-    pub(super) fn end(&self, start: u64, payload_len: usize) -> usize {
+    pub(super) fn end(&self, start: impl Into<Option<u64>>, payload_len: usize) -> usize {
+        let Some(start) = start.into() else {
+            return payload_len;
+        };
         self.0
             .get(self.0.partition_point(|offset| *offset <= start))
             .and_then(|offset| usize::try_from(*offset).ok())

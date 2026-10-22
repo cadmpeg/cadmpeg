@@ -91,6 +91,17 @@ class HeadlineCase(unittest.TestCase):
         self.assertIn("detected", rendered)
         self.assertNotIn("pending", rendered)
 
+    def test_format_contract_fields_render_exactly_and_absence_stays_optional(self):
+        row = renderer.Row("demo:one", "detected", "none")
+        fmt = renderer.Format("demo", 3, (row,), ("model", "design"), ("synthesized",), ("features",), ())
+        text = renderer.format_section("demo", {"demo": fmt})
+        self.assertIn("**Delivered full-decode scope:** `model`, `design`.", text)
+        self.assertIn("**Write paths:** `synthesized`.", text)
+        self.assertIn("**Synthesized dropped arenas:** `features`.", text)
+        self.assertIn("**Synthesized omitted arenas:** none.", text)
+        plain = renderer.format_section("demo", {"demo": self._format()})
+        self.assertNotIn("Delivered full-decode scope", plain)
+
 
 class SpliceCase(unittest.TestCase):
     """A region the generator cannot own unambiguously is a hard failure."""
@@ -145,6 +156,21 @@ class RegistryCase(unittest.TestCase):
         with self._root() as root:
             formats = renderer.load_formats(root)
             self.assertEqual(formats["demo"].headline, "L3")
+
+    def test_contract_arrays_survive_registry_loading(self):
+        support = SUPPORT.replace('[format.demo]\n', '[format.demo]\ndelivered_scope = ["model"]\nwrite_paths = ["synthesized"]\ndropped_arenas = ["features"]\nomitted_arenas = []\n')
+        with self._root(support=support) as root:
+            entry = renderer.load_formats(root)["demo"]
+            self.assertEqual(entry.delivered_scope, ("model",))
+            self.assertEqual(entry.write_paths, ("synthesized",))
+            self.assertEqual(entry.dropped_arenas, ("features",))
+            self.assertEqual(entry.omitted_arenas, ())
+
+    def test_invalid_contract_array_is_a_render_error(self):
+        support = SUPPORT.replace('[format.demo]\n', '[format.demo]\nwrite_paths = "synthesized"\n')
+        with self._root(support=support) as root:
+            with self.assertRaisesRegex(renderer.RenderError, "write_paths must be an array"):
+                renderer.load_formats(root)
 
     def test_evaluations_are_not_a_renderer_input(self):
         with self._root() as root:

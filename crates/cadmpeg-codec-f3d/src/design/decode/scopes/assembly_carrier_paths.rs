@@ -3,6 +3,9 @@
 
 use cadmpeg_core::decode::index_from_u32;
 
+use super::assembly_path_layout::{
+    ParsedOperandPath, PathLinkSources, PathSourceDraft, PathSourceForm,
+};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
@@ -30,30 +33,39 @@ use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
 use crate::records::feature::scope::DesignParameterScope;
 
-pub(super) fn exact_variable_reference_operand_qualifiers(
-    bytes: &[u8],
+pub(super) fn exact_variable_reference_operand_qualifiers<'a>(
+    source: View<'a>,
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frames: &[DesignAssemblyOperandFrame; 2],
+    staged_sources: &mut Vec<(usize, PathSourceDraft<'a>)>,
 ) -> Result<Option<[DesignAssemblyOperandQualifier; 2]>, CodecError> {
+    let bytes = source.window();
     let mut qualifiers = [None, None];
-    for (qualifier, frame) in qualifiers.iter_mut().zip(frames) {
-        *qualifier = exact_class_363_operand_path(bytes, records, scope, frame)?
-            .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
-            .or_else(|| exact_class_307_joint_origin(bytes, records, frame));
+    let mut drafts = Vec::new();
+    for (ordinal, (qualifier, frame)) in qualifiers.iter_mut().zip(frames).enumerate() {
+        if let Some(path) = exact_class_363_operand_path(source, records, scope, frame)? {
+            drafts.push((ordinal, path.source));
+            *qualifier =
+                Some(DesignAssemblyOperandQualifier::OccurrencePath { path: path.content });
+        } else {
+            *qualifier = exact_class_307_joint_origin(bytes, records, frame);
+        }
     }
     let [Some(first), Some(second)] = qualifiers else {
         return Ok(None);
     };
+    staged_sources.extend(drafts);
     Ok(Some([first, second]))
 }
 
-fn exact_class_363_operand_path(
-    bytes: &[u8],
+fn exact_class_363_operand_path<'a>(
+    source: View<'a>,
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
-) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
+) -> Result<Option<ParsedOperandPath<'a>>, CodecError> {
+    let bytes = source.window();
     (|| {
         let (carrier_at, carrier_paired_at) = exact_class_264_record_frame(
             bytes,
@@ -174,33 +186,45 @@ fn exact_class_363_operand_path(
                 .start
                 .checked_add(class_363_leading::IDENTITY_REFERENCE)?,
         )?;
+        let occurrence_at = usize::try_from(occurrence_guid_offset)
+            .ok()?
+            .checked_sub(4)?;
+        let identity_at = usize::try_from(identity_guid_offset).ok()?.checked_sub(4)?;
+        let mut draft = PathSourceDraft::legacy(source, terminal_at, PathSourceForm::Carrier363)?;
+        draft.occurrence(occurrence_at, identity_at)?;
+        draft.identity(identity_at, identity_at.checked_add(76)?)?;
+        draft.set_link(
+            PathLinkSources::new(
+                source,
+                frame.reference_offset,
+                carrier_at,
+                locator_scope_reference_offset,
+                wrapper_reference_offset,
+                leading_identity.start,
+                occurrence_guid_offset,
+            )?
+            .occurrence_reference(source, occurrence_at, identity_at)?,
+        );
+        draft.validate_positions()?;
         DesignAssemblyOperandPath::try_new(
             DesignAssemblyOperandPathLink {
-                locator_reference_offset: frame.reference_offset,
                 locator_record_index: frame.reference_record_index,
                 locator_class_tag: "363".to_owned().try_into().ok()?,
-                locator_byte_offset: u64::try_from(carrier_at).ok()?,
-                locator_scope_reference_offset,
                 wrapper_record_index: leading_identity_record_index,
-                wrapper_reference_offset,
                 wrapper_class_tag: "388".to_owned().try_into().ok()?,
-                wrapper_byte_offset: u64::try_from(leading_identity.start).ok()?,
-                path_reference_offset: occurrence_guid_offset,
             },
             terminal_record_index,
             "386".to_owned().try_into().ok()?,
-            u64::try_from(terminal_at).ok()?,
-            vec![crate::records::identity::Located {
-                value: occurrence_guid.into(),
-                offset: occurrence_guid_offset,
-            }],
-            vec![crate::records::identity::Located {
-                value: identity_guid,
-                offset: identity_guid_offset,
-            }],
+            vec![occurrence_guid.into()],
+            vec![identity_guid],
         )
         .ok()
-        .map(Ok)
+        .map(|content| {
+            Ok(ParsedOperandPath {
+                content,
+                source: draft,
+            })
+        })
     })()
     .transpose()
 }

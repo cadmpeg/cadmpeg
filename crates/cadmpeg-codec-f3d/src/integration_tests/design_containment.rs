@@ -8,13 +8,12 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
-use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{assert_valid, decode};
 use crate::decode::design_intent::inject_failure;
 use crate::loss::F3dLossCode;
 use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_test::f3d_native;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
@@ -29,6 +28,7 @@ fn malformed_design() -> CodecError {
 
 fn recursion_refusal() -> CodecError {
     CodecError::ResourceLimit(ResourceLimit {
+        scope: cadmpeg_core::decode::LimitScope::Part,
         dimension: ResourceDimension::RecursionDepth,
         reason: ResourceFailure::BudgetExceeded,
         limit: 1,
@@ -79,6 +79,58 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
 }
 
 #[test]
+fn typed_history_headers_do_not_represent_opaque_history_payload() {
+    let full = decode(design_archive());
+    let native = f3d_native(full.ir());
+    assert!(native
+        .asm_histories
+        .iter()
+        .flat_map(crate::history_records::AsmHistory::states)
+        .flat_map(|state| &state.records)
+        .any(|record| !record.raw_bytes.is_empty()));
+    assert!(full.ir().scope.design);
+    assert!(full
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+}
+
+#[test]
+fn a_cut_and_a_total_design_failure_hold_identical_prerequisites() {
+    let inputs = [
+        design_archive(),
+        include_bytes!("../../tests/golden/fixtures/design_sketch_constraints.f3d").to_vec(),
+    ];
+    for source in inputs {
+        let cut = F3dCodec
+            .decode(
+                &mut Cursor::new(&source),
+                &DecodeOptions {
+                    depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("geometry cut delivers its prerequisites");
+        inject_failure(malformed_design);
+        let contained = F3dCodec
+            .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+            .expect("total phase-2 failure is contained");
+        assert!(!cut.ir().scope.design);
+        assert_eq!(cut.ir().scope, contained.ir().scope);
+        assert_eq!(cut.ir().model, contained.ir().model);
+        assert_eq!(cut.ir().native, contained.ir().native);
+        assert_eq!(cut.source_fidelity(), contained.source_fidelity());
+        assert!(contained
+            .source_fidelity()
+            .unrepresented()
+            .contains(&cadmpeg_ir::document::ArenaClass::Design,));
+        assert!(contained.report().losses.iter().any(|loss| {
+            loss.code.local_code() == "depth.not-delivered" && loss.message.contains("design")
+        }));
+    }
+}
+
+#[test]
 fn strict_mode_refuses_a_contained_design_intent_failure() {
     let mut options = DecodeOptions::default();
     options.policy.mode = DecodeMode::Strict;
@@ -97,8 +149,8 @@ fn strict_mode_refuses_a_contained_design_intent_failure() {
     );
 }
 
-fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::CadIr {
-    let mut edited = result.ir().clone();
+fn moved_first_point(ir: &cadmpeg_ir::document::CadIr) -> cadmpeg_ir::document::CadIr {
+    let mut edited = ir.clone();
     let moved = edited.model.points[0].position().get();
     edited.model.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
@@ -112,52 +164,58 @@ fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::Cad
 }
 
 #[test]
-fn the_patch_path_refuses_a_source_whose_design_intent_was_contained() {
-    let full = decode(design_archive());
-    let mut patched = Vec::new();
-    crate::test_support::plan_inherited_write(
-        &moved_first_point(&full),
-        full.source_fidelity(),
-        &mut patched,
-    )
-    .expect("the same edit patches when design intent decodes");
-
-    inject_failure(malformed_design);
-    let contained = decode(design_archive());
-    let edited = moved_first_point(&contained);
-    inject_failure(malformed_design);
-    let refused = F3dCodec
-        .plan(
-            EncodeInput::new(&edited, Some(contained.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .map(|_| ());
-
-    assert!(
-        matches!(
-            &refused,
-            Err(CodecError::NotImplemented(message))
-                if message.contains("design intent was not decoded")
-        ),
-        "{refused:?}"
-    );
-}
-
-#[test]
-fn an_unedited_contained_document_replays_its_source_bytes() {
-    let source = design_archive();
-    inject_failure(malformed_design);
-    let contained = decode(source.clone());
-
-    let mut replayed = Vec::new();
-    crate::test_support::plan_inherited_write(
-        contained.ir(),
-        contained.source_fidelity(),
-        &mut replayed,
-    )
-    .expect("an unedited contained document replays");
-
-    assert_eq!(replayed, source);
+fn cut_and_failed_design_are_never_resurrected_by_native_write_back() {
+    use cadmpeg_core::decode::DecodeDepth;
+    use cadmpeg_ir::document::ArenaClass;
+    use cadmpeg_ir::report::export::WritePath;
+    for depth in [DecodeDepth::Geometry, DecodeDepth::Full] {
+        let source = design_archive();
+        if depth == DecodeDepth::Full {
+            inject_failure(malformed_design);
+        }
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(&source),
+                &DecodeOptions {
+                    depth,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("the held geometry is delivered");
+        assert!(!result.ir().scope.design);
+        assert!(result
+            .source_fidelity()
+            .unrepresented()
+            .contains(&ArenaClass::Design));
+        assert!(!EncodeInput::new(result.ir(), Some(result.source_fidelity())).can_reuse_source());
+        for edited in [result.ir().clone(), moved_first_point(result.ir())] {
+            let plan = F3dCodec
+                .plan(
+                    EncodeInput::new(&edited, Some(result.source_fidelity())),
+                    TargetRequest::Inherit,
+                )
+                .expect("a declined patch synthesizes held content");
+            assert!(matches!(
+                plan.report().write_path(),
+                WritePath::Synthesized { .. }
+            ));
+            assert!(
+                matches!(plan.report().synthesis_cause(), Some(cadmpeg_ir::codec::write::SynthesisCause::SourceUnrepresented { classes }) if classes.contains(&ArenaClass::Design))
+            );
+            let mut output = Vec::new();
+            plan.write_to(&mut output)
+                .expect("write synthesized archive");
+            assert_ne!(source, output);
+            let reloaded = F3dCodec
+                .decode(&mut Cursor::new(output), &DecodeOptions::default())
+                .expect("synthesized archive decodes");
+            assert_eq!(reloaded.ir().model.bodies.len(), edited.model.bodies.len());
+            assert_eq!(reloaded.ir().model.faces.len(), edited.model.faces.len());
+            assert!(reloaded.ir().model.features.is_empty());
+            assert!(reloaded.ir().model.sketches.is_empty());
+            assert!(f3d_native(reloaded.ir()).asm_histories.is_empty());
+        }
+    }
 }
 
 #[test]
@@ -199,8 +257,8 @@ fn native_findings(ir: &cadmpeg_ir::document::CadIr) -> Vec<String> {
 }
 
 /// A full decode whose design intent fails keeps the product scopes and
-/// owners that design intent binds. Its failure record tells native
-/// validation that the bindings are absent rather than broken.
+/// owners that design intent binds. Its scope tells native validation that
+/// the design bindings are absent.
 #[test]
 fn native_validation_skips_design_intent_links_after_a_contained_failure() {
     let source =
@@ -208,27 +266,15 @@ fn native_validation_skips_design_intent_links_after_a_contained_failure() {
     inject_failure(malformed_design);
     let contained = decode(source.clone());
 
-    let failures = f3d_native(contained.ir()).design_intent_failures;
-    assert_eq!(failures.len(), 1);
-    assert!(failures[0]
-        .reason
-        .contains("injected design-intent failure"));
+    assert!(!contained.ir().scope.design);
+    assert!(contained
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
     assert_eq!(native_findings(contained.ir()), Vec::<String>::new());
-
-    let mut unmarked = contained.ir().clone();
-    f3d_native_mut(&mut unmarked).design_intent_failures.clear();
-    assert!(native_findings(&unmarked)
-        .iter()
-        .any(|message| message == "Fusion Design parameter scope has an invalid paired frame"));
-
     let full = decode(source);
+    assert!(full.ir().scope.design);
     assert_eq!(native_findings(full.ir()), Vec::<String>::new());
-    let mut marked = full.ir().clone();
-    f3d_native_mut(&mut marked).design_intent_failures = failures;
-    assert_eq!(
-        native_findings(&marked),
-        ["Fusion design-intent failure record accompanies decoded design records"]
-    );
 }
 
 #[test]

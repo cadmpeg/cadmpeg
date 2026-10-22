@@ -838,6 +838,13 @@ impl ChannelAddressing {
 struct TessellationWire {
     /// Stable source-derived identifier.
     id: TessellationId,
+    /// Typed native record from which this mesh was projected.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    native_ref: Option<String>,
     /// Body represented by this mesh, when known.
     #[serde(
         default,
@@ -855,7 +862,7 @@ struct TessellationWire {
         deserialize_with = "deserialize_chordal_deflection"
     )]
     chordal_deflection: Option<f64>,
-    /// Native source-object identity and effective display metadata.
+    /// Native source-object identity and ownership.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -902,13 +909,20 @@ struct TessellationChannelWire {
 pub struct Tessellation {
     /// Stable source-derived identifier.
     pub id: TessellationId,
+    /// Typed native record from which this neutral record was projected.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
     /// Body represented by this mesh, when known.
     pub body: Option<BodyId>,
     /// Faces represented by this mesh, empty when face-level ownership is unknown.
     pub faces: Vec<FaceId>,
     /// Source chordal deflection tolerance, when carried.
     chordal_deflection: Option<NonNegativeReal>,
-    /// Native source-object identity and effective display metadata.
+    /// Native source-object identity and ownership.
     pub source_object: Option<SourceObjectAssociation>,
     mesh: TessellationMesh<FinitePoint3, FiniteVector3>,
     /// Undirected geometric feature edges.
@@ -1143,6 +1157,7 @@ impl Tessellation {
         };
         require_channel_indices(triangle_count, &channels)?;
         Ok(Self {
+            native_ref: None,
             id,
             body: None,
             faces: Vec::new(),
@@ -1493,6 +1508,7 @@ impl From<Tessellation> for TessellationWire {
     fn from(tessellation: Tessellation) -> Self {
         Self {
             id: tessellation.id,
+            native_ref: tessellation.native_ref,
             body: tessellation.body,
             faces: tessellation.faces,
             chordal_deflection: tessellation.chordal_deflection.map(NonNegativeReal::get),
@@ -1511,6 +1527,7 @@ impl TryFrom<TessellationWire> for Tessellation {
 
     fn try_from(wire: TessellationWire) -> Result<Self, Self::Error> {
         let mut mesh = Self {
+            native_ref: wire.native_ref,
             body: wire.body,
             faces: wire.faces,
             source_object: wire.source_object,
@@ -1583,3 +1600,5 @@ cadmpeg_core::named_optional_field!(deserialize_source_id, String, "source_id");
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");

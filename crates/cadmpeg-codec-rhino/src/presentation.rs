@@ -30,6 +30,8 @@ use crate::objects::{
 use crate::settings::{self, MillimeterScale, StandardUnit, UnitBinding};
 use crate::wire::{read_finite, scaled_coordinate, uuid, Uuid};
 
+mod assets;
+
 const ANONYMOUS: u32 = 0x4000_8000;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
 const UTF8_STRING_CHUNK: u32 = 0x4000_8001;
@@ -139,6 +141,7 @@ struct Component {
 #[derive(Debug, Serialize)]
 struct GroupRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     archive_index: i32,
     source_uuid: Option<String>,
@@ -149,6 +152,7 @@ struct GroupRecord {
 #[derive(Debug, Serialize)]
 struct MaterialRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_index: Option<i32>,
@@ -299,6 +303,7 @@ struct TextureFileReference {
 
 #[derive(Debug, Serialize)]
 struct TextureRecord {
+    #[serde(skip_serializing)]
     source_offset: u64,
     source_uuid: Option<String>,
     mapping_channel_id: u32,
@@ -325,6 +330,7 @@ struct TextureRecord {
 #[derive(Debug, Serialize)]
 struct LightRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     source_uuid: String,
     archive_index: i32,
@@ -364,6 +370,7 @@ struct LinetypeSegment {
 #[derive(Debug, Serialize)]
 struct LinetypeRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_index: Option<i32>,
@@ -396,6 +403,7 @@ struct HatchLineRecord {
 #[derive(Debug, Serialize)]
 struct HatchPatternRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_index: Option<i32>,
@@ -463,6 +471,7 @@ fn pattern_document_scale(binding: UnitBinding) -> Result<MillimeterScale, Patte
 #[derive(Debug, Serialize)]
 struct DimensionStyleRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_index: Option<i32>,
@@ -604,7 +613,18 @@ impl Serialize for DimensionStyleControls<'_> {
             {
                 continue;
             }
-            map.serialize_entry(key, value)?;
+            // The child evidence is document content; its source position is
+            // retained separately in NativeInstall::source_layout.
+            if let Some(fields) = value
+                .as_object()
+                .filter(|fields| fields.contains_key("offset") && fields.contains_key("sha256"))
+            {
+                let mut evidence = fields.clone();
+                evidence.remove("offset");
+                map.serialize_entry(key, &evidence)?;
+            } else {
+                map.serialize_entry(key, value)?;
+            }
         }
         if let Some(extra) = self.extra {
             map.serialize_entry("v5_extra_dimension_scale", &extra.dimension_scale)?;
@@ -662,6 +682,7 @@ struct FontRecord {
     english_family_name: String,
     localized_face_name: String,
     english_face_name: String,
+    #[serde(serialize_with = "crate::wire::serialize_panose")]
     panose: Option<NativeBytes<[u8; 10]>>,
     quartet_member: Option<u8>,
 }
@@ -673,6 +694,7 @@ enum FontWeight {
     Legacy {
         windows: i32,
         italic: bool,
+        linefeed_ratio: FiniteReal,
     },
     Modern {
         windows: i32,
@@ -686,8 +708,13 @@ impl Serialize for FontWeight {
         let mut map = serializer.serialize_map(None)?;
         let (windows, apple) = match self {
             Self::Unspecified => (None, None),
-            Self::Legacy { windows, italic } => {
+            Self::Legacy {
+                windows,
+                italic,
+                linefeed_ratio,
+            } => {
                 map.serialize_entry("legacy_italic", italic)?;
+                map.serialize_entry("legacy_linefeed_ratio", linefeed_ratio)?;
                 (Some(*windows), None)
             }
             Self::Modern { windows, apple } => (Some(*windows), Some(*apple)),
@@ -701,6 +728,7 @@ impl Serialize for FontWeight {
 #[derive(Debug, Serialize)]
 struct TextStyleRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_index: Option<i32>,
@@ -728,21 +756,28 @@ impl Serialize for EmbeddedImageCompression {
 #[derive(Debug, Serialize)]
 struct EmbeddedImageRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     source_uuid: Option<String>,
     name: String,
     file_path: String,
+    #[serde(skip_serializing)]
     image_crc32: u32,
+    #[serde(skip_serializing)]
     compression_method: EmbeddedImageCompression,
+    #[serde(skip_serializing)]
     uncompressed_byte_len: u64,
+    #[serde(skip_serializing)]
     buffer_offset: u64,
     buffer_byte_len: u64,
     buffer_sha256: String,
+    asset: Option<cadmpeg_ir::assets::AssetId>,
 }
 
 #[derive(Debug, Serialize)]
 struct WindowsBitmapRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     class_uuid: String,
     file_path: String,
@@ -756,14 +791,17 @@ struct WindowsBitmapRecord {
     pixels_per_meter: [i32; 2],
     colors_used: i32,
     important_colors: i32,
+    #[serde(skip_serializing)]
     pixel_buffer_offset: u64,
     pixel_buffer_byte_len: u64,
     pixel_buffer_sha256: String,
+    asset: Option<cadmpeg_ir::assets::AssetId>,
 }
 
 #[derive(Debug, Serialize)]
 struct TextureMappingRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     source_uuid: Option<String>,
     name: String,
@@ -1038,8 +1076,11 @@ impl Serialize for settings::LayerPerViewportSettings {
         let mut record = serializer.serialize_struct("LayerPerViewportPresentationRecord", 7)?;
         record.serialize_field("viewport_uuid", &DisplayRef(&self.viewport_id))?;
         record.serialize_field("settings_mask", &self.settings_mask())?;
-        record.serialize_field("color", &self.color)?;
-        record.serialize_field("plot_color", &self.plot_color)?;
+        record.serialize_field("color", &self.color.map(crate::wire::packed_color))?;
+        record.serialize_field(
+            "plot_color",
+            &self.plot_color.map(crate::wire::packed_color),
+        )?;
         record.serialize_field("plot_weight_mm", &self.plot_weight_mm)?;
         record.serialize_field(
             "visible",
@@ -1085,7 +1126,10 @@ impl Serialize for LayerPlotSlot {
 
         let plot = self.0.as_ref();
         let mut record = serializer.serialize_struct("LayerPlot", 2)?;
-        record.serialize_field("plot_color", &plot.map(|value| value.color))?;
+        record.serialize_field(
+            "plot_color",
+            &plot.map(|value| crate::wire::packed_color(value.color)),
+        )?;
         record.serialize_field("plot_weight_mm", &plot.map(|value| value.weight_mm))?;
         record.end()
     }
@@ -1094,6 +1138,7 @@ impl Serialize for LayerPlotSlot {
 #[derive(Debug, Serialize)]
 struct LayerPresentationRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     archive_index: i32,
     source_uuid: Option<String>,
@@ -1179,6 +1224,7 @@ struct ObjectAttributesPresentation {
 #[derive(Debug, Serialize)]
 struct ObjectPresentationRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     #[serde(flatten)]
     attributes: ObjectAttributesPresentation,
@@ -1187,6 +1233,7 @@ struct ObjectPresentationRecord {
 
 #[derive(Debug, Serialize)]
 struct LightAttributesRecord {
+    #[serde(skip_serializing)]
     source_offset: u64,
     #[serde(flatten)]
     attributes: ObjectAttributesPresentation,
@@ -1577,7 +1624,7 @@ fn parse_physically_based_material(
     })
 }
 
-fn parse_uuid_text(value: &str) -> Option<Uuid> {
+pub(crate) fn parse_uuid_text(value: &str) -> Option<Uuid> {
     let mut bytes = [0_u8; 16];
     let mut nibble = None;
     let mut index = 0;
@@ -3821,6 +3868,7 @@ fn parse_embedded_image(
         buffer_offset: cadmpeg_core::decode::u64_from_index(buffer_offset),
         buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer_end - buffer_offset),
         buffer_sha256: hex(&cadmpeg_ir::hash::sha256(&data[buffer_offset..buffer_end])),
+        asset: None,
     })
 }
 
@@ -3969,12 +4017,14 @@ fn parse_windows_bitmap(
         pixel_buffer_offset: cadmpeg_core::decode::u64_from_index(pixel_buffer_offset),
         pixel_buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer.len()),
         pixel_buffer_sha256: hex(&cadmpeg_ir::hash::sha256(buffer)),
+        asset: None,
     })
 }
 
 struct ParsedTextureMapping {
     value: TextureMappingRecord,
     cache_requires_opaque: bool,
+    cache_unreadable: bool,
 }
 
 fn parse_mapping_crc_cache(data: &[u8], payload_range: Range<usize>) -> Result<(), FramingError> {
@@ -4033,6 +4083,7 @@ fn parse_texture_mapping(
     let texture_space = if version.1 >= 1 { reader.u32()? } else { 0 };
     let capped = version.1 >= 1 && reader.bool()?;
     reader.skip_remaining()?;
+    let untyped_primitive = primitive_class_uuid.is_some();
     Ok(ParsedTextureMapping {
         value: TextureMappingRecord {
             id: if id.is_nil() {
@@ -4051,7 +4102,8 @@ fn parse_texture_mapping(
             texture_space,
             capped,
         },
-        cache_requires_opaque,
+        cache_unreadable: cache_requires_opaque,
+        cache_requires_opaque: cache_requires_opaque || untyped_primitive,
     })
 }
 
@@ -4433,10 +4485,11 @@ fn parse_text_style(
                     "legacy font italic flag is invalid",
                 ));
             }
-            let _linefeed_ratio = read_finite(&mut reader, "legacy font linefeed ratio")?;
+            let linefeed_ratio = read_finite(&mut reader, "legacy font linefeed ratio")?;
             font.weight = FontWeight::Legacy {
                 windows,
                 italic: italic != 0,
+                linefeed_ratio,
             };
         }
         let id = if packed & 0x0f >= 2 {
@@ -4523,6 +4576,7 @@ fn retain_unbound_presentation_record(
 
 pub(crate) fn install(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    root: cadmpeg_core::decode::View<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
 ) -> Result<NativeInstall, CodecError> {
@@ -4851,6 +4905,16 @@ pub(crate) fn install(
                         record.range.start,
                     ) {
                         Ok(value) => {
+                            if value
+                                .details
+                                .controls()
+                                .0
+                                .iter()
+                                .any(|(_, field)| field.get("sha256").is_some())
+                            {
+                                losses.push(RhinoLossCode::PresentationRecordDropped.note(format!("{}: dimension-style child content is retained without typed semantics", value.id)));
+                                push_opaque_record(&mut opaque_records, table.typecode, record);
+                            }
                             dimension_styles.push(value);
                             parsed = true;
                         }
@@ -4912,12 +4976,19 @@ pub(crate) fn install(
                         record.range.start,
                     ))? {
                         texture_mappings.push(value.value);
+                        if value.cache_unreadable {
+                            push_presentation_loss(
+                                &mut losses,
+                                RhinoLossCode::PresentationRecordDropped,
+                                format_args!("MappingCRCCache at offset {} could not be transferred: unsupported or malformed cache payload", record.range.start),
+                            );
+                        }
                         if value.cache_requires_opaque {
                             push_presentation_loss(
                                 &mut losses,
                                 RhinoLossCode::PresentationRecordDropped,
                                 format_args!(
-                                "MappingCRCCache userdata at offset {} could not be transferred",
+                                "texture mapping at offset {} contains an untyped primitive or cache record",
                                 record.range.start
                             ),
                             );
@@ -5170,6 +5241,133 @@ pub(crate) fn install(
         };
         group.links.sort();
     }
+    let unresolved_images = assets::project(
+        ctx,
+        root,
+        scan,
+        ir,
+        &mut images,
+        &mut windows_bitmaps,
+        &mut losses,
+    )?;
+    for offset in unresolved_images {
+        if let Some((table, record)) = scan.tables.iter().find_map(|table| {
+            table
+                .records
+                .iter()
+                .find(|record| cadmpeg_core::decode::u64_from_index(record.range.start) == offset)
+                .map(|record| (table, record))
+        }) {
+            push_opaque_record(&mut opaque_records, table.typecode, record);
+        }
+    }
+    let mut source_layout = std::collections::BTreeMap::new();
+    for record in &materials {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &lights {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &linetypes {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &hatch_patterns {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &dimension_styles {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+        for (name, child) in &record.details.controls().0 {
+            if let Some(offset) = child.get("offset").and_then(serde_json::Value::as_u64) {
+                source_layout.insert(
+                    format!("rhino.layout.{}.controls.{name}.offset", record.id),
+                    offset.to_string(),
+                );
+            }
+        }
+    }
+    for record in &images {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &windows_bitmaps {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &texture_mappings {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &text_styles {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &layers {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for record in &object_presentation {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", record.id),
+            record.source_offset.to_string(),
+        );
+    }
+    for material in &materials {
+        for (ordinal, texture) in material.textures.iter().enumerate() {
+            source_layout.insert(
+                format!("rhino.layout.{}.texture.{ordinal}.offset", material.id),
+                texture.source_offset.to_string(),
+            );
+        }
+    }
+    for light in &lights {
+        if let Some(attributes) = &light.attributes {
+            source_layout.insert(
+                format!("rhino.layout.{}.attributes.offset", light.id),
+                attributes.source_offset.to_string(),
+            );
+        }
+    }
+    for image in &images {
+        source_layout.insert(
+            format!("rhino.layout.{}.buffer_offset", image.id),
+            image.buffer_offset.to_string(),
+        );
+        source_layout.insert(
+            format!("rhino.layout.{}.crc32", image.id),
+            image.image_crc32.to_string(),
+        );
+    }
+    for bitmap in &windows_bitmaps {
+        source_layout.insert(
+            format!("rhino.layout.{}.pixel_buffer_offset", bitmap.id),
+            bitmap.pixel_buffer_offset.to_string(),
+        );
+    }
     let namespace = ir.native.namespace_mut("rhino");
     namespace.set_arena(ctx, "groups", &groups)?;
     namespace.set_arena(ctx, "materials", &materials)?;
@@ -5184,6 +5382,7 @@ pub(crate) fn install(
     namespace.set_arena(ctx, "layers", &layers)?;
     namespace.set_arena(ctx, "object_presentation", &object_presentation)?;
     Ok(NativeInstall {
+        source_layout,
         losses,
         opaque_records,
     })

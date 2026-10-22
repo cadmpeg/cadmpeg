@@ -10,7 +10,7 @@ fn diagnostic_property(
     type_name: &str,
     values: Vec<crate::native::ValueRecord>,
 ) -> crate::native::PropertyRecord {
-    crate::native::PropertyRecord {
+    let property = crate::native::PropertyRecord {
         id: "fcstd:native:property#Attachment:MapMode".into(),
         owner: "fcstd:native:object#Attachment".into(),
         name: "MapMode".into(),
@@ -24,19 +24,26 @@ fn diagnostic_property(
             dynamic: None,
         },
         order: 0,
-        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("test XML span"),
-    }
+    };
+    let _fidelity =
+        crate::test_support::source_fidelity::xml_layout_fixture(&property.id, "<Property/>");
+    property
 }
 
 fn enum_value(tag: &str, value: Option<&str>) -> crate::native::ValueRecord {
+    let _fidelity = crate::test_support::source_fidelity::value_layout_fixture(
+        "fcstd:native:property#Attachment:MapMode",
+        &["<Integer/>"],
+    );
     crate::native::ValueRecord {
+        parent: None,
         tag: tag.into(),
         order: 0,
         attributes: value
             .map(|value| std::collections::BTreeMap::from([("value".into(), value.into())]))
             .unwrap_or_default(),
+        decoded_json: None,
         text: None,
-        raw_xml: "<Integer/>".into(),
     }
 }
 

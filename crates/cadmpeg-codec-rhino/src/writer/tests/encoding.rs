@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::writer::{
-    archive_body_len, archive_final_size, brep_loop_type, brep_trim_type, check_object_attributes,
-    native_i32_count, object_attributes_payload, utf16, wire_index,
+    archive_body_len, archive_final_size, brep_loop_type, brep_trim_type, native_i32_count, utf16,
+    wire_index,
 };
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
@@ -31,7 +31,7 @@ fn admitted_angular_tolerance_above_pi_is_a_writer_limit() {
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("Rhino cannot state this angular tolerance");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
 }
 
 #[test]
@@ -42,11 +42,11 @@ fn admitted_native_counts_outside_i32_lanes_are_writer_limits() {
     let index_error = wire_index(count).expect_err("the native index lane is signed 32-bit");
     assert!(matches!(
         count_error,
-        cadmpeg_core::CodecError::NotImplemented(_)
+        cadmpeg_core::CodecError::InvalidInput(_)
     ));
     assert!(matches!(
         index_error,
-        cadmpeg_core::CodecError::NotImplemented(_)
+        cadmpeg_core::CodecError::InvalidInput(_)
     ));
 }
 
@@ -57,19 +57,23 @@ fn admitted_archive_sizes_outside_native_lanes_are_writer_limits() {
         archive_final_size(u64::MAX).expect_err("the final size must include a footer");
     assert!(matches!(
         body_error,
-        cadmpeg_core::CodecError::NotImplemented(_)
+        cadmpeg_core::CodecError::InvalidInput(_)
     ));
     assert!(matches!(
         size_error,
-        cadmpeg_core::CodecError::NotImplemented(_)
+        cadmpeg_core::CodecError::InvalidInput(_)
     ));
 }
 
 #[test]
-fn admitted_name_with_null_character_is_a_writer_limit() {
-    let error = check_object_attributes("cadir:model:body#named", Some("left\0right"))
-        .expect_err("Rhino strings cannot state an embedded null");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+fn null_containing_name_omits_only_the_name_attribute() {
+    let identity = "cadir:model:body#named";
+    assert_eq!(
+        object_attributes_payload(&CadIr::empty(), identity, Some("left\0right"), None, None)
+            .expect("name reduction"),
+        object_attributes_payload(&CadIr::empty(), identity, None, None, None)
+            .expect("absent name"),
+    );
 }
 
 #[test]
@@ -103,6 +107,7 @@ fn explicit_loop_role_overrides_face_list_order() {
 #[test]
 fn object_attribute_items_are_written_in_ascending_order() {
     let payload = object_attributes_payload(
+        &CadIr::empty(),
         "body",
         None,
         Some(Color::new(1.0, 0.5, 0.0, 1.0).expect("valid color")),
@@ -113,7 +118,7 @@ fn object_attribute_items_are_written_in_ascending_order() {
 }
 
 #[test]
-fn nonempty_user_string_presentation_is_refused_before_output() {
+fn nonempty_user_string_presentation_is_reported_and_geometry_written() {
     let mut source = CadIr::empty();
     source.model.points.push(Point::new(
         PointId::mint("cadir:model:point#user-strings").expect("identity grammar"),
@@ -155,20 +160,27 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
         .expect("valid native identity");
     }
 
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
+    let plan = RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("user-string metadata must not be discarded");
-    assert!(error.to_string().contains("survival handling"));
-    assert_eq!(output, [0xaa]);
+        .expect("unsupported native presentation is reported");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "native.records-omitted"));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).expect("archive writes");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("written archive decodes");
+    assert_eq!(written.ir().model.points.len(), 1);
 }
 
 #[test]
-fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
+fn nonempty_mesh_modifier_presentation_is_reported_and_geometry_written() {
     let mut source = CadIr::empty();
     source.model.points.push(Point::new(
         PointId::mint("cadir:model:point#mesh-modifiers").expect("identity grammar"),
@@ -210,20 +222,27 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
         .expect("valid native identity");
     }
 
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
+    let plan = RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("mesh modifier metadata must not be discarded");
-    assert!(error.to_string().contains("survival handling"));
-    assert_eq!(output, [0xaa]);
+        .expect("unsupported native presentation is reported");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "native.records-omitted"));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).expect("archive writes");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("written archive decodes");
+    assert_eq!(written.ir().model.points.len(), 1);
 }
 
 #[test]
-fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
+fn nonempty_layer_per_viewport_settings_are_reported_and_geometry_written() {
     let mut source = CadIr::empty();
     source.model.points.push(Point::new(
         PointId::mint("cadir:model:point#layer-settings").expect("identity grammar"),
@@ -269,14 +288,32 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
         .expect("valid native identity");
     }
 
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
+    let plan = RhinoCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("layer metadata must not be discarded");
-    assert!(error.to_string().contains("survival handling"));
-    assert_eq!(output, [0xaa]);
+        .expect("unsupported native presentation is reported");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "native.records-omitted"));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).expect("archive writes");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("written archive decodes");
+    assert_eq!(written.ir().model.points.len(), 1);
+}
+
+fn object_attributes_payload(
+    ir: &CadIr,
+    identity: &str,
+    name: Option<&str>,
+    color: Option<Color>,
+    visible: Option<bool>,
+) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+    let materials = crate::writer::tables::materials::MaterialPlan::new(ir)?;
+    crate::writer::object_attributes_payload(ir, identity, name, color, visible, &materials)
 }

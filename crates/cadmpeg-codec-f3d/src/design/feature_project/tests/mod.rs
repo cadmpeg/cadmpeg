@@ -26,6 +26,7 @@ mod replace_face;
 mod revolve;
 mod scope_properties;
 mod sheet_metal;
+mod sketch_dependencies;
 mod spatial_profiles;
 mod split;
 mod surface;
@@ -47,5 +48,30 @@ fn audit_regression_near_half_turn_retains_negative_axis() {
     ];
     let rotation = super::matrix_axis_angle(&matrix).unwrap();
     assert!(rotation.direction.z < 0.0);
-    assert!((rotation.angle.get() - theta).abs() <= 4.0 * f64::EPSILON);
+    assert!((rotation.angle.literal().unwrap().get() - theta).abs() <= 4.0 * f64::EPSILON);
+}
+
+fn parameter_document(native: &[crate::records::parameters::DesignParameter]) -> cadmpeg_ir::CadIr {
+    let projection = crate::test_support::with_decode_context(|ctx| {
+        super::project_parameter_design_with_edge_identities(
+            ctx,
+            &super::ProjectInputs {
+                native,
+                ..Default::default()
+            },
+        )
+    })
+    .unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = projection.parameters;
+    ir
+}
+
+fn dimension_value<Q: cadmpeg_ir::features::DimensionValue>(
+    dimension: &cadmpeg_ir::Dimension<Q>,
+    native: &[crate::records::parameters::DesignParameter],
+) -> Q {
+    parameter_document(native)
+        .dimension_value(dimension)
+        .expect("canonical test parameter or literal")
 }

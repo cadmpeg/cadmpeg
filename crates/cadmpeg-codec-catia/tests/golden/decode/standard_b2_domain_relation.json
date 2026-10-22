@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -55,7 +54,6 @@
         "consolidated_cylinders": [],
         "consolidated_domain_relations": [
           {
-            "byte_offset": 32,
             "class": 36,
             "data": {
               "accuracy": {
@@ -69,7 +67,6 @@
               },
               "source": {
                 "kind": "affine",
-                "offset": 10.0,
                 "range": [
                   0.0,
                   5.0
@@ -86,13 +83,15 @@
             "flag": 3,
             "header_token": 5,
             "id": "catia:consolidated:domain-relation#0",
-            "payload": "8205090a870d00000000000000000000000000002440000000000000d0bf0000000000000000000000000000144000000000000000c00000000000002440000000000000d03f",
+            "payload": {
+              "byte_len": 70,
+              "record_id": "catia:source:evidence#d95564ceb333f8a8a9e6605b881fc5703ee542e8cd21fb65403a29ed41afa60c",
+              "sha256": "68715a260b501884ede6fa77be3618b2f5948c1dd4150e2e7d57a982fd8a56c8"
+            },
             "source_index": 0,
-            "source_offset": 0,
             "width": 1
           },
           {
-            "byte_offset": 107,
             "class": 36,
             "data": {
               "accuracy": {
@@ -119,9 +118,12 @@
             "flag": 3,
             "header_token": 5,
             "id": "catia:consolidated:domain-relation#1",
-            "payload": "8205090b010000000000000000000000000000002440000000000000008000000000000000000000000000002440",
+            "payload": {
+              "byte_len": 46,
+              "record_id": "catia:source:evidence#e3d847ac73f36e894cecc41d7f0cfc4f1f91f4a3ca7b544152f1e1881995c3ca",
+              "sha256": "06c29c9bc50913e4b8b09d744d51f6dcd8bce713c786edc0bf8d5d2de5f043b0"
+            },
             "source_index": 0,
-            "source_offset": 75,
             "width": 1
           }
         ],
@@ -138,6 +140,7 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
+        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -168,13 +171,15 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "scope": {
+      "design": false,
+      "model": false
+    },
     "source": {
       "attributes": {
         "external_reference_count": "0",
         "file_size": "389",
         "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "389",
         "preview_count": "0",
         "stream_count": "1"
       },
@@ -557,6 +562,17 @@
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the catia decoder did not deliver classes: model, design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -566,7 +582,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": false,
+        "model": false
+      }
     }
   },
   "source_fidelity": {
@@ -585,6 +604,15 @@
         }
       }
     },
+    "metadata": {
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#0.byte_offset": "32",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#0.data.source.offset": "10.0",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#0.source_offset": "0",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#1.byte_offset": "107",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#1.source_offset": "75",
+      "source.inner_offset": "16",
+      "source.outer_dir_offset": "389"
+    },
     "retained_records": {
       "catia:payload:unknown#container": {
         "bytes": {
@@ -592,8 +620,39 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart"
+        "stream": "catia:CATPart",
+        "untyped": []
+      },
+      "catia:source:evidence#d95564ceb333f8a8a9e6605b881fc5703ee542e8cd21fb65403a29ed41afa60c": {
+        "bytes": {
+          "byte_len": 70,
+          "retention": "digest",
+          "sha256": "68715a260b501884ede6fa77be3618b2f5948c1dd4150e2e7d57a982fd8a56c8"
+        },
+        "offset": 0,
+        "stream": "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#0.payload",
+        "untyped": []
+      },
+      "catia:source:evidence#e3d847ac73f36e894cecc41d7f0cfc4f1f91f4a3ca7b544152f1e1881995c3ca": {
+        "bytes": {
+          "byte_len": 46,
+          "retention": "digest",
+          "sha256": "06c29c9bc50913e4b8b09d744d51f6dcd8bce713c786edc0bf8d5d2de5f043b0"
+        },
+        "offset": 0,
+        "stream": "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#1.payload",
+        "untyped": []
+      },
+      "catia:source:image#whole": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAAGFAAAAAFY1X0NGVjIAAAAAjgAAAOeyAyRGBYIFCQqHDQAAAAAAAAAAAAAAAAAAJEAAAAAAAADQvwAAAAAAAAAAAAAAAAAAFEAAAAAAAAAAwAAAAAAAACRAAAAAAAAA0D+yAyQuBYIFCQsBAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAJEBDQVRJQV9WNSBDQjAwMDEAAAAAAAAAAAAAAAAAAAAAfk0AYQBpAG4ARABhAHQAYQBTAHQAcgBlAGEAbQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAEAAAAH4AAAB+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUwB1AHIAZgBhAGMAaQBjAFIAZQBwAHMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAACOAAAAAAAAAAAAAAAAAAAAAENCX19FTkQ=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "catia:source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

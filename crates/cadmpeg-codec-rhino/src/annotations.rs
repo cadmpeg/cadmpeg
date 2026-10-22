@@ -81,7 +81,6 @@ enum AnnotationKind {
 #[derive(Debug, Serialize)]
 struct AnnotationRecord {
     id: String,
-    source_offset: u64,
     source_uuid: String,
     kind: AnnotationKind,
     rich_text: String,
@@ -127,7 +126,6 @@ struct V5TextExtraRecord {
 #[derive(Debug, Serialize)]
 struct TextDotRecord {
     id: String,
-    source_offset: u64,
     source_uuid: String,
     #[serde(flatten)]
     data: TextDotData,
@@ -252,7 +250,6 @@ struct TextDotData {
 #[derive(Debug, Serialize)]
 struct AnnotationArrowRecord {
     id: String,
-    source_offset: u64,
     source_uuid: String,
     tail: [FiniteReal; 3],
     head: [FiniteReal; 3],
@@ -720,7 +717,7 @@ pub(crate) fn install(
                     record_identity(identity, source_order, v2_key.take());
                 annotations.push(AnnotationRecord {
                     id: format!("rhino:document:annotation#{key}"),
-                    source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
+
                     source_uuid,
                     kind: if leader {
                         AnnotationKind::Leader
@@ -791,7 +788,7 @@ pub(crate) fn install(
                     record_identity(identity, source_order, v2_key.take());
                 annotations.push(AnnotationRecord {
                     id: format!("rhino:document:annotation#{key}"),
-                    source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
+
                     source_uuid,
                     kind: if leader {
                         AnnotationKind::Leader
@@ -881,7 +878,7 @@ pub(crate) fn install(
                     record_identity(identity, source_order, v2_key.take());
                 annotations.push(AnnotationRecord {
                     id: format!("rhino:document:annotation#{key}"),
-                    source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
+
                     source_uuid,
                     kind,
                     rich_text,
@@ -939,7 +936,7 @@ pub(crate) fn install(
                     record_identity(identity, source_order, v2_key.take());
                 dots.push(TextDotRecord {
                     id: format!("rhino:document:text_dot#{key}"),
-                    source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
+
                     source_uuid,
                     data,
                     links,
@@ -968,7 +965,7 @@ pub(crate) fn install(
                     record_identity(identity, source_order, v2_key.take());
                 arrows.push(AnnotationArrowRecord {
                     id: format!("rhino:document:annotation_arrow#{key}"),
-                    source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
+
                     source_uuid,
                     tail,
                     head,
@@ -1262,7 +1259,11 @@ mod tests {
                         "class={class} unit={unit:?}"
                     );
                     assert_eq!(
-                        record["source_offset"],
+                        decoded
+                            .source_fidelity()
+                            .retained_record("rhino:object:record#000000")
+                            .expect("source annotation extent")
+                            .offset(),
                         cadmpeg_core::decode::u64_from_index(source.range.start)
                     );
                     assert_eq!(

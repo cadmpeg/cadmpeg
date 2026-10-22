@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use crate::history::literals::parse_dimension_length_mm;
 use crate::records::FeatureSource;
 
-pub(super) fn is_custom_property(feature: &Feature) -> bool {
+pub(crate) fn is_custom_property(feature: &Feature) -> bool {
     feature.xml_tag.eq_ignore_ascii_case("CustomProperty")
 }
 

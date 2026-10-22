@@ -40,6 +40,7 @@ fn appearance_loss_clears_when_an_assignment_resolves() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let appearance = opaque_appearance("2F0E19C1-0000-4000-8000-000000000001");
     ir.model.appearance_bindings = vec![cadmpeg_ir::appearance::AppearanceBinding {
+        native_ref: None,
         id: "f3d:appearance:body#0_1:2F0E19C1-0000-4000-8000-000000000001"
             .try_into()
             .expect("valid identity"),

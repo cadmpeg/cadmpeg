@@ -98,7 +98,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
 
     let compact = candidates(&placement_frame(185, 201, 55, None), 177, "0_172", 185);
     assert_eq!(compact.len(), 1);
-    assert_eq!(compact[0].frame_length(), 201);
+    assert_eq!(compact[0].frame_length(), Some(201));
     assert_eq!(
         *compact[0].transform(),
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()
@@ -118,7 +118,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         1773,
     );
     assert_eq!(explicit.len(), 1);
-    assert_eq!(explicit[0].frame_length(), 329);
+    assert_eq!(explicit[0].frame_length(), Some(329));
     assert_eq!(*explicit[0].transform(), transform);
     assert_eq!(explicit[0].transform_offset(), Some(55));
 
@@ -130,7 +130,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
             1773,
         );
         assert_eq!(legacy.len(), 1);
-        assert_eq!(legacy[0].frame_length(), u64_from_index(length));
+        assert_eq!(legacy[0].frame_length(), Some(u64_from_index(length)));
         assert_eq!(*legacy[0].transform(), transform);
         assert_eq!(legacy[0].transform_offset(), Some(48));
     }
@@ -164,7 +164,7 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
 
     let compact = candidates(&genesis_frame(214, 213, 1, None), 206, "0_201", 214);
     assert_eq!(compact.len(), 1);
-    assert_eq!(compact[0].frame_length(), 213);
+    assert_eq!(compact[0].frame_length(), Some(213));
     assert_eq!(
         *compact[0].transform(),
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()
@@ -184,7 +184,7 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         3060,
     );
     assert_eq!(explicit.len(), 1);
-    assert_eq!(explicit[0].frame_length(), 341);
+    assert_eq!(explicit[0].frame_length(), Some(341));
     assert_eq!(*explicit[0].transform(), transform);
     assert_eq!(explicit[0].transform_offset(), Some(66));
 
@@ -248,7 +248,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         record_index: 20,
         owner_reference: Some(100),
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         coordinate_offset: 141,
         companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),
@@ -371,12 +371,12 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
 
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:design-entity-header#0".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
 
         entity_id: crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("281".to_owned()).unwrap(),
-        optional_slot_present: false,
+        optional_slot_present: Some(false),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             None,
@@ -387,14 +387,17 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let placement = crate::design::decode::sketch::parse_member_run_head_placement(
         &bytes,
-        entity.byte_offset,
+        entity.byte_offset.expect("retained test source"),
         &entity.entity_id,
         &records,
     )
     .expect("feature-owned sketch placement");
     assert_eq!(placement.record_index, 200);
-    assert_eq!(placement.byte_offset(), u64_from_index(head_at));
-    assert_eq!(placement.paired_byte_offset(), u64_from_index(paired_at));
+    assert_eq!(placement.byte_offset(), Some(u64_from_index(head_at)));
+    assert_eq!(
+        placement.paired_byte_offset(),
+        Some(u64_from_index(paired_at))
+    );
     assert_eq!(
         *placement.transform(),
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()
@@ -420,12 +423,12 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let compact = crate::design::decode::sketch::parse_member_run_head_placement(
         &bytes,
-        entity.byte_offset,
+        entity.byte_offset.expect("retained test source"),
         &entity.entity_id,
         &records,
     )
     .expect("compact identity sketch placement");
-    assert_eq!(compact.frame_length(), 34);
+    assert_eq!(compact.frame_length(), Some(34));
     assert_eq!(
         *compact.transform(),
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()
@@ -813,32 +816,39 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     }
 
     push_marked_reference(&mut bytes, 201);
-    let segment_type = |type_guid: &str, version, module: &str, entity_ids: Vec<u64>| {
-        crate::records::entity_header::SegmentTypeData {
-            byte_offset: 0,
-            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
-            type_guid_offset: 0,
-            base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
-            version,
-            version_offset: 0,
-            module: module.into(),
-            entities: crate::records::identity::ReferenceRun::located(
-                entity_ids
-                    .into_iter()
-                    .map(|value| crate::records::identity::Located { value, offset: 0 })
-                    .collect(),
-            ),
-        }
-    };
+    let segment_type =
+        |class_tag: u32, type_guid: &str, version, module: &str, entity_ids: Vec<u64>| {
+            crate::records::entity_header::SegmentTypeData {
+                class_tag: (class_tag)
+                    .to_string()
+                    .try_into()
+                    .expect("fixture class tag"),
+                byte_offset: Some(0),
+                type_guid: type_guid.to_owned().try_into().expect("type GUID"),
+                type_guid_offset: Some(0),
+                base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+                version,
+                version_offset: Some(0),
+                module: module.into(),
+                entities: crate::records::identity::ReferenceRun::located(
+                    entity_ids
+                        .into_iter()
+                        .map(|value| crate::records::identity::Located { value, offset: 0 })
+                        .collect(),
+                ),
+            }
+        };
     let meta = crate::metastream::MetaStream {
         types: vec![
             segment_type(
+                256,
                 "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
                 3,
                 "MSketch",
                 vec![1200],
             ),
             segment_type(
+                257,
                 "00000000-0000-0000-0000-000000000001",
                 0,
                 "MSketch",
@@ -909,12 +919,12 @@ fn sketch_geometry_tail_names_its_owner_container() {
 fn sketch_graph_header(suffix: u64, members: Vec<u32>) -> DesignEntityHeader {
     DesignEntityHeader {
         id: format!("f3d:native:design-entity-header#{suffix}"),
-        byte_offset: suffix,
+        byte_offset: Some(suffix),
 
         entity_id: crate::records::identity::DesignEntityId::try_from(format!("0_{suffix}"))
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("281".to_owned()).unwrap(),
-        optional_slot_present: false,
+        optional_slot_present: Some(false),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             None,
@@ -935,7 +945,7 @@ fn sketch_graph_point(record_index: u32) -> SketchPoint {
         record_index,
         owner_reference: None,
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        byte_offset: u64::from(record_index),
+        byte_offset: Some(u64::from(record_index)),
         coordinate_offset: 141,
         companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),

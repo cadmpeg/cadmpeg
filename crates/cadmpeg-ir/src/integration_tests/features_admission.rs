@@ -13,38 +13,60 @@ fn positive(value: f64) -> PositiveLength {
 
 #[test]
 fn hole_and_sweep_edits_preserve_the_previous_admitted_shape() {
-    assert!(CounterdrillDiameters::new(positive(4.0), Some(positive(4.0))).is_err());
+    assert!(CounterdrillDiameters::new(
+        crate::features::Dimension::Literal(positive(4.0)),
+        Some(crate::features::Dimension::Literal(positive(4.0)))
+    )
+    .is_err());
     let treatment = HoleConstruction::form(HoleKind::Counterbore {
-        diameter: positive(4.0),
-        depth: positive(2.0),
+        diameter: crate::features::Dimension::Literal(positive(4.0)),
+        depth: crate::features::Dimension::Literal(positive(2.0)),
     });
     assert!(HoleShape::new(treatment.clone(), None, None).is_err());
-    assert!(HoleShape::new(treatment.clone(), None, Some(positive(4.0))).is_err());
-    let mut hole = HoleShape::new(treatment, None, Some(positive(2.0))).unwrap();
+    assert!(HoleShape::new(
+        treatment.clone(),
+        None,
+        Some(crate::features::Dimension::Literal(positive(4.0)))
+    )
+    .is_err());
+    let mut hole = HoleShape::new(
+        treatment,
+        None,
+        Some(crate::features::Dimension::Literal(positive(2.0))),
+    )
+    .unwrap();
     let before = hole.clone();
     assert!(hole
-        .try_edit(|_, _, diameter| *diameter = Some(positive(5.0)))
+        .try_edit(
+            |_, _, diameter| *diameter = Some(crate::features::Dimension::Literal(positive(5.0)))
+        )
         .is_err());
     assert_eq!(hole, before);
     assert!(HoleShape::new(
         HoleConstruction::form(HoleKind::Simple),
         Some(HoleKind::Countersink {
-            diameter: positive(2.0),
-            angle: InteriorAngle::new(1.0).unwrap(),
+            diameter: crate::features::Dimension::Literal(positive(2.0)),
+            angle: crate::features::Dimension::Literal(InteriorAngle::new(1.0).unwrap()),
         }),
-        Some(positive(2.0))
+        Some(crate::features::Dimension::Literal(positive(2.0)))
     )
     .is_err());
     assert!(HoleShape::new(
         HoleConstruction::form(HoleKind::PartialCounterbore(
-            crate::features::holes::PartialPair::First(positive(1.0)),
+            crate::features::holes::PartialPair::First(crate::features::Dimension::Literal(
+                positive(1.0)
+            )),
         )),
         None,
-        Some(positive(2.0))
+        Some(crate::features::Dimension::Literal(positive(2.0)))
     )
     .is_ok());
     let circular = SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-        region: SweepCircularRegion::new(positive(2.0), Some(positive(1.0))).unwrap(),
+        region: SweepCircularRegion::new(
+            crate::features::Dimension::Literal(positive(2.0)).into(),
+            Some(crate::features::Dimension::Literal(positive(1.0))),
+        )
+        .unwrap(),
     });
     let sweep = SweepShape::Solid {
         op: crate::features::SolidSweepOperation::NewBody,

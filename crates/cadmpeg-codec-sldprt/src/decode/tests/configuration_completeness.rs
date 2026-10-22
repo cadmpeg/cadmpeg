@@ -3,9 +3,8 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::decode::append_design_losses;
-use crate::decode::complete_resolved_configuration_parameter_snapshots;
-use crate::decode::snapshot_active_configuration;
-use crate::decode::sync_active_configuration_resolutions;
+use crate::history::configuration::normalize_configuration_differences;
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;
@@ -23,6 +22,8 @@ use std::collections::BTreeMap;
 
 #[test]
 fn complete_parting_line_draft_does_not_require_an_outward_flag() {
+    let class_sources = ClassSources::default();
+
     let faces = FaceSelection::generated(
         vec![cadmpeg_ir::features::GeneratedFaceRef::new(
             FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
@@ -43,6 +44,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: faces.clone(),
@@ -56,7 +58,9 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
                         plane: None,
                     },
                 },
-                angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
+                angle: Some(cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap(),
+                )),
                 outward: None,
             }),
         ),
@@ -65,6 +69,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -103,6 +108,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     let mut neutral_plane_report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut neutral_plane_report,
@@ -117,6 +123,8 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
 
 #[test]
 fn configuration_feature_states_drive_design_completeness_accounting() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let feature_id = FeatureId::mint("synthetic:test:id#configured").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -132,6 +140,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -182,30 +191,8 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id.clone(),
-                ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: cadmpeg_ir::features::DistinctMembers::try_from(
-                            (ordinal == 0)
-                                .then(|| {
-                                    BodyId::mint("test:model:entity#missing-output")
-                                        .expect("identity grammar")
-                                })
-                                .into_iter()
-                                .collect::<Vec<_>>(),
-                        )
-                        .unwrap(),
-                    },
-                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                        (ordinal == 0)
-                            .then(|| {
-                                FeatureId::mint("synthetic:test:id#missing-dependency")
-                                    .expect("identity grammar")
-                            })
-                            .into_iter()
-                            .collect::<Vec<_>>(),
-                    )
-                    .unwrap(),
-                    definition,
+                ConfigurationFeatureState::Definition {
+                    definition: Box::new(definition),
                 },
             )]),
             native_ref: None,
@@ -214,6 +201,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -234,6 +222,8 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
 
 #[test]
 fn metadata_only_native_feature_does_not_report_missing_operation() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:id#metadata-only").expect("identity grammar"),
@@ -245,6 +235,7 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
         source_tag: Some("Feature".into()),
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Localized tree item".into(),
@@ -256,6 +247,7 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -284,6 +276,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![seed.clone()],
@@ -313,6 +306,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
@@ -328,11 +322,15 @@ fn active_configuration_inherits_late_feature_resolutions() {
                 shape: cadmpeg_ir::features::holes::HoleShape::new(
                     cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
                     None,
-                    Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()),
+                    Some(cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+                    )),
                 )
                 .unwrap(),
                 extent: Some(LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+                    length: cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+                    ),
                 }),
                 bottom: Some(HoleBottom::Flat),
                 taper_angle: None,
@@ -355,25 +353,17 @@ fn active_configuration_inherits_late_feature_resolutions() {
         feature_states: BTreeMap::from([
             (
                 feature_id.clone(),
-                ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
-                    },
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                    definition: FeatureDefinition::Operation(FeatureOperation::Pattern {
+                ConfigurationFeatureState::Definition {
+                    definition: Box::new(FeatureDefinition::Operation(FeatureOperation::Pattern {
                         seeds: vec![seed],
                         pattern: PatternKind::UNRESOLVED,
-                    }),
+                    })),
                 },
             ),
             (
                 hole_id.clone(),
-                ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
-                    },
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                    definition: FeatureDefinition::Operation(FeatureOperation::Hole {
+                ConfigurationFeatureState::Definition {
+                    definition: Box::new(FeatureDefinition::Operation(FeatureOperation::Hole {
                         profile: None,
                         profile_filter: None,
                         face: None,
@@ -389,85 +379,40 @@ fn active_configuration_inherits_late_feature_resolutions() {
                         bottom: None,
                         taper_angle: None,
                         allow_multi_profile_faces: None,
-                    }),
+                    })),
                 },
             ),
         ]),
         native_ref: None,
     });
 
-    sync_active_configuration_resolutions(&mut ir).unwrap();
-
+    normalize_configuration_differences(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
+    assert!(ir.model.configurations[0].feature_states.is_empty());
     assert!(
-        matches!(&(ir.model.configurations[0].feature_states[&feature_id].definition),
-            FeatureDefinition::Operation(FeatureOperation::Pattern {
-                pattern: admitted_pattern,
-                ..
-            }) if matches!(admitted_pattern.definition(), PatternTransform::Mirror { .. })
-        )
+        matches!(ir.model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), PatternTransform::Mirror { .. }))
     );
-    assert!(matches!(
-    &ir.model.configurations[0].feature_states[&hole_id].definition, FeatureDefinition::Operation(FeatureOperation::Hole {
-        placements,
-        shape,
-        extent: Some(LinearTermination::Blind {
-            length: actual_length
-        }),
-        bottom: Some(HoleBottom::Flat),
-        ..
-    }) if matches!(
-        (&shape.diameter(),),
-        (Some(actual_diameter),)
-            if (placements.as_ref().is_some_and(|placements| placements.len() == 1))
-            && actual_diameter.get() == 4.0
-            && actual_length.get() == 12.0
-    )));
-
-    let FeatureDefinition::Operation(FeatureOperation::Hole {
-        placements,
-        shape,
-        extent,
-        bottom,
-        ..
-    }) = &mut ir.model.configurations[0]
-        .feature_states
-        .get_mut(&hole_id)
-        .expect("hole state")
-        .definition
-    else {
-        unreachable!();
-    };
-    let mut edited_diameter = shape.diameter();
-    let diameter = &mut edited_diameter;
-    *placements = None;
-    *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
-    *extent = Some(LinearTermination::ThroughAll {});
-    *bottom = None;
-
-    *shape = cadmpeg_ir::features::holes::HoleShape::new(
-        shape.construction().clone(),
-        *shape.exit_kind(),
-        edited_diameter,
+    assert!(
+        matches!(ir.model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole { placements, shape, extent: Some(LinearTermination::Blind { length }), bottom: Some(HoleBottom::Flat), .. }) if placements.as_ref().is_some_and(|placements| placements.len() == 1) && ir.dimension_value(shape.diameter().unwrap()).unwrap().get() == 4.0 && ir.dimension_value(length).unwrap().get() == 12.0)
+    );
+    let id = ir.model.features[1].id.clone();
+    ir.set_dimension(
+        &id,
+        "/shape/diameter",
+        cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
     )
     .unwrap();
-    sync_active_configuration_resolutions(&mut ir).unwrap();
-    assert!(matches!(
-    &ir.model.configurations[0].feature_states[&hole_id].definition, FeatureDefinition::Operation(FeatureOperation::Hole {
-        placements,
-        shape,
-        extent: Some(LinearTermination::ThroughAll {}),
-        bottom: None,
-        ..
-    }) if matches!(
-        (&shape.diameter(),),
-        (Some(actual_diameter),)
-            if (placements.as_ref().is_some_and(|placements| placements.len() == 1))
-            && actual_diameter.get() == 8.0
-    )));
+    assert!(ir.model.features[1].needs_recompute);
+    assert!(ir.model.configurations[0].feature_states.is_empty());
+    assert!(
+        matches!(ir.model.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) if ir.dimension_value(shape.diameter().unwrap()).unwrap().get() == 8.0)
+    );
 }
 
 #[test]
-fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
+fn sparse_configuration_maps_do_not_imply_missing_source_content() {
+    let class_sources = ClassSources::default();
+
     let mut ir = CadIr::empty();
     let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -480,6 +425,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -489,6 +435,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
@@ -496,12 +443,12 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         expression: "1".into(),
         display: None,
         value: Some(ParameterValue::Integer(1)),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#unevaluated-parameter").expect("identity grammar"),
         owner: None,
         ordinal: 1,
@@ -509,7 +456,6 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         expression: "native text".into(),
         display: None,
         value: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -531,16 +477,19 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
     )
     .unwrap();
 
-    assert!(report.losses.iter().any(|loss| {
-        loss.message
-            == "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot."
-    }));
+    assert!(!report.losses.iter().any(|loss| loss
+        .message
+        .contains("complete evaluated feature snapshot")
+        || loss
+            .message
+            .contains("complete evaluated parameter snapshot")));
 
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
@@ -553,6 +502,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
     ));
     report.losses.clear();
     append_design_losses(
+        &class_sources,
         &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut report,
@@ -565,7 +515,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
 }
 
 #[test]
-fn active_configuration_snapshots_final_neutral_design_state() {
+fn active_configuration_uses_only_the_base_neutral_design_state() {
     let mut ir = CadIr::empty();
     let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -582,6 +532,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -597,13 +548,13 @@ fn active_configuration_snapshots_final_neutral_design_state() {
     });
     let parameter_id = ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
+        driving: true,
         id: parameter_id.clone(),
         owner: Some(feature_id.clone()),
         ordinal: 0,
         name: "D1".into(),
         expression: "12mm".into(),
         value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         display: None,
         properties: BTreeMap::new(),
         pmi: None,
@@ -627,65 +578,64 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         });
     }
 
-    snapshot_active_configuration(&mut ir).unwrap();
-
+    normalize_configuration_differences(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
+    assert!(ir.model.configurations[0].parameter_values.is_empty());
+    assert!(ir.model.configurations[0].parameter_overrides.is_empty());
+    assert!(ir.model.configurations[0].feature_states.is_empty());
+    assert_eq!(ir.model.features[0].suppressed, Some(true));
     assert_eq!(
-        ir.model.configurations[0].parameter_values[&parameter_id],
-        ParameterValue::Length(Length::new(12.0).unwrap())
+        ir.model.parameters[0].value,
+        Some(ParameterValue::Length(Length::new(12.0).unwrap()))
     );
-    assert_eq!(
-        ir.model.configurations[0].feature_states[&feature_id],
-        ConfigurationFeatureState {
-            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
-                "synthetic:test:id#dependency"
-            )
-            .expect("identity grammar")],)
-            .unwrap(),
-            definition: FeatureDefinition::Operation(FeatureOperation::TreeNode {
-                role: FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
-            }),
-        }
-    );
-    assert!(ir.model.configurations[1].parameter_values.is_empty());
-    assert!(ir.model.configurations[1].feature_states.is_empty());
-
-    ir.model.configurations[0].parameter_values.insert(
+    ir.model.configurations[1].parameter_values.insert(
         parameter_id.clone(),
         ParameterValue::Length(Length::new(25.0).unwrap()),
     );
-    ir.model.configurations[0]
+    ir.model.configurations[1]
         .feature_states
-        .get_mut(&feature_id)
-        .expect("active feature state")
-        .evaluation = cadmpeg_ir::features::ConfigurationEvaluation::Active {
-        outputs: cadmpeg_ir::features::DistinctMembers::default(),
-    };
-    snapshot_active_configuration(&mut ir).unwrap();
+        .insert(feature_id.clone(), ConfigurationFeatureState::Active {});
+    normalize_configuration_differences(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
+    assert!(ir.model.configurations[0].parameter_values.is_empty());
+    assert!(ir.model.configurations[0].feature_states.is_empty());
     assert_eq!(
-        ir.model.configurations[0].parameter_values[&parameter_id],
+        ir.model.configurations[1].parameter_values[&parameter_id],
         ParameterValue::Length(Length::new(25.0).unwrap())
     );
-    assert!(!ir.model.configurations[0].feature_states[&feature_id]
-        .evaluation
-        .is_suppressed());
+    assert!(!ir.model.configurations[1].feature_states[&feature_id].is_suppressed());
+    assert_eq!(ir.model.features[0].suppressed, Some(true));
+    assert_eq!(
+        ir.model.parameters[0].value,
+        Some(ParameterValue::Length(Length::new(12.0).unwrap()))
+    );
 }
 
 #[test]
-fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() {
+fn sparse_configuration_values_inherit_without_copied_base_caches() {
     let mut ir = CadIr::empty();
     let independent = ParameterId::mint("synthetic:test:id#independent").expect("identity grammar");
     let overridden = ParameterId::mint("synthetic:test:id#overridden").expect("identity grammar");
     let dependent = ParameterId::mint("synthetic:test:id#dependent").expect("identity grammar");
-    let parameter = |id: ParameterId, value, dependencies: Vec<ParameterId>| DesignParameter {
+    let parameter = |id: ParameterId,
+                     value: cadmpeg_ir::features::ParameterValue,
+                     dependencies: Vec<ParameterId>| DesignParameter {
+        driving: true,
         id,
         owner: None,
         ordinal: 0,
         name: "D1".into(),
-        expression: "12mm".into(),
+        expression: if let Some(dependency) = dependencies.into_iter().next() {
+            cadmpeg_ir::features::Expression {
+                tokens: vec![
+                    cadmpeg_ir::features::ExpressionToken::Parameter(dependency),
+                    cadmpeg_ir::features::ExpressionToken::Text(" * 2".into()),
+                ],
+            }
+        } else {
+            value.literal_expression()
+        },
         value: Some(value),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
         display: None,
         properties: BTreeMap::new(),
         pmi: None,
@@ -733,23 +683,35 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
         configuration("synthetic:test:id#unresolved", BTreeMap::new()),
     ];
 
-    complete_resolved_configuration_parameter_snapshots(&mut ir).unwrap();
+    normalize_configuration_differences(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
 
     assert_eq!(
         ir.model.configurations[0].parameter_values,
-        BTreeMap::from([
-            (
-                independent,
-                ParameterValue::Length(Length::new(12.0).unwrap())
-            ),
-            (
-                overridden,
-                ParameterValue::Length(Length::new(25.0).unwrap())
-            ),
-        ])
+        BTreeMap::from([(
+            overridden.clone(),
+            ParameterValue::Length(Length::new(25.0).unwrap())
+        )])
     );
     assert!(!ir.model.configurations[0]
         .parameter_values
         .contains_key(&dependent));
     assert!(ir.model.configurations[1].parameter_values.is_empty());
+    assert_eq!(
+        ir.model.configurations[0].parameter_value(&ir, &independent),
+        ir.model.parameters[0].value.as_ref()
+    );
+    ir.model.configurations[0].parameter_overrides.insert(
+        dependent.clone(),
+        cadmpeg_ir::features::Expression {
+            tokens: vec![
+                cadmpeg_ir::features::ExpressionToken::Parameter(overridden),
+                cadmpeg_ir::features::ExpressionToken::Text(" * 2".into()),
+            ],
+        },
+    );
+    assert_eq!(
+        ir.model.configurations[0].parameter_value(&ir, &dependent),
+        None
+    );
 }

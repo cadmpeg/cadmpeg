@@ -2,7 +2,34 @@
 
 use super::super::generated_surface_identities;
 use crate::records::{FeatureInputClass, FeatureInputLane};
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+fn captured_identities(
+    class_sources: &ClassSources,
+    ctx: &DecodeContext<'_>,
+    source: cadmpeg_core::decode::View<'_>,
+    lane: &FeatureInputLane,
+) -> (
+    Vec<crate::records::FeatureInputGeneratedSurfaceIdentity>,
+    cadmpeg_ir::SourceFidelity,
+) {
+    let parsed =
+        generated_surface_identities(class_sources, &lane.id, &lane.classes, &lane.native_payload)
+            .unwrap();
+    let mut staged = lane.clone();
+    staged.generated_surface_identities = parsed.records;
+    let mut sources = crate::resolved_features::body_sources::BodySources::from_views([(
+        lane.id.clone(),
+        source,
+    )])
+    .unwrap();
+    crate::resolved_features::generated_surface_layout::capture(ctx, &staged, &mut sources)
+        .unwrap();
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    crate::pmi::layout::install(ctx, sources.into_pointers(ctx).unwrap(), &mut fidelity).unwrap();
+    (staged.generated_surface_identities, fidelity)
+}
 
 #[test]
 fn generated_surface_identity_path_keeps_absent_source_component() {
@@ -27,10 +54,11 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: 0,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -44,10 +72,25 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    let identities = generated_surface_identities(&lane).unwrap();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
+    let (identities, fidelity) = captured_identities(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &ctx,
+        root,
+        &lane,
+    );
     assert_eq!(identities.len(), 1);
     let identity = &identities[0];
-    assert_eq!(identity.offset, u64::try_from(offset).unwrap());
+    assert_eq!(
+        fidelity.record_layout()[&identity.id]
+            .pointers()
+            .get("offset")
+            .copied(),
+        Some(u64::try_from(offset).unwrap())
+    );
     assert_eq!(identity.feature_source_id.value(), 89);
     assert_eq!(identity.local_identity, 0x85b5);
     assert_eq!(identity.components.len(), 2);
@@ -83,10 +126,11 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: 0,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -102,11 +146,23 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
     };
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let identities = generated_surface_identities(&lane).unwrap();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
+    let (identities, fidelity) = captured_identities(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &ctx,
+        root,
+        &lane,
+    );
     assert_eq!(identities.len(), 2048);
     for (index, identity) in identities.iter().enumerate() {
-        assert_eq!(identity.offset, u64::try_from(first + index * 16).unwrap());
+        assert_eq!(
+            fidelity.record_layout()[&identity.id]
+                .pointers()
+                .get("offset")
+                .copied(),
+            Some(u64::try_from(first + index * 16).unwrap())
+        );
         assert_eq!(identity.feature_source_id.value(), 89);
         assert_eq!(identity.local_identity, 3);
         assert_eq!(identity.components.len(), 1);
@@ -146,17 +202,19 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
         native_payload: payload.into(),
         classes: vec![
             FeatureInputClass {
+                sequence: 0,
+                feature_ref: None,
                 id: "surface-class".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 0,
                 name: class_name.into(),
             },
             FeatureInputClass {
+                sequence: 4096,
+                feature_ref: None,
                 id: "projection-class".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 4096,
                 name: "moPLineProjIdRep_c".into(),
             },
         ],
@@ -177,7 +235,10 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
     let mut cache = None;
     for _ in 0..32 {
         let selections = operation_surface_selection_candidates(
-            &ctx,
+            (
+                &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+                &ctx,
+            ),
             FeatureClass::SplitFace,
             &lane,
             0,

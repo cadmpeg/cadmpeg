@@ -60,6 +60,7 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
@@ -70,7 +71,9 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
                 shape: cadmpeg_ir::features::holes::HoleShape::new(
                     cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
                     None,
-                    Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()),
+                    Some(cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+                    )),
                 )
                 .unwrap(),
                 extent: None,
@@ -115,7 +118,7 @@ fn lane() -> FeatureInputLane {
         id: format!("identity-{ordinal}"),
         parent: "lane".into(),
         ordinal,
-        offset: u64::from(ordinal),
+        sequence: ordinal,
         type_prefix: [0xc3, 0x80, 0xc5, 0].into(),
         feature_source_id: 7_u32.try_into().unwrap(),
         local_identity: 2,
@@ -143,10 +146,12 @@ fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
     let mut lane = lane();
     lane.native_payload.resize(200, 0);
     lane.names.push(FeatureInputName {
+        feature_ref: None,
         id: "hole-name".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 0,
+        sequence: 0,
+        offset: Some(0),
         value: "Hole".into(),
         object_id: ObjectId::from_value(7),
     });

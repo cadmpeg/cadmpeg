@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of application-owned mesh and point payloads.
 
-use cadmpeg_core::decode::{BoundedCount, DecodeContext, View};
+use cadmpeg_core::decode::{BoundedCount, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
@@ -20,11 +20,30 @@ const MAX_ELEMENTS: usize = 1_000_000;
 const MESH_MAGIC: u32 = mesh_hdr::MAGIC_VALUE;
 const MESH_VERSION: u32 = mesh_hdr::VERSION_VALUE;
 
+/// Whether a kernel property has delivered its owning object's neutral geometry.
+pub(crate) fn holds_property(ir: &CadIr, type_name: &str, owner: &str) -> bool {
+    match type_name {
+        "Mesh::PropertyMeshKernel" => ir.model.tessellations.iter().any(|mesh| {
+            mesh.source_object
+                .as_ref()
+                .is_some_and(|source| source.object_id.as_str() == owner)
+        }),
+        "Points::PropertyPointKernel" => ir.model.points.iter().any(|point| {
+            point
+                .source_object
+                .as_ref()
+                .is_some_and(|source| source.object_id.as_str() == owner)
+        }),
+        _ => false,
+    }
+}
+
 pub(crate) fn transfer(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     ir: &mut CadIr,
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
+    sources: &crate::entry_sources::EntrySources<'_>,
     admitted_entities: &mut u64,
 ) -> Result<bool, CodecError> {
     let mut transferred = false;
@@ -58,16 +77,16 @@ pub(crate) fn transfer(
                 property.id
             )));
         };
+        let source = sources.view(entry)?;
+        let bytes = source.window();
         if geometry_kind == GeometryKind::Mesh {
-            ir.model
-                .tessellations
-                .push(parse_mesh(property, entry.data())?);
+            ir.model.tessellations.push(parse_mesh(property, bytes)?);
             transferred = true;
         } else if geometry_kind == GeometryKind::Points {
             let points = parse_points(
                 ctx,
                 property,
-                entry.data(),
+                bytes,
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 admitted_entities,
             )?;
@@ -94,12 +113,13 @@ impl GeometryKind {
 }
 
 fn validate_value_root(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
     expected_tag: &str,
 ) -> Result<Option<String>, CodecError> {
+    let property_xml = ctx.property_xml(property)?;
     let document = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;
@@ -138,10 +158,6 @@ fn association(property: &PropertyRecord) -> Result<SourceObjectAssociation, Cod
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new(property.owner.clone())
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-        name: Some(property.name.clone()),
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     })
 }
@@ -216,7 +232,7 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
 }
 
 fn parse_points(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
     bytes: &[u8],
     current_entities: u64,
@@ -255,11 +271,12 @@ fn parse_points(
 }
 
 fn point_transform(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
 ) -> Result<[[FiniteReal; 4]; 4], CodecError> {
+    let property_xml = ctx.property_xml(property)?;
     let document = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;
@@ -456,59 +473,70 @@ impl<'a> Reader<'a> {
 pub(crate) mod tests {
     use super::{parse_mesh, parse_points, ByteOrder, Reader};
     use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
-    use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
+    use crate::native::{PropertyBody, PropertyFamily, PropertyRecord};
     use crate::test_support::test_archive::archive_entries;
     use crate::FcstdCodec;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::decode::DecodePolicy;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
 
-    fn resource_test_property() -> PropertyRecord {
-        PropertyRecord {
-            id: "fcstd:native:property#Geometry".to_owned(),
-            owner: "fcstd:native:object#Geometry".to_owned(),
-            name: "Geometry".to_owned(),
-            type_name: "Points::PropertyPointKernel".to_owned(),
-            family: PropertyFamily::Unknown,
-            status: None,
-            body: PropertyBody::Transient,
-            order: 0,
-            xml: RetainedXml::from_text("<Property><Points/></Property>".to_owned(), 0)
-                .expect("valid XML span"),
-        }
+    fn resource_test_property() -> crate::test_support::source_fidelity::PropertyFixture {
+        crate::test_support::source_fidelity::PropertyFixture::new(
+            PropertyRecord {
+                id: "fcstd:native:property#Geometry".to_owned(),
+                owner: "fcstd:native:object#Geometry".to_owned(),
+                name: "Geometry".to_owned(),
+                type_name: "Points::PropertyPointKernel".to_owned(),
+                family: PropertyFamily::Unknown,
+                status: None,
+                body: PropertyBody::Transient,
+                order: 0,
+            },
+            "<Property><Points/></Property>".to_owned(),
+        )
     }
 
     #[test]
     fn point_cloud_entities_refuse_before_records_and_are_not_admitted_twice() {
         let mut bytes = 2_u32.to_le_bytes().to_vec();
         bytes.extend_from_slice(&[0; 24]);
-        let arena = DecodeArena::new();
+        let property = resource_test_property();
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
         let mut admitted = 0;
-        assert!(
-            matches!(parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted),
-            Err(CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities && limit.additional == 2)
+        crate::test_support::source_fidelity::with_property_reader(
+            &bytes,
+            &[&property],
+            &policy,
+            |ctx| {
+                assert!(
+                    matches!(parse_points(ctx, &property, &bytes, 0, &mut admitted),
+                Err(CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities && limit.additional == 2)
+                );
+                assert_eq!(admitted, 0);
+            },
         );
-        assert_eq!(admitted, 0);
         policy.limits.max_entities = 2;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
-        assert_eq!(
-            parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted)
-                .expect("admitted points")
-                .len(),
-            2
+        crate::test_support::source_fidelity::with_property_reader(
+            &bytes,
+            &[&property],
+            &policy,
+            |ctx| {
+                assert_eq!(
+                    parse_points(ctx, &property, &bytes, 0, &mut admitted)
+                        .expect("admitted points")
+                        .len(),
+                    2
+                );
+                ctx.admit_entities(2, &mut admitted, "aggregate")
+                    .expect("already admitted");
+                assert!(matches!(
+                    ctx.charge_entities(1, "next entity"),
+                    Err(CodecError::ResourceLimit(_))
+                ));
+            },
         );
-        ctx.admit_entities(2, &mut admitted, "aggregate")
-            .expect("already admitted");
-        assert!(matches!(
-            ctx.charge_entities(1, "next entity"),
-            Err(CodecError::ResourceLimit(_))
-        ));
     }
 
     #[test]
@@ -526,13 +554,17 @@ pub(crate) mod tests {
     #[test]
     fn truncated_point_cloud_is_malformed() {
         let bytes = 1_000_000_u32.to_le_bytes();
-        crate::test_support::with_service_context(&bytes, |ctx| {
-            assert!(
-                matches!(parse_points(ctx, &resource_test_property(), &bytes, 0, &mut 0),
+        let property = resource_test_property();
+        crate::test_support::source_fidelity::with_property_reader(
+            &bytes,
+            &[&property],
+            &DecodePolicy::service(),
+            |ctx| {
+                assert!(matches!(parse_points(ctx, &property, &bytes, 0, &mut 0),
                 Err(CodecError::Malformed(message))
-                    if message == "point-cloud count exceeds remaining payload")
-            );
-        });
+                    if message == "point-cloud count exceeds remaining payload"));
+            },
+        );
     }
 
     #[test]
@@ -614,7 +646,11 @@ pub(crate) mod tests {
             cadmpeg_ir::math::Point3::new(9.0, 18.0, 27.0)
         );
         assert!(result.report().geometry_transferred());
-        assert!(result.report().losses.is_empty());
+        assert!(
+            result.report().losses.is_empty(),
+            "{:#?}",
+            result.report().losses
+        );
     }
 
     #[test]

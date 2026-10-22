@@ -70,3 +70,116 @@ fn merged_archive_keeps_each_component_unknown_record_image_and_owner() {
         .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
         .is_none());
 }
+
+fn malformed_design() -> cadmpeg_core::CodecError {
+    cadmpeg_core::CodecError::malformed("injected archive member design failure")
+}
+
+fn root_and_child_design_failure() -> cadmpeg_core::CodecError {
+    crate::decode::design_intent::inject_failure(malformed_design);
+    malformed_design()
+}
+
+fn mixed_member_archive() -> Vec<u8> {
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let component = f3d_with_smbh(&synthetic_mixed_smbh());
+    f3z_archive("root.f3d", &[("root.f3d", &root), ("comp.f3d", &component)])
+}
+
+#[test]
+fn archive_scope_and_source_representation_union_independent_members() {
+    use cadmpeg_ir::document::{ArenaClass, ContentScope};
+    crate::decode::design_intent::inject_failure(malformed_design);
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(mixed_member_archive()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    // The root failed design projection; the child delivered design and B-rep.
+    assert_eq!(decoded.ir().scope, ContentScope::full());
+    assert_eq!(decoded.report().scope(), decoded.ir().scope);
+    assert!(decoded.report().geometry_transferred());
+    assert_eq!(
+        decoded.source_fidelity().unrepresented(),
+        [ArenaClass::Model].into()
+    );
+    // The root has no Design BulkStream, and the child's ASM stream has
+    // only an EOF delta_state boundary. A failed projection cannot create
+    // omitted Design content. Its unknown solved record is model content.
+    assert!(decoded
+        .source_fidelity()
+        .retained_record("f3d:file:source-image#root")
+        .unwrap()
+        .untyped()
+        .is_empty());
+    let child_image =
+        format!("f3d:xref/role-{XREF_ROLE}/reference-0/occurrence-0/file:source-image#0");
+    assert_eq!(
+        decoded
+            .source_fidelity()
+            .retained_record(&child_image)
+            .unwrap()
+            .untyped(),
+        &cadmpeg_ir::ArenaClasses::from([ArenaClass::Model])
+    );
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| { loss.code == crate::loss::F3dLossCode::DesignIntentUndecoded.kind() })
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn archive_scope_excludes_design_when_every_member_failed_design_projection() {
+    use cadmpeg_ir::document::{ArenaClass, ContentScope};
+    crate::decode::design_intent::inject_failure(root_and_child_design_failure);
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(mixed_member_archive()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(decoded.ir().scope, ContentScope::geometry());
+    assert_eq!(decoded.report().scope(), decoded.ir().scope);
+    assert!(decoded.report().geometry_transferred());
+    assert_eq!(
+        decoded.source_fidelity().unrepresented(),
+        [ArenaClass::Model].into()
+    );
+    // The root has no Design BulkStream, and the child's ASM stream has
+    // only an EOF delta_state boundary. A failed projection cannot create
+    // omitted Design content. Its unknown solved record is model content.
+    assert!(decoded
+        .source_fidelity()
+        .retained_record("f3d:file:source-image#root")
+        .unwrap()
+        .untyped()
+        .is_empty());
+    let child_image =
+        format!("f3d:xref/role-{XREF_ROLE}/reference-0/occurrence-0/file:source-image#0");
+    assert_eq!(
+        decoded
+            .source_fidelity()
+            .retained_record(&child_image)
+            .unwrap()
+            .untyped(),
+        &cadmpeg_ir::ArenaClasses::from([ArenaClass::Model])
+    );
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| { loss.code == crate::loss::F3dLossCode::DesignIntentUndecoded.kind() })
+            .count(),
+        2
+    );
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "depth.not-delivered" && loss.message.contains("design")
+    }));
+}

@@ -8,7 +8,9 @@ use cadmpeg_test_support::edit;
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::write::{
+    target::TargetRequest, ArenaDisposition, EncodeInput, Encoder, ExportPlan,
+};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
@@ -16,6 +18,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -25,6 +28,8 @@ use crate::loss::StepLossCode;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 use super::round_trips::cylinder_surface_doc;
+
+mod appearances;
 
 /// A one-face document whose single edge has no attributed curve, so the writer
 /// must omit that edge and record a loss.
@@ -294,9 +299,15 @@ fn writer_reports_root_occurrence_scale() {
         },
         parent: cadmpeg_ir::products::OccurrenceParent::Root {},
         ordinal: 0,
-        transform: Transform::identity(),
+        transform: Some(
+            Transform::affine([
+                [2.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .expect("finite scaling"),
+        ),
         linked_prototype: None,
-        scale: [2.0, 1.0, 1.0].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()),
         name: Some("Scaled root".into()),
         visible: None,
         link: None,
@@ -453,9 +464,9 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         prototype: cadmpeg_ir::products::PrototypeReference::Unresolved {},
         parent: cadmpeg_ir::products::OccurrenceParent::Root {},
         ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
         linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+
         name: None,
         visible: None,
         link: None,
@@ -469,9 +480,9 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         },
         parent: cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent },
         ordinal: 1,
-        transform: cadmpeg_ir::transform::Transform::identity(),
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
         linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+
         name: None,
         visible: None,
         link: None,
@@ -607,84 +618,6 @@ fn writer_reports_hidden_body_without_step_item() {
     }));
 }
 
-#[test]
-fn writer_reports_dangling_appearance_binding() {
-    use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
-    use cadmpeg_ir::ids::AppearanceId;
-
-    let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let binding = "test:model:appearance-binding#dangling";
-    let appearance = AppearanceId::mint("test:model:appearance#missing").expect("identity grammar");
-    ir.model.appearance_bindings.push(AppearanceBinding {
-        id: binding.try_into().expect("valid identity"),
-        target: AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
-        appearance: appearance.clone(),
-        source_entity_id: None,
-        object_type: None,
-        visible: None,
-        channels: std::collections::BTreeMap::default(),
-    });
-
-    let report = write_step(
-        &ir,
-        &mut Vec::new(),
-        StepSchema::Ap214,
-        &StepWriteOptions::default(),
-    )
-    .expect("report mode writes the representable geometry");
-    assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::AppearanceBindingMissingAsset.kind()
-            && loss.message.contains(binding)
-            && loss.message.contains(appearance.as_str())
-    }));
-}
-
-#[test]
-fn writer_reports_appearance_without_base_color() {
-    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-    use cadmpeg_ir::ids::AppearanceId;
-
-    let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let appearance =
-        AppearanceId::mint("test:model:appearance#colorless").expect("identity grammar");
-    let binding = "test:model:appearance-binding#colorless";
-    ir.model.appearances.push(Appearance {
-        id: appearance.clone(),
-        name: None,
-        asset_guid: None,
-        library_id: None,
-        visual_guid: None,
-        physical_token: None,
-        schema: None,
-        category: None,
-        base_color: None,
-        properties: std::collections::BTreeMap::default(),
-        textures: Vec::new(),
-    });
-    ir.model.appearance_bindings.push(AppearanceBinding {
-        id: binding.try_into().expect("valid identity"),
-        target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
-        appearance: appearance.clone(),
-        source_entity_id: None,
-        object_type: None,
-        visible: None,
-        channels: std::collections::BTreeMap::default(),
-    });
-
-    let report = write_step(
-        &ir,
-        &mut Vec::new(),
-        StepSchema::Ap214,
-        &StepWriteOptions::default(),
-    )
-    .expect("report mode writes the representable geometry");
-    assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::AppearanceBindingNoBaseColor.kind()
-            && loss.message.contains(binding)
-            && loss.message.contains(appearance.as_str())
-    }));
-}
-
 fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool) -> CadIr {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
@@ -714,6 +647,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
         ),
     ] {
         ir.model.appearances.push(Appearance {
+            native_ref: None,
             id,
             name: None,
             asset_guid: None,
@@ -729,6 +663,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
     }
     let mut bindings = vec![
         AppearanceBinding {
+            native_ref: None,
             id: "test:model:binding#red".try_into().expect("valid identity"),
             target: target.clone(),
             appearance: red,
@@ -738,6 +673,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             channels: std::collections::BTreeMap::new(),
         },
         AppearanceBinding {
+            native_ref: None,
             id: "test:model:binding#blue"
                 .try_into()
                 .expect("valid identity"),
@@ -913,7 +849,7 @@ fn writer_reports_each_enclosing_topology_reduction() {
     .expect("report mode writes the surviving outer loop");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::FaceOmittedInnerLoop.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("has no writable topology")
     }));
 
@@ -1032,7 +968,7 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
 }
 
 #[test]
-fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
+fn unsupported_standalone_curve_is_omitted_with_an_error_loss() {
     let mut ir = CadIr::empty();
     let curve_id =
         CurveId::mint("step:test:curve#standalone-unsupported").expect("identity grammar");
@@ -1047,6 +983,17 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
         source_object: None,
     });
 
+    ir.model
+        .procedural_curves
+        .push(cadmpeg_ir::geometry::ProceduralCurve::new(
+            ir.model.curves[0]
+                .geometry
+                .procedural_construction()
+                .expect("held construction identity")
+                .clone(),
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact { cache: None },
+        ));
+
     let report = write_step(
         &ir,
         &mut Vec::new(),
@@ -1056,7 +1003,7 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
     .expect("report mode writes the representable subset");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains(curve_id.as_str())
     }));
 }
@@ -1121,6 +1068,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let appearance = AppearanceId::mint("test:model:appearance#hidden").expect("identity grammar");
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: appearance.clone(),
         name: None,
         asset_guid: None,
@@ -1136,6 +1084,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: "test:model:appearance-binding#hidden-face"
             .try_into()
             .expect("valid identity"),
@@ -1170,6 +1119,8 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
+        native_ref: None,
+        parent: None,
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
         description: None,
@@ -1328,10 +1279,7 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: cadmpeg_core::text::NonBlankString::new("object-0")
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
+
         instance_path: Vec::new(),
     };
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
@@ -1527,7 +1475,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
     .expect("report mode must not panic on an unwritable procedural surface");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains(surface_id.as_str())
     }));
 }
@@ -1563,7 +1511,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
     .expect("report mode must not panic on an unwritable procedural curve");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains(curve_id.as_str())
     }));
 }
@@ -1663,21 +1611,44 @@ fn negative_cone_semi_angle_inside_wr2_is_planned() {
 }
 
 #[test]
-fn right_angle_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(std::f64::consts::FRAC_PI_2)
-        .expect_err("right angle cone is outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
+fn right_angle_cone_semi_angle_is_omitted_with_error() {
+    let plan = circular_cone_plan(std::f64::consts::FRAC_PI_2)
+        .expect("a surface limitation does not refuse the document");
+    assert_unsupported_cone_omission(plan);
 }
 
 #[test]
-fn negative_right_angle_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(-std::f64::consts::FRAC_PI_2)
-        .expect_err("negative right angle cone is outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
+fn negative_right_angle_cone_semi_angle_is_omitted_with_error() {
+    let plan = circular_cone_plan(-std::f64::consts::FRAC_PI_2)
+        .expect("a surface limitation does not refuse the document");
+    assert_unsupported_cone_omission(plan);
+}
+
+fn assert_unsupported_cone_omission(plan: ExportPlan) {
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == StepLossCode::UnknownSurfaceFaceOmitted.kind())
+        .expect("unsupported face is reported");
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
+    for arena in [
+        EntityKind::Surface,
+        EntityKind::Face,
+        EntityKind::Shell,
+        EntityKind::Region,
+        EntityKind::Body,
+    ] {
+        assert_eq!(
+            plan.report().coverage.disposition(arena),
+            ArenaDisposition::Reported
+        );
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("degraded STEP writes");
+    let text = String::from_utf8(bytes).expect("STEP text");
+    assert!(!text.contains("CONICAL_SURFACE"));
+    assert!(text.contains("END-ISO-10303-21;"));
 }
 
 /// A similarity transform, which the writer carries as a `SURFACE_REPLICA`.
@@ -1732,17 +1703,15 @@ fn transformed_cone_basis(ratio: f64, half_angle: f64) -> SolvedSurfaceGeometry 
 }
 
 #[test]
-fn transformed_cone_basis_outside_wr2_is_refused_at_planning() {
+fn transformed_cone_basis_outside_wr2_is_omitted_with_error() {
     let ir = transformed_surface_ir(transformed_cone_basis(1.0, std::f64::consts::FRAC_PI_2));
-    let error = StepCodec::default()
+    let plan = StepCodec::default()
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
         )
-        .expect_err("transformed cone basis remains outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
+        .expect("a surface limitation does not refuse the document");
+    assert_unsupported_cone_omission(plan);
 }
 
 #[test]
@@ -1845,7 +1814,7 @@ fn degenerate_torus_with_a_negative_tube_radius_is_reported() {
 }
 
 #[test]
-fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
+fn a_cone_cache_for_an_unwritable_construction_is_omitted_with_error() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -1881,15 +1850,13 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
         )
         .expect("a cone carrier admits a compound construction");
 
-    let error = StepCodec::default()
+    let plan = StepCodec::default()
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
         )
-        .expect_err("a cached cone outside WR2 cannot be written");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
+        .expect("a surface limitation does not refuse the document");
+    assert_unsupported_cone_omission(plan);
 }
 
 #[test]
@@ -1927,6 +1894,18 @@ fn procedural_construction_reduction_is_reported() {
         loss.message
             .contains("reduced to their solved STEP carriers")
     }));
+    assert_eq!(
+        report.coverage.disposition(EntityKind::ProceduralCurve),
+        ArenaDisposition::Reported
+    );
+    assert_eq!(
+        report.coverage.disposition(EntityKind::Curve),
+        ArenaDisposition::Written
+    );
+    assert_eq!(
+        report.coverage.disposition(EntityKind::Surface),
+        ArenaDisposition::Written
+    );
 }
 
 #[test]
@@ -1950,8 +1929,16 @@ fn source_native_record_reduction_is_reported() {
         &StepWriteOptions::default(),
     )
     .unwrap();
-    assert!(report.losses.iter().any(|loss| {
-        loss.message
-            .contains("source-native record(s) were not represented in STEP")
-    }));
+    let omitted = report
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.local_code() == "native.records-omitted"
+                && loss.message.contains("f3d.asm_histories")
+        })
+        .unwrap_or_else(|| panic!("{:?}", report.losses));
+    assert_eq!(
+        crate::test_support::omitted_record_ids(&omitted.message),
+        ["f3d:test:asm-history#0"]
+    );
 }

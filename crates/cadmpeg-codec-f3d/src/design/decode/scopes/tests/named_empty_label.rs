@@ -49,7 +49,7 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("378".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
 
     let scope = parse_parameter_scope(
@@ -57,7 +57,7 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("empty-label named scope");

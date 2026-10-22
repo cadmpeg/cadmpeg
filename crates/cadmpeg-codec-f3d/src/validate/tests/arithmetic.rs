@@ -13,10 +13,10 @@ fn locus_group_with_saturated_offsets(base: u64, count: usize) -> DesignDimensio
     DesignDimensionLocusGroup {
         id: "f3d:Design/BulkStream.dat:locus-group#9".into(),
         companion_record_index: 8,
-        byte_offset: base,
+        byte_offset: Some(base),
         class_tag: "256".to_owned().try_into().unwrap(),
         record_index: 9,
-        frame_length: end - base,
+        frame_length: Some(end - base),
         loci: (0..count)
             .map(|ordinal| {
                 let ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
@@ -24,24 +24,24 @@ fn locus_group_with_saturated_offsets(base: u64, count: usize) -> DesignDimensio
                 DesignDimensionLocus {
                     returned: Located {
                         value: 10,
-                        offset: returns_start.saturating_add(ordinal * 11).saturating_add(1),
+                        offset: Some(returns_start.saturating_add(ordinal * 11).saturating_add(1)),
                     },
                     geometry_record_index: 10,
-                    geometry_reference_offset: start.saturating_add(1),
+                    geometry_reference_offset: Some(start.saturating_add(1)),
                     role: 1,
-                    role_offset: start.saturating_add(11),
+                    role_offset: Some(start.saturating_add(11)),
                 }
             })
             .collect(),
         owner_reference: 4,
-        owner_reference_offset: owner_start.saturating_add(2),
+        owner_reference_offset: Some(owner_start.saturating_add(2)),
         owner_role: 1,
-        owner_role_offset: owner_start.saturating_add(12),
+        owner_role_offset: Some(owner_start.saturating_add(12)),
         state: 1,
-        state_offset: owner_start.saturating_add(16),
+        state_offset: Some(owner_start.saturating_add(16)),
         next_class_tag: "259".to_owned().try_into().unwrap(),
         next_record_index: 11,
-        next_byte_offset: end,
+        next_byte_offset: Some(end),
     }
 }
 
@@ -99,10 +99,10 @@ fn locus_findings(group: DesignDimensionLocusGroup) -> Vec<cadmpeg_ir::report::c
         );
         let entity = DesignEntityHeader {
             id: "f3d:Design/BulkStream.dat:entity#4".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             entity_id: DesignEntityId::from_parts("sketch", 4),
             class_tag: "112".to_owned().try_into().unwrap(),
-            optional_slot_present: false,
+            optional_slot_present: Some(false),
             registration: DesignEntityRegistration::new(
                 Some(DESIGN_MODULE_SKETCH.into()),
                 None,
@@ -223,7 +223,7 @@ fn companion_findings(
         }
         let header = DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:header#8".into(),
-            byte_offset,
+            byte_offset: Some(byte_offset),
             class_tag: "258".to_owned().try_into().unwrap(),
             record_index: 8,
         };
@@ -325,10 +325,10 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         ));
         let entity = DesignEntityHeader {
             id: "f3d:Design/BulkStream.dat:entity#4".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             entity_id: DesignEntityId::from_parts("sketch", 4),
             class_tag: "112".to_owned().try_into().unwrap(),
-            optional_slot_present: false,
+            optional_slot_present: Some(false),
             registration: DesignEntityRegistration::new(
                 Some(DESIGN_MODULE_SKETCH.into()),
                 None,
@@ -353,10 +353,13 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
                     .map(|(ordinal, index)| {
                         crate::records::dimensions::DesignDimensionAnnotationOperand {
                             geometry_record_index: std::num::NonZeroU32::new(index),
-                            geometry_reference_offset: 125
-                                + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                            geometry_reference_offset: Some(
+                                125 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                            ),
                             role: 1,
-                            role_offset: 135 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                            role_offset: Some(
+                                135 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                            ),
                         }
                     })
                     .collect(),

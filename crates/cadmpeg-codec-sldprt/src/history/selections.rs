@@ -223,7 +223,12 @@ pub(crate) fn bind_topology_selections(
                                     native,
                                     origin.get(),
                                     normal,
-                                    *distance,
+                                    match crate::history::project::source_dimension_value(
+                                        distance, histories,
+                                    ) {
+                                        Some(distance) => distance,
+                                        None => break 'feature_edit,
+                                    },
                                 );
                                 let mut face = match native {
                                     Some(native) => FaceSelection::Native(native.to_owned()),
@@ -797,7 +802,8 @@ mod tests {
             id: "selection".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
+            sequence: 0,
+            offset: Some(0),
             selector: 2,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "feature".into(),

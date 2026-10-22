@@ -53,6 +53,13 @@ fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent
 
 #[test]
 fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
+    use crate::records::identity::Located;
+    use crate::records::topology::construction::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+        DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+        DesignConstructionOperandRole,
+    };
+
     use crate::history_records::AsmHistoricalPlane;
     use cadmpeg_ir::math::{Point3, Vector3};
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -81,18 +88,46 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             .expect("mirror construction"),
         );
     }
-    let group: crate::records::topology::construction::DesignConstructionOperandGroup =
-        serde_json::from_value(serde_json::json!({
-            "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,
-            "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
-            "class_tag": "282", "members": [40], "member_offsets": [0],
-            "frame": {"member_count_offset": 0, "opaque_index": 1,
-                "opaque_index_offset": 18, "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 22, "variant": false},
-            "role": 21_474_836_480u64, "role_offset": 0,
-            "paired_class_tag": "261", "paired_byte_offset": 0
-        }))
-        .expect("mirror plane group");
+
+    let group = DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+        id: "f3d:Design/BulkStream.dat:group#30".into(),
+        scope_record_index: 42,
+        scope_reference_ordinal: 0,
+        record_index: 30,
+        byte_offset: 0,
+        class_tag: "282".to_owned().try_into().unwrap(),
+        members: vec![Located {
+            value: 40,
+            offset: 0,
+        }],
+        lost_edge_references: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 0,
+                opaque_index: 1,
+                opaque_index_offset: 18,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 22,
+                variant: false,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+            },
+        )
+        .unwrap(),
+        operand_role: DesignConstructionOperandRole::Other(
+            crate::records::topology::extrude_selection::DesignOperandRole::from_raw(
+                21_474_836_480u64,
+            ),
+        ),
+        role_offset: 0,
+        paired_class_tag: "261".to_owned().try_into().unwrap(),
+        paired_byte_offset: 0,
+    })
+    .expect("mirror plane group");
     let mut operand: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
@@ -109,7 +144,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             crate::history_records::AsmDeltaState {
                 id: format!("history:state#{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -313,7 +348,7 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
             AsmDeltaState {
                 id: format!("history:state#{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,

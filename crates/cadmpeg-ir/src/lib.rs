@@ -88,19 +88,22 @@ pub use codec::{Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, D
 pub use container::{ContainerKind, ContainerSummary};
 pub use diff::{
     diff, ArenaDiff, ArenaKind, AttributeChange, DialectsChange, IrDiff, ModifiedEntity,
-    NonEmptyFields, SourceDiff,
+    NonEmptyFields, ScopeChange, SourceDiff,
 };
 pub use document::{
-    ArenaClass, ArenaName, CadIr, CensusKey, DesignBelowFullDepth, SourceMeta, IR_VERSION,
+    ArenaClass, ArenaClasses, ArenaName, CadIr, CensusKey, ContentScope, ScopeViolation,
+    SourceMeta, IR_VERSION,
 };
 pub use draft::ModelDraft;
 pub use features::{
-    BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction,
-    CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement,
-    ConfigurationEvaluation, ConfigurationId, CurveProjectionDirection,
-    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, FaceMotion, Feature,
-    FeatureDefinition, FeatureId, FeatureOperation, LoftGuidance, ParameterId, ParameterPmi,
-    ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
+    BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide,
+    CircularPatternDistribution, CoilConstruction, CoilExtent, CoilPlacement, CoilResult,
+    CoilSection, CoilSectionPlacement, ConfigurationId, CurveProjectionDirection,
+    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, Dimension,
+    DimensionResolutionError, DimensionValue, Expression, ExpressionError, ExpressionToken,
+    FaceMotion, Feature, FeatureAngularRange, FeatureDefinition, FeatureId, FeatureOperation,
+    FeatureScalarRange, LoftGuidance, ParameterId, ParameterValue, PatternAngle, PatternDistance,
+    RadialDimension, ScaleCenter, ScaleFactors,
 };
 pub use ids::{is_valid_identity, IdentityError};
 pub use native::{
@@ -124,7 +127,7 @@ pub use products::{
 /// Source location attached to a [`report::loss::LossNote`].
 pub use provenance::{
     AnnotationLocation, AnnotationProvenance, CodecFormat, EmptyStreamName, Exactness, Provenance,
-    SourceGeometryRole, SourceLocation, SourceObjectAssociation, SourceProvenance,
+    SourceGeometryRole, SourceLocation, SourceObjectAssociation, SourceOwner, SourceProvenance,
     StaticStreamName, StreamName,
 };
 pub use references::{ReferenceSelection, ReferenceTarget};

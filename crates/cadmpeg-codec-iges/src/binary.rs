@@ -1871,7 +1871,7 @@ mod tests {
                 .ir()
                 .source
                 .as_ref()
-                .expect("Binary decode retains source metadata")
+                .expect("IGES source metadata")
                 .attributes["representation"],
             "binary"
         );

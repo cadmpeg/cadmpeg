@@ -87,15 +87,16 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
 fn failed_brep_retains_its_mathematics_as_support_geometry() {
     let (data, raw) = source_shaped_plane_brep();
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("source Brep");
-    let association = SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::Rhino,
-        geometry_role: None,
-        object_id: cadmpeg_core::nonblank_literal!("failed-brep"),
+    let association = crate::decode::ObjectContext {
+        identity: SourceObjectAssociation {
+            format: cadmpeg_ir::CodecFormat::Rhino,
+            geometry_role: None,
+            object_id: cadmpeg_core::nonblank_literal!("failed-brep"),
+            instance_path: Vec::new(),
+        },
         name: Some("source name".into()),
         color: None,
         visible: Some(true),
-        layer: None,
-        instance_path: Vec::new(),
     };
     let unknown = "rhino:object:record#failed".try_into().expect("identity");
     let staged = with_expand_bytes(&data, |expand| {
@@ -131,8 +132,14 @@ fn failed_brep_retains_its_mathematics_as_support_geometry() {
         Some(cadmpeg_ir::SourceGeometryRole::Support)
     );
     assert_eq!(source.object_id.as_str(), "failed-brep");
-    assert_eq!(source.name.as_deref(), Some("source name"));
-    assert_eq!(source.visible, Some(true));
+    assert!(serde_json::to_value(source)
+        .expect("identity wire")
+        .get("name")
+        .is_none());
+    assert!(serde_json::to_value(source)
+        .expect("identity wire")
+        .get("visible")
+        .is_none());
 }
 
 #[test]
@@ -222,16 +229,17 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
 fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     let (data, raw) = source_shaped_plane_brep();
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
-    let association = SourceObjectAssociation {
-        geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
-            .expect("nonempty source identity"),
+    let association = crate::decode::ObjectContext {
+        identity: SourceObjectAssociation {
+            geometry_role: None,
+            format: cadmpeg_ir::CodecFormat::Rhino,
+            object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+                .expect("nonempty source identity"),
+            instance_path: Vec::new(),
+        },
         name: Some("plane".to_string()),
         color: None,
         visible: Some(true),
-        layer: None,
-        instance_path: Vec::new(),
     };
     let unknown: UnknownId = "rhino:object:record#plane"
         .try_into()
@@ -335,16 +343,17 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         source_range: 0..0,
     });
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate Brep");
-    let association = SourceObjectAssociation {
-        geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("free-vertex-brep".to_string())
-            .expect("nonempty source identity"),
+    let association = crate::decode::ObjectContext {
+        identity: SourceObjectAssociation {
+            geometry_role: None,
+            format: cadmpeg_ir::CodecFormat::Rhino,
+            object_id: cadmpeg_core::text::NonBlankString::new("free-vertex-brep".to_string())
+                .expect("nonempty source identity"),
+            instance_path: Vec::new(),
+        },
         name: None,
         color: None,
         visible: None,
-        layer: None,
-        instance_path: Vec::new(),
     };
     let unknown: UnknownId = "rhino:object:record#free-vertex"
         .try_into()
@@ -403,16 +412,17 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
     let pcurve = raw.c2.slots[1].as_ref().expect("C2 slot");
     data[pcurve.class_data_range.start] = 0;
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
-    let association = SourceObjectAssociation {
-        geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
-            .expect("nonempty source identity"),
+    let association = crate::decode::ObjectContext {
+        identity: SourceObjectAssociation {
+            geometry_role: None,
+            format: cadmpeg_ir::CodecFormat::Rhino,
+            object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+                .expect("nonempty source identity"),
+            instance_path: Vec::new(),
+        },
         name: None,
         color: None,
         visible: None,
-        layer: None,
-        instance_path: Vec::new(),
     };
     let unknown: UnknownId = "rhino:object:record#plane"
         .try_into()
@@ -581,16 +591,17 @@ fn brep_mesh_cache_stages_one_tessellation() {
     }));
     let brep = crate::brep::ValidatedRawBrep::try_new(raw)
         .expect("validate Brep with one mesh cache slot");
-    let association = SourceObjectAssociation {
-        geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
-            .expect("nonempty source identity"),
+    let association = crate::decode::ObjectContext {
+        identity: SourceObjectAssociation {
+            geometry_role: None,
+            format: cadmpeg_ir::CodecFormat::Rhino,
+            object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+                .expect("nonempty source identity"),
+            instance_path: Vec::new(),
+        },
         name: Some("plane".to_string()),
         color: None,
         visible: Some(true),
-        layer: None,
-        instance_path: Vec::new(),
     };
     let unknown: UnknownId = "rhino:object:record#plane"
         .try_into()

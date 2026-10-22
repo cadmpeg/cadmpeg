@@ -31,13 +31,14 @@ fn named_scalar_identity_decodes_record_fields() {
     assert_eq!(names.len(), 1);
 
     assert_eq!(
-        named_scalars(&payload, "lane", &names).unwrap(),
+        named_scalars(&payload, "lane", &names).unwrap().records,
         vec![crate::records::FeatureInputScalar {
+            sequence: 0,
             id: "sldprt:feature-input:scalar#lane:32".into(),
             parent: "lane".into(),
             feature_ref: None,
             ordinal: 0,
-            offset: 32,
+            offset: Some(32),
             object_id: 42,
             name: names[0].id.clone(),
             value: cadmpeg_ir::scalar::FiniteReal::new(0.025).unwrap(),
@@ -68,7 +69,7 @@ fn scalar_trailer_is_relative_to_variable_length_name() {
         payload[trailer + relative + 4..trailer + relative + 8].fill(0xff);
     }
     let names = decoded_names(&payload);
-    let scalars = named_scalars(&payload, "lane", &names).unwrap();
+    let scalars = named_scalars(&payload, "lane", &names).unwrap().records;
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -100,7 +101,7 @@ fn compact_scalar_header_ends_at_the_value() {
     payload[trailer + 47..trailer + 51].fill(0xff);
 
     let names = decoded_names(&payload);
-    let scalars = named_scalars(&payload, "lane", &names).unwrap();
+    let scalars = named_scalars(&payload, "lane", &names).unwrap().records;
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -142,7 +143,7 @@ fn value_only_scalar_header_ends_at_the_value() {
     payload[trailer + 3..trailer + 7].copy_from_slice(&132u32.to_le_bytes());
 
     let names = decoded_names(&payload);
-    let scalars = named_scalars(&payload, "lane", &names).unwrap();
+    let scalars = named_scalars(&payload, "lane", &names).unwrap().records;
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -172,7 +173,7 @@ fn legacy_scalar_layout_carries_shifted_role_and_operand() {
     payload[trailer + 40..trailer + 44].fill(0xff);
 
     let names = decoded_names(&payload);
-    let scalars = named_scalars(&payload, "lane", &names).unwrap();
+    let scalars = named_scalars(&payload, "lane", &names).unwrap().records;
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -180,7 +181,7 @@ fn legacy_scalar_layout_carries_shifted_role_and_operand() {
     assert_eq!(scalar.operands.len(), 1);
     assert_eq!(
         scalar.operands[0].offset,
-        cadmpeg_core::decode::u64_from_index(trailer + 36)
+        Some(cadmpeg_core::decode::u64_from_index(trailer + 36))
     );
     assert_eq!(
         scalar.operands[0].kind,
@@ -215,13 +216,13 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
     }
 
     let names = decoded_names(&payload);
-    let scalars = named_scalars(&payload, "lane", &names).unwrap();
+    let scalars = named_scalars(&payload, "lane", &names).unwrap().records;
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
     assert_eq!(
         scalar.offset,
-        cadmpeg_core::decode::u64_from_index(value_offset)
+        Some(cadmpeg_core::decode::u64_from_index(value_offset))
     );
     assert_eq!(scalar.object_id, 70);
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
@@ -252,10 +253,12 @@ fn indexed_feature_names_preserve_precedence_and_ambiguity() {
 
     let mut names = (0u32..1000)
         .map(|index| FeatureInputName {
+            feature_ref: None,
             id: format!("name#{index}"),
             parent: "lane".into(),
             ordinal: index,
-            offset: u64::from(index),
+            sequence: index,
+            offset: Some(u64::from(index)),
             object_id: ObjectId::from_value(index + 1),
             value: format!("F{index}"),
         })
@@ -294,10 +297,12 @@ fn indexed_feature_objects_match_the_linear_scans() {
         classes: Vec::new(),
         names: (0u32..400)
             .map(|index| FeatureInputName {
+                feature_ref: None,
                 id: format!("name#{index}"),
                 parent: "lane".into(),
                 ordinal: index,
-                offset: u64::from(next(2_000)),
+                sequence: index,
+                offset: Some(u64::from(next(2_000))),
                 object_id: if next(4) == 0 {
                     None
                 } else {
@@ -360,13 +365,18 @@ fn indexed_feature_objects_match_the_linear_scans() {
     }
     assert!(found > 0 && found < 300);
     let probes = (0..200).map(|_| u64::from(next(2_100))).collect::<Vec<_>>();
-    for start in lane.names.iter().map(|name| name.offset).chain(probes) {
+    for start in lane
+        .names
+        .iter()
+        .filter_map(|name| name.offset)
+        .chain(probes)
+    {
         let linear = histories
             .iter()
             .flat_map(|history| &history.features)
             .filter_map(|feature| feature_object_name(feature, &lane))
-            .filter(|candidate| candidate.offset > start)
-            .map(|candidate| candidate.offset)
+            .filter(|candidate| candidate.offset.is_some_and(|offset| offset > start))
+            .filter_map(|candidate| candidate.offset)
             .min()
             .and_then(|offset| usize::try_from(offset).ok())
             .unwrap_or(PAYLOAD_LEN);

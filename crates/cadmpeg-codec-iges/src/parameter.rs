@@ -16,6 +16,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::ops::Range;
 
+pub(crate) mod parts;
+
 struct BackPointer(Option<u32>);
 
 impl fmt::Display for BackPointer {
@@ -28,8 +30,7 @@ impl fmt::Display for BackPointer {
 }
 
 /// One typed lexical value in an entity parameter record.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TokenValue {
     Omitted,
     Integer(i64),
@@ -37,6 +38,30 @@ pub(crate) enum TokenValue {
     String(cadmpeg_ir::native::bytes::NativeBytes),
     /// The field boundaries are known, but its literal cannot be interpreted.
     Unreadable(ParameterDefect),
+}
+
+impl Serialize for TokenValue {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+        enum Wire<'a> {
+            Omitted,
+            Integer(i64),
+            Real(FiniteReal),
+            String(cadmpeg_ir::native::bytes::NativeBytes<&'a [u8]>),
+            Unreadable(ParameterDefect),
+        }
+        match self {
+            Self::Omitted => Wire::Omitted,
+            Self::Integer(value) => Wire::Integer(*value),
+            Self::Real(value) => Wire::Real(*value),
+            Self::String(bytes) => {
+                Wire::String(cadmpeg_ir::native::bytes::NativeBytes::from(bytes.as_ref()))
+            }
+            Self::Unreadable(defect) => Wire::Unreadable(*defect),
+        }
+        .serialize(serializer)
+    }
 }
 
 #[cfg(test)]
@@ -57,16 +82,9 @@ impl Serialize for Token {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            start: usize,
-            end: usize,
             value: &'a TokenValue,
         }
-        Wire {
-            start: self.span.start,
-            end: self.span.end,
-            value: &self.value,
-        }
-        .serialize(serializer)
+        Wire { value: &self.value }.serialize(serializer)
     }
 }
 
@@ -2829,6 +2847,7 @@ pub(crate) struct ParameterAssembly {
     pub(crate) trailing_pointer_analysis: BTreeMap<u32, TrailingPointerAnalysis>,
     pub(crate) quarantined: Vec<QuarantinedParameterRecord>,
     pub(crate) recoveries: FramingRecoveries,
+    pub(crate) given_up: BTreeSet<u32>,
 }
 
 fn back_pointer(line: &PhysicalLine) -> Option<u32> {
@@ -3791,11 +3810,132 @@ fn range_to_cards(range: Range<u32>) -> Vec<u32> {
     cards
 }
 
+enum OwnedParseFailure {
+    Defect(ParameterDefect, Option<usize>),
+    Error(CodecError),
+}
+
+impl From<TokenizeFailure> for OwnedParseFailure {
+    fn from(error: TokenizeFailure) -> Self {
+        match error {
+            TokenizeFailure::Defect(defect, offset) => Self::Defect(defect, Some(offset)),
+            TokenizeFailure::Error(error) => Self::Error(error),
+        }
+    }
+}
+
+fn parse_owned_record(
+    owned: &Ownership<'_>,
+    owned_bytes: OwnedParameterBytes,
+    global: &ResolvedGlobal,
+) -> Result<ParameterRecord, OwnedParseFailure> {
+    let entry = owned.entry;
+    let tokenized = if entry.entity_type == 306 {
+        tokenize_macro(
+            &owned_bytes.bytes,
+            global.parameter_delimiter,
+            global.record_delimiter,
+        )
+    } else {
+        tokenize_with_limits(
+            &owned_bytes.bytes,
+            &owned_bytes.card_boundaries,
+            global.parameter_delimiter,
+            global.record_delimiter,
+            global.global_table(),
+            global.numeric_limits(),
+        )
+    };
+    let (tokens, record_end) = tokenized.map_err(OwnedParseFailure::from)?;
+    if !matches!(tokens.first().map(|token| &token.value), Some(TokenValue::Integer(value)) if *value == entry.entity_type)
+    {
+        return Err(OwnedParseFailure::Defect(
+            ParameterDefect::EntityTypeTokenMismatch,
+            tokens.first().map(|token| token.span.start),
+        ));
+    }
+    let line_start = owned.cards.first().copied().unwrap_or_default();
+    let line_end = match owned.cards.last() {
+        Some(last) => last.checked_add(1).ok_or_else(|| {
+            OwnedParseFailure::Error(CodecError::malformed(
+                "IGES parameter card sequence overflow",
+            ))
+        })?,
+        None => line_start,
+    };
+    let parameter_end = tokens.len();
+    Ok(ParameterRecord {
+        directory_sequence: entry.sequence,
+        line_range: line_start..line_end,
+        comment: owned_bytes
+            .bytes
+            .get(record_end..)
+            .unwrap_or_default()
+            .to_vec(),
+        bytes: owned_bytes.bytes,
+        tokens,
+        parameter_end,
+    })
+}
+
+fn parse_legacy_owned(
+    owned: &Ownership<'_>,
+    lines: &BTreeMap<u32, &PhysicalLine>,
+    global: &ResolvedGlobal,
+) -> Result<ParsedOwned, CodecError> {
+    if let Some(defect) = owned.quarantine {
+        return Ok(ParsedOwned::Quarantined(quarantine(
+            owned.entry,
+            &owned.cards,
+            lines,
+            defect,
+            None,
+        )?));
+    }
+    match parse_owned_record(owned, owned_bytes(&owned.cards, lines), global) {
+        Ok(record) => Ok(ParsedOwned::Record(record)),
+        Err(OwnedParseFailure::Error(error)) => Err(error),
+        Err(OwnedParseFailure::Defect(defect, offset)) => Ok(ParsedOwned::Quarantined(quarantine(
+            owned.entry,
+            &owned.cards,
+            lines,
+            defect,
+            offset,
+        )?)),
+    }
+}
+
 pub(crate) fn assemble(
     scan: &CardScan,
     directory: &[DirectoryEntry],
     quarantined_directory: &[QuarantinedDirectoryRecord],
     global: &ResolvedGlobal,
+) -> Result<ParameterAssembly, CodecError> {
+    assemble_with(
+        scan,
+        directory,
+        quarantined_directory,
+        global,
+        |owned, lines, _| parse_legacy_owned(owned, lines, global),
+    )
+}
+
+enum ParsedOwned {
+    Record(ParameterRecord),
+    Quarantined(QuarantinedParameterRecord),
+    GivenUp,
+}
+
+fn assemble_with(
+    scan: &CardScan<'_>,
+    directory: &[DirectoryEntry],
+    quarantined_directory: &[QuarantinedDirectoryRecord],
+    global: &ResolvedGlobal,
+    mut parse: impl FnMut(
+        &Ownership<'_>,
+        &BTreeMap<u32, &PhysicalLine>,
+        &[Ownership<'_>],
+    ) -> Result<ParsedOwned, CodecError>,
 ) -> Result<ParameterAssembly, CodecError> {
     let mut lines = BTreeMap::new();
     for (sequence, line) in scan.section(Section::Parameter) {
@@ -3817,76 +3957,15 @@ pub(crate) fn assemble(
     let mut records = Vec::new();
     let mut trailing_pointer_analysis = BTreeMap::new();
     let mut quarantined = Vec::new();
+    let mut given_up = BTreeSet::new();
     for owned in &ownership {
-        let entry = owned.entry;
-        if let Some(defect) = owned.quarantine {
-            quarantined.push(quarantine(entry, &owned.cards, &lines, defect, None)?);
-            continue;
-        }
-        let owned_bytes = owned_bytes(&owned.cards, &lines);
-        let tokenized = if entry.entity_type == 306 {
-            tokenize_macro(
-                &owned_bytes.bytes,
-                global.parameter_delimiter,
-                global.record_delimiter,
-            )
-        } else {
-            tokenize_with_limits(
-                &owned_bytes.bytes,
-                &owned_bytes.card_boundaries,
-                global.parameter_delimiter,
-                global.record_delimiter,
-                global.global_table(),
-                global.numeric_limits(),
-            )
-        };
-        let (tokens, record_end) = match tokenized {
-            Ok(value) => value,
-            Err(TokenizeFailure::Error(error)) => return Err(error),
-            Err(TokenizeFailure::Defect(defect, offset)) => {
-                quarantined.push(quarantine(
-                    entry,
-                    &owned.cards,
-                    &lines,
-                    defect,
-                    Some(offset),
-                )?);
-                continue;
+        match parse(owned, &lines, &ownership)? {
+            ParsedOwned::Record(record) => records.push(record),
+            ParsedOwned::Quarantined(record) => quarantined.push(record),
+            ParsedOwned::GivenUp => {
+                given_up.insert(owned.entry.sequence);
             }
-        };
-        if !matches!(tokens.first().map(|token| &token.value), Some(TokenValue::Integer(value)) if *value == entry.entity_type)
-        {
-            quarantined.push(quarantine(
-                entry,
-                &owned.cards,
-                &lines,
-                ParameterDefect::EntityTypeTokenMismatch,
-                tokens.first().map(|token| token.span.start),
-            )?);
-            continue;
         }
-        let line_start = owned.cards.first().copied().unwrap_or_default();
-        let line_end = match owned.cards.last() {
-            Some(last) => last
-                .checked_add(1)
-                .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?,
-            None => line_start,
-        };
-        let parameter_end = tokens.len();
-        let record = ParameterRecord {
-            directory_sequence: entry.sequence,
-            line_range: line_start..line_end,
-            comment: owned_bytes
-                .bytes
-                .get(record_end..)
-                .unwrap_or_default()
-                .to_vec(),
-            bytes: owned_bytes.bytes,
-            tokens,
-            parameter_end,
-        };
-
-        records.push(record);
     }
     {
         let mut record_by_directory = BTreeMap::new();
@@ -3945,6 +4024,7 @@ pub(crate) fn assemble(
         trailing_pointer_analysis,
         quarantined,
         recoveries,
+        given_up,
     })
 }
 

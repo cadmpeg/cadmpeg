@@ -303,8 +303,12 @@ pub(super) fn decode(
             };
         }
         let nominal = characteristic_values.get(&id).copied();
-        let definition = PmiDimension::new(kind, nominal, None)
-            .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;
+        let definition = PmiDimension::new(
+            kind,
+            nominal.map(cadmpeg_ir::features::Dimension::Literal),
+            None,
+        )
+        .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;
         let aspect_ids = record
             .partials
             .iter()

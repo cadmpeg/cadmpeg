@@ -371,27 +371,27 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         .collect::<std::collections::HashMap<_, _>>();
     let frame = |operands| crate::records::dimensions::DesignDimensionPresentationFrame {
         id: "stream:presentation#0".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("314".to_owned()).unwrap(),
         record_index: 0,
-        frame_length: 0,
+        frame_length: Some(0),
         operands,
-        presentation_bytes: Vec::new().into(),
-        presentation_byte_offset: 0,
+        presentation_bytes: Some(Vec::new().into()),
+        presentation_byte_offset: Some(0),
         paired_class_tag: crate::records::references::DesignClassTag::try_from("281".to_owned())
             .unwrap(),
-        paired_byte_offset: 0,
+        paired_byte_offset: Some(0),
         owner_reference: 0,
-        owner_reference_offset: 0,
+        owner_reference_offset: Some(0),
         governing_owner_record_index: 0,
         governing_parameter_record_index: 0,
         governing_companion_record_index: 0,
     };
     let operand = |record_index| crate::records::dimensions::DesignDimensionPresentationOperand {
         geometry_record_index: std::num::NonZeroU32::new(record_index).unwrap(),
-        geometry_reference_offset: 0,
+        geometry_reference_offset: Some(0),
         role: 0,
-        role_offset: 0,
+        role_offset: Some(0),
     };
     let tangent_span = parse_design_parameter_record(&parameter_record(
         Some(44),
@@ -514,7 +514,7 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
     assert!(matches!(
         crate::design::dimensions::symmetric_parallel_line_dimension_definition(&first, &second, (1, 1), &parameter, parameter_id.clone(), 1.0e-6),
         Some(SketchConstraintDefinitionInput::Distance { entities, parameter: actual })
-            if entities == vec![first.id().clone(), second.id().clone()] && actual == parameter_id
+            if entities == vec![first.id().clone(), second.id().clone()] && actual == cadmpeg_ir::Dimension::Parameter(parameter_id.clone())
     ));
 
     let mut direct_parameter = parameter.clone();
@@ -565,7 +565,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             first: cadmpeg_ir::sketches::SketchLocus::Entity(ref first_id),
             second: cadmpeg_ir::sketches::SketchLocus::Entity(ref second_id),
             parameter: ref parameter_id,
-        } if first_id == first.id() && second_id == second.id() && parameter_id == &parameter
+        } if first_id == first.id() && second_id == second.id() && parameter_id.parameter() == Some(&parameter)
     ));
     assert!(directional_point_dimension(&[&first, &second], 3.0, parameter, 0.0).is_none());
 
@@ -624,7 +624,7 @@ fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
         Some(SketchConstraintDefinitionInput::Distance {
             ref entities,
             parameter: ref actual_parameter,
-        }) if entities == &[point.id().clone(), line.id().clone()] && actual_parameter == &parameter
+        }) if entities == &[point.id().clone(), line.id().clone()] && actual_parameter.parameter() == Some(&parameter)
     ));
 }
 
@@ -828,15 +828,15 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             loci: [
                 crate::records::dimensions::DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(40),
-                    geometry_reference_offset: 70,
+                    geometry_reference_offset: Some(70),
                     role: 7,
-                    role_offset: 80,
+                    role_offset: Some(80),
                 },
                 crate::records::dimensions::DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(41),
-                    geometry_reference_offset: 85,
+                    geometry_reference_offset: Some(85),
                     role: 8,
-                    role_offset: 95,
+                    role_offset: Some(95),
                 },
             ],
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -850,30 +850,30 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let group = DesignDimensionLocusGroup {
         id: format!("{stream}:design-dimension-locus-group#140"),
         companion_record_index: 99,
-        byte_offset: 140,
+        byte_offset: Some(140),
         class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 31,
-        frame_length: 100,
+        frame_length: Some(100),
         loci: vec![DesignDimensionLocus {
             returned: crate::records::identity::Located {
                 value: 40,
-                offset: 210,
+                offset: Some(210),
             },
             geometry_record_index: 40,
-            geometry_reference_offset: 170,
+            geometry_reference_offset: Some(170),
             role: 0,
-            role_offset: 180,
+            role_offset: Some(180),
         }],
         owner_reference: 100,
-        owner_reference_offset: 185,
+        owner_reference_offset: Some(185),
         owner_role: 0,
-        owner_role_offset: 195,
+        owner_role_offset: Some(195),
         state: 0,
-        state_offset: 199,
+        state_offset: Some(199),
         next_class_tag: crate::records::references::DesignClassTag::try_from("273".to_owned())
             .unwrap(),
         next_record_index: 32,
-        next_byte_offset: 240,
+        next_byte_offset: Some(240),
     };
     let point = |record_index, y| {
         SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
@@ -882,7 +882,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             owner_reference: Some(100),
             class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             coordinate_offset: 0,
             companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),
@@ -1012,7 +1012,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             definition,
             ..
         } if matches!(definition.kind(), SpatialSketchConstraintDefinitionInput::PointDistance { first, second, parameter: actual_parameter } if actual_sketch == &spatial_sketch.id
-            && actual_parameter == &neutral_parameter_id_parts(stream, 20)
+            && actual_parameter.parameter() == Some(&neutral_parameter_id_parts(stream, 20))
             && first == spatial_entities[0].id()
             && second == spatial_entities[1].id())
     ));
@@ -1022,8 +1022,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         record_index: 42,
         owner_reference: Some(100),
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset: 0,
-        geometry_offset: 0,
+        byte_offset: None,
+        geometry_offset: None,
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(42).unwrap(),
         secondary_id: 0,
@@ -1046,52 +1046,52 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let symmetry_group = DesignDimensionLocusGroup {
         id: format!("{stream}:design-dimension-locus-group#31"),
         companion_record_index: 22,
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 31,
-        frame_length: 100,
+        frame_length: Some(100),
         loci: vec![
             DesignDimensionLocus {
                 returned: crate::records::identity::Located {
                     value: 40,
-                    offset: 0,
+                    offset: Some(0),
                 },
                 geometry_record_index: 42,
-                geometry_reference_offset: 0,
+                geometry_reference_offset: Some(0),
                 role: 5,
-                role_offset: 0,
+                role_offset: Some(0),
             },
             DesignDimensionLocus {
                 returned: crate::records::identity::Located {
                     value: 41,
-                    offset: 0,
+                    offset: Some(0),
                 },
                 geometry_record_index: 40,
-                geometry_reference_offset: 0,
+                geometry_reference_offset: Some(0),
                 role: 0,
-                role_offset: 0,
+                role_offset: Some(0),
             },
             DesignDimensionLocus {
                 returned: crate::records::identity::Located {
                     value: 42,
-                    offset: 0,
+                    offset: Some(0),
                 },
                 geometry_record_index: 41,
-                geometry_reference_offset: 0,
+                geometry_reference_offset: Some(0),
                 role: 0,
-                role_offset: 0,
+                role_offset: Some(0),
             },
         ],
         owner_reference: 100,
-        owner_reference_offset: 0,
+        owner_reference_offset: Some(0),
         owner_role: 0x400,
-        owner_role_offset: 0,
+        owner_role_offset: Some(0),
         state: 0,
-        state_offset: 0,
+        state_offset: Some(0),
         next_class_tag: crate::records::references::DesignClassTag::try_from("273".to_owned())
             .unwrap(),
         next_record_index: 32,
-        next_byte_offset: 0,
+        next_byte_offset: Some(0),
     };
     let mut symmetry_parameter = parameter.clone();
     symmetry_parameter
@@ -1099,7 +1099,12 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             crate::records::parameters::DesignParameterSource::new(
                 "Linear Dimension-6".into(),
                 symmetry_parameter.owner_record_index(),
-                symmetry_parameter.family_discriminator(),
+                symmetry_parameter.family_discriminator().map(|located| {
+                    crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }
+                }),
             )
             .unwrap(),
         )
@@ -1145,7 +1150,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
 
     let mut zero_parameter = parameter;
     zero_parameter.try_set_evaluated_value(0.0).unwrap();
-    let mut duplicate_pair = pair.clone().into_draft();
+    let mut duplicate_pair = pair.clone().into_draft().unwrap();
     duplicate_pair.loci[1].geometry_record_index = duplicate_pair.loci[0].geometry_record_index;
     let duplicate_pair = DesignDimensionLocusPair::try_new(duplicate_pair).unwrap();
     let duplicate = project_dimension_constraints(
@@ -1179,7 +1184,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let mut group_owner = owner.clone();
     {
         let mut wire =
-            crate::records::parameters::DesignParameterOwnerWire::from(group_owner.clone());
+            crate::records::parameters::DesignParameterOwnerWire::try_from(group_owner.clone())
+                .unwrap();
         wire.companion_record_index = group.companion_record_index;
         wire.record_index = group.companion_record_index - 1;
         wire.parameter_record_index = group.companion_record_index - 2;
@@ -1194,7 +1200,12 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             crate::records::parameters::DesignParameterSource::new(
                 zero_parameter.source_kind_str().into(),
                 Some(group_owner.record_index()),
-                zero_parameter.family_discriminator(),
+                zero_parameter.family_discriminator().map(|located| {
+                    crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }
+                }),
             )
             .unwrap(),
         )
@@ -1291,7 +1302,7 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     let horizontal = |first: &str, second: &str| Definition::HorizontalDistance {
         first: SketchLocus::Entity(entity(first)),
         second: SketchLocus::Entity(entity(second)),
-        parameter: parameter.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter.clone()),
     };
     let candidates = vec![horizontal("a", "b"), horizontal("c", "d")];
     let Definition::RepeatedDistance {
@@ -1301,7 +1312,7 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     else {
         panic!("expected repeated distance")
     };
-    assert_eq!(actual, parameter);
+    assert_eq!(actual, cadmpeg_ir::Dimension::Parameter(parameter.clone()));
     assert!(matches!(
         measurements.as_slice(),
         [

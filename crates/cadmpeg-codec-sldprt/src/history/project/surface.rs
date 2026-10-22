@@ -8,9 +8,7 @@ use cadmpeg_ir::features::{
 };
 use std::collections::HashMap;
 
-use crate::history::literals::{
-    parse_bool, parse_length_mm, parse_positive_length_mm, parse_valid_direction,
-};
+use crate::history::literals::{parse_bool, parse_valid_direction};
 
 pub(super) fn project_offset_surface(feature: &Feature) -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
@@ -19,20 +17,12 @@ pub(super) fn project_offset_surface(feature: &Feature) -> FeatureDefinition {
             .get("Faces")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        distance: feature
-            .parameters
-            .get("Distance")
-            .or_else(|| feature.parameters.get("D1"))
-            .and_then(|value| parse_length_mm(value)),
+        distance: super::parameter_dimension(feature, &["Distance", "D1"]),
     })
 }
 
 pub(super) fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
-    let gap_tolerance = match feature.parameters.get("GapTolerance") {
-        Some(value) => parse_length_mm(value)
-            .and_then(|value| cadmpeg_ir::scalar::NonNegativeLength::try_from(value).ok()),
-        None => None,
-    };
+    let gap_tolerance = super::parameter_dimension(feature, &["GapTolerance"]);
     FeatureDefinition::Operation(FeatureOperation::KnitSurface {
         faces: feature
             .properties
@@ -116,11 +106,7 @@ pub(super) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
             .get("Faces")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        distance: feature
-            .parameters
-            .get("Distance")
-            .or_else(|| feature.parameters.get("D1"))
-            .and_then(|value| parse_positive_length_mm(value)),
+        distance: super::parameter_dimension(feature, &["Distance", "D1"]),
         method: feature
             .properties
             .get("Method")
@@ -131,12 +117,7 @@ pub(super) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
 
 pub(super) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
     let mode = (|| {
-        let distance = parse_positive_length_mm(
-            feature
-                .parameters
-                .get("Distance")
-                .or_else(|| feature.parameters.get("D1"))?,
-        )?;
+        let distance = super::parameter_dimension(feature, &["Distance", "D1"])?;
         let mode_name = feature.properties.get("Mode")?;
         let mode = if mode_name.eq_ignore_ascii_case("normal") {
             RuledSurfaceMode::Normal { distance }

@@ -20,7 +20,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::native_test::{f3d_native_mut, update_f3d_native};
+use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native};
 use crate::test_support::protein_test::generated_prism_instance_properties;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::{
@@ -42,6 +42,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
         AppearanceId::mint("generated:test:appearance#0").expect("identity grammar");
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.appearances = vec![Appearance {
+        native_ref: None,
         id: appearance_id.clone(),
         name: Some("Prism-Generated".into()),
         asset_guid: Some(visual_guid.into()),
@@ -111,42 +112,48 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
 }
 
 #[test]
-fn generated_source_less_rejects_material_assignment_without_presentation_graph() {
+fn generated_source_less_reports_unsupported_material_assignment() {
     use crate::records::references::DesignMaterialAssignment;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     f3d_native_mut(&mut source_less).design_material_assignments = vec![DesignMaterialAssignment {
+        body_binding_id: "f3d:design:design-body-binding#25"
+            .to_owned()
+            .try_into()
+            .expect("typed binding identity"),
         id: "f3d:generated:material-assignment#0".into(),
         asm_body_key: 42,
-        asm_body_key_offset: 0,
+        asm_body_key_offset: None,
 
-        entity_suffix_offset: 0,
+        entity_suffix_offset: None,
         entity_id: crate::records::identity::DesignEntityId::try_from("0_985".to_owned())
             .expect("valid entity ID"),
-        entity_id_offset: 0,
+        entity_id_offset: None,
         visual_guid: crate::records::references::DesignVisualToken::try_from(
             "11111111-2222-3333-4444-555555555555".to_owned(),
         )
         .unwrap(),
-        visual_guid_offset: 0,
+        visual_guid_offset: None,
         physical_token: Some(crate::records::identity::RecordedValue {
             value: "PrismMaterial-Generated".into(),
-            offset: 0,
+            offset: None,
         }),
         visual_preset: None,
     }];
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("an incomplete generated presentation graph must be refused");
-    assert!(error
-        .to_string()
-        .contains("requires a typed body-presentation B-rep and scene graph"));
+    let (output, report) = super::source_less_analytic::synthesize_document(&source_less, None);
+    super::source_less_analytic::assert_native_omission(&report);
+    assert!(crate::test_support::native_test::f3d_native(output.ir())
+        .design_material_assignments
+        .is_empty());
+    assert_eq!(
+        output.ir().model.bodies.len(),
+        source_less.model.bodies.len()
+    );
 }
 
 #[test]
-fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
+fn generated_source_less_regenerates_duplicate_visibility_layout_hints() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.bodies[0].visible = Some(false);
     let body = source_less.model.bodies[0].id.clone();
@@ -170,17 +177,16 @@ fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
         })
         .collect();
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("conflicting body-map rows must not collapse");
-    assert!(error
-        .to_string()
-        .contains("conflicts with the body-map key/suffix bijection"));
+    let (output, report) = super::source_less_analytic::synthesize_document(&source_less, None);
+    assert_eq!(output.ir().model.bodies.len(), 1);
+    assert_eq!(output.ir().model.faces.len(), source_less.model.faces.len());
+    assert_eq!(output.ir().model.bodies[0].visible, Some(false));
+    assert_eq!(f3d_native(output.ir()).body_visibilities.len(), 1);
+    super::source_less_analytic::assert_native_omission(&report);
 }
 
 #[test]
-fn generated_f3d_rejects_material_assignment_divergence() {
+fn generated_f3d_neutral_appearance_wins_over_assignment_divergence() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -194,13 +200,21 @@ fn generated_f3d_rejects_material_assignment_divergence() {
             .value = "PrismMaterial-019".into();
     });
 
-    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
-        .expect_err("divergent assignment and appearance must fail");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let (output, report) =
+        super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
+    super::source_less_analytic::assert_native_omission(&report);
+    assert!(crate::test_support::native_test::f3d_native(output.ir())
+        .design_material_assignments
+        .is_empty());
+    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
+    assert_eq!(
+        output.ir().model.appearances[0].base_color,
+        edited.model.appearances[0].base_color
+    );
 }
 
 #[test]
-fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
+fn generated_f3d_synthesizes_partial_material_assignment_identity_edit() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -213,15 +227,21 @@ fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
                 .expect("valid entity ID");
     });
 
-    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
-        .expect_err("a partial presentation-graph identity edit must fail");
-    assert!(error.to_string().contains(
-        "requires synchronized body-presentation, browser-node, B-rep, and scene graphs"
-    ));
+    let (output, report) =
+        super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
+    super::source_less_analytic::assert_native_omission(&report);
+    assert!(crate::test_support::native_test::f3d_native(output.ir())
+        .design_material_assignments
+        .is_empty());
+    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
+    assert_eq!(
+        output.ir().model.appearances[0].base_color,
+        edited.model.appearances[0].base_color
+    );
 }
 
 #[test]
-fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
+fn generated_f3d_reports_unencodable_protein_properties() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = EditableDecodeResult::from(
         F3dCodec
@@ -234,26 +254,41 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
         cadmpeg_core::nonblank_literal!("refraction_index"),
         cadmpeg_ir::scalar::FiniteReal::HALF,
     );
-    let error = crate::test_support::plan_inherited_write(
-        &invalid,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .expect_err("out-of-range refraction must be refused");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("refraction_index"))
+    let (output, report) =
+        super::source_less_analytic::synthesize_document(&invalid, Some(decoded.source_fidelity()));
+    assert_eq!(output.ir().model.bodies.len(), invalid.model.bodies.len());
+    assert_eq!(
+        output.ir().model.appearances[0].base_color,
+        invalid.model.appearances[0].base_color
     );
+    assert!(!output.ir().model.appearances[0]
+        .properties
+        .contains_key("refraction_index"));
+    assert!(report.losses.iter().any(
+        |loss| loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()
+    ));
 
     let (mut structural, _, fidelity) = decoded.into_parts();
     structural.model.appearances[0].properties.insert(
         cadmpeg_core::nonblank_literal!("unserialized_property"),
         cadmpeg_ir::scalar::FiniteReal::HALF,
     );
-    let error = crate::test_support::plan_inherited_write(&structural, &fidelity, &mut Vec::new())
-        .expect_err("new Protein property must be refused");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("unchanged property set"))
+    let (output, report) =
+        super::source_less_analytic::synthesize_document(&structural, Some(&fidelity));
+    assert_eq!(
+        output.ir().model.bodies.len(),
+        structural.model.bodies.len()
     );
+    assert_eq!(
+        output.ir().model.appearances[0].base_color,
+        structural.model.appearances[0].base_color
+    );
+    assert!(!output.ir().model.appearances[0]
+        .properties
+        .contains_key("unserialized_property"));
+    assert!(report.losses.iter().any(
+        |loss| loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()
+    ));
 }
 
 #[test]
@@ -281,7 +316,16 @@ fn generated_f3d_routes_appearance_edits_across_multiple_protein_assets() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated multi-Protein decode");
-    assert_eq!(round_trip.ir().model.appearances, edited.model.appearances);
+    let mut expected = edited.model.appearances.clone();
+    for appearance in &mut expected {
+        appearance.physical_token = None;
+    }
+    assert_eq!(round_trip.ir().model.appearances, expected);
+    let (_, report) = super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()
+            && loss.message.contains("physical")
+    }));
 }
 
 #[test]
@@ -359,7 +403,10 @@ fn synthesized_appearance_properties_report_each_unwritten_key() {
         ("PrismOpaqueSchema", vec!["surface_roughness"]),
         ("PrismMetalSchema", vec!["surface_roughness"]),
         ("PrismTransparentSchema", vec!["refraction_index"]),
-        ("PhysMatSchema", Vec::new()),
+        (
+            "PhysMatSchema",
+            vec!["reflectivity_at_0deg", "refraction_index"],
+        ),
     ] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let properties = [
@@ -377,6 +424,7 @@ fn synthesized_appearance_properties_report_each_unwritten_key() {
         })
         .collect();
         ir.model.appearances.push(Appearance {
+            native_ref: None,
             id: "test:model:appearance#properties".try_into().unwrap(),
             name: Some("test".into()),
             asset_guid: Some("11111111-2222-3333-4444-555555555555".into()),
@@ -392,37 +440,78 @@ fn synthesized_appearance_properties_report_each_unwritten_key() {
         let plan = F3dCodec
             .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .unwrap();
-        let loss = plan
+        let losses = plan
             .report()
             .losses
             .iter()
-            .find(|loss| {
+            .filter(|loss| {
                 loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()
             })
-            .unwrap();
-        assert!(loss.message.starts_with(&format!(
-            "{} appearance property record(s)",
-            4 - supported.len()
-        )));
+            .collect::<Vec<_>>();
+        assert_eq!(
+            losses.len(),
+            4 - supported.len() + usize::from(schema == "PhysMatSchema"),
+            "each unwritable property needs its own loss"
+        );
         for key in [
             "reflectivity_at_0deg",
             "refraction_index",
             "surface_roughness",
             "extra_property",
         ] {
-            assert_eq!(loss.message.contains(key), !supported.contains(&key));
+            assert_eq!(
+                losses.iter().any(|loss| loss.message.contains(key)),
+                !supported.contains(&key),
+                "property {key} under schema {schema}"
+            );
         }
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(output.ir().model.bodies.len(), ir.model.bodies.len());
+        assert_eq!(
+            output.ir().model.appearances[0].base_color,
+            ir.model.appearances[0].base_color
+        );
+        assert_eq!(
+            output.ir().model.appearances[0]
+                .properties
+                .keys()
+                .map(|key| key.as_str())
+                .collect::<std::collections::BTreeSet<_>>(),
+            supported.iter().copied().collect()
+        );
         ir.model.appearances[0]
             .properties
             .retain(|key, _| supported.contains(&key.as_str()));
         let plan = F3dCodec
             .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
             .unwrap();
-        assert!(!plan
+        let reductions = plan
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code
-                == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()));
+            .filter(|loss| {
+                loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()
+            })
+            .collect::<Vec<_>>();
+        if schema == "PhysMatSchema" {
+            assert_eq!(
+                reductions.len(),
+                1,
+                "the physical-to-visual schema reduction remains explicit"
+            );
+            assert!(reductions[0]
+                .message
+                .to_ascii_lowercase()
+                .contains("schema"));
+        } else {
+            assert!(
+                reductions.is_empty(),
+                "supported property sets have no property omission"
+            );
+        }
     }
 }

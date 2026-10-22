@@ -306,11 +306,8 @@ fn act_entity_native_retained_limit_refuses_before_channel_clone() {
 #[test]
 fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
     let wire = serde_json::json!({
-        "id": "stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
-        "in_table": false, "channel_class_tag": "261", "channel_record_index_offset": 100,
-        "channel_entity_id_offset": 200,
-        "channels": {"Appearance": "11111111-2222-3333-4444-555555555555"},
-        "channel_guid_offsets": {"Appearance": 120}
+    "id": "f3d:stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
+    "in_table": false, "channel_class_tag": "261", "channels": {"Appearance": "11111111-2222-3333-4444-555555555555"},
     });
     let entity: crate::records::act::ActEntity = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(entity).unwrap(), wire);
@@ -318,9 +315,7 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
         let mut invalid = wire.clone();
         invalid["channel_guid_offsets"] = offsets;
         let error = serde_json::from_value::<crate::records::act::ActEntity>(invalid).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("channels and channel_guid_offsets"));
+        assert!(error.to_string().contains("channel_guid_offsets"));
     }
     for guid in ["", "11111111-2222-3333-4444-55555555555z"] {
         let mut invalid = wire.clone();
@@ -336,12 +331,8 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
 #[test]
 fn act_class_tail_requires_nonpadding_bytes_and_a_bounded_offset() {
     let wire = serde_json::json!({
-        "id": "stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
-        "in_table": false, "channel_class_tag": "261", "channel_record_index_offset": 100,
-        "channel_entity_id_offset": 200,
-        "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, "channel_guid_offsets": {"Appearance":120},
-        "channel_class_tail": "0001", "channel_class_tail_offset": 300
-    });
+        "id": "f3d:stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
+        "in_table": false, "channel_class_tag": "261", "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, "class_tail_frame": serde_json::to_value(super::super::source_frame::SourceFrame::from(vec![0,1])).unwrap(), });
     let entity: crate::records::act::ActEntity = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(entity).unwrap(), wire);
     for (bytes, offset) in [
@@ -361,13 +352,14 @@ fn act_class_tail_requires_nonpadding_bytes_and_a_bounded_offset() {
 #[test]
 fn act_table_row_derives_the_entity_offset_and_rejects_wire_drift() {
     let wire = serde_json::json!({
-        "id": "stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
-        "in_table": true, "table_record_index_offset": 20, "table_entity_id_offset": 34,
-        "channel_class_tag": "261", "channel_record_index_offset": 100,
-        "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, "channel_guid_offsets": {"Appearance":120}
-    });
+        "id": "f3d:stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
+        "in_table": true, "channel_class_tag": "261", "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, });
     let entity: crate::records::act::ActEntity = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(entity.table_entity_id_offset(), Some(34));
+    assert_eq!(entity.table_entity_id_offset(), None);
+    assert_eq!(
+        super::ActTableRow::new(20).unwrap().entity_id_offset(),
+        Some(34)
+    );
     assert_eq!(serde_json::to_value(entity).unwrap(), wire);
     for offset in [20, 33, 35, u64::MAX] {
         let mut invalid = wire.clone();
@@ -382,15 +374,8 @@ fn act_table_row_derives_the_entity_offset_and_rejects_wire_drift() {
 #[test]
 fn act_root_component_rejects_nonroot_tracking_on_the_wire() {
     let wire = serde_json::json!({
-        "id": "stream:act-root-component#0", "byte_offset": 0,
-        "record_index": 1, "record_index_offset": 7, "class_tag": "261",
-        "instance_root_record": 2, "instance_root_record_offset": 22,
-        "tracked_entity_record": 3, "tracked_entity_record_offset": 43,
-        "components_root_record": 4, "components_root_record_offset": 63,
-        "registry_flag": 0, "registry_flag_offset": 53,
-        "entity_id": "0_3", "entity_id_offset": 36,
-        "display_name": "", "display_name_offset": 61
-    });
+        "id": "f3d:stream:act-root-component#0", "record_index": 1, "class_tag": "261",
+        "instance_root_record": 2, "tracked_entity_record": 3, "components_root_record": 4, "registry_flag": 0, "entity_id": "0_3", "display_name": "", });
     let root: crate::records::act::ActRootComponent = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(root).unwrap(), wire);
     for record in [0, 1, 2, 4, u32::MAX] {
@@ -422,13 +407,13 @@ fn act_root_component_rejects_nonroot_tracking_on_the_wire() {
 fn act_root_layout_derives_utf16_offsets_and_bounds_padding() {
     use crate::records::act::ActRootLayout;
     let layout = ActRootLayout::new(100, "0_3".into(), "😀".into(), 8).unwrap();
-    assert_eq!(layout.record_index_offset(), 107);
-    assert_eq!(layout.instance_root_record_offset(), 122);
-    assert_eq!(layout.entity_id_offset(), 136);
-    assert_eq!(layout.tracked_entity_record_offset(), 143);
-    assert_eq!(layout.registry_flag_offset(), 153);
-    assert_eq!(layout.display_name_offset(), 161);
-    assert_eq!(layout.components_root_record_offset(), 174);
+    assert_eq!(layout.record_index_offset(), Some(107));
+    assert_eq!(layout.instance_root_record_offset(), Some(122));
+    assert_eq!(layout.entity_id_offset(), Some(136));
+    assert_eq!(layout.tracked_entity_record_offset(), Some(143));
+    assert_eq!(layout.registry_flag_offset(), Some(153));
+    assert_eq!(layout.display_name_offset(), Some(161));
+    assert_eq!(layout.components_root_record_offset(), Some(174));
     assert!(ActRootLayout::new(0, "0_3".into(), String::new(), 0).is_ok());
     for padding in [9, u64::MAX] {
         assert!(ActRootLayout::new(0, "0_3".into(), String::new(), padding).is_err());
@@ -441,12 +426,17 @@ fn act_root_layout_derives_utf16_offsets_and_bounds_padding() {
 #[test]
 fn act_table_reference_derives_target_offset_and_rejects_wire_drift() {
     let wire = serde_json::json!({
-        "id": "stream:act-table-reference#20", "ordinal": 0,
-        "byte_offset": 20, "target_record": 3, "target_record_offset": 21
-    });
+        "id": "f3d:stream:act-table-reference#20", "ordinal": 0,
+        "target_record": 3, });
     let reference: crate::records::act::ActTableReference =
         serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(reference.byte_offset(), 20);
+    assert_eq!(reference.byte_offset(), None);
+    assert_eq!(
+        ActTableReference::new("stream:act-table-reference#20".into(), 0, 20, 3)
+            .unwrap()
+            .target_record_offset(),
+        Some(21)
+    );
     assert_eq!(serde_json::to_value(reference).unwrap(), wire);
     for offset in [0, 20, 22, u64::MAX] {
         let mut invalid = wire.clone();
@@ -474,12 +464,17 @@ fn act_table_reference_derives_target_offset_and_rejects_wire_drift() {
 #[test]
 fn act_guid_derives_payload_offset_and_rejects_wire_drift() {
     let wire = serde_json::json!({
-        "id": "stream:act-guid#20", "byte_offset": 20, "guid_offset": 24,
-        "ordinal": 0, "guid": "01234567-89ab-cdef-0123-456789abcdef"
+        "id": "f3d:stream:act-guid#20", "ordinal": 0, "guid": "01234567-89ab-cdef-0123-456789abcdef"
     });
     let guid: crate::records::act::ActGuid = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(guid.byte_offset(), 20);
-    assert_eq!(guid.guid_offset(), 24);
+    assert_eq!(guid.byte_offset(), None);
+    assert_eq!(guid.guid_offset(), None);
+    assert_eq!(
+        ActGuid::new("stream:act-guid#20".into(), 20, 0, GUID.into())
+            .unwrap()
+            .guid_offset(),
+        Some(24)
+    );
     assert_eq!(serde_json::to_value(guid).unwrap(), wire);
     for offset in [0, 20, 23, 25, u64::MAX] {
         let mut invalid = wire.clone();
@@ -513,16 +508,25 @@ fn act_guid_derives_payload_offset_and_rejects_wire_drift() {
 #[test]
 fn act_registry_channel_derives_offsets_and_rejects_invalid_wire() {
     let wire = serde_json::json!({
-        "id": "stream:act-registry-channel#20", "ordinal": 0, "byte_offset": 20,
-        "name": "abc", "name_offset": 24,
-        "guid": "01234567-89ab-cdef-0123-456789abcdef", "guid_offset": 31
-    });
+        "id": "f3d:stream:act-registry-channel#20", "ordinal": 0, "name": "abc", "guid": "01234567-89ab-cdef-0123-456789abcdef", });
     let channel: crate::records::act::ActRegistryChannel =
         serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(channel.byte_offset(), 20);
+    assert_eq!(channel.byte_offset(), None);
     assert_eq!(channel.name(), "abc");
-    assert_eq!(channel.name_offset(), 24);
-    assert_eq!(channel.guid_offset(), 31);
+    assert_eq!(channel.name_offset(), None);
+    assert_eq!(channel.guid_offset(), None);
+    assert_eq!(
+        ActRegistryChannel::new(
+            "stream:act-registry-channel#20".into(),
+            0,
+            20,
+            "abc".into(),
+            GUID.into()
+        )
+        .unwrap()
+        .guid_offset(),
+        Some(31)
+    );
     assert_eq!(serde_json::to_value(channel).unwrap(), wire);
     for field in ["name_offset", "guid_offset"] {
         let mut invalid = wire.clone();
@@ -570,53 +574,72 @@ fn native_act_ids_bind_kind_and_key_at_each_admission_route() {
     for id in [
         "",
         "act-entity#7",
-        "stream:act-guid#7",
-        "stream:act-entity#8",
-        "stream:act-entity#07",
+        "f3d:stream:act-guid#7",
+        "f3d:stream:act-entity#8",
+        "f3d:stream:act-entity#07",
     ] {
         assert!(ActEntity::try_new(id.into(), 7, "0_1".into(), None, group()).is_err());
     }
     reject_changed_id(
-        ActEntity::try_new("stream:act-entity#7".into(), 7, "0_1".into(), None, group()).unwrap(),
+        ActEntity::try_new(
+            "f3d:stream:act-entity#7".into(),
+            7,
+            "0_1".into(),
+            None,
+            group(),
+        )
+        .unwrap(),
         &[
             "",
             "act-entity#7",
-            "stream:act-guid#7",
-            "stream:act-entity#8",
-            "stream:act-entity#07",
+            "f3d:stream:act-guid#7",
+            "f3d:stream:act-entity#8",
+            "f3d:stream:act-entity#07",
         ],
     );
-    for id in ["id", "stream:act-guid#21", "stream:act-entity#20"] {
+    for id in ["id", "f3d:stream:act-guid#21", "f3d:stream:act-entity#20"] {
         assert!(ActGuid::new(id.into(), 20, 0, GUID.into()).is_err());
     }
     reject_changed_id(
-        ActGuid::new("stream:act-guid#20".into(), 20, 0, GUID.into()).unwrap(),
-        &["id", "stream:act-guid#21", "stream:act-entity#20"],
+        ActGuid::new("f3d:stream:act-guid#20".into(), 20, 0, GUID.into()).unwrap(),
+        &["id", "f3d:stream:act-entity#20"],
     );
-    for id in ["id", "stream:act-table-reference#21", "stream:act-guid#20"] {
+    for id in [
+        "id",
+        "f3d:stream:act-table-reference#21",
+        "f3d:stream:act-guid#20",
+    ] {
         assert!(ActTableReference::new(id.into(), 0, 20, 7).is_err());
     }
     reject_changed_id(
-        ActTableReference::new("stream:act-table-reference#20".into(), 0, 20, 7).unwrap(),
-        &["id", "stream:act-table-reference#21", "stream:act-guid#20"],
+        ActTableReference::new("f3d:stream:act-table-reference#20".into(), 0, 20, 7).unwrap(),
+        &["id", "f3d:stream:act-guid#20"],
     );
-    for id in ["id", "stream:act-registry-channel#21", "stream:act-guid#20"] {
+    for id in [
+        "id",
+        "f3d:stream:act-registry-channel#21",
+        "f3d:stream:act-guid#20",
+    ] {
         assert!(
             ActRegistryChannel::new(id.into(), 0, 20, "Appearance".into(), GUID.into()).is_err()
         );
     }
     reject_changed_id(
         ActRegistryChannel::new(
-            "stream:act-registry-channel#20".into(),
+            "f3d:stream:act-registry-channel#20".into(),
             0,
             20,
             "Appearance".into(),
             GUID.into(),
         )
         .unwrap(),
-        &["id", "stream:act-registry-channel#21", "stream:act-guid#20"],
+        &["id", "f3d:stream:act-guid#20"],
     );
-    for id in ["id", "stream:act-root-component#21", "stream:act-guid#20"] {
+    for id in [
+        "id",
+        "f3d:stream:act-root-component#21",
+        "f3d:stream:act-guid#20",
+    ] {
         assert!(ActRootComponent::try_new(
             id.into(),
             1,
@@ -629,7 +652,7 @@ fn native_act_ids_bind_kind_and_key_at_each_admission_route() {
         .is_err());
     }
     let mut root = ActRootComponent::try_new(
-        "stream:act-root-component#20".into(),
+        "f3d:stream:act-root-component#20".into(),
         1,
         "261".to_owned().try_into().unwrap(),
         2,
@@ -640,15 +663,38 @@ fn native_act_ids_bind_kind_and_key_at_each_admission_route() {
     .unwrap();
     root.try_set_strings("10_3".into(), "Renamed".into())
         .unwrap();
-    assert_eq!(root.id(), "stream:act-root-component#20");
-    assert_eq!(root.layout().byte_offset(), 20);
+    assert_eq!(root.id(), "f3d:stream:act-root-component#20");
+    assert_eq!(root.layout().byte_offset(), Some(20));
     let before = root.clone();
     assert!(root
         .try_set_strings("invalid".into(), "Name".into())
         .is_err());
     assert_eq!(root, before);
-    reject_changed_id(
-        root,
-        &["id", "stream:act-root-component#21", "stream:act-guid#20"],
-    );
+    reject_changed_id(root, &["id", "f3d:stream:act-guid#20"]);
+}
+
+#[test]
+fn root_strings_edit_without_fabricated_cadir_source_layout() {
+    let source = root_component_fixture();
+    let mut root: ActRootComponent =
+        serde_json::from_value(serde_json::to_value(source).unwrap()).unwrap();
+    assert!(root.layout().byte_offset().is_none());
+    root.try_set_strings("10_3".into(), "Edited".into())
+        .unwrap();
+    assert_eq!(root.layout().entity_id(), "10_3");
+    assert_eq!(root.layout().display_name(), "Edited");
+    assert!(root.layout().components_root_record_offset().is_none());
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    root.retain_source(&mut fidelity);
+    assert!(fidelity.metadata.is_empty());
+}
+
+#[test]
+fn actual_act_tail_admission_checks_padding_and_overflow() {
+    assert!(super::ActClassTail::new(Vec::new(), 300).is_err());
+    assert!(super::ActClassTail::new(vec![0, 0], 300).is_err());
+    assert!(super::ActClassTail::new(vec![1], u64::MAX).is_err());
+    let tail = super::ActClassTail::new(vec![0, 1], 300).unwrap();
+    assert_eq!(tail.bytes(), Some([0, 1].as_slice()));
+    assert_eq!(tail.offset(), Some(300));
 }

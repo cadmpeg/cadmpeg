@@ -140,7 +140,6 @@ fn absent_object_data_keeps_empty_ranges_and_digest() {
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
-        data: None,
     }];
     let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     super::install(
@@ -151,7 +150,11 @@ fn absent_object_data_keeps_empty_ranges_and_digest() {
         &[],
     )
     .unwrap();
-    assert!(objects[0].data.is_none());
+    let source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    assert!(source_fidelity
+        .record_layout()
+        .get(objects[0].id())
+        .is_none());
     let records = namespace
         .arena_as::<serde_json::Value>("applications")
         .unwrap();
@@ -202,9 +205,14 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
         .iter()
         .find(|entry| entry.name() == "Payload.bin")
         .expect("payload entry");
-    let spans = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    let spans = result
+        .source_fidelity()
+        .freecad_ledgers()
+        .values()
+        .next()
+        .expect("FCStd source ledgers")
+        .logical_ledger
+        .clone();
     let span = spans
         .iter()
         .find(|span| span.entry == entry.name())
@@ -216,7 +224,10 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
     );
     assert_eq!(span.classification.as_str(), "named_opaque");
     assert_eq!(span.classification.owner(), Some(entry.id()));
-    assert_eq!(entry.data(), payload);
+    assert_eq!(
+        crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), entry.id()),
+        payload
+    );
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
@@ -327,17 +338,25 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
-    let spans = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    let spans = result
+        .source_fidelity()
+        .freecad_ledgers()
+        .values()
+        .next()
+        .expect("FCStd source ledgers")
+        .logical_ledger
+        .clone();
     for (name, _, _, payload) in cases {
         let entry = entries
             .iter()
             .find(|entry| entry.name() == name)
             .expect("side entry");
-        assert_eq!(entry.data(), payload);
         assert_eq!(
-            entry.byte_len(),
+            crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), entry.id()),
+            payload
+        );
+        assert_eq!(
+            result.source_fidelity().record_layout()[entry.id()].byte_len(),
             cadmpeg_core::decode::u64_from_index(payload.len())
         );
         let span = spans
@@ -356,7 +375,7 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
 }
 
 #[test]
-fn application_repeated_payloads_borrow_the_cached_digest() {
+fn repeated_application_payloads_borrow_entry_identity_without_source_evidence() {
     let object = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
             "fcstd:native:object#Owner".into(),
@@ -370,37 +389,86 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
-        data: None,
     };
-    let properties = ["First", "Second"].map(|name| crate::native::PropertyRecord {
-        id: format!("fcstd:native:property#Owner:{name}"),
-        owner: object.id().clone(),
-        name: name.into(),
-        type_name: "App::PropertyFileIncluded".into(),
-        family: crate::native::PropertyFamily::File,
-        status: None,
-        body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["shared.bin".into()],
-            dynamic: None,
-        },
-        order: 0,
-        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML"),
+    let properties = ["First", "Second"].map(|name| {
+        let property = crate::native::PropertyRecord {
+            id: format!("fcstd:native:property#Owner:{name}"),
+            owner: object.id().clone(),
+            name: name.into(),
+            type_name: "App::PropertyFileIncluded".into(),
+            family: crate::native::PropertyFamily::File,
+            status: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["shared.bin".into()],
+                dynamic: None,
+            },
+            order: 0,
+        };
+        let _fidelity =
+            crate::test_support::source_fidelity::xml_layout_fixture(&property.id, "<Property/>");
+        property
     });
-    let entry = crate::test_support::entry_record(
+    let entry = crate::test_support::entry_fixture(
         "fcstd:native:entry#shared.bin".into(),
         "shared.bin".into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
         Vec::new(),
         vec![7; 4096],
     );
-    let digest = entry.sha256().as_ptr();
+    let identity = entry.id().as_ptr();
     let objects = [object];
-    let entries = [entry];
+    let entries = [entry.record];
     let records = super::wire_records(&objects, &properties, &entries);
     for property in &records[0].property_records {
-        assert_eq!(property.payloads[0].sha256.as_ptr(), digest);
-        assert_eq!(property.payloads[0].sha256, entries[0].sha256());
+        assert_eq!(property.payloads[0].entry.as_ptr(), identity);
+        assert_eq!(property.payloads[0].entry, entries[0].id());
+        assert_eq!(property.payloads[0].name, entries[0].name());
+        let wire = serde_json::to_value(&property.payloads[0]).unwrap();
+        assert!(wire.get("sha256").is_none());
+        assert!(wire.get("byte_len").is_none());
+        assert!(wire.get("data").is_none());
     }
+}
+
+#[test]
+fn external_component_census_matches_its_typed_native_records() {
+    let input = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/freecad_fcstd/fixtures/external_component.FCStd"
+    ));
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(input), &DecodeOptions::default())
+        .unwrap();
+    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+    let objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let entries = namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .unwrap();
+    let mut expected = super::wire_records(&objects, &properties, &entries);
+    expected.sort_by(|left, right| left.id.cmp(&right.id));
+    let actual = namespace.arenas().get("applications").unwrap();
+    let expected_json = serde_json::to_value(&expected).unwrap();
+    let actual_json = serde_json::to_value(actual).unwrap();
+    assert_eq!(
+        actual_json, expected_json,
+        "application census must use only its current typed sources"
+    );
+    assert!(
+        super::matches_native(
+            &cadmpeg_test_support::service_decode_context(),
+            namespace,
+            &objects,
+            &properties,
+            &entries
+        )
+        .unwrap(),
+        "equal typed census values must match their native serialization: {expected_json:#}"
+    );
 }

@@ -160,7 +160,8 @@ pub struct Body {
     pub kind: BodyKind,
     /// Constituent regions.
     pub regions: Vec<RegionId>,
-    /// Optional world placement of the body's geometry.
+    /// Optional placement within the owning product definition.
+    /// World placement is computed by composing an occurrence transform.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -174,7 +175,7 @@ pub struct Body {
         deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
-    /// Optional display color.
+    /// Optional display colour, independent of the bound material appearance.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -463,7 +464,7 @@ pub struct Face {
         deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
-    /// Optional display color.
+    /// Optional display colour, independent of the bound material appearance.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

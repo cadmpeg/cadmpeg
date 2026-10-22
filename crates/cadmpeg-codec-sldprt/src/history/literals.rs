@@ -3,11 +3,7 @@
 
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{
-    features::{
-        edge_treatments::ChamferSpec, patterns::PatternTransform, BooleanOp, DimensionDisplay,
-        FaceMotion, FeatureDefinition, FeatureOperation, FinitePoint3, FiniteVector3,
-        ParameterValue,
-    },
+    features::{BooleanOp, DimensionDisplay, FinitePoint3, FiniteVector3, ParameterValue},
     scalar::{Angle, FiniteReal, InteriorAngle, Length, PositiveAngle, PositiveLength},
 };
 
@@ -164,7 +160,7 @@ pub(crate) fn parse_point3_mm(value: &str) -> Option<FinitePoint3> {
     ))
 }
 
-pub(super) fn parse_vector3_mm(value: &str) -> Option<FiniteVector3> {
+pub(crate) fn parse_vector3_mm(value: &str) -> Option<FiniteVector3> {
     let [x, y, z] = parse_length_components_mm(value)?;
     Some(FiniteVector3::from_components(
         x.magnitude(),
@@ -247,6 +243,26 @@ pub(super) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue
         .map(ParameterValue::Real)
 }
 
+/// Recognize an explicitly non-finite scalar literal without treating an equation as a cache.
+pub(crate) fn nonfinite_parameter_literal(expression: &str) -> bool {
+    let expression = strip_dimension_count(expression.trim());
+    let expression = strip_diameter_modifier(expression)
+        .or_else(|| strip_radius_modifier(expression))
+        .unwrap_or(expression)
+        .trim();
+    [
+        "uin", "mil", "mm", "cm", "in", "ft", "nm", "um", "µm", "μm", "Å", "A", "m", "rad", "deg",
+        "°", "",
+    ]
+    .into_iter()
+    .any(|suffix| {
+        expression
+            .strip_suffix(suffix)
+            .and_then(|number| number.trim().parse::<f64>().ok())
+            .is_some_and(|number| !number.is_finite())
+    })
+}
+
 pub(super) fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
     let expression = strip_dimension_count(expression.trim());
     if strip_diameter_modifier(expression).is_some()
@@ -316,49 +332,7 @@ fn strip_radius_modifier(expression: &str) -> Option<&str> {
         .or_else(|| expression.strip_prefix("&lt;MOD-RHO&gt;"))
 }
 
-pub(super) fn parse_neutral_parameter_literal(
-    feature: &cadmpeg_ir::features::Feature,
-    name: &str,
-    expression: &str,
-) -> Option<ParameterValue> {
-    let positional_length = match name {
-        "D1" => matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(
-                FeatureOperation::Extrude { .. }
-                    | FeatureOperation::Fillet { .. }
-                    | FeatureOperation::Chamfer { .. }
-                    | FeatureOperation::Shell { .. }
-                    | FeatureOperation::Thicken { .. }
-                    | FeatureOperation::DatumOffsetPlane { .. }
-                    | FeatureOperation::MoveFace {
-                        motion: FaceMotion::Offset { .. } | FaceMotion::Translate { .. },
-                        ..
-                    }
-            )
-        ),
-        "D2" => matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
-                if groups.iter().any(|group| matches!(group.spec, ChamferSpec::TwoDistances { .. }))
-        ),
-        "D3" => matches!(&(feature.evaluation.definition()),
-            FeatureDefinition::Operation(FeatureOperation::Pattern {
-                pattern: admitted_pattern,
-                ..
-            }) if matches!(admitted_pattern.definition(), PatternTransform::Linear { .. } | PatternTransform::CurveDriven { .. })
-        ),
-        _ => false,
-    };
-    if positional_length {
-        return parse_positive_dimension_length_mm(expression)
-            .map(Length::from)
-            .map(ParameterValue::Length);
-    }
-    parse_parameter_literal(expression)
-}
-
-pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
+pub(crate) fn format_parameter_value(value: &ParameterValue) -> String {
     match value {
         ParameterValue::Length(value) => format_length_mm(*value),
         ParameterValue::Angle(value) => format_angle_rad(*value),
@@ -366,6 +340,15 @@ pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
         ParameterValue::String(value) => value.clone(),
+    }
+}
+
+/// Preserve the cache's quantity when no operation-specific native role supplies
+/// it. An integral real needs a decimal point to distinguish it from an integer.
+pub(crate) fn format_parameter_cache_value(value: &ParameterValue) -> String {
+    match value {
+        ParameterValue::Real(value) => format!("{:?}", value.get()),
+        _ => format_parameter_value(value),
     }
 }
 
@@ -391,6 +374,26 @@ mod direction_tests {
 mod literal_tests {
     use super::{format_length_mm, LengthLiteral};
     use cadmpeg_ir::scalar::Length;
+
+    #[test]
+    fn native_cache_literals_keep_integral_real_distinct_from_integer() {
+        use cadmpeg_ir::{features::ParameterValue, scalar::FiniteReal};
+        for value in [
+            ParameterValue::Real(FiniteReal::new(2.0).unwrap()),
+            ParameterValue::Real(FiniteReal::new(-0.0).unwrap()),
+            ParameterValue::Real(FiniteReal::new(0.5).unwrap()),
+            ParameterValue::Integer(2),
+        ] {
+            let text = super::format_parameter_cache_value(&value);
+            assert_eq!(super::parse_parameter_literal(&text), Some(value));
+        }
+        assert_eq!(
+            super::format_parameter_cache_value(&ParameterValue::Real(
+                FiniteReal::new(2.0).unwrap()
+            )),
+            "2.0"
+        );
+    }
 
     #[test]
     fn length_literal_keeps_decimal_and_scientific_boundaries() {

@@ -1,12 +1,68 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:basic",
+          "name": "basic",
+          "target": {
+            "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
+            "kind": "pmi"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:inspection",
+          "name": "inspection",
+          "target": {
+            "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
+            "kind": "pmi"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:precision",
+          "name": "precision",
+          "target": {
+            "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
+            "kind": "pmi"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 3
+            }
+          ]
+        },
+        {
+          "id": "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:reference_only",
+          "name": "reference_only",
+          "target": {
+            "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
+            "kind": "pmi"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        }
+      ],
       "bodies": [
         {
           "id": "sldprt:brep:body#0",
@@ -45,28 +101,9 @@
           "bodies": [
             "sldprt:brep:body#0"
           ],
-          "feature_states": {
-            "sldprt:model:feature#247:0": {
-              "definition": {
-                "definition": "sketch",
-                "sketch": {
-                  "space": "planar"
-                }
-              },
-              "evaluation": {
-                "kind": "active"
-              }
-            }
-          },
           "id": "sldprt:model:configuration#partition:0",
           "name": "Config-0",
           "ordinal": 0,
-          "parameter_values": {
-            "sldprt:model:parameter#247:0:0": {
-              "kind": "length",
-              "value": 25.0
-            }
-          },
           "source_index": 0
         }
       ],
@@ -117,6 +154,7 @@
           "id": "sldprt:model:feature#247:0",
           "name": "Sketch1",
           "native_ref": "sldprt:history:feature#247:0",
+          "needs_recompute": false,
           "ordinal": 0,
           "source_tag": "Sketch",
           "suppressed": false
@@ -139,22 +177,20 @@
       "occurrences": [],
       "parameters": [
         {
-          "expression": "25mm",
+          "driving": false,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "25mm"
+              }
+            ]
+          },
           "id": "sldprt:model:parameter#247:0:0",
           "name": "D1",
           "ordinal": 0,
           "owner": "sldprt:model:feature#247:0",
-          "pmi": {
-            "basic": true,
-            "display_text": "25.000 mm",
-            "inspection": false,
-            "native_ref": "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef",
-            "precision": 3,
-            "reference_only": true,
-            "subtype": {
-              "kind": "linear"
-            }
-          },
+          "pmi": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
           "value": {
             "kind": "length",
             "value": 25.0
@@ -162,7 +198,29 @@
         }
       ],
       "pcurves": [],
-      "pmi": [],
+      "pmi": [
+        {
+          "definition": {
+            "dimension": "size",
+            "kind": "dimension",
+            "nominal": {
+              "kind": "parameter",
+              "value": "sldprt:model:parameter#247:0:0"
+            }
+          },
+          "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef"
+        },
+        {
+          "definition": {
+            "kind": "presentation",
+            "semantics": [
+              "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef"
+            ],
+            "text": "25.000 mm"
+          },
+          "id": "sldprt:model:pmi#presentation:01234567-89ab-cdef-0123-456789abcdef"
+        }
+      ],
       "points": [
         {
           "id": "sldprt:brep:point#60",
@@ -266,6 +324,7 @@
     "native": {
       "sldprt": {
         "configurations": [],
+        "document_metadata": [],
         "feature_histories": [
           {
             "configurations": [],
@@ -306,23 +365,16 @@
         "pmi_dimensions": [
           {
             "basic": true,
-            "basic_offset": 184,
             "cad_text": "D1@Sketch1",
             "display_text": "25.000 mm",
-            "display_text_offset": 254,
             "guid": "01234567-89ab-cdef-0123-456789abcdef",
             "id": "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef",
             "inspection": false,
-            "inspection_offset": 198,
-            "offset": 100,
             "parent": "sldprt:file:block#347",
             "precision": 3,
-            "precision_offset": 229,
             "reference_only": true,
-            "reference_only_offset": 215,
             "subtype": "Linear",
-            "value": 0.025,
-            "value_offset": 237
+            "value": 0.025
           }
         ],
         "sketch_input_entities": [],
@@ -339,30 +391,16 @@
         ]
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
-        "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "3",
         "bmp_thumbnail_count": "0",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "compound_stream_count": "0",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "png_preview_count": "0",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#partition:0",
-        "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_history_sha256": "3f1b83d3007f70241ae9c82676c94e2e7c23803e4e15e09d5fab1c6aee9ff90d",
-        "sldprt_native_parameter_sha256": "0d5b01b911f52744f4cab180930fd1872c81085936a0933075ead8ea084da550",
-        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+        "png_preview_count": "0"
       },
       "identity": {
         "classification": "classified",
@@ -462,7 +500,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -615,6 +656,18 @@
         }
       }
     },
+    "metadata": {
+      "active_parasolid_block": "Contents/Config-0-Partition",
+      "block_count": "3",
+      "brep_local_sha256": "99515efff73d48415f7fadfea5439d9758fdc4538ace29a4f2e41e397705b946",
+      "compound_stream_count": "0",
+      "document_local_sha256": "2819893fb8ce6203a93f567c79f1ab9f961b1def5f8f63d580bccf7fe739cd1e",
+      "outer_version": "0x00000004",
+      "sldprt_pmi_local_sha256": "88bab75262be85b6b5a40dc383b946ed86b402025609c491d04d02e964089ac4",
+      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
+      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "retained_records": {
       "sldprt:file:block#247": {
         "bytes": {
@@ -622,7 +675,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Keywords"
+        "stream": "Contents/Keywords",
+        "untyped": []
       },
       "sldprt:file:block#347": {
         "bytes": {
@@ -630,7 +684,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/PMISemanticDataDB"
+        "stream": "Contents/PMISemanticDataDB",
+        "untyped": []
       },
       "sldprt:file:block#8": {
         "bytes": {
@@ -638,7 +693,8 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": []
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -646,8 +702,10 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

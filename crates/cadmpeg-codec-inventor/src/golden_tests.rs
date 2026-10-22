@@ -10,6 +10,7 @@ use cadmpeg_test_support::EditableDecodeResult;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
@@ -31,6 +32,10 @@ fn branches() -> [Branch; 2] {
 fn inputs() -> Vec<(String, Vec<u8>)> {
     vec![
         (
+            "model_states".to_string(),
+            crate::test_support::test_fixtures::model_state_envelope_fixture(),
+        ),
+        (
             "structural".to_string(),
             crate::test_support::test_fixtures::fixture(true),
         ),
@@ -50,7 +55,11 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 }
 
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match InventorCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
+    let value = match cadmpeg_test_support::golden::decode(
+        &InventorCodec,
+        &mut Cursor::new(bytes),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             serde_json::json!({
@@ -88,7 +97,65 @@ fn primary_golden_output_is_deterministic() {
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary =
-        cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&InventorCodec, &inputs());
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
+        &InventorCodec,
+        &inputs(),
+        |result| {
+            let expected = crate::loss::unrepresented(
+                &result.report().losses,
+                result.ir().native.namespace("inventor"),
+            );
+            assert!(expected.iter().all(|class| result.source_fidelity().unrepresented().contains(class)), "every source-only loss must have retained source evidence carrying its arena class");
+        },
+    );
     assert_eq!(summary.cut, 0, "{summary:?}");
+}
+
+#[test]
+fn source_model_state_has_a_neutral_configuration() {
+    let result = cadmpeg_test_support::golden::decode(
+        &InventorCodec,
+        &mut Cursor::new(crate::test_support::test_fixtures::model_state_envelope_fixture()),
+        &DecodeOptions::default(),
+    )
+    .expect("model-state document decodes");
+    let configuration = result
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name.as_deref() == Some("Master"))
+        .expect("typed model state projects");
+    assert!(configuration.active);
+    assert!(configuration.parameter_overrides.is_empty());
+    assert!(configuration.parameter_values.is_empty());
+    assert!(configuration.feature_states.is_empty());
+    assert!(configuration.native_ref.is_some());
+
+    let mut encoded = Vec::new();
+    CadirEncoder
+        .plan(
+            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .expect("the projected model state exports to CADIR")
+        .write_to(&mut encoded)
+        .expect("CADIR configuration bytes write");
+    let restored = cadmpeg_ir::CadIr::from_json(
+        std::str::from_utf8(&encoded).expect("fixture value is valid"),
+    )
+    .expect("CADIR parses independently of a decode sidecar");
+    assert!(restored.scope.design);
+    assert_eq!(
+        restored.model.configurations,
+        result.ir().model.configurations
+    );
+    assert_eq!(restored.model.parameters, result.ir().model.parameters);
+}
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(&InventorCodec, &inputs());
 }

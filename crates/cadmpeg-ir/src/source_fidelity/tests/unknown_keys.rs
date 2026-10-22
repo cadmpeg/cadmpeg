@@ -13,6 +13,10 @@ const DIGEST: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f2
 // Their values are still visited through the complete sidecar reader.
 const MAP_PATHS: &[&str] = &[
     "/fidelity/retained_records",
+    "/fidelity/record_layout",
+    "/fidelity/record_layout/synthetic:source:record#inline/reads",
+    "/fidelity/record_layout/synthetic:source:record#inline/pointers",
+    "/fidelity/record_layout/synthetic:source:record#inline/payloads",
     "/fidelity/annotations/provenance",
     "/fidelity/annotations/exactness",
     "/fidelity/annotations/exactness/synthetic:source:record#inline/fields",
@@ -27,7 +31,7 @@ fn fixture() -> Value {
         "ir_sha256": DIGEST,
         "report": {
             "identity": {"classification": "unclassified", "format": "synthetic"},
-            "transfer": {"transfer": "full", "geometry_transferred": true},
+            "transfer": {"scope": {"model": true, "design": true}, "geometry_transferred": true},
             "coverage": {"source_records": 2},
             "losses": [
                 {
@@ -50,6 +54,11 @@ fn fixture() -> Value {
             ]}
         },
         "fidelity": {
+            "record_layout": {
+                FIRST: {"stream":"source", "offset":7, "byte_len":3,
+                    "reads":{"source":[{"start":7,"end":9}]},
+                    "pointers":{"next":10}, "payloads":{"tail":"03"}}
+            },
             "annotations": {
                 "provenance": {FIRST: {"stream": "source", "offset": 7, "tag": "record"}},
                 "exactness": {
@@ -58,8 +67,8 @@ fn fixture() -> Value {
                 }
             },
             "retained_records": {
-                FIRST: {"stream": "", "offset": 0, "bytes": {"retention": "inline", "data": "YWJj"}},
-                SECOND: {"stream": "source", "offset": 7, "bytes": {"retention": "digest", "byte_len": 3, "sha256": DIGEST}}
+                FIRST: {"stream": "", "offset": 0, "untyped": [], "bytes": {"retention": "inline", "data": "YWJj"}},
+                SECOND: {"stream": "source", "offset": 7, "untyped": [], "bytes": {"retention": "digest", "byte_len": 3, "sha256": DIGEST}}
             }
         }
     })
@@ -100,7 +109,8 @@ fn complete_sidecar_refuses_unknown_fields_at_every_owned_object() {
                 "extra": [{"dialect": "acis:asm-binaryfile-4", "instance": "body", "admission": "admitted"}]
             }
         });
-        classified["report"]["transfer"] = json!({"transfer": "container"});
+        classified["report"]["transfer"] =
+            json!({"scope":{"model":false,"design":false},"geometry_transferred":false});
         fixtures.push(classified);
     }
     let mut visited = BTreeSet::new();

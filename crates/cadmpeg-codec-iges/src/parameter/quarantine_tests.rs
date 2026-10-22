@@ -52,10 +52,8 @@ fn an_unreadable_literal_retains_the_other_fields_and_refuses_required_geometry(
     let result = decode(bytes.clone());
     let native = result.ir().native.namespace("iges").unwrap();
     let entity = &native.arenas()["entities"][0];
-    assert!(!entity.fields().unwrap()["parameter_bytes"]
-        .as_str()
-        .unwrap()
-        .is_empty());
+    let (_, retained_parameters) = crate::test_support::retained_fixed_ascii(&result);
+    assert!(!retained_parameters.records[0].bytes.is_empty());
     assert_eq!(
         entity.fields().unwrap()["parameters"]
             .as_array()
@@ -302,7 +300,7 @@ fn a_record_with_no_delimiter_quarantines_the_parameter_data() {
 }
 
 #[test]
-fn two_declared_ranges_claiming_one_card_quarantine_both_records() {
+fn two_declared_ranges_claiming_one_card_share_one_given_up_source_part() {
     let mut bytes = owned_test_file(&[
         OwnedTestEntity {
             entity_type: 116,
@@ -326,25 +324,51 @@ fn two_declared_ranges_claiming_one_card_quarantine_both_records() {
         .expect("Directory card");
     bytes[start_field..start_field + 8].copy_from_slice(b"       1");
 
-    let result = decode(bytes);
+    let result = decode(bytes.clone());
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert!(result.ir().model.points.is_empty());
-    assert_eq!(quarantined.len(), 2);
-    for record in quarantined {
-        assert_eq!(record.fields().unwrap()["defect"], "ownership-conflict");
-    }
+    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    let unknowns = native
+        .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+        .unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let fidelity = result.source_fidelity();
+    let part = &fidelity.parts()[&unknowns[0].id];
+    assert_eq!(part.level().as_str(), "iges.parameter_record");
+    assert_eq!(
+        part.state(),
+        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+    );
+    let start = parameter_card_offset(&bytes);
+    assert_eq!(part.offset(), u64::try_from(start).unwrap());
+    assert_eq!(part.byte_len(), 81);
+    assert_eq!(
+        fidelity
+            .retained_record(unknowns[0].id.as_str())
+            .unwrap()
+            .data(),
+        Some(&bytes[start..start + 81])
+    );
+    let unreadable: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(unreadable.len(), 1);
+    assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert!(unreadable[0].message.contains("ownership-conflict"));
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
-        2
+        0
     );
     assert_eq!(
         code_count(result.report(), IgesLossCode::CardFramingRecovered),
         1
     );
-    assert_eq!(result.report().losses.len(), 3);
+    assert_eq!(result.report().losses.len(), 2);
 }
 
 #[test]

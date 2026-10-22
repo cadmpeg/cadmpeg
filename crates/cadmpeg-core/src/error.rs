@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Errors returned by codec parsing and resource enforcement.
 
-use crate::decode::{DecodeDepth, ResourceLimit, SourceLocation};
+use crate::decode::{ResourceLimit, SourceLocation};
 use crate::dialect::DialectLayers;
 use crate::target::TargetRefusal;
 
@@ -39,10 +39,7 @@ pub enum CodecError {
     ///
     /// Never reported as [`CodecError::Malformed`]: a budget refusal is a
     /// statement about policy, not about the input.
-    #[error(
-        "resource limit on {:?}: {:?} (limit {}, used {}, requested {})",
-        .0.dimension, .0.reason, .0.limit, .0.used, .0.additional
-    )]
+    #[error("{0}")]
     ResourceLimit(ResourceLimit),
     /// The document was identified, and its dialect is not supported.
     ///
@@ -69,18 +66,12 @@ pub enum CodecError {
     /// The encoder could not resolve or deliver a write target.
     #[error("{0}")]
     UnsupportedTarget(Box<TargetRefusal>),
-    /// The document records less of its source than the encoder plans from.
-    #[error(
-        "the {format} encoder needs a {needed}-depth document; this one records {recorded} depth"
-    )]
-    InsufficientDepth {
-        /// Output format of the refusing encoder.
-        format: &'static str,
-        /// The least depth the encoder plans from.
-        needed: DecodeDepth,
-        /// The depth the document records.
-        recorded: DecodeDepth,
-    },
+    /// Internal writer admission signal for content without an exact encoding.
+    ///
+    /// Encoders must catch this inside planning and degrade the entity or
+    /// synthesize after a declined patch. It is never a terminal refusal.
+    #[error("unsupported writer content: {0}")]
+    UnsupportedContent(String),
     /// The codec does not implement a required capability.
     #[error("not implemented yet: {0}")]
     NotImplemented(String),

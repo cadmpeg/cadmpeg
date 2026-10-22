@@ -764,7 +764,8 @@ fn topology_retains_entity_attribute_list_references() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::ParasolidTopologyAttributeListReference>(
             "parasolid_topology_attribute_list_references",
         )

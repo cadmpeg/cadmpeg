@@ -197,10 +197,6 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                         "VisibGeom:{}",
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -269,6 +265,12 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 Exactness::Unknown,
             )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
+            crate::decode::source_carriers::admit_surface_visibility(
+                ctx,
+                ir,
+                &id,
+                namespace.is_visible(),
+            )?;
             source_carriers.admit_surface(
                 ctx,
                 ir,
@@ -285,14 +287,6 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                             namespace.source_prefix(),
                             row.id
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: if namespace.is_visible() {
-                            None
-                        } else {
-                            Some(false)
-                        },
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 },
@@ -330,10 +324,6 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                         "VisibGeom:{}",
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },

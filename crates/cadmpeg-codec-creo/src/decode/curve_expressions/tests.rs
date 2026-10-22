@@ -228,12 +228,6 @@ fn curve_expression_intrinsic_dependency_text_joins_matching_names() {
     );
 }
 
-#[test]
-fn curve_expression_cyclic_dependency_text_joins_with_commas() {
-    let names = ["alpha", "beta"];
-    assert_eq!(super::join_cyclic_dependency_names(&names), "alpha,beta");
-}
-
 fn quantity_property_result() -> Result<
     std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     cadmpeg_core::CodecError,
@@ -289,11 +283,11 @@ fn curve_expression_native_fallback_keeps_kind_and_values() {
     assert_eq!(kind.as_str(), "CurveFromEquation");
     assert_eq!(
         parameters[&cadmpeg_core::nonblank_literal!("entity_id")],
-        "7"
+        cadmpeg_ir::Dimension::Literal(cadmpeg_ir::features::Expression::text("7"))
     );
     assert_eq!(
         parameters[&cadmpeg_core::nonblank_literal!("assignment_count")],
-        "1"
+        cadmpeg_ir::Dimension::Literal(cadmpeg_ir::features::Expression::text("1"))
     );
 }
 
@@ -303,21 +297,6 @@ fn curve_expression_feature_labels_keep_source_spelling() {
         super::curve_expression_feature_labels(7),
         ("Curve Equation 7".to_string(), "crv_fr_eqn".to_string())
     );
-}
-
-#[test]
-fn curve_expression_source_text_joins_lines() {
-    let lines = [
-        crate::curve::CurveExpressionLine {
-            text: "alpha".to_string(),
-            offset: 0,
-        },
-        crate::curve::CurveExpressionLine {
-            text: "beta".to_string(),
-            offset: 6,
-        },
-    ];
-    assert_eq!(super::curve_expression_source_text(&lines), "alpha\nbeta");
 }
 
 #[test]

@@ -16,10 +16,7 @@
 //! directly. Untyped carriers use opaque IR geometry while resolvable topology
 //! remains available.
 
-use self::index::scan_carriers;
-use self::spline::patch_nurbs_curve;
-
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
@@ -56,6 +53,49 @@ const LEN_TO_MM: f64 = 1000.0;
 
 pub(crate) mod feature_source;
 pub(crate) mod graph;
+
+/// Layout identities of supported topology just authored by the writer.
+pub(crate) struct WrittenGeometryIds {
+    pub(crate) bodies: Vec<cadmpeg_ir::ids::BodyId>,
+    pub(crate) faces: Vec<cadmpeg_ir::ids::FaceId>,
+    pub(crate) edges: Vec<cadmpeg_ir::ids::EdgeId>,
+}
+
+/// Read generated node identities without importing any source content.
+pub(crate) fn written_geometry_ids(payload: &[u8]) -> WrittenGeometryIds {
+    let mut facts = typed::scan(payload);
+    facts.bodies.sort_by_key(|body| body.offset);
+    facts.faces.sort_by_key(|face| face.attr);
+    let tables = topology::scan(payload);
+    let mut edges = tables.edge_uses().keys().copied().collect::<Vec<_>>();
+    edges.sort_unstable();
+    WrittenGeometryIds {
+        bodies: facts
+            .bodies
+            .into_iter()
+            .map(|body| cadmpeg_ir::ids::BodyId::compose(&graph::body_namespace(), body.attr))
+            .collect(),
+        faces: facts
+            .faces
+            .into_iter()
+            .map(|face| {
+                cadmpeg_ir::ids::FaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("sldprt", "brep", "face"),
+                    face.attr,
+                )
+            })
+            .collect(),
+        edges: edges
+            .into_iter()
+            .map(|edge| {
+                cadmpeg_ir::ids::EdgeId::compose(
+                    &cadmpeg_ir::identity_namespace!("sldprt", "brep", "edge"),
+                    edge,
+                )
+            })
+            .collect(),
+    }
+}
 
 /// The native persistent identity shared by B-rep face attributes and display
 /// tessellation references.
@@ -369,63 +409,6 @@ fn decode_carrier_values(
         _ => return None,
     };
     Some(g)
-}
-
-/// Return the typed curve carried by one stream-local attribute.
-pub(crate) fn curve_by_attr(
-    ctx: &DecodeContext<'_>,
-    body: &[u8],
-    attr: u16,
-) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
-    let carriers = scan_carriers(ctx, body)?;
-    Ok(carriers
-        .curve(attr)
-        .map(|indexed| indexed.carrier().geometry.clone()))
-}
-
-/// Replace the scalar run of one compact analytic carrier.
-pub(crate) fn patch_compact_values(
-    ctx: &DecodeContext<'_>,
-    body: &mut [u8],
-    attr: u16,
-    values: &[f64],
-) -> Result<bool, cadmpeg_core::CodecError> {
-    let carriers = scan_carriers(ctx, body)?;
-    let Some(indexed) = carriers.curve(attr) else {
-        return Ok(false);
-    };
-    let carrier = indexed.carrier();
-    let Some(size) = values.len().checked_mul(8) else {
-        return Ok(false);
-    };
-    let Some(start) = carrier.end.checked_sub(size) else {
-        return Ok(false);
-    };
-    let Some(bytes) = body.get_mut(start..carrier.end) else {
-        return Ok(false);
-    };
-    for (slot, value) in bytes.chunks_exact_mut(8).zip(values) {
-        slot.copy_from_slice(&value.to_be_bytes());
-    }
-    Ok(true)
-}
-
-/// Patch one stream-local NURBS curve without changing its storage shape.
-pub(crate) fn patch_nurbs_by_attr(
-    ctx: &DecodeContext<'_>,
-    body: &mut [u8],
-    attr: u16,
-    new: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    let carriers = scan_carriers(ctx, body)?;
-    let Some(indexed) = carriers.curve(attr) else {
-        return Ok(false);
-    };
-    let carrier = indexed.carrier();
-    let Some(SolvedCurveGeometry::Nurbs(old)) = carrier.geometry.solved() else {
-        return Ok(false);
-    };
-    Ok(patch_nurbs_curve(body, carrier.offset, old, new, 0.001)?.is_some())
 }
 
 #[cfg(test)]

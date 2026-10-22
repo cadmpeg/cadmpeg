@@ -31,7 +31,7 @@ fn decoded_history_reports_an_invalid_transition() {
             .collect();
         let mut history = crate::test_support::history::history(
             decoded.id,
-            decoded.byte_offset,
+            decoded.byte_offset.expect("retained test source"),
             decoded.preamble,
             false,
             states,

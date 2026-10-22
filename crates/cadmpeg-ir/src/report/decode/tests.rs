@@ -131,7 +131,10 @@ fn classified_report_wire_requires_its_primary_format() {
         DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect_id!("rhino:archive-80"),
         )),
-        DecodeTransfer::full(true),
+        DecodeTransfer {
+            scope: crate::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
@@ -140,19 +143,11 @@ fn classified_report_wire_requires_its_primary_format() {
     let golden = serde_json::to_string(&report).unwrap();
     assert_eq!(
         golden,
-        r#"{"identity":{"classification":"classified","dialects":{"primary":{"dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}},"transfer":{"transfer":"full","geometry_transferred":true},"losses":[],"notes":[]}"#
+        r#"{"identity":{"classification":"classified","dialects":{"primary":{"dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}},"transfer":{"scope":{"model":true,"design":true},"geometry_transferred":true},"losses":[],"notes":[]}"#
     );
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&golden).unwrap(),
         report
-    );
-
-    let contradictory = golden.replacen("\"transfer\":\"full\"", "\"transfer\":\"container\"", 1);
-    let error = serde_json::from_str::<DecodeReport>(&contradictory)
-        .expect_err("a container-only report has no geometry outcome to state");
-    assert!(
-        error.to_string().contains("geometry_transferred"),
-        "{error}"
     );
 
     let restated = golden.replacen(
@@ -169,7 +164,10 @@ fn classified_report_wire_requires_its_primary_format() {
 fn container_only_report_wire_preserves_the_coherent_transfer_state() {
     let report = DecodeReport::unclassified(
         "test",
-        DecodeTransfer::ContainerOnly {},
+        DecodeTransfer {
+            scope: crate::document::ContentScope::container(),
+            geometry_transferred: false,
+        },
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
@@ -178,10 +176,13 @@ fn container_only_report_wire_preserves_the_coherent_transfer_state() {
 
     let rendered = serde_json::to_string(&report).unwrap();
     assert!(
-        rendered.contains("\"transfer\":\"container\""),
+        rendered.contains("\"scope\":{\"model\":false,\"design\":false}"),
         "{rendered}"
     );
-    assert!(!rendered.contains("geometry_transferred"), "{rendered}");
+    assert!(
+        rendered.contains("\"geometry_transferred\":false"),
+        "{rendered}"
+    );
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&rendered).unwrap(),
         report
@@ -189,59 +190,37 @@ fn container_only_report_wire_preserves_the_coherent_transfer_state() {
 }
 
 #[test]
-fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
-    let base = serde_json::json!({
-        "identity": {"classification": "unclassified", "format": "rhino"},
-        "transfer": {"transfer": "full", "geometry_transferred": true},
-        "losses": [],
-        "notes": [],
-    });
-    let report = serde_json::from_value::<DecodeReport>(base.clone()).expect("a full decode");
-    assert_eq!(report.transfer, DecodeTransfer::full(true));
+fn a_decode_transfer_requires_scope_classes_and_geometry_outcome() {
+    let transfer = DecodeTransfer {
+        scope: crate::ContentScope {
+            model: false,
+            design: true,
+        },
+        geometry_transferred: false,
+    };
+    let value = serde_json::to_value(transfer).unwrap();
     assert_eq!(
-        serde_json::to_value(&report).unwrap()["transfer"]["transfer"],
-        "full"
+        value,
+        serde_json::json!({"scope":{"model":false,"design":true},"geometry_transferred":false})
     );
-
-    let mut container_only = base.clone();
-    container_only["transfer"]["transfer"] = serde_json::json!("container");
-    let error = serde_json::from_value::<DecodeReport>(container_only.clone())
-        .expect_err("a container-only report has no geometry outcome");
-    assert!(
-        error.to_string().contains("geometry_transferred"),
-        "{error}"
-    );
-
-    container_only["transfer"]
-        .as_object_mut()
-        .expect("map")
-        .remove("geometry_transferred");
-    let report =
-        serde_json::from_value::<DecodeReport>(container_only.clone()).expect("container only");
-    assert_eq!(report.transfer, DecodeTransfer::ContainerOnly {});
-    let wire = serde_json::to_value(&report).unwrap();
-    assert_eq!(wire["transfer"]["transfer"], "container");
     assert_eq!(
-        wire["transfer"]["transfer"],
-        serde_json::to_value(cadmpeg_core::decode::DecodeDepth::Container).unwrap(),
-        "the transfer tag spells the depth it delivered"
+        serde_json::from_value::<DecodeTransfer>(value.clone()).unwrap(),
+        transfer
     );
-    container_only["transfer"]["transfer"] = serde_json::json!("container_only");
-    serde_json::from_value::<DecodeReport>(container_only)
-        .expect_err("the depth token is `container`");
-    assert!(wire["transfer"].get("geometry_transferred").is_none());
-
-    let mut without_outcome = base;
-    without_outcome["transfer"]
-        .as_object_mut()
-        .expect("map")
-        .remove("geometry_transferred");
-    let error = serde_json::from_value::<DecodeReport>(without_outcome)
-        .expect_err("a full decode states its geometry outcome");
-    assert!(
-        error.to_string().contains("geometry_transferred"),
-        "{error}"
-    );
+    for key in ["scope", "geometry_transferred"] {
+        let mut missing = value.clone();
+        missing.as_object_mut().unwrap().remove(key);
+        assert!(serde_json::from_value::<DecodeTransfer>(missing)
+            .unwrap_err()
+            .to_string()
+            .contains(key));
+    }
+    let mut unknown = value;
+    unknown["scope"]["unknown"] = serde_json::json!(true);
+    assert!(serde_json::from_value::<DecodeTransfer>(unknown)
+        .unwrap_err()
+        .to_string()
+        .contains("unknown"));
 }
 
 #[test]

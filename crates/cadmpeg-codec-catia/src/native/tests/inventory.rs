@@ -34,11 +34,12 @@ fn decode_persists_external_references_in_native_namespace() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode external-reference fixture");
     let native = crate::native::CatiaNative::load(
-        decoded
+        &decoded
             .ir()
             .native
             .namespace("catia")
-            .expect("CATIA native namespace"),
+            .expect("catia namespace")
+            .clone(),
     )
     .expect("load CATIA native namespace");
     let [reference] = native.external_references.as_slice() else {
@@ -267,11 +268,12 @@ fn decode_retains_outer_object_graph_order_and_references() {
         )
         .expect("decode generated object graph part");
     let native = crate::native::CatiaNative::load(
-        decoded
+        &decoded
             .ir()
             .native
             .namespace("catia")
-            .expect("CATIA namespace"),
+            .expect("catia namespace")
+            .clone(),
     )
     .expect("load CATIA native records");
 
@@ -477,11 +479,12 @@ fn decode_retains_catalog_schema_names_without_promoting_features() {
         )
         .expect("decode generated catalog part");
     let native = crate::native::CatiaNative::load(
-        decoded
+        &decoded
             .ir()
             .native
             .namespace("catia")
-            .expect("CATIA namespace"),
+            .expect("catia namespace")
+            .clone(),
     )
     .expect("load CATIA native records");
 
@@ -503,11 +506,12 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
         )
         .expect("decode generated value block part");
     let native = crate::native::CatiaNative::load(
-        decoded
+        &decoded
             .ir()
             .native
             .namespace("catia")
-            .expect("CATIA namespace"),
+            .expect("catia namespace")
+            .clone(),
     )
     .expect("load CATIA native records");
 

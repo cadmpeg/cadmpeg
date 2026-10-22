@@ -37,7 +37,7 @@ pub(crate) fn plan_at(
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 
     crate::IgesCodec.plan(
-        EncodeInput { ir, fidelity },
+        EncodeInput::new(ir, fidelity),
         TargetRequest::Explicit(version.descriptor().id.as_str()),
     )
 }
@@ -167,4 +167,28 @@ pub(crate) fn native_bytes(value: &serde_json::Value) -> Vec<u8> {
     serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(value.clone())
         .expect("native hexadecimal byte string")
         .into_inner()
+}
+
+/// Parse the exact retained Fixed ASCII source when an assertion concerns fidelity.
+pub(crate) fn retained_fixed_ascii(
+    result: &cadmpeg_ir::codec::DecodeResult,
+) -> (
+    Vec<crate::directory::QuarantinedDirectoryRecord>,
+    crate::parameter::ParameterAssembly,
+) {
+    let bytes = result
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .expect("source image retained")
+        .data()
+        .expect("exact source bytes retained");
+    with_service_context(bytes, |ctx| {
+        let scan = crate::card::scan(bytes).expect("retained Fixed ASCII source scans");
+        let (global, _) = crate::global::parse(&scan).expect("retained global parses");
+        let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx)
+            .expect("retained directory parses");
+        let parameters = crate::parameter::assemble(&scan, &directory, &quarantined, &global)
+            .expect("retained parameters assemble");
+        (quarantined, parameters)
+    })
 }

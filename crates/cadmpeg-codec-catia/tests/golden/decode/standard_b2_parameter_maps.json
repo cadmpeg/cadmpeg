@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -55,7 +54,6 @@
         "consolidated_cylinders": [],
         "consolidated_domain_relations": [
           {
-            "byte_offset": 32,
             "class": 37,
             "data": {
               "accuracy": {
@@ -101,13 +99,15 @@
             "flag": 3,
             "header_token": 5,
             "id": "catia:consolidated:domain-relation#0",
-            "payload": "8209050a871500000000000000003378e9de643b3240c5923d5fb68e463f00000000000000003378e9de643b32408200000000000000003378e9de643b324000000000000000003378e9de643b3240c5923d5fb68e463f",
+            "payload": {
+              "byte_len": 87,
+              "record_id": "catia:source:evidence#d95564ceb333f8a8a9e6605b881fc5703ee542e8cd21fb65403a29ed41afa60c",
+              "sha256": "61118322d2012d62a0005a2a5a4fdb98ba90dc6df912d9fadbf48bbe21c7caac"
+            },
             "source_index": 0,
-            "source_offset": 0,
             "width": 1
           },
           {
-            "byte_offset": 124,
             "class": 37,
             "data": {
               "accuracy": {
@@ -124,7 +124,6 @@
               },
               "source": {
                 "kind": "affine",
-                "offset": 0.0,
                 "range": [
                   83.03190003563948,
                   85.61439610531367
@@ -147,13 +146,15 @@
             "flag": 3,
             "header_token": 5,
             "id": "catia:consolidated:domain-relation#1",
-            "payload": "82050a51010a840d057472a60ac254402bc70a4452675540c62c94573103513e057472a60ac254402bc70a4452675540000000000000f03f00000000000000007f81232f94c954409816eff04e565540fca9f1d24d62503f",
+            "payload": {
+              "byte_len": 88,
+              "record_id": "catia:source:evidence#e3d847ac73f36e894cecc41d7f0cfc4f1f91f4a3ca7b544152f1e1881995c3ca",
+              "sha256": "98b5d47bd1b074948e864a0b0890df947a121854cc8cb06aabd9efc107be5ee4"
+            },
             "source_index": 0,
-            "source_offset": 92,
             "width": 1
           },
           {
-            "byte_offset": 217,
             "class": 37,
             "data": {
               "accuracy": {
@@ -200,13 +201,15 @@
             "flag": 3,
             "header_token": 17,
             "id": "catia:consolidated:domain-relation#2",
-            "payload": "8251080e010a8615c3b7c86f38dd3440b5ef3fb7e4ab5140f11d5a13c434e53eec1af601f11f48c0eb1af601f11f484082c3b7c86f38dd3440b5ef3fb7e4ab5140eb1af601f11f4840ec1af601f11f48c0c3b7c86f38dd3440f11d5a13c434e53e",
+            "payload": {
+              "byte_len": 97,
+              "record_id": "catia:source:evidence#cc181e49f6f59654f0c3c31b41b611e7365b207cad47052f2795dabdf97f34d9",
+              "sha256": "2f7e99b58ffa553668bd59209c9dade373385af2b72d3ee5eb4da03fd3f3d842"
+            },
             "source_index": 0,
-            "source_offset": 185,
             "width": 1
           },
           {
-            "byte_offset": 319,
             "class": 37,
             "data": {
               "accuracy": {
@@ -220,7 +223,6 @@
               },
               "source": {
                 "kind": "affine",
-                "offset": 0.0,
                 "range": [
                   1.0,
                   74.0
@@ -243,9 +245,12 @@
             "flag": 3,
             "header_token": 29,
             "id": "catia:consolidated:domain-relation#3",
-            "payload": "8208801e08781e0b870d000000000000f03f00000000008052400000000000000000000000000000f03f0000000000805240000000000000f03f0000000000000000",
+            "payload": {
+              "byte_len": 66,
+              "record_id": "catia:source:evidence#41a6d224f8b2bbddcc09686112bc2085c71ab7f647446335cd4290ae6ba22b16",
+              "sha256": "9a3967e80e5c47b79ca562d55a19a5c3dbe752776656725c2407cce7a103e7b8"
+            },
             "source_index": 0,
-            "source_offset": 287,
             "width": 1
           }
         ],
@@ -262,6 +267,7 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
+        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -292,13 +298,15 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "scope": {
+      "design": false,
+      "model": false
+    },
     "source": {
       "attributes": {
         "external_reference_count": "0",
         "file_size": "621",
         "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "621",
         "preview_count": "0",
         "stream_count": "1"
       },
@@ -681,6 +689,17 @@
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the catia decoder did not deliver classes: model, design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -690,7 +709,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": false,
+        "model": false
+      }
     }
   },
   "source_fidelity": {
@@ -709,6 +731,20 @@
         }
       }
     },
+    "metadata": {
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#0.byte_offset": "32",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#0.source_offset": "0",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#1.byte_offset": "124",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#1.data.source.offset": "0.0",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#1.source_offset": "92",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#2.byte_offset": "217",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#2.source_offset": "185",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#3.byte_offset": "319",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#3.data.source.offset": "0.0",
+      "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#3.source_offset": "287",
+      "source.inner_offset": "16",
+      "source.outer_dir_offset": "621"
+    },
     "retained_records": {
       "catia:payload:unknown#container": {
         "bytes": {
@@ -716,8 +752,59 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart"
+        "stream": "catia:CATPart",
+        "untyped": []
+      },
+      "catia:source:evidence#41a6d224f8b2bbddcc09686112bc2085c71ab7f647446335cd4290ae6ba22b16": {
+        "bytes": {
+          "byte_len": 66,
+          "retention": "digest",
+          "sha256": "9a3967e80e5c47b79ca562d55a19a5c3dbe752776656725c2407cce7a103e7b8"
+        },
+        "offset": 0,
+        "stream": "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#3.payload",
+        "untyped": []
+      },
+      "catia:source:evidence#cc181e49f6f59654f0c3c31b41b611e7365b207cad47052f2795dabdf97f34d9": {
+        "bytes": {
+          "byte_len": 97,
+          "retention": "digest",
+          "sha256": "2f7e99b58ffa553668bd59209c9dade373385af2b72d3ee5eb4da03fd3f3d842"
+        },
+        "offset": 0,
+        "stream": "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#2.payload",
+        "untyped": []
+      },
+      "catia:source:evidence#d95564ceb333f8a8a9e6605b881fc5703ee542e8cd21fb65403a29ed41afa60c": {
+        "bytes": {
+          "byte_len": 87,
+          "retention": "digest",
+          "sha256": "61118322d2012d62a0005a2a5a4fdb98ba90dc6df912d9fadbf48bbe21c7caac"
+        },
+        "offset": 0,
+        "stream": "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#0.payload",
+        "untyped": []
+      },
+      "catia:source:evidence#e3d847ac73f36e894cecc41d7f0cfc4f1f91f4a3ca7b544152f1e1881995c3ca": {
+        "bytes": {
+          "byte_len": 88,
+          "retention": "digest",
+          "sha256": "98b5d47bd1b074948e864a0b0890df947a121854cc8cb06aabd9efc107be5ee4"
+        },
+        "offset": 0,
+        "stream": "native.catia.consolidated_domain_relations.catia:consolidated:domain-relation#1.payload",
+        "untyped": []
+      },
+      "catia:source:image#whole": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAAJtAAAAAFY1X0NGVjIAAAABdgAAAOeyAyVXBYIJBQqHFQAAAAAAAAAAM3jp3mQ7MkDFkj1fto5GPwAAAAAAAAAAM3jp3mQ7MkCCAAAAAAAAAAAzeOneZDsyQAAAAAAAAAAAM3jp3mQ7MkDFkj1fto5GP7IDJVgFggUKUQEKhA0FdHKmCsJUQCvHCkRSZ1VAxiyUVzEDUT4FdHKmCsJUQCvHCkRSZ1VAAAAAAAAA8D8AAAAAAAAAAH+BIy+UyVRAmBbv8E5WVUD8qfHSTWJQP7IDJWERglEIDgEKhhXDt8hvON00QLXvP7fkq1FA8R1aE8Q05T7sGvYB8R9IwOsa9gHxH0hAgsO3yG843TRAte8/t+SrUUDrGvYB8R9IQOwa9gHxH0jAw7fIbzjdNEDxHVoTxDTlPrIDJUIdggiAHgh4HguHDQAAAAAAAPA/AAAAAACAUkAAAAAAAAAAAAAAAAAAAPA/AAAAAACAUkAAAAAAAADwPwAAAAAAAAAAQ0FUSUFfVjUgQ0IwMDAxAAAAAAAAAAAAAAAAAAAAAWZNAGEAaQBuAEQAYQB0AGEAUwB0AHIAZQBhAG0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABAAAAFmAAABZgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFMAdQByAGYAYQBjAGkAYwBSAGUAcABzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAABdgAAAAAAAAAAAAAAAAAAAABDQl9fRU5E",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "catia:source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

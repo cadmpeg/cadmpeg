@@ -84,8 +84,31 @@ impl Parser<'_, '_, '_> {
             _ => None,
         });
         let diagnostic_start = self.diagnostics.len();
-        let (id, record) = match self.record() {
-            Ok(record) => record,
+        let (id, record) = match self.record_attempt() {
+            Ok(super::parts::RecordAttempt::Parsed(id, record)) => (id, record),
+            Ok(super::parts::RecordAttempt::GivenUp { end }) => {
+                self.diagnostics.truncate(diagnostic_start);
+                // The shared helper owns the source bytes and sole unreadable
+                // loss. This span remains only in the parser's byte accounting.
+                omitted.push(start..end);
+                self.budget.retain_bytes(
+                    super::u64_from_index(size_of::<usize>()),
+                    "STEP shared-home accounting index",
+                )?;
+                self.shared_omitted.insert(start);
+                if let Some(id) = source_id {
+                    if let Some(previous) = records.remove(&id) {
+                        self.omit_record(previous.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"));
+                    }
+                    ambiguous.insert(id);
+                }
+                self.lexer
+                    .set_literal_admission(super::LiteralAdmission::Required);
+                self.lexer.seek(end);
+                self.last_end = end;
+                self.current = self.lex_next()?;
+                return Ok(());
+            }
             Err(error @ ParseError::Resource(_)) => return Err(error),
             Err(error @ ParseError::Lex(_)) => return Err(error),
             Err(error @ ParseError::Syntax { .. }) => {
@@ -263,7 +286,7 @@ pub(super) fn visit_references(
 
 /// A semicolon outside a literal or comment bounds a defective statement.
 /// An unterminated literal or comment supplies no continuation boundary.
-fn statement_end(input: &[u8], start: usize, draft: bool) -> Result<usize, ParseError> {
+pub(super) fn statement_end(input: &[u8], start: usize, draft: bool) -> Result<usize, ParseError> {
     let mut at = start;
     while let Some(&byte) = input.get(at) {
         if at > start && matches!(byte, b'#' | b'@') {

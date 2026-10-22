@@ -92,19 +92,19 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .unwrap();
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned()).unwrap(),
         record_index: 100,
     };
     let recipe = ConstructionRecipe {
         id: "f3d:Design/BulkStream.dat:construction-recipe#60".into(),
-        byte_offset: u64_from_index(recipe_name_at),
+        byte_offset: Some(u64_from_index(recipe_name_at)),
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 7,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 303,
-            offset: recipe_record_at + 8,
+            offset: Some(recipe_record_at + 8),
         }),
     };
 
@@ -194,7 +194,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             0,
             &record,
             std::slice::from_ref(&recipe),
-            Some(recipe.byte_offset),
+            Some(recipe.byte_offset.expect("retained test source")),
         ),
         None
     );
@@ -226,19 +226,19 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let vertex_next_at = header(&mut vertex_bytes, *b"370", 205);
     let vertex_header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#200".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("369".to_owned()).unwrap(),
         record_index: 200,
     };
     let vertex_recipe = ConstructionRecipe {
         id: "f3d:Design/BulkStream.dat:construction-recipe#200".into(),
-        byte_offset: u64::try_from(vertex_recipe_name_at).expect("generated offset fits u64"),
+        byte_offset: Some(u64::try_from(vertex_recipe_name_at).expect("generated offset fits u64")),
         kind: ConstructionRecipeKind::Vertex,
         design: None,
         recipe_index: 9,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 303,
-            offset: vertex_recipe_record_at + 8,
+            offset: Some(vertex_recipe_record_at + 8),
         }),
     };
     let parsed_vertex = parse_vertex_recipe(
@@ -1196,14 +1196,14 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         recipe_ordinal: 0,
         recipe_id: "recipe".into(),
         recipe_kind: ConstructionRecipeKind::Edge,
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned()).unwrap(),
         record_index: 1,
-        frame_length: 4,
-        prefix_offset: 0,
+        frame_length: Some(4),
+        prefix_offset: Some(0),
         prefix_bytes: vec![1].into(),
         references: Vec::new(),
-        program_offset: 0,
+        program_offset: Some(0),
         program: embedded_program,
         matching_edge_operand_ids: Vec::new(),
     };
@@ -1250,16 +1250,16 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     face_recipe.design = Some(crate::records::recipes::ConstructionRecipeDesign {
         id: crate::records::identity::RecordedValue {
             value: "303".into(),
-            offset: 0,
+            offset: Some(0),
         },
         selector: None,
     });
-    face_recipe.byte_offset = u64_from_index(face_recipe_name_at);
+    face_recipe.byte_offset = Some(u64_from_index(face_recipe_name_at));
     face_recipe.record_index =
         face_recipe
             .record_index
             .map(|index| crate::records::identity::RecordedValue {
-                offset: face_recipe_record_at + 8,
+                offset: Some(face_recipe_record_at + 8),
                 ..index
             });
     let mut operand = parse_face_operand(
@@ -1383,12 +1383,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     }
     header(&mut compact_bytes, *b"306", 104);
     let mut compact_recipe = face_recipe.clone();
-    compact_recipe.byte_offset = u64_from_index(compact_name_at);
+    compact_recipe.byte_offset = Some(u64_from_index(compact_name_at));
     compact_recipe.record_index =
         compact_recipe
             .record_index
             .map(|index| crate::records::identity::RecordedValue {
-                offset: compact_record_at + 8,
+                offset: Some(compact_record_at + 8),
                 ..index
             });
     let compact = parse_face_operand(
@@ -1433,12 +1433,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(face_recipe_program_kind(&[0, 1, 4]), None);
     assert_eq!(face_recipe_program_kind(&[0, -1, 0]), None);
     operand.recipe_references.push(DesignRecipeReference {
+        clause_index: 0,
         selector: 1,
-        selector_offset: 1_101,
+        selector_offset: Some(1_101),
         token: "3".into(),
-        token_offset: 1,
+        token_offset: Some(1),
         design_reference: 303,
-        design_reference_offset: 2,
+        design_reference_offset: Some(2),
         candidate_faces: Vec::new(),
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
@@ -1494,12 +1495,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let mut direct_face = operand.clone();
     direct_face.recipe_kind = ConstructionRecipeKind::Face;
     direct_face.recipe_references = vec![DesignRecipeReference {
+        clause_index: 0,
         selector: 1,
-        selector_offset: 1_201,
+        selector_offset: Some(1_201),
         token: "3".into(),
-        token_offset: 1_202,
+        token_offset: Some(1_202),
         design_reference: 303,
-        design_reference_offset: 1_203,
+        design_reference_offset: Some(1_203),
         candidate_faces: vec![FaceId::mint("f3d:brep:entity#50").expect("identity grammar")],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),

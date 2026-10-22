@@ -203,8 +203,8 @@ fn fixed_two_sided_distance_lanes_project_two_blind_sides() {
         panic!("two-sided blind Extrude: {definition:?}");
     };
     assert_eq!(profile, neutral_sketch_id(&placement()));
-    assert!((first.get() - 43.0).abs() < 1.0e-12);
-    assert!((second.get() - 2.0).abs() < 1.0e-12);
+    assert!((first.literal().unwrap().get() - 43.0).abs() < 1.0e-12);
+    assert!((second.literal().unwrap().get() - 2.0).abs() < 1.0e-12);
 }
 
 /// A fixed symmetric distance lane does not state its measurement form, so it

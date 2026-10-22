@@ -4,7 +4,7 @@
 use crate::records::Feature;
 use cadmpeg_ir::{
     features::{
-        CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference,
+        CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference, Dimension,
         FaceSelection, FeatureDefinition, FeatureId, FeatureOperation, PathRef, PlanarProfileRef,
         WrapMode,
     },
@@ -13,8 +13,7 @@ use cadmpeg_ir::{
 use std::collections::HashMap;
 
 use crate::history::literals::{
-    parse_angle_rad, parse_bool, parse_dimension_length_mm, parse_length_mm, parse_point3_mm,
-    parse_positive_length_mm, parse_valid_direction, parse_vector3, valid_direction,
+    parse_bool, parse_point3_mm, parse_valid_direction, parse_vector3, valid_direction,
     valid_plane_frame,
 };
 
@@ -37,10 +36,7 @@ pub(in crate::history) fn project_offset_plane(
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
 ) -> Option<FeatureDefinition> {
-    let distance = feature
-        .parameters
-        .get("D1")
-        .and_then(|value| parse_dimension_length_mm(value))?;
+    let distance = super::parameter_dimension(feature, &["D1"])?;
     let resolved_frame = || {
         cadmpeg_ir::features::FeatureSupportPlaneFrame::from_parts(
             parse_point3_mm(feature.properties.get("ReferenceFaceOrigin")?)?,
@@ -137,8 +133,10 @@ pub(super) fn project_equation_curve(feature: &Feature) -> Option<FeatureDefinit
         x_expression.to_owned(),
         y_expression.to_owned(),
         z_expression.to_owned(),
-        start,
-        end,
+        super::parameter_dimension(feature, &["Start"])
+            .or_else(|| cadmpeg_ir::scalar::FiniteReal::new(start).map(Into::into))?,
+        super::parameter_dimension(feature, &["End"])
+            .or_else(|| cadmpeg_ir::scalar::FiniteReal::new(end).map(Into::into))?,
     )
     .map(|curve| FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve }))
 }
@@ -208,32 +206,23 @@ pub(super) fn project_composite_curve(
 pub(super) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
     let axis_origin = parse_point3_mm(feature.properties.get("AxisOrigin")?)?;
     let axis_direction = parse_valid_direction(feature.properties.get("AxisDirection")?)?;
-    let radius = parse_positive_length_mm(feature.parameters.get("Radius")?)?;
-    let pitch = parse_length_mm(feature.parameters.get("Pitch")?)?;
-    let revolutions = feature
-        .parameters
-        .get("Revolutions")?
-        .trim()
-        .parse::<f64>()
-        .ok()
-        .and_then(cadmpeg_ir::scalar::PositiveReal::new)?;
+    let radius = super::parameter_dimension(feature, &["Radius"])?;
+    let pitch = super::parameter_dimension(feature, &["Pitch"])?;
+    let revolutions = super::parameter_dimension(feature, &["Revolutions"])?;
     let clockwise = feature
         .properties
         .get("Clockwise")
         .and_then(|value| parse_bool(value))
         .unwrap_or(false);
-    let start_angle = match feature.parameters.get("StartAngle") {
-        Some(value) => parse_angle_rad(value)?,
-        None => Angle::ZERO,
-    };
+    let start_angle = super::parameter_dimension(feature, &["StartAngle"])
+        .unwrap_or(Dimension::Literal(Angle::ZERO));
     Some(FeatureDefinition::Operation(FeatureOperation::Helix {
         axis_origin,
         axis_direction,
         radius,
         shape: cadmpeg_ir::features::HelixShape::Cylindrical {
-            pitch: cadmpeg_ir::scalar::NonZeroLength::try_from(pitch).ok()?,
+            law: cadmpeg_ir::features::HelixLaw::PitchRevolutions { pitch, revolutions },
         },
-        revolutions,
         start_angle,
         clockwise,
         segment_turns: None,
@@ -241,36 +230,12 @@ pub(super) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
     }))
 }
 
-pub(super) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefinition> {
-    let (axial_rise, pitch, revolutions, start_angle, clockwise) = (|| {
-        let axial_rise = parse_dimension_length_mm(feature.parameters.get("D3")?)?;
-        let pitch = parse_dimension_length_mm(feature.parameters.get("D4")?)?;
-        let revolutions = feature
-            .parameters
-            .get("D5")?
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .and_then(cadmpeg_ir::scalar::PositiveReal::new)?;
-        let start_angle = parse_angle_rad(feature.parameters.get("D7")?)?;
-        let clockwise = feature
-            .properties
-            .get("Clockwise")
-            .and_then(|value| parse_bool(value))
-            .unwrap_or(false);
-        Some((axial_rise, pitch, revolutions, start_angle, clockwise))
-    })()?;
-    let axis_native_ref = cadmpeg_core::text::NonBlankString::new(feature.id.clone());
-    axis_native_ref.map(|axis_native_ref| {
-        FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
-            axis_native_ref,
-            axial_rise,
-            pitch,
-            revolutions,
-            start_angle,
-            clockwise,
-        })
-    })
+pub(super) fn project_native_axis_helix(_feature: &Feature) -> Option<FeatureDefinition> {
+    // The observed D3/D4/D5 records contain height, pitch and turns without a
+    // decoded authoring-law discriminator. Selecting an independent pair from
+    // numerical agreement would invent intent. Native projection retains all
+    // three canonical parameter identities and reports the unresolved law.
+    None
 }
 
 pub(super) fn project_wrap(
@@ -287,11 +252,11 @@ pub(super) fn project_wrap(
         let mode_name = feature.properties.get("Mode")?;
         let mode = if mode_name.eq_ignore_ascii_case("emboss") {
             WrapMode::Emboss {
-                depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
+                depth: super::parameter_dimension(feature, &["Depth"])?,
             }
         } else if mode_name.eq_ignore_ascii_case("deboss") {
             WrapMode::Deboss {
-                depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
+                depth: super::parameter_dimension(feature, &["Depth"])?,
             }
         } else if mode_name.eq_ignore_ascii_case("scribe") {
             WrapMode::Scribe
@@ -328,6 +293,56 @@ mod tests {
     }
 
     #[test]
+    fn helix_authored_pair_uses_canonical_parameter_identities() {
+        let mut feature = crate::history::tests::feature("helix", None, 1);
+        property(&mut feature, "AxisOrigin", "0mm,0mm,0mm");
+        property(&mut feature, "AxisDirection", "0,0,1");
+        parameter(&mut feature, "Radius", "2mm");
+        parameter(&mut feature, "Pitch", "1mm");
+        parameter(&mut feature, "Revolutions", "2.5");
+        let Some(FeatureDefinition::Operation(FeatureOperation::Helix {
+            shape:
+                cadmpeg_ir::features::HelixShape::Cylindrical {
+                    law: cadmpeg_ir::features::HelixLaw::PitchRevolutions { pitch, revolutions },
+                },
+            ..
+        })) = project_helix(&feature)
+        else {
+            panic!("named authored pair projects");
+        };
+        assert_eq!(
+            pitch.parameter(),
+            super::super::parameter_dimension::<cadmpeg_ir::scalar::NonZeroLength>(
+                &feature,
+                &["Pitch"]
+            )
+            .as_ref()
+            .and_then(cadmpeg_ir::features::Dimension::parameter)
+        );
+        assert_eq!(
+            revolutions.parameter(),
+            super::super::parameter_dimension::<cadmpeg_ir::scalar::PositiveReal>(
+                &feature,
+                &["Revolutions"]
+            )
+            .as_ref()
+            .and_then(cadmpeg_ir::features::Dimension::parameter)
+        );
+    }
+
+    #[test]
+    fn native_axis_helix_does_not_infer_independent_pair_from_matching_values() {
+        let mut feature = crate::history::tests::feature("helix", None, 1);
+        parameter(&mut feature, "D3", "2.5mm");
+        parameter(&mut feature, "D4", "1mm");
+        parameter(&mut feature, "D5", "2.5");
+        parameter(&mut feature, "D7", "0rad");
+        assert!(project_native_axis_helix(&feature).is_none());
+        parameter(&mut feature, "D3", "7mm");
+        assert!(project_native_axis_helix(&feature).is_none());
+    }
+
+    #[test]
     fn helix_revolutions_are_admitted_once_into_the_operation() {
         let mut feature = crate::history::tests::feature("helix", None, 1);
         property(&mut feature, "AxisOrigin", "0mm,0mm,0mm");
@@ -336,10 +351,24 @@ mod tests {
         parameter(&mut feature, "Pitch", "1mm");
         parameter(&mut feature, "Revolutions", "2.5");
 
+        let parameters = crate::history::parameters::project_parameters(
+            &cadmpeg_test_support::service_decode_context(),
+            &[crate::records::FeatureHistory {
+                id: "history".into(),
+                part_name: None,
+                properties: std::collections::BTreeMap::new(),
+                content: Vec::new(),
+                configurations: Vec::new(),
+                features: vec![feature.clone()],
+            }],
+        )
+        .unwrap();
+
         assert!(matches!(
             project_helix(&feature),
-            Some(FeatureDefinition::Operation(FeatureOperation::Helix { revolutions, .. }))
-                if revolutions.get() == 2.5
+            Some(FeatureDefinition::Operation(FeatureOperation::Helix { shape, .. }))
+                if shape.law().and_then(|law| law.resolved_from(&parameters))
+                    .is_some_and(|law| law.revolutions.get() == 2.5)
         ));
         parameter(&mut feature, "Revolutions", "0");
         assert!(project_helix(&feature).is_none());
@@ -353,10 +382,24 @@ mod tests {
         parameter(&mut feature, "D5", "2.5");
         parameter(&mut feature, "D7", "0rad");
 
+        let parameters = crate::history::parameters::project_parameters(
+            &cadmpeg_test_support::service_decode_context(),
+            &[crate::records::FeatureHistory {
+                id: "history".into(),
+                part_name: None,
+                properties: std::collections::BTreeMap::new(),
+                content: Vec::new(),
+                configurations: Vec::new(),
+                features: vec![feature.clone()],
+            }],
+        )
+        .unwrap();
+
         assert!(matches!(
             project_native_axis_helix(&feature),
-            Some(FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis { revolutions, .. }))
-                if revolutions.get() == 2.5
+            Some(FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis { law, .. }))
+                if law.resolved_from(&parameters)
+                    .is_some_and(|law| law.revolutions.get() == 2.5)
         ));
         parameter(&mut feature, "D5", "0");
         assert!(project_native_axis_helix(&feature).is_none());

@@ -1,12 +1,309 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "fcstd:model:attribute#0:Comment:property",
+          "name": "Comment",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Company:property",
+          "name": "Company",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:CreatedBy:property",
+          "name": "CreatedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:CreationDate:property",
+          "name": "CreationDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-01-01T00:00:00Z"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Id:property",
+          "name": "Id",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Label:property",
+          "name": "Label",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "binary_exact_shape"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LastModifiedBy:property",
+          "name": "LastModifiedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LastModifiedDate:property",
+          "name": "LastModifiedDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-01-01T00:00:00Z"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:License:property",
+          "name": "License",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "All rights reserved"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LicenseURL:property",
+          "name": "LicenseURL",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "__elided_authoring_path_sha256:ec1ef47ab3cdc361e6423591cb34d5619dbc08299f8f3761ee9fb45645a3314c"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:ShowHidden:property",
+          "name": "ShowHidden",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:TipName:property",
+          "name": "TipName",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:UseHasher:property",
+          "name": "UseHasher",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#BinaryCarrier:Label2:property",
+          "name": "Label2",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#BinaryCarrier"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#BinaryCarrier:Label:property",
+          "name": "Label",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#BinaryCarrier"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "BinaryCarrier"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#BinaryCarrier:Visibility:property",
+          "name": "Visibility",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#BinaryCarrier"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Label2:property",
+          "name": "Label2",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Label:property",
+          "name": "Label",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CorpusMetadata"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:License:property",
+          "name": "License",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CC0-1.0"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
+          "name": "Purpose",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Binary exact-shape side-entry framing"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Visibility:property",
+          "name": "Visibility",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        }
+      ],
       "bodies": [
         {
           "id": "fcstd:model:body#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:17",
@@ -27,7 +324,7 @@
                 5.777824796895384,
                 7.853981633974483
               ],
-              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%285.777824796895384%29%2C%20FiniteReal%287.853981633974483%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A3",
@@ -43,7 +340,7 @@
                 1.5707963267948963,
                 7.853981633974483
               ],
-              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%281.5707963267948963%29%2C%20FiniteReal%287.853981633974483%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A1",
@@ -59,7 +356,7 @@
                 5.777824796895384,
                 7.853981633974483
               ],
-              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%3A2%3A2"
+              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%285.777824796895384%29%2C%20FiniteReal%287.853981633974483%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A1",
@@ -71,7 +368,7 @@
           "owner_loop": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1",
           "pcurves": [
             {
-              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:10%3A1%3A1"
+              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%286.283185307179586%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A4",
@@ -87,7 +384,7 @@
                 0.0,
                 6.283185307179586
               ],
-              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%3A3%3A1"
+              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:6%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%286.283185307179586%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A3",
@@ -103,7 +400,7 @@
                 1.5707963267948963,
                 7.853981633974483
               ],
-              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%281.5707963267948963%29%2C%20FiniteReal%287.853981633974483%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1%3A2",
@@ -119,7 +416,7 @@
                 0.0,
                 8.12701665379223
               ],
-              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.12701665379223%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A4",
@@ -135,7 +432,7 @@
                 0.0,
                 6.283185307179586
               ],
-              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%3A2%3A1"
+              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%286.283185307179586%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1%3A1",
@@ -151,7 +448,7 @@
                 0.0,
                 8.12701665379223
               ],
-              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3A2%3A2"
+              "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.12701665379223%29%5D"
             }
           ],
           "radial_next": "fcstd:model:coedge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1%3A2",
@@ -362,25 +659,7 @@
           "tolerance": 1e-7
         }
       ],
-      "features": [
-        {
-          "definition": {
-            "definition": "stored_geometry"
-          },
-          "id": "fcstd:design:feature#BinaryCarrier",
-          "name": "BinaryCarrier",
-          "native_ref": "fcstd:native:object#BinaryCarrier",
-          "ordinal": 1,
-          "outputs": [
-            "fcstd:model:body#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:17"
-          ],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature",
-          "suppressed": null
-        }
-      ],
+      "features": [],
       "loops": [
         {
           "boundary": {
@@ -430,34 +709,11 @@
             },
             "kind": "line",
             "origin": {
-              "u": 0.0,
-              "v": 1.5707963267948966
-            }
-          },
-          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:10%3A1%3A1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                6.283185307179586
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
               "u": -1.5707963267948966,
               "v": 8.127016653792584
             }
           },
-          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%3A2%3A1",
+          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%281.5707963267948963%29%2C%20FiniteReal%287.853981633974483%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -480,7 +736,7 @@
               "v": -0.5053605102841572
             }
           },
-          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%3A3%3A1",
+          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%281.5707963267948963%29%2C%20FiniteReal%287.853981633974483%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -503,7 +759,7 @@
               "v": -0.0
             }
           },
-          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3A2%3A1",
+          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.12701665379223%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -526,7 +782,7 @@
               "v": -0.0
             }
           },
-          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3A2%3A2",
+          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%288.12701665379223%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -549,7 +805,7 @@
               "v": 0.0
             }
           },
-          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%3A2%3A1",
+          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%286.283185307179586%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -577,7 +833,7 @@
               "v": 1.0
             }
           },
-          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%3A3%3A1",
+          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:6%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%286.283185307179586%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -600,7 +856,7 @@
               "v": -6.283185307179586
             }
           },
-          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%3A2%3A1",
+          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%285.777824796895384%29%2C%20FiniteReal%287.853981633974483%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
@@ -623,12 +879,35 @@
               "v": -6.283185307179586
             }
           },
-          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%3A2%3A2",
+          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%285.777824796895384%29%2C%20FiniteReal%287.853981633974483%29%5D",
           "metadata": {
             "form": {
               "parameter_range": [
                 5.777824796895384,
                 7.853981633974483
+              ]
+            },
+            "source": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 1.5707963267948966
+            }
+          },
+          "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%286.283185307179586%29%5D",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
               ]
             },
             "source": "general"
@@ -821,9 +1100,8 @@
           "annotations": 0,
           "applications": 2,
           "attachments": 1,
-          "byte_coverage": 1,
           "carrier_census": 1,
-          "design_census": 1,
+          "design_census": 0,
           "document": 1,
           "drawings": 0,
           "element_maps": 0,
@@ -833,9 +1111,7 @@
           "gui_properties": 0,
           "gui_view_providers": 0,
           "joints": 0,
-          "logical_ledger": 74,
           "objects": 2,
-          "physical_ledger": 15,
           "product_nodes": 0,
           "properties": 36,
           "shape_payloads": 1,
@@ -845,24 +1121,21 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "eba1d9292ab93f42b938ebcf4ed4075000aa2ca3238f74eefa228f51e742cea9",
-          "byte_coverage": "04780f7f48d7109d1d6a7dd945813d893132a79d0c2fbd24ab2aa604742e2146",
+          "applications": "54241872de667e861ebc9155f900a37dd8b7a622d2ece6be1a4745dda3886798",
           "carrier_census": "b4fc9a4c2f317e87e6f18c5c4ab2cdef86f68a5a0bacfc94222162c048b0fea4",
-          "design_census": "5927fb2c6fba155430c6df4da9710912cb46be3fafcd9d3881f7883514d0df32",
+          "design_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "document": "7cfb1eb06c9f334c540c5a686f2da950a097b17e083b388910a4efd0b2f4d8e8",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "entries": "8b783e746de7bf1c62fde8cae14766ca6e25f1133c63d6115d2977517e2e3e6f",
+          "entries": "2c31d81f9a644d8482c6c4099b43699c1a59c0709e6e2df1b2719fd1a1e95397",
           "extensions": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "logical_ledger": "5c13597a948f4389914998bfe9b9f9dba2685f347e9090b9c7b6b1c61626aace",
-          "objects": "1d3b9b2a93f696114a76553b0443b84a09fb98b44ece4b7303a3066178397424",
-          "physical_ledger": "5850b98598e9e77ec7781c9a65097a0b0d9730109a2894346a828b6581efa43d",
+          "objects": "96ebf5a33c044e98f4b2e8e39cd6edbfab30d939960545fa373e2ea948fb4c8e",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "properties": "26a7b4002d1dac5554f2834b51bda3515de3b68ce0cf2703a1bc97623a285064",
+          "properties": "d76f5146180cafc1aecac66107843829a6dea96fe65aa3ece0bbb8dd373537c4",
           "shape_payloads": "1262fed60df3c2da2a2c606dc18b05b569810f6c74a2133d523379ddb3bf4488",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
@@ -934,16 +1207,15 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "application_domains": "App,Part",
-        "archive_entry_count": "2",
         "document_kind": "part",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "2",
-        "physical_archive_bytes": "2400",
-        "physical_ledger_spans": "15",
         "program_version": "1.1R20260414 (Git shallow)"
       },
       "identity": {
@@ -986,7 +1258,98 @@
         }
       }
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#BinaryCarrier:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#BinaryCarrier:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:InertValue (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",
@@ -998,10 +1361,457 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "metadata": {
+      "document_local_sha256": "1d20fea395f2c9166aa19c620d3d4e87cbd0ccd86f365957e0ee4647ea37a423",
+      "fcstd.archive_entry_count": "2",
+      "fcstd.object_count": "2",
+      "fcstd.physical_archive_bytes": "2400",
+      "fcstd.physical_ledger_spans": "15"
+    },
+    "retained_records": {
+      "fcstd:native:entry#BinaryCarrier.Shape.bin": {
+        "bytes": {
+          "data": "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",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "BinaryCarrier.Shape.bin",
+        "untyped": []
+      },
+      "fcstd:native:entry#Document.xml": {
+        "bytes": {
+          "data": "PD94bWwgdmVyc2lvbj0nMS4wJyBlbmNvZGluZz0ndXRmLTgnPz4KPCEtLQogRnJlZUNBRCBEb2N1bWVudCwgc2VlIGh0dHBzOi8vd3d3LmZyZWVjYWQub3JnIGZvciBtb3JlIGluZm9ybWF0aW9uLi4uCi0tPgo8RG9jdW1lbnQgU2NoZW1hVmVyc2lvbj0iNCIgUHJvZ3JhbVZlcnNpb249IjEuMVIyMDI2MDQxNCAoR2l0IHNoYWxsb3cpIiBGaWxlVmVyc2lvbj0iMSIgU3RyaW5nSGFzaGVyPSIxIj4KICAgIDxTdHJpbmdIYXNoZXIgc2F2ZWFsbD0iMCIgdGhyZXNob2xkPSIwIiBjb3VudD0iMCI+PC9TdHJpbmdIYXNoZXI+CiAgICA8UHJvcGVydGllcyBDb3VudD0iMTciIFRyYW5zaWVudENvdW50PSIzIj4KICAgICAgICA8X1Byb3BlcnR5IG5hbWU9IkZpbGVOYW1lIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjUwMzMxNjQ5Ii8+CiAgICAgICAgPF9Qcm9wZXJ0eSBuYW1lPSJUaXAiIHR5cGU9IkFwcDo6UHJvcGVydHlMaW5rIiBzdGF0dXM9IjMzNTU0NDMzIi8+CiAgICAgICAgPF9Qcm9wZXJ0eSBuYW1lPSJUcmFuc2llbnREaXIiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iNTAzMzE2NDkiLz4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iQ29tbWVudCIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyI+CiAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IiIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IkNvbXBhbnkiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJDcmVhdGVkQnkiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJDcmVhdGlvbkRhdGUiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMTY3NzcyMTciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIyMDI2LTAxLTAxVDAwOjAwOjAwWiIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IklkIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIj4KICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iIi8+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iTGFiZWwiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMTY3NzcyMTciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSJiaW5hcnlfZXhhY3Rfc2hhcGUiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMYXN0TW9kaWZpZWRCeSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyI+CiAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IiIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9Ikxhc3RNb2RpZmllZERhdGUiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMTY3NzcyMTciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIyMDI2LTAxLTAxVDAwOjAwOjAwWiIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxpY2Vuc2UiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMSI+CiAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IkFsbCByaWdodHMgcmVzZXJ2ZWQiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMaWNlbnNlVVJMIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjEiPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSJodHRwczovL2VuLndpa2lwZWRpYS5vcmcvd2lraS9BbGxfcmlnaHRzX3Jlc2VydmVkIi8+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iTWF0ZXJpYWwiIHR5cGU9IkFwcDo6UHJvcGVydHlNYXAiPgogICAgICAgICAgICA8TWFwIGNvdW50PSIwIj4KICAgICAgICAgICAgPC9NYXA+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iTWV0YSIgdHlwZT0iQXBwOjpQcm9wZXJ0eU1hcCI+CiAgICAgICAgICAgIDxNYXAgY291bnQ9IjAiPgogICAgICAgICAgICA8L01hcD4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJTaG93SGlkZGVuIiB0eXBlPSJBcHA6OlByb3BlcnR5Qm9vbCIgc3RhdHVzPSIxIj4KICAgICAgICAgICAgPEJvb2wgdmFsdWU9ImZhbHNlIi8+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iVGlwTmFtZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSI4Mzg4NjA4MCI+CiAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IiIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IlVpZCIgdHlwZT0iQXBwOjpQcm9wZXJ0eVVVSUQiIHN0YXR1cz0iMTY3NzcyMTciPgogICAgICAgICAgICA8VXVpZCB2YWx1ZT0iMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIi8+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iVW5pdFN5c3RlbSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUVudW1lcmF0aW9uIiBzdGF0dXM9IjEiPgogICAgICAgICAgICA8SW50ZWdlciB2YWx1ZT0iMCIgQ3VzdG9tRW51bT0idHJ1ZSIvPgogICAgICAgICAgICA8Q3VzdG9tRW51bUxpc3QgY291bnQ9IjEwIj4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJTdGFuZGFyZCAobW0sIGtnLCBzLCDCsCkiLz4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJNS1MgKG0sIGtnLCBzLCDCsCkiLz4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJVUyBjdXN0b21hcnkgKGluLCBsYikiLz4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJJbXBlcmlhbCBkZWNpbWFsIChpbiwgbGIpIi8+CiAgICAgICAgICAgICAgICA8RW51bSB2YWx1ZT0iQnVpbGRpbmcgRXVybyAoY20sIG3CsiwgbcKzKSIvPgogICAgICAgICAgICAgICAgPEVudW0gdmFsdWU9IkJ1aWxkaW5nIFVTIChmdC1pbiwgc3FmdCwgY2Z0KSIvPgogICAgICAgICAgICAgICAgPEVudW0gdmFsdWU9Ik1ldHJpYyBzbWFsbCBwYXJ0cyAmYW1wOyBDTkMgKG1tLCBtbS9taW4pIi8+CiAgICAgICAgICAgICAgICA8RW51bSB2YWx1ZT0iSW1wZXJpYWwgZm9yIENpdmlsIEVuZyAoZnQsIGxiLCBtcGgpIi8+CiAgICAgICAgICAgICAgICA8RW51bSB2YWx1ZT0iRkVNIChtbSwgTiwgcykiLz4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJNZXRlciBkZWNpbWFsIChtLCBtwrIsIG3CsykiLz4KICAgICAgICAgICAgPC9DdXN0b21FbnVtTGlzdD4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJVc2VIYXNoZXIiIHR5cGU9IkFwcDo6UHJvcGVydHlCb29sIiBzdGF0dXM9IjY3MTA4ODY1Ij4KICAgICAgICAgICAgPEJvb2wgdmFsdWU9InRydWUiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgPC9Qcm9wZXJ0aWVzPgogICAgPE9iamVjdHMgQ291bnQ9IjIiIERlcGVuZGVuY2llcz0iMSI+CiAgICAgICAgPE9iamVjdERlcHMgTmFtZT0iQ29ycHVzTWV0YWRhdGEiIENvdW50PSIwIi8+CiAgICAgICAgPE9iamVjdERlcHMgTmFtZT0iQmluYXJ5Q2FycmllciIgQ291bnQ9IjAiLz4KICAgICAgICA8T2JqZWN0IHR5cGU9IkFwcDo6RmVhdHVyZVB5dGhvbiIgbmFtZT0iQ29ycHVzTWV0YWRhdGEiIGlkPSIxIiAvPgogICAgICAgIDxPYmplY3QgdHlwZT0iUGFydDo6RmVhdHVyZSIgbmFtZT0iQmluYXJ5Q2FycmllciIgaWQ9IjIiIC8+CiAgICA8L09iamVjdHM+CiAgICA8T2JqZWN0RGF0YSBDb3VudD0iMiI+CiAgICAgICAgPE9iamVjdCBuYW1lPSJDb3JwdXNNZXRhZGF0YSI+CiAgICAgICAgICAgIDxQcm9wZXJ0aWVzIENvdW50PSI4IiBUcmFuc2llbnRDb3VudD0iMCI+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iRXhwcmVzc2lvbkVuZ2luZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUV4cHJlc3Npb25FbmdpbmUiIHN0YXR1cz0iNjcxMDg4NjQiPgogICAgICAgICAgICAgICAgICAgIDxFeHByZXNzaW9uRW5naW5lIGNvdW50PSIwIj4KICAgICAgICAgICAgICAgICAgICA8L0V4cHJlc3Npb25FbmdpbmU+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkluZXJ0VmFsdWUiIHR5cGU9IkFwcDo6UHJvcGVydHlQeXRob25PYmplY3QiIGdyb3VwPSJDb3JwdXMiIGRvYz0iIiBhdHRyPSIwIiBybz0iMCIgaGlkZT0iMCIgc3RhdHVzPSIyMDk3MTUyIj4KICAgICAgICAgICAgICAgICAgICA8UHl0aG9uIHZhbHVlPSJleUp6WVdabElqb2dkSEoxWlN3Z0ltVjRaV04xZEdVaU9pQm1ZV3h6WlgwPSIgZW5jb2RlZD0ieWVzIiBqc29uPSJ5ZXMiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iTGFiZWwiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMTM0MjE3NzI4Ij4KICAgICAgICAgICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSJDb3JwdXNNZXRhZGF0YSIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMYWJlbDIiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iNjcxMDg5OTIiPgogICAgICAgICAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IiIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMaWNlbnNlIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBncm91cD0iQ29ycHVzIiBkb2M9IiIgYXR0cj0iMCIgcm89IjAiIGhpZGU9IjAiIHN0YXR1cz0iMjA5NzE1MiI+CiAgICAgICAgICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iQ0MwLTEuMCIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJQcm94eSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVB5dGhvbk9iamVjdCI+CiAgICAgICAgICAgICAgICAgICAgPFB5dGhvbiB2YWx1ZT0iYm5Wc2JBPT0iIGVuY29kZWQ9InllcyIganNvbj0ieWVzIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IlB1cnBvc2UiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIGdyb3VwPSJDb3JwdXMiIGRvYz0iIiBhdHRyPSIwIiBybz0iMCIgaGlkZT0iMCIgc3RhdHVzPSIyMDk3MTUyIj4KICAgICAgICAgICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSJCaW5hcnkgZXhhY3Qtc2hhcGUgc2lkZS1lbnRyeSBmcmFtaW5nIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IlZpc2liaWxpdHkiIHR5cGU9IkFwcDo6UHJvcGVydHlCb29sIiBzdGF0dXM9IjY0OCI+CiAgICAgICAgICAgICAgICAgICAgPEJvb2wgdmFsdWU9InRydWUiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgIDwvUHJvcGVydGllcz4KICAgICAgICA8L09iamVjdD4KICAgICAgICA8T2JqZWN0IG5hbWU9IkJpbmFyeUNhcnJpZXIiPgogICAgICAgICAgICA8UHJvcGVydGllcyBDb3VudD0iNyIgVHJhbnNpZW50Q291bnQ9IjEiPgogICAgICAgICAgICAgICAgPF9Qcm9wZXJ0eSBuYW1lPSJfRWxlbWVudE1hcFZlcnNpb24iIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMjM0ODgxMDI0Ii8+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iRXhwcmVzc2lvbkVuZ2luZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUV4cHJlc3Npb25FbmdpbmUiIHN0YXR1cz0iNjcxMDg4NjQiPgogICAgICAgICAgICAgICAgICAgIDxFeHByZXNzaW9uRW5naW5lIGNvdW50PSIwIj4KICAgICAgICAgICAgICAgICAgICA8L0V4cHJlc3Npb25FbmdpbmU+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxhYmVsIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjEzNDIxNzcyOCI+CiAgICAgICAgICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iQmluYXJ5Q2FycmllciIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMYWJlbDIiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iNjcxMDg5OTIiPgogICAgICAgICAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IiIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJQbGFjZW1lbnQiIHR5cGU9IkFwcDo6UHJvcGVydHlQbGFjZW1lbnQiIHN0YXR1cz0iODM4ODYwOCI+CiAgICAgICAgICAgICAgICAgICAgPFByb3BlcnR5UGxhY2VtZW50IFB4PSIwLjAwMDAwMDAwMDAwMDAwMDAiIFB5PSIwLjAwMDAwMDAwMDAwMDAwMDAiIFB6PSIwLjAwMDAwMDAwMDAwMDAwMDAiIFEwPSIwLjAwMDAwMDAwMDAwMDAwMDAiIFExPSIwLjAwMDAwMDAwMDAwMDAwMDAiIFEyPSIwLjAwMDAwMDAwMDAwMDAwMDAiIFEzPSIxLjAwMDAwMDAwMDAwMDAwMDAiIEE9IjAuMDAwMDAwMDAwMDAwMDAwMCIgT3g9IjAuMDAwMDAwMDAwMDAwMDAwMCIgT3k9IjAuMDAwMDAwMDAwMDAwMDAwMCIgT3o9IjEuMDAwMDAwMDAwMDAwMDAwMCIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJTaGFwZSIgdHlwZT0iUGFydDo6UHJvcGVydHlQYXJ0U2hhcGUiPgogICAgICAgICAgICAgICAgICAgIDxQYXJ0IEVsZW1lbnRNYXA9IjE1LjcwMjAwLjUiIGZpbGU9IkJpbmFyeUNhcnJpZXIuU2hhcGUuYmluIi8+CiAgICAgICAgICAgICAgICAgICAgPEVsZW1lbnRNYXAvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJTaGFwZU1hdGVyaWFsIiB0eXBlPSJNYXRlcmlhbHM6OlByb3BlcnR5TWF0ZXJpYWwiPgogICAgICAgICAgICAgICAgICAgIDxQcm9wZXJ0eU1hdGVyaWFsIHV1aWQ9IjdmOWZkNzNiLTUwYzktNDFkOC1iN2IyLTU3NWEwMzBjMWVlYiIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJWaXNpYmlsaXR5IiB0eXBlPSJBcHA6OlByb3BlcnR5Qm9vbCIgc3RhdHVzPSI2NDgiPgogICAgICAgICAgICAgICAgICAgIDxCb29sIHZhbHVlPSJ0cnVlIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICA8L1Byb3BlcnRpZXM+CiAgICAgICAgPC9PYmplY3Q+CiAgICA8L09iamVjdERhdGE+CjwvRG9jdW1lbnQ+Cg==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:object#BinaryCarrier": {
+        "bytes": {
+          "byte_len": 1756,
+          "retention": "digest",
+          "sha256": "aa88ec2fbece56660504059498eac520493368c0199a08953dcaa19a0715f4ef"
+        },
+        "offset": 5621,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:object#CorpusMetadata": {
+        "bytes": {
+          "byte_len": 1718,
+          "retention": "digest",
+          "sha256": "57c09e00964d87eff4fc8f61e50d374d09abf481a96a89a11bca40d00d3756f2"
+        },
+        "offset": 3894,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Comment": {
+        "bytes": {
+          "byte_len": 103,
+          "retention": "digest",
+          "sha256": "81124538ed09b291d70bc9ac9462cd1c467bcf3033ca67c663d562b74dc50440"
+        },
+        "offset": 593,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Company": {
+        "bytes": {
+          "byte_len": 103,
+          "retention": "digest",
+          "sha256": "44f02c6854c0f86ffa14389e437254eed2aac3cc2e0db1dbbe11da3cc6be9b22"
+        },
+        "offset": 705,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:CreatedBy": {
+        "bytes": {
+          "byte_len": 105,
+          "retention": "digest",
+          "sha256": "a3c3a09c8f328351c2e46ac692dab754c8416e3fa368ba310019e2fb092b249e"
+        },
+        "offset": 817,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:CreationDate": {
+        "bytes": {
+          "byte_len": 146,
+          "retention": "digest",
+          "sha256": "2bb34c364b7f7aa886b71212ad61dab00c939bd1ce2a18b6f1b58115d78a027e"
+        },
+        "offset": 931,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:FileName": {
+        "bytes": {
+          "byte_len": 73,
+          "retention": "digest",
+          "sha256": "1a74759ded01a03fb074b4c490f3fe5a99a36052c10e1c6df2092c6a261fb6a4"
+        },
+        "offset": 350,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Id": {
+        "bytes": {
+          "byte_len": 98,
+          "retention": "digest",
+          "sha256": "7f28bf82f4ee28ada89f86c3a007cf30297e70587afa2a74f5dcbe6131a0c468"
+        },
+        "offset": 1086,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Label": {
+        "bytes": {
+          "byte_len": 137,
+          "retention": "digest",
+          "sha256": "2efd11c6e495e2d11f7d5671ed6e2821d1635b97d289f2e665fa7294bcd9de1a"
+        },
+        "offset": 1193,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:LastModifiedBy": {
+        "bytes": {
+          "byte_len": 110,
+          "retention": "digest",
+          "sha256": "8038637fe707078432aae5f0c68987aa5c250728dd0d5cb037f634fe431f74d9"
+        },
+        "offset": 1339,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:LastModifiedDate": {
+        "bytes": {
+          "byte_len": 150,
+          "retention": "digest",
+          "sha256": "01c595b1311b777c80ce22a1a69f514e61c15465eb0993f1f8d5a3303fd8fb8f"
+        },
+        "offset": 1458,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:License": {
+        "bytes": {
+          "byte_len": 133,
+          "retention": "digest",
+          "sha256": "56918949c4ee74fc2f0e7c90e7aa0a8849a8f71b54d2e67f09c5ffcbd036e12c"
+        },
+        "offset": 1617,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:LicenseURL": {
+        "bytes": {
+          "byte_len": 166,
+          "retention": "digest",
+          "sha256": "d2f644b986ade74581eb859ee372b49af2e92410b346d84c5c742053eef6c048"
+        },
+        "offset": 1759,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Material": {
+        "bytes": {
+          "byte_len": 117,
+          "retention": "digest",
+          "sha256": "1eb11d240b90531c8d4b67faedf4fe6834d37f0f883c0cd2a0f29ce361701f1c"
+        },
+        "offset": 1934,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Meta": {
+        "bytes": {
+          "byte_len": 113,
+          "retention": "digest",
+          "sha256": "5b0e7329af6d40f05da7f11059a927f27551c39a1ad891c608716244da6b2a8f"
+        },
+        "offset": 2060,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:ShowHidden": {
+        "bytes": {
+          "byte_len": 118,
+          "retention": "digest",
+          "sha256": "bd21890fd64a4853f84432035466a00a94db93f4a7b40b919a495ae9e882f9e8"
+        },
+        "offset": 2182,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Tip": {
+        "bytes": {
+          "byte_len": 66,
+          "retention": "digest",
+          "sha256": "8dbe602eb052759405ecb01e2ddb0f0b69b713a0b64d04e3813d852107e0deaf"
+        },
+        "offset": 432,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:TipName": {
+        "bytes": {
+          "byte_len": 121,
+          "retention": "digest",
+          "sha256": "9f97e3fd4713f12f797a72c2556ef6048bb1380c697f94f7e1e48741a10459b0"
+        },
+        "offset": 2309,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:TransientDir": {
+        "bytes": {
+          "byte_len": 77,
+          "retention": "digest",
+          "sha256": "097b6a607235ec5dddae51f6c00ef818d25af322f539e6175925017dde3a0a9b"
+        },
+        "offset": 507,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:Uid": {
+        "bytes": {
+          "byte_len": 149,
+          "retention": "digest",
+          "sha256": "9ecbdbef9a52f0b35488e6a73a03b5dc6a88385180d6feb4aa5726c571057f0f"
+        },
+        "offset": 2439,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:UnitSystem": {
+        "bytes": {
+          "byte_len": 806,
+          "retention": "digest",
+          "sha256": "263748bf16c3b7e13b4f62452dd4429b922d231491401dcbc1a7012b885c3caf"
+        },
+        "offset": 2597,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#0:UseHasher": {
+        "bytes": {
+          "byte_len": 123,
+          "retention": "digest",
+          "sha256": "3d08f21449e454c0a39a959edd5b987a6e3e2caa78aa43932261ab5f238bbd98"
+        },
+        "offset": 3412,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#BinaryCarrier:ExpressionEngine": {
+        "bytes": {
+          "byte_len": 206,
+          "retention": "digest",
+          "sha256": "2d18f041cf9dbfe93eed1614973fea4bda64fda22bf51471a177a7cad5840585"
+        },
+        "offset": 5822,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#BinaryCarrier:Label": {
+        "bytes": {
+          "byte_len": 149,
+          "retention": "digest",
+          "sha256": "d56e6a9d610d0cce93c05af3ea6aa07ae63ed998dea31cc8c6e13694a7bd8b5c"
+        },
+        "offset": 6045,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#BinaryCarrier:Label2": {
+        "bytes": {
+          "byte_len": 136,
+          "retention": "digest",
+          "sha256": "2cf8abec9aa59d488e7fc2f840fce10a81844b388e5fe2f9a184f6213b0efa50"
+        },
+        "offset": 6211,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#BinaryCarrier:Placement": {
+        "bytes": {
+          "byte_len": 406,
+          "retention": "digest",
+          "sha256": "21fdbdfd27aa64029bb027393fd2adca68f76e3cc974dd7cc43787644b119ecf"
+        },
+        "offset": 6364,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#BinaryCarrier:Shape": {
+        "bytes": {
+          "byte_len": 199,
+          "retention": "digest",
+          "sha256": "de66b3fa022aed3d7f96537978193249df468ecca207750d136989480a7a8fb6"
+        },
+        "offset": 6787,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#BinaryCarrier:ShapeMaterial": {
+        "bytes": {
+          "byte_len": 178,
+          "retention": "digest",
+          "sha256": "e84dbb37ec54e57d76685de6a78eac96c451db6c478c87d357fed6df433afe6e"
+        },
+        "offset": 7003,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#BinaryCarrier:Visibility": {
+        "bytes": {
+          "byte_len": 135,
+          "retention": "digest",
+          "sha256": "eeec0388283602194a17f18feabf7df8b684994afecac6bd6bd19e1eed6ce8c1"
+        },
+        "offset": 7198,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#BinaryCarrier:_ElementMapVersion": {
+        "bytes": {
+          "byte_len": 84,
+          "retention": "digest",
+          "sha256": "dc17ddc0dfafee7c45cbe48ab8dbe92c90f54b7847f1fa3b7b7132bb3173a98f"
+        },
+        "offset": 5721,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:ExpressionEngine": {
+        "bytes": {
+          "byte_len": 206,
+          "retention": "digest",
+          "sha256": "2d18f041cf9dbfe93eed1614973fea4bda64fda22bf51471a177a7cad5840585"
+        },
+        "offset": 3995,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:InertValue": {
+        "bytes": {
+          "byte_len": 261,
+          "retention": "digest",
+          "sha256": "47491600b345460b6e2ff4be256d0b5d58a8d42411817970d8300a39b29690e6"
+        },
+        "offset": 4218,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:Label": {
+        "bytes": {
+          "byte_len": 150,
+          "retention": "digest",
+          "sha256": "f727f7767009773a347de7927ce7840a2c753fba0017c1a34f7d6d1187695047"
+        },
+        "offset": 4496,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:Label2": {
+        "bytes": {
+          "byte_len": 136,
+          "retention": "digest",
+          "sha256": "2cf8abec9aa59d488e7fc2f840fce10a81844b388e5fe2f9a184f6213b0efa50"
+        },
+        "offset": 4663,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:License": {
+        "bytes": {
+          "byte_len": 190,
+          "retention": "digest",
+          "sha256": "286ca45e000cc5697761b4c77fdc7d9a55f06e14e9969a16ff52a2b6c418794e"
+        },
+        "offset": 4816,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:Proxy": {
+        "bytes": {
+          "byte_len": 156,
+          "retention": "digest",
+          "sha256": "f38f40f5b2e32a92b784707f882c172210552c61adef3f4c1adbec9e2b970c9c"
+        },
+        "offset": 5023,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:Purpose": {
+        "bytes": {
+          "byte_len": 220,
+          "retention": "digest",
+          "sha256": "6cdf4a7a61a3bdccd9a4728df52d6297df5c8a78348b019368c3b9160bf66876"
+        },
+        "offset": 5196,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:property#CorpusMetadata:Visibility": {
+        "bytes": {
+          "byte_len": 135,
+          "retention": "digest",
+          "sha256": "eeec0388283602194a17f18feabf7df8b684994afecac6bd6bd19e1eed6ce8c1"
+        },
+        "offset": 5433,
+        "stream": "Document.xml",
+        "untyped": []
+      },
+      "fcstd:native:source-layout#byte-coverage": {
+        "bytes": {
+          "data": "eyJpZCI6ImZjc3RkOm5hdGl2ZTpieXRlLWNvdmVyYWdlIzAiLCJwaHlzaWNhbF9ieXRlX2xlbiI6MjQwMCwicGh5c2ljYWxfc3Bhbl9jb3VudCI6MTUsImxvZ2ljYWxfZW50cnlfY291bnQiOjIsImxvZ2ljYWxfYnl0ZV9sZW4iOjk3OTUsImxvZ2ljYWxfc3Bhbl9jb3VudCI6NzQsImNsYXNzaWZpY2F0aW9uX2J5dGVzIjp7Im5hbWVkX29wYXF1ZSI6MTc4LCJzdHJ1Y3R1cmFsIjoxNDQ3LCJ0eXBlZCI6ODE3MH0sIm5hbWVkX29wYXF1ZV9lbnRyaWVzIjpbIkRvY3VtZW50LnhtbCJdLCJleGFjdCI6dHJ1ZX0=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "fcstd:source:layout#archive",
+        "untyped": []
+      },
+      "fcstd:native:source-layout#logical-ledger": {
+        "bytes": {
+          "data": "W3siaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjowLCJlbmQiOjM1MCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzEiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjozNTAsImVuZCI6NDIzLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpGaWxlTmFtZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0MjMsImVuZCI6NDMyLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjQzMiwiZW5kIjo0OTgsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOlRpcCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzQiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0OTgsImVuZCI6NTA3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjUwNywiZW5kIjo1ODQsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOlRyYW5zaWVudERpciJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzYiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1ODQsImVuZCI6NTkzLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjU5MywiZW5kIjo2OTYsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOkNvbW1lbnQifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6Njk2LCJlbmQiOjcwNSwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo3MDUsImVuZCI6ODA4LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpDb21wYW55In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo4MDgsImVuZCI6ODE3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTEiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo4MTcsImVuZCI6OTIyLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpDcmVhdGVkQnkifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjkyMiwiZW5kIjo5MzEsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjkzMSwiZW5kIjoxMDc3LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpDcmVhdGlvbkRhdGUifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxNCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEwNzcsImVuZCI6MTA4NiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE1IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTA4NiwiZW5kIjoxMTg0LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpJZCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE2IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTE4NCwiZW5kIjoxMTkzLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTciLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMTkzLCJlbmQiOjEzMzAsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOkxhYmVsIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTgiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMzMwLCJlbmQiOjEzMzksImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxOSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEzMzksImVuZCI6MTQ0OSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5IzA6TGFzdE1vZGlmaWVkQnkifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMyMCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE0NDksImVuZCI6MTQ1OCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzIxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTQ1OCwiZW5kIjoxNjA4LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpMYXN0TW9kaWZpZWREYXRlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMjIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNjA4LCJlbmQiOjE2MTcsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMyMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE2MTcsImVuZCI6MTc1MCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5IzA6TGljZW5zZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzI0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTc1MCwiZW5kIjoxNzU5LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMjUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNzU5LCJlbmQiOjE5MjUsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOkxpY2Vuc2VVUkwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMyNiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE5MjUsImVuZCI6MTkzNCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzI3IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTkzNCwiZW5kIjoyMDUxLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpNYXRlcmlhbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzI4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MjA1MSwiZW5kIjoyMDYwLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMjkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoyMDYwLCJlbmQiOjIxNzMsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOk1ldGEifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMzMCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjIxNzMsImVuZCI6MjE4MiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzMxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MjE4MiwiZW5kIjoyMzAwLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpTaG93SGlkZGVuIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMzIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoyMzAwLCJlbmQiOjIzMDksImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMzMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjIzMDksImVuZCI6MjQzMCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5IzA6VGlwTmFtZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzM0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MjQzMCwiZW5kIjoyNDM5LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMzUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoyNDM5LCJlbmQiOjI1ODgsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOlVpZCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzM2IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MjU4OCwiZW5kIjoyNTk3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMzciLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoyNTk3LCJlbmQiOjM0MDMsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOlVuaXRTeXN0ZW0ifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMzOCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjM0MDMsImVuZCI6MzQxMiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzM5IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MzQxMiwiZW5kIjozNTM1LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpVc2VIYXNoZXIifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM0MCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjM1MzUsImVuZCI6Mzk5NSwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzQxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6Mzk5NSwiZW5kIjo0MjAxLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjQ29ycHVzTWV0YWRhdGE6RXhwcmVzc2lvbkVuZ2luZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzQyIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NDIwMSwiZW5kIjo0MjE4LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNDMiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0MjE4LCJlbmQiOjQ0NzksImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNDb3JwdXNNZXRhZGF0YTpJbmVydFZhbHVlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNDQiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0NDc5LCJlbmQiOjQ0OTYsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM0NSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjQ0OTYsImVuZCI6NDY0NiwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0NvcnB1c01ldGFkYXRhOkxhYmVsIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNDYiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0NjQ2LCJlbmQiOjQ2NjMsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM0NyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjQ2NjMsImVuZCI6NDc5OSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0NvcnB1c01ldGFkYXRhOkxhYmVsMiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzQ4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NDc5OSwiZW5kIjo0ODE2LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNDkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0ODE2LCJlbmQiOjUwMDYsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNDb3JwdXNNZXRhZGF0YTpMaWNlbnNlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNTAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1MDA2LCJlbmQiOjUwMjMsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM1MSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjUwMjMsImVuZCI6NTE3OSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0NvcnB1c01ldGFkYXRhOlByb3h5In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNTIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1MTc5LCJlbmQiOjUxOTYsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM1MyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjUxOTYsImVuZCI6NTQxNiwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0NvcnB1c01ldGFkYXRhOlB1cnBvc2UifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM1NCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjU0MTYsImVuZCI6NTQzMywiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzU1IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NTQzMywiZW5kIjo1NTY4LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjQ29ycHVzTWV0YWRhdGE6VmlzaWJpbGl0eSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzU2IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NTU2OCwiZW5kIjo1NzIxLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNTciLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1NzIxLCJlbmQiOjU4MDUsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNCaW5hcnlDYXJyaWVyOl9FbGVtZW50TWFwVmVyc2lvbiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzU4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NTgwNSwiZW5kIjo1ODIyLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNTkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1ODIyLCJlbmQiOjYwMjgsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNCaW5hcnlDYXJyaWVyOkV4cHJlc3Npb25FbmdpbmUifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM2MCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjYwMjgsImVuZCI6NjA0NSwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzYxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NjA0NSwiZW5kIjo2MTk0LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjQmluYXJ5Q2FycmllcjpMYWJlbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzYyIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NjE5NCwiZW5kIjo2MjExLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNjMiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo2MjExLCJlbmQiOjYzNDcsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNCaW5hcnlDYXJyaWVyOkxhYmVsMiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzY0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NjM0NywiZW5kIjo2MzY0LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNjUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo2MzY0LCJlbmQiOjY3NzAsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNCaW5hcnlDYXJyaWVyOlBsYWNlbWVudCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzY2IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6Njc3MCwiZW5kIjo2Nzg3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNjciLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo2Nzg3LCJlbmQiOjY5ODYsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNCaW5hcnlDYXJyaWVyOlNoYXBlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNjgiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo2OTg2LCJlbmQiOjcwMDMsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM2OSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjcwMDMsImVuZCI6NzE4MSwiY2xhc3NpZmljYXRpb24iOiJuYW1lZF9vcGFxdWUiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNCaW5hcnlDYXJyaWVyOlNoYXBlTWF0ZXJpYWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM3MCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjcxODEsImVuZCI6NzE5OCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzcxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NzE5OCwiZW5kIjo3MzMzLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjQmluYXJ5Q2FycmllcjpWaXNpYmlsaXR5In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNzIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo3MzMzLCJlbmQiOjc0MDgsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM3MyIsImVudHJ5IjoiQmluYXJ5Q2Fycmllci5TaGFwZS5iaW4iLCJzdGFydCI6MCwiZW5kIjoyMzg3LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6ZW50cnkjQmluYXJ5Q2Fycmllci5TaGFwZS5iaW4ifV0=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "fcstd:source:layout#archive",
+        "untyped": []
+      },
+      "fcstd:native:source-layout#physical-ledger": {
+        "bytes": {
+          "data": "W3siaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzAiLCJzdGFydCI6MCwiZW5kIjo0LCJyb2xlIjoibG9jYWwtc2lnbmF0dXJlIiwiZW50cnkiOiJEb2N1bWVudC54bWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMxIiwic3RhcnQiOjQsImVuZCI6MzAsInJvbGUiOiJsb2NhbC1maWVsZHMiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzIiLCJzdGFydCI6MzAsImVuZCI6NDIsInJvbGUiOiJsb2NhbC1uYW1lIiwiZW50cnkiOiJEb2N1bWVudC54bWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMzIiwic3RhcnQiOjQyLCJlbmQiOjE1MzgsInJvbGUiOiJjb21wcmVzc2VkLXBheWxvYWQiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzQiLCJzdGFydCI6MTUzOCwiZW5kIjoxNTQyLCJyb2xlIjoibG9jYWwtc2lnbmF0dXJlIiwiZW50cnkiOiJCaW5hcnlDYXJyaWVyLlNoYXBlLmJpbiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzUiLCJzdGFydCI6MTU0MiwiZW5kIjoxNTY4LCJyb2xlIjoibG9jYWwtZmllbGRzIiwiZW50cnkiOiJCaW5hcnlDYXJyaWVyLlNoYXBlLmJpbiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzYiLCJzdGFydCI6MTU2OCwiZW5kIjoxNTkxLCJyb2xlIjoibG9jYWwtbmFtZSIsImVudHJ5IjoiQmluYXJ5Q2Fycmllci5TaGFwZS5iaW4ifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiM3Iiwic3RhcnQiOjE1OTEsImVuZCI6MjIyNiwicm9sZSI6ImNvbXByZXNzZWQtcGF5bG9hZCIsImVudHJ5IjoiQmluYXJ5Q2Fycmllci5TaGFwZS5iaW4ifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiM4Iiwic3RhcnQiOjIyMjYsImVuZCI6MjIzMCwicm9sZSI6ImNlbnRyYWwtc2lnbmF0dXJlIiwiZW50cnkiOiJEb2N1bWVudC54bWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiM5Iiwic3RhcnQiOjIyMzAsImVuZCI6MjI3Miwicm9sZSI6ImNlbnRyYWwtZmllbGRzIiwiZW50cnkiOiJEb2N1bWVudC54bWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMxMCIsInN0YXJ0IjoyMjcyLCJlbmQiOjIyODQsInJvbGUiOiJjZW50cmFsLW5hbWUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzExIiwic3RhcnQiOjIyODQsImVuZCI6MjI4OCwicm9sZSI6ImNlbnRyYWwtc2lnbmF0dXJlIiwiZW50cnkiOiJCaW5hcnlDYXJyaWVyLlNoYXBlLmJpbiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzEyIiwic3RhcnQiOjIyODgsImVuZCI6MjMzMCwicm9sZSI6ImNlbnRyYWwtZmllbGRzIiwiZW50cnkiOiJCaW5hcnlDYXJyaWVyLlNoYXBlLmJpbiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzEzIiwic3RhcnQiOjIzMzAsImVuZCI6MjM1Mywicm9sZSI6ImNlbnRyYWwtbmFtZSIsImVudHJ5IjoiQmluYXJ5Q2Fycmllci5TaGFwZS5iaW4ifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMxNCIsInN0YXJ0IjoyMzUzLCJlbmQiOjI0MDAsInJvbGUiOiJlbmQtcmVjb3JkIiwiZW50cnkiOm51bGx9XQ==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "fcstd:source:layout#archive",
+        "untyped": []
+      },
+      "fcstd:source:image#archive": {
+        "bytes": {
+          "data": "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",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "fcstd:source:image#archive",
+        "untyped": []
+      }
+    },
+    "unrepresented": []
   }
 }

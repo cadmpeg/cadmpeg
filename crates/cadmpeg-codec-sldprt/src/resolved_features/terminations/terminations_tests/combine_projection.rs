@@ -82,6 +82,7 @@ fn combine_projection_binds_generated_target_and_tool_bodies() {
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
         native_ref: Some(native.into()),
+        needs_recompute: false,
         evaluation: FeatureEvaluation::from_definition(definition),
     };
     let producer = || {

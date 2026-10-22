@@ -5,6 +5,7 @@ use crate::layout::assembly_compact_wide_limit_owner_run as limit_run;
 use crate::layout::assembly_compact_wide_scope as compact_wide;
 use cadmpeg_core::decode::{u64_from_index, View};
 
+use super::assembly_path_layout::ParsedOperandPath;
 use super::legacy_operand_paths::exact_legacy_class_388_scope;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
@@ -14,7 +15,6 @@ use crate::layout::assembly_class_388_266_scope_968 as class_388_assemble;
 use crate::layout::assembly_class_406_261_scope_671 as class_406_assemble;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::records::feature::assembly::DesignAssemblyOperandFrame;
-use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::scope::DesignParameterScope;
 
 /// Operand reference and transform offsets of a wide-family scope:
@@ -226,10 +226,10 @@ pub(super) fn exact_assembly_operand_frames(
 
 pub(super) fn exact_as_built_operand_frames(
     bytes: &[u8],
-    paths: &[DesignAssemblyOperandPath; 2],
+    paths: &[ParsedOperandPath<'_>; 2],
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
     let frames = paths.each_ref().map(|path| {
-        let locator_at = usize::try_from(path.link().locator_byte_offset).ok()?;
+        let locator_at = path.source.locator_start()?;
         let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
         let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
         Some(DesignAssemblyOperandFrame {

@@ -7,7 +7,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
 
-use crate::writer::tests::configuration_carriers::semantic_writer_rejects_subds;
+use crate::writer::tests::configuration_carriers::semantic_writer_drops_subds_with_loss;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
@@ -290,7 +290,7 @@ fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir
         crate::decode::document_local_sha256(first.ir()).unwrap(),
         crate::decode::document_local_sha256(second.ir()).unwrap()
     );
-    semantic_writer_rejects_subds();
+    semantic_writer_drops_subds_with_loss();
 }
 
 // --------------------------------------------------------------------------
@@ -385,56 +385,26 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
     assert_eq!(classify(written), "sldprt:sw-version-12000-plus");
 }
 
-/// A source dialect outside the one-row catalog refuses under `Inherit` once
-/// there is nothing to preserve. There is no fall-through to the catalog row: a
-/// same-format conversion never silently changes what the part is, and the
-/// refusal names both the source's dialect and the escape.
+/// Inherited versioned dialects can be synthesized without retained source bytes.
 #[test]
-fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
+fn inherit_synthesizes_the_source_dialect_without_retained_bytes() {
     let result = decode(versioned_part());
-    let error = plan(
+    let plan = plan(
         &result,
         false,
         cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
-    .expect_err("a versioned row is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "sldprt");
-    assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("sldprt:sw-version-12000-plus")
-    );
-    assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "sldprt:unknown"),
-        "{:?}",
-        refusal.available()
-    );
-    let reason = serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["reason"]
-        .as_str()
-        .map(str::to_owned)
-        .expect("delivery refusal carries its reason");
-    assert!(
-        reason.contains("sldprt:unknown"),
-        "the refusal must name what the write would have been: {reason}"
-    );
+    .expect("the selected versioned envelope can be generated");
+    assert_eq!(named_target(&plan), "sldprt:sw-version-12000-plus");
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).unwrap();
+    assert_eq!(classify(output), "sldprt:sw-version-12000-plus");
 }
 
-/// An explicit catalog row over a retained part of a different dialect does
-/// not replay or patch that part. Displacement writes from the neutral IR, so
-/// the emitted envelope and the report both name the requested row.
 #[test]
 fn an_explicit_catalog_row_synthesizes_without_consuming_a_different_dialect() {
     let result = decode(versioned_part());

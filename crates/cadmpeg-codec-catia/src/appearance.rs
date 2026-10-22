@@ -17,6 +17,7 @@ use cadmpeg_ir::hash::LowerHex;
 pub(crate) struct TransferResult {
     transferred_packets: usize,
     unresolved_packets: usize,
+    pub(crate) source_colors: Vec<crate::native::CatiaDisplayColorRecord>,
     pub(crate) emitted_assets: usize,
     pub(crate) emitted_bindings: usize,
 }
@@ -105,6 +106,16 @@ pub(crate) fn transfer(
         }
     }
     let mut result = TransferResult::default();
+    for (ordinal, packet) in packets.iter().enumerate() {
+        result
+            .source_colors
+            .push(crate::native::CatiaDisplayColorRecord {
+                id: format!("catia:presentation:display-color#{ordinal}"),
+                appearance: insert_appearance(ctx, ir, packet.rgba())?,
+                source_kind: "value-packet".into(),
+                source_record: Some(packet.source_id.clone()),
+            });
+    }
 
     let mut all_faces = Vec::new();
     let mut body = Vec::new();
@@ -129,6 +140,19 @@ pub(crate) fn transfer(
     };
     let positional_colors = positional_colors.filter(|colors| colors.len() == ir.model.faces.len());
     if let Some(colors) = positional_colors {
+        for rgba in &colors {
+            result
+                .source_colors
+                .push(crate::native::CatiaDisplayColorRecord {
+                    id: format!(
+                        "catia:presentation:display-color#{}",
+                        result.source_colors.len()
+                    ),
+                    appearance: insert_appearance(ctx, ir, *rgba)?,
+                    source_kind: "fbb-face-color".into(),
+                    source_record: None,
+                });
+        }
         let compatible = match all_faces.as_slice() {
             [] => body.len() > 1 && colors.as_slice() == body.as_slice(),
             [base] => {
@@ -238,6 +262,7 @@ fn insert_appearance(
         let retained_id = id.clone();
         let schema = "CATIA V5 display color".to_owned();
         ir.model.appearances.push(Appearance {
+            native_ref: None,
             id: retained_id,
             name: None,
             library_id: None,
@@ -308,6 +333,7 @@ fn insert_binding_record(
     let retained_appearance = appearance.clone();
     let object_type = "CATIA V5 display property".to_owned();
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id,
         target,
         appearance: retained_appearance,

@@ -12,12 +12,36 @@ use frame::FiniteFrame;
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::IdentityKey;
-use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
+
+/// Every content/evidence arena in the `FreeCAD` native namespace. Source byte
+/// ledgers live in `SourceFidelity` rather than in this registry.
+pub(crate) const ARENAS: &[&str] = &[
+    "document",
+    "objects",
+    "extensions",
+    "properties",
+    "shape_payloads",
+    "carrier_census",
+    "string_tables",
+    "product_nodes",
+    "joints",
+    "drawings",
+    "annotations",
+    "applications",
+    "attachments",
+    "design_census",
+    "entries",
+    "gui_documents",
+    "gui_view_providers",
+    "gui_properties",
+    "element_maps",
+    "unreadable_entries",
+    "unknowns",
+];
 
 pub(crate) fn native_id(kind: &str, key: impl AsRef<str>) -> String {
     format!(
@@ -49,864 +73,7 @@ pub(crate) fn id_key(id: &str) -> &str {
 }
 
 #[cfg(test)]
-mod tests {
-
-    use super::{model_id, native_child_id, native_id};
-
-    #[test]
-    fn entries_check_names_identities_references_and_cache_the_digest() {
-        for (id, name, references) in [
-            ("invalid", "safe", vec![]),
-            ("fcstd:native:entry#safe", "../x", vec![]),
-            (
-                "fcstd:native:entry#safe",
-                "safe",
-                vec!["invalid".to_owned()],
-            ),
-        ] {
-            assert!(super::EntryRecord::new(
-                id.into(),
-                name.into(),
-                cadmpeg_core::container::ContainerRole::Auxiliary,
-                references,
-                vec![1, 2, 3]
-            )
-            .is_err());
-        }
-        let record = super::EntryRecord::new(
-            "fcstd:native:entry#safe".into(),
-            "safe".into(),
-            cadmpeg_core::container::ContainerRole::Auxiliary,
-            Vec::new(),
-            vec![1, 2, 3],
-        )
-        .expect("entry");
-        let wire = serde_json::to_value(&record).expect("wire");
-        assert_eq!(
-            wire["sha256"],
-            "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81"
-        );
-        for (key, value) in [
-            ("id", serde_json::json!("invalid")),
-            ("name", serde_json::json!("../x")),
-            ("referenced_by", serde_json::json!(["invalid"])),
-        ] {
-            let mut invalid = wire.clone();
-            invalid[key] = value;
-            assert!(serde_json::from_value::<super::EntryRecord>(invalid).is_err());
-        }
-        let mut record = record;
-        assert!(record.add_reference("invalid").is_err());
-        assert!(record.referenced_by().is_empty());
-    }
-
-    #[test]
-    fn duplicate_property_is_malformed() {
-        let property = super::PropertyRecord {
-            id: "fcstd:native:property#LongProperty".into(),
-            owner: "fcstd:native:object#Owner".into(),
-            name: "LongProperty".into(),
-            type_name: "App::PropertyString".into(),
-            family: super::PropertyFamily::Unknown,
-            status: None,
-            body: super::PropertyBody::Transient,
-            order: 0,
-            xml: super::RetainedXml::from_text("<Property/>".into(), 0).expect("valid XML span"),
-        };
-        let error = super::sole_named_property("product", &[&property, &property], &property.name)
-            .expect_err("duplicate property");
-        assert_eq!(
-            error.to_string(),
-            "malformed container: product property LongProperty occurs more than once"
-        );
-    }
-
-    #[test]
-    fn boolean_tokens_parse_without_a_lowercase_copy() {
-        for (text, expected) in [
-            ("true", Some(true)),
-            ("TRUE", Some(true)),
-            ("TrUe", Some(true)),
-            ("1", Some(true)),
-            ("false", Some(false)),
-            ("FALSE", Some(false)),
-            ("FaLsE", Some(false)),
-            ("0", Some(false)),
-            ("truex", None),
-            ("1 ", None),
-            ("Å", None),
-        ] {
-            assert_eq!(super::parse_bool(text), expected, "{text}");
-        }
-    }
-
-    #[test]
-    fn link_targets_reject_absence_on_every_admission_route() {
-        assert!(super::LinkTarget::try_new(None, None, vec![]).is_err());
-        let wire = serde_json::json!({"document":null,"document_attribute":null,"object":"","subelements":[]});
-        assert!(serde_json::from_value::<super::LinkTarget>(wire).is_err());
-        let target = super::LinkTarget::try_new(None, None, vec!["Face1".into()]).unwrap();
-        assert_eq!(
-            serde_json::to_value(&target).unwrap(),
-            serde_json::json!({"document":null,"document_attribute":null,"object":"","subelements":["Face1"]})
-        );
-    }
-
-    #[test]
-    fn design_census_neutral_is_derived_and_checked_on_the_wire() {
-        for (semantic_kind, neutral) in [("native", false), ("pattern", true)] {
-            let wire = serde_json::json!({"id":"census", "object":"object", "type_name":"type", "feature":"feature", "semantic_kind":semantic_kind, "neutral":neutral, "post_processed":false});
-            let record = serde_json::from_value::<super::DesignCensusRecord>(wire.clone()).unwrap();
-            assert_eq!(record.neutral(), neutral);
-            assert_eq!(serde_json::to_value(record).unwrap(), wire);
-            let mut invalid = wire;
-            invalid["neutral"] = serde_json::json!(!neutral);
-            assert!(serde_json::from_value::<super::DesignCensusRecord>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("neutral"));
-        }
-    }
-
-    #[test]
-    fn string_table_admission_requires_distinct_backward_references() {
-        let entry = |id, components| serde_json::json!({"string_id":id,"flags":0,"components":components,"payload":"value","raw":"raw"});
-        for (entries, valid) in [
-            (vec![entry(1, vec![]), entry(2, vec![1])], true),
-            (vec![entry(1, vec![]), entry(1, vec![])], false),
-            (vec![entry(1, vec![1])], false),
-            (vec![entry(1, vec![2]), entry(2, vec![])], false),
-            (vec![entry(1, vec![9])], false),
-        ] {
-            let wire = serde_json::json!({
-                "id": native_id("string-table", "0"),
-                "index": 0,
-                "owner_property": null,
-                "save_all": false,
-                "threshold": 0,
-                "declared_count": entries.len(),
-                "source_entry": null,
-                "entries": entries
-            });
-            let result = serde_json::from_value::<super::StringTableRecord>(wire.clone());
-            assert_eq!(result.is_ok(), valid);
-            if let Ok(record) = result {
-                assert_eq!(serde_json::to_value(record).unwrap(), wire);
-            }
-        }
-    }
-
-    #[test]
-    fn string_table_admission_derives_and_checks_identity_from_index() {
-        let mut wire = serde_json::json!({
-            "id": native_id("string-table", "0"),
-            "index": 0,
-            "owner_property": null,
-            "save_all": false,
-            "threshold": 0,
-            "declared_count": 0,
-            "source_entry": null,
-            "entries": []
-        });
-        let table = serde_json::from_value::<super::StringTableRecord>(wire.clone()).unwrap();
-        assert_eq!(table.index, 0);
-        assert_eq!(table.id(), native_id("string-table", "0"));
-        assert_eq!(serde_json::to_value(&table).unwrap(), wire);
-
-        wire["id"] = serde_json::json!("fcstd:native:string-table#not-the-index");
-        let error = serde_json::from_value::<super::StringTableRecord>(wire.clone()).unwrap_err();
-        assert!(error.to_string().contains("string table id"));
-
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.native
-            .namespace_mut("fcstd")
-            .set_arena(
-                &cadmpeg_test_support::service_decode_context(),
-                "string_tables",
-                &[wire],
-            )
-            .unwrap();
-        let roundtrip: cadmpeg_ir::CadIr =
-            serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
-        let findings = crate::test_support::validate_native(&roundtrip);
-        assert!(findings.iter().any(|finding| {
-            finding.message.contains("string table id")
-                && finding.check == cadmpeg_ir::report::check::Check::NativeLinks
-        }));
-    }
-
-    #[test]
-    fn string_tables_admit_numeric_positions_from_canonical_native_order() {
-        let records = (0..12)
-            .map(|index| {
-                super::StringTableRecord::try_new(
-                    index,
-                    None,
-                    Some(false),
-                    Some(0),
-                    None,
-                    Some(Vec::new()),
-                )
-                .unwrap()
-            })
-            .collect::<Vec<_>>();
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-        namespace
-            .set_arena(
-                &cadmpeg_test_support::service_decode_context(),
-                "string_tables",
-                &records,
-            )
-            .unwrap();
-        assert_eq!(
-            namespace.arenas()["string_tables"][2].id(),
-            "fcstd:native:string-table#10"
-        );
-        let mut ordered = namespace
-            .arena_as::<super::StringTableRecord>("string_tables")
-            .unwrap();
-        ordered.sort_by_key(|table| table.index);
-        let tables = super::StringTables::try_from(ordered).unwrap();
-        assert_eq!(
-            tables
-                .as_slice()
-                .iter()
-                .map(|table| table.index)
-                .collect::<Vec<_>>(),
-            (0..12).collect::<Vec<_>>()
-        );
-        let mut rewritten = cadmpeg_ir::native::NativeNamespace::default();
-        rewritten
-            .set_arena(
-                &cadmpeg_test_support::service_decode_context(),
-                "string_tables",
-                tables.as_slice(),
-            )
-            .unwrap();
-        assert_eq!(rewritten, namespace);
-        let wire = serde_json::to_value(&tables).unwrap();
-        assert!(wire.is_array());
-        assert_eq!(
-            serde_json::from_value::<super::StringTables>(wire).unwrap(),
-            tables
-        );
-    }
-
-    #[test]
-    fn string_tables_reject_duplicate_and_missing_numeric_positions() {
-        for indices in [vec![1], vec![0, 0], vec![0, 2]] {
-            let records = indices
-                .into_iter()
-                .map(|index| {
-                    super::StringTableRecord::try_new(
-                        index,
-                        None,
-                        Some(false),
-                        Some(0),
-                        None,
-                        Some(Vec::new()),
-                    )
-                    .unwrap()
-                })
-                .collect::<Vec<_>>();
-            assert!(super::StringTables::try_from(records.clone()).is_err());
-            let wire = serde_json::to_value(&records).unwrap();
-            assert!(serde_json::from_value::<super::StringTables>(wire).is_err());
-            let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-            namespace
-                .set_arena(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "string_tables",
-                    &records,
-                )
-                .unwrap();
-            assert!(namespace
-                .arena_as_collection::<super::StringTableRecord, super::StringTables>(
-                    "string_tables"
-                )
-                .is_err());
-        }
-    }
-
-    #[test]
-    fn ledger_spans_reject_empty_and_reversed_wire_intervals() {
-        for (start, end, valid) in [(0, 1, true), (1, 1, false), (2, 1, false)] {
-            let physical = serde_json::json!({"id":"span", "start":start, "end":end, "role":"end-record", "entry":null});
-            let logical = serde_json::json!({"id":"span", "entry":"Document.xml", "start":start, "end":end, "classification":"structural", "owner":null});
-            assert_eq!(
-                serde_json::from_value::<super::ArchiveSpan>(physical).is_ok(),
-                valid
-            );
-            assert_eq!(
-                serde_json::from_value::<super::LogicalSpan>(logical).is_ok(),
-                valid
-            );
-        }
-    }
-
-    #[test]
-    fn gui_state_order_is_derived_from_collection_position() {
-        let state = serde_json::json!({"id":"camera", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[], "raw_xml":"<A/>", "byte_start":0, "byte_end":4});
-        let mut wire = serde_json::json!({"id":"gui", "schema_version":null, "attributes":{}, "states":[state.clone(),state]});
-        assert!(
-            serde_json::from_value::<super::GuiDocumentRecord>(wire.clone())
-                .unwrap_err()
-                .to_string()
-                .contains("order")
-        );
-        wire["states"][1]["order"] = serde_json::json!(1);
-        let mut record = serde_json::from_value::<super::GuiDocumentRecord>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
-        record.states.remove(0);
-        let moved = serde_json::to_value(record).unwrap();
-        assert_eq!(moved["states"][0]["order"], 0);
-    }
-
-    #[test]
-    fn attachment_accepts_accumulated_rigid_tolerance() {
-        let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
-        rows[0][0] += 4.0e-10;
-        let frame = super::FiniteFrame::try_from(rows).unwrap();
-        let product = frame.transform().compose(frame.transform()).unwrap();
-        assert!(!product.is_proper_rigid());
-        assert!(super::AttachmentRecord::try_new(
-            "attachment".into(),
-            "object".into(),
-            vec![],
-            None,
-            Some(frame),
-            Some(frame)
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn attachment_and_product_wire_admission_reject_nonfinite_frames() {
-        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let mut matrix = cadmpeg_ir::transform::Transform::identity().rows();
-            matrix[0][3] = bad;
-            for offset in [false, true] {
-                let wire = super::AttachmentRecordWire {
-                    id: "attachment".into(),
-                    object: "object".into(),
-                    supports: vec![],
-                    map_mode: None,
-                    placement: (!offset).then_some(matrix),
-                    offset: offset.then_some(matrix),
-                    effective_frame: matrix,
-                };
-                let error = super::AttachmentRecord::try_from(wire).unwrap_err();
-                assert!(error.contains(if offset { "offset" } else { "placement" }));
-            }
-            for field in [
-                "element_transforms",
-                "element_scales",
-                "local_transform",
-                "scale",
-            ] {
-                let mut wire: super::ProductNodeRecordWire = serde_json::from_value(serde_json::json!({
-                    "id":"link", "object":"object", "kind":"occurrence", "members":[],
-                    "element_transforms":[], "element_scales":[], "linked_subelements":[], "element_visibility":[], "element_objects":[]
-                })).unwrap();
-                match field {
-                    "element_transforms" => wire.element_transforms.push(matrix),
-                    "element_scales" => wire.element_scales.push([bad, 1.0, 1.0]),
-                    "local_transform" => wire.local_transform = Some(matrix),
-                    _ => wire.scale = Some([bad, 1.0, 1.0]),
-                }
-                assert!(super::ProductNodeRecord::try_from(wire)
-                    .unwrap_err()
-                    .contains(field));
-            }
-        }
-    }
-
-    #[test]
-    fn file_version_preserves_spelling_and_unverified_declarations() {
-        let wire = serde_json::json!({"id":"document", "file_version":"+001", "program_version":null, "root_name":"Document", "object_count":0, "domains":[], "document_kind":"empty"});
-        let record = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
-        assert_eq!(record.file_version.value(), Some(1));
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
-        for spelling in ["-1", "", "abc", "184467440737095516160"] {
-            let mut invalid = wire.clone();
-            invalid["file_version"] = serde_json::json!(spelling);
-            let record = serde_json::from_value::<super::DocumentFacts>(invalid.clone()).unwrap();
-            assert_eq!(record.file_version.value(), None);
-            assert_eq!(serde_json::to_value(record).unwrap(), invalid);
-        }
-    }
-
-    #[test]
-    fn gui_provider_object_rejects_empty_wire_identity() {
-        let mut wire = serde_json::json!({"id":"provider", "object":"", "name":"A", "expanded":null, "order":0, "raw_xml":"<ViewProvider/>"});
-        assert!(serde_json::from_value::<super::GuiViewProviderRecord>(wire.clone()).is_err());
-        for object in [serde_json::Value::Null, serde_json::json!("object")] {
-            wire["object"] = object;
-            let record =
-                serde_json::from_value::<super::GuiViewProviderRecord>(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(record).unwrap(), wire);
-        }
-    }
-
-    #[test]
-    fn retained_xml_records_reject_invalid_wire_spans() {
-        let bases = [
-            serde_json::json!({"id":"state", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[]}),
-            serde_json::json!({"id":"property", "owner":"provider", "name":"Color", "type_name":"App::PropertyColor", "order":0, "values":[], "side_entries":[]}),
-            serde_json::json!({"id":"fcstd:native:object#A", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
-            serde_json::json!({"id":"property", "owner":"object", "name":"Label", "type_name":"App::PropertyString", "family":"scalar", "transient":false, "order":0, "values":[], "links":[], "side_entries":[]}),
-        ];
-        for (kind, base) in bases.into_iter().enumerate() {
-            for (start, end, valid) in [
-                (10, 14, true),
-                (10, 10, false),
-                (10, 9, false),
-                (10, 15, false),
-            ] {
-                let mut wire = base.clone();
-                wire["raw_xml"] = serde_json::json!("<A/>");
-                wire["byte_start"] = serde_json::json!(start);
-                wire["byte_end"] = serde_json::json!(end);
-                let admitted = match kind {
-                    0 => serde_json::from_value::<super::GuiStateRecord>(wire).map(|_| ()),
-                    1 => serde_json::from_value::<super::GuiPropertyRecord>(wire).map(|_| ()),
-                    2 => serde_json::from_value::<super::ObjectRecord>(wire).map(|_| ()),
-                    _ => serde_json::from_value::<super::PropertyRecord>(wire).map(|_| ()),
-                };
-                assert_eq!(
-                    admitted.is_ok(),
-                    valid,
-                    "kind={kind}, span={start}..{end}: {admitted:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn document_kind_wire_must_match_domains_and_count() {
-        let mut wire = serde_json::json!({"id":"document",
-            "file_version":"1", "program_version":null, "root_name":"Document",
-            "object_count":1, "domains":["Part"], "document_kind":"empty"});
-        assert!(serde_json::from_value::<super::DocumentFacts>(wire.clone()).is_err());
-        wire["document_kind"] = serde_json::json!("part");
-        let facts = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(facts).unwrap(), wire);
-    }
-
-    #[test]
-    fn link_array_wire_rejects_negative_and_mismatched_counts() {
-        let base = serde_json::json!({
-            "id": "link", "object": "object", "kind": "occurrence",
-            "members": [], "element_transforms": [], "element_scales": [],
-            "linked_subelements": [], "element_visibility": [], "element_objects": []
-        });
-        let mut negative = base.clone();
-        negative["element_count"] = serde_json::json!(-1);
-        assert!(serde_json::from_value::<super::ProductNodeRecord>(negative).is_err());
-        for field in [
-            "element_transforms",
-            "element_scales",
-            "element_visibility",
-            "element_objects",
-        ] {
-            let mut wire = base.clone();
-            wire["element_count"] = serde_json::json!(2);
-            wire[field] = match field {
-                "element_transforms" => serde_json::json!([[
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0]
-                ]]),
-                "element_scales" => serde_json::json!([[1.0, 1.0, 1.0]]),
-                "element_visibility" => serde_json::json!([true]),
-                _ => serde_json::json!(["object"]),
-            };
-            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
-            wire["element_count"] = serde_json::json!(1);
-            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire).is_ok());
-        }
-
-        let mut object_only = base;
-        object_only["element_objects"] = serde_json::json!(["object"]);
-        let record = serde_json::from_value::<super::ProductNodeRecord>(object_only)
-            .expect("an object carrier establishes absent-count cardinality");
-        assert!(matches!(
-            record.element_cardinality(),
-            Some(super::LinkArrayCardinality::Elements(elements)) if elements.get() == 1
-        ));
-    }
-
-    #[test]
-    fn copy_on_change_payload_requires_policy_on_wire() {
-        for (field, value) in [
-            (
-                "copy_on_change_source",
-                serde_json::json!({"document":null,"document_attribute":null,"object":"source","subelements":[]}),
-            ),
-            (
-                "copy_on_change_group",
-                serde_json::json!({"document":null,"document_attribute":null,"object":"group","subelements":[]}),
-            ),
-            ("copy_on_change_touched", serde_json::json!(false)),
-        ] {
-            let mut wire = serde_json::json!({
-                "id": "link", "object": "object", "kind": "occurrence",
-                "members": [], "element_transforms": [], "element_scales": [],
-                "linked_subelements": [], "element_visibility": [], "element_objects": []
-            });
-            wire[field] = value;
-            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
-            wire["copy_on_change"] = serde_json::json!("2");
-            let admitted =
-                serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(admitted).unwrap()[field], wire[field]);
-        }
-
-        for raw in ["Owned", "abc", ""] {
-            let mut wire = serde_json::json!({
-                "id": "link", "object": "object", "kind": "occurrence",
-                "members": [], "element_transforms": [], "element_scales": [],
-                "linked_subelements": [], "element_visibility": [], "element_objects": [],
-                "copy_on_change": raw,
-            });
-            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
-            wire["copy_on_change"] = serde_json::json!("+00099");
-            let admitted = serde_json::from_value::<super::ProductNodeRecord>(wire.clone())
-                .expect("numeric future policies retain their spelling");
-            assert_eq!(
-                serde_json::to_value(admitted).unwrap()["copy_on_change"],
-                "+00099"
-            );
-        }
-    }
-
-    #[test]
-    fn object_wire_rejects_nonpositive_partial_load_capability() {
-        for value in [0, -1] {
-            let wire = serde_json::json!({
-                "id": "fcstd:native:object#A", "name": "A", "type_name": "App::Feature",
-                "persistent_id": null, "view_type": null, "attributes": {},
-                "dependencies": [], "dependency_allow_partial": value, "order": 0,
-                "raw_xml": null, "byte_start": null, "byte_end": null
-            });
-            let error = serde_json::from_value::<super::ObjectRecord>(wire).unwrap_err();
-            assert!(error.to_string().contains("dependency_allow_partial"));
-        }
-    }
-
-    #[test]
-    fn canonical_ids_escape_names_without_aliasing_literal_escapes() {
-        assert_eq!(
-            native_id("object", "A B#C"),
-            "fcstd:native:object#A%20B%23C"
-        );
-        assert_eq!(native_id("object", "A%20B"), "fcstd:native:object#A%2520B");
-        assert_eq!(native_id("object", "A:B"), "fcstd:native:object#A%3AB");
-        assert_eq!(native_id("object", ""), "fcstd:native:object#%EMPTY");
-        let property = native_child_id("property", &native_id("object", "A B"), "Shape Value");
-        assert_eq!(property, "fcstd:native:property#A%20B:Shape%20Value");
-        assert_eq!(
-            model_id("body", &property, "root#1"),
-            "fcstd:model:body#A%20B:Shape%20Value:root%231"
-        );
-        assert_eq!(
-            model_id("body", &property, ""),
-            "fcstd:model:body#A%20B:Shape%20Value:"
-        );
-    }
-
-    /// Identity frame shared by the written-form tests below.
-    fn identity() -> [[f64; 4]; 4] {
-        cadmpeg_ir::transform::Transform::identity().rows()
-    }
-
-    /// A link target wire object naming one object and its subelements.
-    fn link(object: &str, subelements: &[&str]) -> serde_json::Value {
-        serde_json::json!({
-            "document": null,
-            "document_attribute": null,
-            "object": object,
-            "subelements": subelements
-        })
-    }
-
-    #[test]
-    fn an_attachment_writes_its_supports_frames_and_effective_frame() {
-        let wire = serde_json::json!({
-            "id": "attachment",
-            "object": "object",
-            "supports": [null, link("Pad", &["Face1"])],
-            "map_mode": "3",
-            "placement": identity(),
-            "offset": identity(),
-            "effective_frame": identity()
-        });
-        let record = serde_json::from_value::<super::AttachmentRecord>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
-
-        let mut bare = wire;
-        bare["supports"] = serde_json::json!([]);
-        bare["map_mode"] = serde_json::Value::Null;
-        bare["placement"] = serde_json::Value::Null;
-        bare["offset"] = serde_json::Value::Null;
-        let record = serde_json::from_value::<super::AttachmentRecord>(bare.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), bare);
-    }
-
-    #[test]
-    fn archive_and_logical_spans_write_their_role_and_owner() {
-        for (role, entry) in [
-            ("compressed-payload", serde_json::json!("Document.xml")),
-            ("end-record", serde_json::Value::Null),
-        ] {
-            let wire = serde_json::json!({
-                "id": "span", "start": 0, "end": 4, "role": role, "entry": entry
-            });
-            let record = serde_json::from_value::<super::ArchiveSpan>(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(record).unwrap(), wire);
-        }
-
-        for (classification, owner) in [
-            ("structural", serde_json::Value::Null),
-            ("typed", serde_json::json!("fcstd:native:object#A")),
-            (
-                "named_opaque",
-                serde_json::json!("fcstd:native:property#A:Shape"),
-            ),
-        ] {
-            let wire = serde_json::json!({
-                "id": "span", "entry": "Document.xml", "start": 0, "end": 4,
-                "classification": classification, "owner": owner
-            });
-            let record = serde_json::from_value::<super::LogicalSpan>(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(record).unwrap(), wire);
-        }
-    }
-
-    #[test]
-    fn a_drawing_record_writes_page_views_and_a_non_page_without_them() {
-        let base = serde_json::json!({
-            "id": "drawing", "object": "object",
-            "kind": "TechDraw::DrawPage",
-            "views": ["fcstd:native:object#View"],
-            "template": "fcstd:native:object#Template",
-            "sources": [null, link("Body", &["Face2"])],
-            "relationships": {"Source": [link("Body", &[])]},
-            "parameters": {"Scale": "1.0"},
-            "side_entries": ["template.svg"]
-        });
-        let record = serde_json::from_value::<super::DrawingRecord>(base.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), base);
-
-        let mut other = base;
-        other["kind"] = serde_json::json!("TechDraw::DrawViewPart");
-        other["views"] = serde_json::json!([]);
-        other["template"] = serde_json::Value::Null;
-        let record = serde_json::from_value::<super::DrawingRecord>(other.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), other);
-    }
-
-    #[test]
-    fn an_object_record_writes_its_retained_xml_and_its_absence() {
-        let wire = serde_json::json!({
-            "id": "fcstd:native:object#A", "name": "A", "type_name": "App::Feature",
-            "persistent_id": 7, "view_type": "Gui::ViewProviderFeature",
-            "attributes": {"Touched": "1"},
-            "dependencies": ["fcstd:native:object#B"],
-            "dependency_allow_partial": 2, "order": 0,
-            "raw_xml": "<A/>", "byte_start": 10, "byte_end": 14
-        });
-        let record = serde_json::from_value::<super::ObjectRecord>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
-
-        let mut bare = wire;
-        bare["persistent_id"] = serde_json::Value::Null;
-        bare["view_type"] = serde_json::Value::Null;
-        bare["dependency_allow_partial"] = serde_json::Value::Null;
-        bare["raw_xml"] = serde_json::Value::Null;
-        bare["byte_start"] = serde_json::Value::Null;
-        bare["byte_end"] = serde_json::Value::Null;
-        let record = serde_json::from_value::<super::ObjectRecord>(bare.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), bare);
-    }
-
-    #[test]
-    fn a_property_record_writes_its_payload_and_a_transient_declaration_without_one() {
-        let wire = serde_json::json!({
-            "id": "property", "owner": "object", "name": "Label",
-            "type_name": "App::PropertyString", "family": "string", "status": 1,
-            "transient": false,
-            "dynamic": {"group": "Base", "documentation": "label", "attributes": 0,
-                        "read_only": false, "hidden": null},
-            "order": 2,
-            "values": [{"tag": "String", "order": 0, "attributes": {"value": "A"},
-                        "text": null, "raw_xml": "<String value=\"A\"/>"}],
-            "links": [null, link("B", &["Face1"])],
-            "side_entries": ["Body.brp"],
-            "raw_xml": "<A/>", "byte_start": 10, "byte_end": 14
-        });
-        let record = serde_json::from_value::<super::PropertyRecord>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
-
-        let mut transient = wire;
-        transient["transient"] = serde_json::json!(true);
-        transient["dynamic"] = serde_json::Value::Null;
-        transient["values"] = serde_json::json!([]);
-        transient["links"] = serde_json::json!([]);
-        transient["side_entries"] = serde_json::json!([]);
-        let record = serde_json::from_value::<super::PropertyRecord>(transient.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), transient);
-    }
-
-    #[test]
-    fn an_entry_record_writes_its_bytes_beside_their_length_and_digest() {
-        let wire = serde_json::json!({
-            "id": "fcstd:native:entry#Document.xml",
-            "name": "Document.xml",
-            "role": "document",
-            "byte_len": 3,
-            "sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
-            "referenced_by": ["fcstd:native:property#A:Shape"],
-            "data": "010203"
-        });
-        let record = serde_json::from_value::<super::EntryRecord>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
-
-        let json = serde_json::to_string(&record).unwrap();
-        assert_eq!(
-            serde_json::from_str::<super::EntryRecord>(&json).unwrap(),
-            record
-        );
-
-        let mut empty = wire;
-        empty["byte_len"] = serde_json::json!(0);
-        empty["sha256"] =
-            serde_json::json!("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-        empty["referenced_by"] = serde_json::json!([]);
-        empty["data"] = serde_json::json!("");
-        let record = serde_json::from_value::<super::EntryRecord>(empty.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), empty);
-    }
-
-    #[test]
-    fn entry_hex_rejects_odd_nonhex_uppercase_and_array_payloads() {
-        let record = crate::test_support::entry_record(
-            "fcstd:native:entry#Payload.bin".into(),
-            "Payload.bin".into(),
-            cadmpeg_core::container::ContainerRole::Auxiliary,
-            Vec::new(),
-            vec![0xab],
-        );
-        let wire = serde_json::to_value(record).unwrap();
-        for data in [
-            serde_json::json!("a"),
-            serde_json::json!("ag"),
-            serde_json::json!("AB"),
-            serde_json::json!([171]),
-        ] {
-            let mut invalid = wire.clone();
-            invalid["data"] = data;
-            let json = serde_json::to_string(&invalid).unwrap();
-            assert!(serde_json::from_str::<super::EntryRecord>(&json).is_err());
-            assert!(serde_json::from_value::<super::EntryRecord>(invalid).is_err());
-        }
-        for field in ["byte_len", "sha256"] {
-            let mut invalid = wire.clone();
-            invalid[field] = if field == "byte_len" {
-                serde_json::json!(0)
-            } else {
-                serde_json::json!(cadmpeg_ir::hash::sha256_hex(&[]))
-            };
-            assert!(serde_json::from_value::<super::EntryRecord>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("entry byte_len/sha256 disagrees with data"));
-        }
-    }
-
-    #[test]
-    fn entry_data_is_stored_as_hex_on_the_wire() {
-        let bytes: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
-        let record = crate::test_support::entry_record(
-            "fcstd:native:entry#Payload.bin".into(),
-            "Payload.bin".into(),
-            cadmpeg_core::container::ContainerRole::Auxiliary,
-            Vec::new(),
-            bytes.clone(),
-        );
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-        namespace
-            .set_arena(&ctx, "entries", &[record])
-            .expect("entry arena");
-        let records = namespace.arena_as::<super::EntryRecord>("entries").unwrap();
-        assert_eq!(records[0].data(), bytes);
-        let wire = namespace.arena_as::<serde_json::Value>("entries").unwrap();
-        assert_eq!(wire[0]["data"].as_str().unwrap().len(), bytes.len() * 2);
-        assert!(wire[0]["data"]
-            .as_str()
-            .unwrap()
-            .starts_with("000102030405060708090a0b0c0d0e0f"));
-    }
-
-    #[test]
-    fn a_product_node_writes_occurrence_fields_and_a_container_without_them() {
-        let occurrence = serde_json::json!({
-            "id": "link", "object": "object", "kind": "occurrence",
-            "members": ["fcstd:native:object#Child"],
-            "prototype": "fcstd:native:object#Proto",
-            "external_document": "Other.FCStd",
-            "external_document_attribute": "file",
-            "local_transform": identity(),
-            "placement_property": "Placement",
-            "element_count": 1,
-            "link_transform": true,
-            "element_transforms": [identity()],
-            "element_scales": [[2.0, 2.0, 2.0]],
-            "linked_subelements": ["Face1"],
-            "claim_child": false,
-            "copy_on_change": "2",
-            "copy_on_change_source": link("Source", &[]),
-            "copy_on_change_group": link("Group", &[]),
-            "copy_on_change_touched": true,
-            "scale": [3.0, 3.0, 3.0],
-            "element_visibility": [true],
-            "element_objects": ["fcstd:native:object#Element"]
-        });
-        let record =
-            serde_json::from_value::<super::ProductNodeRecord>(occurrence.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), occurrence);
-
-        let container = serde_json::json!({
-            "id": "group", "object": "object", "kind": "group",
-            "members": ["fcstd:native:object#Child"],
-            "prototype": null,
-            "external_document": null,
-            "external_document_attribute": null,
-            "local_transform": identity(),
-            "placement_property": "Placement",
-            "element_count": null,
-            "link_transform": null,
-            "element_transforms": [],
-            "element_scales": [],
-            "linked_subelements": [],
-            "claim_child": null,
-            "copy_on_change": null,
-            "copy_on_change_source": null,
-            "copy_on_change_group": null,
-            "copy_on_change_touched": null,
-            "scale": null,
-            "element_visibility": [],
-            "element_objects": []
-        });
-        let record = serde_json::from_value::<super::ProductNodeRecord>(container.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), container);
-    }
-}
+mod tests;
 
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -1149,95 +316,6 @@ impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
     }
 }
 
-/// A nonempty half-open byte interval.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ByteSpan {
-    start: u64,
-    end: u64,
-}
-
-impl ByteSpan {
-    pub(crate) fn try_new(start: u64, end: u64) -> Result<Self, String> {
-        if start >= end {
-            return Err("byte span start must be less than end".to_owned());
-        }
-        Ok(Self { start, end })
-    }
-    pub(crate) fn start(self) -> u64 {
-        self.start
-    }
-    pub(crate) fn end(self) -> u64 {
-        self.end
-    }
-}
-
-/// Exact XML text paired with its nonempty source interval.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "RetainedXmlWire")]
-pub(crate) struct RetainedXml {
-    text: String,
-    span: ByteSpan,
-}
-
-impl RetainedXml {
-    fn try_new(text: String, start: u64, end: u64) -> Result<Self, String> {
-        let span = ByteSpan::try_new(start, end)?;
-        if end - start != cadmpeg_core::decode::u64_from_index(text.len()) {
-            return Err("raw_xml length disagrees with byte_start and byte_end".to_owned());
-        }
-        Ok(Self { text, span })
-    }
-    pub(crate) fn from_text(text: String, start: u64) -> Result<Self, String> {
-        let end = start
-            .checked_add(cadmpeg_core::decode::u64_from_index(text.len()))
-            .ok_or("raw_xml byte_end overflow")?;
-        Self::try_new(text, start, end)
-    }
-    pub(crate) fn from_source(text: &str, start: u64) -> Result<Self, CodecError> {
-        Self::from_text(text.to_owned(), start).map_err(CodecError::Malformed)
-    }
-    pub(crate) fn text(&self) -> &str {
-        &self.text
-    }
-    pub(crate) fn start(&self) -> u64 {
-        self.span.start()
-    }
-    pub(crate) fn end(&self) -> u64 {
-        self.span.end()
-    }
-}
-
-#[derive(Deserialize)]
-struct RetainedXmlWire {
-    raw_xml: String,
-    byte_start: u64,
-    byte_end: u64,
-}
-impl TryFrom<RetainedXmlWire> for RetainedXml {
-    type Error = String;
-    fn try_from(wire: RetainedXmlWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.raw_xml, wire.byte_start, wire.byte_end)
-    }
-}
-
-#[derive(Serialize)]
-struct RetainedXmlOut<'a> {
-    raw_xml: &'a str,
-    byte_start: u64,
-    byte_end: u64,
-}
-
-impl Serialize for RetainedXml {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        RetainedXmlOut {
-            raw_xml: &self.text,
-            byte_start: self.span.start(),
-            byte_end: self.span.end(),
-        }
-        .serialize(serializer)
-    }
-}
-
 /// Document-level GUI state outside application-object view providers.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "GuiDocumentRecordWire")]
@@ -1254,6 +332,7 @@ pub(crate) struct GuiDocumentRecord {
 
 /// One ordered document-level GUI state element.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct GuiStateRecord {
     /// Stable state identity.
     pub(crate) id: String,
@@ -1265,16 +344,17 @@ pub(crate) struct GuiStateRecord {
     pub(crate) values: Vec<ValueRecord>,
     /// Referenced display assets.
     pub(crate) side_entries: Vec<String>,
-    /// Retained XML and its byte span.
-    #[serde(flatten)]
-    pub(crate) xml: RetainedXml,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct GuiStateRecordWire {
     order: usize,
-    #[serde(flatten)]
-    state: GuiStateRecord,
+    id: String,
+    kind: String,
+    attributes: BTreeMap<String, String>,
+    values: Vec<ValueRecord>,
+    side_entries: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -1336,7 +416,13 @@ impl TryFrom<GuiDocumentRecordWire> for GuiDocumentRecord {
                 if wire.order != order {
                     return Err("GUI state order disagrees with its states position".to_owned());
                 }
-                Ok(wire.state)
+                Ok(GuiStateRecord {
+                    id: wire.id,
+                    kind: wire.kind,
+                    attributes: wire.attributes,
+                    values: wire.values,
+                    side_entries: wire.side_entries,
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
@@ -2218,12 +1304,11 @@ pub(crate) struct GuiViewProviderRecord {
     pub(crate) expanded: Option<bool>,
     /// Source order in `ViewProviderData`.
     pub(crate) order: usize,
-    /// Exact provider XML.
-    pub(crate) raw_xml: String,
 }
 
 /// One persisted property owned by a GUI view provider.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct GuiPropertyRecord {
     /// Stable native identity.
     pub(crate) id: String,
@@ -2241,208 +1326,6 @@ pub(crate) struct GuiPropertyRecord {
     pub(crate) values: Vec<ValueRecord>,
     /// Referenced archive entries.
     pub(crate) side_entries: Vec<String>,
-    /// Retained XML and its byte span.
-    #[serde(flatten)]
-    pub(crate) xml: RetainedXml,
-}
-
-/// ZIP physical-ledger role stored on one archive span.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ArchiveSpanRole {
-    /// ZIP local-header signature for the named entry.
-    LocalSignature(String),
-    /// ZIP local-header fields for the named entry.
-    LocalFields(String),
-    /// ZIP local-header name for the named entry.
-    LocalName(String),
-    /// ZIP local-header extra data for the named entry.
-    LocalExtra(String),
-    /// ZIP compressed payload for the named entry.
-    CompressedPayload(String),
-    /// ZIP data descriptor for the named entry.
-    DataDescriptor(String),
-    /// ZIP padding following the named entry.
-    EntryArchivePadding(String),
-    /// ZIP central-header signature for the named entry.
-    CentralSignature(String),
-    /// ZIP central-header fields for the named entry.
-    CentralFields(String),
-    /// ZIP central-header name for the named entry.
-    CentralName(String),
-    /// ZIP central-header extra data for the named entry.
-    CentralExtra(String),
-    /// ZIP central-header comment for the named entry.
-    CentralComment(String),
-    /// ZIP64 end-of-central-directory record.
-    Zip64EndRecord,
-    /// ZIP64 end-of-central-directory locator.
-    Zip64EndLocator,
-    /// ZIP end-of-central-directory record.
-    EndRecord,
-    /// ZIP padding not owned by an entry.
-    ArchivePadding,
-}
-
-impl From<&cadmpeg_container::ZipSpanRole> for ArchiveSpanRole {
-    fn from(role: &cadmpeg_container::ZipSpanRole) -> Self {
-        use cadmpeg_container::ZipSpanRole;
-        match role {
-            ZipSpanRole::LocalSignature(entry) => Self::LocalSignature(entry.clone()),
-            ZipSpanRole::LocalFields(entry) => Self::LocalFields(entry.clone()),
-            ZipSpanRole::LocalName(entry) => Self::LocalName(entry.clone()),
-            ZipSpanRole::LocalExtra(entry) => Self::LocalExtra(entry.clone()),
-            ZipSpanRole::CompressedPayload(entry) => Self::CompressedPayload(entry.clone()),
-            ZipSpanRole::DataDescriptor(entry) => Self::DataDescriptor(entry.clone()),
-            ZipSpanRole::CentralSignature(entry) => Self::CentralSignature(entry.clone()),
-            ZipSpanRole::CentralFields(entry) => Self::CentralFields(entry.clone()),
-            ZipSpanRole::CentralName(entry) => Self::CentralName(entry.clone()),
-            ZipSpanRole::CentralExtra(entry) => Self::CentralExtra(entry.clone()),
-            ZipSpanRole::CentralComment(entry) => Self::CentralComment(entry.clone()),
-            ZipSpanRole::Padding { entry: Some(entry) } => Self::EntryArchivePadding(entry.clone()),
-            ZipSpanRole::Padding { entry: None } => Self::ArchivePadding,
-            ZipSpanRole::Zip64EndRecord => Self::Zip64EndRecord,
-            ZipSpanRole::Zip64EndLocator => Self::Zip64EndLocator,
-            ZipSpanRole::EndRecord => Self::EndRecord,
-        }
-    }
-}
-
-impl ArchiveSpanRole {
-    /// Stable physical-ledger label retained on the CADIR wire.
-    pub(crate) fn as_str(&self) -> &'static str {
-        match self {
-            Self::LocalSignature(_) => "local-signature",
-            Self::LocalFields(_) => "local-fields",
-            Self::LocalName(_) => "local-name",
-            Self::LocalExtra(_) => "local-extra",
-            Self::CompressedPayload(_) => "compressed-payload",
-            Self::DataDescriptor(_) => "data-descriptor",
-            Self::EntryArchivePadding(_) | Self::ArchivePadding => "archive-padding",
-            Self::CentralSignature(_) => "central-signature",
-            Self::CentralFields(_) => "central-fields",
-            Self::CentralName(_) => "central-name",
-            Self::CentralExtra(_) => "central-extra",
-            Self::CentralComment(_) => "central-comment",
-            Self::Zip64EndRecord => "zip64-end-record",
-            Self::Zip64EndLocator => "zip64-end-locator",
-            Self::EndRecord => "end-record",
-        }
-    }
-
-    /// Owning entry, when the role is entry-owned.
-    fn entry(&self) -> Option<&str> {
-        match self {
-            Self::LocalSignature(entry)
-            | Self::LocalFields(entry)
-            | Self::LocalName(entry)
-            | Self::LocalExtra(entry)
-            | Self::CompressedPayload(entry)
-            | Self::DataDescriptor(entry)
-            | Self::EntryArchivePadding(entry)
-            | Self::CentralSignature(entry)
-            | Self::CentralFields(entry)
-            | Self::CentralName(entry)
-            | Self::CentralExtra(entry)
-            | Self::CentralComment(entry) => Some(entry),
-            Self::Zip64EndRecord
-            | Self::Zip64EndLocator
-            | Self::EndRecord
-            | Self::ArchivePadding => None,
-        }
-    }
-
-    fn from_label(label: &str, entry: Option<String>) -> Result<Self, String> {
-        let named = |entry: Option<String>, ctor: fn(String) -> Self| {
-            entry
-                .map(ctor)
-                .ok_or_else(|| format!("archive span role {label} requires an owning entry"))
-        };
-        let unit = |entry: Option<String>, role: Self| {
-            if entry.is_some() {
-                Err(format!(
-                    "archive span role {label} cannot carry an owning entry"
-                ))
-            } else {
-                Ok(role)
-            }
-        };
-        match label {
-            "local-signature" => named(entry, Self::LocalSignature),
-            "local-fields" => named(entry, Self::LocalFields),
-            "local-name" => named(entry, Self::LocalName),
-            "local-extra" => named(entry, Self::LocalExtra),
-            "compressed-payload" => named(entry, Self::CompressedPayload),
-            "data-descriptor" => named(entry, Self::DataDescriptor),
-            "archive-padding" => match entry {
-                Some(entry) => Ok(Self::EntryArchivePadding(entry)),
-                None => Ok(Self::ArchivePadding),
-            },
-            "central-signature" => named(entry, Self::CentralSignature),
-            "central-fields" => named(entry, Self::CentralFields),
-            "central-name" => named(entry, Self::CentralName),
-            "central-extra" => named(entry, Self::CentralExtra),
-            "central-comment" => named(entry, Self::CentralComment),
-            "zip64-end-record" => unit(entry, Self::Zip64EndRecord),
-            "zip64-end-locator" => unit(entry, Self::Zip64EndLocator),
-            "end-record" => unit(entry, Self::EndRecord),
-            _ => Err(format!("unknown archive span role {label}")),
-        }
-    }
-}
-
-/// One physical archive span.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "ArchiveSpanWire")]
-pub(crate) struct ArchiveSpan {
-    /// Stable span identity.
-    pub(crate) id: String,
-    /// Nonempty byte interval.
-    pub(crate) span: ByteSpan,
-    /// Structural role.
-    pub(crate) role: ArchiveSpanRole,
-}
-
-#[derive(Deserialize)]
-struct ArchiveSpanWire {
-    id: String,
-    start: u64,
-    end: u64,
-    role: String,
-    entry: Option<String>,
-}
-
-#[derive(Serialize)]
-struct ArchiveSpanOut<'a> {
-    id: &'a str,
-    start: u64,
-    end: u64,
-    role: &'static str,
-    entry: Option<&'a str>,
-}
-
-impl Serialize for ArchiveSpan {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        ArchiveSpanOut {
-            id: &self.id,
-            start: self.span.start(),
-            end: self.span.end(),
-            role: self.role.as_str(),
-            entry: self.role.entry(),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl TryFrom<ArchiveSpanWire> for ArchiveSpan {
-    type Error = String;
-
-    fn try_from(wire: ArchiveSpanWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
-            span: ByteSpan::try_new(wire.start, wire.end)?,
-            role: ArchiveSpanRole::from_label(&wire.role, wire.entry)?,
-        })
-    }
 }
 
 /// Structural document-kind classification from declared object domains.
@@ -2609,8 +1492,6 @@ pub(crate) struct ObjectRecord {
     pub(crate) dependency_allow_partial: Option<std::num::NonZeroU64>,
     /// Source-order index.
     pub(crate) order: usize,
-    /// Exact object-data XML and its source span, when present.
-    pub(crate) data: Option<RetainedXml>,
 }
 
 impl ObjectRecord {
@@ -2624,6 +1505,7 @@ impl ObjectRecord {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ObjectRecordWire {
     id: String,
     name: String,
@@ -2634,9 +1516,6 @@ struct ObjectRecordWire {
     dependencies: Vec<String>,
     dependency_allow_partial: Option<i128>,
     order: usize,
-    raw_xml: Option<String>,
-    byte_start: Option<u64>,
-    byte_end: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -2650,18 +1529,10 @@ struct ObjectRecordOut<'a> {
     dependencies: &'a [String],
     dependency_allow_partial: Option<i128>,
     order: usize,
-    raw_xml: Option<&'a str>,
-    byte_start: Option<u64>,
-    byte_end: Option<u64>,
 }
 
 impl Serialize for ObjectRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // Absent object data writes all three span members absent.
-        let (raw_xml, byte_start, byte_end) = match &self.data {
-            Some(data) => (Some(data.text()), Some(data.start()), Some(data.end())),
-            None => (None, None, None),
-        };
         ObjectRecordOut {
             id: self.id(),
             name: self.name(),
@@ -2674,9 +1545,6 @@ impl Serialize for ObjectRecord {
                 .dependency_allow_partial
                 .map(|value| i128::from(value.get())),
             order: self.order,
-            raw_xml,
-            byte_start,
-            byte_end,
         }
         .serialize(serializer)
     }
@@ -2686,17 +1554,6 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
     type Error = String;
 
     fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
-        let data = match (wire.raw_xml, wire.byte_start, wire.byte_end) {
-            (Some(raw_xml), Some(byte_start), Some(byte_end)) => {
-                Some(RetainedXml::try_new(raw_xml, byte_start, byte_end)?)
-            }
-            (None, None, None) => None,
-            _ => {
-                return Err(
-                    "object data raw_xml, byte_start, and byte_end must be set together".to_owned(),
-                );
-            }
-        };
         Ok(Self {
             identity: object_identity::ObjectIdentity::try_new(wire.id, wire.name)?,
             type_name: wire.type_name,
@@ -2714,7 +1571,6 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
                 })
                 .transpose()?,
             order: wire.order,
-            data,
         })
     }
 }
@@ -2732,8 +1588,6 @@ pub(crate) struct ExtensionRecord {
     pub(crate) type_name: String,
     /// Source-order index.
     pub(crate) order: usize,
-    /// Exact extension XML.
-    pub(crate) raw_xml: String,
 }
 
 /// Dynamic-property persistence metadata.
@@ -2910,19 +1764,78 @@ impl TryFrom<LinkTargetWire> for LinkTarget {
     }
 }
 
-/// One property value element retained in source order.
+/// A decoded JSON value. The wrapper distinguishes a held JSON null from an
+/// absent decoded value without giving the optional key two wire spellings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DecodedJsonValue {
+    pub(crate) value: serde_json::Value,
+}
+
+impl From<serde_json::Value> for DecodedJsonValue {
+    fn from(value: serde_json::Value) -> Self {
+        Self { value }
+    }
+}
+
+cadmpeg_core::named_optional_field!(deserialize_decoded_json, DecodedJsonValue, "decoded_json");
+
+/// One property value element retained in source order.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub(crate) struct ValueRecord {
     /// Value element tag.
     pub(crate) tag: String,
     /// Ordered position among value elements.
     pub(crate) order: usize,
+    /// Parent value index; absent for a direct property child.
+    pub(crate) parent: Option<usize>,
     /// Value attributes.
     pub(crate) attributes: BTreeMap<String, String>,
+    /// Decoded JSON-mode Python value; encoded source attributes are layout only.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_decoded_json"
+    )]
+    pub(crate) decoded_json: Option<DecodedJsonValue>,
     /// Direct text content.
     pub(crate) text: Option<String>,
-    /// Exact value-element XML.
-    pub(crate) raw_xml: String,
+}
+
+impl Serialize for ValueRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct ValueOut<'a> {
+            tag: &'a str,
+            order: usize,
+            parent: Option<usize>,
+            attributes: BTreeMap<&'a str, &'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            decoded_json: Option<&'a DecodedJsonValue>,
+            text: Option<&'a str>,
+        }
+        let python = self.tag == "Python";
+        ValueOut {
+            tag: &self.tag,
+            order: self.order,
+            parent: self.parent,
+            attributes: self
+                .attributes
+                .iter()
+                .filter(|(key, _)| {
+                    !python
+                        || !matches!(
+                            key.as_str(),
+                            "value" | "Value" | "data" | "encoded" | "json"
+                        )
+                })
+                .map(|(key, value)| (key.as_str(), value.as_str()))
+                .collect(),
+            decoded_json: self.decoded_json.as_ref(),
+            text: self.text.as_deref(),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Persisted values of a property, or a status-only transient declaration.
@@ -2965,8 +1878,6 @@ pub(crate) struct PropertyRecord {
     pub(crate) body: PropertyBody,
     /// Source-order index within the owner.
     pub(crate) order: usize,
-    /// Retained XML and its byte span.
-    pub(crate) xml: RetainedXml,
 }
 
 /// More than one property matches a selection.
@@ -3078,6 +1989,7 @@ impl PropertyRecord {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PropertyRecordWire {
     id: String,
     owner: String,
@@ -3092,9 +2004,6 @@ struct PropertyRecordWire {
     values: Vec<ValueRecord>,
     links: Vec<Option<LinkTarget>>,
     side_entries: Vec<String>,
-    raw_xml: String,
-    byte_start: u64,
-    byte_end: u64,
 }
 
 #[derive(Serialize)]
@@ -3113,9 +2022,6 @@ struct PropertyRecordOut<'a> {
     values: &'a [ValueRecord],
     links: &'a [Option<LinkTarget>],
     side_entries: &'a [String],
-    raw_xml: &'a str,
-    byte_start: u64,
-    byte_end: u64,
 }
 
 impl Serialize for PropertyRecord {
@@ -3136,9 +2042,6 @@ impl Serialize for PropertyRecord {
             values: self.values(),
             links: self.links(),
             side_entries: self.side_entries(),
-            raw_xml: self.xml.text(),
-            byte_start: self.xml.start(),
-            byte_end: self.xml.end(),
         }
         .serialize(serializer)
     }
@@ -3148,6 +2051,14 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
     type Error = String;
 
     fn try_from(wire: PropertyRecordWire) -> Result<Self, Self::Error> {
+        for (index, value) in wire.values.iter().enumerate() {
+            if value.order != index || value.parent.is_some_and(|parent| parent >= index) {
+                return Err(
+                    "property values require contiguous order and backward parent references"
+                        .into(),
+                );
+            }
+        }
         let body = if let Some(detail) = wire.payload_error {
             if detail.trim().is_empty()
                 || wire.transient
@@ -3190,7 +2101,6 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
             status: wire.status,
             body,
             order: wire.order,
-            xml: RetainedXml::try_new(wire.raw_xml, wire.byte_start, wire.byte_end)?,
         })
     }
 }
@@ -3239,8 +2149,6 @@ pub(crate) struct EntryRecord {
     name: ArchiveEntryName,
     pub(crate) role: cadmpeg_core::container::ContainerRole,
     referenced_by: EntryReferences,
-    data: NativeBytes,
-    sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3288,20 +2196,16 @@ impl EntryRecord {
         name: String,
         role: cadmpeg_core::container::ContainerRole,
         referenced_by: Vec<String>,
-        data: Vec<u8>,
     ) -> Result<Self, CodecError> {
         let id = cadmpeg_ir::ids::Identity::new(id).map_err(CodecError::malformed)?;
         let name = ArchiveEntryName::try_from(name).map_err(CodecError::malformed)?;
         let referenced_by =
             EntryReferences::try_from(referenced_by).map_err(CodecError::malformed)?;
-        let sha256 = sha256_hex(&data);
         Ok(Self {
             id,
             name,
             role,
             referenced_by,
-            data: data.into(),
-            sha256,
         })
     }
 
@@ -3314,16 +2218,6 @@ impl EntryRecord {
     pub(crate) fn referenced_by(&self) -> &[String] {
         &self.referenced_by.0
     }
-    pub(crate) fn data(&self) -> &[u8] {
-        self.data.as_ref()
-    }
-    pub(crate) fn byte_len(&self) -> u64 {
-        cadmpeg_core::decode::u64_from_index(self.data.len())
-    }
-    pub(crate) fn sha256(&self) -> &str {
-        &self.sha256
-    }
-
     pub(crate) fn add_reference(&mut self, owner: &str) -> Result<(), CodecError> {
         if !cadmpeg_ir::ids::is_valid_identity(owner) {
             return Err(CodecError::malformed("entry reference identity is invalid"));
@@ -3338,37 +2232,15 @@ impl EntryRecord {
         self.referenced_by.0.push(owner);
         Ok(())
     }
-
-    #[cfg(test)]
-    pub(crate) fn replace_data(&mut self, bytes: Vec<u8>) {
-        self.sha256 = sha256_hex(&bytes);
-        self.data = bytes.into();
-    }
-}
-
-/// Read a [`NativeBytes`] payload, requiring the lowercase spelling the writer emits.
-pub(crate) fn deserialize_lowercase_native_bytes<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<NativeBytes, D::Error> {
-    let text = String::deserialize(deserializer)?;
-    if text.bytes().any(|byte| byte.is_ascii_uppercase()) {
-        return Err(serde::de::Error::custom(
-            "entry data hex requires lowercase hexadecimal digits",
-        ));
-    }
-    NativeBytes::deserialize(serde::de::value::StrDeserializer::<D::Error>::new(&text))
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct EntryRecordWire {
     id: String,
     name: String,
     role: String,
-    byte_len: u64,
-    sha256: String,
     referenced_by: Vec<String>,
-    #[serde(deserialize_with = "deserialize_lowercase_native_bytes")]
-    data: NativeBytes,
 }
 
 #[derive(Serialize)]
@@ -3376,10 +2248,7 @@ struct EntryRecordOut<'a> {
     id: &'a str,
     name: &'a str,
     role: &'static str,
-    byte_len: u64,
-    sha256: &'a str,
     referenced_by: &'a [String],
-    data: NativeBytes<&'a [u8]>,
 }
 
 impl Serialize for EntryRecord {
@@ -3388,10 +2257,7 @@ impl Serialize for EntryRecord {
             id: self.id(),
             name: self.name(),
             role: self.role.as_str(),
-            byte_len: self.byte_len(),
-            sha256: self.sha256(),
             referenced_by: self.referenced_by(),
-            data: NativeBytes::new(self.data()),
         }
         .serialize(serializer)
     }
@@ -3404,154 +2270,15 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
         let id = cadmpeg_ir::ids::Identity::new(wire.id).map_err(|error| error.to_string())?;
         let name = ArchiveEntryName::try_from(wire.name).map_err(str::to_owned)?;
         let referenced_by = EntryReferences::try_from(wire.referenced_by)?;
-        if wire.byte_len != cadmpeg_core::decode::u64_from_index(wire.data.len())
-            || wire.sha256 != sha256_hex(&wire.data)
-        {
-            return Err("entry byte_len/sha256 disagrees with data".to_owned());
-        }
         let record = Self {
             id,
             name,
             role: serde_json::from_value(serde_json::Value::String(wire.role))
                 .map_err(|error| format!("entry role: {error}"))?,
             referenced_by,
-            data: wire.data,
-            sha256: wire.sha256,
         };
         Ok(record)
     }
-}
-
-/// One non-overlapping logical-entry byte span.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "LogicalSpanWire")]
-pub(crate) struct LogicalSpan {
-    /// Stable span identity.
-    pub(crate) id: String,
-    /// Owning archive entry.
-    pub(crate) entry: String,
-    /// Nonempty byte interval.
-    pub(crate) span: ByteSpan,
-    /// Span family and owner.
-    pub(crate) classification: LogicalClassification,
-}
-
-/// Logical-entry family. Typed and named-opaque spans own a native record.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum LogicalClassification {
-    /// Framing bytes with no native owner.
-    Structural,
-    /// Typed native record bytes.
-    Typed {
-        /// Native record that owns the bytes.
-        owner: String,
-    },
-    /// Named opaque payload bytes.
-    NamedOpaque {
-        /// Native record that owns the bytes.
-        owner: String,
-    },
-}
-
-impl LogicalClassification {
-    /// Classification string retained on the CADIR wire.
-    pub(crate) const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Structural => "structural",
-            Self::Typed { .. } => "typed",
-            Self::NamedOpaque { .. } => "named_opaque",
-        }
-    }
-
-    /// Native record that owns typed or opaque bytes.
-    pub(crate) fn owner(&self) -> Option<&str> {
-        match self {
-            Self::Structural => None,
-            Self::Typed { owner } | Self::NamedOpaque { owner } => Some(owner.as_str()),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct LogicalSpanWire {
-    id: String,
-    entry: String,
-    start: u64,
-    end: u64,
-    classification: String,
-    owner: Option<String>,
-}
-
-#[derive(Serialize)]
-struct LogicalSpanOut<'a> {
-    id: &'a str,
-    entry: &'a str,
-    start: u64,
-    end: u64,
-    classification: &'static str,
-    owner: Option<&'a str>,
-}
-
-impl Serialize for LogicalSpan {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        LogicalSpanOut {
-            id: &self.id,
-            entry: &self.entry,
-            start: self.span.start(),
-            end: self.span.end(),
-            classification: self.classification.as_str(),
-            owner: self.classification.owner(),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl TryFrom<LogicalSpanWire> for LogicalSpan {
-    type Error = String;
-
-    fn try_from(wire: LogicalSpanWire) -> Result<Self, Self::Error> {
-        let classification = match (wire.classification.as_str(), wire.owner) {
-            ("structural", None) => LogicalClassification::Structural,
-            ("typed", Some(owner)) => LogicalClassification::Typed { owner },
-            ("named_opaque", Some(owner)) => LogicalClassification::NamedOpaque { owner },
-            ("structural", Some(_)) => {
-                return Err("structural logical span cannot carry an owner".to_owned());
-            }
-            ("typed" | "named_opaque", None) => {
-                return Err("typed and named_opaque logical spans require an owner".to_owned());
-            }
-            _ => return Err("unknown logical classification".to_owned()),
-        };
-        Ok(Self {
-            id: wire.id,
-            entry: wire.entry,
-            span: ByteSpan::try_new(wire.start, wire.end)?,
-            classification,
-        })
-    }
-}
-
-/// Deterministic whole-archive byte-accounting summary.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ByteCoverageRecord {
-    /// Stable report identity.
-    pub(crate) id: String,
-    /// Complete physical archive length.
-    pub(crate) physical_byte_len: u64,
-    /// Number of physical partition spans.
-    pub(crate) physical_span_count: usize,
-    /// Number of logical archive entries.
-    pub(crate) logical_entry_count: usize,
-    /// Sum of complete logical entry lengths.
-    pub(crate) logical_byte_len: u64,
-    /// Number of logical partition spans.
-    pub(crate) logical_span_count: usize,
-    /// Byte count for each closed classification.
-    pub(crate) classification_bytes: BTreeMap<String, u64>,
-    /// Sorted logical entries containing named opaque bytes.
-    pub(crate) named_opaque_entries: Vec<String>,
-    /// Whether both physical and logical partitions close exactly.
-    pub(crate) exact: bool,
 }
 
 /// Persistent string tables in contiguous numeric `HasherIndex` order.
@@ -3592,9 +2319,9 @@ pub(crate) struct StringTableRecord {
     /// Owning property when the table is serialized beside its first use.
     pub(crate) owner_property: Option<String>,
     /// Whether all strings were persisted; `None` for unreadable metadata.
-    save_all: Option<bool>,
+    pub(crate) save_all: Option<bool>,
     /// Native hashing threshold; `None` for unreadable metadata.
-    threshold: Option<i64>,
+    pub(crate) threshold: Option<i64>,
     /// Referenced side entry, or `None` for inline data.
     pub(crate) source_entry: Option<String>,
     /// Parsed records in serialized order; `None` when the payload is source-only.
@@ -3721,6 +2448,4 @@ pub(crate) struct StringTableEntry {
     pub(crate) components: Vec<i64>,
     /// Exact payload following the numeric header.
     pub(crate) payload: String,
-    /// Exact serialized record without its line terminator.
-    pub(crate) raw: String,
 }

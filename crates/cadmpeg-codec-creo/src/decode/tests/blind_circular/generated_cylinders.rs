@@ -44,8 +44,10 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(34.0)
-                            .expect("nonzero length fixture")
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(34.0)
+                                .expect("nonzero length fixture")
+                        )
                     },
                     draft: None,
                 }
@@ -234,8 +236,9 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
-                            .expect("nonzero length fixture"),
+                        length: (cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                            .expect("nonzero length fixture"))
+                        .into(),
                     },
                     draft: None,
                 },
@@ -377,8 +380,10 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
                 ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
-                                .expect("nonzero length fixture"),
+                            length: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                                    .expect("nonzero length fixture")
+                            ),
                         },
                         draft: None,
                     },

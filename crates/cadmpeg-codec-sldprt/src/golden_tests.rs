@@ -11,17 +11,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
 use cadmpeg_ir::report::export::WritePath;
-use cadmpeg_test_support::golden::{
-    elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
-};
-use cadmpeg_test_support::roundtrip::{
-    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
-    MutationOutcome, SemanticOutcome,
-};
+use cadmpeg_test_support::golden::{snapshot_text, snapshots_agree, Branch, Harness};
+use cadmpeg_test_support::roundtrip::{semantic_roundtrip, verbatim_replay_holds, SemanticOutcome};
 
 use super::SldprtCodec;
 
@@ -59,25 +53,22 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// fidelity. A decode error is frozen too: refusing a document is
 /// contract-relevant behavior, so this never panics on codec output.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value =
-        match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => {
-                let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
-                if let Some(source) = result.ir_mut().source.as_mut() {
-                    // The `native` lane digests cover retained source bytes and
-                    // stay pinned; a `_local_sha256` digest covers decoded
-                    // content, so a platform's libm moves it.
-                    elide_local_digests(&mut source.attributes);
-                }
-                serde_json::json!({
-                    "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-                    "report": serde_json::to_value(result.report()).expect("serialize report"),
-                    "source_fidelity": serde_json::to_value(result.source_fidelity())
-                        .expect("serialize source_fidelity"),
-                })
-            }
-            Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
-        };
+    let value = match cadmpeg_test_support::golden::decode(
+        &SldprtCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
+        Ok(result) => {
+            let result = cadmpeg_test_support::EditableDecodeResult::from(result);
+            serde_json::json!({
+                "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
+                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": serde_json::to_value(result.source_fidelity())
+                    .expect("serialize source_fidelity"),
+            })
+        }
+        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+    };
     snapshot_text(&value)
 }
 
@@ -184,11 +175,14 @@ fn walk_identifiers(value: &mut serde_json::Value, visit: &mut impl FnMut(&str) 
 /// covers the model, units, and tolerances only — not `ir.native` or
 /// `ir.source.attributes`, which describe the rebuilt container.
 fn neutral_document(bytes: &[u8]) -> String {
-    let value =
-        match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => normalized_document(result.ir()),
-            Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
-        };
+    let value = match cadmpeg_test_support::golden::decode(
+        &SldprtCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
+        Ok(result) => normalized_document(result.ir()),
+        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+    };
     snapshot_text(&value)
 }
 
@@ -275,7 +269,27 @@ fn golden_output_is_deterministic() {
 #[test]
 fn fixtures_replay_verbatim() {
     for (name, bytes) in harness().fixture_inputs() {
-        verbatim_replay_holds(&SldprtCodec, &name, &bytes);
+        let decoded = cadmpeg_test_support::golden::decode(
+            &SldprtCodec,
+            &mut Cursor::new(bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+        if decoded.source_fidelity().unrepresented().is_empty() {
+            verbatim_replay_holds(&SldprtCodec, &name, &bytes);
+        } else {
+            use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+            let plan = SldprtCodec
+                .plan(
+                    EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                    TargetRequest::Inherit,
+                )
+                .unwrap();
+            assert!(
+                matches!(plan.report().write_path(), WritePath::Synthesized { .. }),
+                "fixture {name}"
+            );
+        }
     }
 }
 
@@ -290,20 +304,16 @@ fn fixtures_survive_the_semantic_write_path() {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
                 assert!(
-                    matches!(report.write_path(), WritePath::Patched { .. }),
-                    "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
+                    !matches!(report.write_path(), WritePath::VerbatimReplay { .. }),
+                    "fixture {name}: semantic roundtrip did not run a writer"
                 );
-                if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
-                    panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
+                if report.losses.is_empty() {
+                    if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
+                        panic!("fixture {name}: a lossless semantic write changed the document: {mismatch}");
+                    }
                 }
             }
-            SemanticOutcome::Refused { error } => {
-                assert!(
-                matches!(error, CodecError::NotImplemented(_)),
-                "fixture `{name}`: the semantic writer may decline an edit it has not built, but this \
-                 refusal reports a defect in what it already retains: {error}"
-            );
-            }
+            SemanticOutcome::Refused { error } => panic!("fixture {name}: {error}"),
         });
     }
     assert!(
@@ -316,134 +326,260 @@ fn fixtures_survive_the_semantic_write_path() {
 /// How far the mutation lane moves an extrusion depth, in millimetres.
 const MUTATION_MM: f64 = 3.0;
 
-/// Every statement of a one-sided blind extrusion depth in `ir`.
-fn visit_blind_extrude_lengths(
-    ir: &mut cadmpeg_ir::CadIr,
-    mut visit: impl FnMut(&mut cadmpeg_ir::scalar::NonZeroLength),
-) -> usize {
-    fn depth(definition: &mut FeatureDefinition) -> Option<&mut cadmpeg_ir::scalar::NonZeroLength> {
-        let FeatureDefinition::Operation(FeatureOperation::Extrude {
-            extent: ExtrudeExtent::OneSided { side },
-            ..
-        }) = definition
-        else {
-            return None;
-        };
-        match &mut side.termination {
-            LinearTermination::Blind { length } => Some(length),
-            _ => None,
-        }
+/// One-sided blind extrusion depth in a definition.
+fn blind_depth(
+    definition: &FeatureDefinition,
+) -> Option<&cadmpeg_ir::Dimension<cadmpeg_ir::scalar::NonZeroLength>> {
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    }) = definition
+    else {
+        return None;
+    };
+    match &side.termination {
+        LinearTermination::Blind { length } => Some(length),
+        _ => None,
     }
-    let mut count = 0;
-    for feature in &mut ir.model.features {
-        feature.evaluation.edit(|definition, _| {
-            if let Some(length) = depth(definition) {
-                count += 1;
-                visit(length);
-            }
-        });
-    }
-    for state in ir
-        .model
-        .configurations
-        .iter_mut()
-        .flat_map(|configuration| configuration.feature_states.values_mut())
-    {
-        if let Some(length) = depth(&mut state.definition) {
-            count += 1;
-            visit(length);
-        }
-    }
-    count
 }
 
-/// A blind-depth edit without a regenerated B-rep is refused.
+/// Canonical edits invalidate each changed feature and its dependents.
+fn edit_blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> usize {
+    let edits = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let dimension = blind_depth(feature.definition())?;
+            let length = ir.dimension_value(dimension)?;
+            Some((feature.id.clone(), length, dimension.parameter().cloned()))
+        })
+        .collect::<Vec<_>>();
+    let configuration_edits = ir
+        .model
+        .configurations
+        .iter()
+        .enumerate()
+        .flat_map(|(configuration, row)| {
+            row.feature_states
+                .iter()
+                .filter_map(move |(feature, state)| {
+                    Some((configuration, feature.clone(), state.definition()?.clone()))
+                })
+        })
+        .filter_map(|(configuration, feature, definition)| {
+            let dimension = blind_depth(&definition)?;
+            let length = ir.dimension_value(dimension)?;
+            let parameter = dimension.parameter().cloned();
+            Some((configuration, feature, definition, length, parameter))
+        })
+        .collect::<Vec<_>>();
+    let mut edited_parameters = BTreeSet::new();
+    for (feature, length, parameter) in &edits {
+        if parameter
+            .as_ref()
+            .is_some_and(|parameter| !edited_parameters.insert(parameter.clone()))
+        {
+            continue;
+        }
+        ir.set_dimension(
+            feature,
+            "/extent/side/termination/length",
+            cadmpeg_ir::scalar::NonZeroLength::new(length.get() + MUTATION_MM).unwrap(),
+        )
+        .expect("edit the canonical blind depth");
+    }
+    for (configuration, feature, definition, length, parameter) in &configuration_edits {
+        if parameter
+            .as_ref()
+            .is_some_and(|parameter| !edited_parameters.insert(parameter.clone()))
+        {
+            continue;
+        }
+        let index = ir
+            .model
+            .features
+            .iter()
+            .position(|row| row.id == *feature)
+            .expect("configuration feature exists");
+        let base = ir.model.features[index].definition().clone();
+        ir.model.features[index]
+            .evaluation
+            .set_definition(definition.clone());
+        let result = ir.set_dimension(
+            feature,
+            "/extent/side/termination/length",
+            cadmpeg_ir::scalar::NonZeroLength::new(length.get() + MUTATION_MM).unwrap(),
+        );
+        let edited_definition = ir.model.features[index].definition().clone();
+        ir.model.features[index].evaluation.set_definition(base);
+        result.expect("edit the configuration's canonical blind depth");
+        ir.model.configurations[*configuration]
+            .feature_states
+            .insert(
+                feature.clone(),
+                cadmpeg_ir::features::ConfigurationFeatureState::Definition {
+                    definition: Box::new(edited_definition),
+                },
+            );
+    }
+    edits.len() + configuration_edits.len()
+}
+
+/// A blind-depth edit retains its solved cache and writes the native stale flag.
 #[test]
-fn edited_blind_depth_without_regenerated_brep_is_refused() {
+fn edited_blind_depth_writes_design_and_reports_stale_brep() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    const DEPTH_TOLERANCE_MM: f64 = 1.0e-9;
     let mut edited_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
-        let ran = mutation_roundtrip(
+        let decoded = cadmpeg_test_support::golden::decode(
             &SldprtCodec,
-            &name,
-            &bytes,
-            ExpectedWritePath::Patched,
-            |ir| {
-                visit_blind_extrude_lengths(ir, |depth| {
-                    *depth =
-                        cadmpeg_ir::scalar::NonZeroLength::new(depth.get() + MUTATION_MM).unwrap();
-                }) != 0
-            },
-            |outcome| match outcome {
-                MutationOutcome::Written { edited, bytes, .. } => {
-                    let written = SldprtCodec
-                        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
-                        .unwrap_or_else(|error| {
-                            panic!("fixture `{name}`: written container does not decode: {error}")
-                        });
-                    let mut written = cadmpeg_test_support::EditableDecodeResult::from(written);
-                    let mut expected = edited.clone();
-                    let moved = depths(&mut expected);
-                    let returned = depths(&mut written.ir_mut());
-                    assert_eq!(
-                        returned.len(),
-                        moved.len(),
-                        "fixture `{name}`: the written container states {} blind depths where the edited \
-                         document states {}; the edited feature was dropped or duplicated",
-                        returned.len(),
-                        moved.len()
-                    );
-                    for (index, (returned, moved)) in returned.iter().zip(&moved).enumerate() {
-                        assert!(
-                            (returned - moved).abs() <= 1.0e-9,
-                            "fixture `{name}`: blind depth {index} came back as {returned} rather than \
-                             {moved}; the edit was dropped"
-                        );
-                    }
-                    assert_eq!(
-                        arena_sizes(written.ir()),
-                        arena_sizes(edited),
-                        "fixture `{name}`: the re-authored B-rep is not the same size as the one that was \
-                         written; entities were lost or invented"
-                    );
-                    panic!("fixture `{name}`: a blind-depth edit wrote an unverified B-rep");
-                }
-                MutationOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
-                    "fixture `{name}`: {error}"
-                ),
-            },
-        );
-        if ran {
-            edited_count += 1;
+            &mut Cursor::new(bytes),
+            &DecodeOptions::default(),
+        )
+        .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
+        let (mut edited, _, fidelity) = decoded.into_parts();
+        if edit_blind_extrude_lengths(&mut edited) == 0 {
+            continue;
         }
+        let plan = SldprtCodec
+            .plan(
+                EncodeInput::new(&edited, Some(&fidelity)),
+                TargetRequest::Inherit,
+            )
+            .unwrap_or_else(|error| panic!("fixture {name}: {error}"));
+        assert!(
+            matches!(plan.report().write_path(), WritePath::Patched { .. }),
+            "fixture {name}: path={:?}; losses={:?}",
+            plan.report().write_path(),
+            plan.report().losses,
+        );
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let written = cadmpeg_test_support::golden::decode(
+            &SldprtCodec,
+            &mut Cursor::new(bytes),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+        let synthesized = SldprtCodec
+            .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(
+            matches!(
+                synthesized.report().write_path(),
+                WritePath::Synthesized { .. }
+            ),
+            "fixture {name}: source-free writer path"
+        );
+        let synthesized_report = synthesized.report().clone();
+        let mut synthesized_bytes = Vec::new();
+        synthesized.write_to(&mut synthesized_bytes).unwrap();
+        let source_free = cadmpeg_test_support::golden::decode(
+            &SldprtCodec,
+            &mut Cursor::new(synthesized_bytes),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+        cadmpeg_test_support::contract::assert_written_arenas_agree(
+            &synthesized_report,
+            written.ir(),
+            source_free.ir(),
+        );
+        let native = crate::test_support::native::sldprt_native(written.ir());
+        for feature in &written.ir().model.features {
+            let Some(dimension) = blind_depth(feature.definition()) else {
+                continue;
+            };
+            let parameter_id = dimension.parameter().expect("one canonical bound depth");
+            let parameter = written
+                .ir()
+                .model
+                .parameters
+                .iter()
+                .find(|parameter| parameter.id == *parameter_id)
+                .unwrap();
+            assert_eq!(
+                parameter.owner.as_ref(),
+                Some(&feature.id),
+                "fixture {name}: bound owner"
+            );
+            let cache = parameter
+                .value
+                .as_ref()
+                .expect("evaluated canonical length");
+            assert_eq!(
+                parameter.expression.literal_value_as(cache).as_ref(),
+                Some(cache),
+                "fixture {name}: exact expression/cache agreement"
+            );
+            let native_feature = native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|native_feature| {
+                    Some(native_feature.id.as_str()) == feature.native_ref.as_deref()
+                })
+                .expect("native Keywords counterpart");
+            let native_text = &native_feature.parameters[parameter.name.as_str()];
+            assert_eq!(
+                cadmpeg_ir::features::Expression::text(native_text.as_str())
+                    .literal_value_as(cache)
+                    .as_ref(),
+                Some(cache),
+                "fixture {name}: native Keywords depth regenerated from canonical parameter"
+            );
+        }
+        let mut written = written.ir().clone();
+        assert!(
+            !written.model.features.is_empty()
+                && written
+                    .model
+                    .features
+                    .iter()
+                    .all(|feature| feature.needs_recompute),
+            "fixture {name}: SolidWorks writes swConfigurationNeedsUpdate=YES for stale evaluation"
+        );
+        let expected = depths(&mut edited);
+        let actual = depths(&mut written);
+        assert_eq!(
+            actual.len(),
+            expected.len(),
+            "fixture {name}: an edited feature was dropped or duplicated"
+        );
+        for (actual, expected) in actual.iter().zip(expected) {
+            assert!(
+                (actual - expected).abs() <= DEPTH_TOLERANCE_MM,
+                "fixture {name}: edited depth was discarded"
+            );
+        }
+        assert_eq!(
+            written.model.faces.len(),
+            edited.model.faces.len(),
+            "fixture {name}: stale solved carrier changed"
+        );
+        edited_count += 1;
     }
-    assert_eq!(
-        edited_count, FIXTURES_WITH_A_BLIND_DEPTH,
-        "the number of fixtures carrying a one-sided blind extrusion changed; this lane is the only \
-         one that reaches `sync_neutral_features` from the corpus, so a drop here narrows it silently"
-    );
+    assert_eq!(edited_count, FIXTURES_WITH_A_BLIND_DEPTH);
 }
 
 /// Every blind depth in `ir`, by value.
 fn depths(ir: &mut cadmpeg_ir::CadIr) -> Vec<f64> {
-    let mut values = Vec::new();
-    visit_blind_extrude_lengths(ir, |length| values.push(length.get()));
-    values
-}
-
-/// The size of each topological arena, so a rewrite that loses one fails.
-fn arena_sizes(ir: &cadmpeg_ir::CadIr) -> [usize; 8] {
-    let model = &ir.model;
-    [
-        model.bodies.len(),
-        model.regions.len(),
-        model.shells.len(),
-        model.faces.len(),
-        model.loops.len(),
-        model.coedges.len(),
-        model.edges.len(),
-        model.vertices.len(),
-    ]
+    ir.model
+        .features
+        .iter()
+        .map(cadmpeg_ir::Feature::definition)
+        .chain(
+            ir.model
+                .configurations
+                .iter()
+                .flat_map(|configuration| configuration.feature_states.values())
+                .filter_map(cadmpeg_ir::features::ConfigurationFeatureState::definition),
+        )
+        .filter_map(blind_depth)
+        .map(|dimension| ir.dimension_value(dimension).expect("resolved depth").get())
+        .collect()
 }
 
 /// How many committed fixtures carry a one-sided blind extrusion.
@@ -453,9 +589,35 @@ const FIXTURES_WITH_A_BLIND_DEPTH: usize = 1;
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
+        &SldprtCodec,
+        &harness().fixture_inputs(),
+        |decoded| {
+            let native = decoded
+                .ir()
+                .native
+                .namespace("sldprt")
+                .map(crate::native::SldprtNative::load)
+                .transpose()
+                .expect("typed native records");
+            let expected = crate::loss::unrepresented(&decoded.report().losses, native.as_ref());
+            assert!(
+                expected
+                    .iter()
+                    .all(|class| decoded.source_fidelity().unrepresented().contains(class)),
+                "each absent source class must be declared"
+            );
+        },
+    );
+    assert_eq!(summary.cut, 0, "{summary:?}");
+}
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(
         &SldprtCodec,
         &harness().fixture_inputs(),
     );
-    assert_eq!(summary.cut, 0, "{summary:?}");
 }

@@ -133,7 +133,7 @@ fn split_face_case() -> (
             AsmDeltaState {
                 id: format!("f3d:history:state#{state_id}"),
                 parent: "f3d:history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -158,6 +158,7 @@ fn split_face_case() -> (
         vec![state(2, Some(1)), state(1, None)],
     );
     let mut features = vec![Feature {
+        needs_recompute: false,
         id: FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -288,12 +289,13 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     )
     .unwrap();
     let reference = |token: &str, design_reference, candidates: &[i64]| DesignRecipeReference {
+        clause_index: 0,
         selector: 1,
-        selector_offset: 1_411,
+        selector_offset: Some(1_411),
         token: token.into(),
-        token_offset: 1_415,
+        token_offset: Some(1_415),
         design_reference,
-        design_reference_offset: 1_420,
+        design_reference_offset: Some(1_420),
         candidate_faces: candidates.iter().copied().map(face).collect(),
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
@@ -346,7 +348,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             AsmDeltaState {
                 id: format!("f3d:history:state#{state_id}"),
                 parent: "f3d:history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -600,6 +602,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         visible: None,
     };
     let sweep = |id: &str, outputs: Vec<BodyId>| Feature {
+        needs_recompute: false,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -833,6 +836,7 @@ fn hole_face_case() -> (
         });
     }
     let mut feature = Feature {
+        needs_recompute: false,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -859,12 +863,14 @@ fn hole_face_case() -> (
                 shape: cadmpeg_ir::features::holes::HoleShape::new(
                     cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
                     None,
-                    Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
+                    Some(cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                    )),
                 )
                 .unwrap(),
 
                 extent: Some(LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+                    length: (cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap()).into(),
                 }),
                 bottom: None,
                 taper_angle: None,
@@ -888,7 +894,7 @@ fn hole_face_case() -> (
             AsmDeltaState {
                 id: format!("history:state#{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,

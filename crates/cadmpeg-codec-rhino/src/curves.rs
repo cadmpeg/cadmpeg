@@ -22,7 +22,7 @@ const EPS_CURVE_POSITION: f64 = 1.0e-8;
 const EPS_CURVE_DEGENERATE: f64 = 1.0e-10;
 
 /// Maximum embedded curve nesting depth.
-const MAX_CURVE_DEPTH: usize = 32;
+pub(crate) const MAX_CURVE_DEPTH: usize = 32;
 /// Highest degree a polycurve join raises its segments to. Bezier elevation
 /// costs the square of the degree per span; Rhino commands stop at degree 11.
 const MAX_JOIN_DEGREE: usize = 64;
@@ -117,6 +117,8 @@ pub(crate) enum DecodedCurve {
     Leaf {
         /// Solved carrier geometry.
         geometry: CurveGeometry,
+        /// Independent parameter domain declared by a native line object.
+        parameter_range: Option<cadmpeg_ir::topology::IncreasingParameterInterval>,
         /// Non-fatal source warnings.
         warnings: Diagnostics,
     },
@@ -133,7 +135,39 @@ pub(crate) enum DecodedCurve {
 
 impl DecodedCurve {
     pub(crate) fn leaf(geometry: CurveGeometry, warnings: Diagnostics) -> Self {
-        Self::Leaf { geometry, warnings }
+        Self::Leaf {
+            geometry,
+            parameter_range: None,
+            warnings,
+        }
+    }
+
+    fn line(nurbs: NurbsCurve) -> Self {
+        let knots = nurbs.knots().as_slice();
+        let parameter_range =
+            knots
+                .first()
+                .copied()
+                .zip(knots.last().copied())
+                .and_then(|(lower, upper)| {
+                    cadmpeg_ir::topology::IncreasingParameterInterval::new([lower, upper])
+                });
+        Self::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+            parameter_range,
+            warnings: Diagnostics::new(),
+        }
+    }
+
+    pub(crate) fn parameter_range(
+        &self,
+    ) -> Option<cadmpeg_ir::topology::IncreasingParameterInterval> {
+        match self {
+            Self::Leaf {
+                parameter_range, ..
+            } => *parameter_range,
+            Self::Compound { .. } => None,
+        }
     }
 
     pub(crate) fn warnings(&self) -> &Diagnostics {
@@ -159,6 +193,50 @@ impl DecodedCurve {
             Self::Leaf { geometry, .. } => geometry,
             Self::Compound { .. } => &UNKNOWN_REPORTED_CURVE,
         }
+    }
+}
+
+pub(crate) fn project_curve_leaf(
+    geometry: CurveGeometry,
+    parameter_range: Option<cadmpeg_ir::topology::IncreasingParameterInterval>,
+) -> (
+    CurveGeometry,
+    Option<cadmpeg_ir::topology::IncreasingParameterInterval>,
+) {
+    let line = parameter_range.and_then(|range| {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &geometry else {
+            return None;
+        };
+        if nurbs.degree() != 1
+            || nurbs.pole_count() != 2
+            || nurbs.pole_rows().weight_at(0).is_some()
+        {
+            return None;
+        }
+        let from = nurbs.pole_rows().point_at(0)?.get();
+        let to = nurbs.pole_rows().point_at(1)?.get();
+        let span = range.upper() - range.lower();
+        let direction = cadmpeg_ir::units::UnitVector3::new(Vector3::new(
+            (to.x - from.x) / span,
+            (to.y - from.y) / span,
+            (to.z - from.z) / span,
+        ))?;
+        let origin = FinitePoint3::new(from.translated(*direction.as_raw(), -range.lower()))?;
+        if origin.get().translated(*direction.as_raw(), range.lower()) != from
+            || origin.get().translated(*direction.as_raw(), range.upper()) != to
+        {
+            return None;
+        }
+        Some(cadmpeg_ir::geometry::analytic::LineCurve::new(
+            origin, direction,
+        ))
+    });
+    match line {
+        Some(line) => (
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+            parameter_range,
+        ),
+        None => (geometry, None),
     }
 }
 
@@ -486,14 +564,7 @@ pub(crate) fn decode_inner(
         }
         POINT_CLOUD => DecodedGeometry::PointCloud(read_cloud(&mut reader, scale)?),
         LINE => DecodedGeometry::Curve {
-            curve: DecodedCurve::leaf(
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(
-                    &mut reader,
-                    scale,
-                    None,
-                )?)),
-                Diagnostics::new(),
-            ),
+            curve: DecodedCurve::line(read_line(&mut reader, scale, None)?),
         },
         ARC => {
             let (geometry, warnings) = read_arc(&mut reader, scale, None, false)?;
@@ -3205,5 +3276,103 @@ mod tests {
             println!("Rhino remap{domain:?}: {r:?}");
             assert_eq!(r.unwrap().knots().as_slice(), &[0., 0., 1., 1.]);
         }
+    }
+
+    fn native_line_leaf(from: [f64; 3], to: [f64; 3], domain: [f64; 2]) -> DecodedCurve {
+        let bytes = crate::test_support::test_archive::line_payload(from, to, domain);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("native line body");
+        DecodedCurve::line(
+            read_line(&mut reader, MillimeterScale::IDENTITY, None).expect("native finite line"),
+        )
+    }
+
+    fn projected_leaf(
+        curve: DecodedCurve,
+    ) -> (
+        CurveGeometry,
+        Option<cadmpeg_ir::topology::IncreasingParameterInterval>,
+    ) {
+        let range = curve.parameter_range();
+        let DecodedCurve::Leaf { geometry, .. } = curve else {
+            panic!("native line leaf")
+        };
+        super::project_curve_leaf(geometry, range)
+    }
+
+    #[test]
+    fn native_unit_speed_line_projects_its_actual_origin_direction_and_domain() {
+        let leaf = native_line_leaf([1.0, -4.0, 3.0], [1.0, 4.0, 3.0], [-2.0, 6.0]);
+        let (geometry, range) = projected_leaf(leaf);
+        let Some(range) = range else {
+            panic!("declared finite line domain")
+        };
+        assert_eq!(range.endpoints(), [-2.0, 6.0]);
+        let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = geometry else {
+            panic!("unit-speed analytic line")
+        };
+        assert_eq!(line.origin().get(), Point3::new(1.0, -2.0, 3.0));
+        assert_eq!(line.direction(), UnitVector3::Y_AXIS);
+    }
+
+    #[test]
+    fn native_nonunit_speed_line_keeps_its_exact_nurbs_parameterization() {
+        let (geometry, range) = projected_leaf(native_line_leaf(
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 5.0],
+        ));
+        assert!(range.is_none());
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
+            panic!("nonunit-speed native line")
+        };
+        assert_eq!(nurbs.knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
+        assert_eq!(
+            nurbs
+                .control_points()
+                .into_iter()
+                .map(FinitePoint3::get)
+                .collect::<Vec<_>>(),
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
+        );
+    }
+
+    #[test]
+    fn native_nurbs_class_does_not_gain_an_analytic_line_projection() {
+        let line = native_line_leaf([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]);
+        let DecodedCurve::Leaf { geometry, .. } = line else {
+            panic!("native line geometry")
+        };
+        let native_nurbs = DecodedCurve::leaf(geometry.clone(), Diagnostics::new());
+        let (projected, range) = projected_leaf(native_nurbs);
+        assert!(range.is_none());
+        assert_eq!(projected, geometry);
+    }
+
+    #[test]
+    fn native_line_scaling_is_applied_before_unit_speed_projection() {
+        with_test_context(|ctx| {
+            let mut leaf = native_line_leaf([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]);
+            scale_decoded_curve(
+                ctx,
+                &mut leaf,
+                crate::test_support::millimeter_scale(10.0),
+                0,
+            )
+            .expect("scale native curve fields");
+            let (geometry, range) = projected_leaf(leaf);
+            assert!(range.is_none());
+            let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
+                panic!("scaled nonunit-speed line")
+            };
+            assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(
+                nurbs
+                    .control_points()
+                    .into_iter()
+                    .map(FinitePoint3::get)
+                    .collect::<Vec<_>>(),
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)]
+            );
+        });
     }
 }

@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -348,7 +347,6 @@
         "consolidated_cones": [],
         "consolidated_cylinders": [
           {
-            "byte_offset": 16,
             "header": {
               "header_token": 5,
               "width": 1
@@ -388,14 +386,16 @@
         "consolidated_domain_relations": [],
         "consolidated_edge_nodes": [
           {
-            "byte_offset": 536,
             "curve_ref": 6,
             "definition": {
-              "byte_offset": 435,
               "class": 35,
               "flag": 3,
               "header_token": 0,
-              "payload": "0000000000000000000000000000000000000000f03f8dedb5a0f7c6b03e0000000000000000000000000000f03f000000000000f03f0000000000000000000000000000f03f8dedb5a0f7c6b03e",
+              "payload": {
+                "byte_len": 78,
+                "record_id": "catia:source:evidence#57b60690f61f1146c65737b762a95b380fcec363bfdd09e04220ececa1cc7e5a",
+                "sha256": "5fba3b3a338c1a3e2ad80e3aedf16b3cc95fc4d26921a46a6d11c649a5429ca9"
+              },
               "width": 1
             },
             "flag": 3,
@@ -442,7 +442,6 @@
         ],
         "consolidated_edge_runs": [
           {
-            "byte_offset": 141,
             "endpoint_loci": [
               [
                 1.0,
@@ -479,11 +478,9 @@
             ],
             "support_bindings": [
               {
-                "byte_offset": 16,
                 "kind": "cylinder"
               },
               {
-                "byte_offset": 16,
                 "kind": "cylinder"
               }
             ],
@@ -495,7 +492,6 @@
         "consolidated_parameter_points": [],
         "consolidated_pcurves": [
           {
-            "byte_offset": 141,
             "degree": 5,
             "extrapolation_sites": 2,
             "family": "a",
@@ -539,10 +535,13 @@
               ]
             ],
             "support_id": 4660,
-            "tail": "07"
+            "tail": {
+              "byte_len": 1,
+              "record_id": "catia:source:evidence#29045c794136187f0e0d70853c273b68b169712b5b4a78336d2d74157176a0a5",
+              "sha256": "ca358758f6d27e6cf45272937977a748fd88391db679ceda7dc7bf1f005ee879"
+            }
           },
           {
-            "byte_offset": 288,
             "degree": 5,
             "extrapolation_sites": 2,
             "family": "a",
@@ -586,7 +585,11 @@
               ]
             ],
             "support_id": 4660,
-            "tail": "07"
+            "tail": {
+              "byte_len": 1,
+              "record_id": "catia:source:evidence#cb41a5faa6a7147abfdbc68b919db67c973067525b22dd02b58c55e452e2fe1d",
+              "sha256": "ca358758f6d27e6cf45272937977a748fd88391db679ceda7dc7bf1f005ee879"
+            }
           }
         ],
         "consolidated_plane_carriers": [],
@@ -619,6 +622,7 @@
           }
         ],
         "design_objects": [],
+        "display_colors": [],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -656,6 +660,10 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "brep_stream_len": "324",
@@ -665,8 +673,6 @@
         "fbb_runs": "1",
         "file_size": "1120",
         "finjpl_segment_count": "0",
-        "inner_offset": "549",
-        "outer_dir_offset": "1120",
         "preview_count": "0",
         "stream_count": "2",
         "vertex_records": "3"
@@ -1134,6 +1140,36 @@
         },
         "message": "Standard circles with an exact adjacent-carrier section normal or two non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or cone generators are transferred as curves. Standard spline edges retain exact two-surface intersection constructions and their identity-bound support pcurves when present, but unbound serialized 3D NURBS caches, materials, and document metadata are not yet transferred.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Consolidated pcurve catia:consolidated:pcurve#0 has no neutral pcurve in this projection.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Consolidated pcurve catia:consolidated:pcurve#1 has no neutral pcurve in this projection.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "projection.record-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced"
+        },
+        "message": "Consolidated edge run catia:consolidated:edge-run#0 has no neutral edge in this projection.",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -1144,7 +1180,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -1293,6 +1332,18 @@
         }
       }
     },
+    "metadata": {
+      "native.catia.consolidated_cylinders.catia:consolidated:cylinder#0.byte_offset": "16",
+      "native.catia.consolidated_edge_nodes.catia:consolidated:edge-node#0.byte_offset": "536",
+      "native.catia.consolidated_edge_nodes.catia:consolidated:edge-node#0.definition.byte_offset": "435",
+      "native.catia.consolidated_edge_runs.catia:consolidated:edge-run#0.byte_offset": "141",
+      "native.catia.consolidated_edge_runs.catia:consolidated:edge-run#0.support_bindings[0].byte_offset": "16",
+      "native.catia.consolidated_edge_runs.catia:consolidated:edge-run#0.support_bindings[1].byte_offset": "16",
+      "native.catia.consolidated_pcurves.catia:consolidated:pcurve#0.byte_offset": "141",
+      "native.catia.consolidated_pcurves.catia:consolidated:pcurve#1.byte_offset": "288",
+      "source.inner_offset": "549",
+      "source.outer_dir_offset": "1120"
+    },
     "retained_records": {
       "catia:payload:unknown#brep-stream": {
         "bytes": {
@@ -1300,8 +1351,49 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": []
+      },
+      "catia:source:evidence#29045c794136187f0e0d70853c273b68b169712b5b4a78336d2d74157176a0a5": {
+        "bytes": {
+          "byte_len": 1,
+          "retention": "digest",
+          "sha256": "ca358758f6d27e6cf45272937977a748fd88391db679ceda7dc7bf1f005ee879"
+        },
+        "offset": 0,
+        "stream": "native.catia.consolidated_pcurves.catia:consolidated:pcurve#0.tail",
+        "untyped": []
+      },
+      "catia:source:evidence#57b60690f61f1146c65737b762a95b380fcec363bfdd09e04220ececa1cc7e5a": {
+        "bytes": {
+          "byte_len": 78,
+          "retention": "digest",
+          "sha256": "5fba3b3a338c1a3e2ad80e3aedf16b3cc95fc4d26921a46a6d11c649a5429ca9"
+        },
+        "offset": 0,
+        "stream": "native.catia.consolidated_edge_nodes.catia:consolidated:edge-node#0.definition.payload",
+        "untyped": []
+      },
+      "catia:source:evidence#cb41a5faa6a7147abfdbc68b919db67c973067525b22dd02b58c55e452e2fe1d": {
+        "bytes": {
+          "byte_len": 1,
+          "retention": "digest",
+          "sha256": "ca358758f6d27e6cf45272937977a748fd88391db679ceda7dc7bf1f005ee879"
+        },
+        "offset": 0,
+        "stream": "native.catia.consolidated_pcurves.catia:consolidated:pcurve#1.tail",
+        "untyped": []
+      },
+      "catia:source:image#whole": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAARgAAAAALIDKFoFAAAAAAAA8D8AAAAAAAAAQAAAAAAAAAhAGQAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAAAAAYLURU+yEpQAAAAAAAABDAAAAAAAAAFEAHBQgBAACAPwAAgEAAAEBABQgBAAAAQKBUcEDRXX1ApQMgiwAAAAUINBIVCQgJAAAAAAAAAAAAAAAAAADwPwkCAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8HpQMgiwAAAAUINBIVCQgJAAAAAAAAAAAAAAAAAADwPwkCAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8HsgMjTgAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/je21oPfGsD4AAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/je21oPfGsD6yAwYEBYIRFYiyAwYEBYIVGYSyA14IBRkGiwaOCQUhVjVfQ0ZWMgAAAAFUAAAA5wFBAf8DAAAAAAAAAQACAUkB/wMAAAAAAAAAAAAAAAAAgD8AAAABAAIwBAT/0tLS0jAEBP/S0tLSAQEAECQE//8AAAABAgAQJAT//wAAAAEGAwUIAQAAAAAAAAAAAAAAAAUIAQAAIEEAAAAAAAAAAAUIAQAAAAAAACBBAAAAAKq7zAAaADMzAAAAAAAAAAAAAAAAAAAAAAAAAABAoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAERIjMAAgAzMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//xEiMwACADMyAACAPwAAAEAAAEBAAAAAAAAAgEAAAAAAAACAPwAAAEAAAEBAAACAQGBEVWYAEgAzNwAAAAAAAAAAAAAAAECgAAAAAUNBVElBX1Y1IENCMDAwMQAAAAAAAAAAAAAAAAAAAAB+TQBhAGkAbgBEAGEAdABhAFMAdAByAGUAYQBtAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAQAAAAfgAAAH4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMZTAHUAcgBmAGEAYwBpAGMAUgBlAHAAcwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAI4AAADGAAAAxgAAAAAAAAAAQ0JfX0VORA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "catia:source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

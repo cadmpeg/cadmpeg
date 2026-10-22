@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Stable loss vocabulary charged by the sealed decode wrapper.
+//! Shared decode loss vocabulary for artifact loading and the sealed wrapper.
 //!
-//! These codes belong to no codec: the wrapper charges them by comparing the
-//! requested depth with the depth a backend reported, so every codec reports
-//! them under one namespace.
+//! Fixed factories keep the namespace, code and severity consistent. The
+//! wrapper compares requested classes with the scope a backend delivered.
 
-use cadmpeg_core::decode::DecodeDepth;
+use crate::document::ContentScope;
 
 use crate::report::{
     loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind},
@@ -14,13 +13,19 @@ use crate::report::{
 
 const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("decode");
 
-/// A stable, machine-readable identifier for one wrapper-charged decode loss.
+/// A stable, machine-readable identifier for one shared decode loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DecodeLossCode {
-    /// The backend delivered a shallower depth than the request named.
+pub enum DecodeLossCode {
+    /// A maximal source span was not consumed by any typed record.
+    SourceBytesUndecoded,
+    /// One independently framed part could not be decoded.
+    RecordUnreadable,
+    /// A sidecar does not match the source document and was not consumed.
+    SidecarStale,
+    /// The document lacks a class required by the request.
     DepthNotDelivered {
-        /// The depth the backend reported.
-        delivered: DecodeDepth,
+        /// The scope held by the document.
+        delivered: ContentScope,
     },
 }
 
@@ -28,33 +33,52 @@ impl DecodeLossCode {
     /// The stable string identifier. This is the gating contract.
     const fn code(self) -> &'static str {
         match self {
+            Self::SourceBytesUndecoded => "source.bytes-undecoded",
             Self::DepthNotDelivered { .. } => "depth.not-delivered",
+            Self::RecordUnreadable => "record.unreadable",
+            Self::SidecarStale => "sidecar.stale",
         }
     }
 
     const fn severity(self) -> Severity {
         match self {
-            Self::DepthNotDelivered { .. } => Severity::Error,
+            Self::DepthNotDelivered { .. } | Self::RecordUnreadable => Severity::Error,
+            Self::SidecarStale | Self::SourceBytesUndecoded => Severity::Warning,
         }
     }
 
-    /// Shared category of the content the shallower depth left out.
+    /// Shared category of the unavailable content.
     const fn shared_taxonomy(self) -> LossTaxonomy {
-        let Self::DepthNotDelivered { delivered } = self;
-        match delivered {
-            DecodeDepth::Container => LossTaxonomy::GeometryNotTransferred,
-            DecodeDepth::Geometry | DecodeDepth::Full => LossTaxonomy::ParametricRecordOmitted,
+        match self {
+            Self::DepthNotDelivered { delivered } if delivered.model => {
+                LossTaxonomy::ParametricRecordOmitted
+            }
+            Self::DepthNotDelivered { .. } => LossTaxonomy::GeometryNotTransferred,
+            Self::SidecarStale => LossTaxonomy::PreservedSourceUnavailable,
+            Self::SourceBytesUndecoded => LossTaxonomy::RecordNotTyped,
+            Self::RecordUnreadable => LossTaxonomy::DecodeDiagnostic,
         }
     }
 
     fn kind(self) -> LossKind {
-        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
-            .with_strict_floor(Some(Severity::Warning))
-            .into()
+        let kind = NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy());
+        match self {
+            Self::DepthNotDelivered { .. } => kind.with_strict_floor(Some(Severity::Warning)),
+            Self::SidecarStale | Self::RecordUnreadable | Self::SourceBytesUndecoded => kind,
+        }
+        .into()
+    }
+
+    /// Whether `note` carries this code.
+    pub(crate) fn is_code_of(self, note: &LossNote) -> bool {
+        note.code == self.kind()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
-    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
+    pub fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
+
+#[cfg(test)]
+mod tests;

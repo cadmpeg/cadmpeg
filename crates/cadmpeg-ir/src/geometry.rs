@@ -307,7 +307,7 @@ pub struct Surface {
     pub id: SurfaceId,
     /// Surface shape.
     pub geometry: SurfaceGeometry,
-    /// Native source-object identity and effective display metadata.
+    /// Native source-object identity and ownership.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -643,7 +643,7 @@ pub struct Curve {
         deserialize_with = "deserialize_carrier_parameter_range"
     )]
     pub parameter_range: Option<crate::topology::IncreasingParameterInterval>,
-    /// Native source-object identity and effective display metadata.
+    /// Native source-object identity and ownership.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -3386,27 +3386,25 @@ pub enum RevisionCacheForm<P = RevisionSurfaceParameterization> {
 impl<P> RevisionCacheForm<P> {
     /// State the fit tolerance this form carries for its solved cache.
     fn write_fit_tolerance(&mut self, write: ToleranceWrite) -> RevisionCacheWrite {
-        match self {
-            Self::SolvedCache { fit_tolerance } => {
-                match write {
-                    ToleranceWrite::State(value) => *fit_tolerance = value,
-                    ToleranceWrite::Raise(value) => {
-                        if value.get() > fit_tolerance.get() {
-                            *fit_tolerance = value;
-                        }
-                    }
-                    ToleranceWrite::Scale(scale) => {
-                        let Some(scaled) = fit_tolerance.scaled(scale) else {
-                            return RevisionCacheWrite::InvalidValue(
-                                fit_tolerance.get() * scale.get(),
-                            );
-                        };
-                        *fit_tolerance = scaled;
-                    }
+        match (self, write) {
+            (Self::SolvedCache { fit_tolerance }, ToleranceWrite::State(value)) => {
+                *fit_tolerance = value;
+                RevisionCacheWrite::Written
+            }
+            (Self::SolvedCache { fit_tolerance }, ToleranceWrite::Raise(value)) => {
+                if value.get() > fit_tolerance.get() {
+                    *fit_tolerance = value;
                 }
                 RevisionCacheWrite::Written
             }
-            Self::Parameterization(_) => RevisionCacheWrite::Parameterized,
+            (Self::SolvedCache { fit_tolerance }, ToleranceWrite::Scale(scale)) => {
+                let Some(scaled) = fit_tolerance.scaled(scale) else {
+                    return RevisionCacheWrite::InvalidValue(fit_tolerance.get() * scale.get());
+                };
+                *fit_tolerance = scaled;
+                RevisionCacheWrite::Written
+            }
+            (Self::Parameterization(_), _) => RevisionCacheWrite::Parameterized,
         }
     }
 

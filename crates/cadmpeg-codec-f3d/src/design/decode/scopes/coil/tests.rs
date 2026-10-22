@@ -365,19 +365,19 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
         .unwrap();
     let recipes = vec![ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{recipe_byte_offset}"),
-        byte_offset: u64_from_index(recipe_byte_offset),
+        byte_offset: Some(u64_from_index(recipe_byte_offset)),
         kind: ConstructionRecipeKind::Face,
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
                 value: "body".into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: None,
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 103,
-            offset: 0,
+            offset: Some(0),
         }),
     }];
     (bytes, scope, recipes)
@@ -765,7 +765,7 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
                 .try_into()
                 .expect("GUID"),
             recipe_record_index: 103,
-            recipe_record_byte_offset: recipes[0].byte_offset - 15,
+            recipe_record_byte_offset: recipes[0].byte_offset.unwrap() - 15,
             recipe_id: recipes[0].id.clone(),
             recipe_kind: crate::records::feature::scope::DesignFaceRecipeKind::Face,
             design: Some(crate::records::recipes::ConstructionRecipeDesign {
@@ -806,7 +806,7 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
 
     let scope = parse_parameter_scope(
@@ -814,7 +814,7 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("Coil scope");
@@ -871,7 +871,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
         id: "generated:scope-header#0".into(),
         record_index: 6644,
         class_tag: crate::records::references::DesignClassTag::try_from("353".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
 
     let scope = parse_parameter_scope(
@@ -879,7 +879,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("compact Coil scope");
@@ -916,7 +916,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 header.record_index,
                 &header.class_tag,
-                header.byte_offset,
+                header.byte_offset.expect("actual scanner header position"),
             )
             .unwrap()
             .expect("compact Coil scope");
@@ -931,7 +931,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("unsupported Coil operation remains a native scope");
@@ -972,7 +972,7 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
         id: "generated:scope-header#0".into(),
         record_index: 6644,
         class_tag: crate::records::references::DesignClassTag::try_from("338".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
 
     let scope = parse_parameter_scope(
@@ -980,7 +980,7 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("compact Coil new-body scope");
@@ -1050,14 +1050,14 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
             record_index: 331,
             class_tag: crate::records::references::DesignClassTag::try_from("345".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         };
         parse_parameter_scope(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("long Coil scope")

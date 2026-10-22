@@ -194,7 +194,7 @@ fn decode_resolves_feature_topology_selections() {
             }
         });
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -203,16 +203,125 @@ fn decode_resolves_feature_topology_selections() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let face_body = |ir: &cadmpeg_ir::CadIr, face: &cadmpeg_ir::ids::FaceId| {
+        let face = ir
+            .model
+            .faces
+            .iter()
+            .find(|candidate| &candidate.id == face)
+            .unwrap();
+        let shell = ir
+            .model
+            .shells
+            .iter()
+            .find(|candidate| candidate.id == face.shell)
+            .unwrap();
+        ir.model
+            .regions
+            .iter()
+            .find(|candidate| candidate.id == shell.region)
+            .unwrap()
+            .body
+            .clone()
+    };
+    let surface = |ir: &cadmpeg_ir::CadIr, face: &cadmpeg_ir::ids::FaceId| {
+        let face = ir
+            .model
+            .faces
+            .iter()
+            .find(|candidate| &candidate.id == face)
+            .unwrap();
+        ir.model
+            .surfaces
+            .iter()
+            .find(|candidate| candidate.id == face.surface)
+            .unwrap()
+            .geometry
+            .clone()
+    };
+    let matching_face = |id: &cadmpeg_ir::ids::FaceId| {
+        let expected = surface(decoded.ir(), id);
+        let matches = regenerated
+            .ir()
+            .model
+            .faces
+            .iter()
+            .filter(|face| surface(regenerated.ir(), &face.id) == expected)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            matches.len(),
+            1,
+            "the fixture has one face on each distinct plane"
+        );
+        matches[0].id.clone()
+    };
+    let matching_body = |id: &cadmpeg_ir::ids::BodyId| {
+        let face = decoded
+            .ir()
+            .model
+            .faces
+            .iter()
+            .find(|face| face_body(decoded.ir(), &face.id) == *id)
+            .unwrap();
+        face_body(regenerated.ir(), &matching_face(&face.id))
+    };
+    let edge_points = |ir: &cadmpeg_ir::CadIr, id: &cadmpeg_ir::ids::EdgeId| {
+        let edge = ir.model.edges.iter().find(|edge| &edge.id == id).unwrap();
+        let mut points = [&edge.start, &edge.end].map(|id| {
+            let vertex = ir
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| &vertex.id == id)
+                .unwrap();
+            let point = ir
+                .model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .unwrap()
+                .position()
+                .get();
+            [point.x, point.y, point.z]
+        });
+        points.sort_by(|left, right| {
+            left[0]
+                .total_cmp(&right[0])
+                .then(left[1].total_cmp(&right[1]))
+                .then(left[2].total_cmp(&right[2]))
+        });
+        points
+    };
+    let matching_edges = regenerated
+        .ir()
+        .model
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge_points(regenerated.ir(), &edge.id) == edge_points(decoded.ir(), &edge_id)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(matching_edges.len(), 1);
+    let emitted_edge = &matching_edges[0].id;
+    let emitted_face = matching_face(&face_id);
+    let emitted_body = matching_body(&body_id);
+    let emitted_tool = matching_body(&tool_body_id);
+    assert_ne!(emitted_body, emitted_tool);
     let records = &sldprt_native(regenerated.ir()).feature_histories[0].features;
-    assert_eq!(records[0].properties["Edges"], edge_id.as_str());
-    assert_eq!(records[1].properties["Faces"], face_id.as_str());
-    assert_eq!(records[2].properties["Target"], body_id.as_str());
-    assert_eq!(records[2].properties["Tools"], tool_body_id.as_str());
-    assert_eq!(records[3].properties["Face"], face_id.as_str());
-    assert_eq!(records[3].properties["Profile"], face_id.as_str());
-    assert_eq!(records[4].properties["Face"], face_id.as_str());
-    assert_eq!(records[5].properties["Profile"], face_id.as_str());
-    assert_eq!(records[5].properties["Path"], edge_id.as_str());
+    assert_eq!(records[0].properties["Edges"], emitted_edge.as_str());
+    assert_eq!(records[1].properties["Faces"], emitted_face.as_str());
+    assert_eq!(records[2].properties["Target"], emitted_body.as_str());
+    assert_eq!(records[2].properties["Tools"], emitted_tool.as_str());
+    assert_eq!(records[3].properties["Face"], emitted_face.as_str());
+    assert_eq!(records[3].properties["Profile"], emitted_face.as_str());
+    assert_eq!(records[4].properties["Face"], emitted_face.as_str());
+    assert_eq!(records[5].properties["Profile"], emitted_face.as_str());
+    assert_eq!(records[5].properties["Path"], emitted_edge.as_str());
+    assert!(
+        matches!(regenerated.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
+            if matches!(&groups[0].edges, EdgeSelection::Resolved { edges, .. } if edges == std::slice::from_ref(emitted_edge)))
+    );
 }
 
 #[test]
@@ -279,17 +388,17 @@ fn decode_dispatches_typed_features_by_xml_family() {
                 radius: actual_radius,
             },
             ..
-        }] if actual_radius.get() == 2.0)
+        }] if decoded.ir().dimension_value(actual_radius).unwrap().get() == 2.0)
     ));
+    // D26: this fillet has no definition references. Its original authored
+    // ordering text remains a native fact, not an extra canonical operand edge.
+    assert!(decoded.ir().model.features[2].dependencies.is_empty());
     assert_eq!(
-        decoded.ir().model.features[2].dependencies.as_slice(),
-        vec![
-            decoded.ir().model.features[0].id.clone(),
-            decoded.ir().model.features[1].id.clone(),
-        ]
+        sldprt_native(decoded.ir()).feature_histories[0].features[2].properties["Dependencies"],
+        "51,52,51"
     );
     assert_eq!(
-        decoded.ir().model.features[2].source_properties["Algorithm"],
+        sldprt_native(decoded.ir()).feature_histories[0].features[2].properties["Algorithm"],
         "RollingBall"
     );
     assert!(matches!(
@@ -302,7 +411,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
                 distance: actual_distance,
             },
             ..
-        }] if actual_distance.get() == 3.0)
+        }] if decoded.ir().dimension_value(actual_distance).unwrap().get() == 3.0)
     ));
     assert!(matches!(
         decoded.ir().model.features[4].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -311,29 +420,27 @@ fn decode_dispatches_typed_features_by_xml_family() {
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
-            }, Some(actual_diameter),) if actual_diameter.get() == 4.0)));
+            }, Some(actual_diameter),) if decoded.ir().dimension_value(actual_diameter).unwrap().get() == 4.0)));
 
     {
         let mut ir = decoded.ir_mut();
-        let updated_ir_evaluation = &mut ir.model.features[2].evaluation;
-        let mut updated_ir_definition = updated_ir_evaluation.definition().clone();
-        let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
-            &mut updated_ir_definition
-        else {
-            panic!("typed custom fillet");
-        };
-        let RadiusSpec::Constant { radius } = &mut groups[0].radius else {
-            panic!("constant fillet");
-        };
-        *radius = cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap();
-        updated_ir_evaluation.set_definition(updated_ir_definition);
-        ir.model.features[2].source_properties.insert(
-            cadmpeg_core::nonblank_literal!("Algorithm"),
-            "FaceBlend".into(),
-        );
+        let feature_id = ir.model.features[2].id.clone();
+        ir.set_dimension(
+            &feature_id,
+            "/groups/0/radius/radius",
+            cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
+        )
+        .unwrap();
+        assert!(ir.model.features[2].needs_recompute);
+        crate::test_support::native::update_sldprt_native(&mut ir, |native| {
+            native.feature_histories[0].features[2].properties.insert(
+                cadmpeg_core::nonblank_literal!("Algorithm"),
+                "FaceBlend".into(),
+            );
+        });
     }
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -347,19 +454,12 @@ fn decode_dispatches_typed_features_by_xml_family() {
     assert_eq!(native[2].kind, "CustomFillet");
     assert_eq!(native[2].parameters["Radius"], "2.5mm");
     assert_eq!(native[2].properties["Algorithm"], "FaceBlend");
-    assert_eq!(
-        regenerated.ir().model.features[2].source_properties["Algorithm"],
-        "FaceBlend"
-    );
-    assert_eq!(
-        regenerated.ir().model.features[2].dependencies.as_slice(),
-        vec![
-            regenerated.ir().model.features[0].id.clone(),
-            regenerated.ir().model.features[1].id.clone(),
-        ]
-    );
-    let mut dependencies = regenerated.ir().model.features[2].dependencies.to_vec();
-    dependencies.pop();
+
+    assert!(regenerated.ir().model.features[2].dependencies.is_empty());
+    assert_eq!(native[2].properties["Dependencies"], "51,52,51");
+    // Keep the original adversarial input after removing one old duplicate edge:
+    // the unrelated Profile dependency alone must still be refused.
+    let dependencies = vec![regenerated.ir().model.features[0].id.clone()];
     regenerated.ir_mut().model.features[2].dependencies =
         cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap();
     let error = crate::test_support::plan_inherited_write(
@@ -490,7 +590,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     );
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[0], &feature_id).expect("effective configuration definition"),
         FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
             if matches!(
                 (operands.target(), operands.tools()),
@@ -500,7 +600,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
             )
     ));
     assert!(matches!(
-        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Combine {
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[1], &feature_id).expect("effective configuration definition"), FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
             ..
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))));
@@ -539,12 +639,12 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     assert!(decoded.ir().model.configurations[0].active);
     assert_eq!(decoded.ir().model.configurations[0].source_index, Some(1));
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Combine {
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[0], &feature_id).expect("effective configuration definition"), FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
             ..
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))));
     assert!(matches!(
-        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[1], &feature_id).expect("effective configuration definition"),
         FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
             if matches!(
                 (operands.target(), operands.tools()),
@@ -577,7 +677,7 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
             op: BooleanOp::Cut,
         }) if matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle },
-                }) if (angle.get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
+                }) if (decoded.ir().dimension_value(angle).unwrap().get() - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
     ));
 }
 
@@ -617,7 +717,7 @@ fn decode_projects_compact_solid_sweep_join_operation() {
             },))));
     let feature_id = &decoded.ir().model.features[0].id;
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Sweep {
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[0], feature_id).expect("effective configuration definition"), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             ..
         }) if matches!((shape.mode(),), (SweepMode::Solid {
@@ -700,14 +800,19 @@ fn decode_does_not_globalize_configuration_local_sweep_path() {
     ));
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[0], &feature_id).expect("effective configuration definition"),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
             path: Some(PathRef::Native(path)),
             ..
         }) if path.starts_with("sldprt:feature-input:general-curve-ref:")
     ));
     assert!(matches!(
-        decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
+        super::effective_definition(
+            decoded.ir(),
+            &decoded.ir().model.configurations[1],
+            &feature_id
+        )
+        .expect("effective configuration definition"),
         FeatureDefinition::Operation(FeatureOperation::Sweep { path: None, .. })
     ));
 }
@@ -830,15 +935,14 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         "other".into(),
     ));
     updated_changed_profile_evaluation.set_definition(updated_changed_profile_definition);
-    let error = crate::test_support::plan_inherited_write(
-        &changed_profile,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("changes a reference-curve sweep profile"));
+    changed_profile
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("Surface-Sweep1"))
+        .unwrap()
+        .dependencies = cadmpeg_ir::features::DistinctMembers::default();
+    crate::test_support::assert_synthesis_fallback(&changed_profile, decoded.source_fidelity());
 
     decoded
         .ir_mut()
@@ -1072,17 +1176,6 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
     else {
         panic!("typed extrusion feature");
     };
-    assert_eq!(
-        extent,
-        &cadmpeg_ir::features::ExtrudeExtent::OneSided {
-            side: cadmpeg_ir::features::ExtrudeSide {
-                termination: cadmpeg_ir::features::LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(25.0).unwrap(),
-                },
-                draft: None,
-            }
-        }
-    );
     let parameter = decoded
         .ir()
         .model
@@ -1090,7 +1183,18 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected D1 parameter");
-    assert_eq!(parameter.expression, "25mm");
+    assert_eq!(
+        extent,
+        &cadmpeg_ir::features::ExtrudeExtent::OneSided {
+            side: cadmpeg_ir::features::ExtrudeSide {
+                termination: cadmpeg_ir::features::LinearTermination::Blind {
+                    length: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
+                },
+                draft: None,
+            }
+        }
+    );
+    assert_eq!(parameter.expression, "25 mm".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -1194,7 +1298,7 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected sketch D1 parameter");
-    assert_eq!(parameter.expression, "25mm");
+    assert_eq!(parameter.expression, "25 mm".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(

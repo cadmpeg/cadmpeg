@@ -83,7 +83,7 @@ fn flat_pattern_settings_retain_the_complete_type_table_and_related_headers() {
                 .unwrap();
                 assert_eq!(headers.len(), 1);
                 assert_eq!(headers[0].record_index, 50);
-                assert_eq!(headers[0].byte_offset, 0);
+                assert_eq!(headers[0].byte_offset, Some(0));
                 assert_eq!(headers[0].class_tag.as_str(), "256");
                 assert_eq!(
                     crate::ids::native_stream(&headers[0].id),
@@ -169,7 +169,7 @@ fn design_type_copy_keeps_table_entities_module_and_id() {
     );
     assert_eq!(
         types[0].id(),
-        &crate::ids::native_design_type_id(meta_name, types[0].byte_offset)
+        &crate::ids::native_design_type_id(meta_name, types[0].byte_offset.unwrap())
     );
 }
 
@@ -180,7 +180,7 @@ fn stream_type_indexes_refuse_limits_and_match_escaped_scope() {
     let meta_name = format!("{prefix}MetaStream.dat");
     let type_guid = "11111111-2222-3333-4444-555555555555";
     let design_type =
-        crate::design::test_support::design_type(type_guid, None, 7, "Fusion", vec![17]);
+        crate::design::test_support::design_type(256, type_guid, None, 7, "Fusion", vec![17]);
     let design_type = crate::records::entity_header::SegmentType::try_new(
         crate::ids::native_design_type_id(&meta_name, 0),
         design_type,
@@ -206,6 +206,7 @@ fn design_primary_frames_index_one_registered_frame() {
     bytes.extend_from_slice(&42_u32.to_le_bytes());
     let meta = crate::metastream::MetaStream {
         types: vec![crate::design::test_support::design_type(
+            256,
             "00000000-0000-0000-0000-000000000001",
             None,
             0,
@@ -228,6 +229,7 @@ fn typed_primary_frames_index_one_typed_frame() {
     let type_guid = "00000000-0000-0000-0000-000000000001";
     let meta = crate::metastream::MetaStream {
         types: vec![crate::design::test_support::design_type(
+            256,
             type_guid,
             None,
             0,
@@ -414,10 +416,10 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         };
         assert_eq!(space.component_record_index, 17);
         assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
-        assert_eq!(space.byte_offset, u64_from_index(marker));
+        assert_eq!(space.byte_offset, Some(u64_from_index(marker)));
         assert_eq!(
             space.context_uuid_offset,
-            u64_from_index(marker + 9 + reserved_len)
+            Some(u64_from_index(marker + 9 + reserved_len))
         );
     }
 
@@ -434,10 +436,12 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         };
         assert_eq!(space.component_record_index, 17);
         assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
-        assert_eq!(space.byte_offset, u64_from_index(typed_marker));
+        assert_eq!(space.byte_offset, Some(u64_from_index(typed_marker)));
         assert_eq!(
             space.context_uuid_offset,
-            u64_from_index(typed_marker + 9 + 4 + COMPONENT_TYPE_GUID.len() + reserved_len)
+            Some(u64_from_index(
+                typed_marker + 9 + 4 + COMPONENT_TYPE_GUID.len() + reserved_len
+            ))
         );
     }
 
@@ -575,12 +579,17 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
                 .collect::<Vec<_>>(),
             [101, 102]
         );
-        assert_eq!(timeline.frame().frame_length(), u64_from_index(bulk.len()));
+        assert_eq!(
+            timeline.frame().frame_length(),
+            Some(u64_from_index(bulk.len()))
+        );
         for item in timeline.frame().items() {
             assert_eq!(
                 u64::from_le_bytes(
-                    bulk[usize::try_from(item.offset).expect("fixture offset fits address space")
-                        ..usize::try_from(item.offset).expect("fixture offset fits address space")
+                    bulk[usize::try_from(item.offset.unwrap())
+                        .expect("fixture offset fits address space")
+                        ..usize::try_from(item.offset.unwrap())
+                            .expect("fixture offset fits address space")
                             + 8]
                         .try_into()
                         .expect("timeline target")
@@ -590,7 +599,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         }
 
         let mut duplicate = bulk.clone();
-        let second_offset = usize::try_from(timeline.frame().items()[1].offset)
+        let second_offset = usize::try_from(timeline.frame().items()[1].offset.unwrap())
             .expect("fixture offset fits address space");
         duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
         let error = with_scan(&archive(&meta, &duplicate), |scan| {

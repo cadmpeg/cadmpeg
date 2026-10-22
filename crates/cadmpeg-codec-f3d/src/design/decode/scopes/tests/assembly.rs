@@ -23,6 +23,74 @@ use crate::test_support::push_reference_u64;
 
 const EPS_EXACT_FIXTURE: f64 = f64::EPSILON * 4.0;
 
+/// Source-coordinate assertions use actual admitted record captures, while
+/// ordinary native values carry only assembly meaning.
+fn assembly_path_source_layout(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    owners: &[crate::records::parameters::DesignParameterOwner],
+) -> cadmpeg_ir::source_fidelity::RecordLayout {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut drafts = Vec::new();
+    let alignment =
+        crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types(
+            source,
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+            scope,
+            owners,
+            &std::collections::HashMap::new(),
+            &mut drafts,
+        )
+        .unwrap()
+        .unwrap();
+    let paths = alignment.operand_path_refs().unwrap();
+    let extent = source
+        .child(
+            usize::try_from(scope.byte_offset()).unwrap(),
+            usize::try_from(scope.paired_byte_offset()).unwrap(),
+        )
+        .unwrap();
+    let mut pointers = std::collections::BTreeMap::new();
+    ctx.record(&scope.id, extent, || {
+        for (ordinal, draft) in drafts {
+            draft.read(
+                &ctx,
+                paths[ordinal],
+                scope.record_index,
+                &format!("assembly_alignment.operand_qualifiers.{ordinal}.path"),
+                &mut pointers,
+            )?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    fidelity
+        .install_record_captures(&ctx, |id, layout| {
+            assert_eq!(id, scope.id.as_str());
+            for (field, offset) in std::mem::take(&mut pointers) {
+                layout.insert_pointer(field, offset).unwrap();
+            }
+            Ok(())
+        })
+        .unwrap();
+    fidelity.record_layout()[&scope.id].clone()
+}
+
+fn path_source_pointer(
+    layout: &cadmpeg_ir::source_fidelity::RecordLayout,
+    ordinal: usize,
+    field: &str,
+) -> u64 {
+    layout.pointers()[&format!("assembly_alignment.operand_qualifiers.{ordinal}.path.{field}")]
+}
+
 #[test]
 fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     let scope_record_index = 10_u32;
@@ -198,7 +266,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         identity_paths[0]
             .identity_guids()
             .iter()
-            .map(|guid| guid.value.as_str())
+            .map(|guid| guid.as_str())
             .collect::<Vec<_>>(),
         identities.to_vec()
     );
@@ -235,12 +303,13 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             && path
                 .identity_guids()
                 .iter()
-                .map(|guid| guid.value.as_str())
+                .map(|guid| guid.as_str())
                 .eq(identities.iter().copied())
     }));
+    let identity_source_layout =
+        assembly_path_source_layout(&identity_path_bytes, &scope, &rectangular_owners);
     let first_identity_length_at = usize::try_from(
-        extended_class_329_paths[0].identity_guids()[0]
-            .offset
+        path_source_pointer(&identity_source_layout, 0, "identity_guid_offsets.0")
             .checked_sub(4)
             .expect("identity length precedes text"),
     )
@@ -289,19 +358,32 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     .unwrap()
     .and_then(|alignment| alignment.operand_paths())
     .expect("exact assembly occurrence paths");
+    let path_layout = assembly_path_source_layout(&assembly_bytes, &scope, &rectangular_owners);
     assert_eq!(paths[0].link().locator_record_index, 64);
     assert_eq!(paths[0].link().wrapper_record_index, 66);
-    assert_eq!(paths[0].link().locator_reference_offset, 367);
-    assert_eq!(paths[0].link().locator_scope_reference_offset, 811);
-    assert_eq!(paths[0].link().wrapper_reference_offset, 822);
-    assert_eq!(paths[0].link().path_reference_offset, 1_042);
+    assert_eq!(
+        path_source_pointer(&path_layout, 0, "link.locator_reference_offset"),
+        367
+    );
+    assert_eq!(
+        path_source_pointer(&path_layout, 0, "link.locator_scope_reference_offset"),
+        811
+    );
+    assert_eq!(
+        path_source_pointer(&path_layout, 0, "link.wrapper_reference_offset"),
+        822
+    );
+    assert_eq!(
+        path_source_pointer(&path_layout, 0, "link.path_reference_offset"),
+        1_042
+    );
     assert_eq!(
         paths.each_ref().map(|path| {
             (
                 path.record_index,
                 path.occurrence_guids()
                     .iter()
-                    .map(|guid| guid.value.as_str().to_owned())
+                    .map(|guid| guid.as_str().to_owned())
                     .collect::<Vec<_>>(),
             )
         }),
@@ -353,8 +435,12 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         .unwrap()
         .is_some_and(|alignment| alignment.operand_paths().is_none()));
     }
-    let first_wrapper_at =
-        usize::try_from(paths[0].link().wrapper_byte_offset).expect("wrapper offset fits usize");
+    let first_wrapper_at = usize::try_from(path_source_pointer(
+        &path_layout,
+        0,
+        "link.wrapper_byte_offset",
+    ))
+    .expect("wrapper offset fits usize");
     for (relative_offset, value) in [(21, 0), (22, 2), (26, 0)] {
         let mut invalid_wrapper = assembly_bytes.clone();
         invalid_wrapper[first_wrapper_at + relative_offset] = value;
@@ -447,7 +533,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             && path
                 .identity_guids()
                 .iter()
-                .map(|guid| guid.value.as_str())
+                .map(|guid| guid.as_str())
                 .eq(class_294_identities.iter().copied())
     }));
     for path_at in [first_class_294_path_at, second_class_294_path_at] {
@@ -468,7 +554,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             && path
                 .identity_guids()
                 .iter()
-                .map(|guid| guid.value.as_str())
+                .map(|guid| guid.as_str())
                 .eq(class_294_identities.iter().copied())
     }));
 
@@ -636,7 +722,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     assert_eq!(
         paths
             .each_ref()
-            .map(|path| path.occurrence_guids()[0].value.as_str()),
+            .map(|path| path.occurrence_guids()[0].as_str()),
         [
             "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             "cccccccc-cccc-cccc-cccc-cccccccccccc",
@@ -920,26 +1006,30 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     .unwrap()
     .and_then(|alignment| alignment.operand_paths())
     .expect("legacy class-388 occurrence paths");
+    let path_layout = assembly_path_source_layout(&path_bytes, &scope, &owners);
     assert_eq!(paths[0].link().locator_record_index, 5_001);
     assert_eq!(paths[0].link().locator_class_tag.as_str(), "451");
     assert_eq!(
-        paths[0].link().locator_byte_offset,
+        path_source_pointer(&path_layout, 0, "link.locator_byte_offset"),
         u64_from_index(first_locator_at)
     );
     assert_eq!(paths[0].link().wrapper_record_index, 5_004);
     assert_eq!(paths[0].link().wrapper_class_tag.as_str(), "369");
     assert_eq!(
-        paths[0].link().wrapper_byte_offset,
+        path_source_pointer(&path_layout, 0, "link.wrapper_byte_offset"),
         u64_from_index(first_wrapper_at)
     );
     assert_eq!(paths[0].record_index, 5_003);
     assert_eq!(paths[0].class_tag().as_str(), "412");
-    assert_eq!(paths[0].byte_offset(), u64_from_index(first_path_at + 425));
+    assert_eq!(
+        path_source_pointer(&path_layout, 0, "byte_offset"),
+        u64_from_index(first_path_at + 425)
+    );
     assert_eq!(
         paths[0]
             .occurrence_guids()
             .iter()
-            .map(|guid| guid.value.as_str().to_owned())
+            .map(|guid| guid.as_str().to_owned())
             .collect::<Vec<_>>(),
         [
             "11111111-1111-1111-1111-111111111111".to_owned(),
@@ -1117,7 +1207,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     assert_eq!(
         paths.each_ref().map(|path| (
             path.link().locator_record_index,
-            path.occurrence_guids()[0].value.as_str()
+            path.occurrence_guids()[0].as_str()
         )),
         [
             (64, "11111111-1111-1111-1111-111111111111"),

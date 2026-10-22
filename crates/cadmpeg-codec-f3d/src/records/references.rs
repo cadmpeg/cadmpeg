@@ -5,17 +5,7 @@ use super::identity::{DesignEntityId, RecordedValue};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_physical_token, String, "physical_token");
-cadmpeg_core::named_optional_field!(
-    deserialize_physical_token_offset,
-    u64,
-    "physical_token_offset"
-);
 cadmpeg_core::named_optional_field!(deserialize_visual_preset, String, "visual_preset");
-cadmpeg_core::named_optional_field!(
-    deserialize_visual_preset_offset,
-    u64,
-    "visual_preset_offset"
-);
 /// Persistent-reference channel in the Design construction stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -30,13 +20,16 @@ pub(crate) enum PersistentReferenceKind {
 
 /// One byte-stored persistent point or curve identifier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct PersistentReference {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Byte offset of the persistent-reference field name in its Design `BulkStream`.
-    pub(crate) byte_offset: u64,
+    #[serde(skip)]
+    pub(crate) byte_offset: Option<u64>,
     /// Byte offset of the u64 value relative to `byte_offset`.
-    pub(crate) value_offset: u32,
+    #[serde(skip)]
+    pub(crate) value_offset: Option<u32>,
     /// Whether this reference identifies a persistent point or one end of a curve.
     pub(crate) kind: PersistentReferenceKind,
     /// Raw persistent point/curve identifier as stored in the `Design` construction stream.
@@ -92,7 +85,7 @@ pub(crate) struct LostEdgeReference {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Byte offset of the unresolved record's indexed header.
-    record_byte_offset: u64,
+    record_byte_offset: Option<u64>,
     /// Source per-file dynamic three-digit ASCII class tag of the unresolved record.
     pub(crate) class_tag: DesignClassTag,
     /// Source `BulkStream` record index of the unresolved edge selection.
@@ -126,35 +119,23 @@ impl Clone for LostEdgeReference {
 #[derive(Serialize)]
 struct LostEdgeReferenceWireRef<'a> {
     id: &'a str,
-    record_byte_offset: u64,
-    class_tag_offset: u64,
     class_tag: &'a str,
     record_index: u32,
-    record_index_offset: u64,
-    byte_offset: u64,
-    next_byte_offset: u64,
     next_class_tag: &'a str,
     next_record_index: u32,
 }
-
 impl Serialize for LostEdgeReference {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         LostEdgeReferenceWireRef {
             id: &self.id,
-            record_byte_offset: self.record_byte_offset(),
-            class_tag_offset: self.class_tag_offset(),
             class_tag: self.class_tag.as_str(),
             record_index: self.record_index,
-            record_index_offset: self.record_index_offset(),
-            byte_offset: self.byte_offset(),
-            next_byte_offset: self.next_byte_offset(),
             next_class_tag: self.next_class_tag.as_str(),
             next_record_index: self.next_record_index,
         }
         .serialize(serializer)
     }
 }
-
 impl LostEdgeReference {
     pub(crate) fn new(
         id: String,
@@ -169,99 +150,61 @@ impl LostEdgeReference {
             .ok_or("lost_edge_reference.record_byte_offset overflows the record extent")?;
         Ok(Self {
             id,
-            record_byte_offset,
-            class_tag: DesignClassTag::try_from(class_tag)?,
+            record_byte_offset: Some(record_byte_offset),
+            class_tag: class_tag.try_into()?,
             record_index,
-            next_class_tag: DesignClassTag::try_from(next_class_tag)
+            next_class_tag: next_class_tag
+                .try_into()
                 .map_err(|error| format!("lost_edge_reference.next_class_tag: {error}"))?,
             next_record_index,
         })
     }
-    pub(crate) fn record_byte_offset(&self) -> u64 {
+    pub(crate) fn record_byte_offset(&self) -> Option<u64> {
         self.record_byte_offset
     }
-    pub(crate) fn class_tag_offset(&self) -> u64 {
-        self.record_byte_offset + 4
+    pub(crate) fn class_tag_offset(&self) -> Option<u64> {
+        self.record_byte_offset?.checked_add(4)
     }
-    pub(crate) fn record_index_offset(&self) -> u64 {
-        self.record_byte_offset + 7
+    pub(crate) fn record_index_offset(&self) -> Option<u64> {
+        self.record_byte_offset?.checked_add(7)
     }
-    pub(crate) fn byte_offset(&self) -> u64 {
-        self.record_byte_offset + 29
+    pub(crate) fn byte_offset(&self) -> Option<u64> {
+        self.record_byte_offset?.checked_add(29)
     }
-    pub(crate) fn next_byte_offset(&self) -> u64 {
-        self.record_byte_offset + 48
+    pub(crate) fn next_byte_offset(&self) -> Option<u64> {
+        self.record_byte_offset?.checked_add(48)
     }
 }
-
-/// A construction-history edge selection that Fusion could not re-resolve.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
+#[serde(deny_unknown_fields)]
 struct LostEdgeReferenceWire {
-    /// Globally unique deterministic identifier for this native record.
     id: String,
-    /// Byte offset of the unresolved record's indexed header.
-    record_byte_offset: u64,
-    /// Byte offset of the unresolved record's three-byte class tag.
-    class_tag_offset: u64,
-    /// Source per-file dynamic three-digit ASCII class tag of the unresolved record.
     class_tag: String,
-    /// Source `BulkStream` record index of the unresolved edge selection.
     record_index: u32,
-    /// Byte offset of `record_index`.
-    record_index_offset: u64,
-    /// Byte offset of the `EDGE_REFERENCE_LOST` marker in its Design `BulkStream`.
-    byte_offset: u64,
-    /// Byte offset of the indexed header immediately following this record.
-    next_byte_offset: u64,
-    /// Per-file dynamic class tag of the following indexed record.
     next_class_tag: String,
-    /// Record index of the following indexed record.
     next_record_index: u32,
 }
-
 impl TryFrom<LostEdgeReferenceWire> for LostEdgeReference {
     type Error = String;
-    fn try_from(wire: LostEdgeReferenceWire) -> Result<Self, Self::Error> {
-        let record = Self::new(
-            wire.id,
-            wire.record_byte_offset,
-            wire.class_tag,
-            wire.record_index,
-            wire.next_class_tag,
-            wire.next_record_index,
-        )?;
-        if wire.class_tag_offset != record.class_tag_offset() {
-            return Err(
-                "lost_edge_reference.class_tag_offset disagrees with record_byte_offset".into(),
-            );
-        }
-        if wire.record_index_offset != record.record_index_offset() {
-            return Err(
-                "lost_edge_reference.record_index_offset disagrees with record_byte_offset".into(),
-            );
-        }
-        if wire.byte_offset != record.byte_offset() {
-            return Err("lost_edge_reference.byte_offset disagrees with record_byte_offset".into());
-        }
-        if wire.next_byte_offset != record.next_byte_offset() {
-            return Err(
-                "lost_edge_reference.next_byte_offset disagrees with record_byte_offset".into(),
-            );
-        }
-        Ok(record)
+    fn try_from(wire: LostEdgeReferenceWire) -> Result<Self, String> {
+        Ok(Self {
+            id: wire.id,
+            record_byte_offset: None,
+            class_tag: wire.class_tag.try_into()?,
+            record_index: wire.record_index,
+            next_class_tag: wire
+                .next_class_tag
+                .try_into()
+                .map_err(|error| format!("lost_edge_reference.next_class_tag: {error}"))?,
+            next_record_index: wire.next_record_index,
+        })
     }
 }
-
 #[cfg(test)]
 impl From<LostEdgeReference> for LostEdgeReferenceWire {
     fn from(record: LostEdgeReference) -> Self {
         Self {
-            record_byte_offset: record.record_byte_offset(),
-            class_tag_offset: record.class_tag_offset(),
-            record_index_offset: record.record_index_offset(),
-            byte_offset: record.byte_offset(),
-            next_byte_offset: record.next_byte_offset(),
             id: record.id,
             class_tag: record.class_tag.into(),
             record_index: record.record_index,
@@ -330,24 +273,26 @@ impl DesignVisualToken {
 pub(crate) struct DesignMaterialAssignment {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
+    /// Exact typed Design body-map entry this assignment names.
+    pub(crate) body_binding_id: super::bodies::DesignBodyBindingId,
     /// ASM body key resolved through the Design body map.
     pub(crate) asm_body_key: u64,
     /// Byte offset of the body-map ASM key.
-    pub(crate) asm_body_key_offset: u64,
+    pub(crate) asm_body_key_offset: Option<u64>,
     /// Byte offset of the body-map entity suffix.
-    pub(crate) entity_suffix_offset: u64,
+    pub(crate) entity_suffix_offset: Option<u64>,
     /// UTF-16 design-entity id.
     pub(crate) entity_id: DesignEntityId,
     /// Byte offset of the UTF-16 entity-id code units.
-    pub(crate) entity_id_offset: u64,
+    pub(crate) entity_id_offset: Option<u64>,
     /// Complete serialized visual token.
     pub(crate) visual_guid: DesignVisualToken,
     /// Byte offset of the UTF-16 visual-token code units.
-    pub(crate) visual_guid_offset: u64,
+    pub(crate) visual_guid_offset: Option<u64>,
     /// Physical-material token, when present.
-    pub(crate) physical_token: Option<RecordedValue<String>>,
+    pub(crate) physical_token: Option<RecordedValue<String, Option<u64>>>,
     /// Visual preset name, when present.
-    pub(crate) visual_preset: Option<RecordedValue<String>>,
+    pub(crate) visual_preset: Option<RecordedValue<String, Option<u64>>>,
 }
 
 #[cfg(test)]
@@ -361,6 +306,7 @@ impl Clone for DesignMaterialAssignment {
         DESIGN_MATERIAL_ASSIGNMENT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             id: self.id.clone(),
+            body_binding_id: self.body_binding_id.clone(),
             asm_body_key: self.asm_body_key,
             asm_body_key_offset: self.asm_body_key_offset,
             entity_suffix_offset: self.entity_suffix_offset,
@@ -377,142 +323,147 @@ impl Clone for DesignMaterialAssignment {
 #[derive(Serialize)]
 struct DesignMaterialAssignmentWireRef<'a> {
     id: &'a str,
+    body_binding_id: &'a super::bodies::DesignBodyBindingId,
     asm_body_key: u64,
-    asm_body_key_offset: u64,
-    entity_suffix_offset: u64,
     entity_id: &'a str,
-    entity_id_offset: u64,
     visual_guid: &'a DesignVisualToken,
-    visual_guid_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     physical_token: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    physical_token_offset: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     visual_preset: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    visual_preset_offset: Option<u64>,
 }
-
 impl Serialize for DesignMaterialAssignment {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         DesignMaterialAssignmentWireRef {
             id: &self.id,
+            body_binding_id: &self.body_binding_id,
             asm_body_key: self.asm_body_key,
-            asm_body_key_offset: self.asm_body_key_offset,
-            entity_suffix_offset: self.entity_suffix_offset,
             entity_id: self.entity_id.as_str(),
-            entity_id_offset: self.entity_id_offset,
             visual_guid: &self.visual_guid,
-            visual_guid_offset: self.visual_guid_offset,
             physical_token: self
                 .physical_token
                 .as_ref()
                 .map(|field| field.value.as_str()),
-            physical_token_offset: self.physical_token.as_ref().map(|field| field.offset),
             visual_preset: self
                 .visual_preset
                 .as_ref()
                 .map(|field| field.value.as_str()),
-            visual_preset_offset: self.visual_preset.as_ref().map(|field| field.offset),
         }
         .serialize(serializer)
     }
 }
-
-/// One Design `BulkStream` material assignment joining a design entity to visual assets.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
+#[serde(deny_unknown_fields)]
 struct DesignMaterialAssignmentWire {
-    /// Globally unique deterministic identifier for this native record.
     id: String,
-    /// ASM body key resolved through the Design body map.
+    body_binding_id: super::bodies::DesignBodyBindingId,
     asm_body_key: u64,
-    /// Byte offset of the body-map ASM key.
-    asm_body_key_offset: u64,
-    /// Byte offset of the body-map entity suffix.
-    entity_suffix_offset: u64,
-    /// UTF-16 design-entity id.
     entity_id: String,
-    /// Byte offset of the UTF-16 entity-id code units.
-    entity_id_offset: u64,
-    /// Complete serialized visual token.
     visual_guid: DesignVisualToken,
-    /// Byte offset of the UTF-16 visual-token code units.
-    visual_guid_offset: u64,
-    /// Physical-material token, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_physical_token"
     )]
     physical_token: Option<String>,
-    /// Byte offset of the UTF-16 physical token, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_physical_token_offset"
-    )]
-    physical_token_offset: Option<u64>,
-    /// Visual preset name, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_visual_preset"
     )]
     visual_preset: Option<String>,
-    /// Byte offset of the UTF-16 preset name, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_visual_preset_offset"
-    )]
-    visual_preset_offset: Option<u64>,
 }
-
 impl TryFrom<DesignMaterialAssignmentWire> for DesignMaterialAssignment {
     type Error = String;
-    fn try_from(wire: DesignMaterialAssignmentWire) -> Result<Self, Self::Error> {
-        let entity_id = DesignEntityId::try_from(wire.entity_id)?;
+    fn try_from(wire: DesignMaterialAssignmentWire) -> Result<Self, String> {
         Ok(Self {
             id: wire.id,
+            body_binding_id: wire.body_binding_id,
             asm_body_key: wire.asm_body_key,
-            asm_body_key_offset: wire.asm_body_key_offset,
-            entity_suffix_offset: wire.entity_suffix_offset,
-            entity_id,
-            entity_id_offset: wire.entity_id_offset,
+            asm_body_key_offset: None,
+            entity_suffix_offset: None,
+            entity_id: wire.entity_id.try_into()?,
+            entity_id_offset: None,
             visual_guid: wire.visual_guid,
-            visual_guid_offset: wire.visual_guid_offset,
-            physical_token: RecordedValue::from_wire(
-                wire.physical_token,
-                wire.physical_token_offset,
-                "physical_token",
-            )?,
-            visual_preset: RecordedValue::from_wire(
-                wire.visual_preset,
-                wire.visual_preset_offset,
-                "visual_preset",
-            )?,
+            visual_guid_offset: None,
+            physical_token: wire.physical_token.map(|value| RecordedValue {
+                value,
+                offset: None,
+            }),
+            visual_preset: wire.visual_preset.map(|value| RecordedValue {
+                value,
+                offset: None,
+            }),
         })
     }
 }
-
 #[cfg(test)]
 impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
     fn from(value: DesignMaterialAssignment) -> Self {
         Self {
             id: value.id,
+            body_binding_id: value.body_binding_id,
             asm_body_key: value.asm_body_key,
-            asm_body_key_offset: value.asm_body_key_offset,
-            entity_suffix_offset: value.entity_suffix_offset,
             entity_id: value.entity_id.into_string(),
-            entity_id_offset: value.entity_id_offset,
             visual_guid: value.visual_guid,
-            visual_guid_offset: value.visual_guid_offset,
-            physical_token_offset: value.physical_token.as_ref().map(|field| field.offset),
             physical_token: value.physical_token.map(|field| field.value),
-            visual_preset_offset: value.visual_preset.as_ref().map(|field| field.offset),
             visual_preset: value.visual_preset.map(|field| field.value),
+        }
+    }
+}
+impl PersistentReference {
+    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
+        if let Some(offset) = self.byte_offset {
+            fidelity
+                .metadata
+                .insert(format!("{}.byte_offset", self.id), offset.to_string());
+        }
+        if let Some(offset) = self.value_offset {
+            fidelity
+                .metadata
+                .insert(format!("{}.value_offset", self.id), offset.to_string());
+        }
+    }
+}
+impl LostEdgeReference {
+    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
+        for (field, offset) in [
+            ("record_byte_offset", self.record_byte_offset()),
+            ("class_tag_offset", self.class_tag_offset()),
+            ("record_index_offset", self.record_index_offset()),
+            ("byte_offset", self.byte_offset()),
+            ("next_byte_offset", self.next_byte_offset()),
+        ] {
+            if let Some(offset) = offset {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.{field}", self.id), offset.to_string());
+            }
+        }
+    }
+}
+impl DesignMaterialAssignment {
+    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
+        for (field, offset) in [
+            ("asm_body_key_offset", self.asm_body_key_offset),
+            ("entity_suffix_offset", self.entity_suffix_offset),
+            ("entity_id_offset", self.entity_id_offset),
+            ("visual_guid_offset", self.visual_guid_offset),
+            (
+                "physical_token_offset",
+                self.physical_token.as_ref().and_then(|value| value.offset),
+            ),
+            (
+                "visual_preset_offset",
+                self.visual_preset.as_ref().and_then(|value| value.offset),
+            ),
+        ] {
+            if let Some(offset) = offset {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.{field}", self.id), offset.to_string());
+            }
         }
     }
 }

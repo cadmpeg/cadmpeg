@@ -28,7 +28,8 @@ fn explicit_point_circle_input() -> (
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 42,
+        sequence: 0,
+        offset: Some(42),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: "feature".into(),
@@ -39,7 +40,7 @@ fn explicit_point_circle_input() -> (
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: 0,
+            offset: Some(0),
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
             entity_index: 0,
@@ -51,10 +52,11 @@ fn explicit_point_circle_input() -> (
         configuration: None,
         native_payload: vec![0].into(),
         classes: vec![FeatureInputClass {
+            sequence: 10,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 10,
             name: "sgEntHandle".into(),
         }],
         names: Vec::new(),
@@ -66,11 +68,11 @@ fn explicit_point_circle_input() -> (
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 20,
             id: "reference".into(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: 20,
             kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
             class_ref: Some("class".into()),
             object_index: 0,
@@ -98,6 +100,7 @@ fn explicit_point_circle_input() -> (
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -106,6 +109,7 @@ fn explicit_point_circle_input() -> (
         native_ref: Some("feature".into()),
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
@@ -113,7 +117,6 @@ fn explicit_point_circle_input() -> (
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -136,6 +139,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     let (feature, parameter, lane, mut entities) = explicit_point_circle_input();
 
     project_relation_point_dimensioned_circles(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
         &mut entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -155,6 +159,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     classless_lane.references[0].class_ref = None;
     let mut classless_entities = vec![entities[0].clone()];
     project_relation_point_dimensioned_circles(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&classless_lane)),
         &mut classless_entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -178,6 +183,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     object_index_lane.relation_instances[0].operands[0].entity_index = 1;
     let mut object_index_entities = vec![entities[0].clone()];
     project_relation_point_dimensioned_circles(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&object_index_lane)),
         &mut object_index_entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -197,6 +203,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
 fn point_dimension_projection_adds_the_explicit_point_circle() {
     let (feature, parameter, lane, mut entities) = explicit_point_circle_input();
     project_relation_point_dimensioned_circles(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
         &mut entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),

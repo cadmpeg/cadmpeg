@@ -8,7 +8,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
-    features::{DesignParameter, ParameterId, ParameterValue},
+    features::{DesignParameter, Expression, ParameterId, ParameterValue},
     report::loss::LossNote,
     scalar::{Angle, FiniteReal, Length},
 };
@@ -624,10 +624,7 @@ pub(crate) fn project_parameters(
             "project Inventor parameter",
         )?;
         let id = parameter_id(parameter)?;
-        let (expression, dependencies) =
-            renderer.emit(token, parameter.formula.index(), expression_length)?;
-        let mut dependency_members = cadmpeg_ir::features::DistinctMembers::default();
-        dependency_members.extend(dependencies);
+        let (expression, _) = renderer.emit(token, parameter.formula.index(), expression_length)?;
         projected.push(DesignParameter {
             id,
             owner,
@@ -636,7 +633,7 @@ pub(crate) fn project_parameters(
             expression,
             display: None,
             value: Some(value),
-            dependencies: dependency_members,
+            driving: true,
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some(parameter.id()),
@@ -654,8 +651,28 @@ pub(crate) fn project_parameters(
 
 fn close_parameter_graph(
     ctx: &DecodeContext<'_>,
-    parameters: Vec<DesignParameter>,
+    mut parameters: Vec<DesignParameter>,
 ) -> Result<(Vec<DesignParameter>, usize), CodecError> {
+    // Cycles are source facts and remain in the neutral expression graph. Only
+    // references to absent parameters prevent a closed neutral projection.
+    ctx.charge_entities(0, "check Inventor parameter references")?;
+    let original_count = parameters.len();
+    loop {
+        let ids = parameters
+            .iter()
+            .map(|parameter| parameter.id.clone())
+            .collect::<HashSet<_>>();
+        let before = parameters.len();
+        parameters.retain(|parameter| {
+            parameter
+                .expression
+                .dependencies()
+                .all(|id| ids.contains(id))
+        });
+        if before == parameters.len() {
+            break;
+        }
+    }
     let count = parameters.len();
     let indices = parameters
         .iter()
@@ -672,7 +689,7 @@ fn close_parameter_graph(
     // the source order wherever no dependency forbids it.
     let mut ready = BinaryHeap::new();
     for (index, parameter) in parameters.iter().enumerate() {
-        for dependency in &parameter.dependencies {
+        for dependency in parameter.expression.dependencies() {
             if let Some(&source) = indices.get(dependency) {
                 remaining[index] += 1;
                 dependents[source].push(index);
@@ -687,20 +704,22 @@ fn close_parameter_graph(
     let mut position = ctx.alloc_filled(count, None::<u32>, "admit Inventor parameter closure")?;
     let mut scope_lengths = HashMap::<Option<&str>, u32>::new();
     while let Some(Reverse((_, source))) = ready.pop() {
-        let scope = parameters[source]
-            .owner
-            .as_ref()
-            .map(cadmpeg_ir::features::FeatureId::as_str);
-        let length = scope_lengths.entry(scope).or_default();
-        position[source] = Some(*length);
-        *length = length
-            .checked_add(1)
-            .ok_or_else(|| CodecError::malformed("Inventor parameter scope length overflows"))?;
+        position[source] = Some(next_scope_position(
+            &parameters[source],
+            &mut scope_lengths,
+        )?);
         for &dependent in &dependents[source] {
             remaining[dependent] -= 1;
             if remaining[dependent] == 0 {
                 ready.push(Reverse((parameters[dependent].ordinal, dependent)));
             }
+        }
+    }
+    // A closed cycle is retained as authored, following the dependency-ordered
+    // parameters in each scope. The parameter vector keeps its source order.
+    for (parameter, slot) in parameters.iter().zip(&mut position) {
+        if slot.is_none() {
+            *slot = Some(next_scope_position(parameter, &mut scope_lengths)?);
         }
     }
     let accepted = position.iter().filter(|value| value.is_some()).count();
@@ -713,8 +732,24 @@ fn close_parameter_graph(
                 Some(parameter)
             })
             .collect(),
-        count - accepted,
+        original_count - accepted,
     ))
+}
+
+fn next_scope_position<'a>(
+    parameter: &'a DesignParameter,
+    scope_lengths: &mut HashMap<Option<&'a str>, u32>,
+) -> Result<u32, CodecError> {
+    let scope = parameter
+        .owner
+        .as_ref()
+        .map(cadmpeg_ir::features::FeatureId::as_str);
+    let length = scope_lengths.entry(scope).or_default();
+    let position = *length;
+    *length = length
+        .checked_add(1)
+        .ok_or_else(|| CodecError::malformed("Inventor parameter scope length overflows"))?;
+    Ok(position)
 }
 
 fn parameter_id(parameter: &PmDcParameter) -> Result<ParameterId, CodecError> {
@@ -951,13 +986,14 @@ impl<'a, 'b> ExpressionRenderer<'a, 'b> {
         token: &'a str,
         reference: u32,
         length: usize,
-    ) -> Result<(String, Vec<ParameterId>), CodecError> {
+    ) -> Result<(Expression, Vec<ParameterId>), CodecError> {
         self.ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(length),
             "retain Inventor parameter expression text",
         )?;
         let mut text = String::with_capacity(length);
         let mut dependencies = Vec::new();
+        let mut spans = Vec::new();
         let mut referenced = HashSet::new();
         let mut pending = vec![ExpressionPiece::Node(reference)];
         while let Some(piece) = pending.pop() {
@@ -984,7 +1020,9 @@ impl<'a, 'b> ExpressionRenderer<'a, 'b> {
                     if referenced.insert(operand.index()) {
                         dependencies.push(parameter_id(target)?);
                     }
+                    let start = text.len();
                     text.push_str(&target.name);
+                    spans.push((start..text.len(), parameter_id(target)?));
                 }
                 PmDcExpressionKind::Unary { operand, .. } => pending.extend([
                     ExpressionPiece::Literal(")"),
@@ -1006,7 +1044,9 @@ impl<'a, 'b> ExpressionRenderer<'a, 'b> {
                 ]),
             }
         }
-        Ok((text, dependencies))
+        let expression = Expression::from_spans(&text, spans)
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
+        Ok((expression, dependencies))
     }
 
     /// The parameter a reference expression names, when it resolves uniquely.
@@ -1475,7 +1515,7 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::{DesignParameter, Expression, ParameterId, ParameterValue};
     use cadmpeg_ir::scalar::{FiniteReal, Length};
     use std::collections::HashMap;
 
@@ -2002,10 +2042,27 @@ mod tests {
             (0, 0, 0)
         );
         let parameters = projection.parameters;
-        assert_eq!(parameters[0].expression, "24 in");
-        assert_eq!(parameters[1].expression, "width");
         assert_eq!(
-            parameters[1].dependencies.as_slice(),
+            parameters[0].expression.literal_text().as_deref(),
+            Some("24 in")
+        );
+        assert_eq!(
+            parameters[1]
+                .expression
+                .render_with(|id| parameters
+                    .iter()
+                    .find(|parameter| &parameter.id == id)
+                    .map(|parameter| parameter.name.clone()))
+                .as_deref(),
+            Some("width")
+        );
+        assert_eq!(
+            parameters[1]
+                .expression
+                .dependencies()
+                .cloned()
+                .collect::<Vec<_>>()
+                .as_slice(),
             vec![parameters[0].id.clone()]
         );
         assert_eq!(
@@ -2177,19 +2234,23 @@ mod tests {
     }
 
     #[test]
-    fn rejects_parameter_cycles_and_their_dependents() {
+    fn retains_parameter_cycles_and_their_dependents() {
         let make = |name: &str, dependencies: Vec<ParameterId>| DesignParameter {
             id: ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: name.into(),
-            expression: name.into(),
+            expression: Expression {
+                tokens: dependencies
+                    .into_iter()
+                    .map(cadmpeg_ir::features::ExpressionToken::Parameter)
+                    .collect(),
+            },
             display: None,
             value: Some(ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar fixture"),
             )),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
-                .expect("valid test fixture"),
+            driving: true,
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -2213,13 +2274,18 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("empty fixture view");
         let (closed, rejected) = close_parameter_graph(&ctx, parameters).expect("closure");
-        assert_eq!(rejected, 3);
+        assert_eq!(rejected, 0);
         assert_eq!(
             closed
                 .into_iter()
                 .map(|parameter| cadmpeg_ir::ids::Identity::from(parameter.id).into_string())
                 .collect::<Vec<_>>(),
-            ["synthetic:test:id#d"]
+            [
+                "synthetic:test:id#a",
+                "synthetic:test:id#b",
+                "synthetic:test:id#c",
+                "synthetic:test:id#d"
+            ]
         );
     }
 
@@ -2233,13 +2299,15 @@ mod tests {
             owner: None,
             ordinal: 0,
             name: name.into(),
-            expression: name.into(),
+            expression: Expression {
+                tokens: dependency
+                    .into_iter()
+                    .map(|name| cadmpeg_ir::features::ExpressionToken::Parameter(id(name)))
+                    .collect(),
+            },
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                dependency.into_iter().map(id).collect::<Vec<_>>(),
-            )
-            .expect("valid dependency fixture"),
+            driving: true,
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -2272,13 +2340,17 @@ mod tests {
                 owner: owned.then(|| owner.clone()),
                 ordinal,
                 name: name.into(),
-                expression: name.into(),
+                expression: dependency.map_or_else(
+                    || name.into(),
+                    |dependency| Expression {
+                        tokens: vec![cadmpeg_ir::features::ExpressionToken::Parameter(id(
+                            dependency,
+                        ))],
+                    },
+                ),
                 display: None,
                 value: None,
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                    dependency.into_iter().map(id).collect::<Vec<_>>(),
-                )
-                .expect("valid dependency fixture"),
+                driving: true,
                 properties: std::collections::BTreeMap::new(),
                 pmi: None,
                 native_ref: None,
@@ -2308,7 +2380,7 @@ mod tests {
         policy: &DecodePolicy,
         kinds: Vec<PmDcExpressionKind>,
         root: u32,
-    ) -> Result<Option<(String, Vec<ParameterId>)>, CodecError> {
+    ) -> Result<Option<(Expression, Vec<ParameterId>)>, CodecError> {
         let token = cadmpeg_ir::identity_key!("segment");
         let parameter = Located::new(
             PmDcParameterPayload {
@@ -2390,7 +2462,10 @@ mod tests {
         )
         .expect("admitted graph")
         .expect("closed graph");
-        assert_eq!(result.0, "(x) + (x)");
+        assert_eq!(
+            result.0.render_with(|_| Some("x".into())).as_deref(),
+            Some("(x) + (x)")
+        );
         assert_eq!(result.1.len(), 1);
     }
 
@@ -2468,7 +2543,10 @@ mod tests {
         let admitted = render_graph(&DecodePolicy::service(), vec![reference_leaf()], 1)
             .expect("graph is admitted")
             .expect("graph is closed");
-        assert_eq!(admitted.0, "x");
+        assert_eq!(
+            admitted.0.render_with(|_| Some("x".to_owned())).as_deref(),
+            Some("x")
+        );
         assert_eq!(admitted.1.len(), 1);
     }
 
@@ -2629,7 +2707,13 @@ mod tests {
         assert_eq!(projection.parameters.len(), 1);
         assert_eq!(projection.parameters[0].name, "p0");
         let widest = (0..13).fold("1".to_owned(), |text, _| format!("({text}) + ({text})"));
-        assert_eq!(projection.parameters[0].expression, widest);
+        assert_eq!(
+            projection.parameters[0]
+                .expression
+                .literal_text()
+                .as_deref(),
+            Some(widest.as_str())
+        );
         assert!(widest.len() <= MAX_EXPRESSION_TEXT_BYTES);
         assert!(2 * widest.len() + "() + ()".len() > MAX_EXPRESSION_TEXT_BYTES);
         assert!(bounded_expression_loss(0).is_none());
@@ -2688,7 +2772,8 @@ mod tests {
         let expected = (0..12).fold("1".to_owned(), |text, _| format!("({text}) + ({text})"));
         assert_eq!(expected.len(), (8 << 12) - 7);
         assert!(projection.parameters.iter().all(|parameter| {
-            parameter.expression == expected && parameter.dependencies.as_slice().is_empty()
+            parameter.expression.literal_text().as_deref() == Some(expected.as_str())
+                && parameter.expression.dependencies().next().is_none()
         }));
     }
 

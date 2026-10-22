@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -53,15 +52,16 @@
               "registry_reference": 1,
               "registry_reference_declaration": {
                 "code": 2,
-                "name": "UGS::OM::Meta",
-                "source_offset": 220
+                "name": "UGS::OM::Meta"
               },
               "registry_storage_code": 56,
-              "registry_suffix": "00101112131415161701",
+              "registry_suffix": {
+                "byte_len": 10,
+                "record_id": "nx:source:evidence#0542b4df3b92096164fd385e6caa5c6d21c81b710fbc1f4b2172aa071829eea3",
+                "sha256": "847ce6ff31f3b0cf48884d7c347451ded41947908bf75008455fbe664e401d2b"
+              },
               "schema_fingerprint": "1011121314151617",
-              "section_offset": 204,
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 236,
               "trailing_code": 56
             },
             {
@@ -72,15 +72,16 @@
               "registry_reference": 1,
               "registry_reference_declaration": {
                 "code": 2,
-                "name": "UGS::OM::Meta",
-                "source_offset": 220
+                "name": "UGS::OM::Meta"
               },
               "registry_storage_code": 202,
-              "registry_suffix": "c901202122232425262701",
+              "registry_suffix": {
+                "byte_len": 11,
+                "record_id": "nx:source:evidence#037a2a7e6f847ff432bb8439867f61abd364645d940e02e58a204c3c74b73b80",
+                "sha256": "1421ae1c5c9e1ed3b4c63e54a59209fd129f8469baa9a7c527641ff41d3ef912"
+              },
               "schema_fingerprint": "2021222324252627",
-              "section_offset": 204,
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 267,
               "trailing_code": 128
             },
             {
@@ -91,15 +92,16 @@
               "registry_reference": 1,
               "registry_reference_declaration": {
                 "code": 2,
-                "name": "UGS::OM::Meta",
-                "source_offset": 350
+                "name": "UGS::OM::Meta"
               },
               "registry_storage_code": 56,
-              "registry_suffix": "00101112131415161701",
+              "registry_suffix": {
+                "byte_len": 10,
+                "record_id": "nx:source:evidence#96a3ebf934356b49caad075cda2c8024ae7887c44d4f575bb75ea9ba1bd91103",
+                "sha256": "847ce6ff31f3b0cf48884d7c347451ded41947908bf75008455fbe664e401d2b"
+              },
               "schema_fingerprint": "1011121314151617",
-              "section_offset": 334,
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 366,
               "trailing_code": 56
             },
             {
@@ -110,15 +112,16 @@
               "registry_reference": 1,
               "registry_reference_declaration": {
                 "code": 2,
-                "name": "UGS::OM::Meta",
-                "source_offset": 92
+                "name": "UGS::OM::Meta"
               },
               "registry_storage_code": 56,
-              "registry_suffix": "00101112131415161701",
+              "registry_suffix": {
+                "byte_len": 10,
+                "record_id": "nx:source:evidence#03d75ecd7df871299115e9d4cee43e151cbed6e32dbf99d9661f768ef568eb1f",
+                "sha256": "847ce6ff31f3b0cf48884d7c347451ded41947908bf75008455fbe664e401d2b"
+              },
               "schema_fingerprint": "1011121314151617",
-              "section_offset": 76,
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 108,
               "trailing_code": 56
             },
             {
@@ -129,15 +132,16 @@
               "registry_reference": 1,
               "registry_reference_declaration": {
                 "code": 2,
-                "name": "UGS::OM::Meta",
-                "source_offset": 350
+                "name": "UGS::OM::Meta"
               },
               "registry_storage_code": 202,
-              "registry_suffix": "c901202122232425262701",
+              "registry_suffix": {
+                "byte_len": 11,
+                "record_id": "nx:source:evidence#df7b9e289d12b06818ddc62ddfdce727bd9973eededb4fb2abca36af50d9c287",
+                "sha256": "1421ae1c5c9e1ed3b4c63e54a59209fd129f8469baa9a7c527641ff41d3ef912"
+              },
               "schema_fingerprint": "2021222324252627",
-              "section_offset": 334,
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 397,
               "trailing_code": 128
             },
             {
@@ -148,15 +152,16 @@
               "registry_reference": 1,
               "registry_reference_declaration": {
                 "code": 2,
-                "name": "UGS::OM::Meta",
-                "source_offset": 482
+                "name": "UGS::OM::Meta"
               },
               "registry_storage_code": 56,
-              "registry_suffix": "00101112131415161701",
+              "registry_suffix": {
+                "byte_len": 10,
+                "record_id": "nx:source:evidence#8f36a765693b858c2379ef1a5b8c11bbd6aa8be708eb27ccb506340dcca33276",
+                "sha256": "847ce6ff31f3b0cf48884d7c347451ded41947908bf75008455fbe664e401d2b"
+              },
               "schema_fingerprint": "1011121314151617",
-              "section_offset": 466,
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 498,
               "trailing_code": 56
             },
             {
@@ -167,15 +172,16 @@
               "registry_reference": 1,
               "registry_reference_declaration": {
                 "code": 2,
-                "name": "UGS::OM::Meta",
-                "source_offset": 482
+                "name": "UGS::OM::Meta"
               },
               "registry_storage_code": 202,
-              "registry_suffix": "c901202122232425262701",
+              "registry_suffix": {
+                "byte_len": 11,
+                "record_id": "nx:source:evidence#f118e3a3a8fad90ea444d2ea8422418a31b9a743c2d228e3c5128773b3212d45",
+                "sha256": "1421ae1c5c9e1ed3b4c63e54a59209fd129f8469baa9a7c527641ff41d3ef912"
+              },
               "schema_fingerprint": "2021222324252627",
-              "section_offset": 466,
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 529,
               "trailing_code": 128
             },
             {
@@ -186,15 +192,16 @@
               "registry_reference": 1,
               "registry_reference_declaration": {
                 "code": 2,
-                "name": "UGS::OM::Meta",
-                "source_offset": 92
+                "name": "UGS::OM::Meta"
               },
               "registry_storage_code": 202,
-              "registry_suffix": "c901202122232425262701",
+              "registry_suffix": {
+                "byte_len": 11,
+                "record_id": "nx:source:evidence#5f57c92a822a852269912ba610a6b674cd499fbd42a7c4b2fc9b3233951b3a6e",
+                "sha256": "1421ae1c5c9e1ed3b4c63e54a59209fd129f8469baa9a7c527641ff41d3ef912"
+              },
               "schema_fingerprint": "2021222324252627",
-              "section_offset": 76,
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 139,
               "trailing_code": 128
             }
           ],
@@ -205,10 +212,12 @@
               "ordinal": 0,
               "registry_owner_class": 1,
               "registry_storage_code": 209,
-              "registry_suffix": "d08000",
-              "section_offset": 204,
+              "registry_suffix": {
+                "byte_len": 3,
+                "record_id": "nx:source:evidence#8630d6474468b01216f0e1dba51bc8319d4b4583d6c93acb703c0974a0ef7f3f",
+                "sha256": "535fc5c63ccfb529b1990bd09d35a5222646fd25ff505a6f9fd542e83476aced"
+              },
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 301,
               "trailing_code": 128
             },
             {
@@ -217,10 +226,12 @@
               "ordinal": 0,
               "registry_owner_class": 2,
               "registry_storage_code": 14303,
-              "registry_suffix": "37dea00001",
-              "section_offset": 334,
+              "registry_suffix": {
+                "byte_len": 5,
+                "record_id": "nx:source:evidence#5eafb63c31a4ff03539341670266112011b7675ff9f7e3b2aa908e749c9994bd",
+                "sha256": "3c4db67631e3aac1f0d5766248a2ac81f5e588a904b2c5b66da70c6a1fd48436"
+              },
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 431,
               "trailing_code": 160
             },
             {
@@ -229,10 +240,12 @@
               "ordinal": 0,
               "registry_owner_class": 2,
               "registry_storage_code": 904,
-              "registry_suffix": "8702",
-              "section_offset": 466,
+              "registry_suffix": {
+                "byte_len": 2,
+                "record_id": "nx:source:evidence#0855e7ad05a3429fecb8ba9f6aec3ca6e4f6ad733a6d5a4d1072790e05109c70",
+                "sha256": "cbb1ce1f50919401108a9c520ef73d8084d8b39ae9fa3687d24f72d257380d84"
+              },
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 563,
               "trailing_code": 131
             },
             {
@@ -241,14 +254,20 @@
               "ordinal": 0,
               "registry_owner_class": 1,
               "registry_storage_code": 120,
-              "registry_suffix": "01",
-              "section_offset": 76,
+              "registry_suffix": {
+                "byte_len": 1,
+                "record_id": "nx:source:evidence#bee43ec235cdacb49a4bce48faa09d70a0355e5c0c22c27fdd9a045742e2d74f",
+                "sha256": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a"
+              },
               "source_entry": "/Root/UG_PART/UG_PART",
-              "source_offset": 173,
               "trailing_code": 120
             }
           ]
         }
+      },
+      "scope": {
+        "design": false,
+        "model": false
       },
       "source": {
         "attributes": {
@@ -257,7 +276,6 @@
           "file_size": "609",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "595",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
@@ -310,6 +328,17 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -319,11 +348,181 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": false,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
-      "annotations": {}
+      "annotations": {},
+      "metadata": {
+        "native.nx.class_definitions.nx:om-entry-0:class#160.registry_reference_declaration.source_offset": "220",
+        "native.nx.class_definitions.nx:om-entry-0:class#160.section_offset": "204",
+        "native.nx.class_definitions.nx:om-entry-0:class#160.source_offset": "236",
+        "native.nx.class_definitions.nx:om-entry-0:class#191.registry_reference_declaration.source_offset": "220",
+        "native.nx.class_definitions.nx:om-entry-0:class#191.section_offset": "204",
+        "native.nx.class_definitions.nx:om-entry-0:class#191.source_offset": "267",
+        "native.nx.class_definitions.nx:om-entry-0:class#290.registry_reference_declaration.source_offset": "350",
+        "native.nx.class_definitions.nx:om-entry-0:class#290.section_offset": "334",
+        "native.nx.class_definitions.nx:om-entry-0:class#290.source_offset": "366",
+        "native.nx.class_definitions.nx:om-entry-0:class#32.registry_reference_declaration.source_offset": "92",
+        "native.nx.class_definitions.nx:om-entry-0:class#32.section_offset": "76",
+        "native.nx.class_definitions.nx:om-entry-0:class#32.source_offset": "108",
+        "native.nx.class_definitions.nx:om-entry-0:class#321.registry_reference_declaration.source_offset": "350",
+        "native.nx.class_definitions.nx:om-entry-0:class#321.section_offset": "334",
+        "native.nx.class_definitions.nx:om-entry-0:class#321.source_offset": "397",
+        "native.nx.class_definitions.nx:om-entry-0:class#422.registry_reference_declaration.source_offset": "482",
+        "native.nx.class_definitions.nx:om-entry-0:class#422.section_offset": "466",
+        "native.nx.class_definitions.nx:om-entry-0:class#422.source_offset": "498",
+        "native.nx.class_definitions.nx:om-entry-0:class#453.registry_reference_declaration.source_offset": "482",
+        "native.nx.class_definitions.nx:om-entry-0:class#453.section_offset": "466",
+        "native.nx.class_definitions.nx:om-entry-0:class#453.source_offset": "529",
+        "native.nx.class_definitions.nx:om-entry-0:class#63.registry_reference_declaration.source_offset": "92",
+        "native.nx.class_definitions.nx:om-entry-0:class#63.section_offset": "76",
+        "native.nx.class_definitions.nx:om-entry-0:class#63.source_offset": "139",
+        "native.nx.field_definitions.nx:om-entry-0:field#225.section_offset": "204",
+        "native.nx.field_definitions.nx:om-entry-0:field#225.source_offset": "301",
+        "native.nx.field_definitions.nx:om-entry-0:field#355.section_offset": "334",
+        "native.nx.field_definitions.nx:om-entry-0:field#355.source_offset": "431",
+        "native.nx.field_definitions.nx:om-entry-0:field#487.section_offset": "466",
+        "native.nx.field_definitions.nx:om-entry-0:field#487.source_offset": "563",
+        "native.nx.field_definitions.nx:om-entry-0:field#97.section_offset": "76",
+        "native.nx.field_definitions.nx:om-entry-0:field#97.source_offset": "173",
+        "source.footer_offset": "595"
+      },
+      "retained_records": {
+        "nx:source:evidence#037a2a7e6f847ff432bb8439867f61abd364645d940e02e58a204c3c74b73b80": {
+          "bytes": {
+            "byte_len": 11,
+            "retention": "digest",
+            "sha256": "1421ae1c5c9e1ed3b4c63e54a59209fd129f8469baa9a7c527641ff41d3ef912"
+          },
+          "offset": 0,
+          "stream": "native.nx.class_definitions.nx:om-entry-0:class#191.registry_suffix",
+          "untyped": []
+        },
+        "nx:source:evidence#03d75ecd7df871299115e9d4cee43e151cbed6e32dbf99d9661f768ef568eb1f": {
+          "bytes": {
+            "byte_len": 10,
+            "retention": "digest",
+            "sha256": "847ce6ff31f3b0cf48884d7c347451ded41947908bf75008455fbe664e401d2b"
+          },
+          "offset": 0,
+          "stream": "native.nx.class_definitions.nx:om-entry-0:class#32.registry_suffix",
+          "untyped": []
+        },
+        "nx:source:evidence#0542b4df3b92096164fd385e6caa5c6d21c81b710fbc1f4b2172aa071829eea3": {
+          "bytes": {
+            "byte_len": 10,
+            "retention": "digest",
+            "sha256": "847ce6ff31f3b0cf48884d7c347451ded41947908bf75008455fbe664e401d2b"
+          },
+          "offset": 0,
+          "stream": "native.nx.class_definitions.nx:om-entry-0:class#160.registry_suffix",
+          "untyped": []
+        },
+        "nx:source:evidence#0855e7ad05a3429fecb8ba9f6aec3ca6e4f6ad733a6d5a4d1072790e05109c70": {
+          "bytes": {
+            "byte_len": 2,
+            "retention": "digest",
+            "sha256": "cbb1ce1f50919401108a9c520ef73d8084d8b39ae9fa3687d24f72d257380d84"
+          },
+          "offset": 0,
+          "stream": "native.nx.field_definitions.nx:om-entry-0:field#487.registry_suffix",
+          "untyped": []
+        },
+        "nx:source:evidence#5eafb63c31a4ff03539341670266112011b7675ff9f7e3b2aa908e749c9994bd": {
+          "bytes": {
+            "byte_len": 5,
+            "retention": "digest",
+            "sha256": "3c4db67631e3aac1f0d5766248a2ac81f5e588a904b2c5b66da70c6a1fd48436"
+          },
+          "offset": 0,
+          "stream": "native.nx.field_definitions.nx:om-entry-0:field#355.registry_suffix",
+          "untyped": []
+        },
+        "nx:source:evidence#5f57c92a822a852269912ba610a6b674cd499fbd42a7c4b2fc9b3233951b3a6e": {
+          "bytes": {
+            "byte_len": 11,
+            "retention": "digest",
+            "sha256": "1421ae1c5c9e1ed3b4c63e54a59209fd129f8469baa9a7c527641ff41d3ef912"
+          },
+          "offset": 0,
+          "stream": "native.nx.class_definitions.nx:om-entry-0:class#63.registry_suffix",
+          "untyped": []
+        },
+        "nx:source:evidence#8630d6474468b01216f0e1dba51bc8319d4b4583d6c93acb703c0974a0ef7f3f": {
+          "bytes": {
+            "byte_len": 3,
+            "retention": "digest",
+            "sha256": "535fc5c63ccfb529b1990bd09d35a5222646fd25ff505a6f9fd542e83476aced"
+          },
+          "offset": 0,
+          "stream": "native.nx.field_definitions.nx:om-entry-0:field#225.registry_suffix",
+          "untyped": []
+        },
+        "nx:source:evidence#8f36a765693b858c2379ef1a5b8c11bbd6aa8be708eb27ccb506340dcca33276": {
+          "bytes": {
+            "byte_len": 10,
+            "retention": "digest",
+            "sha256": "847ce6ff31f3b0cf48884d7c347451ded41947908bf75008455fbe664e401d2b"
+          },
+          "offset": 0,
+          "stream": "native.nx.class_definitions.nx:om-entry-0:class#422.registry_suffix",
+          "untyped": []
+        },
+        "nx:source:evidence#96a3ebf934356b49caad075cda2c8024ae7887c44d4f575bb75ea9ba1bd91103": {
+          "bytes": {
+            "byte_len": 10,
+            "retention": "digest",
+            "sha256": "847ce6ff31f3b0cf48884d7c347451ded41947908bf75008455fbe664e401d2b"
+          },
+          "offset": 0,
+          "stream": "native.nx.class_definitions.nx:om-entry-0:class#290.registry_suffix",
+          "untyped": []
+        },
+        "nx:source:evidence#bee43ec235cdacb49a4bce48faa09d70a0355e5c0c22c27fdd9a045742e2d74f": {
+          "bytes": {
+            "byte_len": 1,
+            "retention": "digest",
+            "sha256": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a"
+          },
+          "offset": 0,
+          "stream": "native.nx.field_definitions.nx:om-entry-0:field#97.registry_suffix",
+          "untyped": []
+        },
+        "nx:source:evidence#df7b9e289d12b06818ddc62ddfdce727bd9973eededb4fb2abca36af50d9c287": {
+          "bytes": {
+            "byte_len": 11,
+            "retention": "digest",
+            "sha256": "1421ae1c5c9e1ed3b4c63e54a59209fd129f8469baa9a7c527641ff41d3ef912"
+          },
+          "offset": 0,
+          "stream": "native.nx.class_definitions.nx:om-entry-0:class#321.registry_suffix",
+          "untyped": []
+        },
+        "nx:source:evidence#f118e3a3a8fad90ea444d2ea8422418a31b9a743c2d228e3c5128773b3212d45": {
+          "bytes": {
+            "byte_len": 11,
+            "retention": "digest",
+            "sha256": "1421ae1c5c9e1ed3b4c63e54a59209fd129f8469baa9a7c527641ff41d3ef912"
+          },
+          "offset": 0,
+          "stream": "native.nx.class_definitions.nx:om-entry-0:class#453.registry_suffix",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAABTAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAHAgAAAAAAAP////8AAAAAAAAAcE9NAQEOVUdTOjpPTTo6TWV0YQIBFFVHUzo6T006OlJvb3RPYmplY3Q4ABAREhMUFRYXARVVR1M6Ok9NOjpDaGlsZE9iamVjdIDJASAhIiMkJSYnAQIIbV9maW5hbHgBEmZpcnN0X3JlY29yZF9hcmVhgM8C/////wAAAAAAAAByT00BAQ5VR1M6Ok9NOjpNZXRhAgEUVUdTOjpPTTo6Um9vdE9iamVjdDgAEBESExQVFhcBFVVHUzo6T006OkNoaWxkT2JqZWN0gMkBICEiIyQlJicBAghtX2ZpbmFsgNCAABJmaXJzdF9yZWNvcmRfYXJlYYDPAv////8AAAAAAAAAdE9NAQEOVUdTOjpPTTo6TWV0YQIBFFVHUzo6T006OlJvb3RPYmplY3Q4ABAREhMUFRYXARVVR1M6Ok9NOjpDaGlsZE9iamVjdIDJASAhIiMkJSYnAQIIbV9maW5hbKA33qAAARJmaXJzdF9yZWNvcmRfYXJlYYDPAv////8AAAAAAAAAcU9NAQEOVUdTOjpPTTo6TWV0YQIBFFVHUzo6T006OlJvb3RPYmplY3Q4ABAREhMUFRYXARVVR1M6Ok9NOjpDaGlsZE9iamVjdIDJASAhIiMkJSYnAQIIbV9maW5hbIOHAhJmaXJzdF9yZWNvcmRfYXJlYYDPAkZPT1RFUgAAAAAAAAAA",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
+        }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

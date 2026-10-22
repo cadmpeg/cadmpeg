@@ -13,7 +13,10 @@ use super::decode_text;
 use super::StageOutcome;
 use super::{RecordExt, ValueExt};
 
-pub(super) fn decode(exchange: &Exchange) -> Result<StageOutcome<()>, CodecError> {
+pub(super) fn decode(
+    exchange: &Exchange,
+    ir: &mut cadmpeg_ir::CadIr,
+) -> Result<StageOutcome<()>, CodecError> {
     let mut losses = Vec::new();
     let mut documents = BTreeMap::new();
     let mut sources = BTreeMap::new();
@@ -90,6 +93,47 @@ pub(super) fn decode(exchange: &Exchange) -> Result<StageOutcome<()>, CodecError
                     )
                 })
                 .unwrap_or_default();
+            let Some(uri) = cadmpeg_core::text::NonBlankString::new(identifier.clone()) else {
+                losses.push(StepLossCode::DecodeWarning.note(format!(
+                    "document reference #{id} names document #{document_id} without a usable identifier"
+                )));
+                continue;
+            };
+            if !ir.model.assets.iter().any(|asset| {
+                asset.id.as_str()
+                    == crate::ids::data(crate::ids::kind!("external-document"), document_id)
+                        .as_str()
+            }) {
+                ir.model.assets.push(
+                    cadmpeg_ir::assets::Asset::try_new(
+                        cadmpeg_ir::assets::AssetId::from(crate::ids::data(
+                            crate::ids::kind!("external-document"),
+                            document_id,
+                        )),
+                        (!name.is_empty()).then(|| name.clone()),
+                        None,
+                        cadmpeg_ir::assets::AssetContent::External { uri },
+                        None,
+                    )
+                    .map_err(CodecError::malformed)?,
+                );
+            }
+            if !source.is_empty() {
+                ir.model
+                    .attributes
+                    .push(cadmpeg_ir::attributes::SourceAttribute {
+                        native_ref: None,
+                        id: cadmpeg_ir::ids::AttributeId::from(crate::ids::data(
+                            crate::ids::kind!("document-reference-source"),
+                            id,
+                        )),
+                        target: cadmpeg_ir::attributes::AttributeTarget::Document,
+                        name: format!("DOCUMENT_REFERENCE #{id} source"),
+                        values: vec![cadmpeg_ir::attributes::AttributeValue::String(
+                            source.clone(),
+                        )],
+                    });
+            }
             notes.insert(document_note(identifier, name, &source));
             typed.insert(id);
             typed.insert(document_id);
@@ -111,6 +155,25 @@ pub(super) fn decode(exchange: &Exchange) -> Result<StageOutcome<()>, CodecError
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
+            let Some(uri) = cadmpeg_core::text::NonBlankString::new(source.clone()) else {
+                losses.push(StepLossCode::DecodeWarning.note(format!(
+                    "externally defined item #{id} references an empty external source #{source_id}"
+                )));
+                continue;
+            };
+            ir.model.assets.push(
+                cadmpeg_ir::assets::Asset::try_new(
+                    cadmpeg_ir::assets::AssetId::from(crate::ids::data(
+                        crate::ids::kind!("external-item"),
+                        id,
+                    )),
+                    (!item.is_empty()).then(|| item.clone()),
+                    None,
+                    cadmpeg_ir::assets::AssetContent::External { uri },
+                    None,
+                )
+                .map_err(CodecError::malformed)?,
+            );
             notes.insert(["external source ", source, " item ", &item].join(""));
             typed.insert(id);
             typed.insert(source_id);

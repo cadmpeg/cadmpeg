@@ -7,9 +7,8 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{
     holes::{HoleKind, HolePlacement},
-    ConfigurationFeatureState, ConfigurationId, DesignConfiguration, ExtrudeDirection,
-    ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature, LinearTermination, PlanarProfileRef,
-    ProfileRef,
+    ConfigurationId, DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
+    ExtrudeStart, Feature, LinearTermination, PlanarProfileRef, ProfileRef,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind};
@@ -35,6 +34,7 @@ fn complete_block_ir() -> CadIr {
     let body = BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(body.as_str()));
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -47,11 +47,12 @@ fn complete_block_ir() -> CadIr {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Block {
-                dimensions: Some([
+                dimensions: (Some([
                     cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                     cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
                     cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
-                ]),
+                ]))
+                .map(|values| values.map(Into::into)),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: BooleanOp::NewBody,
             }),
@@ -63,26 +64,6 @@ fn complete_block_ir() -> CadIr {
 }
 
 fn attach_complete_active_configuration(ir: &mut CadIr) {
-    let feature_states = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| {
-            (
-                feature.id.clone(),
-                ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: cadmpeg_ir::features::DistinctMembers::try_from(
-                            feature.evaluation.outputs().clone(),
-                        )
-                        .unwrap(),
-                    },
-                    dependencies: feature.dependencies.clone(),
-                    definition: feature.evaluation.definition().clone(),
-                },
-            )
-        })
-        .collect();
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("synthetic:test:id#active".to_string())
             .expect("identity grammar"),
@@ -104,13 +85,14 @@ fn attach_complete_active_configuration(ir: &mut CadIr) {
             .unwrap(),
         ),
         parameter_values: BTreeMap::new(),
-        feature_states,
+        feature_states: BTreeMap::new(),
         native_ref: None,
     });
 }
 
 fn complete_hole(body: BodyId) -> Feature {
     Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#hole".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -138,7 +120,9 @@ fn complete_hole(body: BodyId) -> Feature {
                 shape: cadmpeg_ir::features::holes::HoleShape::new(
                     cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
                     None,
-                    Some(cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap()),
+                    Some(cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap(),
+                    )),
                 )
                 .unwrap(),
 
@@ -160,6 +144,7 @@ fn body_preserving_feature(
     definition: FeatureDefinition,
 ) -> Feature {
     Feature {
+        needs_recompute: false,
         id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal,
         name: None,
@@ -180,6 +165,7 @@ fn body_preserving_feature(
 
 fn body_neutral_feature(id: &str, ordinal: u64, definition: FeatureDefinition) -> Feature {
     Feature {
+        needs_recompute: false,
         id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal,
         name: None,
@@ -212,7 +198,7 @@ fn complete_extrude_feature(
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                        length: (cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap()).into(),
                     },
                     draft: None,
                 },

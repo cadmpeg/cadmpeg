@@ -102,7 +102,7 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
             }),
             Some(322)
         );
-        assert_eq!(text.raw_bytes, bytes);
+        assert_eq!(text.raw_bytes.data(), Some(bytes.as_slice()));
     }
 }
 
@@ -115,7 +115,11 @@ fn sketch_text_stream_decodes_its_text_records() {
     let bytes = indexed_sketch_text_record(1);
     let types = (0..32)
         .map(|ordinal| SegmentTypeData {
-            byte_offset: 0,
+            class_tag: (ordinal + 256)
+                .to_string()
+                .try_into()
+                .expect("fixture class tag"),
+            byte_offset: Some(0),
             type_guid: (if ordinal == 31 {
                 "E0618268-3A06-450E-9E94-7CF4C2E66802"
             } else {
@@ -124,10 +128,10 @@ fn sketch_text_stream_decodes_its_text_records() {
             .to_owned()
             .try_into()
             .unwrap(),
-            type_guid_offset: 0,
+            type_guid_offset: Some(0),
             base_type_guid: BaseTypeGuid::Absent,
             version: 3,
-            version_offset: 0,
+            version_offset: Some(0),
             module: "Geometry".into(),
             entities: ReferenceRun::located(if ordinal == 31 {
                 vec![Located {
@@ -267,20 +271,26 @@ fn indexed_sketch_fixture() -> (
         bytes
     };
     let design_type =
-        |type_guid: &str, version: u32, module: &str, entity_ids: Vec<u64>| SegmentTypeData {
-            byte_offset: 0,
-            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
-            type_guid_offset: 0,
-            base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
-            version,
-            version_offset: 0,
-            module: module.into(),
-            entities: crate::records::identity::ReferenceRun::located(
-                entity_ids
-                    .into_iter()
-                    .map(|value| crate::records::identity::Located { value, offset: 0 })
-                    .collect(),
-            ),
+        |class_tag: u32, type_guid: &str, version: u32, module: &str, entity_ids: Vec<u64>| {
+            SegmentTypeData {
+                class_tag: (class_tag)
+                    .to_string()
+                    .try_into()
+                    .expect("fixture class tag"),
+                byte_offset: Some(0),
+                type_guid: type_guid.to_owned().try_into().expect("type GUID"),
+                type_guid_offset: Some(0),
+                base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+                version,
+                version_offset: Some(0),
+                module: module.into(),
+                entities: crate::records::identity::ReferenceRun::located(
+                    entity_ids
+                        .into_iter()
+                        .map(|value| crate::records::identity::Located { value, offset: 0 })
+                        .collect(),
+                ),
+            }
         };
 
     let mut bytes = record_prefix(256, PARENT);
@@ -306,36 +316,42 @@ fn indexed_sketch_fixture() -> (
     let meta = MetaStream {
         types: vec![
             design_type(
+                256,
                 crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
                 0,
                 "Fusion",
                 vec![PARENT],
             ),
             design_type(
+                257,
                 "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB",
                 10,
                 "Geometry",
                 vec![POINT],
             ),
             design_type(
+                258,
                 "DCA267ED-D615-4934-B64F-AD805E8003E2",
                 2,
                 "Geometry",
                 vec![CURVE],
             ),
             design_type(
+                259,
                 "E0618268-3A06-450E-9E94-7CF4C2E66802",
                 4,
                 "Geometry",
                 vec![TEXT],
             ),
             design_type(
+                260,
                 "00000000-0000-0000-0000-000000000004",
                 0,
                 "Fusion",
                 Vec::new(),
             ),
             design_type(
+                261,
                 crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.0,
                 crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
                 crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.2,
@@ -390,7 +406,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let points = decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
         .expect("indexed sketch points");
     assert_eq!(points.len(), 1);
-    assert_eq!(points[0].byte_offset, u64_from_index(live_point_at));
+    assert_eq!(points[0].byte_offset, Some(u64_from_index(live_point_at)));
     assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
     meta.types[1].type_guid = "00000000-0000-0000-0000-000000000002"
         .to_owned()
@@ -416,7 +432,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let curves = decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat")
         .expect("indexed sketch curves");
     assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].byte_offset, u64_from_index(live_curve_at));
+    assert_eq!(curves[0].byte_offset, Some(u64_from_index(live_curve_at)));
     assert!(matches!(
         curves[0].geometry,
         Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(50.0, 0.0, 0.0)
@@ -425,7 +441,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let texts = decode_sketch_texts_from_stream(&bytes, &meta, "Design/BulkStream.dat")
         .expect("indexed sketch texts");
     assert_eq!(texts.len(), 1);
-    assert_eq!(texts[0].byte_offset, u64_from_index(live_text_at));
+    assert_eq!(texts[0].byte_offset, Some(u64_from_index(live_text_at)));
     assert_eq!(texts[0].text, "live text");
 
     let mut mismatched_primary = bytes.clone();
@@ -590,7 +606,7 @@ fn frame_sketch_text_record_takes_its_anchor_and_rotation_from_the_transform() {
     );
     // Frame text stores 128 more bytes than path text.
     assert_eq!(
-        text.raw_bytes.len(),
+        usize::try_from(text.raw_bytes.byte_len()).unwrap(),
         sketch_text_record(
             &[("textex_tag", 109), ("txt_tag_base", 305)],
             [None, None],

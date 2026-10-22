@@ -92,15 +92,15 @@ fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
     assert_eq!(parameter.owner_record_index(), Some(886));
     assert_eq!(parameter.source_ordinal, 20);
     assert_eq!(parameter.expression(), "0.4375 in");
-    assert_eq!(parameter.expression_offset(), 45);
+    assert_eq!(parameter.expression_offset(), Some(45));
     assert_eq!(parameter.source_kind(), "HoleDepth");
     assert_eq!(
         parameter.unit().map(|field| field.value.as_str()),
         Some("in")
     );
-    assert_eq!(parameter.unit().map(|field| field.offset), Some(94));
+    assert_eq!(parameter.unit().map(|field| field.offset), Some(Some(94)));
     assert_eq!(parameter.name(), "d20");
-    assert_eq!(parameter.evaluated_value_offset(), 108);
+    assert_eq!(parameter.evaluated_value_offset(), Some(108));
 
     let dimension =
         parse_design_parameter_record(&class_287_parameter_record("Diameter Dimension-2", "d1"))
@@ -372,7 +372,7 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
         panic!("expected one canonical parameter");
     };
     assert_eq!(parameter.record_index, 71);
-    assert_eq!(parameter.byte_offset(), 0);
+    assert_eq!(parameter.byte_offset(), Some(0));
     assert_eq!(parameter.expression(), "first");
     assert_eq!(parameter.evaluated_value().get(), 1.0);
 }
@@ -664,24 +664,20 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
         },
         0,
     )
-    .expect("legacy 68-byte parameter owner")
-    .into_record("Design/BulkStream.dat", 0)
-    .unwrap();
-    assert_eq!(parsed.frame_length(), 68);
+    .expect("legacy 68-byte parameter owner");
+    // This frame has no local-ordinal lane. The parser's compatibility
+    // placeholder is not a document-stated ordinal.
+    assert_eq!(parsed.local_ordinal, 0);
+    assert_eq!(parsed.scope_record_index, 0);
+    let parsed = parsed.into_record("Design/BulkStream.dat", 0).unwrap();
+    assert_eq!(parsed.frame_length(), Some(68));
     assert_eq!(parsed.class_tag().as_str(), "284");
     assert_eq!(parsed.record_index(), 100);
     assert_eq!(parsed.parameter_record_index(), 101);
     assert_eq!(parsed.companion_record_index(), 102);
-    assert_eq!(parsed.scope_record_index(), 0);
-    assert_eq!(parsed.local_ordinal(), 0);
-    assert_eq!(
-        serde_json::from_value::<crate::records::parameters::DesignParameterOwnerWire>(
-            serde_json::to_value(&parsed).unwrap()
-        )
-        .unwrap()
-        .owned_ordinal,
-        290
-    );
+    assert_eq!(parsed.scope_record_index(), None);
+    assert_eq!(parsed.local_ordinal(), None);
+    assert_eq!(parsed.owned_ordinal(), 290);
     assert_eq!(parsed.evaluated_value().get(), 0.0);
 
     for class_tag in ["268", "282", "289", "292", "297", "299", "325", "336"] {
@@ -736,20 +732,15 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
         },
         0,
     )
-    .expect("legacy 88-byte parameter owner")
-    .into_record("Design/BulkStream.dat", 0)
-    .unwrap();
-    assert_eq!(parsed.frame_length(), 88);
-    assert_eq!(parsed.scope_record_index(), 77);
-    assert_eq!(parsed.local_ordinal(), 0);
-    assert_eq!(
-        serde_json::from_value::<crate::records::parameters::DesignParameterOwnerWire>(
-            serde_json::to_value(&parsed).unwrap()
-        )
-        .unwrap()
-        .owned_ordinal,
-        290
-    );
+    .expect("legacy 88-byte parameter owner");
+    // This frame has no local-ordinal lane. The parser's compatibility
+    // placeholder is not a document-stated ordinal.
+    assert_eq!(parsed.local_ordinal, 0);
+    let parsed = parsed.into_record("Design/BulkStream.dat", 0).unwrap();
+    assert_eq!(parsed.frame_length(), Some(88));
+    assert_eq!(parsed.scope_record_index(), Some(77));
+    assert_eq!(parsed.local_ordinal(), None);
+    assert_eq!(parsed.owned_ordinal(), 290);
     assert_eq!(parsed.parameter_record_index(), 101);
     assert_eq!(parsed.companion_record_index(), 102);
     assert_eq!(parsed.evaluated_value().get(), 2.5);
@@ -875,9 +866,9 @@ fn every_parsed_parameter_owner_frame_is_a_valid_owner_record() {
         let owner = parsed
             .into_record("Design/BulkStream.dat", 1000)
             .unwrap_or_else(|| panic!("{length}-byte owner with variant {variant:?}"));
-        assert_eq!(owner.frame_length(), length);
+        assert_eq!(owner.frame_length(), Some(length));
         assert_eq!(
-            i128::from(owner.evaluated_value_offset()),
+            i128::from(owner.evaluated_value_offset().unwrap()),
             1000 + value_offset
         );
     }
@@ -959,7 +950,7 @@ fn parameter_companion_decode_emits_one_identified_companion() {
         id: crate::ids::native_design_record_header_id(STREAM, 0),
         record_index: 46,
         class_tag: crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
@@ -1036,7 +1027,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         id: crate::ids::native_design_record_header_id(stream, 0),
         record_index: 44,
         class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
 
     let mut exact = parameter_owner_frame();
@@ -1052,8 +1043,8 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let [owner] = owners.as_slice() else {
         panic!("expected one parameter owner");
     };
-    assert_eq!(owner.frame_length(), 104);
-    assert_eq!(owner.evaluated_value_offset(), 40);
+    assert_eq!(owner.frame_length(), Some(104));
+    assert_eq!(owner.evaluated_value_offset(), Some(40));
 
     let mut compact = without_variant_padding(parameter_owner_frame());
     compact.extend_from_slice(&paired_header());
@@ -1068,8 +1059,8 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let [owner] = owners.as_slice() else {
         panic!("expected one compact parameter owner");
     };
-    assert_eq!(owner.frame_length(), 103);
-    assert_eq!(owner.evaluated_value_offset(), 40);
+    assert_eq!(owner.frame_length(), Some(103));
+    assert_eq!(owner.evaluated_value_offset(), Some(40));
 
     let unresolved = with_scan(&archive(stream, &[]), |scan| {
         crate::design::decode::parameters::decode_parameter_owners(
@@ -1156,13 +1147,13 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     );
     let recipe = |record_index, byte_offset| ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{record_index}"),
-        byte_offset,
+        byte_offset: Some(byte_offset),
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: record_index,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let recipes = [recipe(31, 100), recipe(30, 80)];
@@ -1182,8 +1173,8 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     .unwrap();
 
     let payload = bound[0].payload().expect("bound payload");
-    assert_eq!(payload.byte_offset(), 68);
-    assert_eq!(payload.byte_length(), 132);
+    assert_eq!(payload.byte_offset(), Some(68));
+    assert_eq!(payload.byte_length(), Some(132));
     assert_eq!(
         payload.owned_recipe_ids(),
         [
@@ -1206,7 +1197,7 @@ fn parameter_companion_binding_owns_its_recipe() {
     );
     let recipe = ConstructionRecipe {
         id: "f3d:native:construction-recipe#60".into(),
-        byte_offset: 60,
+        byte_offset: Some(60),
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 0,
@@ -1243,8 +1234,8 @@ fn parameter_owner_value_offset_is_localized_once() {
     let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(40));
     let owner = parsed.into_record("Design/BulkStream.dat", 1000).unwrap();
-    assert_eq!(owner.byte_offset(), 1000);
-    assert_eq!(owner.evaluated_value_offset(), 1040);
+    assert_eq!(owner.byte_offset(), Some(1000));
+    assert_eq!(owner.evaluated_value_offset(), Some(1040));
     assert!(parse_parameter_owner(&parameter_owner_frame())
         .unwrap()
         .into_record("Design/BulkStream.dat", u64::MAX)
@@ -1270,7 +1261,7 @@ fn parameter_owner_value_offset_is_localized_once() {
         .unwrap(),
     ] {
         let owner = owner.into_record("Design/BulkStream.dat", 0).unwrap();
-        assert_eq!(owner.evaluated_value_offset(), 700);
+        assert_eq!(owner.evaluated_value_offset(), Some(700));
     }
 }
 
@@ -1302,8 +1293,8 @@ fn legacy_parameter_owner_preserves_external_scalar_offsets() {
             let owner = parsed
                 .into_record("Design/BulkStream.dat", frame_start)
                 .unwrap();
-            assert_eq!(owner.byte_offset(), frame_start);
-            assert_eq!(owner.evaluated_value_offset(), 700);
+            assert_eq!(owner.byte_offset(), Some(frame_start));
+            assert_eq!(owner.evaluated_value_offset(), Some(700));
             assert_eq!(owner.evaluated_value().get(), 2.5);
             assert_eq!(
                 owner.id(),
@@ -1342,6 +1333,7 @@ fn design_parameter_text_fields_keep_the_name() {
     assert_eq!(parsed.name, "d71");
 }
 
+mod authored_links;
 const TYPED_PARAMETER_TAIL_TYPE: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
 const TYPED_OWNER_TYPE: &str = "0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0";
 const TYPED_SCOPE_TYPE: &str = "11111111-2222-3333-4444-555555555555";
@@ -1391,15 +1383,23 @@ fn typed_compact_parameters_read_owned_and_document_forms() {
     assert_eq!(parameter.record_index, 537);
     assert_eq!(parameter.source_ordinal, 8);
     assert_eq!(parameter.owner_record_index(), Some(536));
-    assert_eq!(parameter.family_discriminator(), None);
+    assert_eq!(
+        parameter
+            .family_discriminator()
+            .map(|located| crate::records::identity::Located {
+                value: located.value,
+                offset: located.offset.expect("retained test discriminator")
+            }),
+        None
+    );
     assert_eq!(parameter.expression(), "3 mm");
-    assert_eq!(parameter.expression_offset(), 85);
+    assert_eq!(parameter.expression_offset(), Some(85));
     assert_eq!(parameter.unit().map(|unit| unit.value.as_str()), Some("mm"));
     assert_eq!(parameter.name(), "d1");
     assert_eq!(parameter.evaluated_value().get(), 0.3);
     assert_eq!(
         parameter.evaluated_value_offset(),
-        u64::try_from(owned.len() - 60).unwrap()
+        Some(u64::try_from(owned.len() - 60).unwrap())
     );
 
     // The owner reference can omit its inline type GUID.
@@ -1410,7 +1410,7 @@ fn typed_compact_parameters_read_owned_and_document_forms() {
     plain.extend_from_slice(&owned[81..]);
     let parameter = parse_design_parameter_record(&plain).expect("plain-owner typed parameter");
     assert_eq!(parameter.owner_record_index(), Some(536));
-    assert_eq!(parameter.expression_offset(), 45);
+    assert_eq!(parameter.expression_offset(), Some(45));
 
     let document = typed_parameter_record(242, None, "User Parameter");
     let parameter = parse_design_parameter_record(&document).expect("typed document parameter");
@@ -1421,7 +1421,7 @@ fn typed_compact_parameters_read_owned_and_document_forms() {
             family_discriminator: None
         }
     );
-    assert_eq!(parameter.expression_offset(), 35);
+    assert_eq!(parameter.expression_offset(), Some(35));
 
     // Owner presence must agree with the document source kind, and the tail
     // must name the typed parameter-tail type.
@@ -1502,7 +1502,7 @@ fn typed_owner_frame_widens_every_reference_and_keeps_the_scalar_envelope() {
     assert_eq!(parsed.variant, None);
     assert_eq!(parsed.companion_record_index, 538);
     let owner = parsed.into_record("Design1", 1000).expect("typed owner");
-    assert_eq!(owner.evaluated_value_offset(), 1080);
+    assert_eq!(owner.evaluated_value_offset(), Some(1080));
 
     let variant = typed_owner_frame(&[1, 0, 0]);
     let parsed = parse_parameter_owner(&variant).expect("typed variant owner");
@@ -1528,7 +1528,9 @@ fn wide_discriminated_parameter_stores_four_zero_bytes_before_its_discriminator(
     narrow[tail] = 0x10;
     let expected = parse_design_parameter_record(&narrow).expect("narrow discriminated parameter");
     assert_eq!(
-        expected.family_discriminator().map(|field| field.offset),
+        expected
+            .family_discriminator()
+            .and_then(|field| field.offset),
         Some(22)
     );
 
@@ -1540,7 +1542,10 @@ fn wide_discriminated_parameter_stores_four_zero_bytes_before_its_discriminator(
     assert_eq!(parameter.name(), "d3");
     assert_eq!(parameter.evaluated_value().get(), 1.0);
     let discriminator = parameter.family_discriminator().expect("discriminator");
-    assert_eq!((discriminator.value.code(), discriminator.offset), (6, 26));
+    assert_eq!(
+        (discriminator.value.code(), discriminator.offset),
+        (6, Some(26))
+    );
 
     // The four bytes before the discriminator are zero.
     let mut nonzero = wide.clone();

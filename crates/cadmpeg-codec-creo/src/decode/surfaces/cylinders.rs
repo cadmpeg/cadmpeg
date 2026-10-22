@@ -152,10 +152,6 @@ pub(in super::super) fn transfer_active_datum_cylinders(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -280,10 +276,6 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -364,10 +356,6 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -442,10 +430,6 @@ pub(in super::super) fn transfer_hole_cylinders(
                                 "source object_id must not be empty",
                             )
                         })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 },
@@ -580,10 +564,6 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                                 "source object_id must not be empty",
                             )
                         })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 },
@@ -1304,10 +1284,6 @@ pub(in super::super) fn transfer_positional_cylinders(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -1552,10 +1528,6 @@ pub(in super::super) fn transfer_positional_cones(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -1631,10 +1603,6 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                                 "source object_id must not be empty",
                             )
                         })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 },
@@ -1704,10 +1672,6 @@ pub(in super::super) fn transfer_cross_section_planes(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -1754,10 +1718,6 @@ pub(in super::super) fn transfer_cross_section_planes(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },

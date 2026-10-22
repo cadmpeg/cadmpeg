@@ -55,14 +55,27 @@ pub fn entity(data: &[u8]) {
 /// offsets consistent across an in-place value edit and reparse.
 pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
+    let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
     let mut losses = Vec::new();
-    let records = crate::pmi::parse_payload(&ctx, data, &mut losses)?;
-    for record in records {
+    let parsed = crate::pmi::parse_payload(&ctx, root, &mut losses)?;
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    crate::pmi::layout::install(&ctx, parsed.pointers, &mut fidelity)?;
+    for record in parsed.records {
         if record.item_count.get() != 1 {
             continue;
         }
-        let Ok(start) = usize::try_from(record.value_offset) else {
+        let pointers = fidelity
+            .record_layout()
+            .get(&record.id)
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("PMI fuzz record lacks source layout")
+            })?
+            .pointers();
+        let Some(start) = pointers
+            .get("value_offset")
+            .copied()
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
             continue;
         };
         let Some(end) = start.checked_add(8) else {
@@ -75,15 +88,46 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         let edited = f64::from_bits(record.value.get().to_bits() ^ 1);
         patched[start..end].copy_from_slice(&edited.to_be_bytes());
         let mut again_losses = Vec::new();
-        let again = crate::pmi::parse_payload(&ctx, &patched, &mut again_losses)?;
-        if let Some(parsed) = again.iter().find(|candidate| candidate.guid == record.guid) {
+        let (again_ctx, again_root) =
+            DecodeContext::from_root_bytes(&patched, &arena, &DecodePolicy::service())?;
+        let again = crate::pmi::parse_payload(&again_ctx, again_root, &mut again_losses)?;
+        let mut again_fidelity = cadmpeg_ir::SourceFidelity::default();
+        crate::pmi::layout::install(&again_ctx, again.pointers, &mut again_fidelity)?;
+        if let Some(parsed) = again
+            .records
+            .iter()
+            .find(|candidate| candidate.guid == record.guid)
+        {
+            let again_pointers = again_fidelity
+                .record_layout()
+                .get(&parsed.id)
+                .expect("reparsed PMI layout")
+                .pointers();
             assert_eq!(parsed.value.get().to_bits(), edited.to_bits());
-            assert_eq!(parsed.value_offset, record.value_offset);
-            assert_eq!(parsed.precision_offset, record.precision_offset);
-            assert_eq!(parsed.basic_offset, record.basic_offset);
-            assert_eq!(parsed.inspection_offset, record.inspection_offset);
-            assert_eq!(parsed.reference_only_offset, record.reference_only_offset);
-            assert_eq!(parsed.display_text_offset(), record.display_text_offset());
+            assert_eq!(
+                again_pointers.get("value_offset"),
+                pointers.get("value_offset")
+            );
+            assert_eq!(
+                again_pointers.get("precision_offset"),
+                pointers.get("precision_offset")
+            );
+            assert_eq!(
+                again_pointers.get("basic_offset"),
+                pointers.get("basic_offset")
+            );
+            assert_eq!(
+                again_pointers.get("inspection_offset"),
+                pointers.get("inspection_offset")
+            );
+            assert_eq!(
+                again_pointers.get("reference_only_offset"),
+                pointers.get("reference_only_offset")
+            );
+            assert_eq!(
+                again_pointers.get("display_text_offset"),
+                pointers.get("display_text_offset")
+            );
         }
     }
     Ok(())

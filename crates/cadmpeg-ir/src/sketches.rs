@@ -4,7 +4,7 @@
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::{
-    features::{FinitePoint3, FiniteVector3, ParameterId},
+    features::{Dimension, FinitePoint3, FiniteVector3, ParameterId, PatternAngle},
     scalar::{Angle, FiniteReal, Length, PositiveAngle, PositiveLength, PositiveReal},
     units::{FinitePoint2, UnitVector2, UnitVector3},
 };
@@ -1553,13 +1553,15 @@ pub struct SpatialSketchEntityPair {
 )]
 #[serde(try_from = "SpatialSketchConstraintDefinitionInput")]
 pub struct SpatialSketchConstraintDefinition(
-    SpatialSketchConstraintDefinitionInput<UnitVector3, PositiveLength>,
+    SpatialSketchConstraintDefinitionInput<UnitVector3, crate::scalar::NonZeroLength>,
 );
 
 impl SpatialSketchConstraintDefinition {
     /// Borrow the admitted spatial constraint kind.
     #[must_use]
-    pub fn kind(&self) -> &SpatialSketchConstraintDefinitionInput<UnitVector3, PositiveLength> {
+    pub fn kind(
+        &self,
+    ) -> &SpatialSketchConstraintDefinitionInput<UnitVector3, crate::scalar::NonZeroLength> {
         &self.0
     }
 
@@ -1584,7 +1586,7 @@ impl TryFrom<SpatialSketchConstraintDefinitionInput> for SpatialSketchConstraint
         const INVALID: &str = "invalid spatial sketch constraint local arity or scalar value";
         let kind = kind.map_values(
             |direction| UnitVector3::new(direction).ok_or(INVALID),
-            |distance| PositiveLength::try_from(distance).map_err(|_| INVALID),
+            |distance| crate::scalar::NonZeroLength::try_from(distance).map_err(|_| INVALID),
         )?;
         let valid = match &kind {
             Kind::Native { operands, .. } => !operands.is_empty(),
@@ -1721,7 +1723,7 @@ pub enum SpatialSketchConstraintDefinitionInput<U = Vector3, L = crate::scalar::
         /// Second measured point.
         second: SpatialSketchEntityId,
         /// Driving distance parameter.
-        parameter: crate::features::ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Distance from a model-space point to an infinite model-space line.
     PointLineDistance {
@@ -1730,21 +1732,21 @@ pub enum SpatialSketchConstraintDefinitionInput<U = Vector3, L = crate::scalar::
         /// Bounded entity supplying the infinite line carrier.
         line: SpatialSketchEntityId,
         /// Driving distance parameter.
-        parameter: crate::features::ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Endpoint-to-endpoint length of one bounded model-space sketch line.
     LineLength {
         /// Measured line.
         entity: SpatialSketchEntityId,
         /// Driving length parameter.
-        parameter: crate::features::ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Endpoint-to-endpoint lengths of multiple bounded model-space sketch lines.
     RepeatedLineLength {
         /// Distinct measured lines in spatial-sketch entity order.
         entities: Vec<SpatialSketchEntityId>,
         /// Shared driving length parameter.
-        parameter: crate::features::ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Minimum separation between two parallel model-space sketch lines.
     ParallelLineDistance {
@@ -1753,14 +1755,14 @@ pub enum SpatialSketchConstraintDefinitionInput<U = Vector3, L = crate::scalar::
         /// Second measured line.
         second: SpatialSketchEntityId,
         /// Driving distance parameter.
-        parameter: crate::features::ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Repeated separation between disjoint pairs of parallel lines.
     RepeatedParallelLineDistance {
         /// Distinct line pairs in profile traversal order.
         pairs: Vec<SpatialSketchEntityPair>,
         /// Shared driving distance parameter.
-        parameter: crate::features::ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Minimum separation between two parallel collinear model-space line sets.
     ParallelLineSetDistance {
@@ -1769,7 +1771,7 @@ pub enum SpatialSketchConstraintDefinitionInput<U = Vector3, L = crate::scalar::
         /// Collinear entities forming the second line carrier.
         second: Vec<SpatialSketchEntityId>,
         /// Driving distance parameter.
-        parameter: crate::features::ParameterId,
+        parameter: Dimension<Length>,
     },
     /// A model-space curve set generated at one offset distance from a source set.
     Offset {
@@ -1782,15 +1784,8 @@ pub enum SpatialSketchConstraintDefinitionInput<U = Vector3, L = crate::scalar::
         results: Vec<SpatialSketchEntityId>,
         /// Unit normal of the result curve set's common plane.
         normal: U,
-        /// Strictly positive operation-level offset magnitude.
-        distance: L,
-        /// Signed driving offset-distance parameter, when dimensional.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_spatial_sketch_constraint_definition_input_parameter"
-        )]
-        parameter: Option<OffsetParameter>,
+        /// Canonical signed nonzero offset distance along the stated normal.
+        distance: Dimension<L>,
     },
     /// A model-space line is parallel to one fixed model-space direction.
     ParallelToDirection {
@@ -1892,13 +1887,11 @@ impl<U, L> SpatialSketchConstraintDefinitionInput<U, L> {
                 results,
                 normal,
                 distance,
-                parameter,
             } => Kind::Offset {
                 sources,
                 results,
                 normal: direction(normal)?,
-                distance: length(distance)?,
-                parameter,
+                distance: distance.try_map_literal(length)?,
             },
             Self::ParallelToDirection {
                 entity,
@@ -1912,7 +1905,7 @@ impl<U, L> SpatialSketchConstraintDefinitionInput<U, L> {
     }
 }
 
-impl SpatialSketchConstraintDefinitionInput<UnitVector3, PositiveLength> {
+impl SpatialSketchConstraintDefinitionInput<UnitVector3, crate::scalar::NonZeroLength> {
     /// The kind with raw directions and a raw offset distance.
     #[must_use]
     pub fn to_raw(&self) -> SpatialSketchConstraintDefinitionInput {
@@ -2392,111 +2385,77 @@ pub struct SketchOffsetPair {
     pub source_reversed: bool,
 }
 
-/// Signed use of a driving offset-distance parameter.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct OffsetParameter {
-    /// Driving parameter identity.
-    pub id: ParameterId,
-    /// Whether the stored positive distance is the negation of the parameter.
-    pub negated: bool,
-}
-
 /// One axis of a rectangular sketch pattern.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "SketchPatternDirectionWire",
+    into = "SketchPatternDirectionWire"
+)]
 pub struct SketchPatternDirection {
-    /// Unit direction in sketch coordinates.
     direction: UnitVector2,
-    /// Adjacent-instance spacing along `direction`.
-    spacing: Length,
-    /// Driving distance parameter and the distance form it controls.
-    pub distance: Option<SketchPatternDistance>,
-    /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
-    pub count_parameter: Option<ParameterId>,
+    /// Canonical spacing or total span, including any parameter binding.
+    pub distance: SketchPatternDistance,
+    /// Canonical instance count; rows are its evaluated result.
+    pub count: Dimension<u32>,
 }
-
 const EPS_PATTERN_DIRECTION_ORTHOGONALITY: f64 = 1.0e-9;
-
 impl SketchPatternDirection {
-    /// Admit a finite unit direction and finite signed spacing.
+    /// Admit a unit direction and a positive literal count or parameter binding.
     pub fn new(
         direction: [f64; 2],
-        spacing: Length,
-        distance: Option<SketchPatternDistance>,
-        count_parameter: Option<ParameterId>,
+        distance: SketchPatternDistance,
+        count: Dimension<u32>,
     ) -> Option<Self> {
-        let direction = UnitVector2::new(direction)?;
+        if count.literal().is_some_and(|count| *count == 0) {
+            return None;
+        }
         Some(Self {
-            direction,
-            spacing,
+            direction: UnitVector2::new(direction)?,
             distance,
-            count_parameter,
+            count,
         })
     }
-
     /// Unit direction in sketch coordinates.
-    #[must_use]
     pub fn direction(&self) -> UnitVector2 {
         self.direction
     }
-
-    /// Adjacent-instance signed spacing.
-    #[must_use]
-    pub fn spacing(&self) -> Length {
-        self.spacing
-    }
-}
-
-/// Distance form controlled by a rectangular-pattern parameter.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum SketchPatternDistance {
-    /// The parameter controls adjacent-instance spacing.
-    Spacing {
-        /// Driving parameter identity.
-        parameter: ParameterId,
-    },
-    /// The parameter controls the seed-to-final-instance span.
-    Span {
-        /// Driving parameter identity.
-        parameter: ParameterId,
-    },
-}
-
-impl SketchPatternDistance {
-    /// Parameter that controls this distance form.
-    #[must_use]
-    pub fn parameter(&self) -> &ParameterId {
-        match self {
-            Self::Spacing { parameter } | Self::Span { parameter } => parameter,
+    /// Evaluated adjacent-instance spacing derived from the canonical form.
+    pub fn spacing(&self, ir: &crate::CadIr) -> Option<Length> {
+        match &self.distance {
+            SketchPatternDistance::Spacing { distance } => ir.dimension_value(distance),
+            SketchPatternDistance::Span { distance } => {
+                let span = ir.dimension_value(distance)?;
+                let count = ir.dimension_value(&self.count)?;
+                if count <= 1 {
+                    return (span.get() == 0.0).then_some(Length::ZERO);
+                }
+                Length::new(span.get() / f64::from(count - 1))
+            }
         }
     }
 }
-
-/// One resolved rectangular-pattern instance.
+/// The source's canonical rectangular-pattern distance law.
+pub type SketchPatternDistance = crate::features::PatternDistance<Length>;
+/// One evaluated rectangular-pattern instance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SketchPatternInstance {
-    /// Entities in fixed seed-entity order.
+    /// Evaluated entities in seed-entity order.
     pub entities: Vec<SketchEntityId>,
 }
-
-/// One resolved circular-pattern instance.
+/// One evaluated circular-pattern instance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SketchCircularPatternInstance {
-    /// Signed rotation from the seed instance in radians.
+    /// Evaluated signed rotation from the seed in radians.
     pub angle: crate::scalar::NonZeroAngle,
-    /// Entities in fixed seed-entity order.
+    /// Evaluated entities in seed-entity order.
     pub entities: Vec<SketchEntityId>,
 }
-
-/// Checked two-axis rectangular sketch pattern.
+/// A rectangular pattern's canonical inputs and evaluated entity grid.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
@@ -2507,64 +2466,53 @@ pub struct SketchRectangularPattern {
     directions: [SketchPatternDirection; 2],
     rows: Vec<Vec<SketchPatternInstance>>,
 }
-
 impl SketchRectangularPattern {
-    /// Construct a non-empty rectangular grid whose instances have one fixed
-    /// positive entity arity.
+    /// Admit a nonempty rectangular grid with distinct, fixed-arity entity rows.
     pub fn new(
         directions: [SketchPatternDirection; 2],
         rows: Vec<Vec<SketchPatternInstance>>,
     ) -> Option<Self> {
         let row_count = u32::try_from(rows.len()).ok()?;
         let column_count = u32::try_from(rows.first()?.len()).ok()?;
+        let arity = rows.first()?.first()?.entities.len();
         if row_count == 0
             || column_count == 0
+            || arity == 0
             || rows
                 .iter()
                 .any(|row| row.len() != cadmpeg_core::decode::index_from_u32(column_count))
-        {
-            return None;
-        }
-        let entity_arity = rows.first()?.first()?.entities.len();
-        if entity_arity == 0
             || rows
                 .iter()
                 .flatten()
-                .any(|instance| instance.entities.len() != entity_arity)
+                .any(|instance| instance.entities.len() != arity)
         {
             return None;
         }
-        let [first, second] = [directions[0].direction.get(), directions[1].direction.get()];
-        let dot = first[0] * second[0] + first[1] * second[1];
+        let [a, b] = [directions[0].direction.get(), directions[1].direction.get()];
+        if (a[0] * b[0] + a[1] * b[1]).abs() > EPS_PATTERN_DIRECTION_ORTHOGONALITY {
+            return None;
+        }
         let mut entities = std::collections::HashSet::new();
-        if dot.abs() > EPS_PATTERN_DIRECTION_ORTHOGONALITY
-            || rows.iter().flatten().any(|instance| {
-                instance
-                    .entities
-                    .iter()
-                    .any(|entity| !entities.insert(entity))
-            })
+        if rows
+            .iter()
+            .flatten()
+            .flat_map(|instance| &instance.entities)
+            .any(|entity| !entities.insert(entity))
         {
             return None;
         }
         Some(Self { directions, rows })
     }
-
-    /// Ordered pattern directions.
-    #[must_use]
+    /// Canonical directions and dimensional laws.
     pub fn directions(&self) -> &[SketchPatternDirection; 2] {
         &self.directions
     }
-
-    /// Rectangular instance rows. Outer and inner positions are the two
-    /// zero-based pattern indices.
-    #[must_use]
+    /// Evaluated instance grid, which may be stale when the owner needs recompute.
     pub fn rows(&self) -> &[Vec<SketchPatternInstance>] {
         &self.rows
     }
 }
-
-/// Checked circular sketch pattern.
+/// A circular pattern's canonical inputs and evaluated entity instances.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
@@ -2573,133 +2521,85 @@ impl SketchRectangularPattern {
 )]
 pub struct SketchCircularPattern {
     center: SketchEntityId,
-    angle: Angle,
-    angle_parameter: Option<ParameterId>,
-    count_parameter: Option<ParameterId>,
+    angle: PatternAngle<Angle>,
+    count: Dimension<u32>,
     seed: Vec<SketchEntityId>,
-    /// Instances after the seed, at a population whose count the IR width can
-    /// state. The type carries the bound and the figure, so the pattern
-    /// stores no count of its own.
     instances: SeededMembers<SketchCircularPatternInstance>,
 }
-
-/// A nonempty population whose count, with the seed counted, fits the IR
-/// width.
-///
-/// The pattern states its instance count as the population plus the seed, in
-/// a `u32`. The bound therefore belongs on the population, not on the count:
-/// this type proves the bound at construction and refuses a population the
-/// width cannot count. `TryFrom<Vec<T>>` is the only constructor, and the type
-/// hands out a slice, so no value can grow past the count it proved.
+/// An evaluated population whose seeded count fits the wire width.
 #[derive(Debug, Clone, PartialEq)]
 struct SeededMembers<T> {
     members: Vec<T>,
 }
-
 impl<T> TryFrom<Vec<T>> for SeededMembers<T> {
     type Error = &'static str;
-
     fn try_from(members: Vec<T>) -> Result<Self, Self::Error> {
         if members.is_empty() {
             return Err("population states no member");
         }
-        let Some(_) = u32::try_from(members.len())
+        if u32::try_from(members.len())
             .ok()
-            .and_then(|population| population.checked_add(1))
-        else {
+            .and_then(|count| count.checked_add(1))
+            .is_none()
+        {
             return Err("population holds more members than the seeded count can state");
-        };
+        }
         Ok(Self { members })
     }
 }
-
 impl<T> std::ops::Deref for SeededMembers<T> {
     type Target = [T];
-
     fn deref(&self) -> &[T] {
         &self.members
     }
 }
-
 impl<T> IntoIterator for SeededMembers<T> {
     type Item = T;
     type IntoIter = std::vec::IntoIter<T>;
-
     fn into_iter(self) -> Self::IntoIter {
         self.members.into_iter()
     }
 }
-
 impl<'a, T> IntoIterator for &'a SeededMembers<T> {
     type Item = &'a T;
     type IntoIter = std::slice::Iter<'a, T>;
-
     fn into_iter(self) -> Self::IntoIter {
         self.members.iter()
     }
 }
-
-/// The refusal every arity and ownership check of a circular pattern states.
-const CIRCULAR_PATTERN_ARITY: &str =
-    "circular pattern seed and instances must share one fixed positive entity arity over distinct entities";
-
+const CIRCULAR_PATTERN_ARITY: &str = "circular pattern seed and instances must share one fixed positive entity arity over distinct entities";
 impl SketchCircularPattern {
-    /// Construct a non-empty pattern whose instances have one fixed positive
-    /// entity arity.
-    ///
-    /// This is the recognizer shape, for a caller that holds no channel to
-    /// state a cause in. The route that has one is
-    /// `TryFrom<SketchCircularPatternWire>`, which states the cause
-    /// `Self::admit` gives.
+    /// Admit canonical inputs and distinct evaluated fixed-arity instances.
     pub fn new(
         center: SketchEntityId,
-        angle: Angle,
-        angle_parameter: Option<ParameterId>,
-        count_parameter: Option<ParameterId>,
+        angle: PatternAngle<Angle>,
+        count: Dimension<u32>,
         seed: Vec<SketchEntityId>,
         instances: Vec<SketchCircularPatternInstance>,
     ) -> Option<Self> {
-        Self::admit(
-            center,
-            angle,
-            angle_parameter,
-            count_parameter,
-            seed,
-            instances,
-        )
-        .ok()
+        Self::admit(center, angle, count, seed, instances).ok()
     }
-
-    /// Admit the pattern, naming the cause of every refusal.
-    ///
-    /// The population bound is the one `SeededMembers` proves, and its two
-    /// texts are the ones this route states: an empty `instances` array is
-    /// refused as a population that states no member, not as an arity
-    /// disagreement.
     fn admit(
         center: SketchEntityId,
-        angle: Angle,
-        angle_parameter: Option<ParameterId>,
-        count_parameter: Option<ParameterId>,
+        angle: PatternAngle<Angle>,
+        count: Dimension<u32>,
         seed: Vec<SketchEntityId>,
         instances: Vec<SketchCircularPatternInstance>,
     ) -> Result<Self, &'static str> {
-        let entity_arity = seed.len();
-        if entity_arity == 0
+        if count.literal().is_some_and(|count| *count == 0) {
+            return Err("circular pattern count must be positive");
+        }
+        if seed.is_empty()
             || instances
                 .iter()
-                .any(|instance| instance.entities.len() != entity_arity)
+                .any(|instance| instance.entities.len() != seed.len())
         {
             return Err(CIRCULAR_PATTERN_ARITY);
         }
         let mut entities = std::collections::HashSet::new();
         if seed
             .iter()
-            .chain(
-                instances
-                    .iter()
-                    .flat_map(|instance| instance.entities.iter()),
-            )
+            .chain(instances.iter().flat_map(|instance| &instance.entities))
             .any(|entity| entity == &center || !entities.insert(entity))
         {
             return Err(CIRCULAR_PATTERN_ARITY);
@@ -2707,168 +2607,117 @@ impl SketchCircularPattern {
         Ok(Self {
             center,
             angle,
-            angle_parameter,
-            count_parameter,
+            count,
             seed,
             instances: SeededMembers::try_from(instances)?,
         })
     }
-
-    /// Point entity defining the center of rotation.
-    #[must_use]
+    /// Point entity defining the center.
     pub fn center(&self) -> &SketchEntityId {
         &self.center
     }
-
-    /// Driving angular-span parameter.
-    #[must_use]
-    pub fn angle_parameter(&self) -> Option<&ParameterId> {
-        self.angle_parameter.as_ref()
+    /// Canonical angle, including any parameter binding.
+    pub fn angle(&self) -> &PatternAngle<Angle> {
+        &self.angle
     }
-
-    /// Driving instance-count parameter.
-    #[must_use]
-    pub fn count_parameter(&self) -> Option<&ParameterId> {
-        self.count_parameter.as_ref()
+    /// Canonical instance count.
+    pub fn count(&self) -> &Dimension<u32> {
+        &self.count
     }
-
-    /// Instances in pattern order, after the seed. Slice position plus one is
-    /// the zero-based pattern index.
-    #[must_use]
+    /// Evaluated entities copied from the seed.
+    pub fn seed(&self) -> &[SketchEntityId] {
+        &self.seed
+    }
+    /// Evaluated instances after the seed.
     pub fn instances(&self) -> &[SketchCircularPatternInstance] {
         &self.instances
     }
 }
-
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SketchPatternDirectionWire {
+    /// Unit direction in sketch coordinates.
     direction: [f64; 2],
-    spacing: Length,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_distance"
-    )]
-    distance: Option<SketchPatternDistance>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_count_parameter"
-    )]
-    count_parameter: Option<ParameterId>,
+    /// Canonical adjacent spacing or total span.
+    distance: SketchPatternDistance,
+    /// Canonical instance count, including the seed.
+    count: Dimension<u32>,
 }
-
-impl SketchPatternDirectionWire {
-    fn from_direction(value: &SketchPatternDirection) -> Self {
+impl From<SketchPatternDirection> for SketchPatternDirectionWire {
+    fn from(value: SketchPatternDirection) -> Self {
         Self {
             direction: value.direction.get(),
-            spacing: value.spacing,
-            distance: value.distance.clone(),
-            count_parameter: value.count_parameter.clone(),
+            distance: value.distance,
+            count: value.count,
         }
     }
-
-    fn into_direction(self) -> Result<SketchPatternDirection, &'static str> {
-        SketchPatternDirection::new(
-            self.direction,
-            self.spacing,
-            self.distance,
-            self.count_parameter,
-        )
-        .ok_or("pattern direction must be finite and unit, with finite spacing")
+}
+impl TryFrom<SketchPatternDirectionWire> for SketchPatternDirection {
+    type Error = &'static str;
+    fn try_from(value: SketchPatternDirectionWire) -> Result<Self, Self::Error> {
+        Self::new(value.direction, value.distance, value.count)
+            .ok_or("pattern direction must be unit and count positive")
     }
 }
-
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(rename = "SketchRectangularPattern"))]
 #[serde(deny_unknown_fields)]
 struct SketchRectangularPatternWire {
-    /// Ordered pattern directions.
-    directions: [SketchPatternDirectionWire; 2],
-    /// Rectangular instance rows.
+    /// Canonical orthogonal directions and dimensional distribution laws.
+    directions: [SketchPatternDirection; 2],
+    /// Evaluated instance grid in second-axis row, first-axis column order.
     rows: Vec<Vec<SketchPatternInstance>>,
 }
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(rename = "SketchCircularPattern"))]
-#[serde(deny_unknown_fields)]
-struct SketchCircularPatternWire {
-    /// Point entity defining the center of rotation.
-    center: SketchEntityId,
-    /// Evaluated angular span stored by the native pattern.
-    angle: Angle,
-    /// Driving angular-span parameter.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_angle_parameter"
-    )]
-    angle_parameter: Option<ParameterId>,
-    /// Driving instance-count parameter.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_count_parameter"
-    )]
-    count_parameter: Option<ParameterId>,
-    /// Seed entities in fixed order.
-    seed: Vec<SketchEntityId>,
-    /// Instances after the seed, in pattern order.
-    instances: Vec<SketchCircularPatternInstance>,
-}
-
 impl From<SketchRectangularPattern> for SketchRectangularPatternWire {
-    fn from(pattern: SketchRectangularPattern) -> Self {
+    fn from(value: SketchRectangularPattern) -> Self {
         Self {
-            directions: [
-                SketchPatternDirectionWire::from_direction(&pattern.directions[0]),
-                SketchPatternDirectionWire::from_direction(&pattern.directions[1]),
-            ],
-            rows: pattern.rows,
+            directions: value.directions,
+            rows: value.rows,
         }
     }
 }
-
 impl TryFrom<SketchRectangularPatternWire> for SketchRectangularPattern {
     type Error = &'static str;
-
-    fn try_from(wire: SketchRectangularPatternWire) -> Result<Self, Self::Error> {
-        let [first, second] = wire.directions;
-        let directions = [first.into_direction()?, second.into_direction()?];
-        Self::new(directions, wire.rows).ok_or(
-            "rectangular pattern rows must form one non-empty grid whose instances have one fixed positive entity arity",
-        )
+    fn try_from(value: SketchRectangularPatternWire) -> Result<Self, Self::Error> {
+        Self::new(value.directions,value.rows).ok_or("rectangular pattern rows must form one non-empty grid whose instances have one fixed positive entity arity")
     }
 }
-
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct SketchCircularPatternWire {
+    /// Point entity defining the rotation center.
+    center: SketchEntityId,
+    /// Canonical angular spacing or total span and distribution.
+    angle: PatternAngle<Angle>,
+    /// Canonical instance count, including the seed.
+    count: Dimension<u32>,
+    /// Ordered seed entities.
+    seed: Vec<SketchEntityId>,
+    /// Evaluated rotated copies after the seed.
+    instances: Vec<SketchCircularPatternInstance>,
+}
 impl From<SketchCircularPattern> for SketchCircularPatternWire {
-    fn from(pattern: SketchCircularPattern) -> Self {
+    fn from(value: SketchCircularPattern) -> Self {
         Self {
-            center: pattern.center,
-            angle: pattern.angle,
-            angle_parameter: pattern.angle_parameter,
-            count_parameter: pattern.count_parameter,
-            seed: pattern.seed,
-            instances: pattern.instances.into_iter().collect(),
+            center: value.center,
+            angle: value.angle,
+            count: value.count,
+            seed: value.seed,
+            instances: value.instances.into_iter().collect(),
         }
     }
 }
-
 impl TryFrom<SketchCircularPatternWire> for SketchCircularPattern {
     type Error = &'static str;
-
-    fn try_from(wire: SketchCircularPatternWire) -> Result<Self, Self::Error> {
+    fn try_from(value: SketchCircularPatternWire) -> Result<Self, Self::Error> {
         Self::admit(
-            wire.center,
-            wire.angle,
-            wire.angle_parameter,
-            wire.count_parameter,
-            wire.seed,
-            wire.instances,
+            value.center,
+            value.angle,
+            value.count,
+            value.seed,
+            value.instances,
         )
     }
 }
@@ -3148,6 +2997,14 @@ impl SketchSameCoordinate {
 #[serde(try_from = "f64")]
 pub struct SketchLabelValue(f64);
 
+impl SketchLabelValue {
+    /// Return the admitted finite label coordinate.
+    #[must_use]
+    pub const fn get(self) -> f64 {
+        self.0
+    }
+}
+
 impl TryFrom<f64> for SketchLabelValue {
     type Error = &'static str;
 
@@ -3196,13 +3053,15 @@ impl SketchConstraintDefinition {
         &self.0
     }
 
-    /// Set the driving parameter of an admitted planar offset relation.
-    /// The parameter does not change offset-pair admission.
-    pub fn set_offset_parameter(&mut self, driving: OffsetParameter) -> bool {
-        let SketchConstraintDefinitionInput::Offset { parameter, .. } = &mut self.0 else {
+    /// Set the canonical signed offset dimension on a standalone definition.
+    pub fn set_offset_dimension(&mut self, dimension: Dimension<Length>) -> bool {
+        let SketchConstraintDefinitionInput::Offset { distance, .. } = &mut self.0 else {
             return false;
         };
-        *parameter = Some(driving);
+        if dimension.literal().is_some_and(|value| value.get() == 0.0) {
+            return false;
+        }
+        *distance = dimension;
         true
     }
 
@@ -3241,20 +3100,22 @@ impl TryFrom<SketchConstraintDefinitionInput> for SketchConstraintDefinition {
                 path,
                 glyph_transforms,
             } => text != path && !glyph_transforms.is_empty(),
-            Kind::DistanceLociValue { distance, .. } => distance.get() >= 0.0,
+            Kind::DistanceLociValue { distance, .. } => {
+                distance.literal().is_none_or(|value| value.get() >= 0.0)
+            }
             Kind::PolarDistance {
                 distance, angle, ..
-            } => {
+            } => distance.literal().is_none_or(|distance| {
                 distance.get() >= 0.0
                     && if distance.get() <= EPS_POLAR_DISTANCE_ZERO {
                         angle.is_none()
                     } else {
                         angle.is_some()
                     }
-            }
-            Kind::AngleDifference { value, .. } => {
-                (0.0..=std::f64::consts::PI).contains(&value.get())
-            }
+            }),
+            Kind::AngleDifference { value, .. } => value
+                .literal()
+                .is_none_or(|value| (0.0..=std::f64::consts::PI).contains(&value.get())),
             Kind::ScalarEquality { first, second } => first != second,
             Kind::RepeatedDistance { measurements, .. } => {
                 let mut entities = std::collections::HashSet::new();
@@ -3303,7 +3164,7 @@ impl TryFrom<SketchConstraintDefinitionInput> for SketchConstraintDefinition {
                 let mut sources = std::collections::HashSet::new();
                 let mut results = std::collections::HashSet::new();
                 !pairs.is_empty()
-                    && distance.get() > 0.0
+                    && distance.literal().is_none_or(|value| value.get() != 0.0)
                     && pairs.iter().all(|pair| {
                         pair.source != pair.result
                             && sources.insert(&pair.source)
@@ -3439,7 +3300,7 @@ pub enum SketchConstraintDefinitionInput {
         /// Point whose two coordinates are constrained.
         point: SketchLocus,
         /// Coordinate values in sketch `u`, then `v`, order.
-        values: [Length; 2],
+        values: [Dimension<Length>; 2],
     },
     /// One sketch coordinate is the arithmetic mean of two point loci.
     MidpointCoordinate {
@@ -3456,16 +3317,9 @@ pub enum SketchConstraintDefinitionInput {
     Offset {
         /// Ordered progenitor/result pairs.
         pairs: Vec<SketchOffsetPair>,
-        /// Strictly positive common offset magnitude, measured along each
-        /// oriented source entity's left normal.
-        distance: Length,
-        /// Signed driving offset-distance parameter, when dimensional.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_spatial_sketch_constraint_definition_input_parameter"
-        )]
-        parameter: Option<OffsetParameter>,
+        /// Canonical signed nonzero offset distance along each source
+        /// entity's oriented left normal.
+        distance: Dimension<Length>,
     },
     /// A regular profile entity copied from a projected reference entity.
     ProjectedCopy {
@@ -3584,21 +3438,21 @@ pub enum SketchConstraintDefinitionInput {
         /// Constrained circular arc.
         entity: SketchEntityId,
         /// Fixed positive arc angle in radians.
-        angle: PositiveAngle,
+        angle: Dimension<PositiveAngle>,
     },
     /// Bounded ellipse parameter sweep fixed by the relation kind.
     EllipseAngle {
         /// Constrained bounded ellipse.
         entity: SketchEntityId,
         /// Fixed positive parameter sweep in radians.
-        angle: PositiveAngle,
+        angle: Dimension<PositiveAngle>,
     },
     /// Distance controlled by a design parameter.
     Distance {
         /// Measured entities.
         entities: Vec<SketchEntityId>,
         /// Driving distance parameter.
-        parameter: ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Euclidean distance between two explicit loci.
     DistanceLoci {
@@ -3607,7 +3461,7 @@ pub enum SketchConstraintDefinitionInput {
         /// Second measured locus.
         second: SketchLocus,
         /// Driving distance parameter.
-        parameter: ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Euclidean distance between two loci with a source-evaluated value.
     DistanceLociValue {
@@ -3616,14 +3470,7 @@ pub enum SketchConstraintDefinitionInput {
         /// Second measured locus.
         second: SketchLocus,
         /// Non-negative measured distance in model units.
-        distance: Length,
-        /// Driving distance parameter, when the source supplies one.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_sketch_constraint_definition_input_parameter"
-        )]
-        parameter: Option<ParameterId>,
+        distance: Dimension<Length>,
     },
     /// A second locus is displaced from the first by a polar sketch-space
     /// distance and direction.
@@ -3633,7 +3480,7 @@ pub enum SketchConstraintDefinitionInput {
         /// Displaced locus.
         second: SketchLocus,
         /// Non-negative displacement length in model units.
-        distance: Length,
+        distance: Dimension<Length>,
         /// Direction from the sketch-u axis; absent when the displacement is
         /// zero and therefore has no defined direction.
         #[serde(
@@ -3641,14 +3488,7 @@ pub enum SketchConstraintDefinitionInput {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_angle"
         )]
-        angle: Option<Angle>,
-        /// Driving distance parameter, when the source supplies one.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_distance_parameter"
-        )]
-        distance_parameter: Option<ParameterId>,
+        angle: Option<Dimension<Angle>>,
     },
     /// Direct difference between two angle-valued solver scalars.
     AngleDifference {
@@ -3659,7 +3499,7 @@ pub enum SketchConstraintDefinitionInput {
         /// Solver-local key of the difference scalar receiving `first - second`.
         difference: u32,
         /// Source-evaluated non-negative angle difference in radians.
-        value: Angle,
+        value: Dimension<Angle>,
     },
     /// Equality between two equality-class solver scalars.
     ScalarEquality {
@@ -3682,7 +3522,7 @@ pub enum SketchConstraintDefinitionInput {
         /// Second measured locus.
         second: SketchLocus,
         /// Driving horizontal-distance parameter.
-        parameter: ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Vertical separation between two explicit loci.
     VerticalDistance {
@@ -3691,21 +3531,21 @@ pub enum SketchConstraintDefinitionInput {
         /// Second measured locus.
         second: SketchLocus,
         /// Driving vertical-distance parameter.
-        parameter: ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Multiple disjoint locus pairs controlled by one linear parameter.
     RepeatedDistance {
         /// Ordered independent measurements.
         measurements: Vec<SketchDistanceMeasurement>,
         /// Shared driving distance parameter.
-        parameter: ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Equal-length line entities controlled by one linear parameter.
     RepeatedLength {
         /// Distinct line entities sharing the driven length.
         entities: Vec<SketchEntityId>,
         /// Shared driving length parameter.
-        parameter: ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Distance between two parallel collinear line-entity sets.
     ParallelLineSetDistance {
@@ -3714,7 +3554,7 @@ pub enum SketchConstraintDefinitionInput {
         /// Collinear entities forming the second line carrier.
         second: Vec<SketchEntityId>,
         /// Driving distance parameter.
-        parameter: ParameterId,
+        parameter: Dimension<Length>,
     },
     /// Angle controlled by a design parameter.
     Angle {
@@ -3723,7 +3563,7 @@ pub enum SketchConstraintDefinitionInput {
         /// Second angular entity.
         second: SketchEntityId,
         /// Driving angle parameter.
-        parameter: ParameterId,
+        parameter: Dimension<Angle>,
     },
     /// Angle from a canonical sketch axis to one line entity.
     AngleToAxis {
@@ -3732,35 +3572,35 @@ pub enum SketchConstraintDefinitionInput {
         /// Canonical sketch reference axis.
         axis: SketchAxis,
         /// Driving angle parameter.
-        parameter: ParameterId,
+        parameter: Dimension<Angle>,
     },
     /// Radius controlled by a design parameter.
     Radius {
         /// Circular or elliptical entity.
         entity: SketchEntityId,
         /// Driving radius parameter.
-        parameter: ParameterId,
+        parameter: Dimension<PositiveLength>,
     },
     /// Equal-radius circular entities controlled by one design parameter.
     RepeatedRadius {
         /// Distinct circular entities sharing the driven radius.
         entities: Vec<SketchEntityId>,
         /// Shared driving radius parameter.
-        parameter: ParameterId,
+        parameter: Dimension<PositiveLength>,
     },
     /// Diameter controlled by a design parameter.
     Diameter {
         /// Circular entity.
         entity: SketchEntityId,
         /// Driving diameter parameter.
-        parameter: ParameterId,
+        parameter: Dimension<PositiveLength>,
     },
     /// Equal-diameter circular entities controlled by one design parameter.
     RepeatedDiameter {
         /// Distinct circular entities sharing the driven diameter.
         entities: Vec<SketchEntityId>,
         /// Shared driving diameter parameter.
-        parameter: ParameterId,
+        parameter: Dimension<PositiveLength>,
     },
     /// Refraction relation between two curve loci and their interface.
     SnellsLaw {
@@ -3771,14 +3611,14 @@ pub enum SketchConstraintDefinitionInput {
         /// Interface entity carrying the surface normal in sketch space.
         interface: SketchEntityId,
         /// Dimensionless refractive-index ratio.
-        parameter: ParameterId,
+        parameter: Dimension<FiniteReal>,
     },
     /// Rational spline weight controlled by a dimensionless parameter.
     Weight {
         /// Weighted spline entity.
         entity: SketchEntityId,
         /// Dimensionless weight parameter.
-        parameter: ParameterId,
+        parameter: Dimension<FiniteReal>,
     },
     /// Relation between generated helper geometry and its parent conic or spline.
     InternalAlignment {
@@ -3973,11 +3813,6 @@ cadmpeg_core::named_optional_field!(
     crate::features::ParameterId,
     "parameter"
 );
-cadmpeg_core::named_optional_field!(
-    deserialize_spatial_sketch_constraint_definition_input_parameter,
-    OffsetParameter,
-    "parameter"
-);
 cadmpeg_core::named_optional_field!(deserialize_driving, bool, "driving");
 cadmpeg_core::named_optional_field!(deserialize_active, bool, "active");
 cadmpeg_core::named_optional_field!(deserialize_virtual_space, bool, "virtual_space");
@@ -3996,21 +3831,53 @@ cadmpeg_core::named_optional_field!(deserialize_metadata, String, "metadata");
 cadmpeg_core::named_optional_field!(deserialize_role, u32, "role");
 cadmpeg_core::named_optional_field!(deserialize_field, NativeOperandField, "field");
 cadmpeg_core::named_optional_field!(deserialize_object_index, u32, "object_index");
-cadmpeg_core::named_optional_field!(deserialize_distance, SketchPatternDistance, "distance");
-cadmpeg_core::named_optional_field!(deserialize_count_parameter, ParameterId, "count_parameter");
-cadmpeg_core::named_optional_field!(deserialize_angle_parameter, ParameterId, "angle_parameter");
 cadmpeg_core::named_optional_field!(
     deserialize_sketch_constraint_definition_input_parameter,
     ParameterId,
     "parameter"
 );
-cadmpeg_core::named_optional_field!(deserialize_angle, Angle, "angle");
-cadmpeg_core::named_optional_field!(
-    deserialize_distance_parameter,
-    ParameterId,
-    "distance_parameter"
-);
+cadmpeg_core::named_optional_field!(deserialize_angle, Dimension<Angle>, "angle");
 cadmpeg_core::named_optional_field!(deserialize_font, String, "font");
 cadmpeg_core::named_optional_field!(deserialize_native_flags, u64, "native_flags");
 
 mod identity_rewrite;
+
+impl SketchConstraintDefinitionInput {
+    /// Canonical parameter identities bound to this constraint's dimensions.
+    pub fn dimension_parameters(
+        &self,
+    ) -> Result<Vec<ParameterId>, crate::features::DimensionResolutionError> {
+        let mut parameters = crate::features::bound_dimension_parameters(self)?;
+        if let Self::Native {
+            parameter: Some(parameter),
+            ..
+        } = self
+        {
+            if !parameters.contains(parameter) {
+                parameters.push(parameter.clone());
+                parameters.sort();
+            }
+        }
+        Ok(parameters)
+    }
+}
+
+impl<U: Serialize, L: Serialize> SpatialSketchConstraintDefinitionInput<U, L> {
+    /// Canonical parameters bound to this spatial constraint's dimensions.
+    pub fn dimension_parameters(
+        &self,
+    ) -> Result<Vec<ParameterId>, crate::features::DimensionResolutionError> {
+        let mut parameters = crate::features::bound_dimension_parameters(self)?;
+        if let Self::Native {
+            parameter: Some(parameter),
+            ..
+        } = self
+        {
+            if !parameters.contains(parameter) {
+                parameters.push(parameter.clone());
+                parameters.sort();
+            }
+        }
+        Ok(parameters)
+    }
+}

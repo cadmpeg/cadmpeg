@@ -26,7 +26,10 @@ fn zero_length_edge_parameter_range_is_a_writer_limit() {
     let error = WritableModel::try_new(&ir)
         .err()
         .expect("Rhino cannot write a zero-length domain");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::UnsupportedContent(_)
+    ));
 }
 
 #[test]
@@ -47,7 +50,10 @@ fn admitted_unit_direction_outside_rhino_bound_is_a_writer_limit() {
     let error = WritableModel::try_new(&ir)
         .err()
         .expect("Rhino uses a tighter direction bound");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::UnsupportedContent(_)
+    ));
 }
 
 #[test]
@@ -69,7 +75,10 @@ fn admitted_frame_outside_rhino_bound_is_a_writer_limit() {
     let error = WritableModel::try_new(&ir)
         .err()
         .expect("Rhino uses a tighter frame bound");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::UnsupportedContent(_)
+    ));
 }
 
 #[test]
@@ -128,4 +137,127 @@ fn multi_face_resolves_domains_and_incidence_in_arena_order() {
             WritableFaceSurface::Plane { .. }
         ));
     }
+}
+
+#[test]
+fn planar_brep_serializes_trim_iso_without_changing_its_topology_or_curves() {
+    use crate::brep::{BrepParse, RawTrimIso};
+    use crate::chunks::ArchiveVersion;
+
+    let ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(0.5, 0.0, 0.0),
+        Point3::new(0.5, 0.5, 0.0),
+        Point3::new(0.0, 0.5, 0.0),
+    ]);
+    let model = WritableModel::try_new(&ir).expect("independent valid planar square");
+    for (version, archive) in [
+        (crate::RhinoArchiveVersion::V5, ArchiveVersion::V5),
+        (crate::RhinoArchiveVersion::V8, ArchiveVersion::V8),
+    ] {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let payload = super::super::brep_payload(&ctx, &model, version).unwrap();
+        let BrepParse::Valid(brep) = crate::brep::parse(
+            &ctx,
+            &payload.body,
+            0..payload.body.len(),
+            archive,
+            Some(super::super::OPENNURBS_WRITER_VERSION),
+            &[],
+        )
+        .expect("native Brep grammar") else {
+            panic!("square Brep topology must remain valid")
+        };
+        let raw = brep.raw();
+        assert_eq!(
+            raw.trims.iter().map(|trim| trim.iso).collect::<Vec<_>>(),
+            [RawTrimIso::Y, RawTrimIso::X, RawTrimIso::Y, RawTrimIso::X]
+        );
+        assert_eq!(raw.trims.len(), 4);
+        assert_eq!(raw.edges.len(), 4);
+        assert_eq!(raw.vertices.len(), 4);
+        assert_eq!(raw.loops.len(), 1);
+        assert_eq!(raw.faces.len(), 1);
+        for (index, trim) in raw.trims.iter().enumerate() {
+            assert_eq!(trim.edge, Some(i32::try_from(index).unwrap()));
+            assert!(!trim.reversed_3d);
+            assert_eq!(trim.loop_index, 0);
+            assert_eq!(
+                trim.domain.0.get(),
+                model.edges[index]
+                    .domain
+                    .map(cadmpeg_ir::scalar::FiniteReal::get)
+            );
+        }
+    }
+}
+
+#[test]
+fn bounded_free_line_uses_native_endpoints_and_its_declared_domain() {
+    let curve = cadmpeg_ir::geometry::Curve {
+        id: "test:geometry:curve#bounded-line"
+            .try_into()
+            .expect("curve identity"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::new(
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, -2.0, 3.0))
+                    .expect("finite origin"),
+                cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            ),
+        )),
+        parameter_range: Some(
+            cadmpeg_ir::topology::IncreasingParameterInterval::new([-2.0, 6.0])
+                .expect("finite increasing range"),
+        ),
+        source_object: None,
+    };
+    let (class, payload) = crate::writer::model::WritableObjectCurve::try_new(&curve)
+        .expect("bounded finite line")
+        .payload()
+        .expect("native bounded line");
+    assert_eq!(class, crate::test_support::test_archive::LINE_CLASS);
+    assert_eq!(
+        payload,
+        crate::test_support::test_archive::line_payload(
+            [1.0, -4.0, 3.0],
+            [1.0, 4.0, 3.0],
+            [-2.0, 6.0],
+        )
+    );
+}
+
+#[test]
+fn unbounded_or_collapsed_free_line_does_not_invent_a_native_domain_or_geometry() {
+    let mut curve = cadmpeg_ir::geometry::Curve {
+        id: "test:geometry:curve#unbounded-line"
+            .try_into()
+            .expect("curve identity"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::new(
+                cadmpeg_ir::features::FinitePoint3::ZERO,
+                cadmpeg_ir::units::UnitVector3::X_AXIS,
+            ),
+        )),
+        parameter_range: None,
+        source_object: None,
+    };
+    assert!(matches!(
+        crate::writer::model::WritableObjectCurve::try_new(&curve),
+        Err(cadmpeg_core::CodecError::UnsupportedContent(_))
+    ));
+    curve.parameter_range = Some(
+        cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0])
+            .expect("finite increasing range"),
+    );
+    curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::new(
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0e30, 0.0, 0.0))
+                .expect("finite large origin"),
+            cadmpeg_ir::units::UnitVector3::X_AXIS,
+        ),
+    ));
+    assert!(matches!(
+        crate::writer::model::WritableObjectCurve::try_new(&curve),
+        Err(cadmpeg_core::CodecError::UnsupportedContent(_))
+    ));
 }

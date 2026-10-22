@@ -34,7 +34,7 @@ pub(super) fn format_angle_like(
     {
         let degrees = value.get().to_degrees();
         if !degrees.is_finite() {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "SLDPRT angle {} rad has no finite degree value",
                 value.get()
             )));
@@ -76,7 +76,7 @@ mod tests {
             panic!("{written:?}");
         };
         assert!(
-            matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
+            matches!(error, cadmpeg_core::CodecError::UnsupportedContent(_)),
             "{error}"
         );
         assert_eq!(

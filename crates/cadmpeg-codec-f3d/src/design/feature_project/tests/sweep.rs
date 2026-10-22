@@ -80,7 +80,7 @@ fn guide_surface_input() -> (
     selected
         .try_set_members(vec![crate::records::identity::Located {
             value: 2788,
-            offset: selected.members()[0].offset,
+            offset: selected.members()[0].offset.expect("retained test source"),
         }])
         .unwrap();
     let mut carrier = profile_group(102, 3);
@@ -88,7 +88,7 @@ fn guide_surface_input() -> (
     carrier
         .try_set_members(vec![crate::records::identity::Located {
             value: 2795,
-            offset: carrier.members()[0].offset,
+            offset: carrier.members()[0].offset.expect("retained test source"),
         }])
         .unwrap();
     let mut guide = profile_group(103, 4);

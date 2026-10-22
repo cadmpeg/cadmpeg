@@ -22,7 +22,11 @@ use crate::records::{
     references::DesignClassTag,
 };
 
+#[derive(Default)]
 pub(crate) struct DecodedAct {
+    pub(crate) untyped_records: usize,
+    pub(crate) tables: Vec<crate::records::act_table::ActTable>,
+    pub(crate) types: Vec<crate::records::entity_header::SegmentType>,
     pub(crate) entities: Vec<ActEntity>,
     pub(crate) guids: Vec<ActGuid>,
     pub(crate) registry_channels: Vec<ActRegistryChannel>,
@@ -144,6 +148,9 @@ fn sibling_meta_name(stream: &str) -> Option<String> {
 }
 
 pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
+    let mut untyped_records = 0_usize;
+    let mut tables = Vec::new();
+    let mut types = Vec::new();
     let mut entities = Vec::new();
     let mut guids = Vec::new();
     let mut registry_channels = Vec::new();
@@ -175,6 +182,19 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                 ))
             })?;
         let meta = crate::metastream::parse(scan.entry_bytes(&meta_entry.name)?, &meta_entry.name)?;
+        for record in &meta.types {
+            let id = format!(
+                "{}:design-type#{}",
+                crate::ids::native_scope(&meta_entry.name),
+                record.byte_offset.ok_or_else(|| CodecError::malformed(
+                    "parsed ACT type lacks its source location"
+                ))?
+            );
+            types.push(
+                crate::records::entity_header::SegmentType::try_new(id, record.clone())
+                    .map_err(CodecError::Malformed)?,
+            );
+        }
         let frames = decode_record_frames(bytes, &meta, &entry.name)?;
         let table_frames = frames
             .iter()
@@ -186,6 +206,11 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                 entry.name
             )));
         };
+        tables.push(crate::records::act_table::ActTable {
+            id: crate::ids::native_scoped_id(&entry.name, "act-table", table_frame.start),
+            record_index: table_frame.record_index,
+            class_tag: table_frame.class_tag.clone(),
+        });
         let DecodedTable {
             entries: table,
             guids: stream_guids,
@@ -240,9 +265,24 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             }
         }
 
-        for entity in merge_entities(&entry.name, table, groups)? {
-            entities.push(entity);
-        }
+        let stream_entities = merge_entities(&entry.name, table, groups)?;
+        let mut represented = stream_entities
+            .iter()
+            .map(ActEntity::record_index)
+            .collect::<BTreeSet<_>>();
+        represented.insert(table_frame.record_index);
+        let scope = crate::ids::native_scope(&entry.name);
+        represented.extend(
+            root_components
+                .iter()
+                .filter(|record| record.stream() == scope)
+                .map(|record| record.record_index),
+        );
+        untyped_records += frames
+            .iter()
+            .filter(|frame| !represented.contains(&frame.record_index))
+            .count();
+        entities.extend(stream_entities);
         for guid in stream_guids {
             guids.push(guid);
         }
@@ -254,6 +294,9 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
         }
     }
     Ok(DecodedAct {
+        untyped_records,
+        tables,
+        types,
         entities,
         guids,
         registry_channels,
@@ -893,7 +936,7 @@ mod tests {
             .expect("well-framed group with a class tail")
             .expect("class tail follows the complete channel grammar");
         let tail = group.class_tail.as_ref().unwrap();
-        assert_eq!(tail.bytes(), class_tail);
-        assert_eq!(tail.offset(), u64_from_index(tail_at));
+        assert_eq!(tail.bytes(), Some(class_tail.as_slice()));
+        assert_eq!(tail.offset(), Some(u64_from_index(tail_at)));
     }
 }

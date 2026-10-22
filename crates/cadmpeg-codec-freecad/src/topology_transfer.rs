@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Occurrence-aware transfer of exact-shape topology into neutral CADIR.
 
+mod body_names;
+pub(crate) use body_names::apply as apply_body_names;
+
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -245,10 +248,6 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 self.source_object.as_str().to_owned(),
             )
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         })
     }
@@ -326,11 +325,18 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 };
                 let primary_range =
                     normalize_pcurve_parameter_range(&primary_geometry, Some(parameter_range));
-                ir.model.pcurves.push(Pcurve {
-                    id: self.pcurve_id(position + 1, representation_index, false)?,
-                    geometry: primary_geometry,
-                    metadata: PcurveMetadata::general(None, primary_range.map(Into::into), None),
-                });
+                let primary_id = self.pcurve_id(position + 1, representation_index, false)?;
+                if !ir.model.pcurves.iter().any(|curve| curve.id == primary_id) {
+                    ir.model.pcurves.push(Pcurve {
+                        id: primary_id,
+                        geometry: primary_geometry,
+                        metadata: PcurveMetadata::general(
+                            None,
+                            primary_range.map(Into::into),
+                            None,
+                        ),
+                    });
+                }
                 if let Some(secondary) = secondary {
                     let secondary_read =
                         match pcurve_geometry(self.ctx, &self.tables.curve2ds[secondary - 1]) {
@@ -356,15 +362,23 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         &secondary_geometry,
                         Some(parameter_range),
                     );
-                    ir.model.pcurves.push(Pcurve {
-                        id: self.pcurve_id(position + 1, representation_index, true)?,
-                        geometry: secondary_geometry,
-                        metadata: PcurveMetadata::general(
-                            None,
-                            secondary_range.map(Into::into),
-                            None,
-                        ),
-                    });
+                    let secondary_id = self.pcurve_id(position + 1, representation_index, true)?;
+                    if !ir
+                        .model
+                        .pcurves
+                        .iter()
+                        .any(|curve| curve.id == secondary_id)
+                    {
+                        ir.model.pcurves.push(Pcurve {
+                            id: secondary_id,
+                            geometry: secondary_geometry,
+                            metadata: PcurveMetadata::general(
+                                None,
+                                secondary_range.map(Into::into),
+                                None,
+                            ),
+                        });
+                    }
                 }
             }
         }
@@ -409,12 +423,39 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         representation: usize,
         secondary: bool,
     ) -> Result<PcurveId, CodecError> {
-        let key = format!(
-            "{}:{}:{}",
-            edge,
-            representation + 1,
-            usize::from(secondary) + 1
-        );
+        let TextTShapeGeometry::Edge {
+            representations, ..
+        } = &self.tables.tshapes[edge - 1].geometry
+        else {
+            return Err(CodecError::malformed("pcurve owner is not an edge"));
+        };
+        let (curve, surface, range) = match &representations[representation] {
+            TextEdgeRepresentation::Pcurve {
+                curve,
+                surface,
+                parameter_range,
+                ..
+            } => (*curve, *surface, *parameter_range),
+            TextEdgeRepresentation::PcurvePair {
+                curves,
+                surface,
+                parameter_range,
+                ..
+            } => (curves[usize::from(secondary)], *surface, *parameter_range),
+            _ => {
+                return Err(CodecError::malformed(
+                    "pcurve identity has no parameter-space representation",
+                ))
+            }
+        };
+        // Curve2d rows are content shared by edge occurrences. Include their
+        // UV chart and domain, which can give one row distinct neutral forms.
+        let chart = self
+            .tables
+            .surfaces
+            .get(surface - 1)
+            .map(surface_parameter_affine);
+        let key = format!("{curve}:{chart:?}:{range:?}");
         PcurveId::mint(crate::native::model_id("pcurve", &self.payload.id, &key))
             .map_err(CodecError::malformed)
     }
@@ -861,6 +902,15 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 Ok::<_, CodecError>((index, triangulation, vertices, triangles, scale))
             })
             .transpose()?;
+        // Canonical analytic carriers use right-handed frames. A source UV
+        // reflection reverses the carrier normal, while physical coedge
+        // traversal stays the same. Transfer that sign into the face sense.
+        let chart_reversed = if let Some(surface) = surface {
+            let chart = surface_parameter_affine(surface.resolve(self.tables.surfaces)?);
+            chart.u_scale.is_sign_negative() ^ chart.v_scale.is_sign_negative()
+        } else {
+            false
+        };
         let surface_id = if let Some(surface) = surface {
             surface.resolve(self.tables.surfaces)?;
             self.located_surface(ir, surface.index(), surface_transform)?
@@ -1040,7 +1090,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             id: face_id.clone(),
             shell: shell.clone(),
             surface: surface_id,
-            sense: sense(face_reversed),
+            sense: sense(face_reversed ^ chart_reversed),
             loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
             name: None,
             color: None,
@@ -1683,6 +1733,84 @@ fn transformed_pcurve_geometry(
         })
     {
         return Some(geometry);
+    }
+    // Reflections and translations have an exact native line form. Normalize
+    // those chart changes rather than making source coordinate conventions
+    // part of neutral content. Non-isometric charts retain their affine form.
+    if affine.u_scale.abs() == 1.0 && affine.v_scale.abs() == 1.0 {
+        use cadmpeg_ir::geometry::pcurve::{
+            CirclePcurve, EllipsePcurve, HyperbolaPcurve, ParabolaPcurve,
+        };
+        let point = |point: cadmpeg_ir::math::Point2| {
+            cadmpeg_ir::math::Point2::new(
+                affine.u_scale * point.u + affine.u_offset,
+                affine.v_scale * point.v + affine.v_offset,
+            )
+        };
+        let vector = |point: cadmpeg_ir::math::Point2| {
+            cadmpeg_ir::math::Point2::new(affine.u_scale * point.u, affine.v_scale * point.v)
+        };
+        match &geometry {
+            PcurveGeometry::Circle(value) => {
+                return CirclePcurve::try_new(
+                    point(value.center().get()),
+                    vector(value.x_axis().get()),
+                    vector(value.y_axis().get()),
+                    value.radius().get(),
+                )
+                .ok()
+                .map(PcurveGeometry::Circle)
+            }
+            PcurveGeometry::Ellipse(value) => {
+                return EllipsePcurve::try_new(
+                    point(value.center().get()),
+                    vector(value.x_axis().get()),
+                    vector(value.y_axis().get()),
+                    value.major_radius().get(),
+                    value.minor_radius().get(),
+                )
+                .ok()
+                .map(PcurveGeometry::Ellipse)
+            }
+            PcurveGeometry::Parabola(value) => {
+                return ParabolaPcurve::try_new(
+                    point(value.vertex().get()),
+                    vector(value.x_axis().get()),
+                    vector(value.y_axis().get()),
+                    value.focal_distance().get(),
+                )
+                .ok()
+                .map(PcurveGeometry::Parabola)
+            }
+            PcurveGeometry::Hyperbola(value) => {
+                return HyperbolaPcurve::try_new(
+                    point(value.center().get()),
+                    vector(value.x_axis().get()),
+                    vector(value.y_axis().get()),
+                    value.major_radius().get(),
+                    value.minor_radius().get(),
+                )
+                .ok()
+                .map(PcurveGeometry::Hyperbola)
+            }
+            _ => {}
+        }
+        if let PcurveGeometry::Line(line) = &geometry {
+            let origin = line.origin().get();
+            let direction = line.direction().as_raw();
+            return cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(
+                    affine.u_scale * origin.u + affine.u_offset,
+                    affine.v_scale * origin.v + affine.v_offset,
+                ),
+                cadmpeg_ir::math::Point2::new(
+                    affine.u_scale * direction.u,
+                    affine.v_scale * direction.v,
+                ),
+            )
+            .ok()
+            .map(PcurveGeometry::Line);
+        }
     }
     Some(PcurveGeometry::Transformed(
         cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(

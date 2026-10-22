@@ -1,4 +1,4 @@
-//! Sketch record patching in native streams.
+//! Sketch B-rep synthesis from the current neutral geometry.
 
 use super::SKETCH_POINT_TOLERANCE;
 use cadmpeg_ir::geometry::{
@@ -9,17 +9,11 @@ use cadmpeg_ir::ids::{
     VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, PositiveLength};
 use cadmpeg_ir::sketches::{Sketch, SketchGeometry, SketchGeometryDefinition};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::units::FinitePoint2;
 use std::collections::{HashMap, HashSet};
-use std::io::Read;
-use std::io::Write;
-
-const EPS_SKETCH_WRITE_GEOMETRY: f64 = 1.0e-9;
 
 /// The namespace every identity a written sketch generates is composed under.
 fn sketch_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
@@ -34,7 +28,7 @@ pub(super) fn sketch_brep(
         .resolved_placement()
         .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
         .ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented(format!(
+            cadmpeg_core::CodecError::UnsupportedContent(format!(
                 "source-less SLDPRT sketch {} requires resolved model-space placement",
                 sketch.id.as_str()
             ))
@@ -103,7 +97,7 @@ pub(super) fn sketch_brep(
                 SketchGeometryDefinition::Point { .. }
             )
     }) {
-        return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+        return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
             "source-less SLDPRT sketch writing cannot encode unprofiled curve {}",
             entity.id()
         )));
@@ -134,7 +128,7 @@ pub(super) fn sketch_brep(
             let (next_start, _) = endpoints[(index + 1) % endpoints.len()];
             !same_sketch_point(*end, next_start)
         }) {
-            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+            return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                 "source-less SLDPRT sketch profile {profile_index} is not a closed endpoint chain"
             )));
         }
@@ -343,7 +337,7 @@ pub(super) fn sketch_brep(
         face_loops.push(loop_id);
     }
     if face_loops.is_empty() {
-        return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+        return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
             "source-less SLDPRT sketch {} has no profiles",
             sketch.id.as_str()
         )));
@@ -397,7 +391,7 @@ fn generated_sketch_curve(
         .resolved_placement()
         .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
         .ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented(format!(
+            cadmpeg_core::CodecError::UnsupportedContent(format!(
                 "source-less SLDPRT sketch {} requires resolved model-space placement",
                 sketch.id.as_str()
             ))
@@ -507,7 +501,7 @@ fn generated_sketch_curve(
         }
         SketchGeometryDefinition::Nurbs { curve } => {
             if curve.periodic() {
-                return Err(cadmpeg_core::CodecError::NotImplemented(
+                return Err(cadmpeg_core::CodecError::UnsupportedContent(
                     "source-less SLDPRT sketch writing requires a non-periodic NURBS with at least two poles".into(),
                 ));
             }
@@ -533,7 +527,7 @@ fn generated_sketch_curve(
         | SketchGeometryDefinition::Parabola { .. }
         | SketchGeometryDefinition::ExternalReference { .. }
         | SketchGeometryDefinition::Native { .. } => Err(
-            cadmpeg_core::CodecError::NotImplemented(
+            cadmpeg_core::CodecError::UnsupportedContent(
                 "source-less SLDPRT sketch writing does not support point or native-only profile entities".into(),
             ),
         ),
@@ -594,575 +588,12 @@ pub(super) fn same_sketch_point(left: Point2, right: Point2) -> bool {
         && (left.v - right.v).abs() <= SKETCH_POINT_TOLERANCE
 }
 
-pub(super) fn patch_line_profiles(
-    ir: &cadmpeg_ir::CadIr,
-    native: &mut crate::native::SldprtNative,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let mut requested = HashMap::<(String, usize, u16), Point3>::new();
-    let mut curves = Vec::new();
-    for sketch in &ir.model.sketches {
-        let lane_id = sketch.native_ref.as_ref().ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented(
-                "SLDPRT sketch write-back requires native sketch provenance".into(),
-            )
-        })?;
-        let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented(format!(
-                "SLDPRT sketch write-back requires resolved placement for {}",
-                sketch.id.as_str()
-            ))
-        })?;
-        let v_axis = normal.get().cross(u_axis.get());
-        for entity in ir
-            .model
-            .sketch_entities
-            .iter()
-            .filter(|entity| entity.sketch == sketch.id)
-        {
-            if entity.endpoint_refs.len() != 2 {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                    "SLDPRT sketch entity {} lacks two endpoint references",
-                    entity.id()
-                )));
-            }
-            match entity.geometry.definition() {
-                SketchGeometryDefinition::Point { position } => {
-                    let reference = &entity.endpoint_refs[0];
-                    let (stream, attr) = parse_point_ref(reference)?;
-                    let point = lift_point(position.get(), origin.get(), u_axis.get(), v_axis);
-                    let key = (lane_id.clone(), stream, attr);
-                    if let Some(previous) = requested.insert(key, point) {
-                        if Point3::distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
-                            return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                                "SLDPRT shared sketch point {reference} has conflicting positions"
-                            )));
-                        }
-                    }
-                }
-                SketchGeometryDefinition::Line { start, end } => {
-                    for (reference, point) in entity.endpoint_refs.iter().zip([start, end]) {
-                        let (stream, attr) = parse_point_ref(reference)?;
-                        let point = lift_point(point.get(), origin.get(), u_axis.get(), v_axis);
-                        let key = (lane_id.clone(), stream, attr);
-                        if let Some(previous) = requested.insert(key, point) {
-                            if Point3::distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
-                                return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                                    "SLDPRT shared sketch point {reference} has conflicting positions"
-                                )));
-                            }
-                        }
-                    }
-                }
-                _ => {
-                    let geometry = &entity.geometry;
-                    let patch_geometry = PatchCurve::try_from(geometry)?;
-                    let geometry_ref = entity.geometry_ref.as_deref().ok_or_else(|| {
-                        cadmpeg_core::CodecError::Malformed(
-                            "SLDPRT sketch curve lacks native carrier provenance".into(),
-                        )
-                    })?;
-                    let (stream, carrier_attr) = parse_point_ref(geometry_ref)?;
-                    let (_, start_attr) = parse_point_ref(&entity.endpoint_refs[0])?;
-                    let (_, end_attr) = parse_point_ref(&entity.endpoint_refs[1])?;
-                    if let Some(endpoints) = bounded_endpoints(geometry) {
-                        for (reference, point) in entity.endpoint_refs.iter().zip(endpoints) {
-                            let (point_stream, attr) = parse_point_ref(reference)?;
-                            let point = lift_point(point, origin.get(), u_axis.get(), v_axis);
-                            let key = (lane_id.clone(), point_stream, attr);
-                            if let Some(previous) = requested.insert(key, point) {
-                                if Point3::distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
-                                    return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                                        "SLDPRT shared sketch point {reference} has conflicting positions"
-                                    )));
-                                }
-                            }
-                        }
-                    }
-                    curves.push(CurvePatch {
-                        lane_id: lane_id.clone(),
-                        stream,
-                        carrier_attr,
-                        start_attr,
-                        end_attr,
-                        geometry: patch_geometry,
-                        origin,
-                        u_axis,
-                        v_axis,
-                    });
-                }
-            }
-        }
-    }
-    for ((lane_id, stream_ordinal, attr), point) in requested {
-        let lane = native
-            .feature_input_lanes
-            .iter_mut()
-            .find(|lane| lane.id == lane_id)
-            .ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "SLDPRT sketch lane {lane_id} is missing"
-                ))
-            })?;
-        patch_direct_stream_point(&mut lane.native_payload, stream_ordinal, attr, point)?;
-    }
-    for request in curves {
-        let lane = native
-            .feature_input_lanes
-            .iter_mut()
-            .find(|lane| lane.id == request.lane_id)
-            .ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "SLDPRT sketch lane {} is missing",
-                    request.lane_id
-                ))
-            })?;
-        patch_direct_curve(&mut lane.native_payload, &request)?;
-    }
-    Ok(())
-}
-
-fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
-    match geometry.definition() {
-        SketchGeometryDefinition::Arc {
-            center,
-            radius,
-            start_angle,
-            end_angle,
-        } => Some([
-            offset_point(center.get(), polar(radius.get(), start_angle.get())),
-            offset_point(center.get(), polar(radius.get(), end_angle.get())),
-        ]),
-        SketchGeometryDefinition::Ellipse {
-            center,
-            major_angle,
-            radii,
-            bounds: Some([start, end]),
-        } => {
-            let major_radius = radii.major();
-            let minor_radius = radii.minor();
-            let point = |parameter: f64| {
-                Point2::new(
-                    center.u + major_angle.get().cos() * major_radius.get() * parameter.cos()
-                        - major_angle.get().sin() * minor_radius.get() * parameter.sin(),
-                    center.v
-                        + major_angle.get().sin() * major_radius.get() * parameter.cos()
-                        + major_angle.get().cos() * minor_radius.get() * parameter.sin(),
-                )
-            };
-            Some([point(start.get()), point(end.get())])
-        }
-        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.control_points();
-            Some([
-                control_points[0].get(),
-                control_points[control_points.len() - 1].get(),
-            ])
-        }
-        _ => None,
-    }
-}
-
-enum PatchCurve {
-    Circle {
-        center: FinitePoint2,
-        radius: PositiveLength,
-    },
-    Arc {
-        center: FinitePoint2,
-        radius: PositiveLength,
-        start_angle: Angle,
-        end_angle: Angle,
-    },
-    Ellipse(PatchEllipse),
-    Nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs),
-}
-
-struct PatchEllipse {
-    center: FinitePoint2,
-    major_angle: Angle,
-    radii: cadmpeg_ir::sketches::OrderedMajorRadius,
-    bounds: Option<[Angle; 2]>,
-}
-
-impl TryFrom<&SketchGeometry> for PatchCurve {
-    type Error = cadmpeg_core::CodecError;
-
-    fn try_from(geometry: &SketchGeometry) -> Result<Self, Self::Error> {
-        match geometry.definition() {
-            SketchGeometryDefinition::Circle { center, radius } => Ok(Self::Circle {
-                center: *center,
-                radius: *radius,
-            }),
-            SketchGeometryDefinition::Arc {
-                center,
-                radius,
-                start_angle,
-                end_angle,
-            } => Ok(Self::Arc {
-                center: *center,
-                radius: *radius,
-                start_angle: *start_angle,
-                end_angle: *end_angle,
-            }),
-            SketchGeometryDefinition::Ellipse {
-                center,
-                major_angle,
-                radii,
-                bounds,
-            } => Ok(Self::Ellipse(PatchEllipse {
-                center: *center,
-                major_angle: *major_angle,
-                radii: *radii,
-                bounds: *bounds,
-            })),
-            SketchGeometryDefinition::Nurbs { curve } => Ok(Self::Nurbs(curve.clone())),
-            _ => Err(cadmpeg_core::CodecError::NotImplemented(
-                "SLDPRT sketch write-back does not support this curve family".into(),
-            )),
-        }
-    }
-}
-
-struct CurvePatch {
-    lane_id: String,
-    stream: usize,
-    carrier_attr: u16,
-    start_attr: u16,
-    end_attr: u16,
-    geometry: PatchCurve,
-    origin: cadmpeg_ir::features::FinitePoint3,
-    u_axis: cadmpeg_ir::features::FiniteVector3,
-    v_axis: Vector3,
-}
-
-fn parse_point_ref(reference: &str) -> Result<(usize, u16), cadmpeg_core::CodecError> {
-    let (stream, id) = reference.split_once(':').ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed(format_args!(
-            "invalid SLDPRT sketch endpoint reference {reference}"
-        ))
-    })?;
-    let attr = id.rsplit('#').next().and_then(|value| value.parse().ok());
-    match (stream.parse().ok(), attr) {
-        (Some(stream), Some(attr)) => Ok((stream, attr)),
-        _ => Err(cadmpeg_core::CodecError::malformed(format_args!(
-            "invalid SLDPRT sketch endpoint reference {reference}"
-        ))),
-    }
-}
-
 fn lift_point(point: Point2, origin: Point3, u_axis: Vector3, v_axis: Vector3) -> Point3 {
     Point3::new(
         origin.x + point.u * u_axis.x + point.v * v_axis.x,
         origin.y + point.u * u_axis.y + point.v * v_axis.y,
         origin.z + point.u * u_axis.z + point.v * v_axis.z,
     )
-}
-
-fn patch_direct_stream_point(
-    payload: &mut Vec<u8>,
-    stream_ordinal: usize,
-    attr: u16,
-    point_mm: Point3,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let xyz_m = [point_mm.x * 0.001, point_mm.y * 0.001, point_mm.z * 0.001];
-    edit_stream(payload, stream_ordinal, |_ctx, body| {
-        if !crate::brep::topology::patch_point(body, attr, xyz_m) {
-            return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "SLDPRT sketch point {attr} is missing"
-            )));
-        }
-        Ok(())
-    })
-}
-
-fn patch_direct_curve(
-    payload: &mut Vec<u8>,
-    request: &CurvePatch,
-) -> Result<(), cadmpeg_core::CodecError> {
-    edit_stream(payload, request.stream, |ctx, body| {
-        patch_direct_curve_body(ctx, body, request)
-    })
-}
-
-fn patch_direct_curve_body(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    body: &mut [u8],
-    request: &CurvePatch,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let (center_2d, radius, angles) = match &request.geometry {
-        PatchCurve::Circle { center, radius } => (*center, *radius, None),
-        PatchCurve::Arc {
-            center,
-            radius,
-            start_angle,
-            end_angle,
-        } => (*center, *radius, Some((*start_angle, *end_angle))),
-        PatchCurve::Ellipse(ellipse) => return patch_direct_ellipse(ctx, body, request, ellipse),
-        PatchCurve::Nurbs(curve) => return patch_direct_nurbs(ctx, body, request, curve),
-    };
-    let frame = match crate::brep::curve_by_attr(ctx, body, request.carrier_attr)? {
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
-            *circle_curve.frame()
-        }
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))) => {
-            return Err(cadmpeg_core::CodecError::Malformed(
-                "SLDPRT sketch carrier family changed".into(),
-            ));
-        }
-        _ => {
-            return Err(cadmpeg_core::CodecError::Malformed(
-                "SLDPRT sketch analytic carrier is missing".into(),
-            ));
-        }
-    };
-    let center = cadmpeg_ir::features::FinitePoint3::new(lift_point(
-        center_2d.get(),
-        request.origin.get(),
-        request.u_axis.get(),
-        request.v_axis,
-    ))
-    .ok_or_else(|| cadmpeg_core::CodecError::malformed("CircleCurve.center must be finite"))?;
-    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, radius),
-    ));
-    let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
-    if !crate::brep::patch_compact_values(ctx, body, request.carrier_attr, &values)? {
-        return Err(cadmpeg_core::CodecError::Malformed(
-            "SLDPRT sketch circle carrier cannot be patched".into(),
-        ));
-    }
-    let center_2d = center_2d.get();
-    let radius = radius.get();
-    let endpoints = angles.map_or(
-        [offset_point(center_2d, polar(radius, 0.0)); 2],
-        |(start, end)| {
-            [
-                offset_point(center_2d, polar(radius, start.get())),
-                offset_point(center_2d, polar(radius, end.get())),
-            ]
-        },
-    );
-    for (attr, endpoint) in [request.start_attr, request.end_attr]
-        .into_iter()
-        .zip(endpoints)
-    {
-        let point = lift_point(
-            endpoint,
-            request.origin.get(),
-            request.u_axis.get(),
-            request.v_axis,
-        );
-        if !crate::brep::topology::patch_point(
-            body,
-            attr,
-            [point.x * 0.001, point.y * 0.001, point.z * 0.001],
-        ) {
-            return Err(cadmpeg_core::CodecError::Malformed(
-                "SLDPRT sketch curve endpoint is missing".into(),
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn edit_stream(
-    payload: &mut Vec<u8>,
-    stream_ordinal: usize,
-    edit: impl FnOnce(
-        &cadmpeg_core::decode::DecodeContext<'_>,
-        &mut [u8],
-    ) -> Result<(), cadmpeg_core::CodecError>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::read_root(
-        &mut std::io::Cursor::new(payload.as_slice()),
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-        cadmpeg_core::decode::DecodeDepth::Full,
-    )?;
-    let stream = crate::parasolid::extract_streams_with_offsets(payload, &ctx)?
-        .streams
-        .into_iter()
-        .nth(stream_ordinal)
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::Malformed("SLDPRT sketch stream is missing".into())
-        })?;
-    let body_offset = stream.header.body_offset;
-    if let Some(start) = payload
-        .windows(stream.payload.len())
-        .position(|candidate| candidate == stream.payload.as_slice())
-    {
-        return edit(
-            &ctx,
-            &mut payload[start + body_offset..start + stream.payload.len()],
-        );
-    }
-    let (start, end) = compressed_member(payload, &stream.payload).ok_or_else(|| {
-        cadmpeg_core::CodecError::Malformed(
-            "compressed retained SLDPRT sketch stream is missing".into(),
-        )
-    })?;
-    let mut inflated = stream.payload;
-    edit(&ctx, &mut inflated[body_offset..])?;
-    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    encoder.write_all(&inflated)?;
-    payload.splice(start..end, encoder.finish()?);
-    Ok(())
-}
-
-fn compressed_member(payload: &[u8], target: &[u8]) -> Option<(usize, usize)> {
-    let last = payload.len().checked_sub(1)?;
-    for start in 0..last {
-        if payload[start] != 0x78 || !matches!(payload[start + 1], 0x01 | 0x9c | 0xda) {
-            continue;
-        }
-        // Cap inflation at `target.len() + 1` bytes: this scan only accepts a member
-        // whose inflated body equals `target`, so any stream that expands past the
-        // target length can never match and need not be materialized.
-        let ceiling = target.len().checked_add(1)?;
-        let mut decoder = flate2::read::ZlibDecoder::new(&payload[start..])
-            .take(cadmpeg_core::decode::u64_from_index(ceiling));
-        let mut inflated = Vec::with_capacity(ceiling);
-        let mut chunk = [0_u8; 8192];
-        let mut valid = true;
-        loop {
-            match decoder.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(read) => inflated.extend_from_slice(&chunk[..read]),
-                Err(_) => {
-                    valid = false;
-                    break;
-                }
-            }
-        }
-        if valid && inflated == target {
-            let consumed = cadmpeg_core::decode::index_from_u64(decoder.into_inner().total_in())?;
-            return Some((start, start + consumed));
-        }
-    }
-    None
-}
-
-fn patch_direct_nurbs(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    body: &mut [u8],
-    request: &CurvePatch,
-    curve: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let curve = curve
-        .lift(|point| {
-            lift_point(
-                point,
-                request.origin.get(),
-                request.u_axis.get(),
-                request.v_axis,
-            )
-        })
-        .map_err(|error| {
-            cadmpeg_core::CodecError::malformed(format_args!(
-                "SLDPRT sketch NURBS lift is invalid: {error}"
-            ))
-        })?;
-    if !crate::brep::patch_nurbs_by_attr(ctx, body, request.carrier_attr, &curve)? {
-        return Err(cadmpeg_core::CodecError::NotImplemented(
-            "SLDPRT sketch NURBS edit changes native storage shape".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn patch_direct_ellipse(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    body: &mut [u8],
-    request: &CurvePatch,
-    ellipse: &PatchEllipse,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let axis = match crate::brep::curve_by_attr(ctx, body, request.carrier_attr)? {
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))) => {
-            *ellipse_curve.frame().axis()
-        }
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {
-            return Err(cadmpeg_core::CodecError::Malformed(
-                "SLDPRT sketch carrier family changed".into(),
-            ));
-        }
-        _ => {
-            return Err(cadmpeg_core::CodecError::Malformed(
-                "SLDPRT sketch analytic carrier is missing".into(),
-            ));
-        }
-    };
-    let PatchEllipse {
-        center,
-        major_angle,
-        radii,
-        bounds,
-    } = *ellipse;
-    let center_3d = lift_point(
-        center.get(),
-        request.origin.get(),
-        request.u_axis.get(),
-        request.v_axis,
-    );
-    let major_angle_value = major_angle.get();
-    let u_axis = request.u_axis.get();
-    let major_direction = Vector3::new(
-        u_axis.x * major_angle_value.cos() + request.v_axis.x * major_angle_value.sin(),
-        u_axis.y * major_angle_value.cos() + request.v_axis.y * major_angle_value.sin(),
-        u_axis.z * major_angle_value.cos() + request.v_axis.z * major_angle_value.sin(),
-    );
-    let frame = cadmpeg_ir::units::UnitVector3::new(major_direction)
-        .and_then(|major_direction| {
-            cadmpeg_ir::units::OrthonormalFrame3::from_units(axis, major_direction)
-        })
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(
-                "EllipseCurve.axis/major_direction must form an orthonormal frame",
-            )
-        })?;
-    let center_3d = cadmpeg_ir::features::FinitePoint3::new(center_3d)
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.center must be finite"))?;
-    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::analytic::EllipseCurve::new(center_3d, frame, radii),
-    ));
-    let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
-    if !crate::brep::patch_compact_values(ctx, body, request.carrier_attr, &values)? {
-        return Err(cadmpeg_core::CodecError::Malformed(
-            "SLDPRT sketch ellipse carrier cannot be patched".into(),
-        ));
-    }
-    let parameters = bounds.map_or([0.0, 0.0], |bounds| bounds.map(Angle::get));
-    let center = center.get();
-    let major_radius = radii.major().get();
-    let minor_radius = radii.minor().get();
-    for (attr, parameter) in [request.start_attr, request.end_attr]
-        .into_iter()
-        .zip(parameters)
-    {
-        let local = Point2::new(
-            center.u + major_angle_value.cos() * major_radius * parameter.cos()
-                - major_angle_value.sin() * minor_radius * parameter.sin(),
-            center.v
-                + major_angle_value.sin() * major_radius * parameter.cos()
-                + major_angle_value.cos() * minor_radius * parameter.sin(),
-        );
-        let point = lift_point(
-            local,
-            request.origin.get(),
-            request.u_axis.get(),
-            request.v_axis,
-        );
-        if !crate::brep::topology::patch_point(
-            body,
-            attr,
-            [point.x * 0.001, point.y * 0.001, point.z * 0.001],
-        ) {
-            return Err(cadmpeg_core::CodecError::Malformed(
-                "SLDPRT sketch ellipse endpoint is missing".into(),
-            ));
-        }
-    }
-    Ok(())
 }
 
 fn polar(radius: f64, angle: f64) -> Point2 {

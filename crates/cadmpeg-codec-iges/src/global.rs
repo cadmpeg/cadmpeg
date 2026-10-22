@@ -8,6 +8,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 
+pub(crate) mod parts;
+
 #[derive(Debug, Clone, PartialEq)]
 enum Value {
     Omitted,
@@ -585,13 +587,52 @@ fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
     Ok((delimiter, cursor + 1))
 }
 
-fn delimited_value(
+#[derive(Clone, Copy)]
+enum ValueKind {
+    Omitted,
+    String,
+    Malformed,
+    Atom,
+}
+
+struct ValueFrame {
+    kind: ValueKind,
+    payload: std::ops::Range<usize>,
+    header: Option<std::ops::Range<usize>>,
+    next: usize,
+    ended: bool,
+}
+
+impl ValueFrame {
+    fn value(&self, payload: &[u8]) -> Value {
+        if matches!(self.kind, ValueKind::Omitted) {
+            Value::Omitted
+        } else {
+            self.owned_value(payload.to_vec())
+        }
+    }
+
+    fn owned_value(&self, payload: Vec<u8>) -> Value {
+        match self.kind {
+            ValueKind::Omitted => Value::Omitted,
+            ValueKind::String => Value::String(payload),
+            ValueKind::Malformed => Value::Malformed(payload),
+            ValueKind::Atom => Value::Atom(payload),
+        }
+    }
+
+    fn window_value(&self, bytes: &[u8]) -> Value {
+        self.value(&bytes[self.payload.clone()])
+    }
+}
+
+fn frame_value(
     bytes: &[u8],
     start: usize,
     parameter_delimiter: u8,
     record_delimiter: Option<u8>,
     retain: bool,
-) -> Result<(Value, usize, bool), CodecError> {
+) -> Result<ValueFrame, CodecError> {
     let remaining = bytes
         .len()
         .checked_sub(start)
@@ -601,21 +642,35 @@ fn delimited_value(
             .iter()
             .position(|byte| *byte != b' ')
             .unwrap_or(remaining);
-    if bytes.get(value_start) == Some(&parameter_delimiter) {
-        return Ok((Value::Omitted, value_start + 1, false));
+    if bytes.get(value_start) == Some(&parameter_delimiter)
+        || record_delimiter.is_some_and(|delimiter| bytes.get(value_start) == Some(&delimiter))
+    {
+        return Ok(ValueFrame {
+            kind: ValueKind::Omitted,
+            payload: value_start..value_start,
+            header: None,
+            next: value_start + 1,
+            ended: bytes.get(value_start) != Some(&parameter_delimiter)
+                && record_delimiter == bytes.get(value_start).copied(),
+        });
     }
-    if record_delimiter.is_some_and(|delimiter| bytes.get(value_start) == Some(&delimiter)) {
-        return Ok((Value::Omitted, value_start + 1, true));
-    }
-    let (value, end, allow_padding_after) =
+    let (kind, payload, header, end, allow_padding_after) =
         if let Some((payload, end)) = hollerith(bytes, value_start)? {
-            if !retain {
-                (Value::Omitted, end, true)
-            } else if source_span_crosses_card(value_start, end - payload.len()) {
-                (Value::Malformed(payload.to_vec()), end, true)
+            let payload_start = end - payload.len();
+            let kind = if !retain {
+                ValueKind::Omitted
+            } else if source_span_crosses_card(value_start, payload_start) {
+                ValueKind::Malformed
             } else {
-                (Value::String(payload.to_vec()), end, true)
-            }
+                ValueKind::String
+            };
+            (
+                kind,
+                payload_start..end,
+                Some(value_start..payload_start),
+                end,
+                true,
+            )
         } else {
             let end = bytes[value_start..]
                 .iter()
@@ -623,13 +678,14 @@ fn delimited_value(
                 .and_then(|relative| value_start.checked_add(relative))
                 .ok_or_else(|| malformed("record delimiter is missing"))?;
             let atom = &bytes[value_start..end];
-            if !retain || atom.iter().all(|byte| *byte == b' ') {
-                (Value::Omitted, end, false)
+            let kind = if !retain || atom.iter().all(|byte| *byte == b' ') {
+                ValueKind::Omitted
             } else if source_span_crosses_card(value_start, end + 1) {
-                (Value::Malformed(atom.to_vec()), end, false)
+                ValueKind::Malformed
             } else {
-                (Value::Atom(atom.to_vec()), end, false)
-            }
+                ValueKind::Atom
+            };
+            (kind, value_start..end, None, end, false)
         };
     let separator_start = if allow_padding_after {
         let remaining = bytes
@@ -643,15 +699,18 @@ fn delimited_value(
     } else {
         end
     };
-    match bytes.get(separator_start).copied() {
-        Some(separator) if separator == parameter_delimiter => {
-            Ok((value, separator_start + 1, false))
-        }
-        Some(separator) if record_delimiter == Some(separator) => {
-            Ok((value, separator_start + 1, true))
-        }
-        _ => Err(malformed("value is not followed by a delimiter")),
-    }
+    let ended = match bytes.get(separator_start).copied() {
+        Some(separator) if separator == parameter_delimiter => false,
+        Some(separator) if record_delimiter == Some(separator) => true,
+        _ => return Err(malformed("value is not followed by a delimiter")),
+    };
+    Ok(ValueFrame {
+        kind,
+        payload,
+        header,
+        next: separator_start + 1,
+        ended,
+    })
 }
 
 fn global_bytes(scan: &CardScan<'_>) -> Vec<u8> {
@@ -664,6 +723,13 @@ fn global_bytes(scan: &CardScan<'_>) -> Vec<u8> {
 
 fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
     let bytes = global_bytes(scan);
+    parse_raw_with(&bytes, |_, frame| Ok(frame.window_value(&bytes)))
+}
+
+fn parse_raw_with(
+    bytes: &[u8],
+    mut value: impl FnMut(usize, &ValueFrame) -> Result<Value, CodecError>,
+) -> Result<RawGlobal, CodecError> {
     if bytes.is_empty() {
         return Err(malformed("section is missing"));
     }
@@ -676,9 +742,10 @@ fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
             unreadable_suffix: None,
         });
     }
-    let (parameter_delimiter, mut cursor) = first_delimiter(&bytes)?;
-    let (record_value, next, _) = delimited_value(&bytes, cursor, parameter_delimiter, None, true)?;
-    cursor = next;
+    let (parameter_delimiter, mut cursor) = first_delimiter(bytes)?;
+    let record_frame = frame_value(bytes, cursor, parameter_delimiter, None, true)?;
+    let record_value = record_frame.window_value(bytes);
+    cursor = record_frame.next;
     let record_delimiter = match &record_value {
         Value::Omitted => b';',
         Value::String(value) if value.len() == 1 => value[0],
@@ -710,15 +777,15 @@ fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
     let mut unreadable_suffix = None;
     loop {
         let retain = field_count < values.len();
-        let framed = delimited_value(
-            &bytes,
+        let framed = frame_value(
+            bytes,
             cursor,
             parameter_delimiter,
             Some(record_delimiter),
             retain,
         );
-        let (value, next, ended) = match framed {
-            Ok(value) => value,
+        let frame = match framed {
+            Ok(frame) => frame,
             // Every field after the version declaration is descriptive. The
             // Global cards bound their suffix independently of Directory and
             // Parameter cards; no later field boundary needs to be guessed.
@@ -728,14 +795,15 @@ fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
             }
             Err(error) => return Err(error),
         };
+        let parsed = value(cursor, &frame)?;
         if retain {
-            values[field_count] = value;
+            values[field_count] = parsed;
         }
         field_count = field_count
             .checked_add(1)
             .ok_or_else(|| malformed("Global field count overflows"))?;
-        cursor = next;
-        if ended {
+        cursor = frame.next;
+        if frame.ended {
             break;
         }
     }

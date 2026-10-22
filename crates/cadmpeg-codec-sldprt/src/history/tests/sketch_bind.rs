@@ -235,8 +235,11 @@ fn decode_binds_configuration_sketch_state_after_geometry_projection() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("projected sketch feature");
+    assert!(decoded.ir().model.configurations[0]
+        .feature_states
+        .is_empty());
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[&feature.id].definition,
+        super::effective_definition(decoded.ir(), &decoded.ir().model.configurations[0], &feature.id).expect("effective configuration definition"),
         FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(configuration_sketch)),
             ..
@@ -376,6 +379,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             source_tag: Some("Sketch".into()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: Some(native_ref.into()),
         };

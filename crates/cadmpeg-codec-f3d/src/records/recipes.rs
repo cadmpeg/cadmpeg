@@ -8,31 +8,33 @@ use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_design_id, String, "design_id");
-cadmpeg_core::named_optional_field!(deserialize_design_id_offset, u64, "design_id_offset");
 cadmpeg_core::named_optional_field!(
     deserialize_design_selector,
     ConstructionRecipeSelector,
     "design_selector"
 );
 cadmpeg_core::named_optional_field!(deserialize_record_index, i32, "record_index");
-cadmpeg_core::named_optional_field!(deserialize_record_index_offset, u64, "record_index_offset");
 /// Component-local Design naming space bound to a context UUID.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DesignComponentNamingSpace {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Byte offset of the binding marker in its Design `BulkStream`.
-    pub(crate) byte_offset: u64,
+    #[serde(skip)]
+    pub(crate) byte_offset: Option<u64>,
     /// Component entity id named by the binding.
     pub(crate) component_record_index: u64,
     /// UUID used by persistent identities to select this component.
     pub(crate) context_uuid: DesignRelaxedGuidText,
     /// Byte offset of the UUID length prefix.
-    pub(crate) context_uuid_offset: u64,
+    #[serde(skip)]
+    pub(crate) context_uuid_offset: Option<u64>,
 }
 
 /// Original authoring time attached to a solved ASM entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct CreationTimestamp {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -77,18 +79,18 @@ pub(crate) struct ConstructionRecipe {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Byte offset of this recipe's family marker in its Design `BulkStream`.
-    pub(crate) byte_offset: u64,
+    pub(crate) byte_offset: Option<u64>,
     /// Topology kind this recipe regenerates on replay.
     pub(crate) kind: ConstructionRecipeKind,
     /// Design identity carried by the recipe; absent for recipes without a body key.
-    pub(crate) design: Option<ConstructionRecipeDesign<RecordedValue<String>>>,
+    pub(crate) design: Option<ConstructionRecipeDesign<RecordedValue<String, Option<u64>>>>,
     /// Position of this recipe in the `BulkStream` recipe sequence, in source order.
     pub(crate) recipe_index: u32,
     /// Source `BulkStream` record index this recipe was decoded from, with the
     /// byte offset it was read at; `None` when the recipe's family marker opens
     /// the stream too early for the index word to precede it, so the stream
     /// states no record index for this recipe.
-    pub(crate) record_index: Option<RecordedValue<i32>>,
+    pub(crate) record_index: Option<RecordedValue<i32, Option<u64>>>,
 }
 
 #[cfg(test)]
@@ -111,48 +113,25 @@ impl Clone for ConstructionRecipe {
     }
 }
 
-/// One source-framed parametric regeneration recipe.
+/// Typed recipe content. Physical source lanes are retained separately.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ConstructionRecipeWire {
-    /// Globally unique deterministic identifier for this native record.
     id: String,
-    /// Byte offset of this recipe's family marker in its Design `BulkStream`.
-    byte_offset: u64,
-    /// Byte offset of `record_index` in the Design `BulkStream`, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_record_index_offset"
-    )]
-    record_index_offset: Option<u64>,
-    /// Topology kind this recipe regenerates on replay.
     kind: ConstructionRecipeKind,
-    /// Design entity id of the body this recipe is keyed to, if the source record
-    /// carried a `generic_tag_attrib_def` construction id; `None` for body-less recipes.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_design_id"
     )]
     design_id: Option<String>,
-    /// Byte offset of `design_id` in the Design `BulkStream`, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_design_id_offset"
-    )]
-    design_id_offset: Option<u64>,
-    /// Selector following the Design entity id, when the recipe carries that id.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_design_selector"
     )]
     design_selector: Option<ConstructionRecipeSelector>,
-    /// Position of this recipe in the `BulkStream` recipe sequence, in source order.
     recipe_index: u32,
-    /// Source `BulkStream` record index this recipe was decoded from, when the
-    /// stream states one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -160,102 +139,143 @@ struct ConstructionRecipeWire {
     )]
     record_index: Option<i32>,
 }
-
 impl Serialize for ConstructionRecipe {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct WireRef<'a> {
             id: &'a str,
-            byte_offset: u64,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            record_index_offset: Option<u64>,
             kind: ConstructionRecipeKind,
             #[serde(skip_serializing_if = "Option::is_none")]
             design_id: Option<&'a str>,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            design_id_offset: Option<u64>,
             #[serde(skip_serializing_if = "Option::is_none")]
             design_selector: Option<ConstructionRecipeSelector>,
             recipe_index: u32,
             #[serde(skip_serializing_if = "Option::is_none")]
             record_index: Option<i32>,
         }
-        let design = self.design.as_ref();
         WireRef {
             id: &self.id,
-            byte_offset: self.byte_offset,
-            record_index_offset: self.record_index.map(|record| record.offset),
             kind: self.kind,
-            design_id: design.map(|design| design.id.value.as_str()),
-            design_id_offset: design.map(|design| design.id.offset),
-            design_selector: design.and_then(|design| design.selector),
+            design_id: self.design.as_ref().map(|design| design.id.value.as_str()),
+            design_selector: self.design.as_ref().and_then(|design| design.selector),
             recipe_index: self.recipe_index,
-            record_index: self.record_index.map(|record| record.value),
+            record_index: self.record_index.map(|index| index.value),
         }
         .serialize(serializer)
     }
 }
-
 impl TryFrom<ConstructionRecipeWire> for ConstructionRecipe {
     type Error = String;
-    fn try_from(wire: ConstructionRecipeWire) -> Result<Self, Self::Error> {
-        let id = RecordedValue::from_wire(wire.design_id, wire.design_id_offset, "design_id")?;
-        let design = match (id, wire.design_selector) {
-            (Some(id), selector) => Some(ConstructionRecipeDesign { id, selector }),
+    fn try_from(wire: ConstructionRecipeWire) -> Result<Self, String> {
+        let design = match (wire.design_id, wire.design_selector) {
+            (Some(value), selector) => Some(ConstructionRecipeDesign {
+                id: RecordedValue {
+                    value,
+                    offset: None,
+                },
+                selector,
+            }),
             (None, None) => None,
             (None, Some(_)) => {
-                return Err("construction recipe design_selector requires design_id".into())
+                return Err("construction recipe design_selector requires design_id".into());
             }
         };
-        let record_index =
-            RecordedValue::from_wire(wire.record_index, wire.record_index_offset, "record_index")?;
         Ok(Self {
             id: wire.id,
-            byte_offset: wire.byte_offset,
+            byte_offset: None,
             kind: wire.kind,
             design,
             recipe_index: wire.recipe_index,
-            record_index,
+            record_index: wire.record_index.map(|value| RecordedValue {
+                value,
+                offset: None,
+            }),
         })
     }
 }
-
 #[cfg(test)]
 impl From<ConstructionRecipe> for ConstructionRecipeWire {
     fn from(value: ConstructionRecipe) -> Self {
-        let (design_id, design_id_offset, design_selector) = match value.design {
-            Some(design) => (
-                Some(design.id.value),
-                Some(design.id.offset),
-                design.selector,
-            ),
-            None => (None, None, None),
-        };
-        let (record_index, record_index_offset) = match value.record_index {
-            Some(record_index) => (Some(record_index.value), Some(record_index.offset)),
-            None => (None, None),
-        };
         Self {
             id: value.id,
-            byte_offset: value.byte_offset,
-            record_index_offset,
             kind: value.kind,
-            design_id,
-            design_id_offset,
-            design_selector,
+            design_id: value.design.as_ref().map(|design| design.id.value.clone()),
+            design_selector: value.design.as_ref().and_then(|design| design.selector),
             recipe_index: value.recipe_index,
-            record_index,
+            record_index: value.record_index.map(|index| index.value),
+        }
+    }
+}
+impl ConstructionRecipe {
+    pub(crate) fn content_eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.kind == other.kind
+            && self.recipe_index == other.recipe_index
+            && self.record_index.map(|index| index.value)
+                == other.record_index.map(|index| index.value)
+            && self.design.as_ref().map(|design| {
+                (
+                    &design.id.value,
+                    design.selector.map(|selector| selector.value),
+                )
+            }) == other.design.as_ref().map(|design| {
+                (
+                    &design.id.value,
+                    design.selector.map(|selector| selector.value),
+                )
+            })
+    }
+    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
+        for (name, offset) in [
+            ("byte_offset", self.byte_offset),
+            (
+                "record_index_offset",
+                self.record_index.and_then(|index| index.offset),
+            ),
+            (
+                "design_id_offset",
+                self.design.as_ref().and_then(|design| design.id.offset),
+            ),
+            (
+                "design_selector.byte_offset",
+                self.design
+                    .as_ref()
+                    .and_then(|design| design.selector)
+                    .and_then(|selector| selector.byte_offset),
+            ),
+        ] {
+            if let Some(offset) = offset {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.{name}", self.id), offset.to_string());
+            }
+        }
+    }
+}
+impl DesignComponentNamingSpace {
+    pub(crate) fn retain_source(&self, fidelity: &mut cadmpeg_ir::SourceFidelity) {
+        for (name, offset) in [
+            ("byte_offset", self.byte_offset),
+            ("context_uuid_offset", self.context_uuid_offset),
+        ] {
+            if let Some(offset) = offset {
+                fidelity
+                    .metadata
+                    .insert(format!("{}.{name}", self.id), offset.to_string());
+            }
         }
     }
 }
 
 /// Serialized Design selector carried by a construction recipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ConstructionRecipeSelector {
     /// Selector value.
     pub(crate) value: u32,
     /// Byte offset of `value`.
-    pub(crate) byte_offset: u64,
+    #[serde(skip)]
+    pub(crate) byte_offset: Option<u64>,
 }
 
 #[cfg(test)]

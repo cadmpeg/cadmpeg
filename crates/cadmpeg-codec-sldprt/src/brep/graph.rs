@@ -116,6 +116,8 @@ pub(crate) struct Brep {
     /// whose lane the reader refused. The model carries the absence of each
     /// refused carrier, so the decode continues and reports the loss.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Source model records withheld by an admission branch, beyond the typed arenas.
+    pub(crate) untyped_model: bool,
     /// Loss accounting for this decode.
     pub(crate) stats: Stats,
 }
@@ -153,12 +155,14 @@ impl Brep {
         ];
         let total = counts.into_iter().try_fold(0_usize, |total, count| {
             total.checked_add(count).ok_or_else(|| {
+                // (O-capacity): the decoded count exceeds the host or u64 count field.
                 cadmpeg_core::CodecError::NotImplemented(
                     "SLDPRT B-rep entity count exceeds usize".into(),
                 )
             })
         })?;
         u64::try_from(total).map_err(|_| {
+            // (O-capacity): the decoded count exceeds the host or u64 count field.
             cadmpeg_core::CodecError::NotImplemented("SLDPRT B-rep entity count exceeds u64".into())
         })
     }
@@ -495,7 +499,7 @@ fn region_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
 }
 
 /// The `sldprt:brep` body namespace.
-fn body_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
+pub(super) fn body_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
     cadmpeg_ir::identity_namespace!("sldprt", "brep", "body")
 }
 
@@ -1569,6 +1573,7 @@ fn decode_graph(
         vertex_use_sequences,
         body_modifiers,
         losses: std::mem::take(&mut carriers.lane_refusals),
+        untyped_model: carriers.untyped_model,
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
             unresolved_face_colors: entity_facts.unresolved_face_colors + conflicting_face_colors,
@@ -4397,6 +4402,7 @@ fn derive_nurbs_isoparametric_pcurves(
     // The sink is drained before the `?` below: an error on that route must
     // not drop a refusal the walk above already pushed.
     for record in lane_refusals.take_records() {
+        out.untyped_model = true;
         let note = crate::loss::spline_lane_refusal(&record);
         out.losses.push(note);
     }

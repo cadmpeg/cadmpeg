@@ -14,7 +14,7 @@
 
 use std::fmt;
 
-use self::loss::DecodeLossCode;
+pub use self::loss::DecodeLossCode;
 use crate::document::CadIr;
 use crate::report::{
     check::Finding,
@@ -101,8 +101,8 @@ pub struct DecodeOptions {
 /// The sealed [`Codec`] wrapper constructs this value after it stamps the source
 /// classification onto the report and finalizes the IR and source fidelity.
 /// `#[non_exhaustive]` blocks external struct literals so callers cannot skip
-/// finalization. Read through [`Self::ir`] and [`Self::report`]. Consume with
-/// [`Self::into_parts`] to obtain the source fidelity or edit either document.
+/// finalization. Read through [`Self::ir`], [`Self::report`], and [`Self::source_fidelity`].
+/// Consume with [`Self::into_parts`] to edit the document or fidelity.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct DecodeResult {
@@ -190,8 +190,7 @@ pub struct Decoded {
 /// A [`DecodeReport`] without its classification.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodeBody {
-    /// The depth the backend delivered and its geometry outcome. The sealed
-    /// wrapper records this depth on the document.
+    /// Geometry outcome; the sealed wrapper derives scope from the document.
     pub transfer: DecodeTransfer,
     /// Coverage measures keyed by their declared name.
     pub coverage: Coverage,
@@ -222,25 +221,25 @@ impl DecodeResult {
     /// the report body, then canonicalizing the IR and source fidelity.
     ///
     /// A document without source metadata yields an unclassified report for
-    /// `format`, the codec's registry format. The document records the depth
-    /// the backend's transfer state reports; a depth shallower than
-    /// `requested` adds an error loss.
+    /// `format`, the codec's registry format. The report derives scope from
+    /// the document; missing requested classes add an error loss.
     fn new(decoded: Decoded, format: FormatId, requested: DecodeDepth) -> Result<Self, CodecError> {
         let Decoded {
             mut ir,
             mut body,
             source_fidelity,
         } = decoded;
-        let delivered = body.transfer.depth();
-        ir.set_decode_depth(delivered);
-        ir.check_decode_depth().map_err(|error| {
+        ir.check_scope().map_err(|error| {
             CodecError::malformed(format_args!("codec {format:?} decoded {error}"))
         })?;
-        if delivered < requested {
+        let delivered = ir.scope;
+        body.transfer.scope = delivered;
+        let required = requested.required_scope();
+        let missing = delivered.missing_from(required);
+        if !missing.is_empty() {
             body.losses.push(
                 DecodeLossCode::DepthNotDelivered { delivered }.note(format!(
-                    "requested {requested} depth but the {format} decoder delivered \
-                     {delivered} depth, so the records only {requested} depth carries are absent"
+                    "requested {requested} depth but the {format} decoder did not deliver classes: {missing}"
                 )),
             );
         }
@@ -271,6 +270,11 @@ impl DecodeResult {
     /// Borrow the transfer report.
     pub fn report(&self) -> &DecodeReport {
         &self.report
+    }
+
+    /// Borrow decode-time annotations, retention, and unrepresented classes.
+    pub const fn source_fidelity(&self) -> &SourceFidelity {
+        &self.source_fidelity
     }
 
     /// Consume into IR, report, and source fidelity.

@@ -18,6 +18,13 @@ use crate::unknown::UnknownRecord;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
+pub mod b1;
+pub mod freecad;
+mod part;
+pub mod parts;
+
+pub use part::RecordLayout;
+
 /// Retained-byte operation for one appended native unknown record.
 const ATTACH_UNKNOWN_RECORD: &str = "attach native unknown record";
 
@@ -124,6 +131,27 @@ pub enum RetainedBytes {
     },
 }
 
+/// Document-safe evidence identifying a source payload without carrying it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct SourceEvidence {
+    /// Number of bytes in the source payload.
+    pub length: u64,
+    /// SHA-256 of those exact bytes.
+    pub sha256: Sha256Digest,
+}
+
+impl SourceEvidence {
+    /// Describe the exact bytes without retaining or copying their payload.
+    pub fn of(bytes: &[u8]) -> Self {
+        Self {
+            length: u64_from_index(bytes.len()),
+            sha256: Sha256Digest::digest(bytes),
+        }
+    }
+}
+
 impl RetainedBytes {
     /// Returns the number of source bytes.
     #[must_use]
@@ -168,6 +196,8 @@ pub struct RetainedSourceRecord {
     offset: u64,
     /// Retained image of the source bytes.
     bytes: RetainedBytes,
+    /// Content classes not represented by any typed document record.
+    untyped: crate::document::ArenaClasses,
 }
 
 #[derive(Deserialize)]
@@ -181,6 +211,8 @@ struct RetainedSourceRecordWire {
     offset: u64,
     /// Retained image of the source bytes.
     bytes: RetainedBytes,
+    /// Content classes not represented by any typed document record.
+    untyped: crate::document::ArenaClasses,
 }
 
 /// A source record's exclusive end offset exceeds the offset domain.
@@ -217,6 +249,7 @@ impl TryFrom<RetainedSourceRecordWire> for RetainedSourceRecord {
 
     fn try_from(wire: RetainedSourceRecordWire) -> Result<Self, Self::Error> {
         Self::from_bytes(wire.stream, wire.offset, wire.bytes)
+            .map(|record| record.with_untyped(wire.untyped))
     }
 }
 
@@ -228,6 +261,7 @@ impl RetainedSourceRecord {
             stream: stream.into(),
             offset: 0,
             bytes: RetainedBytes::Inline { data },
+            untyped: crate::document::ArenaClasses::new(),
         }
     }
 
@@ -243,7 +277,20 @@ impl RetainedSourceRecord {
             stream,
             offset,
             bytes,
+            untyped: crate::document::ArenaClasses::new(),
         })
+    }
+
+    /// Declare which source content survives in no typed document record.
+    #[must_use]
+    pub fn with_untyped(mut self, classes: crate::document::ArenaClasses) -> Self {
+        self.untyped = classes;
+        self
+    }
+
+    /// Content classes carried only by this retained source record.
+    pub const fn untyped(&self) -> &crate::document::ArenaClasses {
+        &self.untyped
     }
 
     /// Returns the source stream containing the record.
@@ -322,17 +369,124 @@ impl RetainedSourceRecord {
 /// let mut fidelity = cadmpeg_ir::SourceFidelity::default();
 /// fidelity.retained_records().clear();
 /// ```
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", schemars(with = "SourceFidelityWire"))]
+#[serde(try_from = "SourceFidelityWire")]
 pub struct SourceFidelity {
     /// Sparse source locations and conversion exactness.
-    #[serde(default)]
     pub annotations: Annotations,
+    /// Source layout and fingerprint facts, never document content or payload bytes.
+    pub metadata: BTreeMap<String, String>,
+    /// Source extents and reads keyed by native or neutral record identity.
+    record_layout: BTreeMap<String, RecordLayout>,
     /// Native records retained for recovery or replay, keyed by record id.
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
+    /// Every reached independently framed decode part.
+    parts: BTreeMap<UnknownId, parts::PartRecord>,
+    /// Owner-derived maximal B1 spans for finalized source streams.
+    b1_spans: BTreeMap<String, b1::finalization::ClassifiedStream>,
+    /// Closed FCStd source-ledger arenas keyed by their actual archive stream.
+    freecad_ledgers: BTreeMap<String, freecad::FreecadSourceLedgers>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct SourceFidelityWire {
+    /// Union of B1 span classes and retained records' untyped content classes.
+    #[serde(default)]
+    unrepresented: crate::document::ArenaClasses,
+    /// Sparse source locations and conversion exactness.
+    #[serde(default)]
+    annotations: Annotations,
+    /// Facts about source layout and fingerprints.
+    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    metadata: BTreeMap<String, String>,
+    /// Source extents and reads keyed by native or neutral record identity.
+    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    record_layout: BTreeMap<String, RecordLayout>,
+    /// Native records retained for recovery or replay.
+    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
+    /// Every reached independently framed decode part.
+    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    parts: BTreeMap<UnknownId, parts::PartRecord>,
+    /// Owner-derived maximal B1 spans for finalized source streams.
+    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    b1_spans: BTreeMap<String, b1::finalization::ClassifiedStream>,
+    /// Closed FCStd source-ledger arenas keyed by actual archive stream.
+    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    freecad_ledgers: BTreeMap<String, freecad::FreecadSourceLedgers>,
+}
+
+impl TryFrom<SourceFidelityWire> for SourceFidelity {
+    type Error = String;
+
+    fn try_from(wire: SourceFidelityWire) -> Result<Self, Self::Error> {
+        let value = Self {
+            annotations: wire.annotations,
+            metadata: wire.metadata,
+            record_layout: wire.record_layout,
+            retained_records: wire.retained_records,
+            parts: wire.parts,
+            b1_spans: wire.b1_spans,
+            freecad_ledgers: wire.freecad_ledgers,
+        };
+        parts::validate_tree(&value.parts)?;
+        for stream in value.freecad_ledgers.keys() {
+            if stream.is_empty() {
+                return Err("FCStd source ledgers require a named archive stream".into());
+            }
+        }
+        if value.b1_spans.keys().any(String::is_empty) {
+            return Err("B1 coverage requires a named source stream".into());
+        }
+        let derived = value.unrepresented();
+        if wire.unrepresented != derived {
+            return Err(format!(
+                "unrepresented classes ({}) differ from the B1/retained untyped union ({derived})",
+                wire.unrepresented,
+            ));
+        }
+        Ok(value)
+    }
+}
+
+impl Serialize for SourceFidelity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[serde(deny_unknown_fields)]
+        struct Wire<'a> {
+            unrepresented: crate::document::ArenaClasses,
+            annotations: &'a Annotations,
+            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+            metadata: &'a BTreeMap<String, String>,
+            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+            record_layout: &'a BTreeMap<String, RecordLayout>,
+            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+            retained_records: &'a BTreeMap<UnknownId, RetainedSourceRecord>,
+            /// Every reached independently framed decode part.
+            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+            parts: &'a BTreeMap<UnknownId, parts::PartRecord>,
+            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+            b1_spans: &'a BTreeMap<String, b1::finalization::ClassifiedStream>,
+            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+            freecad_ledgers: &'a BTreeMap<String, freecad::FreecadSourceLedgers>,
+        }
+        Wire {
+            unrepresented: self.unrepresented(),
+            annotations: &self.annotations,
+            metadata: &self.metadata,
+            record_layout: &self.record_layout,
+            retained_records: &self.retained_records,
+            parts: &self.parts,
+            b1_spans: &self.b1_spans,
+            freecad_ledgers: &self.freecad_ledgers,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl SourceFidelity {
@@ -340,18 +494,105 @@ impl SourceFidelity {
     pub fn with_annotations(annotations: Annotations) -> Self {
         Self {
             annotations,
+            metadata: BTreeMap::new(),
+            record_layout: BTreeMap::new(),
             retained_records: std::collections::BTreeMap::new(),
+            parts: BTreeMap::new(),
+            b1_spans: BTreeMap::new(),
+            freecad_ledgers: BTreeMap::new(),
         }
     }
 
     /// Consume the source metadata without copying its retained bytes.
-    pub fn into_parts(self) -> (Annotations, BTreeMap<UnknownId, RetainedSourceRecord>) {
-        (self.annotations, self.retained_records)
+    pub fn into_parts(
+        self,
+    ) -> (
+        Annotations,
+        BTreeMap<UnknownId, RetainedSourceRecord>,
+        BTreeMap<String, String>,
+        BTreeMap<String, RecordLayout>,
+        BTreeMap<UnknownId, parts::PartRecord>,
+        BTreeMap<String, b1::finalization::ClassifiedStream>,
+        BTreeMap<String, freecad::FreecadSourceLedgers>,
+    ) {
+        (
+            self.annotations,
+            self.retained_records,
+            self.metadata,
+            self.record_layout,
+            self.parts,
+            self.b1_spans,
+            self.freecad_ledgers,
+        )
     }
 
-    /// Append source metadata after checking both tables for identity collisions.
+    /// Classes whose source content survives in no typed document record.
+    ///
+    /// This is the union of finalized B1 span classes and retained source classes.
+    pub fn unrepresented(&self) -> crate::document::ArenaClasses {
+        self.retained_records
+            .values()
+            .flat_map(|record| record.untyped().iter().copied())
+            .chain(
+                self.b1_spans
+                    .values()
+                    .flat_map(|stream| stream.spans())
+                    .flat_map(|span| span.classes()),
+            )
+            .collect()
+    }
+
+    /// Mark additional content on an existing retained source record as untyped.
+    pub fn mark_untyped(
+        &mut self,
+        id: &str,
+        classes: impl IntoIterator<Item = crate::document::ArenaClass>,
+    ) -> Result<(), NativeConvertError> {
+        let record = self.retained_records.get_mut(id).ok_or_else(|| {
+            NativeConvertError::InvalidCollection(format!("missing retained source record {id}"))
+        })?;
+        record.untyped.extend(classes);
+        Ok(())
+    }
+
+    /// Append source metadata after checking all tables for identity collisions.
     /// Failure leaves this source metadata unchanged.
     pub fn append(&mut self, mut other: Self) -> Result<(), cadmpeg_core::CodecError> {
+        for stream in other.freecad_ledgers.keys() {
+            if self.freecad_ledgers.contains_key(stream) {
+                return Err(CodecError::malformed(format_args!(
+                    "duplicate FCStd source ledgers for stream {stream}"
+                )));
+            }
+        }
+        for stream in other.b1_spans.keys() {
+            if self.b1_spans.contains_key(stream) {
+                return Err(CodecError::malformed(format_args!(
+                    "duplicate B1 source stream {stream}"
+                )));
+            }
+        }
+        for id in other.parts.keys() {
+            if self.parts.contains_key(id) {
+                return Err(CodecError::malformed(format_args!(
+                    "duplicate source part {id}"
+                )));
+            }
+        }
+        for id in other.record_layout.keys() {
+            if self.record_layout.contains_key(id) {
+                return Err(CodecError::malformed(format_args!(
+                    "duplicate source record layout {id}"
+                )));
+            }
+        }
+        for key in other.metadata.keys() {
+            if self.metadata.contains_key(key) {
+                return Err(CodecError::malformed(format_args!(
+                    "duplicate source fidelity metadata key {key}"
+                )));
+            }
+        }
         for id in other.retained_records.keys() {
             if self.retained_records.contains_key(id) {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -361,7 +602,70 @@ impl SourceFidelity {
         }
         self.annotations.append(other.annotations)?;
         self.retained_records.append(&mut other.retained_records);
+        self.metadata.append(&mut other.metadata);
+        self.record_layout.append(&mut other.record_layout);
+        self.parts.append(&mut other.parts);
+        self.b1_spans.append(&mut other.b1_spans);
+        self.freecad_ledgers.append(&mut other.freecad_ledgers);
         Ok(())
+    }
+
+    /// The three closed FCStd source-ledger arenas by actual archive stream.
+    pub fn freecad_ledgers(&self) -> &BTreeMap<String, freecad::FreecadSourceLedgers> {
+        &self.freecad_ledgers
+    }
+
+    /// Retain one complete set of FCStd source ledgers without replacing a stream.
+    pub fn insert_freecad_ledgers(
+        &mut self,
+        stream: String,
+        ledgers: freecad::FreecadSourceLedgers,
+    ) -> Result<(), CodecError> {
+        let stream =
+            String::from(crate::StreamName::try_from(stream).map_err(CodecError::malformed)?);
+        match self.freecad_ledgers.entry(stream) {
+            Entry::Vacant(entry) => {
+                entry.insert(ledgers);
+                Ok(())
+            }
+            Entry::Occupied(entry) => Err(CodecError::malformed(format_args!(
+                "duplicate FCStd source ledgers for stream {}",
+                entry.key()
+            ))),
+        }
+    }
+
+    /// Borrow exact source coverage without permitting arbitrary class assignment.
+    pub fn b1_spans(&self) -> &BTreeMap<String, b1::finalization::ClassifiedStream> {
+        &self.b1_spans
+    }
+
+    /// Read every reached part without changing its delivery state or source extent.
+    pub fn parts(&self) -> &BTreeMap<UnknownId, parts::PartRecord> {
+        &self.parts
+    }
+
+    /// Borrow source layouts without permitting replacement or read attribution.
+    pub const fn record_layout(&self) -> &BTreeMap<String, RecordLayout> {
+        &self.record_layout
+    }
+
+    /// Inserts a source layout without replacing an existing record identity.
+    pub fn insert_record_layout(
+        &mut self,
+        id: String,
+        layout: RecordLayout,
+    ) -> Result<(), CodecError> {
+        match self.record_layout.entry(id) {
+            Entry::Vacant(entry) => {
+                entry.insert(layout);
+                Ok(())
+            }
+            Entry::Occupied(entry) => Err(CodecError::malformed(format_args!(
+                "duplicate source record layout {}",
+                entry.key()
+            ))),
+        }
     }
 
     /// Finds a retained source record by identifier.
@@ -527,6 +831,7 @@ fn duplicate_record(id: &UnknownId) -> NativeConvertError {
 #[cfg(test)]
 mod tests {
     mod admission;
+    mod record_layout;
     mod unknown_keys;
 
     use std::path::{Path, PathBuf};
@@ -541,6 +846,73 @@ mod tests {
     use crate::report::decode::DecodeReport;
     use crate::unknown::UnknownRecord;
 
+    #[test]
+    fn unrepresented_classes_derive_from_retained_records_and_survive_sidecars() {
+        use crate::document::{ArenaClass, ArenaClasses};
+        let mut fidelity = SourceFidelity::default();
+        fidelity
+            .insert_retained_record(
+                id("design"),
+                record(b"unread design").with_untyped(ArenaClasses::from([ArenaClass::Design])),
+            )
+            .unwrap();
+        fidelity
+            .metadata
+            .insert("source_layout".into(), "partition-a".into());
+        let bytes = b"saved document";
+        let sidecar =
+            DecodeSidecar::bind_sha256(Sha256Digest::digest(bytes), report(), fidelity.clone());
+        let wire = serde_json::to_value(&sidecar).expect("valid contract fixture");
+        assert_eq!(
+            wire["fidelity"]["unrepresented"],
+            serde_json::json!(["design"])
+        );
+        let restored =
+            serde_json::from_value::<DecodeSidecar>(wire.clone()).expect("valid contract fixture");
+        assert_eq!(restored.fidelity, fidelity);
+        let mut tampered = wire;
+        tampered["fidelity"]["unrepresented"] = serde_json::json!([]);
+        let error = serde_json::from_value::<DecodeSidecar>(tampered)
+            .expect_err("a sidecar cannot hide untyped source classes");
+        assert!(error.to_string().contains("untyped union"));
+        let mut other = SourceFidelity::default();
+        other
+            .insert_retained_record(
+                id("model"),
+                record(b"unread model").with_untyped(ArenaClasses::from([ArenaClass::Model])),
+            )
+            .unwrap();
+        fidelity.append(other).expect("disjoint source records");
+        assert_eq!(
+            fidelity.unrepresented(),
+            ArenaClasses::from([ArenaClass::Model, ArenaClass::Design,])
+        );
+        fidelity.remove_retained_record(id("design").as_str());
+        assert_eq!(
+            fidelity.unrepresented(),
+            ArenaClasses::from([ArenaClass::Model])
+        );
+        fidelity.remove_retained_record(id("model").as_str());
+        assert!(fidelity.unrepresented().is_empty());
+    }
+
+    #[test]
+    fn source_metadata_collisions_leave_both_record_tables_unchanged() {
+        let mut left = SourceFidelity::default();
+        left.metadata
+            .insert("document_digest".into(), "left".into());
+        let original = left.clone();
+        let mut right = SourceFidelity::default();
+        right
+            .metadata
+            .insert("document_digest".into(), "right".into());
+        right
+            .insert_retained_record(id("right"), record(b"right"))
+            .unwrap();
+        assert!(left.append(right).is_err());
+        assert_eq!(left, original);
+    }
+
     fn record(data: &[u8]) -> RetainedSourceRecord {
         RetainedSourceRecord::whole("source", data.to_vec())
     }
@@ -552,7 +924,10 @@ mod tests {
     fn report() -> DecodeReport {
         DecodeReport::unclassified(
             "test",
-            crate::report::decode::DecodeTransfer::full(true),
+            crate::report::decode::DecodeTransfer {
+                scope: crate::document::ContentScope::full(),
+                geometry_transferred: true,
+            },
             std::collections::BTreeMap::default(),
             Vec::new(),
             Vec::new(),
@@ -583,9 +958,9 @@ mod tests {
         // refuses the second by name rather than keeping the last.
         let error = serde_json::from_str::<SourceFidelity>(
             r#"{"retained_records":{
-                 "synthetic:source:record#a":{"stream":"source","offset":0,
+                 "synthetic:source:record#a":{"stream":"source","offset":0,"untyped":[],
                       "bytes":{"retention":"inline","data":"AQ=="}},
-                 "synthetic:source:record#a":{"stream":"source","offset":0,
+                 "synthetic:source:record#a":{"stream":"source","offset":0,"untyped":[],
                       "bytes":{"retention":"inline","data":"Ag=="}}}}"#,
         )
         .expect_err("a repeated record id states two records under one identity")
@@ -597,7 +972,7 @@ mod tests {
 
         let single = serde_json::from_str::<SourceFidelity>(
             r#"{"retained_records":{
-                 "synthetic:source:record#a":{"stream":"source","offset":0,
+                 "synthetic:source:record#a":{"stream":"source","offset":0,"untyped":[],
                       "bytes":{"retention":"inline","data":"Ag=="}}}}"#,
         )
         .expect("one record under one id reads");
@@ -679,6 +1054,7 @@ mod tests {
             serde_json::json!({
                 "stream": stream,
                 "offset": 0,
+                "untyped": [],
                 "bytes": {
                     "retention": "digest",
                     "byte_len": 3,

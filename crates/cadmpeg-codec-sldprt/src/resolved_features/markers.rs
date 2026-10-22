@@ -26,6 +26,7 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperandKind, FeatureInputReference,
     FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FinitePoint3};
@@ -53,6 +54,7 @@ use crate::layout::wide_spatial_marker_coordinate_prefix as spatial_pre;
 /// Relation-owned indexed point markers use the relation-tail decoder below;
 /// their native relation kind must remain intact for downstream binding.
 pub(crate) fn spatial_sketches(
+    class_sources: &ClassSources,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -90,11 +92,11 @@ pub(crate) fn spatial_sketches(
         let mut point_candidates = Vec::new();
         for (lane, objects) in lanes.iter().zip(&lane_objects) {
             let mut relation_ranges = Vec::new();
-            for (start, end) in spatial_relation_manager_ranges(lane) {
+            for (start, end) in spatial_relation_manager_ranges(class_sources, lane) {
                 if lane.scalars.iter().any(|scalar| {
                     scalar.feature_ref.as_deref() == Some(native_ref)
-                        && scalar.offset > start
-                        && scalar.offset < end
+                        && scalar.offset.is_some_and(|position| position > start)
+                        && scalar.offset.is_some_and(|position| position < end)
                 }) {
                     relation_ranges.push((start, end));
                 }
@@ -106,17 +108,20 @@ pub(crate) fn spatial_sketches(
                 {
                     continue;
                 }
-                let Ok(offset) = usize::try_from(marker.offset()) else {
+                let Some(offset) = marker
+                    .offset()
+                    .and_then(|offset| usize::try_from(offset).ok())
+                else {
                     continue;
                 };
                 if !relation_ranges.is_empty()
-                    && (!relation_ranges
-                        .iter()
-                        .any(|(start, end)| marker.offset() > *start && marker.offset() < *end)
-                        || !matches!(
-                            marker_native_code(&lane.native_payload, offset),
-                            Some(1..=85)
-                        ))
+                    && (!relation_ranges.iter().any(|(start, end)| {
+                        marker.offset().is_some_and(|position| position > *start)
+                            && marker.offset().is_some_and(|position| position < *end)
+                    }) || !matches!(
+                        marker_native_code(&lane.native_payload, offset),
+                        Some(1..=85)
+                    ))
                 {
                     continue;
                 }
@@ -227,7 +232,7 @@ pub(crate) fn spatial_sketches(
             let Some(name) = names.of(record) else {
                 continue;
             };
-            let Some(start) = usize::try_from(name.offset).ok() else {
+            let Some(start) = name.offset.and_then(|offset| usize::try_from(offset).ok()) else {
                 continue;
             };
             let end = starts.end(name.offset, lane.native_payload.len());
@@ -315,9 +320,9 @@ fn spatial_line_vertices(
     (names, starts): &(FeatureObjectNames<'_>, FeatureObjectStarts),
 ) -> Option<SpatialLineVertices> {
     let name = names.of(record)?;
-    let Ok(start) = usize::try_from(name.offset) else {
-        return None;
-    };
+    let start = name
+        .offset
+        .and_then(|offset| usize::try_from(offset).ok())?;
     let end = starts.end(name.offset, lane.native_payload.len());
     let object = lane.native_payload.get(start..end)?;
     let offsets = spatial_vertex_offsets(object);
@@ -1145,20 +1150,22 @@ pub(super) fn current_geometry_locus_arc_handle_point(payload: &[u8], offset: us
 }
 
 pub(crate) fn relation_bindings(
+    class_sources: &ClassSources,
     parent: &str,
     classes: &[FeatureInputClass],
     scalars: &[FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],
 ) -> Result<Vec<FeatureInputRelationBinding>, CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    let candidates = unique_relation_declaration_candidates(classes, scalars, intervals);
+    let candidates =
+        unique_relation_declaration_candidates(class_sources, classes, scalars, intervals);
     let mut bindings = Vec::new();
     for (class, scalar, family) in candidates {
         let ordinal = u32::try_from(bindings.len())
             .map_err(|_| CodecError::malformed("SLDPRT relation binding ordinal overflows u32"))?;
         let id = format!(
             "sldprt:feature-input:relation-binding#{lane_key}:{}",
-            class.offset
+            class.ordinal
         );
         let parent = parent.to_owned();
         let class_ref = class.id.clone();
@@ -1168,7 +1175,7 @@ pub(crate) fn relation_bindings(
             id,
             parent,
             ordinal,
-            offset: class.offset,
+            sequence: ordinal,
             class_ref,
             family,
             scalar_ref,
@@ -1178,44 +1185,63 @@ pub(crate) fn relation_bindings(
     Ok(bindings)
 }
 
+pub(crate) struct ParsedReferences {
+    pub(crate) records: Vec<FeatureInputReference>,
+    pub(super) positions: BTreeMap<String, u64>,
+}
+
 pub(crate) fn reference_cells(
+    class_sources: &ClassSources,
     scalars: &[FeatureInputScalar],
     classes: &[FeatureInputClass],
-) -> Result<Vec<FeatureInputReference>, CodecError> {
+) -> Result<ParsedReferences, CodecError> {
     let mut cells = Vec::new();
     for scalar in scalars {
         for operand in &scalar.operands {
             let id = operand.reference_ref.clone();
             let parent = scalar.parent.clone();
             let feature_ref = scalar.feature_ref.clone();
-            cells.push(FeatureInputReference {
-                id,
-                parent,
-                feature_ref,
-                ordinal: 0,
-                offset: operand.offset,
-                kind: operand.kind,
-                class_ref: None,
-                object_index: operand.entity_index,
-            });
+            cells.push((
+                operand.offset,
+                FeatureInputReference {
+                    id,
+                    parent,
+                    feature_ref,
+                    ordinal: 0,
+                    sequence: 0,
+                    kind: operand.kind,
+                    class_ref: None,
+                    object_index: operand.entity_index,
+                },
+            ));
         }
     }
-    cells.sort_by_key(|left| left.offset);
-    cells.dedup_by_key(|cell| cell.offset);
+    cells.sort_by_key(|(position, _)| *position);
+    cells.dedup_by_key(|(position, _)| *position);
+    let positions = cells
+        .iter()
+        .filter_map(|(position, cell)| Some((cell.id.clone(), (*position)?)))
+        .collect::<BTreeMap<_, _>>();
+    let mut cells = cells.into_iter().map(|(_, cell)| cell).collect::<Vec<_>>();
     for (ordinal, cell) in cells.iter_mut().enumerate() {
         cell.ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed("SLDPRT reference cell ordinal overflows u32"))?;
     }
     let mut classes_at = HashMap::<(&str, u64), Vec<&FeatureInputClass>>::new();
     for class in classes {
-        classes_at
-            .entry((class.parent.as_str(), class.offset))
-            .or_default()
-            .push(class);
+        if let Some(position) = class_sources.position(class) {
+            classes_at
+                .entry((class.parent.as_str(), position))
+                .or_default()
+                .push(class);
+        }
     }
     let mut declarations = HashMap::<FeatureInputOperandKind, Vec<&FeatureInputClass>>::new();
     for cell in &cells {
-        let Some(class_offset) = cell.offset.checked_add(12) else {
+        let Some(class_offset) = positions
+            .get(&cell.id)
+            .and_then(|offset| offset.checked_add(12))
+        else {
             continue;
         };
         if let Some(declared) = classes_at.get(&(cell.parent.as_str(), class_offset)) {
@@ -1228,7 +1254,7 @@ pub(crate) fn reference_cells(
     for declared in declarations.values_mut() {
         declared
             .as_mut_slice()
-            .sort_unstable_by_key(|left| left.offset);
+            .sort_unstable_by_key(|left| class_sources.position(left));
         declared.dedup_by_key(|class| class.id.as_str());
     }
     for cell in &mut cells {
@@ -1236,7 +1262,10 @@ pub(crate) fn reference_cells(
             cell.class_ref = Some(class.id.clone());
         }
     }
-    Ok(cells)
+    Ok(ParsedReferences {
+        records: cells,
+        positions,
+    })
 }
 
 pub(crate) fn marker_local_id_offset(payload: &[u8], offset: usize) -> Option<usize> {
@@ -3273,7 +3302,9 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
     markers: &[&SketchInputEntity],
 ) -> Option<[u64; 2]> {
     let curve_index = (|| {
-        let offset = usize::try_from(curve.offset()).ok()?;
+        let offset = curve
+            .offset()
+            .and_then(|offset| usize::try_from(offset).ok())?;
         let curve_index = u16::try_from(curve.object_index()?).ok()?;
         if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
             || marker_native_code(payload, offset) != Some(1)
@@ -3290,9 +3321,9 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
         if marker.feature_ref != curve.feature_ref {
             continue;
         }
-        let Ok(marker_offset) = usize::try_from(marker.offset()) else {
-            return None;
-        };
+        let marker_offset = marker
+            .offset()
+            .and_then(|offset| usize::try_from(offset).ok())?;
         let Some((_, links)) = linked_profile_point(payload, marker_offset) else {
             continue;
         };
@@ -3302,8 +3333,8 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
             }
             by_selector
                 .entry(selector)
-                .and_modify(|offsets| offsets.include_offset(marker.offset()))
-                .or_insert(ReverseIncidenceOffsets::One(marker.offset()));
+                .and_modify(|offsets| offsets.include_offset(u64_from_index(marker_offset)))
+                .or_insert(ReverseIncidenceOffsets::One(u64_from_index(marker_offset)));
         }
     }
     let mut candidates = by_selector

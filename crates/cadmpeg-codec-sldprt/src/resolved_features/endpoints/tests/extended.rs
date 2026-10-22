@@ -981,7 +981,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     additional_endpoint.set_test_id(format!("{}:additional", additional_endpoint.id()));
     additional_endpoint = additional_endpoint.with_test_position(
         additional_endpoint.ordinal(),
-        additional_endpoint.offset() + 1,
+        additional_endpoint.offset().expect("source offset") + 1,
     );
     additional_endpoint.coordinates_m = cadmpeg_ir::units::FiniteVector::new([-1.0, 0.0]);
     hybrid_entities.insert(3, additional_endpoint);

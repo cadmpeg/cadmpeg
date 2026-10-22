@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -58,8 +57,7 @@
           "id": "rhino:object:curve#record-000002-offset-659",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -108,8 +106,7 @@
           "id": "rhino:object:curve#record-000003-offset-840",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -148,8 +145,7 @@
           "id": "rhino:object:curve#record-000004-offset-1197",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -160,8 +156,7 @@
           "id": "rhino:object:curve#record-000005-offset-1418",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -194,8 +189,7 @@
           "id": "rhino:object:curve#record-000005-offset-1418.root.component-0",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -205,8 +199,7 @@
           "id": "rhino:object:curve#record-000005-offset-1418.root.component-1",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -239,8 +232,7 @@
           "id": "rhino:object:curve#record-000005-offset-1418.root.component-1.component-0",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -263,8 +255,7 @@
           },
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -276,8 +267,7 @@
           },
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -289,8 +279,7 @@
           },
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -427,8 +416,7 @@
             "current_material_source": null,
             "current_wire_density": null,
             "id": "rhino:document:settings#current",
-            "model_url": null,
-            "writer_version": null
+            "model_url": null
           }
         ],
         "embedded_images": [],
@@ -493,17 +481,14 @@
         "windows_bitmaps": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
-        "absolute_tolerance_millimeters": "0.01",
-        "absolute_tolerance_native": "0.01",
-        "angular_tolerance": "0.1",
         "archive_version": "50",
-        "container_kind": "3dm-chunks",
-        "millimeters_per_unit": "1",
-        "relative_tolerance": "0.001",
-        "unit_system": "standard:2",
-        "unit_value": "2"
+        "container_kind": "3dm-chunks"
       },
       "identity": {
         "classification": "classified",
@@ -677,6 +662,66 @@
         },
         "message": "object at 1418 has nil object UUID",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "record.neutral-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "record.neutral-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "rhino:object:record#record-000001-offset-314: layer index -1 is absent or ambiguous",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "record.neutral-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "rhino:object:record#record-000002-offset-659: layer index -1 is absent or ambiguous",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "record.neutral-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "rhino:object:record#record-000003-offset-840: layer index -1 is absent or ambiguous",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "record.neutral-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "rhino:object:record#record-000004-offset-1197: layer index -1 is absent or ambiguous",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "record.neutral-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "rhino:object:record#record-000005-offset-1418: layer index -1 is absent or ambiguous",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -684,7 +729,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -736,6 +784,11 @@
         }
       }
     },
+    "metadata": {
+      "rhino.history_layout": "[]",
+      "rhino.object_layout": "[{\"start\":177,\"end\":314},{\"start\":314,\"end\":659},{\"start\":659,\"end\":840},{\"start\":840,\"end\":1197},{\"start\":1197,\"end\":1418},{\"start\":1418,\"end\":2054}]",
+      "rhino.table_layout": "[[268435476,[]],[268435477,[[536903729,105,153]]],[268435475,[[536903792,177,314],[536903792,314,659],[536903792,659,840],[536903792,840,1197],[536903792,1197,1418],[536903792,1418,2054]]]]"
+    },
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
@@ -743,7 +796,8 @@
           "retention": "inline"
         },
         "offset": 177,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000001": {
         "bytes": {
@@ -751,7 +805,8 @@
           "retention": "inline"
         },
         "offset": 314,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000002": {
         "bytes": {
@@ -759,7 +814,8 @@
           "retention": "inline"
         },
         "offset": 659,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000003": {
         "bytes": {
@@ -767,7 +823,8 @@
           "retention": "inline"
         },
         "offset": 840,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000004": {
         "bytes": {
@@ -775,7 +832,8 @@
           "retention": "inline"
         },
         "offset": 1197,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000005": {
         "bytes": {
@@ -783,8 +841,10 @@
           "retention": "inline"
         },
         "offset": 1418,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

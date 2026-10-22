@@ -27,8 +27,9 @@ fn expected_linear_plane_extent() -> (ExtrudeExtent, [f64; 3]) {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
-                        .expect("nonzero length fixture"),
+                    length: (cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                        .expect("nonzero length fixture"))
+                    .into(),
                 },
                 draft: None,
             },
@@ -156,8 +157,10 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(6.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(6.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -396,8 +399,9 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(34.0)
-                        .expect("nonzero length fixture"),
+                    length: (cadmpeg_ir::scalar::NonZeroLength::new(34.0)
+                        .expect("nonzero length fixture"))
+                    .into(),
                 },
                 draft: None,
             },

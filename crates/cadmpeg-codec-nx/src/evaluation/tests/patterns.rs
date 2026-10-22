@@ -45,8 +45,10 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
                     cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
                         .unwrap(),
                 ),
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
-                count: 3,
+                distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                    distance: (cadmpeg_ir::scalar::Length::new(2.0).unwrap()).into(),
+                },
+                count: 3_u32.into(),
                 second: None,
             })
             .unwrap(),
@@ -71,6 +73,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
 fn output_free_unresolved_pattern_is_body_census_neutral() {
     let mut ir = complete_block_ir();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#pattern".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,

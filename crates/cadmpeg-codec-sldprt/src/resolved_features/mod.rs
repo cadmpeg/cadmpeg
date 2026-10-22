@@ -63,11 +63,16 @@ impl DeclaredEnd {
 
 pub(crate) mod assembly;
 
+pub(crate) mod body_sources;
+
 pub(crate) mod axes;
 
 pub(crate) mod bindings;
 
 pub(crate) mod classes;
+
+mod class_layout;
+pub(crate) mod class_sources;
 
 pub(crate) mod compact_reference_planes;
 
@@ -82,8 +87,6 @@ pub(crate) mod direct_edits;
 mod drafts;
 
 mod endpoints;
-
-pub(crate) mod hashes;
 
 mod helix;
 
@@ -111,6 +114,13 @@ mod relation_loci;
 
 mod relation_records;
 
+mod relation_layout;
+
+mod edge_selection_layout;
+mod generated_surface_layout;
+
+mod reference_layout;
+
 pub(crate) mod feature_sources;
 
 pub(crate) mod scalars;
@@ -132,6 +142,10 @@ pub(crate) mod typed_relations;
 
 pub(crate) mod validate;
 
-mod write_generate;
+pub(crate) mod write_generate;
 
+pub(crate) mod write_feature_parameters;
 pub(crate) mod write_prepare;
+
+pub(crate) mod native_lane_write;
+mod native_selection_write;

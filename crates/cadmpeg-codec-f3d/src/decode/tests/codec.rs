@@ -25,6 +25,7 @@ use std::io::{Cursor, Write};
 
 use cadmpeg_asm::asm_header;
 use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use zip::CompressionMethod;
 
@@ -365,6 +366,19 @@ fn asm_history_preamble_need_not_name_the_head_state() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
     let mut history = f3d_native(result.ir()).asm_histories[0].clone();
+    assert!(
+        history.preamble.is_none(),
+        "document content excludes the source preamble"
+    );
+    let source_value = |field: &str| {
+        result.source_fidelity().metadata[&format!("{}.{field}", history.id)]
+            .parse::<i64>()
+            .expect("exact source preamble value")
+    };
+    history.preamble = Some(crate::history_records::AsmPreamble {
+        stream_size: source_value("stream_size"),
+        history_entry_count: source_value("history_entry_count"),
+    });
     assert!(crate::history::graph_is_coherent(&history));
 
     // The first preamble field names the state after the head.
@@ -386,8 +400,14 @@ fn decode_retains_generated_asm_history_graph() {
 
     assert_eq!(f3d_native(result.ir()).asm_histories.len(), 1);
     let history = &f3d_native(result.ir()).asm_histories[0];
-    assert_eq!(history.stream_size(), Some(2));
-    assert_eq!(history.history_entry_count(), Some(99));
+    assert_eq!(
+        result.source_fidelity().metadata[&format!("{}.stream_size", history.id)],
+        "2"
+    );
+    assert_eq!(
+        result.source_fidelity().metadata[&format!("{}.history_entry_count", history.id)],
+        "99"
+    );
     assert_eq!(history.states().len(), 2);
     assert_eq!(history.states()[0].state_id, 2);
     assert_eq!(history.states()[0].next_ref, Some(1));
@@ -404,6 +424,13 @@ fn decode_retains_generated_asm_history_graph() {
     };
     assert_eq!(entity_references, &[1830, -1]);
     assert!(!history.states()[0].records[0].raw_bytes.is_empty());
+    assert!(!result
+        .source_fidelity()
+        .retained_record(&history.states()[0].records[0].id)
+        .unwrap()
+        .data()
+        .unwrap()
+        .is_empty());
     assert!(matches!(
         history.states()[0].bulletin_boards[0].changes[1].kind,
         crate::history_records::AsmEntityChangeKind::Insert { .. }
@@ -414,16 +441,21 @@ fn decode_retains_generated_asm_history_graph() {
 }
 
 #[test]
-fn generated_f3d_rewrites_fixed_delta_state_header() {
+fn generated_f3d_refuses_incoherent_delta_state_header() {
     let source = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated history decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
+    let source_offset = |id: &str| {
+        fidelity.metadata[&format!("{id}.byte_offset")]
+            .parse::<u64>()
+            .expect("retained source position")
+    };
     update_f3d_native(&mut edited, |native| {
         let history = &mut native.asm_histories[0];
-        assert!(history.byte_offset > 0);
-        assert!(history.states()[0].byte_offset > 0);
+        assert!(source_offset(&history.id) > 0);
+        assert!(source_offset(&history.states()[0].id) > 0);
         history.preamble = Some(crate::history_records::AsmPreamble {
             stream_size: 8,
             history_entry_count: 120,
@@ -437,48 +469,24 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
         history.states_mut()[0].partner_ref = Some(18);
         history.states_mut()[0].owner_ref = 20;
         let board = &mut history.states_mut()[0].bulletin_boards[0];
-        assert!(board.byte_offset > 0);
+        assert!(source_offset(&board.id) > 0);
         board.owner_ref = 22;
         board.number = 24;
-        assert!(board.changes[0].byte_offset > 0);
+        assert!(source_offset(&board.changes[0].id) > 0);
         board.changes[0].kind = crate::history_records::AsmEntityChangeKind::Delete { old: 26 };
         board.changes[1].kind = crate::history_records::AsmEntityChangeKind::Insert { new: 28 };
     });
 
-    let mut regenerated = Vec::new();
-    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
-        .expect("delta-state owner regeneration");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
-        .expect("regenerated history decode");
-    let native = f3d_native(round_trip.ir());
-    let state = &native.asm_histories[0].states()[0];
-    assert_eq!(
-        f3d_native(round_trip.ir()).asm_histories[0].stream_size(),
-        Some(8)
+    let error = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .expect_err("dangling previous/next history links are malformed");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::InvalidInput(message)
+        if message.contains("coherent doubly linked state chain"))
     );
-    assert_eq!(
-        f3d_native(round_trip.ir()).asm_histories[0].history_entry_count(),
-        Some(120)
-    );
-    assert_eq!(state.state_id, 8);
-    assert_eq!(state.version_flag, 4);
-    assert_eq!(state.state_flag, 6);
-    assert_eq!(state.previous_ref, Some(12));
-    assert_eq!(state.next_ref, Some(14));
-    assert_eq!(state.node_index, 16);
-    assert_eq!(state.partner_ref, Some(18));
-    assert_eq!(state.owner_ref, 20);
-    let board = &state.bulletin_boards[0];
-    assert_eq!(board.owner_ref, 22);
-    assert_eq!(board.number, 24);
-    assert_eq!(
-        board.changes[0].kind,
-        crate::history_records::AsmEntityChangeKind::Delete { old: 26 }
-    );
-    assert_eq!(board.changes[0].old_ref(), Some(26));
-    assert_eq!(board.changes[0].new_ref(), None);
-    assert_eq!(board.changes[1].new_ref(), Some(28));
 }
 
 #[test]
@@ -843,7 +851,7 @@ fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert!(!result.ir().model.faces.is_empty());
-        let attributes = &result.ir().source.as_ref().unwrap().attributes;
+        let attributes = &result.source_fidelity().metadata;
         assert_eq!(
             attributes.get("active_brep").map(String::as_str),
             Some(contributing_name)

@@ -12,7 +12,10 @@ fn typed() -> Vec<VariableRadius<Fraction, NonNegativeLength>> {
         .into_iter()
         .map(|point| VariableRadius {
             parameter: Fraction::new(point.parameter).expect("fraction"),
-            radius: NonNegativeLength::try_from(point.radius).expect("nonnegative"),
+            radius: point
+                .radius
+                .try_map_literal(NonNegativeLength::try_from)
+                .expect("nonnegative"),
         })
         .collect()
 }
@@ -64,7 +67,7 @@ fn radius_construction_keeps_geometry_absence_distinct_from_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut points = typed();
     for point in &mut points {
-        point.radius = NonNegativeLength::ZERO;
+        point.radius = NonNegativeLength::ZERO.into();
     }
     assert_eq!(
         VariableRadii::from_parts(points),

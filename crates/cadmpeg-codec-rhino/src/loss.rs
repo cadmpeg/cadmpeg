@@ -67,10 +67,6 @@ impl Diagnostics {
         self.0.splice(0..0, earlier.0);
     }
 
-    pub(crate) fn truncate(&mut self, len: usize) {
-        self.0.truncate(len);
-    }
-
     /// Moves every diagnostic of `other` after the recorded ones.
     pub(crate) fn append(&mut self, other: &mut Self) {
         self.0.append(&mut other.0);
@@ -145,10 +141,18 @@ pub(crate) enum RhinoLossCode {
     IntegrityFailure,
     /// A framed presentation record could not be transferred.
     PresentationRecordDropped,
+    /// A typed native record has no admitted neutral projection.
+    NativeRecordUnprojected,
     /// A framed annotation record could not be transferred.
     AnnotationRecordDropped,
+    /// A typed annotation has no constructible neutral semantic projection.
+    AnnotationRecordUnprojected,
+    /// A neutral annotation cannot be encoded as a Rhino object.
+    WriterAnnotationOmitted,
     /// A framed product occurrence could not be transferred to the native graph.
     ProductOccurrenceDropped,
+    /// A fully typed product record has no constructible neutral counterpart.
+    ProductRecordUnprojected,
     /// A recognized annotation userdata payload could not be typed.
     AnnotationUserdataDropped,
     /// Viewport userdata has no typed CADIR owner.
@@ -217,6 +221,26 @@ pub(crate) enum RhinoLossCode {
     MeshNormalPrecisionReduced,
     /// Standalone support points and curves cannot keep their dependency.
     WriterSupportGeometryWithheld,
+    /// A document arena has no 3DM representation.
+    WriterDesignOmitted,
+    /// Subdivision records have no writer encoding.
+    WriterSubdOmitted,
+    /// Procedural definitions are reduced to solved carriers.
+    WriterProceduralReduced,
+    /// Material records have no writer encoding.
+    WriterMaterialOmitted,
+    /// Attribute records have no writer encoding.
+    WriterAttributesOmitted,
+    /// Object display colors were quantized to native byte channels.
+    WriterColorPrecisionReduced,
+    /// An entity has no writable carrier.
+    WriterEntityOmitted,
+    /// A body cannot be encoded without its unsupported topology.
+    WriterBodyOmitted,
+    /// A body placement cannot be represented in the native carrier.
+    WriterBodyTransformNotApplied,
+    /// No geometry can be written to the target.
+    NoExportableSolids,
     /// A field was read under the legacy reading because the archive carries no
     /// openNURBS writer-version stamp to verify that record against.
     ///
@@ -253,8 +277,12 @@ impl RhinoLossCode {
         Self::ContainerScanDiagnostic,
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,
+        Self::NativeRecordUnprojected,
         Self::AnnotationRecordDropped,
+        Self::AnnotationRecordUnprojected,
+        Self::WriterAnnotationOmitted,
         Self::ProductOccurrenceDropped,
+        Self::ProductRecordUnprojected,
         Self::AnnotationUserdataDropped,
         Self::ViewportUserdataDropped,
         Self::MeshNgonGroupingDropped,
@@ -289,6 +317,16 @@ impl RhinoLossCode {
         Self::MeshVertexPrecisionReduced,
         Self::MeshNormalPrecisionReduced,
         Self::WriterSupportGeometryWithheld,
+        Self::WriterDesignOmitted,
+        Self::WriterSubdOmitted,
+        Self::WriterProceduralReduced,
+        Self::WriterMaterialOmitted,
+        Self::WriterAttributesOmitted,
+        Self::WriterColorPrecisionReduced,
+        Self::WriterEntityOmitted,
+        Self::WriterBodyOmitted,
+        Self::WriterBodyTransformNotApplied,
+        Self::NoExportableSolids,
         Self::SourceWriterStampUnverified,
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
@@ -302,8 +340,12 @@ impl RhinoLossCode {
             Self::ContainerScanDiagnostic => "container.scan-diagnostic",
             Self::IntegrityFailure => "container.integrity-failure",
             Self::PresentationRecordDropped => "presentation.record-dropped",
+            Self::NativeRecordUnprojected => "record.neutral-unprojected",
             Self::AnnotationRecordDropped => "annotation.record-dropped",
+            Self::AnnotationRecordUnprojected => "annotation.record-unprojected",
+            Self::WriterAnnotationOmitted => "writer.annotation-omitted",
             Self::ProductOccurrenceDropped => "product.occurrence-dropped",
+            Self::ProductRecordUnprojected => "product.record-unprojected",
             Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
             Self::ViewportUserdataDropped => "viewport.userdata-dropped",
             Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
@@ -337,6 +379,16 @@ impl RhinoLossCode {
             Self::HistoryGeometryNotTransferred => "history.geometry-not-transferred",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::WriterSupportGeometryWithheld => "writer.support-geometry-withheld",
+            Self::WriterDesignOmitted => "design.parametric-records-omitted",
+            Self::WriterSubdOmitted => "writer.subds-omitted",
+            Self::WriterProceduralReduced => "writer.procedural-reduced",
+            Self::WriterMaterialOmitted => "writer.materials-omitted",
+            Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
+            Self::WriterEntityOmitted => "writer.entity-omitted",
+            Self::WriterBodyOmitted => "writer.body-omitted",
+            Self::WriterBodyTransformNotApplied => "body.non-rigid-transform",
+            Self::NoExportableSolids => "export.no-exportable-solids",
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
             Self::SourceWriterStampUnverified => "source.writer-stamp-unverified",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -350,7 +402,11 @@ impl RhinoLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::ObjectRecordCensus => Severity::Info,
-            Self::ObjectFramingUndecodable | Self::IntegrityFailure => Severity::Error,
+            Self::ObjectFramingUndecodable
+            | Self::IntegrityFailure
+            | Self::WriterEntityOmitted
+            | Self::WriterBodyOmitted => Severity::Error,
+            Self::WriterAnnotationOmitted => Severity::Error,
             _ => Severity::Warning,
         }
     }
@@ -370,6 +426,10 @@ impl RhinoLossCode {
             Self::TrimPcurveDropped => LossTaxonomy::PcurveOmitted,
             Self::IntegrityFailure => LossTaxonomy::IntegrityFailure,
             Self::PresentationRecordDropped => LossTaxonomy::AssetNotTransferred,
+            Self::ProductRecordUnprojected => LossTaxonomy::MetadataNotTransferred,
+            Self::NativeRecordUnprojected => LossTaxonomy::MetadataNotTransferred,
+            Self::AnnotationRecordUnprojected => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterAnnotationOmitted => LossTaxonomy::PmiOmitted,
             Self::ViewportUserdataDropped | Self::ProductOccurrenceDropped => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -404,7 +464,18 @@ impl RhinoLossCode {
             Self::SourceWriterStampUnverified | Self::SourceDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
-            Self::WriterSupportGeometryWithheld => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterSupportGeometryWithheld | Self::WriterEntityOmitted => {
+                LossTaxonomy::GeometryNotTransferred
+            }
+            Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
+            Self::WriterDesignOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
+            Self::WriterProceduralReduced => LossTaxonomy::ProceduralReduced,
+            Self::WriterMaterialOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
+            Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
         }
@@ -464,8 +535,12 @@ mod tests {
                 "container.scan-diagnostic",
                 "container.integrity-failure",
                 "presentation.record-dropped",
+                "record.neutral-unprojected",
                 "annotation.record-dropped",
+                "annotation.record-unprojected",
+                "writer.annotation-omitted",
                 "product.occurrence-dropped",
+                "product.record-unprojected",
                 "annotation.userdata-dropped",
                 "viewport.userdata-dropped",
                 "mesh.ngon-grouping-dropped",
@@ -500,6 +575,16 @@ mod tests {
                 "mesh.vertex-precision-reduced",
                 "mesh.normal-precision-reduced",
                 "writer.support-geometry-withheld",
+                "design.parametric-records-omitted",
+                "writer.subds-omitted",
+                "writer.procedural-reduced",
+                "writer.materials-omitted",
+                "writer.attributes-omitted",
+                "appearance.color-precision-reduced",
+                "writer.entity-omitted",
+                "writer.body-omitted",
+                "body.non-rigid-transform",
+                "export.no-exportable-solids",
                 "source.writer-stamp-unverified",
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",

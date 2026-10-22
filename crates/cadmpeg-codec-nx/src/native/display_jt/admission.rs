@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
 
-use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
+use cadmpeg_ir::native::NativeConvertError;
+use cadmpeg_ir::native::NativeNamespace;
 use serde::{Deserialize, Serialize};
 
 use super::{

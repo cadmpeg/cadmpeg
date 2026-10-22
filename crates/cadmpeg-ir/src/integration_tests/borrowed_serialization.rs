@@ -62,7 +62,7 @@ wire_case!(
 wire_case!(
     borrowed_equation_curve_wire,
     crate::features::FeatureEquationCurve,
-    json!({"parameter":" t ","x_expression":"t*t","y_expression":"0","z_expression":"-t","start":-2.0,"end":3.0})
+    json!({"parameter":" t ","x_expression":"t*t","y_expression":"0","z_expression":"-t","start":{"kind":"literal","value":-2.0},"end":{"kind":"literal","value":3.0}})
 );
 wire_case!(
     borrowed_sketch_binding_wire,

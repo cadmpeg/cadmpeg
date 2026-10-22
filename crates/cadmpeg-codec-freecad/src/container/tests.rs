@@ -13,7 +13,7 @@ use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
 #[test]
-fn unreadable_entry_payload_uses_checked_hex() {
+fn unreadable_entry_wire_contains_only_length_and_hash_evidence() {
     let data: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
     let record = super::UnreadableEntry {
         id: "fcstd:native:unreadable_entry#Payload.bin".into(),
@@ -21,6 +21,8 @@ fn unreadable_entry_payload_uses_checked_hex() {
         data_start: 0,
         data_end: u64::try_from(data.len()).unwrap(),
         stored_data: data.clone().into(),
+        byte_len: u64::try_from(data.len()).unwrap(),
+        sha256: cadmpeg_ir::hash::sha256_hex(&data),
         error: "unsupported compression".into(),
     };
     crate::test_support::with_service_context(&[], |ctx| {
@@ -31,14 +33,16 @@ fn unreadable_entry_payload_uses_checked_hex() {
         let wire = namespace
             .arena_as::<serde_json::Value>("unreadable_entries")
             .unwrap();
-        assert_eq!(
-            wire[0]["stored_data"].as_str().unwrap().len(),
-            data.len() * 2
-        );
+        assert!(wire[0].get("stored_data").is_none());
+        assert!(wire[0].get("data_start").is_none());
+        assert!(wire[0].get("data_end").is_none());
+        assert_eq!(wire[0]["byte_len"], u64::try_from(data.len()).unwrap());
+        assert_eq!(wire[0]["sha256"], cadmpeg_ir::hash::sha256_hex(&data));
         let typed = namespace
             .arena_as::<super::UnreadableEntry>("unreadable_entries")
             .unwrap();
-        assert_eq!(typed[0].stored_data, data);
+        assert!(typed[0].stored_data.is_empty());
+        assert_eq!(typed[0].byte_len, u64::try_from(data.len()).unwrap());
         for payload in [
             serde_json::json!("a"),
             serde_json::json!("gg"),
@@ -67,33 +71,34 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
     with_scanned_document(|scan| {
         let properties: Vec<_> = ["First", "Second"]
             .into_iter()
-            .map(|name| crate::native::PropertyRecord {
-                id: format!("fcstd:native:property#{name}"),
-                owner: "fcstd:native:object#Owner".into(),
-                name: name.into(),
-                type_name: "App::PropertyFileIncluded".into(),
-                family: crate::native::PropertyFamily::File,
-                status: None,
-                body: crate::native::PropertyBody::Persisted {
-                    values: Vec::new(),
-                    links: Vec::new(),
-                    dynamic: None,
-                    side_entries: vec![
-                        scan.entries[0].name.clone(),
-                        "Missing.bin".into(),
-                        scan.entries[0].name.clone(),
-                    ],
-                },
-                order: 0,
-                xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
+            .map(|name| {
+                let property = crate::native::PropertyRecord {
+                    id: format!("fcstd:native:property#{name}"),
+                    owner: "fcstd:native:object#Owner".into(),
+                    name: name.into(),
+                    type_name: "App::PropertyFileIncluded".into(),
+                    family: crate::native::PropertyFamily::File,
+                    status: None,
+                    body: crate::native::PropertyBody::Persisted {
+                        values: Vec::new(),
+                        links: Vec::new(),
+                        dynamic: None,
+                        side_entries: vec![
+                            scan.entries[0].name.clone(),
+                            "Missing.bin".into(),
+                            scan.entries[0].name.clone(),
+                        ],
+                    },
+                    order: 0,
+                };
+                let _fidelity = crate::test_support::source_fidelity::xml_layout_fixture(
+                    &property.id,
+                    "<Property/>",
+                );
+                property
             })
             .collect();
-        let entries = super::entry_records(
-            &cadmpeg_test_support::service_decode_context(),
-            scan,
-            &properties,
-        )
-        .unwrap();
+        let entries = super::entry_records(scan, &properties).unwrap();
         assert_eq!(
             entries[0].referenced_by(),
             [
@@ -105,13 +110,22 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
 }
 
 #[test]
-fn entry_data_copy_refuses_at_retained_limit() {
+fn archive_source_image_retention_refuses_at_retained_limit() {
     with_scanned_document(|scan| {
         let name = &scan.entries[0].name;
         scan.data.get(name).expect("entry data");
-        crate::test_support::assert_retained_refusal_at(&[], "retain FCStd entry", |ctx| {
-            super::entry_records(ctx, scan, &[])
-        });
+        let document = std::str::from_utf8(scan.data["Document.xml"].window()).unwrap();
+        let input = archive(document);
+        let limit = cadmpeg_test_support::decode::resource_refusal_at(
+            &FcstdCodec,
+            &input,
+            &mut DecodeOptions::default(),
+            ResourceDimension::RetainedBytes,
+            "retain FCStd source image",
+            0,
+        );
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, "retain FCStd source image");
     });
 }
 
@@ -301,13 +315,8 @@ fn inspects_and_closes_physical_ledger() {
         )
         .expect("decode");
     assert!(result.report().losses.is_empty());
-    let ledger = result
-        .ir()
-        .native
-        .namespace("fcstd")
-        .expect("namespace")
-        .arena_as::<crate::native::ArchiveSpan>("physical_ledger")
-        .expect("ledger");
+    let ledger: Vec<cadmpeg_ir::source_fidelity::freecad::ArchiveSpan> =
+        crate::test_support::source_fidelity::layout(result.source_fidelity(), "physical-ledger");
     assert_eq!(ledger.first().map(|span| span.span.start()), Some(0));
     assert_eq!(ledger.last().map(|span| span.span.end()), Some(archive_len));
     assert!(ledger
@@ -360,7 +369,7 @@ fn decode_refuses_when_max_entities_is_below_object_cardinality() {
 #[test]
 fn decode_keeps_document_objects_and_model_entities_additive() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="Part::Feature" name="Stored" id="1"/></Objects>
+<Objects Count="1"><Object type="Part::Box" name="Stored" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Stored"><Properties Count="0"/></Object></ObjectData>
 </Document>"#;
     let decoded = FcstdCodec
@@ -412,13 +421,17 @@ fn thumbnail_bytes_are_retained_with_digest() {
         1,
         "thumbnail has one product reference"
     );
-    let retained = result
-        .source_fidelity()
-        .retained_records()
-        .values()
-        .next()
-        .expect("retained thumbnail");
-    assert_eq!(retained.data(), Some(b"png".as_slice()));
+    let thumbnail = cadmpeg_ir::ids::UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "native", "thumbnail"),
+        cadmpeg_ir::ids::IdentityKey::encode_segment("thumbnails/Thumbnail.png"),
+    );
+    assert_eq!(
+        crate::test_support::source_fidelity::entry_bytes(
+            result.source_fidelity(),
+            thumbnail.as_str()
+        ),
+        b"png"
+    );
 }
 
 #[test]
@@ -446,9 +459,8 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .iter()
         .find(|entry| entry.name() == "Shared.bin")
         .expect("shared entry");
-    let spans = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
+    let spans: Vec<cadmpeg_ir::source_fidelity::freecad::LogicalSpan> =
+        crate::test_support::source_fidelity::layout(result.source_fidelity(), "logical-ledger");
     let span = spans
         .iter()
         .find(|span| span.entry == "Shared.bin")
@@ -468,13 +480,14 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .expect("shared entry");
     let mut references = shared.referenced_by().to_vec();
     references.pop();
-    *shared = crate::test_support::entry_record(
+    *shared = crate::test_support::entry_fixture(
         shared.id().to_owned(),
         shared.name().to_owned(),
         shared.role,
         references,
-        shared.data().to_vec(),
-    );
+        crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), shared.id()),
+    )
+    .record;
     corrupted
         .native
         .namespace_mut("fcstd")
@@ -539,6 +552,7 @@ fn producer_version_metadata_does_not_refuse_the_document() {
                 .note("")
                 .code));
         drop(scan);
+        drop(ctx);
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();

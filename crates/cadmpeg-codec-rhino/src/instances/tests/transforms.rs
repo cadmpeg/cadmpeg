@@ -81,15 +81,19 @@ fn extreme_finite_instance_transforms_keep_native_occurrences_and_geometry() {
             assert_eq!(ir.model.points.len(), 1, "exponent {exponent}");
             assert_eq!(
                 ir.model.points[0].position().get(),
-                Point3::new(scale, 2.0 * scale, 3.0 * scale)
+                Point3::new(1.0, 2.0, 3.0)
             );
             let native = serde_json::to_value(ir.native.namespace("rhino").unwrap()).unwrap();
             let occurrences = native["product_occurrences"].as_array().unwrap();
             assert_eq!(occurrences.len(), 1);
-            assert_eq!(occurrences[0]["transform_units"], "millimeter");
+            assert_eq!(occurrences[0]["transform"], serde_json::json!(rows));
+            assert_eq!(ir.model.occurrences.len(), 1);
             assert_eq!(
-                occurrences[0]["transform"],
-                serde_json::to_value(rows).unwrap()
+                ir.model.occurrences[0]
+                    .transform
+                    .expect("source occurrence placement")
+                    .rows(),
+                rows
             );
         }
     }
@@ -190,7 +194,12 @@ fn source_instance_world_placement_is_applied_once() {
             assert_eq!(ir.model.points.len(), 1);
             let point = ir.model.points[0].position().get();
             let body = ir.model.bodies.first().unwrap();
-            let world = body.transform.unwrap_or_default().apply_point(point);
+            assert!(body.transform.is_none());
+            let graph = cadmpeg_ir::products::AssemblyGraph::new(&ir.model.occurrences).unwrap();
+            let world = graph
+                .effective_transform(&ir.model.occurrences[0].id)
+                .unwrap()
+                .apply_point(point);
             assert_eq!(
                 world.map(cadmpeg_ir::features::FinitePoint3::get),
                 Some(expected)

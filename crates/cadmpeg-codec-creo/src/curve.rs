@@ -1293,6 +1293,20 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
 }
 
 fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &str) -> Option<()> {
+    for span in expression_parameter_spans(expression)? {
+        let dependency = &expression[span];
+        if !dependencies
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(dependency))
+        {
+            dependencies.push(dependency.to_owned());
+        }
+    }
+    Some(())
+}
+
+pub(crate) fn expression_parameter_spans(expression: &str) -> Option<Vec<std::ops::Range<usize>>> {
+    let mut spans = Vec::new();
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
@@ -1352,19 +1366,14 @@ fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &s
             let function =
                 bytes.get(following) == Some(&b'(') && creo_relation_function(dependency).is_some();
             let constant = reserved_relation_scalar(dependency).is_some();
-            if !function
-                && !constant
-                && !dependencies
-                    .iter()
-                    .any(|existing| existing.eq_ignore_ascii_case(dependency))
-            {
-                dependencies.push(dependency.to_owned());
+            if !function && !constant {
+                spans.push(start..cursor);
             }
         } else {
             cursor += 1;
         }
     }
-    Some(())
+    Some(spans)
 }
 
 fn split_expression_assignment(source: &str) -> Option<(&str, &str)> {

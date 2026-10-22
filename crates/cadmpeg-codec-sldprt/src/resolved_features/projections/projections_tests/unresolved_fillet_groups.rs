@@ -38,7 +38,9 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
         sole_unresolved_fillet_group(&fillet(vec![group(
             native.clone(),
             RadiusSpec::Constant {
-                radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("a positive radius"),
+                radius: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("a positive radius")
+                ),
             },
         )])),
         None
@@ -99,10 +101,10 @@ fn a_sole_unresolved_fillet_group_carries_its_tangency_weight() {
     };
 
     assert_eq!(
-        sole_unresolved_fillet_group(&fillet(Some(weight)))
+        sole_unresolved_fillet_group(&fillet(Some(cadmpeg_ir::Dimension::Literal(weight))))
             .expect("a sole group without a radius is carried out of the check")
             .1,
-        Some(weight)
+        Some(cadmpeg_ir::Dimension::Literal(weight))
     );
     assert_eq!(
         sole_unresolved_fillet_group(&fillet(None))

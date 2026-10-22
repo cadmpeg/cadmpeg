@@ -113,11 +113,8 @@ pub(crate) fn decode_edge_operands(
     }
     let mut stream_offsets: HashMap<&str, Vec<u64>> = HashMap::new();
     for header in record_headers {
-        if let Some(stream) = native_stream(&header.id) {
-            stream_offsets
-                .entry(stream)
-                .or_default()
-                .push(header.byte_offset);
+        if let (Some(stream), Some(offset)) = (native_stream(&header.id), header.byte_offset) {
+            stream_offsets.entry(stream).or_default().push(offset);
         }
     }
     for offsets in stream_offsets.values_mut() {
@@ -178,6 +175,9 @@ pub(crate) fn decode_edge_operands(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
+            let Some(header_offset) = header.byte_offset else {
+                continue;
+            };
             let terminal_group_member =
                 terminal_group_members.contains(&(stream, scope.record_index, header.record_index));
             let stream_end = u64::try_from(bytes.len()).map_err(|_| {
@@ -187,7 +187,7 @@ pub(crate) fn decode_edge_operands(
                 stream_offsets
                     .get(stream)
                     .and_then(|offsets| {
-                        let at = offsets.partition_point(|offset| *offset <= header.byte_offset);
+                        let at = offsets.partition_point(|offset| *offset <= header_offset);
                         offsets.get(at).copied()
                     })
                     .unwrap_or(stream_end)
@@ -285,7 +285,9 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
                 id: design_record_id(
                     stream,
                     ":edge-treatment-vertex-operand#",
-                    header.byte_offset,
+                    header.byte_offset.ok_or_else(|| {
+                        CodecError::malformed("F3D source record has no scanner position")
+                    })?,
                 ),
                 scope_record_index: scope.record_index,
                 scope_reference_ordinal,
@@ -376,9 +378,13 @@ pub(crate) fn bind_work_point_input_carriers(
                     .map_err(CodecError::Malformed)?;
                 continue;
             }
-            if let Some(selection) =
-                parse_work_point_sketch_point_frame(bytes, input.record_index(), header.byte_offset)
-            {
+            if let Some(selection) = parse_work_point_sketch_point_frame(
+                bytes,
+                input.record_index(),
+                header.byte_offset.ok_or_else(|| {
+                    CodecError::malformed("F3D source record has no scanner position")
+                })?,
+            ) {
                 let mut point_matches = sketch_points.iter().filter(|point| {
                     native_stream(&point.id) == Some(stream.as_str())
                         && point.owner_reference == Some(selection.sketch_record_index)
@@ -424,7 +430,9 @@ pub(crate) fn bind_work_point_input_carriers(
             let Some(selection) = parse_entity_selection_frame(
                 bytes,
                 input.record_index(),
-                header.byte_offset,
+                header.byte_offset.ok_or_else(|| {
+                    CodecError::malformed("F3D source record has no scanner position")
+                })?,
                 header.class_tag.as_str(),
             ) else {
                 continue;
@@ -525,7 +533,7 @@ pub(crate) fn bind_work_plane_constructions(
         let Some(owner) = owners.iter().find(|owner| {
             native_stream(owner.id()) == Some(stream.as_str())
                 && owner.record_index() == *extra_offset
-                && owner.scope_record_index() == scope.record_index
+                && owner.scope_record_index() == Some(scope.record_index)
                 && owner.evaluated_value().get() == 0.0
         }) else {
             continue;
@@ -679,7 +687,9 @@ pub(crate) fn decode_edge_identity_operands(
             let Some(header) = header_index.get(&(stream, record_index)) else {
                 continue;
             };
-            let Ok(start) = usize::try_from(header.byte_offset) else {
+            let Ok(start) = usize::try_from(header.byte_offset.ok_or_else(|| {
+                CodecError::malformed("F3D source record has no scanner position")
+            })?) else {
                 continue;
             };
             let Some(parsed) = parse_edge_identity_member(bytes, start) else {
@@ -701,13 +711,17 @@ pub(crate) fn decode_edge_identity_operands(
                         id: design_record_id(
                             &entry.name,
                             ":design-edge-identity-operand#",
-                            header.byte_offset,
+                            header.byte_offset.ok_or_else(|| {
+                                CodecError::malformed("F3D source record has no scanner position")
+                            })?,
                         ),
                         scope_record_index: scope.record_index,
                         group_record_index: group.record_index,
                         group_member_ordinal,
                         record_index,
-                        byte_offset: header.byte_offset,
+                        byte_offset: header.byte_offset.ok_or_else(|| {
+                            CodecError::malformed("F3D source record has no scanner position")
+                        })?,
                         class_tag: header.class_tag.clone(),
                         layout: parsed.layout,
                         local_id: parsed.local_id,
@@ -872,7 +886,7 @@ pub(crate) fn decode_face_operands(
                 .get(group_member_index + 1)
                 .and_then(|record| header_index.get(&(stream, record.value)))
                 .copied()
-                .map(|header| header.byte_offset)
+                .and_then(|header| header.byte_offset)
                 .or_else(|| {
                     if !is_offset_faces_operand && !is_shell_operand {
                         return None;
@@ -883,7 +897,7 @@ pub(crate) fn decode_face_operands(
                         .position(|candidate| candidate == record_index)
                         .and_then(|ordinal| scope.reference_members().values().nth(ordinal + 1))
                         .and_then(|record_index| header_index.get(&(stream, *record_index)))
-                        .map(|header| header.byte_offset)
+                        .and_then(|header| header.byte_offset)
                 });
             if let Some(operand) = parse_face_operand(
                 ctx,
@@ -973,7 +987,7 @@ pub(crate) fn decode_face_operands(
                     .values()
                     .nth(ordinal + 1)
                     .and_then(|record_index| header_index.get(&(stream, *record_index)))
-                    .map(|header| header.byte_offset)
+                    .and_then(|header| header.byte_offset)
             } else {
                 None
             };
@@ -1506,7 +1520,14 @@ pub(crate) fn decode_extrude_selection_groups(
                 continue;
             };
             if let Some(group) = parse_extrude_selection_group(bytes, scope, ordinal, header)? {
-                push_extrude_selection_group(&mut out, group, &entry.name, header.byte_offset);
+                push_extrude_selection_group(
+                    &mut out,
+                    group,
+                    &entry.name,
+                    header.byte_offset.ok_or_else(|| {
+                        CodecError::malformed("F3D source record has no scanner position")
+                    })?,
+                );
             }
         }
     }
@@ -1602,7 +1623,9 @@ pub(crate) fn decode_construction_operand_groups(
                         &mut out,
                         group,
                         &entry.name,
-                        header.byte_offset,
+                        header.byte_offset.ok_or_else(|| {
+                            CodecError::malformed("F3D source record has no scanner position")
+                        })?,
                     );
                 }
                 ConstructionOperandGroupParse::Unclosed => {
@@ -1668,7 +1691,7 @@ pub(crate) fn decode_loft_legacy_body_carriers(
             let Some(carrier) = parse_loft_legacy_body_carrier(bytes, scope, header) else {
                 continue;
             };
-            push_loft_legacy_body_carrier(&mut out, carrier, &entry.name, header.byte_offset);
+            push_loft_legacy_body_carrier(&mut out, carrier, &entry.name, header.byte_offset.ok_or_else(|| CodecError::malformed("F3D source record has no scanner position"))?);
         }
     }
     out.sort_by(|left, right| left.id.cmp(&right.id));
@@ -1692,7 +1715,8 @@ fn parse_loft_legacy_body_carrier(
     scope: &DesignParameterScope,
     header: &DesignRecordHeader,
 ) -> Option<DesignLoftLegacyBodyCarrier> {
-    let start = usize::try_from(header.byte_offset).ok()?;
+    let header_offset = header.byte_offset?;
+    let start = usize::try_from(header_offset).ok()?;
     let (paired_class, frame_length, has_trailing_scope) = match header.class_tag.as_str() {
         "322" => {
             let short_paired_offset = start.checked_add(legacy_loft_322::LEN)?;
@@ -1794,7 +1818,7 @@ fn parse_loft_legacy_body_carrier(
         id: String::new(),
         scope_record_index: scope.record_index,
         record_index: header.record_index,
-        byte_offset: header.byte_offset,
+        byte_offset: header_offset,
         class_tag: header.class_tag.clone(),
         owner_scope_record_index_offset: u64::try_from(
             start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX,
@@ -1912,11 +1936,11 @@ pub(crate) fn decode_fillet_radius_groups(
             .iter()
             .filter(|owner| {
                 native_stream(owner.id()) == Some(stream)
-                    && owner.scope_record_index() == scope.record_index
+                    && owner.scope_record_index() == Some(scope.record_index)
             })
             .filter_map(|owner| {
                 Some((
-                    owner.local_ordinal(),
+                    owner.local_ordinal()?,
                     *parameter_index.get(&(stream, owner.parameter_record_index()))?,
                 ))
             })
@@ -2081,7 +2105,7 @@ pub(crate) fn disambiguate_fixed_fillet_parameters(
         };
         if owners.iter().any(|owner| {
             native_stream(owner.id()) == Some(stream)
-                && owner.scope_record_index() == scope.record_index
+                && owner.scope_record_index() == Some(scope.record_index)
         }) {
             if let crate::records::feature::scope::DesignScopePayloadMut::Fillet(slot)
             | crate::records::feature::scope::DesignScopePayloadMut::Conge(slot)
@@ -2177,7 +2201,7 @@ fn extrude_operand_role(
 pub(super) struct RecordFrame {
     pub(super) record_index: u32,
     pub(super) class_tag: crate::records::references::DesignClassTag,
-    pub(super) byte_offset: u64,
+    pub(super) byte_offset: Option<u64>,
 }
 
 impl From<&DesignRecordHeader> for RecordFrame {
@@ -2215,7 +2239,10 @@ pub(super) fn parse_construction_operand_group(
 ) -> ConstructionOperandGroupParse {
     use ConstructionOperandGroupParse::{Complete, NotAGroup, Unclosed};
 
-    let Ok(start) = usize::try_from(header.byte_offset) else {
+    let Some(header_offset) = header.byte_offset else {
+        return NotAGroup;
+    };
+    let Ok(start) = usize::try_from(header_offset) else {
         return NotAGroup;
     };
     // The indexed header is the three-digit class tag, the u64 entity id whose
@@ -2465,7 +2492,7 @@ pub(super) fn parse_construction_operand_group(
             scope_record_index: scope.record_index,
             scope_reference_ordinal,
             record_index: header.record_index,
-            byte_offset: header.byte_offset,
+            byte_offset: header_offset,
             class_tag: header.class_tag.clone(),
             members,
             lost_edge_references: Vec::new(),
@@ -2624,7 +2651,8 @@ fn parse_construction_operand_flag(
     bytes: &[u8],
     header: &DesignRecordHeader,
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandFlag> {
-    let start = usize::try_from(header.byte_offset).ok()?;
+    let header_offset = header.byte_offset?;
+    let start = usize::try_from(header_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
         || bytes.get(start + 23) != Some(&0)
@@ -2639,10 +2667,10 @@ fn parse_construction_operand_flag(
     Some(
         crate::records::topology::construction::DesignConstructionOperandFlag {
             record_index: header.record_index,
-            byte_offset: header.byte_offset,
+            byte_offset: Some(header_offset),
             class_tag: header.class_tag.clone(),
             value,
-            value_offset: u64::try_from(start + 22).ok()?,
+            value_offset: Some(u64::try_from(start + 22).ok()?),
         },
     )
 }
@@ -2691,7 +2719,8 @@ fn parse_construction_operand_path(
     expected_scope_record_index: u32,
     header: &DesignRecordHeader,
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandPath> {
-    let start = usize::try_from(header.byte_offset).ok()?;
+    let header_offset = header.byte_offset?;
+    let start = usize::try_from(header_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 21) != Some(&1) {
         return None;
     }
@@ -2742,7 +2771,7 @@ fn parse_construction_operand_path(
     crate::records::topology::construction::DesignConstructionOperandPath::try_new(
         crate::records::topology::construction::DesignConstructionOperandPathDraft {
             record_index: header.record_index,
-            byte_offset: header.byte_offset,
+            byte_offset: header_offset,
             class_tag: header.class_tag.clone(),
             entity_ref,
             entity_ref_offset,
@@ -2766,7 +2795,8 @@ fn parse_construction_operand_transform(
     bytes: &[u8],
     header: &DesignRecordHeader,
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandTransform> {
-    let start = usize::try_from(header.byte_offset).ok()?;
+    let header_offset = header.byte_offset?;
+    let start = usize::try_from(header_offset).ok()?;
     if bytes.get(start + 11..start + 22)? != [0; 11]
         || bytes.get(start + 150..start + 152)? != [1, 0]
     {
@@ -2784,7 +2814,7 @@ fn parse_construction_operand_transform(
     crate::records::topology::construction::DesignConstructionOperandTransform::try_new(
         crate::records::topology::construction::DesignConstructionOperandTransformDraft {
             record_index: header.record_index,
-            byte_offset: header.byte_offset,
+            byte_offset: header_offset,
             class_tag: header.class_tag.clone(),
             transform,
             transform_offset: u64::try_from(transform_at).ok()?,
@@ -2803,7 +2833,8 @@ fn parse_construction_operand_dual_transform(
     bytes: &[u8],
     header: &DesignRecordHeader,
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandDualTransform> {
-    let start = usize::try_from(header.byte_offset).ok()?;
+    let header_offset = header.byte_offset?;
+    let start = usize::try_from(header_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 277) != Some(&0) {
         return None;
     }
@@ -2812,12 +2843,12 @@ fn parse_construction_operand_dual_transform(
     Some(
         crate::records::topology::construction::DesignConstructionOperandDualTransform {
             record_index: header.record_index,
-            byte_offset: header.byte_offset,
+            byte_offset: Some(header_offset),
             class_tag: header.class_tag.clone(),
             first_transform: rigid_transform_at(bytes, first_at)?,
-            first_transform_offset: u64::try_from(first_at).ok()?,
+            first_transform_offset: Some(u64::try_from(first_at).ok()?),
             second_transform: rigid_transform_at(bytes, second_at)?,
-            second_transform_offset: u64::try_from(second_at).ok()?,
+            second_transform_offset: Some(u64::try_from(second_at).ok()?),
         },
     )
 }
@@ -2854,7 +2885,7 @@ pub(crate) fn decode_construction_operand_identities(
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignConstructionOperandIdentity>, CodecError> {
     let headers = indexed_operand_headers(headers);
-    let mut out = Vec::new();
+    let mut jobs = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
             continue;
@@ -2863,27 +2894,38 @@ pub(crate) fn decode_construction_operand_identities(
         else {
             continue;
         };
-        let Some(trailing_record_index) = group
-            .frame
-            .trailing_records()
-            .first()
-            .map(|record| &record.value)
-        else {
+        let Some(record) = group.frame.trailing_records().first() else {
             continue;
         };
-        let Some(wrapper_header) = headers.get(&(stream, *trailing_record_index)) else {
+        let Some(header) = headers.get(&(stream, record.value)) else {
             continue;
         };
+        let Some(offset) = header.byte_offset else {
+            continue;
+        };
+        jobs.push((stream, entry, group, *header, offset));
+    }
+    // Physical order is read once from the actual source scan. The resulting
+    // ordinal is a semantic ordering fact; CADIR never infers it from an id.
+    jobs.sort_by_key(|(stream, _, _, _, offset)| (*stream, *offset));
+    jobs.dedup_by(|left, right| left.0 == right.0 && left.4 == right.4);
+    let mut stream_ordinals = HashMap::<&str, u32>::new();
+    let mut out = Vec::new();
+    for (stream, entry, group, header, header_offset) in jobs {
+        let ordinal = stream_ordinals.entry(stream).or_insert(0);
+        let current_ordinal = *ordinal;
+        *ordinal = ordinal.checked_add(1).ok_or_else(|| {
+            CodecError::malformed("F3D construction identity count exceeds u32::MAX")
+        })?;
         let bytes = scan.entry_bytes(&entry.name)?;
         if let Some(mut identity) =
-            parse_construction_operand_identity(bytes, group, wrapper_header)
+            parse_construction_operand_identity(bytes, group, header, current_ordinal)
         {
             identity.id = design_record_id(
                 &entry.name,
                 ":design-construction-operand-identity#",
-                wrapper_header.byte_offset,
+                header_offset,
             );
-
             out.push(identity);
         }
     }
@@ -2936,14 +2978,16 @@ pub(crate) fn bind_lost_edge_groups(
             continue;
         };
         let wrapper_record_index = wrapper.record_index;
-        let wrapper_byte_offset = wrapper.byte_offset;
+        let Some(wrapper_byte_offset) = wrapper.byte_offset else {
+            continue;
+        };
         let wrapper_class_tag = wrapper.class_tag.as_str();
         let stream_edges = collect_stream_lost_edges(lost_edges, stream);
         let mut terminal = None;
         let mut multiple_terminals = false;
         for (ordinal, edge) in stream_edges.iter().enumerate() {
             if edge.next_record_index == wrapper_record_index
-                && edge.next_byte_offset() == wrapper_byte_offset
+                && edge.next_byte_offset() == Some(wrapper_byte_offset)
                 && edge.next_class_tag.as_str() == wrapper_class_tag
                 && terminal.replace(ordinal).is_some()
             {
@@ -2980,13 +3024,15 @@ fn parse_construction_operand_identity(
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     wrapper_header: &DesignRecordHeader,
+    ordinal: u32,
 ) -> Option<DesignConstructionOperandIdentity> {
-    let mut current_at = usize::try_from(wrapper_header.byte_offset).ok()?;
+    let wrapper_header_offset = wrapper_header.byte_offset?;
+    let mut current_at = usize::try_from(wrapper_header_offset).ok()?;
     let mut current_record_index = wrapper_header.record_index;
     let mut current_class_tag = wrapper_header.class_tag.clone();
     let mut chain_started = false;
     if let Some(transform) = parse_construction_operand_transform(bytes, wrapper_header) {
-        current_at = usize::try_from(transform.following_byte_offset()).ok()?;
+        current_at = usize::try_from(transform.following_byte_offset()?).ok()?;
         current_record_index = transform.following_record_index();
         current_class_tag = transform.following_class_tag;
         chain_started = true;
@@ -3015,7 +3061,7 @@ fn parse_construction_operand_identity(
         wrappers.push(
             crate::records::topology::construction::DesignIdentityWrapper {
                 record_index: current_record_index,
-                byte_offset: u64::try_from(current_at).ok()?,
+                byte_offset: Some(u64::try_from(current_at).ok()?),
                 class_tag: current_class_tag,
             },
         );
@@ -3037,7 +3083,7 @@ fn parse_construction_operand_identity(
         &current_class_tag,
     );
     if let Some(path) = &tracking_path {
-        current_at = usize::try_from(path.following_byte_offset()).ok()?;
+        current_at = usize::try_from(path.following_byte_offset()?).ok()?;
         current_record_index = path.following_record_index();
         current_class_tag.clone_from(&path.following_class_tag);
         chain_started = true;
@@ -3066,6 +3112,7 @@ fn parse_construction_operand_identity(
     DesignConstructionOperandIdentity::try_new(
         crate::records::topology::construction::DesignConstructionOperandIdentityDraft {
             id: String::new(),
+            ordinal,
             group_record_index: group.record_index,
             wrappers,
             following_record_index: current_record_index,
@@ -3204,7 +3251,8 @@ fn parse_extrude_selection_group(
             CodecError,
         >,
     > {
-        let start = usize::try_from(header.byte_offset).ok()?;
+        let header_offset = header.byte_offset?;
+        let start = usize::try_from(header_offset).ok()?;
         if bytes.get(start + 11..start + 21)? != [0; 10]
             || bytes.get(start + 21) != Some(&1)
             || View::u32_le_at(bytes, start + 22)? != scope.record_index
@@ -3263,7 +3311,7 @@ fn parse_extrude_selection_group(
                 scope_record_index: scope.record_index,
                 scope_reference_ordinal,
                 record_index: header.record_index,
-                byte_offset: header.byte_offset,
+                byte_offset: header_offset,
                 class_tag: header.class_tag.clone().into(),
                 member_count_offset: u64::try_from(start + 32).ok()?,
                 members,
@@ -3318,7 +3366,9 @@ pub(crate) fn decode_extrude_selection_members(
                 member.id = design_record_id(
                     &entry.name,
                     ":design-extrude-selection-member#",
-                    header.byte_offset,
+                    header.byte_offset.ok_or_else(|| {
+                        CodecError::malformed("F3D source record has no scanner position")
+                    })?,
                 );
 
                 out.push(member);
@@ -3363,7 +3413,9 @@ pub(crate) fn decode_entity_selection_operands(
                 operand.id = design_record_id(
                     &entry.name,
                     ":design-entity-selection-operand#",
-                    header.byte_offset,
+                    header.byte_offset.ok_or_else(|| {
+                        CodecError::malformed("F3D source record has no scanner position")
+                    })?,
                 );
 
                 out.push(operand);
@@ -3380,10 +3432,11 @@ pub(super) fn parse_entity_selection_operand(
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
 ) -> Option<DesignEntitySelectionOperand> {
+    let header_offset = header.byte_offset?;
     let frame = parse_entity_selection_frame(
         bytes,
         header.record_index,
-        header.byte_offset,
+        header_offset,
         header.class_tag.as_str(),
     )?;
     DesignEntitySelectionOperand::try_new(
@@ -3813,7 +3866,14 @@ pub(crate) fn decode_body_recipe_operands(
             if let Some(operand) =
                 parse_body_recipe_operand_with_index(bytes, records, group, ordinal, header, recipe)
             {
-                push_body_recipe_operand(&mut out, operand, &entry.name, header.byte_offset);
+                push_body_recipe_operand(
+                    &mut out,
+                    operand,
+                    &entry.name,
+                    header.byte_offset.ok_or_else(|| {
+                        CodecError::malformed("F3D source record has no scanner position")
+                    })?,
+                );
             }
         }
     }
@@ -3883,7 +3943,14 @@ pub(crate) fn decode_body_recipe_operands(
                 header,
                 recipe,
             ) {
-                push_body_recipe_operand(&mut out, operand, &entry.name, header.byte_offset);
+                push_body_recipe_operand(
+                    &mut out,
+                    operand,
+                    &entry.name,
+                    header.byte_offset.ok_or_else(|| {
+                        CodecError::malformed("F3D source record has no scanner position")
+                    })?,
+                );
             }
         }
     }
@@ -3933,13 +4000,15 @@ fn unique_body_recipe_with_index<'a>(
     header: &DesignRecordHeader,
     recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
-    let start = usize::try_from(header.byte_offset).ok()?;
+    let header_offset = header.byte_offset?;
+    let start = usize::try_from(header_offset).ok()?;
     let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
     let next_at = records.first_at_or_after(prologue_end, header.record_index.checked_add(4)?)?;
     let lower = u64::try_from(prologue_end).ok()?;
     let upper = u64::try_from(next_at).ok()?;
-    let matching = &recipes[recipes.partition_point(|recipe| recipe.byte_offset < lower)
-        ..recipes.partition_point(|recipe| recipe.byte_offset < upper)];
+    let matching = &recipes[recipes
+        .partition_point(|recipe| recipe.byte_offset.is_none_or(|offset| offset < lower))
+        ..recipes.partition_point(|recipe| recipe.byte_offset.is_none_or(|offset| offset < upper))];
     let [recipe] = matching else {
         return None;
     };
@@ -4050,8 +4119,11 @@ fn parse_body_recipe_operand_frame_with_index(
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
 ) -> Option<DesignBodyRecipeOperand> {
-    let start = usize::try_from(header.byte_offset).ok()?;
-    let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
+    let header_offset = header.byte_offset?;
+    let start = usize::try_from(header_offset).ok()?;
+    let recipe_at = recipe
+        .byte_offset
+        .and_then(|offset| usize::try_from(offset).ok())?;
     let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
     let next_at =
         body_recipe_operand_end_with_index(records, prologue_end, header.record_index, recipe_at)?;
@@ -4074,9 +4146,9 @@ fn parse_body_recipe_operand_frame_with_index(
     for _ in 0..reference_count {
         references.push(DesignBodyRecipeReference {
             design_reference: View::u64_le_at(bytes, cursor)?,
-            design_reference_offset: u64::try_from(cursor).ok()?,
+            design_reference_offset: Some(u64::try_from(cursor).ok()?),
             form: View::u32_le_at(bytes, cursor + 8)?,
-            form_offset: u64::try_from(cursor + 8).ok()?,
+            form_offset: Some(u64::try_from(cursor + 8).ok()?),
             candidate_faces: Vec::new(),
             preceding_candidate_faces: Vec::new(),
             preceding_body_slots: Vec::new(),
@@ -4120,7 +4192,7 @@ fn parse_body_recipe_operand_frame_with_index(
             scope_record_index,
             owner,
             record_index: header.record_index,
-            byte_offset: header.byte_offset,
+            byte_offset: header_offset,
             class_tag: header.class_tag.clone(),
             asset_id: asset_id.try_into().ok()?,
             asset_id_offset: u64::try_from(asset_id_at + 4).ok()?,
@@ -4286,7 +4358,9 @@ pub(crate) fn bind_extrude_selection_identities(
             .filter(|identity| {
                 native_stream(&identity.id) == Some(stream)
                     && identity.following_record_index() == member.record_index()
-                    && identity.following_byte_offset() == member.byte_offset()
+                    && identity
+                        .following_byte_offset()
+                        .is_none_or(|offset| offset == member.byte_offset())
                     && identity.persistent_identity().is_some_and(|persistent| {
                         persistent.local_id == member.local_id
                             && persistent.asset_id == member.asset_id
@@ -4294,12 +4368,7 @@ pub(crate) fn bind_extrude_selection_identities(
                     })
             })
             .collect::<Vec<_>>();
-        matches.sort_by_key(|identity| {
-            identity
-                .wrappers()
-                .first()
-                .map(|wrapper| wrapper.byte_offset)
-        });
+        matches.sort_by_key(|identity| identity.ordinal);
         member.operand_identity_ids = matches
             .into_iter()
             .map(|identity| identity.id.clone())
@@ -4313,7 +4382,8 @@ fn parse_extrude_selection_member(
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
 ) -> Option<DesignExtrudeSelectionMember> {
-    let start = usize::try_from(header.byte_offset).ok()?;
+    let header_offset = header.byte_offset?;
+    let start = usize::try_from(header_offset).ok()?;
     let member = parse_extrude_identity_member(bytes, start)?;
     DesignExtrudeSelectionMember::try_new(
         crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
@@ -4321,7 +4391,7 @@ fn parse_extrude_selection_member(
             group_record_index: group.record_index,
             group_member_ordinal,
             record_index: header.record_index,
-            byte_offset: header.byte_offset,
+            byte_offset: header_offset,
             class_tag: header.class_tag.clone(),
             local_id: member.local_id,
             local_id_offset: member.local_id_offset,
@@ -4498,7 +4568,8 @@ pub(in crate::design) fn parse_sketch_profile(
     header: &DesignRecordHeader,
     entities: &[DesignEntityHeader],
 ) -> Option<DesignSketchProfileOperand> {
-    let start = usize::try_from(header.byte_offset).ok()?;
+    let header_offset = header.byte_offset?;
+    let start = usize::try_from(header_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
         || View::u32_le_at(bytes, start + 22)? != header.record_index.checked_add(3)?
@@ -4558,7 +4629,7 @@ pub(in crate::design) fn parse_sketch_profile(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             scope_reference_ordinal,
             record_index: header.record_index,
-            byte_offset: header.byte_offset,
+            byte_offset: header_offset,
             class_tag: header.class_tag.clone(),
             asset_id: asset_id.try_into().ok()?,
             asset_id_offset: u64::try_from(start + 40).ok()?,
@@ -4696,12 +4767,11 @@ fn parse_sketch_profile_region_selection(
                 return None;
             }
             members.push(DesignSketchProfileRegionMember {
-                kind_offset: u64::try_from(kind_offset).ok()?,
+                kind_offset: Some(u64::try_from(kind_offset).ok()?),
                 curve_primary_id,
-                curve_primary_id_offset: u64::try_from(
-                    cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
-                )
-                .ok()?,
+                curve_primary_id_offset: Some(
+                    u64::try_from(cursor.checked_add(region_member::CURVE_PRIMARY_ID)?).ok()?,
+                ),
                 incidence_flag: incidence_words[3] == 1,
                 incidence_values: [
                     crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
@@ -4713,12 +4783,12 @@ fn parse_sketch_profile_region_selection(
                     )
                     .ok()?,
                 ],
-                incidence_words_offset: u64::try_from(incidence_words_offset).ok()?,
+                incidence_words_offset: Some(u64::try_from(incidence_words_offset).ok()?),
             });
             cursor = cursor.checked_add(region_member::LEN)?;
         }
         regions.push(DesignSketchProfileRegion {
-            member_count_offset: u64::try_from(member_count_offset).ok()?,
+            member_count_offset: Some(u64::try_from(member_count_offset).ok()?),
             members,
         });
     }
@@ -4735,16 +4805,15 @@ fn parse_sketch_profile_region_selection(
     }
     Some(DesignSketchProfileRegionSelection {
         record_index: selection_record_index,
-        byte_offset: u64::try_from(selection_at).ok()?,
+        byte_offset: Some(u64::try_from(selection_at).ok()?),
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
-        region_count_offset: u64::try_from(
-            selection_at.checked_add(region_selection::REGION_COUNT)?,
-        )
-        .ok()?,
+        region_count_offset: Some(
+            u64::try_from(selection_at.checked_add(region_selection::REGION_COUNT)?).ok()?,
+        ),
         regions,
         companion_class_tag: crate::design::decode::text::class_tag_from_view(companion_class_tag)
             .ok()?,
-        companion_byte_offset: u64::try_from(companion_at).ok()?,
+        companion_byte_offset: Some(u64::try_from(companion_at).ok()?),
     })
 }
 
@@ -4777,6 +4846,7 @@ fn parse_vertex_recipe(
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
 ) -> Option<DesignVertexRecipe> {
+    let header_offset = header.byte_offset?;
     let parsed = parse_recipe_operand(
         bytes,
         records,
@@ -4791,7 +4861,7 @@ fn parse_vertex_recipe(
     DesignVertexRecipe::try_new(
         crate::records::feature::work_geometry::DesignVertexRecipeDraft {
             record_index: header.record_index,
-            byte_offset: header.byte_offset,
+            byte_offset: header_offset,
             class_tag: header.class_tag.clone(),
             paired_byte_offset: parsed.paired_byte_offset,
             paired_class_tag: parsed.paired_class_tag,
@@ -4820,10 +4890,11 @@ fn parse_recipe_operand(
     recipes: &[ConstructionRecipe],
     (recipe_kind, terminator): (ConstructionRecipeKind, RecipeOperandTerminator),
 ) -> Option<ParsedRecipeOperand> {
+    let header_offset = header.byte_offset?;
     let family_name = crate::design::RECIPES
         .iter()
         .find_map(|(name, kind)| (*kind == recipe_kind).then_some(*name))?;
-    let start = usize::try_from(header.byte_offset).ok()?;
+    let start = usize::try_from(header_offset).ok()?;
     let mut offsets = [0usize; 5];
     let mut position = start.checked_add(11)?;
     for (delta, slot) in offsets[..4].iter_mut().enumerate() {
@@ -4843,14 +4914,17 @@ fn parse_recipe_operand(
             let recipe = recipes
                 .iter()
                 .filter(|recipe| {
-                    recipe.byte_offset > recipe_record_byte_offset
-                        && recipe.byte_offset < limit
+                    recipe
+                        .byte_offset
+                        .is_some_and(|offset| offset > recipe_record_byte_offset)
+                        && recipe.byte_offset.is_some_and(|offset| offset < limit)
                         && recipe.kind == recipe_kind
                         && native_stream(&recipe.id) == Some(stream)
                 })
                 .min_by_key(|recipe| recipe.byte_offset)?;
-            let recipe_program_at = usize::try_from(recipe.byte_offset)
-                .ok()?
+            let recipe_program_at = recipe
+                .byte_offset
+                .and_then(|offset| usize::try_from(offset).ok())?
                 .checked_add(family_name.len())?;
             let next = next_indexed_record_offset(bytes, recipe_program_at)?;
             (u64::try_from(next).ok()? <= limit).then_some(next)?
@@ -4886,8 +4960,12 @@ fn parse_recipe_operand(
     let recipe_record_byte_offset = u64::try_from(offsets[3]).ok()?;
     let next_byte_offset = u64::try_from(offsets[4]).ok()?;
     let mut matches = recipes.iter().filter(|recipe| {
-        recipe.byte_offset > recipe_record_byte_offset
-            && recipe.byte_offset < next_byte_offset
+        recipe
+            .byte_offset
+            .is_some_and(|offset| offset > recipe_record_byte_offset)
+            && recipe
+                .byte_offset
+                .is_some_and(|offset| offset < next_byte_offset)
             && recipe.kind == recipe_kind
             && native_stream(&recipe.id) == Some(stream)
     });
@@ -4898,13 +4976,16 @@ fn parse_recipe_operand(
     let (recipe_prefix_at, recipe_prefix_bytes) = recipe_record_prefix(
         bytes,
         offsets[3],
-        usize::try_from(recipe.byte_offset).ok()?,
+        recipe
+            .byte_offset
+            .and_then(|offset| usize::try_from(offset).ok())?,
         family_name.len(),
     )?;
     let recipe_prefix_offset = u64::try_from(recipe_prefix_at).ok()?;
     let recipe_references = decode_recipe_references(recipe_prefix_bytes, recipe_prefix_offset);
-    let recipe_program_at = usize::try_from(recipe.byte_offset)
-        .ok()?
+    let recipe_program_at = recipe
+        .byte_offset
+        .and_then(|offset| usize::try_from(offset).ok())?
         .checked_add(family_name.len())?;
     let recipe_program_end = usize::try_from(next_byte_offset).ok()?;
     if recipe_program_end.checked_sub(recipe_program_at)? > 64 * 1024 {
@@ -4938,6 +5019,7 @@ fn parse_edge_operand(
     recipes: &[ConstructionRecipe],
     terminal_group_limit: Option<u64>,
 ) -> Option<Result<DesignEdgeOperand, CodecError>> {
+    let header_offset = header.byte_offset?;
     let next_record_delta = edge_recipe_terminal_delta(&scope.kind());
     let stream = native_stream(&scope.id)?;
     let parsed = parse_recipe_operand(
@@ -4983,7 +5065,7 @@ fn parse_edge_operand(
             .strip_prefix(crate::ids::SCHEME_PREFIX)
             .unwrap_or(stream),
         ":design-edge-operand#",
-        header.byte_offset,
+        header_offset,
     );
     DesignEdgeOperand::try_new(
         crate::records::topology::edge_identity::DesignEdgeOperandDraft {
@@ -4991,7 +5073,7 @@ fn parse_edge_operand(
             scope_record_index: scope.record_index,
             scope_reference_ordinal,
             record_index: header.record_index,
-            byte_offset: header.byte_offset,
+            byte_offset: header_offset,
             class_tag: header.class_tag.clone(),
             paired_byte_offset: parsed.paired_byte_offset,
             paired_class_tag: parsed.paired_class_tag,
@@ -5680,7 +5762,8 @@ pub(super) fn parse_face_operand(
         next_byte_offset,
         header,
     } = input;
-    let start = usize::try_from(header.byte_offset).ok()?;
+    let header_offset = header.byte_offset?;
+    let start = usize::try_from(header_offset).ok()?;
     let mut offsets = [0usize; 5];
     let mut position = start.checked_add(11)?;
     for (delta, slot) in offsets[..4].iter_mut().enumerate() {
@@ -5713,8 +5796,12 @@ pub(super) fn parse_face_operand(
     let recipe_start = u64::try_from(offsets[3]).ok()?;
     let next_byte_offset = u64::try_from(offsets[4]).ok()?;
     let mut matches = recipes.iter().filter(|recipe| {
-        recipe.byte_offset > recipe_start
-            && recipe.byte_offset < next_byte_offset
+        recipe
+            .byte_offset
+            .is_some_and(|offset| offset > recipe_start)
+            && recipe
+                .byte_offset
+                .is_some_and(|offset| offset < next_byte_offset)
             && matches!(
                 recipe.kind,
                 ConstructionRecipeKind::Face | ConstructionRecipeKind::BoundedFace
@@ -5733,13 +5820,16 @@ pub(super) fn parse_face_operand(
     let (recipe_prefix_at, recipe_prefix_bytes) = recipe_record_prefix(
         bytes,
         offsets[3],
-        usize::try_from(recipe.byte_offset).ok()?,
+        recipe
+            .byte_offset
+            .and_then(|offset| usize::try_from(offset).ok())?,
         family_name_len,
     )?;
     let recipe_references =
         decode_recipe_references(recipe_prefix_bytes, u64::try_from(recipe_prefix_at).ok()?);
-    let recipe_program_at = usize::try_from(recipe.byte_offset)
-        .ok()?
+    let recipe_program_at = recipe
+        .byte_offset
+        .and_then(|offset| usize::try_from(offset).ok())?
         .checked_add(family_name_len)?;
     let recipe_program_end = usize::try_from(next_byte_offset).ok()?;
     if recipe_program_end.checked_sub(recipe_program_at)? > 64 * 1024 {
@@ -5761,7 +5851,7 @@ pub(super) fn parse_face_operand(
             .strip_prefix(crate::ids::SCHEME_PREFIX)
             .unwrap_or(stream),
         ":design-face-operand#",
-        header.byte_offset,
+        header_offset,
     );
     DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
         id,
@@ -5774,7 +5864,7 @@ pub(super) fn parse_face_operand(
             }
         }),
         record_index: header.record_index,
-        byte_offset: header.byte_offset,
+        byte_offset: header_offset,
         class_tag: header.class_tag.clone(),
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
         paired_class_tag: crate::design::decode::text::class_tag_from_view(indexed[0].0).ok()?,

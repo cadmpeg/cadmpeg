@@ -85,9 +85,9 @@ fn selection_fixture() -> (
         references: vec![
             crate::records::topology::body_recipe::DesignBodyRecipeReference {
                 design_reference: 301,
-                design_reference_offset: 25,
+                design_reference_offset: Some(25),
                 form: 33,
-                form_offset: 33,
+                form_offset: Some(33),
                 candidate_faces: vec![cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#7").unwrap()],
                 preceding_candidate_faces: Vec::new(),
                 preceding_body_slots: Vec::new(),
@@ -170,6 +170,7 @@ fn bind_direct(native_set: bool) -> BodySelection {
         );
     }
     let inputs = super::super::FeatureBodySelectionInputs {
+        parameters: &[],
         scopes: std::slice::from_ref(&scope),
         groups: &groups,
         body_recipe_operands: &operands,
@@ -240,22 +241,22 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
     };
     let recipe = ConstructionRecipe {
         id: operands[0].recipe_id.clone(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         kind: ConstructionRecipeKind::Body,
         design: Some(ConstructionRecipeDesign {
             id: RecordedValue {
                 value: "301".into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: Some(ConstructionRecipeSelector {
                 value: 9,
-                byte_offset: 0,
+                byte_offset: Some(0),
             }),
         }),
         recipe_index: 0,
         record_index: Some(RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let link = crate::records::sketch_links::PersistentDesignLink {

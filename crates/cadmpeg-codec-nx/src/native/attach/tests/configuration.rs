@@ -236,12 +236,16 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         .map(|operation| (operation.clone(), Length::new(5.1).unwrap()))
         .collect();
     let chamfer = HoleKind::Chamfer {
-        diameter: cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap(),
-        angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+        diameter: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap(),
+        ),
+        angle: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+        ),
     };
     let chamfers = operations
         .iter()
-        .map(|operation| (operation.clone(), chamfer))
+        .map(|operation| (operation.clone(), chamfer.clone()))
         .collect();
 
     ({
@@ -457,6 +461,7 @@ fn hole_package_projection_counts_uses_and_templates_over_many_packages() {
 fn current_body_writers_close_false_suppression_without_a_configuration() {
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let feature = |id: &str, ordinal, dependencies: Vec<FeatureId>, outputs: Vec<BodyId>| Feature {
+        needs_recompute: false,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -729,8 +734,14 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
     assert_eq!(
         parameters,
         std::collections::BTreeMap::from([
-            ("p1_length".to_string(), "p2_length * 2".to_string()),
-            ("p2_length".to_string(), "12.5".to_string()),
+            (
+                "p1_length".to_string(),
+                cadmpeg_ir::Dimension::Literal("p2_length * 2".into())
+            ),
+            (
+                "p2_length".to_string(),
+                cadmpeg_ir::Dimension::Literal("12.5".into())
+            ),
         ])
     );
     assert_eq!(
@@ -750,11 +761,11 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
                 parameters: std::collections::BTreeMap::from([
                     (
                         cadmpeg_core::nonblank_literal!("p1_length"),
-                        "p2_length * 2".to_string()
+                        cadmpeg_ir::Dimension::Literal("p2_length * 2".into())
                     ),
                     (
                         cadmpeg_core::nonblank_literal!("p2_length"),
-                        "12.5".to_string()
+                        cadmpeg_ir::Dimension::Literal("12.5".into())
                     ),
                 ]),
             }
@@ -820,7 +831,8 @@ fn nx_native_feature_parameters_match_the_backward_expression_scan() {
     fn backward_scan(
         uses: &[&crate::native::features::FeatureParameterUse],
         expressions: &[crate::native::om::ParameterFormula],
-    ) -> std::collections::BTreeMap<String, String> {
+    ) -> std::collections::BTreeMap<String, cadmpeg_ir::Dimension<cadmpeg_ir::features::Expression>>
+    {
         let mut parameters = std::collections::BTreeMap::new();
         for parameter_use in uses {
             let Some(expression) = expressions
@@ -835,7 +847,7 @@ fn nx_native_feature_parameters_match_the_backward_expression_scan() {
             }
             parameters.insert(
                 expression.name.as_str().to_owned(),
-                expression.expression.clone(),
+                cadmpeg_ir::Dimension::Literal(expression.expression.clone().into()),
             );
         }
         parameters

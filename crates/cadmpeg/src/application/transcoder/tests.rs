@@ -96,8 +96,10 @@ fn prepared(
         selection: TargetSelection::new(format, None),
         destination: ResolvedDestination::Stdout,
         loss_policy,
-        allow_errors: false,
-        allow_empty: false,
+        loss_floor: super::LossFloor::Info,
+        reject_errors: true,
+        // These tests isolate export planning and loss policy.
+        reject_empty: false,
     }
 }
 
@@ -233,7 +235,7 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
     );
     // The lone point is an orphan carrier, a check error the Rhino payload
     // carries. This test covers the export-loss gate, so it permits errors.
-    conversion.allow_errors = true;
+    conversion.reject_errors = false;
     let Err(error) = conversion.plan() else {
         panic!("the omitted product definition must refuse");
     };
@@ -256,10 +258,10 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
 struct NotImplementedEncoder;
 
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: cadmpeg_ir::codec::FormatId =
         cadmpeg_ir::codec::FormatId::new("not-implemented-test");
-    const NEEDS: cadmpeg_ir::codec::write::DepthNeed =
-        cadmpeg_ir::codec::write::DepthNeed::AtLeast(cadmpeg_core::decode::DecodeDepth::Full);
+    const REQUEST: cadmpeg_core::decode::DecodeDepth = cadmpeg_core::decode::DecodeDepth::Full;
     type Target = cadmpeg_ir::codec::write::target::DialectFree;
     const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;
 
@@ -491,8 +493,9 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path) -> PreparedConversion {
         export_target(TargetSelection::new(Format::Step, None)),
         &super::ConversionPolicy {
             losses: LossPolicy::Allow,
-            allow_errors: false,
-            allow_empty: false,
+            loss_floor: super::LossFloor::Info,
+            reject_errors: true,
+            reject_empty: true,
             destination: DestinationPolicy::Stdout {
                 allow_binary: false,
             },
@@ -674,8 +677,9 @@ fn a_design_arena_error_blocks_a_freecad_round_trip() {
             selection: target.selection,
             destination: ResolvedDestination::Stdout,
             loss_policy: LossPolicy::Allow,
-            allow_errors: false,
-            allow_empty: false,
+            loss_floor: super::LossFloor::Info,
+            reject_errors: true,
+            reject_empty: true,
         };
         if inject_error {
             conversion.validation.findings.push(Finding {
@@ -709,7 +713,7 @@ fn a_design_arena_error_blocks_a_freecad_round_trip() {
 
 #[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
-fn allow_errors_writes_past_a_carried_error() {
+fn default_conversion_writes_past_a_carried_error() {
     use cadmpeg_ir::report::{
         check::{Check, Finding},
         Severity,
@@ -730,10 +734,10 @@ fn allow_errors_writes_past_a_carried_error() {
         message: "synthetic document-wide error".into(),
         entity: None,
     });
-    conversion.allow_errors = true;
+    conversion.reject_errors = false;
     let planned = conversion
         .plan()
-        .expect("allow-errors permits a carried error");
+        .expect("default conversion permits a carried error");
     assert_eq!(planned.carried_errors(), 1);
 }
 
@@ -766,3 +770,108 @@ fn an_f3d_native_design_record_error_does_not_block_a_step_export() {
     assert_eq!(planned.carried_errors(), 0);
     assert!(planned.prepared().validation.findings.contains(&finding));
 }
+
+#[test]
+fn loss_floor_cli_accepts_each_severity_and_defaults_to_info() {
+    use clap::Parser;
+    for (spelling, expected) in [
+        (None, super::LossFloor::Info),
+        (Some("info"), super::LossFloor::Info),
+        (Some("warning"), super::LossFloor::Warning),
+        (Some("error"), super::LossFloor::Error),
+        (Some("blocking"), super::LossFloor::Blocking),
+    ] {
+        let mut args = vec!["cadmpeg", "convert", "input.step", "--reject-lossy"];
+        if let Some(value) = spelling {
+            args.extend(["--reject-lossy-floor", value]);
+        }
+        let crate::Command::Convert {
+            reject_lossy_floor, ..
+        } = crate::Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("expected convert command");
+        };
+        assert_eq!(reject_lossy_floor, expected);
+    }
+}
+
+#[test]
+fn loss_floors_include_their_threshold_and_all_higher_severities() {
+    use cadmpeg_ir::report::Severity;
+    let severities = [
+        Severity::Info,
+        Severity::Warning,
+        Severity::Error,
+        Severity::Blocking,
+    ];
+    for (index, floor) in [
+        super::LossFloor::Info,
+        super::LossFloor::Warning,
+        super::LossFloor::Error,
+        super::LossFloor::Blocking,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for (severity_index, severity) in severities.into_iter().enumerate() {
+            assert_eq!(floor.rejects_severity(severity), severity_index >= index);
+        }
+    }
+}
+
+#[cfg(feature = "step")]
+#[test]
+fn export_loss_gate_uses_the_configured_floor() {
+    for (floor, refuses) in [
+        (super::LossFloor::Info, true),
+        (super::LossFloor::Warning, true),
+        (super::LossFloor::Error, false),
+        (super::LossFloor::Blocking, false),
+    ] {
+        let mut conversion = prepared(
+            step_ir_with_unrepresentable_native_content(),
+            Format::Step,
+            Box::new(cadmpeg_codec_step::StepCodec::default()),
+            LossPolicy::RejectExport,
+        );
+        conversion.loss_floor = floor;
+        match conversion.plan() {
+            Err(error) if refuses => assert!(matches!(
+                error.refusal(),
+                Some(ConversionRefusal::ExportLossRejected { .. })
+            )),
+            Ok(planned) if !refuses => assert!(!planned.plan.report().losses.is_empty()),
+            outcome => panic!(
+                "unexpected outcome for floor {floor:?}: {}",
+                outcome.is_ok()
+            ),
+        }
+    }
+}
+
+#[test]
+fn conversion_refusals_are_opt_in_and_allow_flags_are_removed() {
+    use clap::Parser;
+    for flag in [None, Some("--reject-errors"), Some("--reject-empty")] {
+        let mut args = vec!["cadmpeg", "convert", "input.step"];
+        args.extend(flag);
+        let crate::Command::Convert {
+            reject_errors,
+            reject_empty,
+            ..
+        } = crate::Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("convert command");
+        };
+        assert_eq!(reject_errors, flag == Some("--reject-errors"));
+        assert_eq!(reject_empty, flag == Some("--reject-empty"));
+    }
+    for flag in ["--allow-errors", "--allow-empty"] {
+        let error =
+            crate::Cli::try_parse_from(["cadmpeg", "convert", "input.step", flag]).unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+}
+
+#[cfg(feature = "rhino")]
+mod emptiness;

@@ -1,23 +1,66 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{exact_assembly_operand_path, exact_assembly_operand_path_envelope};
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+
+// These adapters give each unchanged byte fixture its actual source session.
+fn exact_assembly_operand_path(
+    bytes: &[u8],
+    start: usize,
+    record_index: u32,
+    limit: usize,
+    link: DesignAssemblyOperandPathLink,
+    type_guid: Option<&str>,
+) -> Result<
+    Option<crate::records::feature::assembly::DesignAssemblyOperandPath>,
+    cadmpeg_core::CodecError,
+> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    super::exact_assembly_operand_path(source, start, record_index, limit, link, type_guid)
+        .map(|parsed| parsed.map(|path| path.content))
+}
+
+fn exact_assembly_operand_path_envelope(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    types: &super::StreamTypes<'_>,
+    locator_record_index: u32,
+    locator_reference_offset: u64,
+    locator_at: usize,
+) -> Result<
+    Option<crate::records::feature::assembly::DesignAssemblyOperandPath>,
+    cadmpeg_core::CodecError,
+> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    super::exact_assembly_operand_path_envelope(
+        source,
+        scope,
+        types,
+        locator_record_index,
+        locator_reference_offset,
+        locator_at,
+    )
+    .map(|parsed| parsed.map(|path| path.content))
+}
 
 const GUID: &str = "11111111-1111-1111-1111-111111111111";
 
 fn path_link() -> DesignAssemblyOperandPathLink {
     DesignAssemblyOperandPathLink {
-        locator_reference_offset: 0,
         locator_record_index: 64,
         locator_class_tag: "304".to_owned().try_into().unwrap(),
-        locator_byte_offset: 0,
-        locator_scope_reference_offset: 0,
         wrapper_record_index: 66,
-        wrapper_reference_offset: 0,
         wrapper_class_tag: "382".to_owned().try_into().unwrap(),
-        wrapper_byte_offset: 0,
-        path_reference_offset: 0,
     }
 }
 
@@ -246,7 +289,7 @@ fn typed_path_reads_a_decimal_occurrence_key() {
     let path = exact_assembly_operand_path(&bytes, 0, 65, bytes.len(), path_link(), Some(TYPED))
         .unwrap()
         .expect("typed path with a decimal key");
-    assert_eq!(path.occurrence_guids()[0].value.as_str(), "34");
+    assert_eq!(path.occurrence_guids()[0].as_str(), "34");
     assert_eq!(path.identity_guids().len(), 4);
 }
 
@@ -270,11 +313,8 @@ fn typed_path_reads_its_occurrence_identity_pairs() {
         .expect("typed path with an identity pair");
     let pairs = path.paired_occurrence_keys();
     assert_eq!(pairs.len(), 2);
-    assert_eq!(pairs[0].value.as_str(), "43");
-    assert_eq!(
-        pairs[1].value.as_str(),
-        "66666666-6666-6666-6666-666666666666"
-    );
+    assert_eq!(pairs[0].as_str(), "43");
+    assert_eq!(pairs[1].as_str(), "66666666-6666-6666-6666-666666666666");
     assert_eq!(path.identity_guids().len(), 4);
 
     // The plain zero tail has no pairs; a pair without its `u32 2` is refused.
@@ -298,3 +338,5 @@ fn typed_path_reads_its_occurrence_identity_pairs() {
             .is_none()
     );
 }
+
+mod source_layout;

@@ -50,26 +50,32 @@ fn extrusion_termination_enrichment_projects_through_all() {
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
+                sequence: 10,
+                feature_ref: None,
                 id: "extrusion-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 0,
-                offset: 10,
+                offset: Some(10),
                 value: "extrusion".into(),
                 object_id: ObjectId::from_value(10),
             },
             FeatureInputName {
+                sequence: 200,
+                feature_ref: None,
                 id: "cosmetic-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 1,
-                offset: 200,
+                offset: Some(200),
                 value: "cosmetic".into(),
                 object_id: ObjectId::from_value(11),
             },
             FeatureInputName {
+                sequence: 500,
+                feature_ref: None,
                 id: "next-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 2,
-                offset: 500,
+                offset: Some(500),
                 value: "next".into(),
                 object_id: ObjectId::from_value(12),
             },
@@ -159,10 +165,12 @@ fn legacy_face_fixture() -> (Vec<FeatureHistory>, FeatureInputLane) {
         native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 10,
+            feature_ref: None,
             id: "extrusion-name".into(),
             parent: "lane#7".into(),
             ordinal: 0,
-            offset: 10,
+            offset: Some(10),
             value: "extrusion".into(),
             object_id: ObjectId::from_value(10),
         }],
@@ -220,7 +228,10 @@ fn compact_surface_selections_refuses_legacy_path_nesting_limit() {
         DecodeContext::from_root_bytes(&lane.native_payload, &arena, &DecodePolicy::service())
             .unwrap();
     let selections = crate::resolved_features::selections::compact_surface_selections(
-        &service, &histories, &lane,
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &service,
+        &histories,
+        &lane,
     )
     .unwrap();
     assert_eq!(selections.len(), 1);
@@ -231,7 +242,10 @@ fn compact_surface_selections_refuses_legacy_path_nesting_limit() {
     let (limited, _) =
         DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
     let error = crate::resolved_features::selections::compact_surface_selections(
-        &limited, &histories, &lane,
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
+        &limited,
+        &histories,
+        &lane,
     )
     .unwrap_err();
     assert!(
@@ -273,10 +287,12 @@ fn extrusion_delimiters_end_every_successor_through_all() {
             content: Vec::new(),
         });
         names.push(FeatureInputName {
+            feature_ref: None,
             id: format!("name#{index}"),
             parent: "lane".into(),
             ordinal: index,
-            offset: u64::try_from(offset).unwrap(),
+            sequence: index,
+            offset: Some(u64::try_from(offset).unwrap()),
             object_id: ObjectId::from_value(source),
             value: name,
         });

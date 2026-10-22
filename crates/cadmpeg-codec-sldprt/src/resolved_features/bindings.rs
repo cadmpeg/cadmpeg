@@ -1,5 +1,8 @@
 //! Pattern, sweep and scalar operand lane binding.
 
+use crate::resolved_features::class_sources::ClassSources;
+mod source_order;
+
 use super::assembly::is_supplemental_config_lane;
 use super::axes::{
     compact_line_reference_directions, declared_line_reference_directions,
@@ -60,8 +63,25 @@ pub(super) fn history_metadata_ids(histories: &[crate::records::FeatureHistory])
     ids
 }
 
+/// A derived cosmetic-thread object is the pattern's generated child, so
+/// the next independent feature object closes its physical source interval.
+pub(super) fn pattern_object_end<'a>(
+    mut following: impl Iterator<Item = (usize, &'a crate::records::Feature)>,
+    payload_len: usize,
+) -> usize {
+    let next = following.next();
+    if next.is_some_and(|(_, feature)| {
+        feature.input_class.as_deref() == Some("moDerivedCosmeticThread_c")
+    }) {
+        following.next().map_or(payload_len, |(offset, _)| offset)
+    } else {
+        next.map_or(payload_len, |(offset, _)| offset)
+    }
+}
+
 /// Bind pattern operands carried by adjacent feature-input objects.
 pub(crate) fn bind_pattern_inputs(
+    class_sources: &ClassSources,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -98,23 +118,32 @@ pub(crate) fn bind_pattern_inputs(
     };
 
     for lane in lanes {
-        let discovered_identities;
-        let generated_identities = if lane.generated_surface_identities.is_empty() {
-            discovered_identities = generated_surface_identities(lane)?;
-            &discovered_identities
+        let discovered_identities = if lane.generated_surface_identities.is_empty() {
+            Some(generated_surface_identities(
+                class_sources,
+                &lane.id,
+                &lane.classes,
+                &lane.native_payload,
+            )?)
+        } else {
+            None
+        };
+        let generated_identities = if let Some(parsed) = &discovered_identities {
+            &parsed.records
         } else {
             &lane.generated_surface_identities
         };
-        // `lanes::admit` compares every stored name offset with the offset
-        // `object_names` read out of `native_payload`, so an admitted name
-        // offset is an index of that payload. It is narrowed once here, where
-        // that proof holds, and the objects below carry `usize` offsets.
+        // These are freshly scanned source objects. A native document retains
+        // typed owner links and content order instead of their physical positions.
         let names = FeatureObjectNames::new(&lane.names);
         let mut starts = history_features
             .iter()
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| {
-                let offset = usize::try_from(names.of(feature)?.offset).ok()?;
+                let offset = names
+                    .of(feature)?
+                    .offset
+                    .and_then(|offset| usize::try_from(offset).ok())?;
                 Some((offset, *feature))
             })
             .collect::<Vec<_>>();
@@ -130,11 +159,10 @@ pub(crate) fn bind_pattern_inputs(
             // payload bytes at its own offset, and `SldprtNative::load`
             // refuses a name whose offset the payload does not state.
             let pattern_object_end = || {
-                let next = start_index + 1 + usize::from(has_derived_cosmetic_thread_output);
-                match starts.get(next) {
-                    Some((offset, _)) => *offset,
-                    None => lane.native_payload.len(),
-                }
+                self::pattern_object_end(
+                    starts.iter().skip(start_index + 1).copied(),
+                    lane.native_payload.len(),
+                )
             };
             if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::MirrorPattern
@@ -264,9 +292,37 @@ pub(crate) fn bind_pattern_inputs(
                         let seed_candidates = generated_identities
                             .iter()
                             .filter(|identity| {
-                                usize::try_from(identity.offset)
-                                    .ok()
-                                    .is_some_and(|offset| (start..end).contains(&offset))
+                                if lane.generated_surface_identities.is_empty() {
+                                    discovered_identities
+                                        .as_ref()
+                                        .and_then(|parsed| parsed.frames.get(&identity.id))
+                                        .is_some_and(|frame| {
+                                            (start..end).contains(&frame.extent.start)
+                                        })
+                                } else {
+                                    // Admitted native records share one lane-wide
+                                    // source_order rank with names. Initial parser
+                                    // ordinals use the source-frame branch above.
+                                    let Some(owner) = names.of(feature) else {
+                                        return false;
+                                    };
+                                    let mut following = starts
+                                        .iter()
+                                        .skip(start_index + 1)
+                                        .map(|(_, feature)| *feature);
+                                    let mut next = following.next();
+                                    if next.is_some_and(|feature| {
+                                        feature.input_class.as_deref()
+                                            == Some("moDerivedCosmeticThread_c")
+                                    }) {
+                                        next = following.next();
+                                    }
+                                    let until = next
+                                        .and_then(|feature| names.of(feature))
+                                        .map(|name| name.sequence);
+                                    owner.sequence <= identity.sequence
+                                        && until.is_none_or(|end| identity.sequence < end)
+                                }
                             })
                             .filter(|identity| {
                                 identity.components.first().is_some_and(|component| {
@@ -324,9 +380,10 @@ pub(crate) fn bind_pattern_inputs(
                         }
                     )
                 ) {
-                    if let Some((spacing, count)) =
+                    if let Some(dimensions) =
                         object_start.filter(|start| *start < end).and_then(|start| {
                             typed_linear_pattern_dimensions(
+                                class_sources,
                                 feature,
                                 lane,
                                 start,
@@ -336,8 +393,21 @@ pub(crate) fn bind_pattern_inputs(
                     {
                         let admitted = PatternKind::new(PatternTransform::Linear {
                             direction: None,
-                            spacing,
-                            count,
+                            distance: match crate::history::project::parameter_dimension::<
+                                cadmpeg_ir::scalar::Length,
+                            >(
+                                feature, &[dimensions.spacing_name]
+                            ) {
+                                Some(dimension) => dimension.into(),
+                                None => continue,
+                            },
+                            count: match crate::history::project::parameter_dimension(
+                                feature,
+                                &[dimensions.count_name],
+                            ) {
+                                Some(dimension) => dimension,
+                                None => continue,
+                            },
                             second: None,
                         })
                         .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
@@ -394,22 +464,32 @@ pub(crate) fn bind_pattern_inputs(
                 let mut declarations = Vec::new();
                 for class in &lane.classes {
                     if class.name == "moLineRef_w"
-                        && class.offset > u64_from_index(starts[start_index].0)
-                        && class.offset < u64_from_index(end)
+                        && class_sources.position(class).is_some_and(|position| {
+                            position > u64_from_index(starts[start_index].0)
+                        })
+                        && class_sources
+                            .position(class)
+                            .is_some_and(|position| position < u64_from_index(end))
                     {
                         declarations.push(class);
                     }
                 }
                 let mut directions = Vec::new();
                 for class in &declarations {
-                    let declared =
-                        declared_line_reference_directions(&lane.native_payload, class.offset, end);
+                    let declared = declared_line_reference_directions(
+                        &lane.native_payload,
+                        class_sources.position(class),
+                        end,
+                    );
                     directions.extend(declared);
                 }
                 if let Some(start) = object_start {
                     let mut excluded_handles = Vec::new();
                     for class in &declarations {
-                        if let Ok(offset) = usize::try_from(class.offset) {
+                        if let Some(offset) = class_sources
+                            .position(class)
+                            .and_then(|offset| usize::try_from(offset).ok())
+                        {
                             excluded_handles.extend([offset + 136, offset + 144]);
                         }
                     }
@@ -595,10 +675,11 @@ pub(crate) fn bind_pattern_inputs(
             .and_then(|native| history_features.iter().find(|feature| feature.id == native));
         let parameters = native.and_then(|feature| {
             Some((
-                feature.parameters.get("D4").and_then(|value| {
-                    crate::history::literals::parse_positive_dimension_length_mm(value)
-                })?,
-                feature.parameters.get("D2")?.parse::<u32>().ok()?,
+                crate::history::project::parameter_dimension::<cadmpeg_ir::scalar::Length>(
+                    feature,
+                    &["D4"],
+                )?,
+                crate::history::project::parameter_dimension::<u32>(feature, &["D2"])?,
             ))
         });
         let mut edit_result = Ok(());
@@ -609,7 +690,7 @@ pub(crate) fn bind_pattern_inputs(
                 {
                     let PatternTransform::Linear {
                         direction,
-                        spacing,
+                        distance,
                         count,
                         second,
                     } = pattern.definition()
@@ -622,13 +703,13 @@ pub(crate) fn bind_pattern_inputs(
                         [first] if direction.is_none() => direction = Some(*first),
                         [first, second_direction] => {
                             if let (true, true, Some((spacing, count))) =
-                                (direction.is_none(), second.is_none(), parameters)
+                                (direction.is_none(), second.is_none(), parameters.clone())
                             {
                                 direction = Some(*first);
                                 second =
                                     Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                                         direction: *second_direction,
-                                        spacing,
+                                        distance: spacing.into(),
                                         count,
                                     });
                             }
@@ -637,8 +718,8 @@ pub(crate) fn bind_pattern_inputs(
                     }
                     *pattern = PatternKind::new(PatternTransform::Linear {
                         direction,
-                        spacing: *spacing,
-                        count: *count,
+                        distance: distance.clone(),
+                        count: count.clone(),
                         second,
                     })
                     .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
@@ -727,14 +808,14 @@ pub(crate) fn bind_pattern_inputs(
         else {
             continue;
         };
-        let Some(angle) = native
+        let Some(_angle) = native
             .parameters
             .get("Angle")
             .and_then(|value| parse_positive_angle_rad(value))
         else {
             continue;
         };
-        let Some(count) = native
+        let Some(_count) = native
             .parameters
             .get("Count")
             .and_then(|value| parse_count(value))
@@ -756,8 +837,17 @@ pub(crate) fn bind_pattern_inputs(
         let admitted = PatternKind::new(PatternTransform::Circular {
             axis_origin: *axis_origin,
             axis_dir: FeatureDirection3::from(*axis_dir),
-            angle,
-            count,
+            angle: match crate::history::project::parameter_dimension::<
+                cadmpeg_ir::scalar::PositiveAngle,
+            >(native, &["Angle"])
+            {
+                Some(dimension) => dimension.into(),
+                None => continue,
+            },
+            count: match crate::history::project::parameter_dimension(native, &["Count"]) {
+                Some(dimension) => dimension,
+                None => continue,
+            },
         })
         .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
         model_features[index].evaluation.edit(|definition, _| {
@@ -818,7 +908,7 @@ pub(crate) fn bind_mirror_surface_planes(
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let mut mirror_native_refs = HashSet::new();
     for feature in histories
         .iter()
@@ -850,83 +940,75 @@ pub(crate) fn bind_mirror_surface_planes(
 
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
-        let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
-            edit_result = (|| {
-                'feature_edit: {
-                    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
-                        definition
+            'feature_edit: {
+                let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+                    definition
+                else {
+                    break 'feature_edit;
+                };
+                if !pattern.is_unresolved() {
+                    break 'feature_edit;
+                }
+                let Some(native_ref) = native_ref else {
+                    break 'feature_edit;
+                };
+                if !mirror_native_refs.contains(native_ref) {
+                    break 'feature_edit;
+                }
+                let mut candidates = Vec::new();
+                for selection in lanes
+                    .iter()
+                    .filter(|lane| !is_supplemental_config_lane(lane))
+                    .flat_map(|lane| &lane.surface_selections)
+                    .filter(|selection| selection.feature_ref == native_ref)
+                {
+                    let Some(component) = selection.components.last() else {
+                        continue;
+                    };
+                    let Some(source) = View::u32_le_at(component.type_signature.as_ref(), 4)
+                        .and_then(|source| FeatureSourceId::try_from(source).ok())
                     else {
-                        break 'feature_edit;
+                        continue;
                     };
-                    if !pattern.is_unresolved() {
-                        break 'feature_edit;
-                    }
-                    let Some(native_ref) = native_ref else {
-                        break 'feature_edit;
+                    let Some(local) = component.local_id else {
+                        continue;
                     };
-                    if !mirror_native_refs.contains(native_ref) {
-                        break 'feature_edit;
-                    }
-                    let mut candidates = Vec::new();
-                    for selection in lanes
-                        .iter()
-                        .filter(|lane| !is_supplemental_config_lane(lane))
-                        .flat_map(|lane| &lane.surface_selections)
-                        .filter(|selection| selection.feature_ref == native_ref)
-                    {
-                        let Some(component) = selection.components.last() else {
-                            continue;
-                        };
-                        let Some(source) = View::u32_le_at(component.type_signature.as_ref(), 4)
-                            .and_then(|source| FeatureSourceId::try_from(source).ok())
-                        else {
-                            continue;
-                        };
-                        let Some(local) = component.local_id else {
-                            continue;
-                        };
-                        let Some([face_id]) =
-                            faces_by_identity.get(&(source, local)).map(Vec::as_slice)
-                        else {
-                            continue;
-                        };
-                        let Some(surface) = faces_by_id
-                            .get(face_id)
-                            .and_then(|face| surfaces_by_id.get(face.surface.as_str()))
-                        else {
-                            continue;
-                        };
-                        let Some(plane) = mirror_plane_from_surface(
-                            surface.geometry.solved().ok_or_else(|| {
-                                cadmpeg_core::CodecError::NotImplemented(
-                                    "carrier has no solved geometry".into(),
-                                )
-                            })?,
-                        ) else {
-                            continue;
-                        };
-                        if !candidates.contains(&plane) {
-                            candidates.push(plane);
-                        }
-                    }
-                    let [(origin, normal)] = candidates.as_slice() else {
-                        break 'feature_edit;
+                    let Some([face_id]) =
+                        faces_by_identity.get(&(source, local)).map(Vec::as_slice)
+                    else {
+                        continue;
                     };
-                    if let Ok(admitted) = PatternKind::new(PatternTransform::Mirror {
-                        plane_origin: *origin,
-                        plane_normal: cadmpeg_ir::features::FeatureDirection3::from(*normal),
-                    }) {
-                        *pattern = admitted;
+                    let Some(surface) = faces_by_id
+                        .get(face_id)
+                        .and_then(|face| surfaces_by_id.get(face.surface.as_str()))
+                    else {
+                        continue;
+                    };
+                    // An unsolved carrier leaves this typed native selection
+                    // unresolved; the feature projection reports its fidelity.
+                    let Some(geometry) = surface.geometry.solved() else {
+                        continue;
+                    };
+                    let Some(plane) = mirror_plane_from_surface(geometry) else {
+                        continue;
+                    };
+                    if !candidates.contains(&plane) {
+                        candidates.push(plane);
                     }
                 }
-                Ok::<_, cadmpeg_core::CodecError>(())
-            })();
+                let [(origin, normal)] = candidates.as_slice() else {
+                    break 'feature_edit;
+                };
+                if let Ok(admitted) = PatternKind::new(PatternTransform::Mirror {
+                    plane_origin: *origin,
+                    plane_normal: cadmpeg_ir::features::FeatureDirection3::from(*normal),
+                }) {
+                    *pattern = admitted;
+                }
+            }
         });
-        edit_result?;
     }
-
-    Ok(())
 }
 
 pub(crate) fn bind_sweep_adjacent_profiles(
@@ -1065,11 +1147,16 @@ pub(crate) fn bind_scalar_operands(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
+    sources: &mut super::body_sources::BodySources<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    sources.capture_classes(ctx, lanes.iter())?;
+    let class_sources = sources.class_sources();
+
     let represented_sketches = represented_sketch_features(histories, lanes);
     let metadata_ids = history_metadata_ids(histories);
     let features_by_id = crate::records::HistoryFeatures::new(histories);
     for lane in lanes {
+        super::reference_layout::capture(ctx, lane, sources)?;
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
             entity.links = None;
@@ -1090,7 +1177,8 @@ pub(crate) fn bind_scalar_operands(
                 entity.feature_ref = Some(feature_id.to_owned());
             }
             for reference in lane.references.iter_mut().filter(|reference| {
-                reference.offset > start && end.is_none_or(|end| reference.offset < end)
+                sources.pointer(&reference.id) > start
+                    && end.is_none_or(|end| sources.pointer(&reference.id) < end)
             }) {
                 reference.feature_ref = Some(feature_id.to_owned());
             }
@@ -1102,7 +1190,7 @@ pub(crate) fn bind_scalar_operands(
                 scalar.feature_ref = Some(feature_id.to_owned());
             }
         }
-        bind_detached_legacy_sketch_objects(ctx, histories, &represented_sketches, lane)?;
+        bind_detached_legacy_sketch_objects(ctx, histories, &represented_sketches, lane, sources)?;
         for pair in starts.windows(2) {
             let [(_, parent_id), (child_start, child_id)] = pair else {
                 continue;
@@ -1133,7 +1221,10 @@ pub(crate) fn bind_scalar_operands(
                 scalar.feature_ref = Some((*parent_id).to_owned());
             }
         }
-        finalize_lane_bindings(ctx, histories, lane)?;
+        let source = sources.view(lane)?;
+        lane.body_selections =
+            compact_body_selections(&class_sources, ctx, source, sources, histories, lane)?;
+        finalize_lane_bindings(ctx, histories, lane, sources)?;
     }
     Ok(())
 }
@@ -1142,7 +1233,11 @@ pub(crate) fn finalize_lane_bindings(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &mut FeatureInputLane,
+    sources: &mut super::body_sources::BodySources<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let class_sources =
+        super::class_sources::ClassSources::from_source(ctx, sources.view(lane)?, &lane.classes)?;
+
     normalize_indexed_curve_entities(lane);
     let mut marker_ids = HashMap::<String, HashMap<u32, Vec<(String, bool)>>>::new();
     for entity in &lane.sketch_entities {
@@ -1157,7 +1252,10 @@ pub(crate) fn finalize_lane_bindings(
         }
     }
     for entity in &mut lane.sketch_entities {
-        let Ok(offset) = usize::try_from(entity.offset()) else {
+        let Some(offset) = entity
+            .offset()
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
             continue;
         };
         let local_links =
@@ -1225,12 +1323,27 @@ pub(crate) fn finalize_lane_bindings(
             .map(str::to_owned);
     }
     let intervals = feature_intervals(histories, lane);
-    lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &intervals)?;
-    lane.relation_instances = relation_instances(histories, lane)?;
-    lane.body_selections = compact_body_selections(histories, lane)?;
-    lane.edge_selections = compact_edge_selections(ctx, histories, lane)?;
-    lane.surface_selections = compact_surface_selections(ctx, histories, lane)?;
-    lane.generated_surface_identities = generated_surface_identities(lane)?;
+    lane.relation_bindings = relation_bindings(
+        &class_sources,
+        &lane.id,
+        &lane.classes,
+        &lane.scalars,
+        &intervals,
+    )?;
+    lane.relation_instances = relation_instances(&class_sources, histories, lane)?;
+    lane.edge_selections = compact_edge_selections(&class_sources, ctx, histories, lane)?.records;
+    lane.surface_selections = compact_surface_selections(&class_sources, ctx, histories, lane)?;
+    lane.generated_surface_identities = generated_surface_identities(
+        &class_sources,
+        &lane.id,
+        &lane.classes,
+        &lane.native_payload,
+    )?
+    .records;
+    super::relation_layout::capture(ctx, lane, sources)?;
+    super::generated_surface_layout::capture(ctx, lane, sources)?;
+    super::edge_selection_layout::capture(ctx, histories, lane, sources)?;
+    source_order::finalize(&class_sources, histories, lane, sources.pointers())?;
     Ok(())
 }
 
@@ -1277,6 +1390,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
     model_features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
+    sources: &mut super::body_sources::BodySources<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut unresolved = HashSet::new();
     for feature in model_features {
@@ -1305,8 +1419,8 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
         .iter_mut()
         .filter(|lane| is_supplemental_config_lane(lane))
     {
-        bind_detached_legacy_sketch_objects(ctx, histories, &represented, lane)?;
-        finalize_lane_bindings(ctx, histories, lane)?;
+        bind_detached_legacy_sketch_objects(ctx, histories, &represented, lane, sources)?;
+        finalize_lane_bindings(ctx, histories, lane, sources)?;
     }
     Ok(())
 }
@@ -1316,7 +1430,10 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     histories: &[crate::records::FeatureHistory],
     represented: &HashSet<String>,
     lane: &mut FeatureInputLane,
+    sources: &super::body_sources::BodySources<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let class_sources = sources.class_sources();
+
     const OBJECT_GAP: u64 = 4096;
 
     if !is_supplemental_config_lane(lane) {
@@ -1326,21 +1443,26 @@ pub(super) fn bind_detached_legacy_sketch_objects(
         .classes
         .iter()
         .find(|class| class.name == "moFeatureDimHandle_c")
-        .map_or_else(
-            || u64_from_index(lane.native_payload.len()),
-            |class| class.offset,
-        );
-    let relation_bindings = bind_detached_spatial_relation_objects(histories, represented, lane);
+        .and_then(|class| class_sources.position(class))
+        .unwrap_or_else(|| u64_from_index(lane.native_payload.len()));
+    let relation_bindings = bind_detached_spatial_relation_objects(
+        &class_sources,
+        histories,
+        represented,
+        lane,
+        sources,
+    );
     let markers = lane
         .sketch_entities
         .iter()
-        .filter(|entity| entity.offset() < limit)
+        .filter(|entity| entity.offset().is_some_and(|position| position < limit))
         .filter(|entity| {
-            relation_bindings
-                .iter()
-                .all(|(start, end, _)| entity.offset() < *start || entity.offset() >= *end)
+            relation_bindings.iter().all(|(start, end, _)| {
+                entity.offset().is_some_and(|position| position < *start)
+                    || entity.offset().is_some_and(|position| position >= *end)
+            })
         })
-        .map(crate::records::SketchInputEntity::offset)
+        .filter_map(crate::records::SketchInputEntity::offset)
         .collect::<Vec<_>>();
     let Some(&first) = markers.first() else {
         return Ok(());
@@ -1375,67 +1497,82 @@ pub(super) fn bind_detached_legacy_sketch_objects(
 
     for (index, (&start, (_, owner))) in starts.iter().zip(owners).enumerate() {
         let end = starts.get(index + 1).copied().unwrap_or(limit);
-        for entity in lane
-            .sketch_entities
-            .iter_mut()
-            .filter(|entity| entity.offset() >= start && entity.offset() < end)
-        {
+        for entity in lane.sketch_entities.iter_mut().filter(|entity| {
+            entity
+                .offset()
+                .is_some_and(|position| position >= start && position < end)
+        }) {
             entity.feature_ref = Some(owner.id.clone());
         }
-        for reference in lane
-            .references
-            .iter_mut()
-            .filter(|reference| reference.offset >= start && reference.offset < end)
-        {
+        for reference in lane.references.iter_mut().filter(|reference| {
+            sources
+                .pointer(&reference.id)
+                .is_some_and(|position| position >= start && position < end)
+        }) {
             reference.feature_ref = Some(owner.id.clone());
         }
-        for scalar in lane
-            .scalars
-            .iter_mut()
-            .filter(|scalar| scalar.offset >= start && scalar.offset < end)
-        {
+        for scalar in lane.scalars.iter_mut().filter(|scalar| {
+            scalar
+                .offset
+                .is_some_and(|position| position >= start && position < end)
+        }) {
             scalar.feature_ref = Some(owner.id.clone());
         }
     }
     Ok(())
 }
 
-pub(super) fn spatial_relation_manager_ranges(lane: &FeatureInputLane) -> Vec<(u64, u64)> {
-    let mut ranges = spatial_relation_manager_candidates(lane).collect::<Vec<_>>();
+pub(super) fn spatial_relation_manager_ranges(
+    class_sources: &ClassSources,
+    lane: &FeatureInputLane,
+) -> Vec<(u64, u64)> {
+    let mut ranges = spatial_relation_manager_candidates(class_sources, lane).collect::<Vec<_>>();
     ranges.sort_unstable_by(Ord::cmp);
     ranges.dedup();
     ranges
 }
 
-fn spatial_relation_manager_candidates(
-    lane: &FeatureInputLane,
-) -> impl Iterator<Item = (u64, u64)> + '_ {
+fn spatial_relation_manager_candidates<'a>(
+    class_sources: &'a ClassSources,
+    lane: &'a FeatureInputLane,
+) -> impl Iterator<Item = (u64, u64)> + 'a {
     lane.classes
         .iter()
         .filter(|class| class.name == "sg3DPlaneHandle")
-        .filter_map(|plane| {
-            let start = lane
-                .classes
-                .iter()
-                .filter(|class| class.name == "moRelMgr_c" && class.offset < plane.offset)
-                .max_by_key(|class| class.offset)?
-                .offset;
-            let end = lane
-                .classes
-                .iter()
-                .filter(|class| class.name == "suObList" && class.offset > plane.offset)
-                .min_by_key(|class| class.offset)?
-                .offset;
-            (start < plane.offset && plane.offset < end).then_some((start, end))
+        .filter_map(move |plane| {
+            let start = class_sources.position(
+                lane.classes
+                    .iter()
+                    .filter(|class| {
+                        class.name == "moRelMgr_c"
+                            && class_sources.position(class) < class_sources.position(plane)
+                    })
+                    .max_by_key(|class| class_sources.position(class))?,
+            )?;
+            let end = class_sources.position(
+                lane.classes
+                    .iter()
+                    .filter(|class| {
+                        class.name == "suObList"
+                            && class_sources.position(class) > class_sources.position(plane)
+                    })
+                    .min_by_key(|class| class_sources.position(class))?,
+            )?;
+            (class_sources
+                .position(plane)
+                .is_some_and(|position| start < position && position < end))
+            .then_some((start, end))
         })
 }
 
 fn bind_detached_spatial_relation_objects(
+    class_sources: &ClassSources,
     histories: &[crate::records::FeatureHistory],
     represented: &HashSet<String>,
     lane: &mut FeatureInputLane,
+    sources: &super::body_sources::BodySources<'_>,
 ) -> Vec<(u64, u64, String)> {
-    let ranges = spatial_relation_manager_ranges(lane);
+    let ranges = spatial_relation_manager_ranges(class_sources, lane);
     if ranges.is_empty() {
         return Vec::new();
     }
@@ -1475,7 +1612,10 @@ fn bind_detached_spatial_relation_objects(
         let scalars = lane
             .scalars
             .iter()
-            .filter(|scalar| scalar.offset > start && scalar.offset < end)
+            .filter(|scalar| {
+                scalar.offset.is_some_and(|position| position > start)
+                    && scalar.offset.is_some_and(|position| position < end)
+            })
             .filter(|scalar| scalar.role != crate::records::FeatureInputScalarRole::Display)
             .filter_map(|scalar| {
                 Some((
@@ -1534,25 +1674,26 @@ fn bind_detached_spatial_relation_objects(
         }
     }
     for (start, end, owner) in &bound {
-        for entity in lane
-            .sketch_entities
-            .iter_mut()
-            .filter(|entity| entity.offset() > *start && entity.offset() < *end)
-        {
+        for entity in lane.sketch_entities.iter_mut().filter(|entity| {
+            entity.offset().is_some_and(|position| position > *start)
+                && entity.offset().is_some_and(|position| position < *end)
+        }) {
             entity.feature_ref = Some(owner.to_owned());
         }
-        for reference in lane
-            .references
-            .iter_mut()
-            .filter(|reference| reference.offset > *start && reference.offset < *end)
-        {
+        for reference in lane.references.iter_mut().filter(|reference| {
+            sources
+                .pointer(&reference.id)
+                .is_some_and(|position| position > *start)
+                && sources
+                    .pointer(&reference.id)
+                    .is_some_and(|position| position < *end)
+        }) {
             reference.feature_ref = Some(owner.to_owned());
         }
-        for scalar in lane
-            .scalars
-            .iter_mut()
-            .filter(|scalar| scalar.offset > *start && scalar.offset < *end)
-        {
+        for scalar in lane.scalars.iter_mut().filter(|scalar| {
+            scalar.offset.is_some_and(|position| position > *start)
+                && scalar.offset.is_some_and(|position| position < *end)
+        }) {
             scalar.feature_ref = Some(owner.to_owned());
         }
     }
@@ -1580,7 +1721,7 @@ pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
         let Some(feature) = curve.feature_ref.as_deref() else {
             continue;
         };
-        let Some(offset) = index_from_u64(curve.offset()) else {
+        let Some(offset) = curve.offset().and_then(index_from_u64) else {
             continue;
         };
         let Some(indices) = wide_indexed_curve_endpoint_indices(&lane.native_payload, offset)
@@ -1632,12 +1773,17 @@ pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
             continue;
         };
         if marker.coordinates_m.is_none() {
-            marker.coordinates_m = linked_endpoint_coordinates.get(&marker.offset()).copied();
+            marker.coordinates_m = marker
+                .offset()
+                .and_then(|position| linked_endpoint_coordinates.get(&position))
+                .copied();
         }
         if (endpoints
             .get(feature)
             .is_some_and(|indices| indices.contains(&index))
-            || linked_endpoint_coordinates.contains_key(&marker.offset()))
+            || marker
+                .offset()
+                .is_some_and(|position| linked_endpoint_coordinates.contains_key(&position)))
             && marker.coordinates_m.is_some()
         {
             marker.reclassify(SketchInputKind::Point);
@@ -1655,9 +1801,12 @@ fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
         let markers = super::endpoints::coordinate_rosters::CoordinateRosters::new(markers);
         let mut selected = HashSet::new();
         for curve in markers.iter().copied().filter(|curve| {
-            index_from_u64(curve.offset()).is_some_and(|offset| {
-                marker_is_selected_construction_line(&lane.native_payload, offset)
-            })
+            curve
+                .offset()
+                .and_then(index_from_u64)
+                .is_some_and(|offset| {
+                    marker_is_selected_construction_line(&lane.native_payload, offset)
+                })
         }) {
             for marker in
                 marker_curve_endpoint_markers(&lane.native_payload, curve, &markers_by_id, &markers)

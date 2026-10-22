@@ -24,7 +24,6 @@ pub(crate) const CLASS: Uuid = Uuid::from_canonical([
 
 #[derive(Debug, Clone)]
 pub(crate) struct Cage {
-    pub(crate) source_range: Range<usize>,
     pub(crate) dimension: usize,
     pub(crate) orders: [usize; 3],
     pub(crate) counts: [usize; 3],
@@ -283,7 +282,6 @@ pub(crate) fn decode_at(
         .map_err(|error| refused(body.position(), &error))?;
     Ok((
         Cage {
-            source_range: offset..chunk.next_offset(),
             dimension,
             orders,
             counts,

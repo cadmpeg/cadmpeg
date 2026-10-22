@@ -102,6 +102,40 @@ pub struct CatiaCodec;
 
 impl CodecBackend for CatiaCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+
+    fn validate_native(
+        _ctx: &DecodeContext<'_>,
+        ir: &cadmpeg_ir::CadIr,
+    ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+        let Some(namespace) = ir.native.namespace("catia") else {
+            return Ok(Vec::new());
+        };
+        let Some(records) = namespace.arenas().get("display_colors") else {
+            return Ok(Vec::new());
+        };
+        let mut findings = Vec::new();
+        for record in records {
+            let fields = record.fields()?;
+            let valid = fields
+                .get("appearance")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|id| {
+                    ir.model
+                        .appearances
+                        .iter()
+                        .any(|appearance| appearance.id.as_str() == id)
+                });
+            if !valid || fields.contains_key("rgba") {
+                findings.push(cadmpeg_ir::report::check::Finding {
+                    check: cadmpeg_ir::report::check::Check::NativeLinks,
+                    severity: cadmpeg_ir::report::Severity::Error,
+                    message: "CATIA display-color source must link its canonical neutral appearance without a duplicate color".into(),
+                    entity: Some(record.id().to_owned()), related: Vec::new(),
+                });
+            }
+        }
+        Ok(findings)
+    }
     fn detect_impl(
         &self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,

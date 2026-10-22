@@ -4,7 +4,7 @@
 
 use serde::{ser::SerializeMap, Deserialize, Serialize};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 use std::collections::{HashMap, HashSet};
@@ -16,10 +16,9 @@ use crate::records::{
     FeatureInputScalar, FeatureInputSurfaceSelection, PmiDimension,
 };
 
-use crate::resolved_features::feature_sources::FeatureSources;
-
-const SLDPRT_ARENA_NAMES: &[&str] = &[
+pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "configurations",
+    "document_metadata",
     "feature_histories",
     "feature_input_body_selections",
     "feature_input_classes",
@@ -72,7 +71,7 @@ impl Serialize for LaneArenaView<'_> {
         if self.0.configuration.is_some() {
             map.serialize_entry("configuration", &self.0.configuration)?;
         }
-        map.serialize_entry("native_payload", &self.0.native_payload)?;
+        map.serialize_entry("payload_evidence", &self.0.native_payload)?;
         for field in [
             "classes",
             "names",
@@ -121,6 +120,16 @@ macro_rules! lane_family {
 }
 
 const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
+    SldprtFamilyRow {
+        arena: "document_metadata",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.document_metadata)
+        },
+        len: |model| model.document_metadata.len(),
+        counts_toward_emptiness: true,
+    },
     SldprtFamilyRow {
         arena: "feature_histories",
         exactness: (),
@@ -306,8 +315,21 @@ pub(crate) struct SldprtNative {
     pub(crate) feature_input_lanes: Vec<FeatureInputLane>,
     /// Semantic dimensions decoded from `PMISemanticDataDB`.
     pub(crate) pmi_dimensions: Vec<PmiDimension>,
+    /// Typed document metadata retained when the neutral model is not delivered.
+    pub(crate) document_metadata: Vec<DocumentMetadata>,
 }
 
+/// Model metadata remains queryable without claiming a delivered neutral model.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DocumentMetadata {
+    pub(crate) id: cadmpeg_core::text::NonBlankString,
+    pub(crate) attributes: Vec<cadmpeg_ir::attributes::SourceAttribute>,
+    pub(crate) pmi: Vec<cadmpeg_ir::pmi::PmiAnnotation>,
+    pub(crate) semantic_annotations: Vec<cadmpeg_ir::semantic_annotations::SemanticAnnotation>,
+}
+
+#[cfg(test)]
 pub(crate) mod lanes;
 
 impl SldprtNative {
@@ -340,6 +362,7 @@ impl SldprtNative {
                 .map(crate::records::FeatureInputLaneWire::admit)
                 .collect::<Result<Vec<_>, _>>()?,
             pmi_dimensions: read_arena!("pmi_dimensions"),
+            document_metadata: read_arena!("document_metadata"),
         };
         let configurations: Vec<crate::records::Configuration> = read_arena!("configurations");
         let features: Vec<crate::records::Feature> = read_arena!("features");
@@ -420,10 +443,7 @@ impl SldprtNative {
                     wire.id, wire.parent
                 )));
             };
-            entities.push(
-                crate::records::SketchInputEntity::try_from_wire(wire, payload)
-                    .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?,
-            );
+            entities.push(crate::records::SketchInputEntity::from_wire(wire, payload));
         }
         if let Some(record) = classes
             .iter()
@@ -563,17 +583,6 @@ impl SldprtNative {
                     .terminal_feature_ref
                     .as_deref()
                     .is_some_and(|feature| !feature_ids.contains(feature))
-                || record.endpoint_selector().is_some_and(|selector| {
-                    usize::try_from(record.offset)
-                        .ok()
-                        .and_then(|offset| offset.checked_sub(4))
-                        .and_then(|offset| {
-                            lane_payloads
-                                .get(record.parent.as_str())
-                                .and_then(|payload| View::u32_le_at(payload, offset))
-                        })
-                        != Some(selector)
-                })
         }) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "feature-input surface selection {} has unresolved ownership",
@@ -595,7 +604,7 @@ impl SldprtNative {
             .collect::<HashMap<_, _>>();
         let ids = RecordIds::new(&classes, &scalars, &names);
         if let Some(record) = relation_bindings.iter().find(|record| {
-            !ids.classes.contains_key(record.class_ref.as_str())
+            !relation_binding_family_valid(record, &ids)
                 || !ids.scalars.contains_key(record.scalar_ref.as_str())
                 || record
                     .feature_ref
@@ -603,7 +612,7 @@ impl SldprtNative {
                     .is_some_and(|feature| !feature_ids.contains(feature))
         }) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "feature-input relation binding {} has an unresolved class or scalar",
+                "feature-input relation binding {} has an unresolved or inconsistent relation class or scalar",
                 record.id
             )));
         }
@@ -651,9 +660,7 @@ impl SldprtNative {
                         scalar.id, operand.reference_ref
                     )));
                 };
-                if reference.offset != operand.offset
-                    || reference.kind != operand.kind
-                    || reference.object_index != operand.entity_index
+                if reference.kind != operand.kind || reference.object_index != operand.entity_index
                 {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input scalar {} has inconsistent cell {}",
@@ -725,68 +732,18 @@ impl SldprtNative {
             lane.relation_instances.sort_by_key(|left| left.ordinal);
             lane.body_selections = children(&body_selections_by_parent, &lane.id);
             lane.body_selections.sort_by_key(|left| left.ordinal);
-            for record in &lane.body_selections {
-                if body_selection_disagrees_with_payload(lane, record) {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                        "feature-input body selection {} disagrees with its payload",
-                        record.id
-                    )));
-                }
-            }
             lane.edge_selections = children(&edge_selections_by_parent, &lane.id);
             lane.edge_selections.sort_by_key(|left| left.ordinal);
             lane.surface_selections = children(&surface_selections_by_parent, &lane.id);
             lane.surface_selections.sort_by_key(|left| left.ordinal);
-            let lane_features = FeatureSources::for_lane(&features, lane);
-            for record in &lane.edge_selections {
-                if edge_selection_disagrees_with_payload(ctx, lane, record, &lane_features)? {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                        "feature-input edge selection {} disagrees with its payload",
-                        record.id
-                    )));
-                }
-                let references = match usize::try_from(record.offset) {
-                    Ok(offset) => {
-                        let feature_kind = features_by_id
-                            .get(record.feature_ref.as_str())
-                            .map(|feature| feature.kind.as_str())
-                            .unwrap_or_default();
-                        crate::resolved_features::selections::compact_edge_reference_list_for_feature(
-                            &lane.native_payload, offset, feature_kind,
-                        )
-                    }
-                    Err(_) => None,
-                };
-                let disagreement = references.unwrap_or_default() != record.references;
-                if disagreement {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                        "feature-input edge selection {} disagrees with its payload",
-                        record.id
-                    )));
-                }
-            }
-            for record in &lane.surface_selections {
-                if surface_selection_disagrees_with_payload(ctx, lane, record, &lane_features)? {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                        "feature-input surface selection {} disagrees with its payload",
-                        record.id
-                    )));
-                }
-            }
             let mut records = children(&generated_surface_identities_by_parent, &lane.id);
             records.sort_by_key(|left| left.ordinal);
             lane.generated_surface_identities = records;
-            if generated_surface_identities_disagree_with_payload(lane)? {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "feature-input lane {} generated surface identities disagree with its payload",
-                    lane.id
-                )));
-            }
             lane.sketch_entities = children(&entities_by_parent, &lane.id);
             lane.sketch_entities
                 .sort_by_key(super::records::SketchInputEntity::ordinal);
         }
-        lanes::admit(&native, ctx)?;
+        native.validate_records()?;
         Ok(native)
     }
 
@@ -795,9 +752,14 @@ impl SldprtNative {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        // Load admits every record against the lane payload it is derived from;
-        // that is the boundary a hand-written namespace crosses. Store holds the
-        // relations between records that no single payload derives.
+        self.validate_records()?;
+        SLDPRT_CATALOGUE.emit_all(ctx, self, namespace)?;
+        Ok(())
+    }
+
+    fn validate_records(&self) -> Result<(), cadmpeg_ir::NativeConvertError> {
+        // Typed records are admitted against their document-owned relationships.
+        // Physical framing was checked by the source scanner before projection.
         for history in &self.feature_histories {
             if let Some(record) = history
                 .configurations
@@ -830,6 +792,25 @@ impl SldprtNative {
             .map(|feature| feature.id.as_str())
             .collect::<HashSet<_>>();
         for lane in &self.feature_input_lanes {
+            for (id, owner) in lane
+                .classes
+                .iter()
+                .map(|record| (&record.id, &record.feature_ref))
+                .chain(
+                    lane.names
+                        .iter()
+                        .map(|record| (&record.id, &record.feature_ref)),
+                )
+            {
+                if owner
+                    .as_ref()
+                    .is_some_and(|owner| !feature_ids.contains(owner.as_str()))
+                {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "feature-input record {id} references an absent feature owner"
+                    )));
+                }
+            }
             let name_ids = lane
                 .names
                 .iter()
@@ -870,24 +851,13 @@ impl SldprtNative {
                         record.id
                     )));
                 }
-                let invalid = body_state_ids_disagree_with_payload(lane, record)
-                    || body_selection_disagrees_with_payload(lane, record);
-                if invalid {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                        "feature-input body selection {} has inconsistent ownership",
-                        record.id
-                    )));
-                }
             }
-            let lane_features = FeatureSources::for_lane_iter(features.iter().copied(), lane);
             for record in &lane.edge_selections {
                 let invalid = record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.local_edge_ids.is_empty();
-                if invalid
-                    || edge_selection_disagrees_with_payload(ctx, lane, record, &lane_features)?
-                {
+                if invalid {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input edge selection {} has inconsistent ownership",
                         record.id
@@ -899,9 +869,7 @@ impl SldprtNative {
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.components.is_empty();
-                if invalid
-                    || surface_selection_disagrees_with_payload(ctx, lane, record, &lane_features)?
-                {
+                if invalid {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input surface selection {} has inconsistent ownership",
                         record.id
@@ -932,7 +900,7 @@ impl SldprtNative {
             }
             if let Some(record) = lane.relation_bindings.iter().find(|record| {
                 record.parent != lane.id
-                    || !ids.classes.contains_key(record.class_ref.as_str())
+                    || !relation_binding_family_valid(record, &ids)
                     || !ids.scalars.contains_key(record.scalar_ref.as_str())
                     || record
                         .feature_ref
@@ -1019,8 +987,7 @@ impl SldprtNative {
                             scalar.id, operand.reference_ref
                         )));
                     };
-                    if reference.offset != operand.offset
-                        || reference.kind != operand.kind
+                    if reference.kind != operand.kind
                         || reference.object_index != operand.entity_index
                     {
                         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -1077,152 +1044,8 @@ impl SldprtNative {
                 }
             }
         }
-        let history_lanes = self
-            .feature_input_lanes
-            .iter()
-            .filter(|lane| !crate::resolved_features::assembly::is_supplemental_config_lane(lane))
-            .collect::<Vec<_>>();
-        let expected_classes = crate::resolved_features::classes::history_classes(
-            &self.feature_histories,
-            &history_lanes,
-        );
-        if features
-            .iter()
-            .zip(expected_classes)
-            .any(|(feature, expected)| feature.input_class.as_deref() != expected)
-        {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                "history feature classes do not match the feature-input index".into(),
-            ));
-        }
-        SLDPRT_CATALOGUE.emit_all(ctx, self, namespace)?;
         Ok(())
     }
-}
-
-fn generated_surface_identities_disagree_with_payload(
-    lane: &FeatureInputLane,
-) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    Ok(lane.generated_surface_identities
-        != crate::resolved_features::selections::generated_surface_identities(lane)?)
-}
-
-fn body_state_ids_disagree_with_payload(
-    lane: &FeatureInputLane,
-    record: &FeatureInputBodySelection,
-) -> bool {
-    crate::resolved_features::selections::compact_body_state_ids_for_selection(lane, record)
-        != record.body_state_ids
-}
-
-/// `true` when a body selection disagrees with the compact selection in its lane payload.
-fn body_selection_disagrees_with_payload(
-    lane: &FeatureInputLane,
-    record: &FeatureInputBodySelection,
-) -> bool {
-    let selection = match usize::try_from(record.offset) {
-        Ok(offset) => crate::resolved_features::selections::compact_body_selection_at(
-            &lane.native_payload,
-            offset,
-        ),
-        Err(_) => None,
-    };
-    selection.as_ref() != Some(&record.local_body_ids)
-        || crate::resolved_features::selections::compact_body_retention_mode_for_selection(
-            lane, record,
-        ) != record.mode
-}
-
-/// `true` when an edge selection disagrees with the compact selection in its lane payload.
-///
-/// `edge_features` are the history features with this lane's object sources.
-fn edge_selection_disagrees_with_payload(
-    ctx: &DecodeContext<'_>,
-    lane: &FeatureInputLane,
-    record: &FeatureInputEdgeSelection,
-    edge_features: &FeatureSources<'_>,
-) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    Ok(match usize::try_from(record.offset) {
-        Ok(offset) => crate::resolved_features::selections::compact_edge_selection_at(
-            ctx,
-            &lane.native_payload,
-            offset,
-        )?,
-        Err(_) => None,
-    }
-    .as_ref()
-        != Some(&record.local_edge_ids)
-        || match usize::try_from(record.offset) {
-            Ok(offset) => crate::resolved_features::selections::compact_edge_component_path_at(
-                ctx,
-                &lane.native_payload,
-                offset,
-            )?,
-            Err(_) => None,
-        }
-        .unwrap_or_default()
-            != record.components
-        || match usize::try_from(record.offset) {
-            Ok(offset) => crate::resolved_features::selections::compact_edge_producer_features_at(
-                ctx,
-                &lane.native_payload,
-                offset,
-                &record.components,
-                edge_features,
-                &record.feature_ref,
-            )?,
-            Err(_) => Vec::new(),
-        } != record.producer_feature_refs
-        || match usize::try_from(record.offset) {
-            Ok(offset) => crate::resolved_features::selections::compact_edge_owner_feature_at(
-                ctx,
-                &lane.native_payload,
-                offset,
-                &record.components,
-                edge_features,
-                &record.feature_ref,
-            )?,
-            Err(_) => None,
-        } != record.terminal_feature_ref)
-}
-
-/// `true` when a surface selection disagrees with the compact reference in its lane payload.
-///
-/// `surface_features` are the history features with this lane's object sources.
-fn surface_selection_disagrees_with_payload(
-    ctx: &DecodeContext<'_>,
-    lane: &FeatureInputLane,
-    record: &FeatureInputSurfaceSelection,
-    surface_features: &FeatureSources<'_>,
-) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    // An offset no index can name names no byte of the payload in memory, so
-    // the selection states nothing the payload agrees with.
-    let matches_payload = match usize::try_from(record.offset) {
-        Ok(offset) => crate::resolved_features::selections::surface_reference_matches_at(
-            ctx,
-            &lane.native_payload,
-            offset,
-            &record.components,
-        )?,
-        Err(_) => false,
-    };
-    Ok(!matches_payload
-        || crate::resolved_features::component_paths::surface_selection_producer_features(
-            &record.components,
-            record.terminal_feature_ref.as_deref(),
-            surface_features,
-        ) != record.producer_feature_refs
-        || match usize::try_from(record.offset) {
-            Ok(offset) => {
-                crate::resolved_features::selections::surface_selection_terminal_feature_at(
-                    &lane.native_payload,
-                    offset,
-                    &record.components,
-                    surface_features,
-                )
-            }
-            Err(_) => None,
-        } != record.terminal_feature_ref)
 }
 
 /// References to `records` grouped by parent id, each group in source order.
@@ -1280,6 +1103,21 @@ impl<'a> RecordIds<'a> {
     }
 }
 
+fn relation_binding_family_valid(
+    record: &FeatureInputRelationBinding,
+    ids: &RecordIds<'_>,
+) -> bool {
+    ids.classes
+        .get(record.class_ref.as_str())
+        .is_some_and(|class| {
+            matches!(
+                crate::classification::native_object_class(&class.name),
+                crate::classification::NativeClassKind::SketchRelation(family)
+                    if family == record.family
+            )
+        })
+}
+
 fn relation_instance_shape_valid(
     record: &FeatureInputRelationInstance,
     ids: &RecordIds<'_>,
@@ -1331,7 +1169,7 @@ fn relation_instance_shape_valid(
     let Some((_, first)) = ids.scalars.get(record.scalar_refs()[0].as_str()) else {
         return false;
     };
-    if first.offset != record.offset || !scalar_operands_match(first) {
+    if first.sequence != record.sequence || !scalar_operands_match(first) {
         return false;
     }
     let mut last_operand_position = None;

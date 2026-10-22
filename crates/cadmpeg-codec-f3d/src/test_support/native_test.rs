@@ -11,6 +11,50 @@ use cadmpeg_ir::codec::write::Encoder;
 
 use crate::F3dCodec;
 
+pub(crate) fn timestamp_attribute(
+    ordinal: u32,
+    target: cadmpeg_ir::attributes::AttributeTarget,
+    value: cadmpeg_ir::scalar::FiniteReal,
+) -> cadmpeg_ir::attributes::SourceAttribute {
+    use cadmpeg_ir::attributes::{AttributeValue, SourceAttribute};
+    SourceAttribute {
+        native_ref: None,
+        id: cadmpeg_ir::ids::AttributeId::mint(format!("synthetic:timestamp:attribute#{ordinal}"))
+            .expect("timestamp attribute identity"),
+        target,
+        name: "ATTRIB_CUSTOM-attrib".into(),
+        values: vec![
+            AttributeValue::String("Timestamp_attrib_def".into()),
+            AttributeValue::Integer(1),
+            AttributeValue::Float(value),
+        ],
+    }
+}
+
+pub(crate) fn edit_timestamp_attribute(
+    ir: &mut cadmpeg_ir::document::CadIr,
+    target: &cadmpeg_ir::attributes::AttributeTarget,
+    value: cadmpeg_ir::scalar::FiniteReal,
+) {
+    use cadmpeg_ir::attributes::AttributeValue;
+    let mut attributes = ir.model.attributes.iter_mut().filter(|attribute| {
+        &attribute.target == target && crate::brep::creation_timestamp_value(attribute).is_some()
+    });
+    let attribute = attributes.next().expect("canonical timestamp attribute");
+    assert!(
+        attributes.next().is_none(),
+        "one timestamp attribute per target"
+    );
+    let previous = crate::brep::creation_timestamp_value(attribute).unwrap();
+    let mut values = attribute.values.iter_mut().filter_map(|field| match field {
+        AttributeValue::Float(current) if *current == previous => Some(current),
+        _ => None,
+    });
+    let current = values.next().expect("canonical timestamp value");
+    assert!(values.next().is_none(), "one timestamp value per attribute");
+    *current = value;
+}
+
 pub(crate) fn assert_borrowed_native_retained_limit<T: Serialize>(
     record: &T,
     arena_name: &str,
@@ -63,7 +107,7 @@ impl TestEncode for F3dCodec {
         output: &mut dyn Write,
     ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_core::CodecError> {
         self.plan(
-            cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
+            cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
             TargetRequest::Inherit,
         )?
         .write_to(output)

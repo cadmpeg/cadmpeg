@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::semantic_annotations::{
@@ -17,7 +16,7 @@ use crate::native::{
 };
 
 pub(crate) fn transfer(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<SemanticAnnotationRecord>, CodecError> {
@@ -39,15 +38,34 @@ pub(crate) fn transfer(
                 .map_or(&[][..], Vec::as_slice);
             let mut owned = Vec::new();
             owned.extend_from_slice(source);
+            let mut source_order = BTreeMap::new();
+            for property in &owned {
+                if let Some(range) = ctx.source_range(property)? {
+                    source_order.insert(property.id.as_str(), (range.start, range.end));
+                }
+            }
             owned.sort_by(|left, right| {
-                (left.xml.start(), left.xml.end()).cmp(&(right.xml.start(), right.xml.end()))
+                match (
+                    source_order.get(left.id.as_str()),
+                    source_order.get(right.id.as_str()),
+                ) {
+                    (Some(left), Some(right)) => left.cmp(right),
+                    _ => (left.order, &left.id).cmp(&(right.order, &right.id)),
+                }
             });
             let mut references = BTreeMap::new();
             let mut parameters = BTreeMap::new();
             for property in &owned {
                 let name = property.name.clone();
                 if property.links().is_empty() {
-                    parameters.insert(name, property.xml.text().to_owned());
+                    let literal_text = schema.text.is_some_and(|carrier| {
+                        !carrier.has_format_spec && carrier.property == property.name
+                    });
+                    if !literal_text {
+                        if let Some(value) = crate::attributes::semantic_text(property) {
+                            parameters.insert(name, value);
+                        }
+                    }
                 } else {
                     let mut links = Vec::new();
                     for link in property.links() {
@@ -94,7 +112,7 @@ pub(crate) fn transfer(
 }
 
 pub(crate) fn transfer_neutral(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     model: &mut Model,
     records: &[SemanticAnnotationRecord],
     properties: &[PropertyRecord],
@@ -150,7 +168,9 @@ pub(crate) fn transfer_neutral(
         }
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
-            parameters.insert(name.to_owned(), value.to_owned());
+            if !schema.owns_dedicated(name) {
+                parameters.insert(name.to_owned(), value.to_owned());
+            }
         }
         let mut assets = Vec::new();
         for name in &record.side_entries {
@@ -169,7 +189,11 @@ pub(crate) fn transfer_neutral(
             order: u32::try_from(order).map_err(|_| {
                 CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
             })?,
-            text: record.text.clone(),
+            text: if schema.text.is_some_and(|carrier| carrier.has_format_spec) {
+                Vec::new()
+            } else {
+                record.text.clone()
+            },
             references: cadmpeg_core::text::named_entries(&record.object, references)?,
             value: None,
             format: match schema.text {
@@ -216,6 +240,25 @@ enum PositionCarrier {
         y_name: &'static str,
         type_names: &'static [&'static str],
     },
+}
+
+impl AnnotationSchema {
+    fn owns_dedicated(&self, name: &str) -> bool {
+        self.text.is_some_and(|carrier| carrier.property == name)
+            || match self.position {
+                PositionCarrier::Vector { name: position, .. } => position == name,
+                PositionCarrier::Coordinates { x_name, y_name, .. } => {
+                    name == x_name || name == y_name
+                }
+            }
+    }
+}
+
+pub(crate) fn consumes_property(record: &SemanticAnnotation, name: &str) -> bool {
+    record.parameters.keys().any(|key| key.as_str() == name)
+        || record.references.keys().any(|key| key.as_str() == name)
+        || AnnotationRuntimeType::from_label(&record.runtime_type)
+            .is_some_and(|runtime| annotation_schema(runtime).owns_dedicated(name))
 }
 
 const TECHDRAW_POSITION_TYPES: &[&str] = &[
@@ -339,7 +382,7 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
 }
 
 fn annotation_position(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     carrier: PositionCarrier,
 ) -> Result<Option<cadmpeg_ir::units::FiniteVector<3>>, CodecError> {
@@ -381,7 +424,7 @@ fn annotation_position(
 }
 
 fn optional_scalar_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     type_names: &[&str],
@@ -403,7 +446,7 @@ fn optional_scalar_property(
 }
 
 fn optional_vector_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     type_names: &[&str],
@@ -436,7 +479,7 @@ fn optional_vector_property(
 }
 
 fn string_property(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
     type_name: &str,
@@ -476,7 +519,7 @@ fn typed_property<'a>(
 }
 
 fn validate_text_carriers(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     schema: &AnnotationSchema,
 ) -> Result<(), CodecError> {
@@ -490,13 +533,14 @@ fn validate_text_carriers(
 }
 
 fn direct_value_attributes(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
     expected_tag: &str,
     allowed_attributes: &[&str],
 ) -> Result<BTreeMap<String, String>, CodecError> {
+    let property_xml = ctx.property_xml(property)?;
     let document = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;
@@ -542,7 +586,7 @@ fn direct_value_attributes(
 }
 
 fn strict_text_values(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
     expected_type: &str,
 ) -> Result<Vec<String>, CodecError> {
@@ -569,8 +613,9 @@ fn strict_text_values(
         }
         return Ok(values);
     }
+    let property_xml = ctx.property_xml(property)?;
     let document = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;
@@ -1094,6 +1139,7 @@ pub(crate) mod tests {
             .iter()
             .find(|annotation| annotation.object.ends_with("#Dimension"))
             .expect("dimension");
+        assert_eq!(dimension.parameters["FormatSpec"], "12.5 mm");
         assert_eq!(dimension.text, ["12.5 mm"]);
         assert_eq!(
             dimension.references["References2D"][0]

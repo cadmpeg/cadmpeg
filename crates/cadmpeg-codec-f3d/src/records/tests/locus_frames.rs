@@ -26,15 +26,15 @@ fn draft(first: Option<NonZeroU32>, base: u64, length: u64) -> Draft {
         loci: [
             Operand {
                 geometry_record_index: first,
-                geometry_reference_offset: base + prefix,
+                geometry_reference_offset: Some(base + prefix),
                 role: 0,
-                role_offset: base + prefix + 10,
+                role_offset: Some(base + prefix + 10),
             },
             Operand {
                 geometry_record_index: NonZeroU32::new(41),
-                geometry_reference_offset: base + prefix + 15,
+                geometry_reference_offset: Some(base + prefix + 15),
                 role: 1,
-                role_offset: base + prefix + 25,
+                role_offset: Some(base + prefix + 25),
             },
         ],
         paired_class_tag: "273".to_owned().try_into().unwrap(),
@@ -47,16 +47,19 @@ fn locus_pair_derives_each_form_and_preserves_its_smallest_extent() {
     for (first, length) in [(None, 55), (NonZeroU32::new(41), 70)] {
         let payload = draft(first, 100, length);
         let pair = Pair::try_new(payload.clone()).unwrap();
-        assert_eq!(pair.clone().into_draft(), payload);
+        assert_eq!(pair.clone().into_draft().unwrap(), payload);
         let wire = serde_json::to_value(&pair).unwrap();
-        assert_eq!(serde_json::from_value::<Pair>(wire).unwrap(), pair);
+        let reloaded: Pair = serde_json::from_value(wire.clone()).unwrap();
+        assert!(reloaded.byte_offset().is_none());
+        assert!(reloaded.clone().into_draft().is_err());
+        assert_eq!(serde_json::to_value(reloaded).unwrap(), wire);
         let mut short = payload;
         short.frame_length -= 1;
         short.paired_byte_offset -= 1;
         assert!(Pair::try_new(short).unwrap_err().contains("frame_length"));
         let boundary = Pair::try_new(draft(first, u64::MAX - length, length)).unwrap();
-        assert_eq!(boundary.paired_byte_offset(), u64::MAX);
-        let mut overflow = boundary.into_draft();
+        assert_eq!(boundary.paired_byte_offset(), Some(u64::MAX));
+        let mut overflow = boundary.into_draft().unwrap();
         overflow.frame_length += 1;
         assert!(Pair::try_new(overflow)
             .unwrap_err()
@@ -93,7 +96,7 @@ fn locus_pair_rejects_stale_wire_offsets_and_missing_geometry() {
             .unwrap_err()
             .to_string()
             .contains("second_geometry_record_index"));
-        let mut missing_second = pair.into_draft();
+        let mut missing_second = pair.into_draft().unwrap();
         missing_second.loci[1].geometry_record_index = None;
         assert!(Pair::try_new(missing_second).is_err());
     }

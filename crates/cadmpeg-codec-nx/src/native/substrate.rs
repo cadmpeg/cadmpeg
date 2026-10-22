@@ -531,8 +531,8 @@ mod tests {
 
     #[test]
     fn unchanged_stream_views_borrow_the_inflated_bytes() {
-        let scan = crate::decode::Scan {
-            container: crate::container::Container {
+        let scan = crate::decode::Scan::new(
+            crate::container::Container {
                 data: Vec::new().into(),
                 physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
@@ -541,7 +541,7 @@ mod tests {
                 indexed_section_layouts: std::sync::OnceLock::new(),
                 om_section_cache: std::sync::OnceLock::new(),
             },
-            streams: vec![crate::parasolid::Stream {
+            vec![crate::parasolid::Stream {
                 file_offset: 0,
                 consumed: 3,
                 inflated: vec![1, 2, 3],
@@ -553,7 +553,7 @@ mod tests {
                     ),
                 },
             }],
-        };
+        );
 
         let topology = topology_streams(&scan).expect("test topology streams");
         let parsed = ParsedStreams::parse(&scan).expect("test parsed streams");
@@ -587,8 +587,8 @@ mod tests {
                 },
             }
         };
-        let scan = crate::decode::Scan {
-            container: crate::container::Container {
+        let scan = crate::decode::Scan::new(
+            crate::container::Container {
                 data: Vec::new().into(),
                 physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
@@ -597,8 +597,8 @@ mod tests {
                 indexed_section_layouts: std::sync::OnceLock::new(),
                 om_section_cache: std::sync::OnceLock::new(),
             },
-            streams: vec![stream(0), stream(1)],
-        };
+            vec![stream(0), stream(1)],
+        );
 
         let parsed = ParsedStreams::parse(&scan).expect("test parsed streams");
 

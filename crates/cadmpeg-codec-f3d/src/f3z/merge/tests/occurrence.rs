@@ -16,14 +16,15 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::Native;
 
 use crate::f3z::merge::{
-    append_feature_history, compose_transforms, extend_native, occurrence_key,
-    reparent_component_roots, OccurrenceScope,
+    append_feature_history, extend_native, occurrence_key, reparent_component_roots,
+    OccurrenceScope,
 };
 use crate::records::xref::XrefReference;
 use cadmpeg_ir::features::FeatureOperation;
 
 fn feature(id: &str, ordinal: u64) -> Feature {
     Feature {
+        needs_recompute: false,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -37,7 +38,7 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "test".into(),
-                parameters: std::collections::BTreeMap::new(),
+                parameters: (std::collections::BTreeMap::new()),
             }),
         ),
         native_ref: None,
@@ -99,7 +100,7 @@ fn occurrence_transform_composes_outside_existing_body_transform() {
     .expect("affine transform");
 
     assert_eq!(
-        compose_transforms(outer, inner).unwrap().rows(),
+        outer.compose(inner).unwrap().rows(),
         [
             [0.0, -1.0, 0.0, 20.0],
             [1.0, 0.0, 0.0, 35.0],
@@ -123,9 +124,8 @@ fn merged_component_root_occurrences_become_children_of_the_outer_instance() {
             prototype: PrototypeReference::Unresolved {},
             parent: OccurrenceParent::Root {},
             ordinal: 0,
-            transform: Transform::identity(),
+            transform: Some(Transform::identity()),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -138,9 +138,8 @@ fn merged_component_root_occurrences_become_children_of_the_outer_instance() {
                 occurrence: root_child.clone(),
             },
             ordinal: 0,
-            transform: Transform::identity(),
+            transform: Some(Transform::identity()),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -184,6 +183,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
         let mut scope = OccurrenceScope {
             ctx: &ctx,
             occurrence: &occurrence,
+            part_ids: &Default::default(),
         };
         merged
             .extend_rewritten(component.clone(), &mut scope)
@@ -219,6 +219,7 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     let scoped = OccurrenceScope {
         ctx: &ctx,
         occurrence: "component-0",
+        part_ids: &Default::default(),
     }
     .rewrite(body)
     .unwrap();
@@ -268,6 +269,7 @@ fn occurrence_merge_remaps_and_retains_native_records() {
         &mut root,
         component,
         "role/occurrence-0",
+        &Default::default(),
     )
     .unwrap();
 
@@ -307,6 +309,7 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
         &mut ir.native,
         component,
         "component-0",
+        &Default::default(),
     )
     .unwrap();
     let wire = ir.to_canonical_json().unwrap();
@@ -384,6 +387,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         &mut root,
         component,
         "role/occurrence-0",
+        &Default::default(),
     )
     .unwrap();
 

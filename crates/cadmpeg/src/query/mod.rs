@@ -281,12 +281,11 @@ struct DecodeReportProbe {
     dialects: Option<DialectLayers>,
 }
 
-/// Lenient decode-transfer state: the tag reads as a string so a future state
-/// does not break projection.
+/// Decode content scope accepts future classes without breaking projection.
 #[derive(Deserialize)]
 struct DecodeTransferProbe {
     #[serde(default)]
-    transfer: Option<String>,
+    scope: BTreeMap<String, bool>,
     #[serde(default)]
     geometry_transferred: Option<bool>,
 }
@@ -408,6 +407,8 @@ mod tests {
 #[derive(Deserialize)]
 struct CadirProbe {
     ir_version: String,
+    #[serde(default)]
+    scope: BTreeMap<String, bool>,
     #[serde(default)]
     source: Option<SourceMeta>,
     #[serde(default)]
@@ -705,12 +706,10 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                     if let Some(format) = &decode.format {
                         rows.push(("decode_format".to_owned(), cell(format).into()));
                     }
-                    if let Some(transfer) = decode
-                        .transfer
-                        .as_ref()
-                        .and_then(|state| state.transfer.as_ref())
-                    {
-                        rows.push(("decode_transfer".to_owned(), cell(transfer).into()));
+                    if let Some(scope) = decode.transfer.as_ref().map(|state| &state.scope) {
+                        for (class, held) in scope {
+                            rows.push((format!("decode_scope.{class}"), held.to_string().into()));
+                        }
                     }
                     if let Some(geometry) = decode
                         .transfer
@@ -780,6 +779,9 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         }
         Artifact::Cadir(cadir) => {
             rows.push(("ir_version".to_owned(), cell(&cadir.ir_version).into()));
+            for (class, held) in &cadir.scope {
+                rows.push((format!("scope.{class}"), held.to_string().into()));
+            }
             match &cadir.source {
                 Some(source) => {
                     rows.push(("source_format".to_owned(), cell(source.format()).into()));
@@ -826,6 +828,11 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 Some(decode) => {
                     if let Some(format) = &decode.format {
                         rows.push(("decode_format".to_owned(), cell(format).into()));
+                    }
+                    if let Some(transfer) = &decode.transfer {
+                        for (class, held) in &transfer.scope {
+                            rows.push((format!("decode_scope.{class}"), held.to_string().into()));
+                        }
                     }
                     rows.push((
                         "coverage_rows".to_owned(),

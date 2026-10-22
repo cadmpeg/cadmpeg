@@ -3,12 +3,11 @@
 
 use crate::classification::{classify, native_object_class, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{
         holes::{HoleBottom, HoleConstruction, HoleKind},
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureOperation,
-        LinearTermination, PlanarProfileRef, ProfileRef, VertexSelection,
+        BooleanOp, Dimension, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition,
+        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef, VertexSelection,
     },
     scalar::{NonZeroLength, PositiveLength},
 };
@@ -16,9 +15,8 @@ use std::collections::HashMap;
 
 use crate::history::classify::extrude_feature_op;
 use crate::history::literals::{
-    parse_angle_rad, parse_boolean_op, parse_bounded_angle_rad, parse_dimension_display_length,
-    parse_point3_mm, parse_positive_dimension_length_mm, parse_positive_length_mm, parse_vector3,
-    strip_diameter_modifier, valid_direction,
+    parse_boolean_op, parse_bounded_angle_rad, parse_dimension_display_length, parse_point3_mm,
+    parse_positive_dimension_length_mm, parse_vector3, strip_diameter_modifier, valid_direction,
 };
 
 pub(super) fn project_extrude(
@@ -78,40 +76,29 @@ pub(super) fn project_extrude(
         })
         .unwrap_or(BooleanOp::Unresolved);
     let sole_length = || {
-        let mut values = feature.parameters.values();
-        let sole = values.next().filter(|_| values.next().is_none())?;
-        parse_positive_length_mm(sole).or_else(|| parse_positive_dimension_length_mm(sole))
+        let mut names = feature.parameters.keys();
+        let name = names.next().filter(|_| names.next().is_none())?;
+        super::parameter_dimension::<cadmpeg_ir::scalar::PositiveLength>(feature, &[name.as_str()])
     };
     let legacy_length = || {
-        source_depth
-            .and_then(|name| feature.parameters.get(name))
-            .and_then(|value| {
-                parse_positive_length_mm(value)
-                    .or_else(|| parse_positive_dimension_length_mm(value))
-            })
+        super::parameter_dimension::<cadmpeg_ir::scalar::PositiveLength>(feature, &[source_depth?])
     };
     let length = |name| {
-        feature
-            .parameters
-            .get(name)
-            .and_then(|value| parse_positive_length_mm(value))
-            .or_else(|| {
-                (name == "Depth")
-                    .then(|| feature.parameters.get("D1"))
-                    .flatten()
-                    .and_then(|value| parse_positive_dimension_length_mm(value))
-            })
-    };
-    let draft = match feature.parameters.get("Draft") {
-        Some(value) => {
-            let angle = parse_angle_rad(value)
-                .and_then(|angle| cadmpeg_ir::scalar::SlopeAngle::try_from(angle).ok())?;
-            Some(angle)
+        if name == "Depth" {
+            super::parameter_dimension::<cadmpeg_ir::scalar::PositiveLength>(
+                feature,
+                &["Depth", "D1"],
+            )
+        } else {
+            super::parameter_dimension(feature, &[name])
         }
-        None => None,
     };
+    let draft = super::parameter_dimension::<cadmpeg_ir::scalar::SlopeAngle>(feature, &["Draft"]);
     let one_sided = |termination| ExtrudeExtent::OneSided {
-        side: ExtrudeSide { termination, draft },
+        side: ExtrudeSide {
+            termination,
+            draft: draft.clone(),
+        },
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None if !feature.parameters.contains_key("Depth")
@@ -126,7 +113,7 @@ pub(super) fn project_extrude(
             .or_else(sole_length)
         {
             Some(length) => one_sided(LinearTermination::Blind {
-                length: NonZeroLength::from(length),
+                length: length.map_literal(NonZeroLength::from),
             }),
             None => one_sided(LinearTermination::Unresolved {}),
         },
@@ -134,9 +121,9 @@ pub(super) fn project_extrude(
             Some(length) => ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: NonZeroLength::from(length),
+                        length: length.map_literal(NonZeroLength::from),
                     },
-                    draft,
+                    draft: draft.clone(),
                 },
             },
             None => one_sided(LinearTermination::Unresolved {}),
@@ -148,13 +135,13 @@ pub(super) fn project_extrude(
             ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: NonZeroLength::from(first),
+                        length: first.map_literal(NonZeroLength::from),
                     },
-                    draft,
+                    draft: draft.clone(),
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: NonZeroLength::from(second),
+                        length: second.map_literal(NonZeroLength::from),
                     },
                     draft: None,
                 },
@@ -164,7 +151,7 @@ pub(super) fn project_extrude(
         Some("ThroughAllBoth") => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: LinearTermination::ThroughAll {},
-                draft,
+                draft: draft.clone(),
             },
             second: ExtrudeSide {
                 termination: LinearTermination::ThroughAll {},
@@ -259,12 +246,8 @@ pub(super) fn project_hole(
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some((shape, profile)) =
-        hole_shape_and_profile(feature, features_by_source, history_features)?
-    else {
-        return Ok(None);
-    };
+) -> Option<FeatureDefinition> {
+    let (shape, profile) = hole_shape_and_profile(feature, features_by_source, history_features)?;
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None | Some("Blind")
             if profile
@@ -273,18 +256,15 @@ pub(super) fn project_hole(
         {
             Some(LinearTermination::ThroughAll {})
         }
-        None | Some("Blind") => feature
-            .parameters
-            .get("Depth")
-            .and_then(|value| parse_positive_length_mm(value))
-            .or_else(|| profile.as_ref().and_then(|profile| profile.depth))
+        None | Some("Blind") => super::parameter_dimension(feature, &["Depth"])
+            .or_else(|| profile.as_ref().and_then(|profile| profile.depth.clone()))
             .map(|length| LinearTermination::Blind {
-                length: NonZeroLength::from(length),
+                length: length.map_literal(NonZeroLength::from),
             }),
         Some("ThroughAll") => Some(LinearTermination::ThroughAll {}),
         Some(_) => None,
     };
-    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Hole {
+    Some(FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: None,
         profile_filter: None,
         face: feature
@@ -312,71 +292,41 @@ pub(super) fn project_hole(
             }),
         shape,
         extent,
-        bottom: profile.as_ref().and_then(|profile| profile.bottom),
-        taper_angle: profile.as_ref().and_then(|profile| profile.taper_angle),
+        bottom: profile.as_ref().and_then(|profile| profile.bottom.clone()),
+        taper_angle: profile
+            .as_ref()
+            .and_then(|profile| profile.taper_angle.clone()),
         allow_multi_profile_faces: None,
-    })))
+    }))
 }
 fn hole_shape_and_profile(
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Result<
-    Option<(
-        cadmpeg_ir::features::holes::HoleShape,
-        Option<HoleProfileConstruction>,
-    )>,
-    CodecError,
-> {
-    let profile = hole_profile_construction(feature, features_by_source, history_features)?;
-    let diameter = feature
-        .parameters
-        .get("Diameter")
-        .and_then(|value| parse_positive_length_mm(value))
-        .or_else(|| profile.as_ref().map(|profile| profile.diameter));
+) -> Option<(
+    cadmpeg_ir::features::holes::HoleShape,
+    Option<HoleProfileConstruction>,
+)> {
+    let profile = hole_profile_construction(feature, features_by_source, history_features);
+    let diameter = super::parameter_dimension(feature, &["Diameter"])
+        .or_else(|| profile.as_ref().map(|profile| profile.diameter.clone()));
     let has_counterbore = feature.parameters.contains_key("CounterboreDiameter")
         || feature.parameters.contains_key("CounterboreDepth");
     let has_countersink = feature.parameters.contains_key("CountersinkDiameter")
         || feature.parameters.contains_key("CountersinkAngle");
-    let counterbore_diameter = feature
-        .parameters
-        .get("CounterboreDiameter")
-        .and_then(|value| parse_positive_length_mm(value));
-    let counterbore_depth = feature
-        .parameters
-        .get("CounterboreDepth")
-        .and_then(|value| parse_positive_length_mm(value));
-    let countersink_diameter = feature
-        .parameters
-        .get("CountersinkDiameter")
-        .and_then(|value| parse_positive_length_mm(value));
-    let countersink_angle = feature
-        .parameters
-        .get("CountersinkAngle")
-        .and_then(|value| parse_bounded_angle_rad(value));
-    let drill_point_angle = feature
-        .parameters
-        .get("DrillPointAngle")
-        .and_then(|value| parse_bounded_angle_rad(value));
-    let thread = feature
-        .parameters
-        .get("ThreadMajorDiameter")
-        .and_then(|value| parse_positive_length_mm(value))
-        .zip(
-            feature
-                .parameters
-                .get("ThreadDepth")
-                .and_then(|value| parse_positive_length_mm(value)),
-        )
-        .zip(drill_point_angle)
+    let counterbore_diameter = super::parameter_dimension(feature, &["CounterboreDiameter"]);
+    let counterbore_depth = super::parameter_dimension(feature, &["CounterboreDepth"]);
+    let countersink_diameter = super::parameter_dimension(feature, &["CountersinkDiameter"]);
+    let countersink_angle = super::parameter_dimension(feature, &["CountersinkAngle"]);
+    let drill_point_angle = super::parameter_dimension(feature, &["DrillPointAngle"]);
+    let thread = super::parameter_dimension(feature, &["ThreadMajorDiameter"])
+        .zip(super::parameter_dimension(feature, &["ThreadDepth"]))
+        .zip(drill_point_angle.clone())
         .map(|((major_diameter, thread_depth), drill_point_angle)| {
             HoleConstruction::NativeThread {
                 major_diameter,
                 thread_depth,
-                pitch: feature
-                    .parameters
-                    .get("ThreadPitch")
-                    .and_then(|value| parse_positive_length_mm(value)),
+                pitch: super::parameter_dimension(feature, &["ThreadPitch"]),
                 drill_point_angle,
             }
         });
@@ -384,14 +334,14 @@ fn hole_shape_and_profile(
         hole_form(HoleKind::Unresolved(None))
     } else if has_counterbore {
         match (counterbore_diameter, counterbore_depth) {
-            (Some(diameter), Some(depth)) => hole_form(drill_point_angle.map_or(
-                HoleKind::Counterbore { diameter, depth },
-                |drill_point_angle| HoleKind::CounterboreDrilled {
+            (Some(diameter), Some(depth)) => hole_form(match drill_point_angle {
+                None => HoleKind::Counterbore { diameter, depth },
+                Some(drill_point_angle) => HoleKind::CounterboreDrilled {
                     diameter,
                     depth,
                     drill_point_angle,
                 },
-            )),
+            }),
             (Some(diameter), None) => hole_form(HoleKind::PartialCounterbore(
                 cadmpeg_ir::features::holes::PartialPair::First(diameter),
             )),
@@ -425,42 +375,57 @@ fn hole_shape_and_profile(
             None => hole_form(HoleKind::Simple),
         }
     };
-    let Ok(shape) = cadmpeg_ir::features::holes::HoleShape::new(
+    let shape = cadmpeg_ir::features::holes::HoleShape::new(
         construction,
-        profile.as_ref().and_then(|profile| profile.exit_kind),
+        profile
+            .as_ref()
+            .and_then(|profile| profile.exit_kind.clone()),
         diameter,
-    ) else {
-        return Ok(None);
-    };
-    Ok(Some((shape, profile)))
+    )
+    .ok()?;
+    Some((shape, profile))
 }
 
 pub(crate) fn threaded_hole_major_diameter(
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Result<Option<f64>, CodecError> {
+) -> Option<f64> {
     if classify(feature) != Some(FeatureClass::Hole) {
-        return Ok(None);
+        return None;
     }
-    let Some((shape, _)) = hole_shape_and_profile(feature, features_by_source, history_features)?
-    else {
-        return Ok(None);
-    };
+    let (shape, _) = hole_shape_and_profile(feature, features_by_source, history_features)?;
     let HoleConstruction::NativeThread { major_diameter, .. } = shape.construction() else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(major_diameter.get()))
+    let value = major_diameter.literal().copied().or_else(|| {
+        let id = major_diameter.parameter()?;
+        history_features
+            .iter()
+            .chain(std::iter::once(feature))
+            .find_map(|source| {
+                source.parameters.keys().find_map(|name| {
+                    (super::parameter_dimension::<PositiveLength>(source, &[name.as_str()])
+                        .as_ref()
+                        .and_then(Dimension::parameter)
+                        == Some(id))
+                    .then(|| crate::history::parameters::source_parameter_value(source, name.as_str()))
+                    .flatten()
+                    .and_then(|value| <PositiveLength as cadmpeg_ir::features::DimensionValue>::from_parameter_value(&value))
+                })
+            })
+    });
+    value.map(PositiveLength::get)
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct HoleProfileConstruction {
-    pub(in crate::history) diameter: cadmpeg_ir::scalar::PositiveLength,
-    pub(in crate::history) depth: Option<PositiveLength>,
+    pub(in crate::history) diameter: Dimension<PositiveLength>,
+    pub(in crate::history) depth: Option<Dimension<PositiveLength>>,
     pub(in crate::history) construction: HoleConstruction,
     pub(in crate::history) exit_kind: Option<HoleKind>,
     pub(in crate::history) bottom: Option<HoleBottom>,
-    pub(in crate::history) taper_angle: Option<cadmpeg_ir::scalar::InteriorAngle>,
+    pub(in crate::history) taper_angle: Option<Dimension<cadmpeg_ir::scalar::InteriorAngle>>,
 }
 
 fn hole_form(kind: HoleKind) -> HoleConstruction {
@@ -474,10 +439,8 @@ fn hole_profile_construction(
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Result<Option<HoleProfileConstruction>, CodecError> {
-    let Some(children) = feature.properties.get("DissectableChildren") else {
-        return Ok(None);
-    };
+) -> Option<HoleProfileConstruction> {
+    let children = feature.properties.get("DissectableChildren")?;
     let constructions = children
         .split(',')
         .map(str::trim)
@@ -499,12 +462,12 @@ fn hole_profile_construction(
     let mut multiple = false;
     let mut complete = None;
     for profile in constructions {
-        let Some(construction) = hole_sketch_construction(profile)? else {
+        let Some(construction) = hole_sketch_construction(profile) else {
             continue;
         };
         if construction.depth.is_some() {
             if complete.is_some() {
-                return Ok(None);
+                return None;
             }
             complete = Some(construction);
             continue;
@@ -515,123 +478,164 @@ fn hole_profile_construction(
             sole = Some(construction);
         }
     }
-    Ok(complete.or(if multiple { None } else { sole }))
+    complete.or(if multiple { None } else { sole })
 }
 
-pub(super) fn hole_sketch_construction(
+pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {
+    hole_sketch_construction_details(profile).map(|(construction, _)| construction)
+}
+
+/// Source quantity roles proven by a supported ordered hole-profile construction.
+pub(in crate::history) fn hole_profile_parameter_values(
     profile: &Feature,
-) -> Result<Option<HoleProfileConstruction>, CodecError> {
-    #[derive(Clone, Copy)]
+) -> Option<std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterValue>> {
+    hole_sketch_construction_details(profile).map(|(_, controls)| controls)
+}
+
+fn hole_profile_dimension<Q>(
+    profile: &Feature,
+    name: &str,
+    parse: impl Fn(&str) -> Option<Q>,
+) -> Option<Dimension<Q>> {
+    if let Some(cache) = profile
+        .dimension_properties
+        .get(name)
+        .and_then(|properties| properties.get("Value"))
+    {
+        parse(cache)?;
+    }
+    let ordinal = super::projected_parameter_names(profile)
+        .iter()
+        .position(|candidate| candidate == name)?;
+    super::neutral_parameter_id(profile, ordinal)
+        .ok()
+        .map(Dimension::Parameter)
+}
+
+type HoleProfileDetails = (
+    HoleProfileConstruction,
+    std::collections::BTreeMap<String, cadmpeg_ir::features::ParameterValue>,
+);
+
+fn hole_sketch_construction_details(profile: &Feature) -> Option<HoleProfileDetails> {
+    // Numeric values below classify the source's ordered construction. The
+    // resulting design stores only parameter bindings, never these parse values.
+    #[derive(Clone)]
+    struct Measure<Q> {
+        value: Q,
+        binding: Dimension<Q>,
+    }
+    #[derive(Clone)]
     enum ParsedDimension {
-        Diameter(PositiveLength),
-        Length(PositiveLength),
-        Angle(cadmpeg_ir::scalar::InteriorAngle),
+        Diameter(Measure<PositiveLength>),
+        Length(Measure<PositiveLength>),
+        Angle(Measure<cadmpeg_ir::scalar::InteriorAngle>),
     }
 
     const MAX_DIMENSIONS: usize = 7;
     const MAX_DIAMETERS: usize = 3;
     const MAX_LENGTHS: usize = 2;
     const MAX_ANGLES: usize = 2;
-    let Some(initial_length) = PositiveLength::new(1.0) else {
-        return Ok(None);
-    };
-    let Some(initial_angle) = cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2)
-    else {
-        return Ok(None);
-    };
-    let mut dimensions = [ParsedDimension::Length(initial_length); MAX_DIMENSIONS];
-    let mut dimension_count = 0;
     let has_source_dimensions = profile
         .content
         .iter()
         .any(|content| matches!(content, FeatureContent::Dimension(_)));
     let expressions = profile
         .parameters
-        .values()
+        .iter()
         .filter(|_| !has_source_dimensions)
-        .chain(profile.content.iter().filter_map(|content| match content {
-            FeatureContent::Dimension(name) => profile.parameters.get(name.as_str()),
-            FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
+        .map(|(name, value)| (name.as_str(), value))
+        .chain(profile.content.iter().filter_map(|content| {
+            match content {
+                FeatureContent::Dimension(name) => profile
+                    .parameters
+                    .get(name.as_str())
+                    .map(|value| (name.as_str(), value)),
+                FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
+            }
         }));
-    for expression in expressions {
+    let mut dimensions = Vec::new();
+    let mut controls = std::collections::BTreeMap::new();
+    for (name, expression) in expressions {
         let dimension = if strip_diameter_modifier(expression).is_some() {
             parse_dimension_display_length(expression)
                 .and_then(|value| PositiveLength::try_from(value).ok())
-                .map(ParsedDimension::Diameter)
+                .zip(hole_profile_dimension(profile, name, |text| {
+                    parse_dimension_display_length(text)
+                        .and_then(|value| PositiveLength::try_from(value).ok())
+                }))
+                .map(|(value, binding)| ParsedDimension::Diameter(Measure { value, binding }))
         } else if let Some(value) = parse_bounded_angle_rad(expression) {
-            Some(ParsedDimension::Angle(value))
+            hole_profile_dimension(profile, name, parse_bounded_angle_rad)
+                .map(|binding| ParsedDimension::Angle(Measure { value, binding }))
         } else {
-            parse_positive_dimension_length_mm(expression).map(ParsedDimension::Length)
+            parse_positive_dimension_length_mm(expression)
+                .zip(hole_profile_dimension(
+                    profile,
+                    name,
+                    parse_positive_dimension_length_mm,
+                ))
+                .map(|(value, binding)| ParsedDimension::Length(Measure { value, binding }))
         };
         if let Some(dimension) = dimension {
-            let Some(slot) = dimensions.get_mut(dimension_count) else {
-                return Ok(None);
+            let value = match &dimension {
+                ParsedDimension::Diameter(measure) | ParsedDimension::Length(measure) => {
+                    cadmpeg_ir::features::ParameterValue::Length(cadmpeg_ir::scalar::Length::from(
+                        measure.value,
+                    ))
+                }
+                ParsedDimension::Angle(measure) => cadmpeg_ir::features::ParameterValue::Angle(
+                    cadmpeg_ir::scalar::Angle::from(measure.value),
+                ),
             };
-            *slot = dimension;
-            dimension_count += 1;
+            controls.insert(name.to_owned(), value);
+            if dimensions.len() == MAX_DIMENSIONS {
+                return None;
+            }
+            dimensions.push(dimension);
         }
     }
-    let dimensions = &dimensions[..dimension_count];
-    let mut diameters = [initial_length; MAX_DIAMETERS];
-    let mut lengths = [initial_length; MAX_LENGTHS];
-    let mut angles = [initial_angle; MAX_ANGLES];
-    let (mut diameter_count, mut length_count, mut angle_count) = (0, 0, 0);
-    for dimension in dimensions {
+    let mut diameters = Vec::new();
+    let mut lengths = Vec::new();
+    let mut angles = Vec::new();
+    for dimension in &dimensions {
         match dimension {
-            ParsedDimension::Diameter(value) => {
-                let Some(slot) = diameters.get_mut(diameter_count) else {
-                    return Ok(None);
-                };
-                *slot = *value;
-                diameter_count += 1;
-            }
-            ParsedDimension::Length(value) => {
-                let Some(slot) = lengths.get_mut(length_count) else {
-                    return Ok(None);
-                };
-                *slot = *value;
-                length_count += 1;
-            }
-            ParsedDimension::Angle(value) => {
-                let Some(slot) = angles.get_mut(angle_count) else {
-                    return Ok(None);
-                };
-                *slot = *value;
-                angle_count += 1;
-            }
+            ParsedDimension::Diameter(value) => diameters.push(value.clone()),
+            ParsedDimension::Length(value) => lengths.push(value.clone()),
+            ParsedDimension::Angle(value) => angles.push(value.clone()),
         }
     }
-    let diameters = &mut diameters[..diameter_count];
-    let lengths = &mut lengths[..length_count];
-    let angles = &mut angles[..angle_count];
-    diameters.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
-    lengths.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
-    angles.sort_unstable_by(|left, right| left.get().total_cmp(&right.get()));
-    Ok(match (&*diameters, &*lengths, &*angles) {
+    if diameters.len() > MAX_DIAMETERS || lengths.len() > MAX_LENGTHS || angles.len() > MAX_ANGLES {
+        return None;
+    }
+    diameters.sort_unstable_by(|left, right| left.value.get().total_cmp(&right.value.get()));
+    lengths.sort_unstable_by(|left, right| left.value.get().total_cmp(&right.value.get()));
+    angles.sort_unstable_by(|left, right| left.value.get().total_cmp(&right.value.get()));
+    let construction = match (&*diameters, &*lengths, &*angles) {
         ([diameter], [depth], []) => Some(HoleProfileConstruction {
-            diameter: *diameter,
-            depth: Some(*depth),
+            diameter: diameter.binding.clone(),
+            depth: Some(depth.binding.clone()),
             construction: hole_form(HoleKind::Simple),
             exit_kind: None,
             bottom: Some(HoleBottom::Flat),
             taper_angle: None,
         }),
         ([diameter], [depth], [drill_point_angle]) => Some(HoleProfileConstruction {
-            diameter: *diameter,
-            depth: Some(*depth),
+            diameter: diameter.binding.clone(),
+            depth: Some(depth.binding.clone()),
             construction: hole_form(HoleKind::SimpleDrilled {
-                drill_point_angle: *drill_point_angle,
+                drill_point_angle: drill_point_angle.binding.clone(),
             }),
             exit_kind: None,
             bottom: Some(HoleBottom::Angled {
-                included_angle: *drill_point_angle,
+                included_angle: drill_point_angle.binding.clone(),
                 depth_to_tip: false,
             }),
             taper_angle: None,
         }),
         ([diameter, major_diameter], [thread_depth, drill_depth], [drill_point_angle])
             if matches!(
-                dimensions,
+                dimensions.as_slice(),
                 [
                     ParsedDimension::Diameter(_),
                     ParsedDimension::Length(_),
@@ -639,21 +643,21 @@ pub(super) fn hole_sketch_construction(
                     ParsedDimension::Length(_),
                     ParsedDimension::Angle(_),
                 ]
-            ) && diameter.get() < major_diameter.get()
-                && thread_depth.get() < drill_depth.get() =>
+            ) && diameter.value.get() < major_diameter.value.get()
+                && thread_depth.value.get() < drill_depth.value.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: *diameter,
-                depth: Some(*drill_depth),
+                diameter: diameter.binding.clone(),
+                depth: Some(drill_depth.binding.clone()),
                 construction: HoleConstruction::NativeThread {
-                    major_diameter: *major_diameter,
-                    thread_depth: *thread_depth,
+                    major_diameter: major_diameter.binding.clone(),
+                    thread_depth: thread_depth.binding.clone(),
                     pitch: None,
-                    drill_point_angle: *drill_point_angle,
+                    drill_point_angle: drill_point_angle.binding.clone(),
                 },
                 exit_kind: None,
                 bottom: Some(HoleBottom::Angled {
-                    included_angle: *drill_point_angle,
+                    included_angle: drill_point_angle.binding.clone(),
                     depth_to_tip: false,
                 }),
                 taper_angle: None,
@@ -663,43 +667,43 @@ pub(super) fn hole_sketch_construction(
             [diameter, major_diameter],
             [thread_depth, drill_depth],
             [taper_angle, drill_point_angle],
-        ) if diameter.get() < major_diameter.get()
-            && thread_depth.get() < drill_depth.get()
-            && taper_angle.get() < drill_point_angle.get() =>
+        ) if diameter.value.get() < major_diameter.value.get()
+            && thread_depth.value.get() < drill_depth.value.get()
+            && taper_angle.value.get() < drill_point_angle.value.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: *diameter,
-                depth: Some(*drill_depth),
+                diameter: diameter.binding.clone(),
+                depth: Some(drill_depth.binding.clone()),
                 construction: HoleConstruction::NativeThread {
-                    major_diameter: *major_diameter,
-                    thread_depth: *thread_depth,
+                    major_diameter: major_diameter.binding.clone(),
+                    thread_depth: thread_depth.binding.clone(),
                     pitch: None,
-                    drill_point_angle: *drill_point_angle,
+                    drill_point_angle: drill_point_angle.binding.clone(),
                 },
                 exit_kind: None,
                 bottom: Some(HoleBottom::Angled {
-                    included_angle: *drill_point_angle,
+                    included_angle: drill_point_angle.binding.clone(),
                     depth_to_tip: false,
                 }),
-                taper_angle: Some(*taper_angle),
+                taper_angle: Some(taper_angle.binding.clone()),
             })
         }
         ([diameter, entry_diameter], [entry_depth, depth], [drill_point_angle])
             if matches!(dimensions.last(), Some(ParsedDimension::Diameter(_)))
-                && diameter.get() < entry_diameter.get()
-                && entry_depth.get() < depth.get() =>
+                && diameter.value.get() < entry_diameter.value.get()
+                && entry_depth.value.get() < depth.value.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: *diameter,
-                depth: Some(*depth),
+                diameter: diameter.binding.clone(),
+                depth: Some(depth.binding.clone()),
                 construction: hole_form(HoleKind::CounterboreDrilled {
-                    diameter: *entry_diameter,
-                    depth: *entry_depth,
-                    drill_point_angle: *drill_point_angle,
+                    diameter: entry_diameter.binding.clone(),
+                    depth: entry_depth.binding.clone(),
+                    drill_point_angle: drill_point_angle.binding.clone(),
                 }),
                 exit_kind: None,
                 bottom: Some(HoleBottom::Angled {
-                    included_angle: *drill_point_angle,
+                    included_angle: drill_point_angle.binding.clone(),
                     depth_to_tip: false,
                 }),
                 taper_angle: None,
@@ -710,7 +714,7 @@ pub(super) fn hole_sketch_construction(
             [counterbore_depth, through_depth],
             [exit_angle],
         ) if matches!(
-            dimensions,
+            dimensions.as_slice(),
             [
                 ParsedDimension::Length(_),
                 ParsedDimension::Diameter(_),
@@ -719,20 +723,20 @@ pub(super) fn hole_sketch_construction(
                 ParsedDimension::Diameter(_),
                 ParsedDimension::Diameter(_),
             ]
-        ) && diameter.get() < exit_diameter.get()
-            && exit_diameter.get() < counterbore_diameter.get()
-            && counterbore_depth.get() < through_depth.get() =>
+        ) && diameter.value.get() < exit_diameter.value.get()
+            && exit_diameter.value.get() < counterbore_diameter.value.get()
+            && counterbore_depth.value.get() < through_depth.value.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: *diameter,
-                depth: Some(*through_depth),
+                diameter: diameter.binding.clone(),
+                depth: Some(through_depth.binding.clone()),
                 construction: hole_form(HoleKind::Counterbore {
-                    diameter: *counterbore_diameter,
-                    depth: *counterbore_depth,
+                    diameter: counterbore_diameter.binding.clone(),
+                    depth: counterbore_depth.binding.clone(),
                 }),
                 exit_kind: Some(HoleKind::Countersink {
-                    diameter: *exit_diameter,
-                    angle: *exit_angle,
+                    diameter: exit_diameter.binding.clone(),
+                    angle: exit_angle.binding.clone(),
                 }),
                 bottom: None,
                 taper_angle: None,
@@ -742,37 +746,37 @@ pub(super) fn hole_sketch_construction(
             [diameter, recess_diameter, entry_diameter],
             [recess_depth, drill_depth],
             [entry_angle, drill_point_angle],
-        ) if diameter.get() < recess_diameter.get()
-            && recess_diameter.get() < entry_diameter.get()
-            && recess_depth.get() < drill_depth.get()
-            && entry_angle.get() < drill_point_angle.get() =>
+        ) if diameter.value.get() < recess_diameter.value.get()
+            && recess_diameter.value.get() < entry_diameter.value.get()
+            && recess_depth.value.get() < drill_depth.value.get()
+            && entry_angle.value.get() < drill_point_angle.value.get() =>
         {
-            let Ok(diameters) = cadmpeg_ir::features::holes::CounterdrillDiameters::new(
-                *recess_diameter,
-                Some(*entry_diameter),
-            ) else {
-                return Ok(None);
-            };
+            let diameters = cadmpeg_ir::features::holes::CounterdrillDiameters::new(
+                recess_diameter.binding.clone(),
+                Some(entry_diameter.binding.clone()),
+            )
+            .ok()?;
             Some(HoleProfileConstruction {
-                diameter: *diameter,
-                depth: Some(*drill_depth),
+                diameter: diameter.binding.clone(),
+                depth: Some(drill_depth.binding.clone()),
                 construction: hole_form(HoleKind::Counterdrill {
                     diameters,
-                    depth: *recess_depth,
-                    angle: *entry_angle,
+                    depth: recess_depth.binding.clone(),
+                    angle: entry_angle.binding.clone(),
                 }),
                 exit_kind: None,
                 bottom: Some(HoleBottom::Angled {
-                    included_angle: *drill_point_angle,
+                    included_angle: drill_point_angle.binding.clone(),
                     depth_to_tip: false,
                 }),
                 taper_angle: None,
             })
         }
         _ => None,
-    })
+    };
+    construction.map(|construction| (construction, controls))
 }
 
-pub(crate) fn is_hole_profile_construction(feature: &Feature) -> Result<bool, CodecError> {
-    Ok(hole_sketch_construction(feature)?.is_some())
+pub(crate) fn is_hole_profile_construction(feature: &Feature) -> bool {
+    hole_sketch_construction(feature).is_some()
 }

@@ -6,17 +6,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 
-use crate::loss::F3dLossCode;
+use crate::decode;
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
-use crate::{decode, F3dCodec};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 pub(crate) mod edits;
 mod geometry;
@@ -54,7 +52,7 @@ use records::{
 /// `source_image` must match the F3D source represented by `target`. The
 /// function validates changed topology, geometry, design, sketch, history, and
 /// appearance fields before patching records. Unsupported edits return
-/// [`CodecError::NotImplemented`].
+/// [`CodecError::UnsupportedContent`].
 ///
 /// Completeness of the patch is checked by rebuilding the document from the
 /// baseline plus the supported edits and comparing its machine-local content
@@ -71,7 +69,7 @@ pub(crate) fn write_semantic(
     // Semantic patching reserializes native records under the same desktop
     // decode policy used for the source-image salvage decode below.
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (encode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    let (encode_ctx, source_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         source_image,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::desktop(),
@@ -83,31 +81,14 @@ pub(crate) fn write_semantic(
     } else {
         validate_assembly_projection(target, None)?;
     }
-    let baseline = F3dCodec
-        .decode(&mut Cursor::new(source_image), &DecodeOptions::default())
-        .map_err(|failure| match failure {
-            DecodeFailure::Codec(error) => error,
-            other => CodecError::malformed(format!(
-                "the salvage decode of the source image refused: {other}"
-            )),
-        })?;
-    if baseline
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == F3dLossCode::DesignIntentUndecoded.kind())
-    {
-        return Err(CodecError::NotImplemented(
-            "F3D semantic patching refuses a source whose design intent was not decoded".into(),
-        ));
-    }
-    let baseline_native = f3d_native(baseline.ir())?;
+    let baseline = decode::decode_patch_baseline(&encode_ctx, source_root)?;
+    let baseline_native = baseline.native_layout.as_ref();
     let natives = PatchNatives {
-        baseline: baseline_native.as_ref(),
+        baseline: baseline_native,
         target: target_native.as_ref(),
     };
     let baseline_point_ids = baseline
-        .ir()
+        .ir
         .model
         .points
         .iter()
@@ -120,12 +101,12 @@ pub(crate) fn write_semantic(
         .map(|point| point.id.as_str())
         .collect::<std::collections::BTreeSet<_>>();
     if baseline_point_ids != target_point_ids {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "F3D point regeneration requires the unchanged point-id set and finite coordinates"
                 .into(),
         ));
     }
-    let edited_curves = validate_curve_edits(&baseline.ir().model.curves, &target.model.curves)?;
+    let edited_curves = validate_curve_edits(&baseline.ir.model.curves, &target.model.curves)?;
     let nurbs_curve_edits = target
         .model
         .curves
@@ -135,7 +116,7 @@ pub(crate) fn write_semantic(
                 if edited_curves.contains(curve.id.as_str()) =>
             {
                 let before = baseline
-                    .ir()
+                    .ir
                     .model
                     .curves
                     .iter()
@@ -155,9 +136,9 @@ pub(crate) fn write_semantic(
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
-    let pcurve_edits = validate_pcurve_edits(&baseline.ir().model, &target.model)?;
+    let pcurve_edits = validate_pcurve_edits(&baseline.ir.model, &target.model)?;
     let edited_surfaces =
-        validate_surface_edits(&baseline.ir().model.surfaces, &target.model.surfaces)?;
+        validate_surface_edits(&baseline.ir.model.surfaces, &target.model.surfaces)?;
     let nurbs_surface_edits = target
         .model
         .surfaces
@@ -167,7 +148,7 @@ pub(crate) fn write_semantic(
                 if edited_surfaces.contains(surface.id.as_str()) =>
             {
                 let before = baseline
-                    .ir()
+                    .ir
                     .model
                     .surfaces
                     .iter()
@@ -188,11 +169,10 @@ pub(crate) fn write_semantic(
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
-    let extrusion_direction_edits = validate_procedural_surface_edits(baseline.ir(), target)?;
-    let procedural_surface_fit_edits =
-        validate_procedural_surface_fit_edits(baseline.ir(), target)?;
+    let extrusion_direction_edits = validate_procedural_surface_edits(&baseline.ir, target)?;
+    let procedural_surface_fit_edits = validate_procedural_surface_fit_edits(&baseline.ir, target)?;
     let procedural_curve_edits = validate_procedural_curve_edits(
-        &baseline.ir().model.procedural_curves,
+        &baseline.ir.model.procedural_curves,
         &target.model.procedural_curves,
     )?;
     let sketch_point_edits = validate_sketch_point_edits(natives)?;
@@ -206,7 +186,7 @@ pub(crate) fn write_semantic(
     let lost_edge_edits = validate_lost_edge_edits(natives)?;
     let material_assignment_edits = validate_material_assignment_edits(natives)?;
     let protein_appearance_edits =
-        validate_material_assignment_appearances(natives, baseline.ir(), target)?;
+        validate_material_assignment_appearances(natives, &baseline.ir, target)?;
     let mut act_guid_edits = validate_act_guid_edits(natives)?;
     for (stream, edits) in validate_act_registry_channel_edits(natives)? {
         act_guid_edits.entry(stream).or_default().extend(edits);
@@ -222,25 +202,25 @@ pub(crate) fn write_semantic(
         .map(|native| &native.act_table_references[..])
         .unwrap_or_default();
     if baseline_act_table_references != target_act_table_references {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "F3D ACT table-reference edits require regeneration of the complete table graph".into(),
         ));
     }
     let configuration_edits = validate_configuration_edits(natives)?;
-    validate_act_appearance_bindings(natives, baseline.ir(), target)?;
+    validate_act_appearance_bindings(natives, &baseline.ir, target)?;
     let body_transform_edits =
-        validate_body_transform_edits(&baseline.ir().model.bodies, &target.model.bodies)?;
-    let body_visibility_edits = validate_body_visibility_edits(natives, baseline.ir(), target)?;
+        validate_body_transform_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
+    let body_visibility_edits = validate_body_visibility_edits(natives, &baseline.ir, target)?;
     let body_native_key_edits = validate_body_native_key_edits(natives)?;
     let transform_hint_edits = validate_transform_hint_edits(natives)?;
     let mut entity_color_edits =
-        validate_body_color_edits(&baseline.ir().model.bodies, &target.model.bodies)?;
+        validate_body_color_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
     entity_color_edits.extend(validate_face_color_edits(
-        &baseline.ir().model.faces,
+        &baseline.ir.model.faces,
         &target.model.faces,
     )?);
     let mut edge_range_edits =
-        validate_edge_range_edits(&baseline.ir().model.edges, &target.model.edges)?;
+        validate_edge_range_edits(&baseline.ir.model.edges, &target.model.edges)?;
     // IR line-edge parameters are millimeter arc lengths; the native stream
     // stores centimeters. Conic parameters are angles in both.
     for (edge_id, range) in &mut edge_range_edits {
@@ -264,20 +244,20 @@ pub(crate) fn write_semantic(
             range[1] /= LEN_TO_MM;
         }
     }
-    let face_sense_edits = validate_face_sense_edits(natives, baseline.ir(), target)?;
+    let face_sense_edits = validate_face_sense_edits(natives, &baseline.ir, target)?;
     let coedge_sense_edits =
-        validate_coedge_sense_edits(&baseline.ir().model.coedges, &target.model.coedges)?;
+        validate_coedge_sense_edits(&baseline.ir.model.coedges, &target.model.coedges)?;
     let history_state_edits = validate_history_state_edits(natives)?;
     let creation_timestamp_edits = validate_creation_timestamp_edits(natives)?;
     let edge_continuity_edits = validate_edge_continuity_edits(natives)?;
     let edge_ownership_edits = validate_edge_ownership_edits(natives, target)?;
     let vertex_ownership_edits = validate_vertex_ownership_edits(natives, target)?;
     let face_sidedness_edits = validate_face_sidedness_edits(natives)?;
-    let tolerant_edge_edits = validate_tolerant_edge_edits(natives, baseline.ir(), target)?;
-    let tolerant_vertex_edits = validate_tolerant_vertex_edits(natives, baseline.ir(), target)?;
-    let tolerant_coedge_edits = validate_tolerant_coedge_edits(natives, baseline.ir(), target)?;
+    let tolerant_edge_edits = validate_tolerant_edge_edits(natives, &baseline.ir, target)?;
+    let tolerant_vertex_edits = validate_tolerant_vertex_edits(natives, &baseline.ir, target)?;
+    let tolerant_coedge_edits = validate_tolerant_coedge_edits(natives, &baseline.ir, target)?;
     let wire_topology_edits = validate_wire_topology_edits(natives)?;
-    let mut supported_target = baseline.ir().clone();
+    let mut supported_target = baseline.ir.clone();
     supported_target
         .model
         .points
@@ -337,7 +317,7 @@ pub(crate) fn write_semantic(
         .configurations
         .clone_from(&target.model.configurations);
     if let (Some(mut supported), Some(target_native)) =
-        (baseline_native.clone(), target_native.as_ref())
+        (baseline_native.cloned(), target_native.as_ref())
     {
         supported
             .body_native_keys
@@ -421,17 +401,16 @@ pub(crate) fn write_semantic(
         supported.store(&encode_ctx, supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "modified F3D IR contains edits beyond supported point, line, and plane carriers"
                 .into(),
         ));
     }
 
     let active_brep = baseline
-        .ir()
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("active_brep"))
+        .source_fidelity
+        .metadata
+        .get("active_brep")
         .ok_or_else(|| CodecError::Malformed("F3D baseline has no active BREP".into()))?;
     let positions = target
         .model
@@ -772,7 +751,7 @@ pub(crate) fn write_semantic(
         zip.write_all(&bytes)?;
     }
     if patched_protein_appearances.len() != protein_appearance_edits.len() {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "one or more edited F3D appearances have no writable Protein carrier".into(),
         ));
     }

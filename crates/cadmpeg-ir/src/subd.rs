@@ -101,6 +101,26 @@ impl TryFrom<SubdCageWire> for SubdCage {
 }
 
 impl SubdCage {
+    /// Control vertices in cage order.
+    pub fn vertices(&self) -> &[SubdVertex] {
+        &self.vertices
+    }
+
+    /// Control edges in cage order.
+    pub fn edges(&self) -> &[SubdEdge] {
+        &self.edges
+    }
+
+    /// Directed face rings in cage order.
+    pub fn faces(&self) -> &[SubdFace] {
+        &self.faces
+    }
+
+    /// Editor symmetry blocks in cage order.
+    pub fn symmetries(&self) -> &[SubdSymmetry] {
+        &self.symmetries
+    }
+
     /// Construct a cage with closed directed rings and valid local payloads.
     pub fn new(
         vertices: Vec<SubdVertex>,
@@ -609,6 +629,11 @@ impl TryFrom<SubdVertexWire> for SubdVertex {
 }
 
 impl SubdVertex {
+    /// Optional secondary-grip topology.
+    pub fn secondary_grips(&self) -> Option<&SubdVertexGripLayout> {
+        self.secondary_grips.as_ref()
+    }
+
     /// Construct a control vertex with a finite position.
     pub fn new(
         point: Point3,
@@ -873,6 +898,26 @@ impl TryFrom<SubdEdgeWire> for SubdEdge {
 }
 
 impl SubdEdge {
+    /// Indices of the two endpoint vertices.
+    pub const fn vertices(&self) -> [u32; 2] {
+        self.vertices
+    }
+
+    /// Sharpness at the start and end endpoints.
+    pub const fn sharpness(&self) -> [NonNegativeReal; 2] {
+        self.sharpness
+    }
+
+    /// Parametric knot interval, when present.
+    pub const fn knot_interval(&self) -> Option<PositiveReal> {
+        self.knot_interval
+    }
+
+    /// Sector coefficients at the two endpoints.
+    pub const fn sector_coefficients(&self) -> [FiniteReal; 2] {
+        self.sector_coefficients
+    }
+
     /// Construct an edge from admitted numeric controls. Only distinct
     /// endpoints remain to be checked.
     pub fn from_controls(
@@ -1009,6 +1054,11 @@ impl TryFrom<SubdFaceWire> for SubdFace {
 }
 
 impl SubdFace {
+    /// Directed edge uses in boundary order.
+    pub fn edges(&self) -> &[SubdEdgeUse] {
+        &self.edges
+    }
+
     /// Construct a face with at least three directed edge uses.
     pub fn new(edges: Vec<SubdEdgeUse>) -> Result<Self, SubdError> {
         if edges.len() < 3 {

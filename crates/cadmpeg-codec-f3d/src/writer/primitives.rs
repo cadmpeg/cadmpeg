@@ -24,13 +24,20 @@ pub(super) fn validate_configuration_projection(
     crate::design::configurations::bind_configuration_parameter_overrides(
         &mut projected,
         &target.model.parameters,
-    );
+    )?;
     crate::design::configurations::bind_configuration_suppressed_features(
         &mut projected,
         &target.model.features,
     );
+    let mut parameters = target.model.parameters.clone();
+    let mut features = target.model.features.clone();
+    crate::design::configurations::canonicalize_active_configuration(
+        &mut projected,
+        &mut parameters,
+        &mut features,
+    )?;
     if target.model.configurations != projected {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::UnsupportedContent(
             "neutral F3D configurations must equal the projection of native configuration tables"
                 .into(),
         ));
@@ -49,7 +56,7 @@ pub(crate) fn validate_assembly_projection(
             .is_empty()
             .then_some(())
             .ok_or_else(|| {
-                CodecError::NotImplemented(
+                CodecError::UnsupportedContent(
                     "source-less F3D generation does not support assembly joints".into(),
                 )
             });
@@ -66,7 +73,7 @@ pub(crate) fn validate_assembly_projection(
         &native.design_joint_motions,
     );
     if target.model.assembly_joints != projected.joints {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "editing F3D assembly joints is not supported".into(),
         ));
     }

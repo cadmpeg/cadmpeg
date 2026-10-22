@@ -6,7 +6,22 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputRelationFamily,
     FeatureInputScalar, FeatureInputScalarRole,
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
+use crate::resolved_features::class_sources::ClassSources;
+use std::collections::{BTreeMap, HashMap};
+
+/// Resolve a dimensional binding through the current canonical parameter slice.
+pub(crate) fn dimension_value<Q: cadmpeg_ir::features::DimensionValue>(
+    dimension: &cadmpeg_ir::features::Dimension<Q>,
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+) -> Option<Q> {
+    match dimension {
+        cadmpeg_ir::features::Dimension::Literal(value) => Some(value.clone()),
+        cadmpeg_ir::features::Dimension::Parameter(id) => parameters
+            .iter()
+            .find(|parameter| parameter.id == *id)
+            .and_then(Q::resolve_parameter),
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScalarUnit {
@@ -19,7 +34,7 @@ enum ScalarUnit {
 /// unreferenced scalar belongs to the object whose open span holds its offset.
 struct ScalarOwners<'a> {
     referenced: HashMap<&'a str, Vec<usize>>,
-    unreferenced: Vec<(u64, usize)>,
+    unreferenced: Vec<(u32, usize)>,
 }
 
 impl<'a> ScalarOwners<'a> {
@@ -29,7 +44,7 @@ impl<'a> ScalarOwners<'a> {
         for (index, scalar) in scalars.iter().enumerate() {
             match scalar.feature_ref.as_deref() {
                 Some(feature) => referenced.entry(feature).or_default().push(index),
-                None => unreferenced.push((scalar.offset, index)),
+                None => unreferenced.push((scalar.sequence, index)),
             }
         }
         unreferenced.sort_unstable();
@@ -41,7 +56,7 @@ impl<'a> ScalarOwners<'a> {
 
     /// Indices, in scalar order, of the scalars `feature` owns over the span
     /// after `start` and before `end`.
-    fn owned(&self, feature: &str, start: u64, end: Option<u64>) -> Vec<usize> {
+    fn owned(&self, feature: &str, start: u32, end: Option<u32>) -> Vec<usize> {
         let first = self
             .unreferenced
             .partition_point(|&(offset, _)| offset <= start);
@@ -65,17 +80,17 @@ impl<'a> ScalarOwners<'a> {
 /// A lane's class declarations and name records in offset order.
 struct DeclaredParameters<'a> {
     classes: Vec<&'a FeatureInputClass>,
-    name_offsets: Vec<u64>,
+    name_offsets: Vec<u32>,
 }
 
 impl<'a> DeclaredParameters<'a> {
     fn new(lane: &'a FeatureInputLane) -> Self {
         let mut classes = lane.classes.iter().collect::<Vec<_>>();
-        classes.sort_by_key(|class| class.offset);
+        classes.sort_by_key(|class| class.sequence);
         let mut name_offsets = lane
             .names
             .iter()
-            .map(|name| name.offset)
+            .map(|name| name.sequence)
             .collect::<Vec<_>>();
         name_offsets.sort_unstable();
         Self {
@@ -89,20 +104,21 @@ impl<'a> DeclaredParameters<'a> {
     fn class_of(&self, name: &FeatureInputName) -> Option<&'a FeatureInputClass> {
         let before = self
             .classes
-            .partition_point(|class| class.offset < name.offset);
+            .partition_point(|class| class.sequence < name.sequence);
         let class = *self.classes.get(before.checked_sub(1)?)?;
         let after_class = self
             .name_offsets
-            .partition_point(|&offset| offset <= class.offset);
+            .partition_point(|&offset| offset <= class.sequence);
         let before_name = self
             .name_offsets
-            .partition_point(|&offset| offset < name.offset);
+            .partition_point(|&offset| offset < name.sequence);
         (after_class >= before_name).then_some(class)
     }
 }
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
 pub(crate) fn enrich_history_parameters<'a>(
+    class_sources: &ClassSources,
     histories: &mut [crate::records::FeatureHistory],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
     replace_existing: bool,
@@ -150,20 +166,93 @@ pub(crate) fn enrich_history_parameters<'a>(
             }
         }
         let object_names = FeatureObjectNames::new(&lane.names);
-        let mut starts = Vec::<(u64, usize, usize)>::new();
+        let mut starts = Vec::<(u32, usize, usize)>::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
                 let Some(name) = object_names.of(feature) else {
                     continue;
                 };
-                starts.push((name.offset, history_index, feature_index));
+                starts.push((name.sequence, history_index, feature_index));
             }
         }
         starts.sort_by_key(|left| left.0);
         let owners = ScalarOwners::new(&lane.scalars);
+        let metadata_ids = super::bindings::history_metadata_ids(histories);
+        let mut object_starts = histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
+            .filter_map(|feature| {
+                let offset = usize::try_from(object_names.of(feature)?.offset?).ok()?;
+                Some((offset, feature))
+            })
+            .collect::<Vec<_>>();
+        object_starts.sort_unstable_by_key(|(offset, _)| *offset);
+        let mut pattern_values = Vec::new();
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map(|next| next.0);
             let feature = &histories[history_index].features[feature_index];
+            if feature.input_class.as_deref() == Some("moLPattern_c") {
+                let object_start = object_names
+                    .of(feature)
+                    .and_then(|name| name.offset)
+                    .and_then(|offset| usize::try_from(offset).ok());
+                let object_end = object_starts
+                    .iter()
+                    .position(|(_, candidate)| candidate.id == feature.id)
+                    .map_or(lane.native_payload.len(), |position| {
+                        super::bindings::pattern_object_end(
+                            object_starts.iter().skip(position + 1).copied(),
+                            lane.native_payload.len(),
+                        )
+                    });
+                if let Some(dimensions) = object_start.and_then(|start| {
+                    super::axes::typed_linear_pattern_dimensions(
+                        class_sources,
+                        feature,
+                        lane,
+                        start,
+                        object_end,
+                    )
+                }) {
+                    for (name, default, length) in [
+                        (
+                            dimensions.spacing_name,
+                            crate::history::literals::format_length_mm(dimensions.spacing.into()),
+                            true,
+                        ),
+                        (dimensions.count_name, dimensions.count.to_string(), false),
+                    ] {
+                        let cache = feature
+                            .dimension_properties
+                            .get(name)
+                            .and_then(|properties| properties.get("Value"));
+                        let typed = match cache {
+                            None => Some(default),
+                            Some(cache) if length => {
+                                crate::history::literals::parse_positive_dimension_length_mm(cache)
+                                    .map(|value| {
+                                        crate::history::literals::format_length_mm(value.into())
+                                    })
+                            }
+                            Some(cache) => cache
+                                .trim()
+                                .parse::<u32>()
+                                .ok()
+                                .filter(|count| *count > 0)
+                                .map(|count| count.to_string()),
+                        };
+                        if let Some(typed) = typed {
+                            pattern_values.push((
+                                history_index,
+                                feature_index,
+                                name.to_owned(),
+                                typed,
+                            ));
+                        }
+                    }
+                }
+            }
             let mut owned = BTreeMap::<&str, Vec<&FeatureInputScalar>>::new();
             for scalar in owners
                 .owned(&feature.id, start, end)
@@ -191,8 +280,14 @@ pub(crate) fn enrich_history_parameters<'a>(
                 };
                 if let [scalar] = candidates_for_name.as_slice() {
                     let value_only = names_by_id.get(scalar.name.as_str()).is_some_and(|name| {
-                        value_only_scalar_offset(&lane.native_payload, name)
-                            == usize::try_from(scalar.offset).ok()
+                        value_only_scalar_offset(&lane.native_payload, name).is_some_and(
+                            |value_offset| {
+                                scalar
+                                    .offset
+                                    .and_then(|offset| usize::try_from(offset).ok())
+                                    == Some(value_offset)
+                            },
+                        )
                     });
                     let unit = scalar_units
                         .get(scalar.id.as_str())
@@ -208,6 +303,13 @@ pub(crate) fn enrich_history_parameters<'a>(
                         .push((scalar.value.get(), unit));
                 }
             }
+        }
+        for (history, feature, name, value) in pattern_values {
+            histories[history].features[feature]
+                .dimension_properties
+                .entry(name)
+                .or_default()
+                .insert(cadmpeg_core::nonblank_literal!("Value"), value);
         }
     }
 
@@ -274,6 +376,11 @@ pub(crate) fn enrich_history_parameters<'a>(
             continue;
         };
         if replace_existing {
+            if let Some(properties) = feature.dimension_properties.get_mut(name.as_str()) {
+                if properties.contains_key("Value") {
+                    properties.insert(cadmpeg_core::nonblank_literal!("Value"), expression.clone());
+                }
+            }
             feature.parameters.insert(name, expression);
         } else {
             feature.parameters.entry(name).or_insert(expression);
@@ -325,7 +432,9 @@ fn scalar_unit_from_feature_parameter(
 }
 
 pub(super) fn value_only_scalar_offset(payload: &[u8], name: &FeatureInputName) -> Option<usize> {
-    let name_offset = usize::try_from(name.offset).ok()?;
+    let name_offset = name
+        .offset
+        .and_then(|offset| usize::try_from(offset).ok())?;
     let header_offset = name_offset
         .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
@@ -351,10 +460,9 @@ fn native_scalar_matches_discrete_parameter(
     }
 }
 
-pub(crate) fn sync_changed_feature_scalars(
+pub(crate) fn sync_feature_scalars(
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
-    changed: &HashSet<(String, cadmpeg_core::text::NonBlankString)>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::ParameterValue;
 
@@ -368,7 +476,11 @@ pub(crate) fn sync_changed_feature_scalars(
         let mut starts = histories
             .iter()
             .flat_map(|history| &history.features)
-            .filter_map(|feature| object_names.of(feature).map(|name| (name.offset, feature)))
+            .filter_map(|feature| {
+                object_names
+                    .of(feature)
+                    .map(|name| (name.sequence, feature))
+            })
             .collect::<Vec<_>>();
         starts.sort_by_key(|(left, _)| *left);
         let owners = ScalarOwners::new(&lane.scalars);
@@ -377,9 +489,6 @@ pub(crate) fn sync_changed_feature_scalars(
             let end = starts.get(index + 1).map(|(offset, _)| *offset);
             let mut owned = None;
             for (name, expression) in &feature.parameters {
-                if !changed.contains(&(feature.id.clone(), name.clone())) {
-                    continue;
-                }
                 let candidates = owned
                     .get_or_insert_with(|| owners.owned(&feature.id, start, end))
                     .iter()
@@ -388,22 +497,6 @@ pub(crate) fn sync_changed_feature_scalars(
                         names_by_id.get(scalar.name.as_str()) == Some(&name.as_str())
                     })
                     .collect::<Vec<_>>();
-                let driving = candidates
-                    .iter()
-                    .filter(|(_, scalar)| scalar.role == FeatureInputScalarRole::Driving)
-                    .copied()
-                    .collect::<Vec<_>>();
-                let candidates = if driving.is_empty() {
-                    candidates
-                        .into_iter()
-                        .filter(|(_, scalar)| scalar.role == FeatureInputScalarRole::Native)
-                        .collect::<Vec<_>>()
-                } else {
-                    driving
-                };
-                let [(scalar_index, _)] = candidates.as_slice() else {
-                    continue;
-                };
                 let value = match crate::history::parameters::parse_native_parameter_literal(
                     feature,
                     name.as_str(),
@@ -414,29 +507,38 @@ pub(crate) fn sync_changed_feature_scalars(
                     Some(ParameterValue::Real(value)) => value.get(),
                     _ => continue,
                 };
-                updates.push((*scalar_index, value));
+                updates.extend(
+                    candidates
+                        .into_iter()
+                        .map(|(scalar_index, _)| (scalar_index, value)),
+                );
             }
         }
         for (scalar_index, value) in updates {
             let scalar = &mut lane.scalars[scalar_index];
-            let offset = usize::try_from(scalar.offset).map_err(|_| {
-                cadmpeg_core::CodecError::Malformed(
-                    "SLDPRT scalar offset exceeds address space".into(),
-                )
+            let checked = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("SLDPRT scalar update is non-finite")
             })?;
-            let bytes = lane
-                .native_payload
-                .get_mut(offset..offset + 8)
-                .ok_or_else(|| {
+            if !lane.native_payload.is_empty() {
+                let offset = scalar
+                    .offset
+                    .and_then(|offset| usize::try_from(offset).ok())
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "SLDPRT scalar offset exceeds address space",
+                        )
+                    })?;
+                let end = offset.checked_add(8).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("SLDPRT scalar extent overflows")
+                })?;
+                let bytes = lane.native_payload.get_mut(offset..end).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed(format_args!(
                         "SLDPRT scalar {} lies outside its payload",
                         scalar.id
                     ))
                 })?;
-            let checked = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("SLDPRT scalar update is non-finite")
-            })?;
-            bytes.copy_from_slice(&value.to_le_bytes());
+                bytes.copy_from_slice(&value.to_le_bytes());
+            }
             scalar.value = checked;
         }
     }

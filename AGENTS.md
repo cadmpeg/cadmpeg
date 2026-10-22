@@ -49,3 +49,5 @@ Shared checkouts:
 - Changes you did not make belong to another agent. Do not commit, revert, or unstage them. Check `git diff --cached --name-only` before you commit.
 - Use `--no-verify` only with the reason in the commit body.
 - In a conflicted merge, restore a file from a merge stage with `scripts/restore-merge-stage.sh`.
+
+- Read [the document contract](docs/document-contract.md) before changing codecs or writers. Scope and unrepresented are contracts; retained bytes never supply document content.

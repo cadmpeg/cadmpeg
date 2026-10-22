@@ -7,6 +7,7 @@
 mod identity_rewrite;
 
 pub(crate) mod act;
+pub(crate) mod act_table;
 pub(crate) mod bodies;
 pub(crate) mod canvas;
 pub(crate) mod configuration;
@@ -28,6 +29,7 @@ pub(crate) mod sketch_geometry;
 pub(crate) mod sketch_links;
 pub(crate) mod sketch_placement;
 pub(crate) mod sketch_relations;
+pub(crate) mod source_frame;
 #[cfg(test)]
 mod tests;
 pub(crate) mod topology;

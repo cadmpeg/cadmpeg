@@ -304,7 +304,7 @@ pub(super) fn definitions<'a>(
             thread.operation_label.as_str(),
             FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                 face,
-                diameter: Some(diameter),
+                diameter: Some(cadmpeg_ir::features::Dimension::Literal(diameter)),
                 extent: None,
             }),
         );

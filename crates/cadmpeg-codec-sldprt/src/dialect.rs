@@ -79,16 +79,21 @@ include!("dialect/registry_ids.rs");
 #[cfg(test)]
 const PARASOLID_FORMAT: &str = "parasolid";
 
-/// The one dialect this writer synthesizes.
-///
-/// `writer::generated_solidworks_xml` emits a `swSolidWorks` block with no
-/// `swVersion` attribute, so a synthesized part carries no version declaration
-/// and classifies into the registry's totality row. Every versioned row is
-/// reachable only by preserving a retained part.
-pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-    id: SldprtDialect::Unknown.id(),
-    aliases: &[],
-}];
+/// Dialects authored from the document, in default-first order.
+pub(crate) const TARGETS: &[TargetDescriptor] = &[
+    TargetDescriptor {
+        id: SldprtDialect::Unknown.id(),
+        aliases: &[],
+    },
+    TargetDescriptor {
+        id: SldprtDialect::SwVersionPre12000.id(),
+        aliases: &[],
+    },
+    TargetDescriptor {
+        id: SldprtDialect::SwVersion12000Plus.id(),
+        aliases: &[],
+    },
+];
 
 /// Key of the `swSolidWorks` `swVersion` attribute in
 /// [`DialectMatch::declared`].
@@ -215,6 +220,20 @@ impl SldprtDialect {
         }
     }
 
+    /// The typed registry row selected by a resolved write target.
+    pub(crate) fn from_id(id: &DialectId) -> Option<Self> {
+        Self::ALL.into_iter().find(|dialect| dialect.id() == *id)
+    }
+
+    /// A declaration in this row's established grammar range.
+    pub(crate) const fn write_declaration(self) -> Option<&'static str> {
+        match self {
+            Self::SwVersionPre12000 => Some("11999"),
+            Self::SwVersion12000Plus => Some("12000"),
+            Self::Unknown => None,
+        }
+    }
+
     /// Feature-operation form-code padding width selected by this row.
     pub(crate) const fn form_code_padding(self) -> Option<usize> {
         match self {
@@ -222,12 +241,6 @@ impl SldprtDialect {
             Self::SwVersion12000Plus => Some(8),
             Self::Unknown => None,
         }
-    }
-
-    /// The typed row carried by an existing classification.
-    pub(crate) fn from_match(matched: &DialectMatch) -> Option<Self> {
-        let id = matched.dialect();
-        Self::ALL.into_iter().find(|dialect| dialect.id() == *id)
     }
 
     /// Classifies one document from its `swVersion` declaration. The single

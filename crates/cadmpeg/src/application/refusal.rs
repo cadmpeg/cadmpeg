@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::path::Path;
 
-use cadmpeg_core::decode::{DecodeDepth, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::target::TargetRefusal;
 use cadmpeg_ir::codec::DecodeFailure;
@@ -185,7 +185,7 @@ pub(crate) enum RefusalCode {
     UnsupportedDialect,
     /// Strict decode policy rejected a reported loss.
     StrictDecodeRejected,
-    /// The check found errors and `--allow-errors` was not set.
+    /// The check found errors and `--reject-errors` was set.
     CheckFailed,
     /// Decode reported losses under `--reject-lossy`.
     DecodeLossRejected,
@@ -195,8 +195,8 @@ pub(crate) enum RefusalCode {
     EmptyGeometry,
     /// The encoder cannot write the dialect `--to` named.
     UnsupportedTarget,
-    /// The document records less of its source than the encoder plans from.
-    InsufficientDepth,
+    /// Container-only decoding was requested for a native output.
+    ContainerOnlyOutput,
     /// The selected format has no encoder in this build.
     UnsupportedOutputFormat,
     /// Binary container would stream to stdout without `--binary-stdout`.
@@ -215,7 +215,7 @@ impl RefusalCode {
             Self::ExportLossRejected => (RefusalStage::Export, 1),
             Self::EmptyGeometry
             | Self::UnsupportedTarget
-            | Self::InsufficientDepth
+            | Self::ContainerOnlyOutput
             | Self::UnsupportedOutputFormat => (RefusalStage::Plan, 1),
             Self::BinaryStdoutRejected => (RefusalStage::Plan, 2),
         };
@@ -235,7 +235,7 @@ impl fmt::Display for RefusalCode {
             Self::ExportLossRejected => "export_loss_rejected",
             Self::EmptyGeometry => "empty_geometry",
             Self::UnsupportedTarget => "unsupported_target",
-            Self::InsufficientDepth => "insufficient_depth",
+            Self::ContainerOnlyOutput => "container_only_output",
             Self::UnsupportedOutputFormat => "unsupported_output_format",
             Self::BinaryStdoutRejected => "binary_stdout_rejected",
         })
@@ -320,7 +320,7 @@ pub(crate) enum ConversionRefusal {
         /// Completed decode report bound to the loss that caused refusal.
         rejection: cadmpeg_ir::codec::StrictDecodeRejection,
     },
-    /// The check found errors and `--allow-errors` was not set.
+    /// The check found errors and `--reject-errors` was set.
     CheckFailed {
         /// Operation rejected by validation.
         operation: CheckOperation,
@@ -345,7 +345,7 @@ pub(crate) enum ConversionRefusal {
         /// Export report computed by encoder planning before rejection.
         export_report: ExportReport,
     },
-    /// Geometry export refused because decode transferred no geometry.
+    /// Geometry export refused because the document holds no geometry.
     EmptyGeometry {
         /// Requested output format.
         format: Format,
@@ -353,6 +353,8 @@ pub(crate) enum ConversionRefusal {
         decode_report: Option<DecodeReport>,
         /// Validation report available for an optional `--report`.
         validation: ValidationReport,
+        /// Completed export plan that found no exportable geometry.
+        export_report: ExportReport,
     },
     /// The command-line target cannot select a writable output format.
     UnsupportedOutputFormat {
@@ -368,15 +370,13 @@ pub(crate) enum ConversionRefusal {
         /// Validation report available for an optional `--report`.
         validation: ValidationReport,
     },
-    /// The document records less of its source than the encoder plans from.
-    InsufficientDepth {
-        /// Output format of the refusing encoder.
-        format: &'static str,
-        /// The depth the encoder needs and the depth the document records.
-        depth: DepthReport,
-        /// Decode report available for an optional `--report`.
+    /// The caller requested container inspection before a native output.
+    ContainerOnlyOutput {
+        /// Requested output format.
+        format: Format,
+        /// Completed decode report, when the input was native.
         decode_report: Option<DecodeReport>,
-        /// Validation report available for an optional `--report`.
+        /// Completed validation report.
         validation: ValidationReport,
     },
     /// Binary container would write to stdout without an override.
@@ -420,17 +420,6 @@ enum RefusalDetail<'a> {
     Dialects(&'a DialectLayers),
     /// The encoder's typed target refusal and catalog.
     Target(&'a TargetRefusal),
-    /// The depth the encoder needs and the depth the document records.
-    Depth(DepthReport),
-}
-
-/// Depth evidence carried by an insufficient-depth refusal.
-#[derive(Debug, Clone, Copy, Serialize)]
-pub(crate) struct DepthReport {
-    /// The least depth the encoder plans from.
-    pub(crate) needed: DecodeDepth,
-    /// The depth the document records.
-    pub(crate) recorded: DecodeDepth,
 }
 
 /// Resource evidence carried by a command refusal.
@@ -553,11 +542,11 @@ impl ConversionRefusal {
                         format!("check found {} error(s)", validation.error_count())
                     }
                     CheckOperation::Export { carried } if *carried == validation.error_count() => format!(
-                        "check found {} error(s); refusing to export (use --allow-errors to override)",
+                        "check found {} error(s); refusing to export",
                         validation.error_count()
                     ),
                     CheckOperation::Export { carried } => format!(
-                        "check found {} error(s), {carried} in what the export writes; refusing to export (use --allow-errors to override)",
+                        "check found {} error(s), {carried} in what the export writes; refusing to export",
                         validation.error_count()
                     ),
                 }),
@@ -613,17 +602,18 @@ impl ConversionRefusal {
                 format,
                 decode_report,
                 validation,
+                export_report,
             } => RefusalEvidence {
                 code: RefusalCode::EmptyGeometry,
                 message: Cow::Owned(format!(
-                    "decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)",
+                    "document holds no exportable geometry; refusing to write an empty {}",
                     format.name()
                 )),
                 detail: None,
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
                     check: Some(validation),
-                    export: None,
+                    export: Some(export_report),
                 },
             },
             Self::UnsupportedOutputFormat { message } => RefusalEvidence {
@@ -646,23 +636,11 @@ impl ConversionRefusal {
                     export: None,
                 },
             },
-            Self::InsufficientDepth {
-                format,
-                depth,
-                decode_report,
-                validation,
-            } => RefusalEvidence {
-                code: RefusalCode::InsufficientDepth,
-                message: Cow::Owned(format!(
-                    "the {format} encoder needs a {}-depth decode, but the document records {} depth",
-                    depth.needed, depth.recorded
-                )),
-                detail: Some(RefusalDetail::Depth(*depth)),
-                reports: RefusalReports {
-                    decode: decode_report.as_ref(),
-                    check: Some(validation),
-                    export: None,
-                },
+            Self::ContainerOnlyOutput { format, decode_report, validation } => RefusalEvidence {
+                code: RefusalCode::ContainerOnlyOutput,
+                message: Cow::Owned(format!("--container-only permits CADIR output only; refusing {} output (decode geometry to export it)", format.name())),
+                detail: None,
+                reports: RefusalReports { decode: decode_report.as_ref(), check: Some(validation), export: None },
             },
             Self::BinaryStdoutRejected { message } => RefusalEvidence {
                 code: RefusalCode::BinaryStdoutRejected,
@@ -740,11 +718,10 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use cadmpeg_core::decode::DecodeDepth;
     use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
     use cadmpeg_core::target::{TargetCatalog, TargetDescriptor};
 
-    use super::{ApplicationError, CheckOperation, ConversionRefusal, DepthReport, RefusalCode};
+    use super::{ApplicationError, CheckOperation, ConversionRefusal, RefusalCode};
     use crate::application::transcoder::TargetSelection;
     use cadmpeg_core::target::TargetRefusal;
     use cadmpeg_ir::codec::DecodeFailure;
@@ -796,34 +773,6 @@ mod tests {
             report["target"]["available"][0]["id"],
             "iges:5.3-fixed-ascii"
         );
-    }
-
-    #[test]
-    fn an_insufficient_depth_refusal_reports_both_depths_at_plan() {
-        let refusal = ConversionRefusal::InsufficientDepth {
-            format: "f3d",
-            depth: DepthReport {
-                needed: DecodeDepth::Full,
-                recorded: DecodeDepth::Geometry,
-            },
-            decode_report: None,
-            validation: ValidationReport {
-                entity_counts: BTreeMap::new(),
-                findings: Vec::new(),
-                losses: Vec::new(),
-            },
-        };
-        assert_eq!(refusal.code(), RefusalCode::InsufficientDepth);
-        assert_eq!(refusal.exit_code(), 1);
-        assert_eq!(
-            refusal.to_string(),
-            "the f3d encoder needs a full-depth decode, but the document records geometry depth"
-        );
-        let report = report_value(&refusal);
-        assert_eq!(report["code"], "insufficient_depth");
-        assert_eq!(report["stage"], "plan");
-        assert_eq!(report["depth"]["needed"], "full");
-        assert_eq!(report["depth"]["recorded"], "geometry");
     }
 
     #[test]
@@ -987,6 +936,12 @@ mod tests {
                 (ResourceFailure::AllocationFailed, "allocation_failed"),
             ] {
                 let limit = ResourceLimit {
+                    scope: match dimension {
+                        cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
+                            cadmpeg_core::decode::LimitScope::Part
+                        }
+                        _ => cadmpeg_core::decode::LimitScope::Session,
+                    },
                     dimension,
                     reason,
                     limit: u64::MAX,

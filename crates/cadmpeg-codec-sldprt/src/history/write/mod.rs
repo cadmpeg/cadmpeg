@@ -1,207 +1,53 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral-to-native history write preparation.
 
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    BodySelection, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition, FeatureId, FeatureOperation, LinearTermination, PlanarProfileRef,
-    VertexSelection,
+    BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition,
+    FeatureOperation, LinearTermination, PlanarProfileRef, VertexSelection,
 };
 use std::collections::{HashMap, HashSet};
 
 use crate::history::configuration::{
     enrich_history_semantic, project_compact_and_generated, HistoryEnrichment,
 };
-use crate::history::hash::{feature_hash, history_hash, native_parameter_hash};
-use crate::history::parameters::expression_identifier_tokens;
 use crate::history::project::{project_feature_model, project_features, FeatureProjection};
 
-pub(crate) mod brep_agreement;
 pub(crate) mod configurations;
 pub(crate) mod features;
 pub(crate) mod parameters;
 pub(crate) mod xml;
 
 use self::features::sync_neutral_features;
-use self::parameters::rewrite_parameter_expression;
 
-/// Collect retained feature names changed by the neutral model.
-pub(crate) fn feature_name_changes(
-    ir: &cadmpeg_ir::CadIr,
-    native: Option<&crate::native::SldprtNative>,
-) -> HashMap<FeatureId, (String, String)> {
-    native.map_or_else(HashMap::new, |native| {
-        ir.model
-            .features
-            .iter()
-            .filter_map(|feature| {
-                let record = native
-                    .feature_histories
-                    .iter()
-                    .flat_map(|history| &history.features)
-                    .find(|record| feature.native_ref.as_deref() == Some(record.id.as_str()))?;
-                let new_name = feature.name.as_deref().unwrap_or_default();
-                (record.name != new_name).then(|| {
-                    (
-                        feature.id.clone(),
-                        (record.name.clone(), new_name.to_string()),
-                    )
-                })
-            })
-            .collect()
-    })
-}
-
-pub(crate) fn native_parameters_match_source(
-    ir: &cadmpeg_ir::CadIr,
-    native: Option<&crate::native::SldprtNative>,
-) -> Result<bool, CodecError> {
-    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &hash_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-
-    Ok(native
-        .map(|native| native_parameter_hash(&hash_ctx, &native.feature_histories))
-        .transpose()?
-        .zip(
-            ir.source
-                .as_ref()
-                .and_then(|source| source.attributes.get("sldprt_native_parameter_sha256")),
-        )
-        .is_some_and(|(current, baseline)| &current == baseline))
-}
-
-pub(crate) fn apply_feature_name_changes(
-    parameters: &mut [DesignParameter],
-    changes: &HashMap<FeatureId, (String, String)>,
-) {
-    let owners = parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
-        .collect::<HashMap<_, _>>();
-    for parameter in parameters {
-        if let Some((old_owner, new_owner)) = parameter
-            .owner
-            .as_ref()
-            .and_then(|owner| changes.get(owner))
-        {
-            if let Some(equation_id) = parameter.properties.get_mut("EquationId") {
-                if let Some(base) = equation_id.strip_suffix(&format!("@{old_owner}")) {
-                    *equation_id = format!("{base}@{new_owner}");
-                }
-            }
-        }
-        let dependency_changes = parameter
-            .dependencies
-            .iter()
-            .filter_map(|dependency| owners.get(dependency))
-            .filter_map(|owner| owner.as_ref().and_then(|owner| changes.get(owner)))
-            .collect::<Vec<_>>();
-        let aliases = expression_identifier_tokens(&parameter.expression)
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|token| {
-                dependency_changes
-                    .iter()
-                    .find_map(|(old_owner, new_owner)| {
-                        token
-                            .value()
-                            .strip_suffix(&format!("@{old_owner}"))
-                            .map(|base| (token.value().to_owned(), format!("{base}@{new_owner}")))
-                    })
-            })
-            .collect::<HashMap<_, _>>();
-        if let Some(rewritten) = rewrite_parameter_expression(&parameter.expression, &aliases) {
-            parameter.expression = rewritten;
-        }
-    }
-}
-
-/// Resolve neutral/native feature edit authority and update the write history.
-///
-/// Bitwise comparison against the machine-local document baseline; see
-/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
-/// the neutral side.
-pub(crate) fn prepare_features_for_write(
+/// Regenerate native feature fields from current neutral content.
+pub(crate) fn synchronize_feature_records(
+    ctx: &DecodeContext<'_>,
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<Vec<features::FeatureInputRename>, CodecError> {
-    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &hash_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-
-    let neutral_hash = feature_hash(&hash_ctx, &ir.model)?;
-    let native_hash = native
-        .as_ref()
-        .map(|value| history_hash(&hash_ctx, &value.feature_histories))
-        .transpose()?;
-    let baseline_neutral = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_neutral_feature_local_sha256"));
-    let baseline_native = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_native_history_sha256"));
-    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &neutral_hash);
-    let native_changed = match (&native_hash, baseline_native) {
-        (Some(current), Some(baseline)) => current != baseline,
-        (Some(_), None) => true,
-        (None, Some(_)) => true,
-        (None, None) => false,
-    };
-    if baseline_neutral.is_none() && baseline_native.is_none() {
-        validate_compact_body_selection_edits(&ir.model.features, native.as_ref())?;
-        validate_compact_edge_selection_edits(&ir.model.features, native.as_ref())?;
-        validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
-        validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
-        validate_embedded_helix_edits(&ir.model.features, native.as_ref())?;
-        return sync_neutral_features(&ir.model, &ir.model.parameters, &ir.model.bodies, native);
+    if !ir.scope.design {
+        return Ok(Vec::new());
     }
-    match (neutral_changed, native_changed) {
-        (false, _) => Ok(Vec::new()),
-        (true, true) => {
-            let projected_model = native
-                .as_ref()
-                .map(project_feature_model_with_native_inputs)
-                .transpose()?
-                .map(|projection| Ok::<_, CodecError>(projection.into_model()?.0))
-                .transpose()?
-                .unwrap_or_default();
-            if feature_hash(&hash_ctx, &projected_model)? == neutral_hash {
-                Ok(Vec::new())
-            } else {
-                Err(CodecError::Malformed(
-                    "conflicting neutral and native SLDPRT feature edits".into(),
-                ))
-            }
-        }
-        (true, false) => {
-            validate_compact_body_selection_edits(&ir.model.features, native.as_ref())?;
-            validate_compact_edge_selection_edits(&ir.model.features, native.as_ref())?;
-            validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
-            validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
-            validate_embedded_helix_edits(&ir.model.features, native.as_ref())?;
-            sync_neutral_features(&ir.model, &ir.model.parameters, &ir.model.bodies, native)
-        }
-    }
+    validate_compact_body_selection_edits(&ir.model.features, native.as_ref())?;
+    validate_compact_edge_selection_edits(&ir.model.features, native.as_ref())?;
+    validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
+    validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
+    validate_embedded_helix_edits(ctx, &ir.model.features, native.as_ref())?;
+    sync_neutral_features(&ir.model, &ir.model.parameters, &ir.model.bodies, native)
 }
 
 fn validate_embedded_helix_edits(
+    ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
     let Some(native) = native else {
         return Ok(());
     };
-    let embedded = project_features(&native.feature_histories)?
+    let embedded = project_features(ctx, &native.feature_histories)?
         .into_iter()
         .filter_map(|feature| {
             matches!(
@@ -211,7 +57,7 @@ fn validate_embedded_helix_edits(
             .then_some(feature.id)
         })
         .collect::<HashSet<_>>();
-    let expected = project_features_with_native_inputs(native)?
+    let expected = project_features_with_native_inputs(native, &[])?
         .into_iter()
         .filter_map(|feature| {
             (embedded.contains(&feature.id)
@@ -227,7 +73,7 @@ fn validate_embedded_helix_edits(
             continue;
         };
         if feature.evaluation.definition() != expected {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "SLDPRT feature {} changes embedded helix geometry",
                 feature.id
             )));
@@ -243,7 +89,7 @@ fn validate_surface_sweep_profile_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let expected = project_features_with_native_inputs(native)?
+    let expected = project_features_with_native_inputs(native, &[])?
         .into_iter()
         .filter_map(|feature| {
             let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
@@ -268,19 +114,19 @@ fn validate_surface_sweep_profile_edits(
         let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
             feature.evaluation.definition()
         else {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
             )));
         };
         let Some(profile) = shape.referenced_profile() else {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
             )));
         };
         if profile != expected {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
             )));
@@ -291,13 +137,16 @@ fn validate_surface_sweep_profile_edits(
 
 fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
+    sketches: &[cadmpeg_ir::sketches::Sketch],
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
-    Ok(project_feature_model_with_native_inputs(native)?.features)
+    Ok(project_feature_model_with_native_inputs(native, sketches)?.features)
 }
 
 fn project_feature_model_with_native_inputs(
     native: &crate::native::SldprtNative,
+    sketches: &[cadmpeg_ir::sketches::Sketch],
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
+    let class_sources = ClassSources::default();
     let projection_bytes = native
         .feature_input_lanes
         .iter()
@@ -308,27 +157,37 @@ fn project_feature_model_with_native_inputs(
         DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
     let mut histories = native.feature_histories.clone();
     enrich_history_semantic(
+        &class_sources,
         &ctx,
         &mut histories,
         &native.feature_input_lanes,
         &native.pmi_dimensions,
         HistoryEnrichment::Write,
     )?;
-    let mut projection = project_feature_model(&histories)?;
+    let mut projection = project_feature_model(&ctx, &histories)?;
     let features = &mut projection.features;
     crate::resolved_features::bindings::bind_pattern_inputs(
+        &class_sources,
         features,
         &histories,
         &native.feature_input_lanes,
     )?;
     crate::resolved_features::operations::bind_sweep_operations(
+        &class_sources,
         features,
         &histories,
         &native.feature_input_lanes,
         None,
     );
-    project_compact_and_generated(&ctx, features, &histories, &native.feature_input_lanes)?;
+    project_compact_and_generated(
+        &class_sources,
+        &ctx,
+        features,
+        &histories,
+        &native.feature_input_lanes,
+    )?;
     crate::resolved_features::operations::bind_revolution_operations(
+        &class_sources,
         features,
         &histories,
         &native.feature_input_lanes,
@@ -336,10 +195,17 @@ fn project_feature_model_with_native_inputs(
     );
     // discarded-value: marking the features is the whole effect on the write route; the collected sketches have a reader only on the decode route
     let _ = crate::resolved_features::markers::spatial_sketches(
+        &class_sources,
         features,
         &histories,
         &native.feature_input_lanes,
     );
+    // The held sketch arenas resolve profile aliases exactly as on decode.
+    // This replaces a provisional Feature operand with its actual Sketch.
+    crate::history::bind::bind_unique_sketch_feature(features, sketches, &histories);
+    // Later bindings replace provisional feature operands with their actual
+    // sketch or spatial carriers. Dependencies follow the final definition.
+    crate::history::project::refresh_definition_dependencies(&ctx, features)?;
     Ok(projection)
 }
 
@@ -383,9 +249,9 @@ fn validate_compact_body_selection_edits(
                 &selection.local_body_ids,
             ),
         )
-        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+        .map_err(|error| CodecError::UnsupportedContent(error.to_string()))?;
         if bodies != &expected {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "SLDPRT feature {} changes a compact body selection",
                 feature.id
             )));
@@ -395,7 +261,7 @@ fn validate_compact_body_selection_edits(
             .as_ref()
             .is_some_and(|expected| mode != expected)
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "SLDPRT feature {} changes a compact body retention mode",
                 feature.id
             )));
@@ -446,7 +312,7 @@ fn validate_compact_edge_selection_edits(
             _ => continue,
         };
         let [edges] = groups.as_slice() else {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "SLDPRT feature {} requires exactly one compact edge group",
                 feature.id
             )));
@@ -479,7 +345,7 @@ fn validate_compact_edge_selection_edits(
             None => EdgeSelection::Native(native),
         };
         if *edges != &expected {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "SLDPRT feature {} changes a compact edge selection",
                 feature.id
             )));
@@ -618,7 +484,7 @@ fn validate_compact_surface_selection_edits(
             }
         };
         if changed {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "SLDPRT feature {} changes a compact surface selection",
                 feature.id
             )));
@@ -626,3 +492,5 @@ fn validate_compact_surface_selection_edits(
     }
     Ok(())
 }
+
+mod input_classes;

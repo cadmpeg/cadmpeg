@@ -1393,7 +1393,6 @@ fn decode_reports_display_list_geometry() {
             .unwrap(),
     );
     let source = result.ir().source.as_ref().expect("source metadata");
-
     assert_eq!(
         source
             .attributes
@@ -1516,6 +1515,13 @@ fn decode_rejects_inconsistent_display_list_table() {
         .unwrap()
         .attributes
         .contains_key("displaylist_vertices"));
+    assert!(!result
+        .ir()
+        .source
+        .as_ref()
+        .unwrap()
+        .attributes
+        .contains_key("displaylist_triangles"));
 }
 
 #[test]

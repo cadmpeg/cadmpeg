@@ -223,6 +223,10 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Option<
 /// Each nesting arm emits its own record after the basis record it references,
 /// so the chain is written from the leaf outwards.
 pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
+    e.try_geometry(|e| pcurve_carrier(e, geometry))
+}
+
+fn pcurve_carrier(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
     Some(match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
@@ -401,19 +405,13 @@ pub(crate) fn placement(
 }
 
 /// Emit a `CARTESIAN_TRANSFORMATION_OPERATOR_3D`, which states three axis
-/// directions, an origin and one scale: a similarity. Any other transform,
-/// including one with a zero column, is refused through
-/// [`Emitter::refuse_operator`], and the section is not written.
-pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
-    let Some(SimilarityColumns {
+/// directions, an origin and one scale: a similarity. Other transforms return
+/// `None`, allowing the caller to reduce or omit the affected entity.
+pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> Option<Ref> {
+    let SimilarityColumns {
         directions: [x, y, z],
         scale,
-    }) = similarity_transform(&transform)
-    else {
-        e.refuse_operator(transform);
-        // The emitter refuses the whole DATA section, so no operator reference is written.
-        return Ref(0);
-    };
+    } = similarity_transform(&transform)?;
     let origin = point(
         e,
         Point3::new(
@@ -425,10 +423,10 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
     let x = direction(e, x);
     let y = direction(e, y);
     let z = direction(e, z);
-    e.emit(
+    Some(e.emit(
         "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
         &format!("'',{x},{y},{origin},{},{z}", e.real(scale)),
-    )
+    ))
 }
 
 /// The carrier whose values [`surface`] writes into the file for `g`.
@@ -447,6 +445,10 @@ pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> &SolvedSurfaceGeometry
 /// [`bake::placed_surface`] can place it, and otherwise as `SURFACE_REPLICA`
 /// records over its basis.
 pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
+    e.try_geometry(|e| surface_carrier(e, g))
+}
+
+fn surface_carrier(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     let (placements, basis) = placed_surface(g);
     if !placements.is_empty() {
         if let Some(placed) =
@@ -459,7 +461,7 @@ pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref>
     // The chain is emitted from the basis outwards, so each `SURFACE_REPLICA`
     // references the record written for the placement inside it.
     for transform in placements.iter().rev() {
-        let operator = transformation_operator(e, **transform);
+        let operator = transformation_operator(e, **transform)?;
         reference = e.emit("SURFACE_REPLICA", &format!("'',{reference},{operator}"));
     }
     Some(reference)
@@ -587,6 +589,10 @@ fn zero_angle_cone(e: &mut Emitter, cone: &ConeSurface) -> Option<Ref> {
 /// [`bake::placed_curve`] can place it, and otherwise as `CURVE_REPLICA`
 /// records over its basis.
 pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
+    e.try_geometry(|e| curve_carrier(e, g))
+}
+
+fn curve_carrier(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
     let (placements, basis) = placed_curve(g);
     if !placements.is_empty() {
         if let Some(placed) =
@@ -599,7 +605,7 @@ pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
     // The chain is emitted from the basis outwards, so each `CURVE_REPLICA`
     // references the record written for the placement inside it.
     for transform in placements.iter().rev() {
-        let operator = transformation_operator(e, **transform);
+        let operator = transformation_operator(e, **transform)?;
         reference = e.emit("CURVE_REPLICA", &format!("'',{reference},{operator}"));
     }
     Some(reference)

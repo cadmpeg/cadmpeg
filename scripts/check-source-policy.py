@@ -1090,7 +1090,7 @@ DOC_ATTRIBUTE = re.compile(r"^#\s*\[\s*doc\b")
 MIRROR_FIELD = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*:")
 MIRROR_BODY_FIELD = re.compile(
     r"(?:\s|#\s*\[[^]]*\])*?(?:pub(?:\([^)]*\))?\s+)?"
-    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*:",
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*:(?!:)",
     re.DOTALL,
 )
 MIRROR_BODY_VARIANT = re.compile(

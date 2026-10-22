@@ -36,29 +36,37 @@ fn semantic_writer_round_trips_typed_shell() {
             thickness: Some(value),
             outward: Some(false),
             ..
-        }) if selection == "face:4" && (value.get() - 2.032).abs() < 1.0e-12
+        }) if selection == "face:4" && (decoded.ir().dimension_value(value).unwrap().get() - 2.032).abs() < 1.0e-12
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let feature_id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &feature_id,
+                "/thickness",
+                cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Shell {
                 removed_faces,
-                thickness,
+                thickness: _,
                 outward,
                 ..
             }) = definition
             else {
                 panic!("typed shell feature");
             };
-            *thickness = Some(cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap());
+
             *outward = Some(true);
             *removed_faces = FaceSelection::Native("face:5,face:6".into());
         });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -77,7 +85,7 @@ fn semantic_writer_round_trips_typed_shell() {
             thickness: Some(actual_thickness),
             outward: Some(true),
             ..
-        }) if actual_thickness.get() == 3.0
+        }) if regenerated.ir().dimension_value(actual_thickness).unwrap().get() == 3.0
     ));
 }
 
@@ -101,28 +109,36 @@ fn semantic_writer_round_trips_typed_thicken() {
             faces: FaceSelection::Native(selection),
             thickness: Some(value),
             side: Some(ThickenSide::Reverse),
-        }) if selection == "face:4" && (value.get() - 2.032).abs() < 1.0e-12
+        }) if selection == "face:4" && (decoded.ir().dimension_value(value).unwrap().get() - 2.032).abs() < 1.0e-12
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let feature_id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &feature_id,
+                "/thickness",
+                cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Thicken {
                 faces,
-                thickness,
+                thickness: _,
                 side,
             }) = definition
             else {
                 panic!("typed thicken feature");
             };
             *faces = FaceSelection::Native("face:5,face:6".into());
-            *thickness = Some(cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap());
+
             *side = Some(ThickenSide::Both);
         });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -142,7 +158,7 @@ fn semantic_writer_round_trips_typed_thicken() {
             thickness: Some(actual_thickness),
             side: Some(ThickenSide::Both),
             ..
-        }) if actual_thickness.get() == 3.0
+        }) if regenerated.ir().dimension_value(actual_thickness).unwrap().get() == 3.0
     ));
 }
 
@@ -176,7 +192,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
             faces: FaceSelection::Unresolved,
             thickness: Some(actual_thickness),
             side: Some(ThickenSide::Forward),
-        }) if actual_thickness.get() == 6.0
+        }) if decoded.ir().dimension_value(actual_thickness).unwrap().get() == 6.0
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
@@ -185,18 +201,23 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let feature_id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &feature_id,
+                "/thickness",
+                cadmpeg_ir::scalar::PositiveLength::new(8.5).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Thicken { thickness, .. }) =
-                definition
-            else {
+            let FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) = definition else {
                 panic!("typed positional thicken");
             };
-            *thickness = Some(cadmpeg_ir::scalar::PositiveLength::new(8.5).unwrap());
         });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -216,7 +237,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
             thickness: Some(actual_thickness),
             side: Some(ThickenSide::Forward),
             ..
-        }) if actual_thickness.get() == 8.5
+        }) if regenerated.ir().dimension_value(actual_thickness).unwrap().get() == 8.5
     ));
 }
 
@@ -248,7 +269,7 @@ fn semantic_writer_round_trips_typed_scale() {
             bodies: BodySelection::Native(selection),
             center: Some(ScaleCenter::Point(checked_geometry_1)),
             factors: ScaleFactors::Uniform { factor },
-        }) if (selection == "body:1" && factor.get() == 2.0) && matches!(checked_geometry_1.get(), Point3 { x: 1.0, y: 2.0, z: 3.0 })
+        }) if (selection == "body:1" && decoded.ir().dimension_value(factor).unwrap().get() == 2.0) && matches!(checked_geometry_1.get(), Point3 { x: 1.0, y: 2.0, z: 3.0 })
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
@@ -288,14 +309,17 @@ fn semantic_writer_round_trips_typed_scale() {
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
             ));
             *factors = ScaleFactors::PerAxis {
-                factors: [1.5, 2.0, 2.5]
-                    .map(|value| cadmpeg_ir::scalar::NonZeroReal::new(value).unwrap()),
+                factors: [1.5, 2.0, 2.5].map(|value| {
+                    cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::NonZeroReal::new(value).unwrap(),
+                    )
+                }),
             };
         });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -324,7 +348,7 @@ fn semantic_writer_round_trips_typed_scale() {
             center: Some(ScaleCenter::Point(checked_geometry_1)),
             factors: ScaleFactors::PerAxis { factors },
             ..
-        }) if (factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [1.5, 2.0, 2.5]) && matches!(checked_geometry_1.get(), Point3 {
+        }) if (std::array::from_fn::<_, 3, _>(|index| regenerated.ir().dimension_value(&factors[index]).unwrap().get()) == [1.5, 2.0, 2.5]) && matches!(checked_geometry_1.get(), Point3 {
                 x: 4.0,
                 y: 5.0,
                 z: 6.0
@@ -392,16 +416,7 @@ fn semantic_writer_retains_partial_native_scale_construction() {
     for index in 0..2 {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        let error = crate::test_support::plan_inherited_write(
-            &detached,
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-        assert!(
-            error.to_string().contains("unresolved scale construction"),
-            "{error}"
-        );
+        crate::test_support::assert_synthesis_fallback(&detached, decoded.source_fidelity());
     }
 
     for (index, feature) in decoded.ir_mut().model.features.iter_mut().enumerate() {
@@ -475,7 +490,7 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -555,10 +570,7 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
     assert_eq!(feature.properties["Vertex"], "vertex:2");
     assert_eq!(feature.parameters["Depth"], "4mm");
     assert_eq!(feature.parameters["Depth2"], "6mm");
-    assert_eq!(
-        feature.parameters["Draft"],
-        format!("{}rad", 3f64.to_radians())
-    );
+    assert_eq!(feature.parameters["Draft"], "3deg");
 }
 
 #[test]
@@ -591,11 +603,19 @@ fn semantic_writer_round_trips_typed_draft() {
             outward: Some(false),
         }) if ( faces == "face:1,face:2"
             && neutral_plane == "face:3"
-            && (value.get() - 3f64.to_radians()).abs() < 1.0e-12) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
+            && (decoded.ir().dimension_value(value).unwrap().get() - 3f64.to_radians()).abs() < 1.0e-12) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let feature_id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &feature_id,
+                "/angle",
+                cadmpeg_ir::scalar::SlopeAngle::new(7f64.to_radians()).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces,
@@ -604,7 +624,7 @@ fn semantic_writer_round_trips_typed_draft() {
                         plane: neutral_plane,
                         pull: Some(pull),
                     },
-                angle,
+                angle: _,
                 outward,
                 ..
             }) = definition
@@ -613,7 +633,7 @@ fn semantic_writer_round_trips_typed_draft() {
             };
             pull.direction =
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
-            *angle = Some(cadmpeg_ir::scalar::SlopeAngle::new(7f64.to_radians()).unwrap());
+
             *outward = Some(true);
             *faces = FaceSelection::Native("face:4".into());
             *neutral_plane = FaceSelection::Native("face:5".into());
@@ -621,7 +641,7 @@ fn semantic_writer_round_trips_typed_draft() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -702,7 +722,7 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -730,10 +750,7 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
 
 #[test]
 fn semantic_writer_preserves_absent_feature_selections() {
-    use cadmpeg_ir::features::{
-        edge_treatments::ChamferSpec, EdgeSelection, FaceSelection, FeatureDefinition,
-        FeatureOperation,
-    };
+    use cadmpeg_ir::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -779,34 +796,44 @@ fn semantic_writer_preserves_absent_feature_selections() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) = definition
-            else {
-                panic!("typed chamfer");
-            };
-            groups[0].spec = ChamferSpec::Distance {
-                distance: cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
-            };
-        });
+        let feature_id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &feature_id,
+                "/groups/0/spec/distance",
+                cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
+            )
+            .unwrap();
+        let feature_id = ir_edit.model.features[1].id.clone();
+        ir_edit
+            .set_dimension(
+                &feature_id,
+                "/thickness",
+                cadmpeg_ir::scalar::PositiveLength::new(1.5).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[1].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Shell { thickness, .. }) =
-                definition
-            else {
+            let FeatureDefinition::Operation(FeatureOperation::Shell { .. }) = definition else {
                 panic!("typed shell");
             };
-            *thickness = Some(cadmpeg_ir::scalar::PositiveLength::new(1.5).unwrap());
         });
+        let feature_id = ir_edit.model.features[2].id.clone();
+        ir_edit
+            .set_dimension(
+                &feature_id,
+                "/angle",
+                cadmpeg_ir::scalar::SlopeAngle::new(5f64.to_radians()).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[2].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Draft { angle, .. }) = definition
-            else {
+            let FeatureDefinition::Operation(FeatureOperation::Draft { .. }) = definition else {
                 panic!("typed draft");
             };
-            *angle = Some(cadmpeg_ir::scalar::SlopeAngle::new(5f64.to_radians()).unwrap());
         });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -874,7 +901,7 @@ fn semantic_writer_round_trips_typed_combine() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -956,7 +983,7 @@ fn semantic_writer_round_trips_delete_and_keep_body() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1047,7 +1074,7 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
         });
     }
     let mut resolved_encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         sparse.ir(),
         sparse.source_fidelity(),
         &mut resolved_encoded,
@@ -1108,7 +1135,7 @@ fn semantic_writer_round_trips_typed_delete_face() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1170,7 +1197,7 @@ fn semantic_writer_round_trips_typed_replace_face() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1217,7 +1244,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
                 distance: actual_distance
             },
             ..
-        }) if actual_distance.get() == 2.0
+        }) if decoded.ir().dimension_value(actual_distance).unwrap().get() == 2.0
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
@@ -1227,7 +1254,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
                 distance: actual_distance,
             },
             ..
-        }) if ( actual_distance.get() == 3.0) && matches!(geometry_1.get(), Vector3 {
+        }) if ( decoded.ir().dimension_value(actual_distance).unwrap().get() == 3.0) && matches!(geometry_1.get(), Vector3 {
                     x: 1.0,
                     y: 0.0,
                     z: 0.0
@@ -1242,7 +1269,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
                 angle: value,
             },
             ..
-        }) if ( (value.get() - 15f64.to_radians()).abs() < 1.0e-12)
+        }) if ( (decoded.ir().dimension_value(value).unwrap().get() - 15f64.to_radians()).abs() < 1.0e-12)
         && matches!(geometry_1.get(), Point3 { x: 1.0, y: 2.0, z: 3.0 })
         && matches!(geometry_2.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
@@ -1255,15 +1282,23 @@ fn semantic_writer_round_trips_all_move_face_forms() {
             else {
                 panic!("typed move face");
             };
+            let FaceMotion::Offset { distance } = motion else {
+                panic!("original offset motion");
+            };
+            let distance = distance.clone();
             *faces = FaceSelection::Native("face:8".into());
             *motion = FaceMotion::Translate {
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
                     0.0, 1.0, 0.0,
                 ))
                 .unwrap(),
-                distance: Length::new(4.0).unwrap(),
+                distance,
             };
         });
+        let feature_id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(&feature_id, "/motion/distance", Length::new(4.0).unwrap())
+            .unwrap();
         ir_edit.model.features[1].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::MoveFace { motion, .. }) =
                 definition
@@ -1275,7 +1310,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
                     .unwrap(),
                 axis_dir: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
                     .unwrap(),
-                angle: Angle::new(0.5).unwrap(),
+                angle: cadmpeg_ir::Dimension::Literal(Angle::new(0.5).unwrap()),
             };
         });
         ir_edit.model.features[2].evaluation.edit(|definition, _| {
@@ -1285,13 +1320,13 @@ fn semantic_writer_round_trips_all_move_face_forms() {
                 panic!("typed move face");
             };
             *motion = FaceMotion::Offset {
-                distance: Length::new(-1.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(-1.0).unwrap()),
             };
         });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1311,7 +1346,32 @@ fn semantic_writer_round_trips_all_move_face_forms() {
     assert_eq!(native[1].parameters["Angle"], "0.5rad");
     assert_eq!(native[2].properties["Mode"], "Offset");
     assert_eq!(native[2].parameters["Distance"], "-1mm");
-    assert!(!native[2].parameters.contains_key("Angle"));
+    // #209 D1: changing the motion removes its use of Angle, while the
+    // independently authored parameter remains held by the feature.
+    assert_eq!(native[2].parameters["Angle"], "15deg");
+    assert!(matches!(
+        regenerated.ir().model.features[2].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MoveFace {
+            motion: FaceMotion::Offset { distance },
+            ..
+        }) if regenerated.ir().dimension_value(distance).unwrap().get() == -1.0
+    ));
+    assert_eq!(
+        regenerated
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| {
+                parameter.owner.as_ref() == Some(&regenerated.ir().model.features[2].id)
+                    && parameter.name == "Angle"
+            })
+            .unwrap()
+            .value,
+        Some(cadmpeg_ir::features::ParameterValue::Angle(
+            Angle::new(15f64.to_radians()).unwrap()
+        ))
+    );
 }
 
 #[test]
@@ -1335,15 +1395,23 @@ fn semantic_writer_round_trips_typed_dome() {
             height: Some(value),
             elliptical: Some(false),
             reverse: Some(false),
-        }) if faces == "face:9" && (value.get() - 6.35).abs() < 1.0e-12
+        }) if faces == "face:9" && (decoded.ir().dimension_value(value).unwrap().get() - 6.35).abs() < 1.0e-12
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let feature_id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &feature_id,
+                "/height",
+                cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Dome {
                 faces,
-                height,
+                height: _,
                 elliptical,
                 reverse,
             }) = definition
@@ -1351,14 +1419,14 @@ fn semantic_writer_round_trips_typed_dome() {
                 panic!("typed dome");
             };
             *faces = FaceSelection::Native("face:10,face:11".into());
-            *height = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
+
             *elliptical = Some(true);
             *reverse = Some(true);
         });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1379,7 +1447,7 @@ fn semantic_writer_round_trips_typed_dome() {
             height: Some(actual_height),
             elliptical: Some(true),
             reverse: Some(true),
-        }) if (faces == "face:10,face:11") && actual_height.get() == 8.0
+        }) if (faces == "face:10,face:11") && regenerated.ir().dimension_value(actual_height).unwrap().get() == 8.0
     ));
 }
 
@@ -1409,13 +1477,7 @@ fn semantic_writer_retains_partial_native_dome_construction() {
 
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    let error = crate::test_support::plan_inherited_write(
-        &detached,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("unresolved dome construction"));
+    crate::test_support::assert_synthesis_fallback(&detached, decoded.source_fidelity());
 
     decoded.ir_mut().model.features[0].name = Some("Renamed dome".into());
     let mut encoded = Vec::new();
@@ -1519,13 +1581,7 @@ fn semantic_writer_round_trips_principal_reference_planes() {
                 plane: PrincipalPlane::Right,
             },
         ));
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("principal-plane role"));
+    crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
 }
 
 #[test]
@@ -1674,7 +1730,7 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
             distance: actual_distance,
-        }) if actual_distance.get() == 3.0
+        }) if decoded.ir().dimension_value(actual_distance).unwrap().get() == 3.0
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
@@ -1683,14 +1739,16 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let feature_id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(&feature_id, "/distance", Length::new(-4.5).unwrap())
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                distance, ..
-            }) = definition
+            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. }) =
+                definition
             else {
                 panic!("localized offset plane");
             };
-            *distance = Length::new(-4.5).unwrap();
         });
     }
 
@@ -1714,7 +1772,7 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
             distance: actual_distance,
-        }) if actual_distance.get() == -4.5
+        }) if regenerated.ir().dimension_value(actual_distance).unwrap().get() == -4.5
     ));
 }
 

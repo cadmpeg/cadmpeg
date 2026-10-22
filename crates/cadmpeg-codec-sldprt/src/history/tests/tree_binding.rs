@@ -75,7 +75,7 @@ fn decode_extracts_parametric_history() {
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
-        }) if (profile == &history.features[0].id) && actual_length.get() == 12.5
+        }) if (profile == &history.features[0].id) && result.ir().dimension_value(actual_length).unwrap().get() == 12.5
     ));
     assert_eq!(
         result
@@ -98,7 +98,7 @@ fn decode_uses_plain_numeric_config_as_legacy_feature_input_lane() {
     let lanes = &sldprt_native(decoded.ir()).feature_input_lanes;
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].configuration.as_deref(), Some("7"));
-    assert_eq!(lanes[0].native_payload, legacy);
+    assert_eq!(lanes[0].native_payload, legacy.into());
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn decode_prefers_explicit_feature_input_lanes_over_plain_config_streams() {
     let lanes = &sldprt_native(decoded.ir()).feature_input_lanes;
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].configuration.as_deref(), Some("7"));
-    assert_eq!(lanes[0].native_payload, explicit);
+    assert_eq!(lanes[0].native_payload, explicit.into());
 }
 
 #[test]

@@ -1085,7 +1085,12 @@ Co 1001000 +2 0 *
         .model
         .coedges
         .iter()
-        .any(|coedge| { coedge.pcurves[0].pcurve.as_str().ends_with("3%3A2%3A1") }));
+        .all(|coedge| coedge.pcurves.iter().all(|usage| result
+            .ir()
+            .model
+            .pcurves
+            .iter()
+            .any(|curve| curve.id == usage.pcurve))));
     assert_eq!(result.ir().model.appearances.len(), 3);
     assert_eq!(result.ir().model.appearance_bindings.len(), 5);
     assert_eq!(
@@ -1149,7 +1154,14 @@ Co 1001000 +2 0 *
         .is_some_and(|id| id.ends_with("Shape")));
     assert_eq!(view.order, 0);
     assert_eq!(view.expanded, Some(true));
-    assert_eq!(view.visible, Some(false));
+    assert_eq!(
+        result
+            .ir()
+            .effective_visibility(&cadmpeg_ir::appearance::AppearanceTarget::Body(
+                result.ir().model.bodies[0].id.clone(),
+            )),
+        Some(false),
+    );
     assert_eq!(
         view.line_width
             .map(cadmpeg_ir::scalar::NonNegativeReal::get),
@@ -1160,7 +1172,12 @@ Co 1001000 +2 0 *
             .map(cadmpeg_ir::scalar::NonNegativeReal::get),
         Some(4.0)
     );
-    let color = result.ir().model.bodies[0].color.expect("shape color");
+    let color = result
+        .ir()
+        .effective_display_color(&cadmpeg_ir::appearance::AppearanceTarget::Body(
+            result.ir().model.bodies[0].id.clone(),
+        ))
+        .expect("shape color");
     assert!((color.r() - f32::from(0x33_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
     assert!((color.g() - f32::from(0x66_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
     assert!((color.b() - f32::from(0x99_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
@@ -1212,9 +1229,11 @@ Co 1001000 +2 0 *
         Some("fcstd:native:object#Shape")
     );
     assert_eq!(gui_properties.len(), 8);
-    assert!(gui_properties
-        .iter()
-        .all(|property| property.xml.text().starts_with("<Property")));
+    assert!(gui_properties.iter().all(|property| std::str::from_utf8(
+        crate::test_support::source_fidelity::bytes(result.source_fidelity(), &property.id,)
+    )
+    .expect("GUI property source XML")
+    .starts_with("<Property")));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 

@@ -16,10 +16,20 @@ use crate::loss::RhinoLossCode;
 use crate::settings::UnitBinding;
 use crate::wire::Uuid;
 
+mod neutral;
+
+/// Project prototype-local bodies and local occurrence placements.
+pub(crate) fn project(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &Scan<'_>,
+    ir: &mut CadIr,
+) -> Result<Vec<LossNote>, CodecError> {
+    neutral::project(ctx, scan, ir)
+}
+
 #[derive(Debug, Serialize)]
 struct DefinitionRecord<'a> {
     id: String,
-    source_offset: u64,
     source_uuid: String,
     archive_index: Option<i32>,
     name: String,
@@ -40,7 +50,6 @@ struct DefinitionRecord<'a> {
 #[derive(Debug, Serialize)]
 struct OccurrenceRecord {
     id: String,
-    source_offset: u64,
     source_uuid: String,
     definition_uuid: String,
     #[serde(flatten)]
@@ -210,7 +219,7 @@ pub(crate) fn install(
 
         definitions.push(DefinitionRecord {
             id: definition_id(definition.id()),
-            source_offset: cadmpeg_core::decode::u64_from_index(definition.source_range.start),
+
             source_uuid: format!("{}", definition.id()),
             archive_index: definition.index,
             name: definition.name.clone(),
@@ -304,7 +313,7 @@ pub(crate) fn install(
 
         occurrences.push(OccurrenceRecord {
             id: format!("rhino:product:occurrence#{key}"),
-            source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
+
             source_uuid: format!("{}", identity.object_id),
             definition_uuid: format!("{}", reference.definition_id()),
             transform,
@@ -441,16 +450,41 @@ mod tests {
             let occurrences = &namespace.arenas()["product_occurrences"];
             assert_eq!(occurrences.len(), 1, "unit={unit:?}");
             let occurrence = serde_json::to_value(&occurrences[0]).expect("occurrence JSON");
-            assert_eq!(occurrence["transform_units"], expected_units);
-            assert_eq!(
-                occurrence["transform"],
-                serde_json::json!([
-                    [2.0, 1.0, 0.0, expected_translation[0]],
-                    [0.0, 1.0, 0.0, expected_translation[1]],
-                    [0.0, 0.0, 1.0, expected_translation[2]],
-                    [0.0, 0.0, 0.0, 1.0],
-                ])
-            );
+            let expected_rows = [
+                [2.0, 1.0, 0.0, expected_translation[0]],
+                [0.0, 1.0, 0.0, expected_translation[1]],
+                [0.0, 0.0, 1.0, expected_translation[2]],
+                [0.0, 0.0, 0.0, 1.0],
+            ];
+            if expected_units == "millimeter" {
+                assert_eq!(ir.model.occurrences.len(), 1);
+                assert_eq!(
+                    ir.model.occurrences[0]
+                        .transform
+                        .expect("source occurrence placement")
+                        .rows(),
+                    expected_rows
+                );
+                // #213 keeps source fields after projection.
+                assert_eq!(occurrence["transform"], serde_json::json!(expected_rows));
+                assert_eq!(occurrence["transform_units"], expected_units);
+                assert_eq!(
+                    occurrence["neutral_refs"],
+                    serde_json::json!([ir.model.occurrences[0].id.as_str()])
+                );
+            } else {
+                assert!(ir.model.occurrences.is_empty());
+                assert_eq!(occurrence["transform_units"], expected_units);
+                assert_eq!(occurrence["transform"], serde_json::json!(expected_rows));
+                assert!(
+                    decoded
+                        .report()
+                        .losses
+                        .iter()
+                        .any(|loss| loss.code
+                            == super::RhinoLossCode::ProductRecordUnprojected.kind())
+                );
+            }
             assert_eq!(
                 occurrence["links"],
                 serde_json::json!(["rhino:object:record#000000"])
@@ -528,15 +562,23 @@ mod tests {
         assert_eq!(ir.model.points.len(), 1);
         let records = &ir.native.namespace("rhino").unwrap().arenas()["product_occurrences"];
         assert_eq!(records.len(), 1);
+        assert!(records[0].field("source_offset").is_none());
         assert_eq!(
-            records[0].field("source_offset"),
-            Some(serde_json::json!(scan.objects[3].range().start))
+            decoded
+                .source_fidelity()
+                .retained_record("rhino:object:record#000003")
+                .expect("source record")
+                .offset(),
+            cadmpeg_core::decode::u64_from_index(scan.objects[3].range().start)
         );
         let losses = decoded
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == super::RhinoLossCode::ProductOccurrenceDropped.kind())
+            .filter(|loss| {
+                loss.code == super::RhinoLossCode::ProductOccurrenceDropped.kind()
+                    && loss.message.contains("could not be transferred")
+            })
             .collect::<Vec<_>>();
         assert_eq!(losses.len(), 3);
         for (index, loss) in losses.iter().enumerate() {

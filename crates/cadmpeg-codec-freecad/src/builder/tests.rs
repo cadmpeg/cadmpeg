@@ -53,11 +53,15 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
     crate::builder::test_support::attach_part_fixture(&mut builder, b"extension payload");
     let mut ir = builder.build().expect("build source-less graph");
     assert!(crate::test_support::validate_native(&ir).is_empty());
-    crate::mutation::replace_entry(&mut ir, "Payload.bin", b"edited payload".to_vec())
-        .expect("replace side entry");
+    crate::test_support::mutation::assert_entry_source_fields_rejected(
+        &mut ir,
+        "Payload.bin",
+        &[b"extension payload", b"edited payload"],
+    )
+    .expect("replace side entry");
 
     let mut encoded = Vec::new();
-    FcstdCodec
+    let report = FcstdCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("write graph");
@@ -80,10 +84,11 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
     assert_eq!(
-        entries
-            .iter()
-            .find(|entry| entry.name() == "Payload.bin")
-            .map(crate::native::EntryRecord::data),
-        Some(b"edited payload".as_slice())
+        entries.iter().find(|entry| entry.name() == "Payload.bin"),
+        None
     );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "native.records-omitted"));
 }

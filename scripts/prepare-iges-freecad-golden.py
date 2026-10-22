@@ -35,7 +35,11 @@ def parse_args() -> argparse.Namespace:
 def validate_filename(filename: str, source: Path) -> Path:
     output_path = Path(filename)
     if (
-        output_path.name != filename
+        output_path.is_absolute()
+        or "\\" in filename
+        or output_path.as_posix() != filename
+        or any(part in {".", ".."} for part in output_path.parts)
+        or (len(output_path.parts) > 1 and output_path.parts[0] != "damaged")
         or output_path.suffix.lower() not in {".igs", ".iges"}
     ):
         raise SystemExit(f"{source}: invalid output filename: {filename}")
@@ -63,7 +67,7 @@ def manifest_outputs(expectations: Path, golden_dir: Path) -> list[tuple[Path, s
     outputs = []
     for filename in sorted(files):
         output_path = validate_filename(filename, expectations)
-        golden_path = golden_dir / f"{output_path.stem}.json"
+        golden_path = golden_dir / output_path.with_suffix(".json")
         if not golden_path.is_file():
             raise SystemExit(f"missing golden output: {golden_path}")
         outputs.append((output_path, golden_output(golden_path)))
@@ -72,12 +76,16 @@ def manifest_outputs(expectations: Path, golden_dir: Path) -> list[tuple[Path, s
 
 def all_writable_outputs(golden_dir: Path) -> list[tuple[Path, str]]:
     outputs = []
-    for golden_path in sorted(golden_dir.glob("*.json")):
+    paths = list(golden_dir.glob("*.json"))
+    damaged = golden_dir / "damaged"
+    if damaged.is_dir():
+        paths.extend(damaged.rglob("*.json"))
+    for golden_path in sorted(paths):
         output = json.loads(golden_path.read_text(encoding="utf-8"))
         if not isinstance(output, dict) or not isinstance(output.get("output"), str):
             continue
         outputs.append(
-            (validate_filename(f"{golden_path.stem}.igs", golden_path), output["output"])
+            (validate_filename(golden_path.relative_to(golden_dir).with_suffix(".igs").as_posix(), golden_path), output["output"])
         )
     if not outputs:
         raise SystemExit(f"{golden_dir}: no successful writer outputs found")
@@ -90,6 +98,7 @@ def materialize(output_dir: Path, outputs: list[tuple[Path, str]]) -> None:
         target = output_dir / output_path
         if target.exists() and target.read_text(encoding="utf-8") != output:
             raise SystemExit(f"refusing to overwrite different file: {target}")
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(output, encoding="utf-8")
         print(target)
 

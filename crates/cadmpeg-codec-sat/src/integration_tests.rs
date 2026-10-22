@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+mod scope;
+
 use crate::loss::SatLossCode;
 use crate::SatCodec;
 use cadmpeg_ir::codec::{Codec, DecodeResult};
@@ -13,6 +15,43 @@ fn decode_bytes(bytes: &[u8]) -> DecodeResult {
         )
         .unwrap()
 }
+
+#[test]
+fn kernel_entity_count_is_inspection_data_not_document_source_content() {
+    use crate::test_support::test_streams::{
+        binary_sphere_stream, text_sphere_stream, BinaryFixtureKind,
+    };
+
+    for (bytes, family, version) in [
+        (text_sphere_stream(1.0), "asm", "23200"),
+        (binary_sphere_stream(BinaryFixtureKind::Asm), "asm", "23200"),
+        (
+            binary_sphere_stream(BinaryFixtureKind::Acis),
+            "acis",
+            "21800",
+        ),
+    ] {
+        let inspected = SatCodec
+            .inspect(
+                &mut std::io::Cursor::new(&bytes),
+                &cadmpeg_core::decode::InspectOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(inspected.entries[0].attributes["kernel_entity_count"], "2");
+        let decoded = decode_bytes(&bytes);
+        let source = decoded.ir().source.as_ref().unwrap();
+        assert!(!source.attributes.contains_key("kernel_entity_count"));
+        assert_eq!(source.attributes["kernel_family"], family);
+        assert_eq!(source.attributes["acis_save_format_version"], version);
+        assert_eq!(decoded.ir().model.bodies.len(), 1);
+        assert_eq!(decoded.ir().model.faces.len(), 1);
+        assert_eq!(decoded.ir().model.surfaces.len(), 1);
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .unwrap()
+            .is_ok());
+    }
+}
+
 #[test]
 fn concatenated_sat_tables_preserve_each_independent_sphere() {
     let sphere = |x, radius, terminator: &str| {

@@ -19,7 +19,7 @@ fn native_rectangular_pattern_refuses_nonunit_direction() {
     );
 }
 
-const RELATION_WIRE: &str = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"members":[1,2],"resolved_members":[],"member_offsets":[25,40],"owner_reference_offset":0,"state":0,"constraint_kinds":["coincident"],"unknown_constraint_bits":0,"member_relation_ordinals":[3,5],"entity_genesis":null,"pattern":null,"return_members":[2,1],"resolved_return_members":[],"return_member_offsets":[60,75],"raw_bytes":"0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}"#;
+const RELATION_WIRE: &str = r#"{"id":"relation","record_index":1,"class_tag":"000","owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"members":[1,2],"resolved_members":[],"state":0,"member_relation_ordinals":[3,5],"entity_genesis":null,"pattern":null,"return_members":[2,1],"resolved_return_members":[]}"#;
 
 #[test]
 fn sketch_relation_borrowed_wire_matches_owned_wire_bytes() {
@@ -113,29 +113,73 @@ fn sketch_relation_owner_preserves_absence_and_nonempty_ids_on_wire_round_trip()
     }
 }
 
+fn source_relation() -> SketchRelation {
+    let content: SketchRelation = serde_json::from_str(RELATION_WIRE).unwrap();
+    let members = content
+        .members
+        .0
+        .into_iter()
+        .zip([25, 40])
+        .map(|(mut row, offset)| {
+            row.offset = Some(offset);
+            row
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    let return_members = content
+        .return_members
+        .0
+        .into_iter()
+        .zip([60, 75])
+        .map(|(mut row, offset)| {
+            row.offset = Some(offset);
+            row
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    SketchRelation::try_new(super::SketchRelationDraft {
+        id: content.id,
+        record_index: content.record_index,
+        class_tag: content.class_tag,
+        byte_offset: 0,
+        state_offset: 0,
+        owner_reference: content.owner_reference,
+        owner_entity_id: content.owner_entity_id,
+        auxiliary_references: super::ReferenceRun::located(Vec::new()),
+        rectangular_counted_reference_count: None,
+        members,
+        owner_reference_offset: 0,
+        definition: content.definition,
+        entity_genesis: content.entity_genesis,
+        return_members,
+        raw_bytes: vec![0; 80],
+    })
+    .unwrap()
+}
 #[test]
-fn sketch_relation_admission_bounds_every_reference_and_preserves_failed_edits() {
-    let relation: SketchRelation = serde_json::from_str(RELATION_WIRE).unwrap();
-    for field in [
-        "member_offsets",
-        "auxiliary_reference_offsets",
-        "owner_reference_offset",
-        "return_member_offsets",
-    ] {
-        for offset in [77_u32, u32::MAX] {
-            let mut wire = serde_json::to_value(&relation).unwrap();
-            if field == "owner_reference_offset" {
-                wire[field] = serde_json::json!(offset);
-            } else if field == "auxiliary_reference_offsets" {
-                wire["auxiliary_references"] = serde_json::json!([1]);
-                wire[field] = serde_json::json!([offset]);
-            } else {
-                wire[field][0] = serde_json::json!(offset);
-            }
-            assert!(serde_json::from_value::<SketchRelation>(wire)
-                .unwrap_err()
-                .to_string()
-                .contains(field));
+fn source_admission_bounds_every_reference_and_preserves_failed_edits() {
+    let relation = source_relation();
+    for offset in [77, u32::MAX] {
+        for field in [
+            "member_offsets",
+            "auxiliary_reference_offsets",
+            "owner_reference_offset",
+            "return_member_offsets",
+        ] {
+            let mut edited = relation.clone();
+            let result = edited.try_edit(|draft| match field {
+                "member_offsets" => draft.members.0[0].offset = Some(offset),
+                "auxiliary_reference_offsets" => {
+                    draft.auxiliary_references =
+                        super::ReferenceRun::located(vec![super::Located { value: 1, offset }]);
+                }
+                "owner_reference_offset" => draft.owner_reference_offset = offset,
+                _ => draft.return_members.0[0].offset = Some(offset),
+            });
+            assert!(result.unwrap_err().to_string().contains(field));
+            assert_eq!(edited, relation);
         }
     }
     let mut edited = relation.clone();
@@ -144,15 +188,34 @@ fn sketch_relation_admission_bounds_every_reference_and_preserves_failed_edits()
         .is_err());
     assert_eq!(edited, relation);
     assert!(edited
-        .try_edit(|draft| draft.auxiliary_references =
-            crate::records::identity::ReferenceRun::unlocated(vec![1]))
+        .try_edit(|draft| draft.auxiliary_references = super::ReferenceRun::unlocated(vec![1]))
         .is_err());
     assert_eq!(edited, relation);
     edited
         .try_edit(|draft| draft.owner_reference_offset = 76)
         .unwrap();
-    assert_eq!(edited.owner_reference_offset(), 76);
-    let mut draft = relation.into_draft();
-    draft.members.0[0].offset = 77;
-    assert!(SketchRelation::try_new(draft).is_err());
+    assert_eq!(edited.owner_reference_offset(), Some(76));
+}
+#[test]
+fn cadir_relation_keeps_content_without_fabricating_source_positions() {
+    let source = source_relation();
+    let value = serde_json::to_value(&source).unwrap();
+    assert!(value.get("frame").is_some());
+    assert!(value
+        .as_object()
+        .unwrap()
+        .keys()
+        .all(|key| !key.contains("offset") && key != "raw_bytes"));
+    let mut restored: SketchRelation = serde_json::from_value(value.clone()).unwrap();
+    assert!(restored.raw_bytes().is_none());
+    assert!(restored.byte_offset.is_none());
+    assert!(restored
+        .members
+        .iter()
+        .all(|member| member.offset.is_none()));
+    assert_eq!(serde_json::to_value(&restored).unwrap(), value);
+    assert!(restored
+        .try_edit(|draft| draft.owner_reference = 2)
+        .is_err());
+    assert_eq!(serde_json::to_value(&restored).unwrap(), value);
 }

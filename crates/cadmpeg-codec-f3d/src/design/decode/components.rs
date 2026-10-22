@@ -398,7 +398,10 @@ pub(crate) fn decode_local_components(
             components
                 .root_entities
                 .insert(space.component_record_index);
-            let Ok(offset) = usize::try_from(space.byte_offset) else {
+            let Some(offset) = space
+                .byte_offset
+                .and_then(|offset| usize::try_from(offset).ok())
+            else {
                 continue;
             };
             let Some(frame) = frames

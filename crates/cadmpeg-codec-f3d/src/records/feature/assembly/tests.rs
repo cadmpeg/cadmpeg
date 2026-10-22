@@ -185,40 +185,41 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
     };
     let path = crate::records::feature::assembly::DesignAssemblyOperandPath::try_new(
         crate::records::feature::assembly::DesignAssemblyOperandPathLink {
-            locator_reference_offset: 11,
             locator_record_index: 10,
             locator_class_tag: crate::records::references::DesignClassTag::try_from(
                 "363".to_owned(),
             )
             .unwrap(),
-            locator_byte_offset: 100,
-            locator_scope_reference_offset: 111,
+
             wrapper_record_index: 20,
-            wrapper_reference_offset: 122,
+
             wrapper_class_tag: crate::records::references::DesignClassTag::try_from(
                 "388".to_owned(),
             )
             .unwrap(),
-            wrapper_byte_offset: 200,
-            path_reference_offset: 211,
         },
         30,
         crate::records::references::DesignClassTag::try_from("386".to_owned()).unwrap(),
-        300,
-        vec![crate::records::identity::Located {
+        (vec![crate::records::identity::Located {
             value: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
             offset: 311,
-        }],
-        vec![crate::records::identity::Located {
+        }])
+        .into_iter()
+        .map(|field| field.value)
+        .collect(),
+        (vec![crate::records::identity::Located {
             value: "22222222-2222-4222-8222-222222222222"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
             offset: 322,
-        }],
+        }])
+        .into_iter()
+        .map(|field| field.value)
+        .collect(),
     )
     .unwrap();
     let limits: crate::records::feature::assembly::DesignAssemblyLimits =
@@ -818,9 +819,14 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
                 link.clone(),
                 30,
                 tag.to_owned().try_into().unwrap(),
-                300,
-                guids(&[400]),
-                guids(&offsets),
+                (guids(&[400]))
+                    .into_iter()
+                    .map(|field| field.value)
+                    .collect(),
+                (guids(&offsets))
+                    .into_iter()
+                    .map(|field| field.value)
+                    .collect(),
             );
             assert_eq!(result.is_ok(), valid);
         }
@@ -829,9 +835,14 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
         link,
         30,
         "390".to_owned().try_into().unwrap(),
-        300,
-        guids(&[400, 480]),
-        guids(&[560, 640, 720, 800]),
+        (guids(&[400, 480]))
+            .into_iter()
+            .map(|field| field.value)
+            .collect(),
+        (guids(&[560, 640, 720, 800]))
+            .into_iter()
+            .map(|field| field.value)
+            .collect(),
     )
     .unwrap();
     let wire = serde_json::to_value(path).unwrap();
@@ -1023,8 +1034,8 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let selection = |record_index| {
-        crate::records::feature::assembly::DesignAssemblyLegacySelection {
+    let selection =
+        |record_index| crate::records::feature::assembly::DesignAssemblyLegacySelection {
             record_index,
             byte_offset: 400,
             class_tag: crate::records::references::DesignClassTag::try_from("307".to_owned())
@@ -1043,15 +1054,25 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
             recipe_record_byte_offset: 500,
             recipe_id: "recipe".into(),
             recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
-            recipe_references: vec![serde_json::from_value(serde_json::json!({
-                "selector": 1, "selector_offset": 1, "token": "f3d:model:face#one", "token_offset": 2,
-                "design_reference": 1, "design_reference_offset": 3,
-                "candidate_faces": ["f3d:model:face#one"], "candidate_edges": ["f3d:model:edge#one"],
-                "alternate_selector_faces": ["f3d:model:face#one"], "alternate_selector_edges": ["f3d:model:edge#one"]
-            })).unwrap()],
+            recipe_references: vec![crate::records::dimensions::DesignRecipeReference {
+                clause_index: 0,
+                selector: 1,
+                selector_offset: Some(1),
+                token: "f3d:model:face#one".into(),
+                token_offset: Some(2),
+                design_reference: 1,
+                design_reference_offset: Some(3),
+                candidate_faces: vec![cadmpeg_ir::ids::FaceId::mint("f3d:model:face#one").unwrap()],
+                candidate_edges: vec![cadmpeg_ir::ids::EdgeId::mint("f3d:model:edge#one").unwrap()],
+                alternate_selector_faces: vec![
+                    cadmpeg_ir::ids::FaceId::mint("f3d:model:face#one").unwrap()
+                ],
+                alternate_selector_edges: vec![
+                    cadmpeg_ir::ids::EdgeId::mint("f3d:model:edge#one").unwrap()
+                ],
+            }],
             next_byte_offset: 600,
-        }
-    };
+        };
     let carriers = crate::records::feature::assembly::DesignAssemblyLegacyOperands::new(
         crate::records::feature::assembly::DesignAssemblyLegacyOperand {
             construction_class_tag: crate::records::references::DesignClassTag::try_from(

@@ -35,7 +35,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::SldprtCodec;
 
 #[test]
-fn semantic_writer_rejects_retained_sketch_constraint_edits() {
+fn semantic_writer_synthesizes_retained_sketch_constraint_edits() {
     use cadmpeg_ir::sketches::{
         SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
     };
@@ -45,6 +45,7 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
+    let original_digest = crate::decode::document_local_sha256(decoded.ir()).unwrap();
     let sketch = decoded.ir().model.sketches[0].id.clone();
     let entity = decoded.ir().model.sketch_entities[0].id().clone();
     decoded
@@ -70,21 +71,38 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
             native_ref: None,
         });
     assert_ne!(
-        decoded.ir().source.as_ref().unwrap().attributes["document_local_sha256"],
+        original_digest,
         crate::decode::document_local_sha256(decoded.ir()).unwrap()
     );
 
-    let error = SldprtCodec
+    let plan = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error
-        .to_string()
-        .contains("SLDPRT native sketch relation editing is not implemented"));
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        regenerated
+            .ir()
+            .model
+            .sketch_constraints
+            .iter()
+            .filter(|constraint| matches!(
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Horizontal { .. }
+            ))
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -125,7 +143,7 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
         ));
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -293,6 +311,12 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
+    let edited_start = cadmpeg_ir::sketches::SketchLocus::Start(
+        decoded.ir().model.sketch_entities[0].id().clone(),
+    );
+    let coincidence_id = decoded.ir().model.sketch_constraints.iter().find(|constraint| {
+        matches!(constraint.definition.kind(), cadmpeg_ir::sketches::SketchConstraintDefinitionInput::CoincidentLoci { loci } if loci.contains(&edited_start))
+    }).expect("authored shared start-point coincidence").id.clone();
     {
         let mut ir_edit = decoded.ir_mut();
         edit::replace(&mut ir_edit.model.sketch_entities[0].geometry, |previous| {
@@ -311,17 +335,30 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         .unwrap();
     }
 
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).unwrap();
+    assert!(
+        validation.findings.iter().any(|finding| {
+            finding.check == cadmpeg_ir::report::check::Check::GeometricConsistency
+                && finding.severity == cadmpeg_ir::report::Severity::Error
+                && finding.entity.as_deref() == Some(coincidence_id.as_str())
+                && finding.message == "solved loci disagree with their coincidence constraint"
+        }),
+        "{validation:#?}"
+    );
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::Malformed(message)
-            if message.contains("conflicting positions")
-    ));
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_core::CodecError::Malformed(message)
+                if message == "solved loci disagree with their coincidence constraint"
+        ),
+        "{error}"
+    );
 }
 
 #[test]
@@ -616,7 +653,7 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
 }
 
 #[test]
-fn semantic_writer_preserves_opaque_auxiliary_blocks() {
+fn semantic_writer_omits_opaque_auxiliary_content_during_synthesis() {
     let payload = b"vendor-private\x00\x01\x02";
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x77, "Contents/CustomData", payload));
@@ -635,12 +672,20 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    let path = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
     )
     .unwrap();
+    assert!(matches!(
+        path,
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(!crate::test_support::container::scan(&encoded)
+        .blocks
+        .iter()
+        .any(|block| block.section.name() == Some("Contents/CustomData")));
     let regenerated = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -648,6 +693,12 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
     );
 
     assert!(regenerated
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.position().get().z == moved.z + 1.0));
+    assert!(!regenerated
         .source_fidelity()
         .retained_records()
         .iter()
@@ -663,7 +714,7 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
 }
 
 #[test]
-fn semantic_writer_round_trips_all_supported_lanes_together() {
+fn synthesis_writes_supported_lanes_from_neutral_content() {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
     let mut body = Vec::new();
@@ -711,7 +762,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     });
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -741,9 +792,9 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     );
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
-        "20mm"
+        "12.5mm"
     );
-    assert!(regenerated
+    assert!(!regenerated
         .source_fidelity()
         .retained_records()
         .iter()
@@ -766,9 +817,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     assert_eq!(scan.directory.len(), scan.blocks.len());
     for block in &scan.blocks {
         let section = block.section.name().unwrap();
-        if section == "Contents/CustomData" {
-            assert_eq!(block.type_id, 0x77);
-        }
+        assert_ne!(section, "Contents/CustomData");
         assert!(scan.directory.iter().any(|entry| {
             entry.name == section
                 && cadmpeg_core::decode::index_from_u32(entry.size) == block.uncomp_sz()
@@ -902,7 +951,7 @@ fn semantic_writer_expands_indexed_tessellation() {
         .expect("valid triangle group partition");
     assert!(matches!(
         crate::writer::sequential_tessellation(&attributed),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
+        Err(cadmpeg_core::CodecError::UnsupportedContent(_))
     ));
 
     let edged = mesh
@@ -910,7 +959,7 @@ fn semantic_writer_expands_indexed_tessellation() {
         .expect("valid feature edge");
     assert!(matches!(
         crate::writer::sequential_tessellation(&edged),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
+        Err(cadmpeg_core::CodecError::UnsupportedContent(_))
     ));
 }
 

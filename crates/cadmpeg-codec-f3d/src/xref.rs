@@ -438,15 +438,10 @@ pub(crate) fn project_occurrences(
     let mut occurrences = Vec::new();
     for (ordinal, reference) in table.references.iter().enumerate() {
         let path = reference.relative_path.as_str().to_owned();
-        let transform = reference.transform.map_or(
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-            crate::records::xref::XrefPlacementTransform::rows,
-        );
+        let transform = reference
+            .transform
+            .map(|transform| crate::design::components::neutral_transform(transform.rows()))
+            .transpose()?;
         occurrences.push(Occurrence {
             id: crate::ids::neutral_xref_occurrence_id(
                 reference.ordinal,
@@ -458,9 +453,8 @@ pub(crate) fn project_occurrences(
             },
             parent: OccurrenceParent::Root {},
             ordinal: ordinal_at(ordinal)?,
-            transform: crate::design::components::neutral_transform(transform)?,
+            transform,
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,

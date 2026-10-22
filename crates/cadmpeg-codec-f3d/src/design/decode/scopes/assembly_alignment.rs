@@ -4,6 +4,7 @@
 use super::assembly_operand_frames::exact_as_built_operand_frames;
 use super::assembly_operand_frames::exact_assembly_operand_frames;
 use super::assembly_operand_paths::exact_assembly_operand_paths;
+use super::assembly_path_layout::PathSourceDraft;
 use super::legacy_operand_paths::exact_legacy_class_383_operand_paths;
 use super::legacy_operand_paths::exact_legacy_class_388_operand_paths;
 use super::legacy_operand_paths::exact_legacy_class_388_scope;
@@ -23,6 +24,7 @@ use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 struct AsBuiltAlignmentDraft {
@@ -51,24 +53,34 @@ pub(super) fn exact_assembly_alignment(
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Result<Option<DesignAssemblyAlignment>, CodecError> {
-    exact_assembly_alignment_with_types(
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    exact_assembly_alignment_with_types(
+        source,
         records,
         scope,
         parameter_owners,
         &std::collections::HashMap::new(),
+        &mut Vec::new(),
     )
 }
 
 /// The alignment of an assembly scope. `stream_types` names the stream's
 /// record types, which admit typed operand-path records.
-pub(super) fn exact_assembly_alignment_with_types(
-    bytes: &[u8],
+pub(super) fn exact_assembly_alignment_with_types<'a>(
+    source: View<'a>,
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
     stream_types: &super::assembly_operand_paths::StreamTypes<'_>,
+    staged_sources: &mut Vec<(usize, PathSourceDraft<'a>)>,
 ) -> Result<Option<DesignAssemblyAlignment>, CodecError> {
+    let bytes = source.window();
+    let mut chosen_sources = Vec::new();
     use assembly::DesignAssemblyAlignmentForm;
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Assemble) {
         return Ok(None);
@@ -78,7 +90,7 @@ pub(super) fn exact_assembly_alignment_with_types(
     };
     let matching = |owner: &&DesignParameterOwner| {
         native_stream(owner.id()) == Some(stream)
-            && owner.scope_record_index() == scope.record_index
+            && owner.scope_record_index() == Some(scope.record_index)
     };
 
     let mut lanes = Vec::new();
@@ -94,11 +106,11 @@ pub(super) fn exact_assembly_alignment_with_types(
         };
         left_key.cmp(&right_key)
     });
-    (|| -> Option<Result<DesignAssemblyAlignment, CodecError>> {
+    let result = (|| -> Option<Result<DesignAssemblyAlignment, CodecError>> {
         if lanes
             .iter()
             .enumerate()
-            .any(|(ordinal, owner)| u32::try_from(ordinal) != Ok(owner.local_ordinal()))
+            .any(|(ordinal, owner)| u32::try_from(ordinal).ok() != owner.local_ordinal())
         {
             return None;
         }
@@ -174,7 +186,7 @@ pub(super) fn exact_assembly_alignment_with_types(
             for owner in alignment_lanes {
                 owners.push(crate::records::identity::Located {
                     value: owner.record_index(),
-                    offset: owner.evaluated_value_offset(),
+                    offset: owner.evaluated_value_offset()?,
                 });
             }
             if legacy_class_388 {
@@ -187,7 +199,7 @@ pub(super) fn exact_assembly_alignment_with_types(
                     });
                 if lanes
                     .iter()
-                    .any(|owner| owner.class_tag().as_str() != "282" || owner.frame_length() != 103)
+                    .any(|owner| owner.class_tag().as_str() != "282" || owner.frame_length() != Some(103))
                     || !owner_reference_order_matches
                     || !scope
                         .reference_members()
@@ -208,7 +220,7 @@ pub(super) fn exact_assembly_alignment_with_types(
                     });
                 if lanes
                     .iter()
-                    .any(|owner| owner.class_tag().as_str() != "284" || owner.frame_length() != 103)
+                    .any(|owner| owner.class_tag().as_str() != "284" || owner.frame_length() != Some(103))
                     || !owner_reference_order_matches
                     || !scope
                         .reference_members()
@@ -225,7 +237,7 @@ pub(super) fn exact_assembly_alignment_with_types(
             ) {
                 if lanes
                     .iter()
-                    .any(|owner| owner.class_tag().as_str() != "289" || owner.frame_length() != 103)
+                    .any(|owner| owner.class_tag().as_str() != "289" || owner.frame_length() != Some(103))
                     || (0..scope.reference_members().len())
                         .filter(|&start| {
                             scope
@@ -265,14 +277,20 @@ pub(super) fn exact_assembly_alignment_with_types(
             (angle, offset, owners)
         };
         let form = if scope.kind() == scope::DesignFeatureKind::AsBuilt {
-            let paths = match exact_assembly_operand_paths(bytes, records, scope, stream_types) {
+            let paths = match exact_assembly_operand_paths(source, records, scope, stream_types) {
                 Ok(paths) => paths,
                 Err(error) => return Some(Err(error)),
             };
             paths
                 .map(|paths| {
+                    let frames = exact_as_built_operand_frames(bytes, &paths);
+                    let paths = paths.map(|path| {
+                        let ordinal = chosen_sources.len();
+                        chosen_sources.push((ordinal, path.source));
+                        path.content
+                    });
                     DesignAssemblyAlignmentForm::try_from(AsBuiltAlignmentDraft {
-                        frames: exact_as_built_operand_frames(bytes, &paths),
+                        frames,
                         paths,
                     })
                 })
@@ -280,45 +298,59 @@ pub(super) fn exact_assembly_alignment_with_types(
                 .ok()?
         } else if let Some(frames) = exact_assembly_operand_frames(bytes, scope) {
             let qualifiers = if legacy_class_383 {
-                let paths = match exact_legacy_class_383_operand_paths(bytes, records, scope, &frames) {
+                let paths = match exact_legacy_class_383_operand_paths(source, records, scope, &frames) {
                     Ok(paths) => paths,
                     Err(error) => return Some(Err(error)),
                 };
-                paths.map(|paths| paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }))
+                paths.map(|paths| paths.map(|path| {
+                    let ordinal = chosen_sources.len(); chosen_sources.push((ordinal, path.source));
+                    DesignAssemblyOperandQualifier::OccurrencePath { path: path.content }
+                }))
             } else if legacy_class_388 {
-                let paths = match exact_legacy_class_388_operand_paths(bytes, records, scope) {
+                let paths = match exact_legacy_class_388_operand_paths(source, records, scope) {
                     Ok(paths) => paths,
                     Err(error) => return Some(Err(error)),
                 };
                 paths.map(|paths| {
-                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+                    paths.map(|path| {
+                        let ordinal = chosen_sources.len(); chosen_sources.push((ordinal, path.source));
+                        DesignAssemblyOperandQualifier::OccurrencePath { path: path.content }
+                    })
                 })
             } else if crate::design::assembly::variable_reference_assembly_generation(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
             ) {
-                let direct = match super::assembly_carrier_paths::exact_variable_reference_operand_qualifiers(bytes, records, scope, &frames) {
+                let direct = match super::assembly_carrier_paths::exact_variable_reference_operand_qualifiers(source, records, scope, &frames, &mut chosen_sources) {
                     Ok(value) => value,
                     Err(error) => return Some(Err(error)),
                 };
                 if direct.is_some() {
                     direct
                 } else {
-                    let paths = match exact_assembly_operand_paths(bytes, records, scope, stream_types) {
+                    let paths = match exact_assembly_operand_paths(source, records, scope, stream_types) {
                         Ok(paths) => paths,
                         Err(error) => return Some(Err(error)),
                     };
                     paths.map(|paths| {
-                        paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+                        paths.map(|path| {
+                        let ordinal = chosen_sources.len();
+                        chosen_sources.push((ordinal, path.source));
+                        DesignAssemblyOperandQualifier::OccurrencePath { path: path.content }
+                    })
                     })
                 }
             } else {
-                let paths = match exact_assembly_operand_paths(bytes, records, scope, stream_types) {
+                let paths = match exact_assembly_operand_paths(source, records, scope, stream_types) {
                     Ok(paths) => paths,
                     Err(error) => return Some(Err(error)),
                 };
                 paths.map(|paths| {
-                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+                    paths.map(|path| {
+                        let ordinal = chosen_sources.len();
+                        chosen_sources.push((ordinal, path.source));
+                        DesignAssemblyOperandQualifier::OccurrencePath { path: path.content }
+                    })
                 })
             };
             Some(match qualifiers {
@@ -332,5 +364,9 @@ pub(super) fn exact_assembly_alignment_with_types(
             .ok()
             .map(Ok)
     })()
-    .transpose()
+    .transpose();
+    if matches!(&result, Ok(Some(_))) {
+        staged_sources.extend(chosen_sources);
+    }
+    result
 }

@@ -11,6 +11,7 @@ use crate::records::{
     FeatureInputReference, FeatureInputRelationFamily, FeatureInputRelationInstance,
     SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
+use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -28,9 +29,11 @@ use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn declared_entity_handle_precedes_generic_operand_resolution() {
+    let class_sources = ClassSources::default();
+
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -62,10 +65,11 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         configuration: None,
         native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
+            sequence: 112,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 112,
             name: "sgEntHandle".into(),
         }],
         names: Vec::new(),
@@ -77,11 +81,11 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 0,
             id: operand.reference_ref.clone(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: operand.offset,
             kind,
             class_ref: Some("class".into()),
             object_index: 0,
@@ -95,6 +99,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
@@ -116,6 +121,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let terminal_carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&terminal_lane),
         &terminal_markers,
         "feature",
@@ -133,6 +139,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let circular_radial_carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&terminal_lane),
         &circular_radial_markers,
         "feature",
@@ -160,6 +167,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
@@ -176,6 +184,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let direct_carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&direct_lane),
         &direct_markers,
         "feature",
@@ -189,9 +198,11 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
 
 #[test]
 fn declared_entity_handle_accepts_indexed_radial_point_pair() {
+    let class_sources = ClassSources::default();
+
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x80f7).unwrap());
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -219,10 +230,11 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         configuration: None,
         native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
+            sequence: 112,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 112,
             name: "sgEntHandle".into(),
         }],
         names: Vec::new(),
@@ -234,11 +246,11 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 0,
             id: operand.reference_ref.clone(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: operand.offset,
             kind,
             class_ref: Some("class".into()),
             object_index: 0,
@@ -254,6 +266,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
@@ -276,6 +289,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
@@ -293,6 +307,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&mismatched_lane),
         &mismatched_markers,
         "feature",
@@ -304,9 +319,11 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
 
 #[test]
 fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
+    let class_sources = ClassSources::default();
+
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E);
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 1,
@@ -335,10 +352,11 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         configuration: None,
         native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
+            sequence: 112,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 112,
             name: "sgEntHandle".into(),
         }],
         names: Vec::new(),
@@ -350,11 +368,11 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 0,
             id: operand.reference_ref.clone(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: operand.offset,
             kind,
             class_ref: Some("class".into()),
             object_index: 0,
@@ -373,6 +391,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
@@ -388,6 +407,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     let mut first_pair = operand;
     first_pair.entity_index = 0;
     let first_carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
@@ -400,6 +420,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     let mut out_of_range = first_pair.clone();
     out_of_range.entity_index = 2;
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
@@ -417,6 +438,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&mismatched_lane),
         &mismatched_markers,
         "feature",
@@ -433,6 +455,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&odd_lane),
         &odd_markers,
         "feature",
@@ -453,6 +476,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&missing_center_id_lane),
         &missing_center_id_markers,
         "feature",
@@ -464,6 +488,8 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
 
 #[test]
 fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
+    let class_sources = ClassSources::default();
+
     let marker = |id: &str, offset, object_index, local_id, coordinates_m| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
@@ -487,10 +513,11 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         configuration: None,
         native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
+            sequence: 112,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 112,
             name: "sgEntHandle".into(),
         }],
         names: Vec::new(),
@@ -502,11 +529,11 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 100,
             id: "reference".into(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: 100,
             kind,
             class_ref: Some("class".into()),
             object_index: 0,
@@ -532,7 +559,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             )
         );
         let operand = FeatureInputOperand {
-            offset: 100,
+            offset: Some(100),
             reference_ref: "reference".into(),
             kind,
             entity_index: 0,
@@ -548,6 +575,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let carrier = dimensioned_relation_carrier(
+            &class_sources,
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
@@ -569,6 +597,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
                 .map(|marker| (marker.id(), marker))
                 .collect::<HashMap<_, _>>();
             assert!(dimensioned_relation_carrier(
+                &class_sources,
                 std::slice::from_ref(&wrong_marker_kind_lane),
                 &wrong_marker_kind,
                 "feature",
@@ -581,6 +610,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         let mut wrong_address = operand.clone();
         wrong_address.entity_index = 1;
         assert!(dimensioned_relation_carrier(
+            &class_sources,
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
@@ -592,6 +622,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         let mut unreferenced = operand.clone();
         unreferenced.entity_ref = None;
         assert!(dimensioned_relation_carrier(
+            &class_sources,
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
@@ -608,6 +639,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         assert!(dimensioned_relation_carrier(
+            &class_sources,
             std::slice::from_ref(&wrong_feature_lane),
             &wrong_feature_markers,
             "feature",
@@ -632,6 +664,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         assert!(dimensioned_relation_carrier(
+            &class_sources,
             &lanes,
             &duplicate_owner_markers,
             "feature",
@@ -644,9 +677,11 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
 
 #[test]
 fn declared_slot_handle_selects_indexed_dimension_center() {
+    let class_sources = ClassSources::default();
+
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x88e7).unwrap());
     let operand = FeatureInputOperand {
-        offset: 150,
+        offset: Some(150),
         reference_ref: "reference".into(),
         kind,
         entity_index: 1,
@@ -713,24 +748,27 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         native_payload: payload.into(),
         classes: vec![
             FeatureInputClass {
+                sequence: 100,
+                feature_ref: None,
                 id: "entity-class".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 100,
                 name: "sgEntHandle".into(),
             },
             FeatureInputClass {
+                sequence: 180,
+                feature_ref: None,
                 id: "slot-class".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 180,
                 name: "sgSlotHandle".into(),
             },
             FeatureInputClass {
+                sequence: 250,
+                feature_ref: None,
                 id: "end-class".into(),
                 parent: "lane".into(),
                 ordinal: 2,
-                offset: 250,
                 name: "next".into(),
             },
         ],
@@ -743,11 +781,11 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 0,
             id: "reference".into(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: operand.offset,
             kind,
             class_ref: Some("entity-class".into()),
             object_index: 1,
@@ -785,6 +823,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
@@ -801,10 +840,12 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
     ambiguous_lane.classes.insert(
         2,
         FeatureInputClass {
+            feature_ref: None,
             id: "second-slot-class".into(),
             parent: "lane".into(),
             ordinal: 2,
-            offset: 240,
+            sequence: 2,
+
             name: "sgSlotHandle".into(),
         },
     );
@@ -814,6 +855,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
@@ -830,6 +872,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&mismatched_center_lane),
         &mismatched_center_markers,
         "feature",
@@ -846,6 +889,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&mismatched_slot_lane),
         &mismatched_slot_markers,
         "feature",
@@ -857,11 +901,13 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
 
 #[test]
 fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
+    let class_sources = ClassSources::default();
+
     use crate::layout::current_geometry_locus_arc_handle_point as arc_handle;
 
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x69bd).unwrap());
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -934,10 +980,11 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         configuration: None,
         native_payload: native_payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: 200,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 200,
             name: "sgEntHandle".into(),
         }],
         names: Vec::new(),
@@ -949,11 +996,11 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 0,
             id: operand.reference_ref.clone(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: operand.offset,
             kind,
             class_ref: Some("class".into()),
             object_index: 0,
@@ -967,6 +1014,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
@@ -999,6 +1047,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     let mut unrelated_operand = operand;
     unrelated_operand.entity_ref = Some("other".into());
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&unrelated_lane),
         &unrelated_markers,
         "feature",
@@ -1010,9 +1059,11 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
 
 #[test]
 fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witness() {
+    let class_sources = ClassSources::default();
+
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8452).unwrap());
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -1039,10 +1090,11 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         configuration: None,
         native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
+            sequence: 112,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 112,
             name: "sgEntHandle".into(),
         }],
         names: Vec::new(),
@@ -1054,11 +1106,11 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 0,
             id: operand.reference_ref.clone(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: operand.offset,
             kind,
             class_ref: Some("class".into()),
             object_index: 0,
@@ -1077,6 +1129,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let carrier = dimensioned_relation_carrier(
+            &class_sources,
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
@@ -1104,6 +1157,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&missing_witness_lane),
         &missing_witness_markers,
         "feature",
@@ -1123,6 +1177,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let point_carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&point_lane),
         &point_markers,
         "feature",
@@ -1143,6 +1198,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
@@ -1154,9 +1210,11 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
 
 #[test]
 fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness() {
+    let class_sources = ClassSources::default();
+
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8263).unwrap());
     let operand = FeatureInputOperand {
-        offset: 100,
+        offset: Some(100),
         reference_ref: "reference".into(),
         kind,
         entity_index: 0,
@@ -1184,17 +1242,19 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         native_payload: Vec::new().into(),
         classes: vec![
             FeatureInputClass {
+                sequence: 100,
+                feature_ref: None,
                 id: "entity-class".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 100,
                 name: "sgEntHandle".into(),
             },
             FeatureInputClass {
+                sequence: 25,
+                feature_ref: None,
                 id: "arc-class".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: 25,
                 name: "sgArcHandle".into(),
             },
         ],
@@ -1207,11 +1267,11 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 0,
             id: operand.reference_ref.clone(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: operand.offset,
             kind,
             class_ref: Some("entity-class".into()),
             object_index: 0,
@@ -1239,6 +1299,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
@@ -1262,6 +1323,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let unbound_carrier = dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&lane),
         &unbound_markers,
         "feature",
@@ -1273,10 +1335,12 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
 
     let mut multiple_declared = lane.clone();
     multiple_declared.classes.push(FeatureInputClass {
+        feature_ref: None,
         id: "line-class".into(),
         parent: "lane".into(),
         ordinal: 2,
-        offset: 45,
+        sequence: 2,
+
         name: "sgLineHandle".into(),
     });
     let multiple_markers = multiple_declared
@@ -1285,6 +1349,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&multiple_declared),
         &multiple_markers,
         "feature",
@@ -1302,6 +1367,7 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
+        &class_sources,
         std::slice::from_ref(&mismatched_declared),
         &mismatched_markers,
         "feature",
@@ -1410,6 +1476,8 @@ fn duplicated_compact_curve_address_identifies_a_radial_circle_witness() {
 
 #[test]
 fn native_radial_role_propagates_omitted_circle_construction_state() {
+    let class_sources = ClassSources::default();
+
     let payload = |construction: bool| {
         let mut payload = vec![0; 104 + LEGACY_SKETCH_MARKER.len()];
         payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
@@ -1491,13 +1559,14 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
         let operand = FeatureInputOperand {
-            offset: 0,
+            offset: Some(0),
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
             entity_index: 0,
             entity_ref: Some(center.id().to_string()),
         };
         let carrier = dimensioned_relation_carrier(
+            &class_sources,
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
@@ -1512,14 +1581,14 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
 #[test]
 fn radial_dimensions_normalize_radius_and_diameter_displays() {
     let parameter = |display, value| DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#radial").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#sketch").expect("identity grammar")),
         ordinal: 0,
         name: "radial".into(),
-        expression: String::new(),
+        expression: String::new().into(),
         display,
         value: Some(ParameterValue::Length(Length::new(value).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1550,7 +1619,8 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 42,
+        sequence: 0,
+        offset: Some(42),
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
         feature_ref: feature_ref.into(),
@@ -1561,7 +1631,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: 0,
+            offset: Some(0),
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
             entity_index: 0,
@@ -1605,6 +1675,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -1613,6 +1684,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         native_ref: Some(feature_ref.into()),
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
@@ -1620,7 +1692,6 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -1638,6 +1709,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     let mut entities = vec![center];
 
     project_relation_point_dimensioned_circles(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
         &mut entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -1666,6 +1738,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         .with_native_ref(Some(marker_id.into())),
     );
     project_relation_point_dimensioned_circles(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&lane)),
         &mut ambiguous,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -1678,6 +1751,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     let mut missing_lane = lane.clone();
     missing_lane.relation_instances[0].operands[0].entity_ref = None;
     project_relation_point_dimensioned_circles(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&missing_lane)),
         &mut missing,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -1754,6 +1828,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     .with_construction(true)
     .with_native_ref(Some("implicit-center".into()))];
     project_relation_point_dimensioned_circles(
+        &crate::test_support::native::class_sources(std::slice::from_ref(&implicit_lane)),
         &mut implicit_entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),

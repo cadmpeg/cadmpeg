@@ -16,7 +16,7 @@ use std::path::Path;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
+use cadmpeg_test_support::golden::{artifact_names, snapshot_text, Branch, Harness};
 
 use super::{RhinoArchiveVersion, RhinoCodec};
 
@@ -24,7 +24,7 @@ use super::{RhinoArchiveVersion, RhinoCodec};
 const FIXTURE_EXTENSION: &str = "3dm";
 
 /// Crate-relative regeneration hint used in every failure message.
-const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-rhino golden";
+const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test-fast golden";
 
 fn harness() -> Harness {
     Harness::new(env!("CARGO_MANIFEST_DIR"), FIXTURE_EXTENSION, REGENERATE)
@@ -54,8 +54,11 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// fidelity. A decode error is frozen too: refusing a document is
 /// contract-relevant behavior, so this never panics on codec output.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match RhinoCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    {
+    let value = match cadmpeg_test_support::golden::decode(
+        &RhinoCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             serde_json::json!({
@@ -96,11 +99,17 @@ const ENCODE_TARGETS: [(&str, RhinoArchiveVersion); 2] = [
 /// fixture's own archive word is. The `Inherit` path resolves against the source
 /// instead and so cannot be pinned per target; it is covered by the unit tests
 /// in `writer/tests/targets.rs`.
-fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<Vec<u8>, String>> {
+fn encode_outcome(
+    bytes: &[u8],
+    version: RhinoArchiveVersion,
+) -> Option<Result<(Vec<u8>, String), String>> {
     let decoded = EditableDecodeResult::from(
-        RhinoCodec
-            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-            .ok()?,
+        cadmpeg_test_support::golden::decode(
+            &RhinoCodec,
+            &mut Cursor::new(bytes.to_vec()),
+            &DecodeOptions::default(),
+        )
+        .ok()?,
     );
     let mut encoded = Vec::new();
     let written = Encoder::plan(
@@ -110,7 +119,10 @@ fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<V
     )
     .and_then(|plan| plan.write_to(&mut encoded));
     Some(match written {
-        Ok(_) => Ok(encoded),
+        Ok(report) => Ok((
+            encoded,
+            snapshot_text(&serde_json::to_value(report).expect("export report")),
+        )),
         Err(error) => Err(error.to_string()),
     })
 }
@@ -118,20 +130,31 @@ fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<V
 /// Compares every fixture's encode outcome against `tests/golden/encode/`.
 fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<String> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/encode");
+    check_encode_branch_at(&dir, fixtures, update)
+}
+
+fn check_encode_branch_at(dir: &Path, fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<String> {
     let mut failures = Vec::new();
     let mut produced = BTreeSet::new();
     for (name, bytes) in fixtures {
         for (target, version) in ENCODE_TARGETS {
             let archive = dir.join(format!("{name}.{target}.bin"));
             let refusal = dir.join(format!("{name}.{target}.err.txt"));
+            let report = dir.join(format!("{name}.{target}.report.json"));
             match encode_outcome(bytes, version) {
                 None => {}
-                Some(Ok(written)) => {
+                Some(Ok((written, report_text))) => {
                     produced.insert(format!("{name}.{target}.bin"));
+                    produced.insert(format!("{name}.{target}.report.json"));
                     if update {
                         write_golden(&archive, &written);
+                        write_golden(&report, report_text.as_bytes());
                         remove_golden(&refusal);
                         continue;
+                    }
+                    match std::fs::read_to_string(&report) {
+                        Ok(expected) if expected.replace("\r\n", "\n") == report_text => {}
+                        _ => failures.push(format!("fixture `{name}` target {target}: export report differs; regenerate with `{REGENERATE}`")),
                     }
                     match std::fs::read(&archive) {
                         Ok(expected) if expected == written => {}
@@ -152,6 +175,7 @@ fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<Stri
                     if update {
                         write_golden(&refusal, written.as_bytes());
                         remove_golden(&archive);
+                        remove_golden(&report);
                         continue;
                     }
                     match std::fs::read_to_string(&refusal) {
@@ -171,10 +195,8 @@ fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<Stri
             }
         }
     }
-    for orphan in std::fs::read_dir(&dir)
-        .unwrap_or_else(|error| panic!("read {}: {error}", dir.display()))
-        .map(|entry| entry.expect("directory entry").file_name())
-        .map(|name| name.to_string_lossy().into_owned())
+    for orphan in artifact_names(dir)
+        .into_iter()
         .filter(|name| !produced.contains(name))
     {
         failures.push(format!(
@@ -186,6 +208,8 @@ fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<Stri
 }
 
 fn write_golden(path: &Path, bytes: &[u8]) {
+    std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
+        .expect("create golden branch directory");
     std::fs::write(path, bytes).unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
 }
 
@@ -238,6 +262,12 @@ fn encode_goldens_hold() {
 fn encode_output_is_deterministic() {
     for (name, bytes) in harness().fixture_inputs() {
         for (target, version) in ENCODE_TARGETS {
+            if let Some(outcome) = encode_outcome(&bytes, version) {
+                assert!(
+                    outcome.is_ok(),
+                    "decoded fixture `{name}` target {target} must encode: {outcome:?}"
+                );
+            }
             assert!(
                 encode_outcome(&bytes, version) == encode_outcome(&bytes, version),
                 "fixture `{name}` target {target}: two encodes in one process disagree"
@@ -250,9 +280,32 @@ fn encode_output_is_deterministic() {
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
         &RhinoCodec,
         &harness().fixture_inputs(),
+        |result| {
+            let fidelity = result.source_fidelity();
+            let restored: cadmpeg_ir::SourceFidelity =
+                serde_json::from_value(serde_json::to_value(fidelity).unwrap()).unwrap();
+            assert_eq!(
+                restored.retained_records(),
+                fidelity.retained_records(),
+                "the sidecar must retain every source span, byte and untyped class"
+            );
+            assert_eq!(restored.unrepresented(), fidelity.unrepresented());
+        },
     );
     assert_eq!(summary.cut, 0, "{summary:?}");
 }
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(
+        &RhinoCodec,
+        &harness().fixture_inputs(),
+    );
+}
+
+mod damaged;

@@ -15,6 +15,7 @@ fn metadata_document() -> CadIr {
         ("sldprt:test:attribute#10:3", "source_linear_unit_code"),
     ] {
         ir.model.attributes.push(SourceAttribute {
+            native_ref: None,
             id: AttributeId::mint(id).unwrap(),
             target: AttributeTarget::Document,
             name: name.to_owned(),

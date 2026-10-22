@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -140,6 +139,10 @@
         "wire_topologies": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "acis_save_format_version": "23200",
@@ -214,7 +217,10 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -255,6 +261,7 @@
           "tag": "sphere-surface"
         }
       }
-    }
+    },
+    "unrepresented": []
   }
 }

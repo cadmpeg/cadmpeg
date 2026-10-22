@@ -85,7 +85,7 @@ fn move_body_selection_uses_unique_owning_history() {
             AsmDeltaState {
                 id: format!("f3d:{parent}:asm-delta-state#{state_id}"),
                 parent: parent.into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -121,6 +121,7 @@ fn move_body_selection_uses_unique_owning_history() {
     );
     let histories = [history, unrelated_history];
     let mut feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -133,18 +134,18 @@ fn move_body_selection_uses_unique_owning_history() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::MoveBody {
                 bodies: BodySelection::Native(group_id.into()),
-                translation: cadmpeg_ir::features::FiniteVector3::new(
-                    cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
-                )
-                .unwrap(),
+                translation: [1.0, 2.0, 3.0].map(|value| {
+                    cadmpeg_ir::Dimension::Literal(cadmpeg_ir::scalar::Length::new(value).unwrap())
+                }),
                 rotation: None,
-                copies: 0,
+                copies: (0).into(),
             }),
         ),
         native_ref: None,
     };
     feature.native_ref = Some(scope.id.clone());
     let inputs = FeatureBodySelectionInputs {
+        parameters: &[],
         scopes: std::slice::from_ref(&scope),
         groups: std::slice::from_ref(&group),
         body_recipe_operands: &[],
@@ -220,6 +221,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
     )
     .unwrap();
     let mut feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("f3d:test:feature#pattern").unwrap(),
         ordinal: 0,
         name: None,
@@ -238,6 +240,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
         native_ref: Some(scope.id.clone()),
     };
     let inputs = FeatureBodySelectionInputs {
+        parameters: &[],
         scopes: std::slice::from_ref(&scope),
         groups: std::slice::from_ref(&group),
         body_recipe_operands: &[],

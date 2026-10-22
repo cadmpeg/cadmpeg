@@ -31,15 +31,15 @@ fn exact_pipe_owner_lanes(
     let mut owners = [None; 4];
     for owner in parameter_owners.iter().filter(|owner| {
         native_stream(owner.id()) == Some(stream)
-            && owner.scope_record_index() == scope.record_index
+            && owner.scope_record_index() == Some(scope.record_index)
             && scope
                 .reference_members()
                 .values()
                 .any(|value| value == &owner.record_index())
             && owner.class_tag().as_str() == "342"
-            && owner.frame_length() == 103
+            && owner.frame_length() == Some(103)
     }) {
-        let ordinal = usize::try_from(owner.local_ordinal()).ok()?;
+        let ordinal = usize::try_from(owner.local_ordinal()?).ok()?;
         let slot = owners.get_mut(ordinal)?;
         if slot.replace(owner).is_some() {
             return None;
@@ -53,9 +53,9 @@ fn exact_pipe_owner_lanes(
             owner.record_index(),
             FixedScalarFrame {
                 owner_record_index: Some(scope.record_index),
-                ordinal: u8::try_from(owner.local_ordinal()).ok()?,
+                ordinal: u8::try_from(owner.local_ordinal()?).ok()?,
                 value: owner.evaluated_value(),
-                value_offset: owner.evaluated_value_offset(),
+                value_offset: owner.evaluated_value_offset()?,
             },
         ))
     };
@@ -94,7 +94,7 @@ pub(super) fn exact_path_feature_construction(
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index: angle.record_index(),
-                    angle_offset: angle.evaluated_value_offset(),
+                    angle_offset: angle.evaluated_value_offset()?,
                     opposite_angle: None,
                 },
             ))
@@ -162,7 +162,7 @@ pub(super) fn exact_path_feature_construction(
                     operation_offset: u64::try_from(start + 21).ok()?,
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index,
-                    angle_offset: angle.evaluated_value_offset(),
+                    angle_offset: angle.evaluated_value_offset()?,
                     opposite_angle: None,
                 },
             ))
@@ -186,7 +186,7 @@ pub(super) fn exact_path_feature_construction(
                     operation_offset: u64::try_from(start + class_403_revolve::OPERATION).ok()?,
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index,
-                    angle_offset: angle.evaluated_value_offset(),
+                    angle_offset: angle.evaluated_value_offset()?,
                     opposite_angle: None,
                 },
             ))

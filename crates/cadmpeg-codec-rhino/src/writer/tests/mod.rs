@@ -12,13 +12,17 @@ use cadmpeg_ir::math::Point3;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
+mod compounds;
 mod computed_values;
 mod coverage;
 mod encoding;
 mod free_geometry;
 mod model;
 mod nurbs;
+mod placements;
 mod planar;
+mod reductions;
+mod scopes;
 mod targets;
 
 #[test]
@@ -48,7 +52,7 @@ fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usi
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
+                cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
                 TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
@@ -1108,3 +1112,18 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
 }
 
 mod trim_domain;
+
+mod budgets;
+
+/// Builds one table for a hand-authored reader fixture under desktop limits.
+pub(crate) fn table(
+    typecode: u32,
+    records: &[Vec<u8>],
+) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &DecodePolicy::desktop(), DecodeDepth::Full);
+    super::table(&ctx, typecode, records)
+}
+
+mod retained_bytes;

@@ -2,6 +2,8 @@
 
 ## Support ladder
 
+The delivered scope tables describe each codec's normal successful full projection. Contained failures can deliver fewer independent classes; the document's `scope` and matching report `transfer.scope` state the actual result. IGES, STEP, and SAT hold design as complete-and-empty because their formats have no design-history concept. See [the document contract](document-contract.md).
+
 ### Scoring rules
 
 1. **A score attaches to declared coverage.** A score states the highest level whose requirements pass for the coverage its profile declares, and the profile names that coverage — concretely, the format's `scored` list in `crates/cadmpeg-registry/docs/dialect-support.toml`. Surplus capability in a subset of versions, layouts, or files shows as extras. Refusing a band the codec recognizes is a stated, visible fact in the profile, never an exclusion that raises a score.
@@ -79,6 +81,14 @@ lists. Every profile below describes the envelope its rows cover.
 | `inventor:cfb3-rse31-meta8` | detected               | none  |
 | `inventor:unknown`          | unclassified-recovered | none  |
 
+**Delivered full-decode scope:** `model`, `design`.
+
+**Write paths:** none.
+
+**Synthesized dropped arenas:** none.
+
+**Synthesized omitted arenas:** none.
+
 <!-- /generated: dialects inventor -->
 
 Structural detection requires directory evidence. The codec enumerates the complete CFB hierarchy, versioned databases, registry and revision tables, exact segment pairs, metadata tables, typed bulk records, OLE property sets, previews when present, Protein package entries and decoded catalog assets, and `UFRxDoc` external references. Optional or unknown segments remain named native records.
@@ -109,6 +119,14 @@ See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.
 | `sat:text`        | detected | none  |
 | `sat:unknown`     | refused  | none  |
 
+**Delivered full-decode scope:** `model`, `design`.
+
+**Write paths:** none.
+
+**Synthesized dropped arenas:** none.
+
+**Synthesized omitted arenas:** none.
+
 <!-- /generated: dialects sat -->
 
 Detection, inspection, and decode cover the admitted binary and text branches. The codec transfers solved-record analytic, NURBS, topology, placement, and procedural carriers through `cadmpeg-asm` into connected B-rep when the stream yields surfaces, points, or faces. Header scale and tolerances populate the neutral document. Unknown SAB records retain source range, digest, and kernel-qualified identity under the `sat` namespace. A stream that frames but decodes no carrier produces blocking `geometry_not_transferred`. Feature history, assemblies, presentation documents, and native writing are inapplicable or absent for this envelope.
@@ -136,20 +154,30 @@ See [`formats/asm.md`](formats/asm.md) and [`formats/asm-open-items.md`](formats
 
 **Ladder: L5.**
 
-| Dialect          | Read                   | Write     |
-| ---------------- | ---------------------- | --------- |
-| `fcstd:schema-2` | detected               | preserved |
-| `fcstd:schema-3` | detected               | preserved |
-| `fcstd:schema-4` | L5                     | verified  |
-| `fcstd:unknown`  | unclassified-recovered | none      |
+| Dialect          | Read                   | Write    |
+| ---------------- | ---------------------- | -------- |
+| `fcstd:schema-2` | detected               | emitted  |
+| `fcstd:schema-3` | detected               | emitted  |
+| `fcstd:schema-4` | L5                     | verified |
+| `fcstd:unknown`  | unclassified-recovered | none     |
+
+**Delivered full-decode scope:** `model`, `design`.
+
+**Write paths:** `synthesized`, `patched`.
+
+**Synthesized dropped arenas:** `subds`, `assets`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `drawings`, `semantic_annotations`, `tessellations`, `attributes`, `pmi`, `presentation_layers`.
+
+**Synthesized omitted arenas:** none.
 
 <!-- /generated: dialects fcstd -->
 
-The cumulative gate stops at L5; L9 write assertions pass individually and show as extras. Schema 4 / file 1 is the one synthesis target. Schema 2 and schema 3 are preservation-only input dialects. Each schema's own read and write disposition is the row above.
+The cumulative gate stops at L5; individual writer assertions are reported as extras.
+Schemas 2, 3, and 4 are synthesized, with schema 4 the authored/foreign-input default.
+Each schema's current evidence is the generated row above.
 
-- **Read profile:** Partial for the primary envelope relative to the cumulative L5 gate. Text and binary exact shapes, connected topology, sketches, constraints, core design operations, product links, TechDraw, semantic annotations, Mesh, Points, embedded assets, and inert extension data are implemented. See the generated coverage profile for the current cumulative result.
-- **Native write:** Partial for the declared write envelope; individual write assertions pass as extras above L5. Schema 4/file 1 retained documents regenerate deterministically while preserving every unedited XML record and named side entry. Checked leaf property edits and side-entry replacements are supported. Recursive typed application graphs can be generated without a source archive. Writing uses the FCStd native document graph on `CadIr` (`ir.native["fcstd"]`); `Encoder::plan` ignores `SourceFidelity` and returns `NotConsumed`. Unsupported schema/file targets, cross-band transcoding, and edits lacking a typed nested-value serializer are explicitly refused.
-- **Round trip:** Every manifested public fixture writes deterministically, decodes to the same semantic fingerprint, accepts a typed property edit, and retains every named entry by identity and digest. Optional FreeCAD 1.1.1 acceptance is environment-driven interop via [`tools/validate_fcstd_interop.py`](../tools/validate_fcstd_interop.py) and is not recorded in the checked-in profile.
+- **Read profile:** Partial for the primary envelope relative to the cumulative L5 gate. Text and binary exact shapes, connected topology, sketches, constraints, core design operations, product links, TechDraw, semantic annotations, Mesh, Points, embedded assets, and inert extension data are implemented. The delivered scope distinguishes neutral geometry from projected design; typed native objects and properties remain document content at geometry scope. Opaque Python/File payloads remain unrepresented; decoded JSON-mode Python values and native product-array values are typed content.
+- **Native write:** Unchanged, fully represented sources with fidelity can use the guarded patched path. Other documents synthesize neutral geometry, supported design operations, sketches, parameters, spreadsheets, products, joints, and presentation. Own typed native records supply only values with no neutral form. Retained archive/XML bytes never supply synthesized content. Unsupported content is omitted or degraded with export losses, and a declined patch falls back to synthesis.
+- **Round trip:** Synthesized output is re-decoded and checked against the neutral content the writer declares Written; retained and source-less paths have separate tests. Feature and parameter changes do not recompute BRep and report a warning. Plain dumb-solid wrappers create no history nodes. Optional FreeCAD acceptance remains independent interop via [`tools/validate_fcstd_interop.py`](../tools/validate_fcstd_interop.py).
 
 See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fcstd-open-items.md`](formats/freecad_fcstd-open-items.md), and [`formats/freecad_fcstd-coverage.md`](formats/freecad_fcstd-coverage.md).
 
@@ -186,13 +214,21 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 | `iges:5.3-binary`                         | detected               | preserved |
 | `iges:unknown`                            | unclassified-recovered | preserved |
 
+**Delivered full-decode scope:** `model`, `design`.
+
+**Write paths:** `synthesized`, `verbatim_replay`.
+
+**Synthesized dropped arenas:** `subds`, `procedural_curves`, `assets`, `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `tessellations`, `appearances`, `appearance_bindings`, `attributes`, `pmi`, `presentation_layers`.
+
+**Synthesized omitted arenas:** none.
+
 <!-- /generated: dialects iges -->
 
 Semantic decode is resource-bounded, valid-IR output is admitted atomically, every non-null Directory Entry has retained identity and transfer accounting, and semantic output has target-version and independent-application gates. Binary, other ASCII versions, and extensions are separate envelopes. Binary is a read-only physical representation; its normalized entity semantics use the same version profile and do not change the writer ladder.
 
 ### Envelopes
 
-- **IGES 4.0, 5.0, 5.1, 5.2, and 5.3 Fixed ASCII mechanical/document.** The 80-column representation containing Start, Global, Directory Entry, Parameter Data, and Terminate sections; the declared geometry, topology, product, presentation, annotation, drawing, associativity, property, and Macro entity matrix; and implementor-defined Type 406 property forms retained as opaque native records. Unchanged documents replay their retained source image. Semantic regeneration is bounded to the documented writer profile and refuses unsupported model or native content.
+- **IGES 4.0, 5.0, 5.1, 5.2, and 5.3 Fixed ASCII mechanical/document.** The 80-column representation containing Start, Global, Directory Entry, Parameter Data, and Terminate sections; the declared geometry, topology, product, presentation, annotation, drawing, associativity, property, and Macro entity matrix; and implementor-defined Type 406 property forms retained as opaque native records. Unchanged documents replay their retained source image. Semantic regeneration writes the supported document content and reports unsupported model and native content as loss; replay cannot supply additional content.
 - **Other Fixed ASCII versions.** Version-specific legacy or later envelope. Detection and exact version reporting establish identity. Semantic decode retains the declared version, uses the nearest implemented recovery profile, and reports `iges/source.dialect-unverified`; strict mode refuses that loss.
 - **Compressed ASCII.** The supported read representation expands inherited Directory fields and variable-length Parameter Data into the fixed-card parser model. Unchanged documents replay the original Compressed ASCII source image; semantic regeneration writes Fixed ASCII.
 - **Binary.** Deprecated Binary Flag, section, control-byte, and null-padding envelope. The reader validates the bounded Binary structure and normalizes its Start, Global, Directory, Parameter, and Terminate sections into the shared Fixed ASCII entity pipeline. The original Binary bytes remain the source image; semantic admission still follows the declared version profile, and no Binary writer is provided.
@@ -221,8 +257,8 @@ Semantic decode is resource-bounded, valid-IR output is admitted atomically, eve
 
 ### Write and round trip
 
-- **Native write: Semantic.** An unchanged decoded document with an intact source baseline replays byte for byte. Source-less documents and edited documents can write standalone points, finite lines, circles, ellipse/parabola/hyperbola conic arcs, NURBS curves, planes, and NURBS support surfaces, one-face trimmed sheet bodies with Type 141/144 boundaries and NURBS parameter curves, and bounded Type 186/502/504/508/510/514 manifold B-rep solids and multi-face sheet bodies, including vertex-only pole loops and non-manifold sheet radial rings. Circular cylinder, circular cone, sphere, and torus carriers are writable only when they support B-rep topology; other uses are refused because neutral IR supplies no finite domain for an equivalent Type 128 patch. Default-parameterization Revolution constructions with bounded directly evaluable generatrices emit their exact axis, generatrix, and Type 120 records for IGES 4.0, 5.0, and 5.1–5.3 targets; this includes analytic hyperbolas and does not use `procedural_reduced`. Bounded directly evaluable Extrusion constructions emit their exact directrix and Type 122 record for IGES 4.0, 5.0, and 5.1–5.3 targets; this includes analytic hyperbolas and piecewise-linear carriers and does not use `procedural_reduced`. Other exact solved carriers for ruled, revolved, tabulated, offset, and composite constructions are regenerated as writable neutral geometry with `procedural_reduced` information. Exact piecewise-linear carriers are encoded as degree-one NURBS. Analytic output uses Type 190 Form 1 for planes and pointer-defined Type 192, 194, 196, and 198 records for the other analytic families, with physically dependent Type 116 and Type 123 support entities. Parameter domains, knot vectors, weights, orthonormal frames, finite coordinates, topology ownership, radial incidence, and card widths are validated before output. The default target is IGES 5.3 Fixed ASCII; targets 4.0, 5.0, 5.1, and 5.2 are also emitted. Unsupported model arenas, native arenas, and native entity types are explicitly refused. Native direction, display, and occurrence-expansion records that are not regenerated produce `passthrough_record_omitted` warnings; `--reject-lossy` can refuse the plan before writing.
-- **Round trip: Verified.** Generated output is decoded and validated by the IGES codec for the writable geometry, single-face trimmed-sheet profile, and bounded B-rep profile, including shared and non-manifold sheet edges, vertex-only pole loops, void shells, and multi-face sheet shells. The target-version matrix covers IGES 5.1, 5.2, and 5.3. Unchanged source documents preserve every source byte through replay. The independent FreeCAD workflow checks exact topology and measures for the geometry profile, then imports every successful writer golden and one edited neutral document at each target version; the broad pass allows presentation-only imports to be empty but rejects null or invalid shapes. [GitHub Actions run 31923613047](https://github.com/cadmpeg/cadmpeg/actions/runs/31923613047) passed the exact manifest with 11 of 11 files and the broad manifest with 37 of 37 valid shape imports, including edited points at `(11, 22, 33)` for all three targets. Artifact `iges-freecad-report-31923613047` retains the reports. See [`scripts/prepare-iges-freecad-golden.py`](../scripts/prepare-iges-freecad-golden.py), [`scripts/prepare-iges-freecad-edited.py`](../scripts/prepare-iges-freecad-edited.py), and [`scripts/verify-iges-freecad.py`](../scripts/verify-iges-freecad.py). Edited documents containing unsupported structures are refused rather than reduced silently.
+- **Native write: Semantic.** An unchanged decoded document with an intact source baseline replays byte for byte. Source-less documents and edited documents can write standalone points, finite lines, circles, ellipse/parabola/hyperbola conic arcs, NURBS curves, planes, and NURBS support surfaces, one-face trimmed sheet bodies with Type 141/144 boundaries and NURBS parameter curves, and bounded Type 186/502/504/508/510/514 manifold B-rep solids and multi-face sheet bodies, including vertex-only pole loops and non-manifold sheet radial rings. Circular cylinder, circular cone, sphere, and torus carriers are writable when they support B-rep topology; other unbounded uses are omitted with Error loss when no finite Type 128 patch can be authored. Default-parameterization Revolution constructions with bounded directly evaluable generatrices emit their exact axis, generatrix, and Type 120 records for IGES 4.0, 5.0, and 5.1–5.3 targets; this includes analytic hyperbolas and does not use `procedural_reduced`. Bounded directly evaluable Extrusion constructions emit their exact directrix and Type 122 record for IGES 4.0, 5.0, and 5.1–5.3 targets; this includes analytic hyperbolas and piecewise-linear carriers and does not use `procedural_reduced`. Other exact solved carriers for ruled, revolved, tabulated, offset, and composite constructions are regenerated as writable neutral geometry with `procedural_reduced` information. Exact piecewise-linear carriers are encoded as degree-one NURBS. Analytic output uses Type 190 Form 1 for planes and pointer-defined Type 192, 194, 196, and 198 records for the other analytic families, with physically dependent Type 116 and Type 123 support entities. Parameter domains, knot vectors, weights, orthonormal frames, finite coordinates, topology ownership, radial incidence, and card widths are validated before output. The default target is IGES 5.3 Fixed ASCII; targets 4.0, 5.0, 5.1, and 5.2 are also emitted. Unsupported arenas are dropped with losses. Unsupported entities are reduced or omitted while independent content is written. Native direction, display, and occurrence-expansion records that are not regenerated produce `passthrough_record_omitted` warnings; `--reject-lossy` can refuse the plan before writing.
+- **Round trip: Verified.** Generated output is decoded and validated by the IGES codec for the writable geometry, single-face trimmed-sheet profile, and bounded B-rep profile, including shared and non-manifold sheet edges, vertex-only pole loops, void shells, and multi-face sheet shells. The target-version matrix covers IGES 5.1, 5.2, and 5.3. Unchanged source documents preserve every source byte through replay. The independent FreeCAD workflow checks exact topology and measures for the geometry profile, then imports every successful writer golden and one edited neutral document at each target version; the broad pass allows presentation-only imports to be empty but rejects null or invalid shapes. [GitHub Actions run 31923613047](https://github.com/cadmpeg/cadmpeg/actions/runs/31923613047) passed the exact manifest with 11 of 11 files and the broad manifest with 37 of 37 valid shape imports, including edited points at `(11, 22, 33)` for all three targets. Artifact `iges-freecad-report-31923613047` retains the reports. See [`scripts/prepare-iges-freecad-golden.py`](../scripts/prepare-iges-freecad-golden.py), [`scripts/prepare-iges-freecad-edited.py`](../scripts/prepare-iges-freecad-edited.py), and [`scripts/verify-iges-freecad.py`](../scripts/verify-iges-freecad.py). Edited documents containing unsupported structures are reduced with attributable losses. Unsupported pcurves can be omitted while retaining a valid model-space boundary.
 
 - **Independent producer read: Verified.** An Autodesk Inventor 2019 sample and a FreeCAD 1.1.1/Open CASCADE 7.8 export decode and validate under the service profile. Their source identities, digests, entity counts, and the retained Type 402 projection warning are recorded in [`formats/iges-fixture-charter.md`](formats/iges-fixture-charter.md). The producer files are evidence inputs only and are not repository fixtures.
 
@@ -248,6 +284,14 @@ Semantic decode is resource-bounded, valid-IR output is admitted atomically, eve
 | `rhino:archive-90` | detected               | none    |
 | `rhino:unknown`    | unclassified-recovered | none    |
 
+**Delivered full-decode scope:** `model`, `design`.
+
+**Write paths:** `synthesized`.
+
+**Synthesized dropped arenas:** `subds`, `procedural_surfaces`, `features`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `attributes`.
+
+**Synthesized omitted arenas:** `assets`, `feature_input_topologies`, `feature_result_topologies`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `pmi`, `presentation_layers`.
+
 <!-- /generated: dialects rhino -->
 
 Partial typed geometry, topology, presentation, and bounded source-less native writing show as extras above the scored rows. V1 decodes through the legacy flat-record path. Archive 5 uses the four-byte chunk scan and is admitted as `rhino:archive-5`.
@@ -265,8 +309,8 @@ Partial typed geometry, topology, presentation, and bounded source-less native w
 
 ### Write and round trip
 
-- **Native write: Bounded source-less regeneration.** Explicit archive 50, 60, 70, and 80 targets regenerate a narrowly writable IR. The writer does not consume `SourceFidelity` (`NotConsumed`). Writable families are point objects, grouped point clouds as free-vertex bodies, circles, native-canonical rational and non-rational NURBS curves, planes, native-canonical rational and non-rational NURBS surfaces, connected polygon sheet Breps with multiple faces, shared manifold edges, disjoint outer and inner loops, line or full-domain nonperiodic rational and non-rational NURBS edges, closed manifold planar solid Breps, bounded nonperiodic rational and non-rational NURBS faces, and standalone triangle meshes. Generated archives declare millimetre units and contain the canonical table sequence, a persistent default layer, and object attributes bound to that layer. Multiple independently owned Breps, free-vertex groups, and standalone geometry coexist in one object table; each Brep is preflighted and serialized from its isolated ownership graph. Every generated object receives a deterministic native UUID derived from its IR identity. Every NURBS-face coedge carries an explicit line or full-domain nonperiodic NURBS pcurve. The pcurve remains inside the surface parameter domain and maps through the surface onto the directed C3 edge within the declared face, edge, and pcurve tolerances. Planar NURBS edges retain their C3 carrier and generate an exact projected NURBS C2 for each directed face use. Explicit line and full-domain nonperiodic NURBS pcurves are written when they exactly equal that directed projection; their parameter range and fit tolerance are retained. Pcurves with incompatible geometry, ownership, wrapper state, native tail state, parameter domain, or surface/edge agreement are rejected. Writable Breps retain edge parameter domains, directed coedge rings, radial edge incidence, sheet or solid body classification, and vertex and edge tolerances. Solid output requires two opposite directed uses of every edge, a connected shell, and nondegenerate face loops. Free-vertex bodies and writable Breps retain object names, RGBA colors, and visibility through deterministic object attributes. Mesh normals, UV values, colors, surface parameters, and curvature channels retain their native scalar encodings. Archive 60, 70, and 80 use the double-vertex mesh extension; archive 50 uses float vertices and reports quantization. Unsupported arenas, retained non-writer namespaces, cross-object topology carriers, periodic surface topology, non-manifold topology, other display state, native records, shared free-vertex points, strip topology, unknown mesh channels, and noncanonical NURBS contracts are rejected before output.
-- **Round trip: Bounded.** Generated archives decode through the codec for every supported target. Exact geometry and grouping are retained for the writable families except explicitly reported archive-50 mesh quantization. The independent openNURBS comparison also writes one point with `RhinoEncoder` for each target and requires its reader to enumerate that point before the codec decodes it as one transferred object. This checks object-record interoperability, not acceptance by a vendor UI. A decoded archive produced by this writer can be edited and semantically regenerated when its native namespace contains only the writer's accounting records, default layer, default object presentation, and supported object records. Any additional retained Rhino arena or nondefault native presentation state is refused.
+- **Native write: Bounded source-less regeneration.** Explicit archive 50, 60, 70, and 80 targets regenerate a narrowly writable IR. The writer does not consume `SourceFidelity` (`NotConsumed`). Writable families are point objects, grouped point clouds as free-vertex bodies, circles, native-canonical rational and non-rational NURBS curves, planes, native-canonical rational and non-rational NURBS surfaces, connected polygon sheet Breps with multiple faces, shared manifold edges, disjoint outer and inner loops, line or full-domain nonperiodic rational and non-rational NURBS edges, closed manifold planar solid Breps, bounded nonperiodic rational and non-rational NURBS faces, and standalone triangle meshes. Generated archives declare millimetre units and contain the canonical table sequence, a persistent default layer, and object attributes bound to that layer. Multiple independently owned Breps, free-vertex groups, and standalone geometry coexist in one object table; each Brep is preflighted and serialized from its isolated ownership graph. A native UUID in the document identity is reused; other objects receive a deterministic UUID derived from their IR identity. Every NURBS-face coedge carries an explicit line or full-domain nonperiodic NURBS pcurve. The pcurve remains inside the surface parameter domain and maps through the surface onto the directed C3 edge within the declared face, edge, and pcurve tolerances. Planar NURBS edges retain their C3 carrier and generate an exact projected NURBS C2 for each directed face use. Explicit line and full-domain nonperiodic NURBS pcurves are written when their mapped geometry agrees with that directed projection within the stated tolerances; their parameter range and fit tolerance are retained. Unsupported pcurve wrappers, domains, or native tail state omit the dependent entity with Error loss. Inconsistent ownership or actual surface/edge disagreement remains a malformed-input precondition. Writable Breps retain edge parameter domains, directed coedge rings, radial edge incidence, sheet or solid body classification, and vertex and edge tolerances. Solid output requires two opposite directed uses of every edge, a connected shell, and nondegenerate face loops. Free-vertex bodies and writable Breps retain object names, RGBA colors, and visibility through deterministic object attributes. Mesh normals, UV values, colors, surface parameters, and curvature channels retain their native scalar encodings. Archive 60, 70, and 80 use the double-vertex mesh extension; archive 50 uses float vertices and reports quantization. Unsupported arenas and native records are omitted with losses. Unsupported topology omits the affected entity or body with Error loss; supported objects remain. Rigid placements are baked, non-rigid placements are omitted with a warning, and unsupported mesh channels are omitted without losing triangle geometry.
+- **Round trip: Bounded.** Generated archives decode through the codec for every supported target. Exact geometry and grouping are retained for the writable families except explicitly reported archive-50 mesh quantization. The independent openNURBS comparison also writes one point with `RhinoEncoder` for each target and requires its reader to enumerate that point before the codec decodes it as one transferred object. This checks object-record interoperability, not acceptance by a vendor UI. A decoded archive produced by this writer can be edited and semantically regenerated when its native namespace contains only the writer's accounting records, default layer, default object presentation, and supported object records. Additional Rhino arenas and unsupported presentation state are omitted with `export:native.records-omitted`; native richness does not refuse the document.
 
 See [`formats/rhino_3dm.md`](formats/rhino_3dm.md), [`formats/rhino_3dm-open-items.md`](formats/rhino_3dm-open-items.md), and the [`openNURBS comparison`](formats/rhino_3dm-opennurbs-comparison.md).
 
@@ -280,11 +324,19 @@ See [`formats/rhino_3dm.md`](formats/rhino_3dm.md), [`formats/rhino_3dm-open-ite
 
 **Ladder: L1.**
 
-| Dialect                        | Read                   | Write     |
-| ------------------------------ | ---------------------- | --------- |
-| `sldprt:sw-version-pre-12000`  | detected               | preserved |
-| `sldprt:sw-version-12000-plus` | detected               | preserved |
-| `sldprt:unknown`               | unclassified-recovered | emitted   |
+| Dialect                        | Read                   | Write   |
+| ------------------------------ | ---------------------- | ------- |
+| `sldprt:sw-version-pre-12000`  | detected               | emitted |
+| `sldprt:sw-version-12000-plus` | detected               | emitted |
+| `sldprt:unknown`               | unclassified-recovered | emitted |
+
+**Delivered full-decode scope:** `model`, `design`.
+
+**Write paths:** `synthesized`, `patched`, `verbatim_replay`.
+
+**Synthesized dropped arenas:** `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `assets`, `feature_input_topologies`, `feature_result_topologies`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `presentation_layers`, `pmi`, `spatial_sketch_constraints`.
+
+**Synthesized omitted arenas:** none.
 
 <!-- /generated: dialects sldprt -->
 
@@ -302,9 +354,10 @@ Unknown geometry carriers and topology cases block L5. Incomplete sketch constra
 
 ### Write and round trip
 
-- **Native write: Partial.** Unchanged IR with a retained source image writes byte for byte. Supported geometry edits can patch the native Parasolid partition when the entity graph and provenance remain stable. Retained writing can synchronize supported feature, sketch, parameter, configuration, active-configuration XML, and PMI edits and rejects structural edits it cannot safely rewrite. Modified or source-less supported IR regenerates native blocks, DisplayLists, Keywords history, ResolvedFeatures lanes, and a section directory.
-- **Semantic write limits:** at most five regions per body and six shells per solid region; sheet regions require one shell. Ellipses whose declared major radius is smaller than the minor radius, elliptical or non-acute cones, signed sphere or torus parameterizations, explicit face names, stored edge parameter ranges, periodic NURBS carriers, NURBS surface degrees outside 1–8 or shapes that do not re-infer identically, and unbounded appearance data are not encoded.
-- **Round trip: Partial.** Byte-exact unchanged-file and semantic regeneration paths have generated-fixture tests. The public version and feature matrix remains to be built.
+- **Native write: Partial.** Replay and patch require every source content record to have a typed neutral or native representation. A declined patch selects synthesis and records its reason. Synthesis consumes no retained bytes. It writes supported analytic and NURBS bodies, Keywords features and parameters, planar and spatial sketch lanes, supported sketch constraints, configurations, document string properties, colors, and tessellation. Typed native feature metadata with no neutral form keeps its supported XML and class records; neutral definitions replace corresponding native fields. Own typed histories and supported document metadata also write when their neutral class is unheld. Global parameters get an equation-container owner. The selected `swVersion` envelope preserves an inherited declaration or states the explicit target grammar.
+- **Export losses: Explicit.** Unsupported arenas are dropped with losses. Unsupported sheet faces are omitted while writable sheet faces remain. A solid whose closed topology cannot be retained is omitted; other supported bodies still write. Unsupported feature definitions retain their solved outputs and report the omitted operation. Solved procedural carriers write with a reduction loss. Names, parameter ranges, appearance fields, sketch relations, and mesh channels without a supported encoding produce losses. Semantic PMI annotations have no synthesized database encoding and are omitted with a loss; their neutral dimension scalars remain parameters. Features whose stored evaluation is stale retain the target application's recompute flag. An empty document writes a geometry-less part with `export.no-exportable-solids`.
+- **Preconditions:** at most five native regions per body and six shells per solid region. Multi-shell sheet regions split into one native region per shell with a grouping loss. Malformed input, unresolved target identities, and native field capacity limits remain refusals.
+- **Round trip: Partial.** Generated-fixture tests cover replay eligibility, guarded synthesis, source-less geometry and design, and per-body degradation. The public version and feature matrix remains to be built.
 
 See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`](formats/sldprt-open-items.md).
 
@@ -321,6 +374,14 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
 | `f3d:manifest-3-2-0-0`   | L4                     | verified |
 | `f3d:f3z-multi-document` | detected               | none     |
 | `f3d:unknown`            | unclassified-recovered | none     |
+
+**Delivered full-decode scope:** `model`, `design`.
+
+**Write paths:** `synthesized`, `patched`, `verbatim_replay`.
+
+**Synthesized dropped arenas:** `subds`, `assets`, `features`, `feature_input_topologies`, `feature_result_topologies`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `tessellations`, `appearance_bindings`, `attributes`, `pmi`, `presentation_layers`.
+
+**Synthesized omitted arenas:** none.
 
 <!-- /generated: dialects f3d -->
 
@@ -353,16 +414,17 @@ Undefined geometry-carrier payloads block L5. Tolerant coedge, edge, and vertex 
   Form scopes transfer their committed T-spline control cages into typed Form features through the serializer identity join or the validated compact one-cage envelope; T-spline topology, crease edges, grip coordinates, correspondence symmetry maps, symmetry plane frames, radial controls, and selector-preserving radial map pairs transfer into the subdivision arena. Radial map operands remain native until their namespace is resolved.
   Neutral-plane and parting-line `Draft` scopes transfer as typed draft nodes with their exact signed angle. Neutral drafts retain drafted-face and neutral-plane selections; parting-line drafts retain drafted-face and parting-tool selections, the WorkPlane pull direction, and the WorkPlane feature dependency. The pull direction composes the signed-angle sign with the oriented neutral carrier, and the neutral `outward` value is true for a negative signed angle. Any face recipe that does not resolve to active B-rep faces retains its native selection and the feature is reported incomplete. `SplitFace` scopes transfer typed face targets with either a Sketch path or one or more ordered WorkPlane tools.
   Extrusions driven by prior solid faces retain exact state-qualified profile faces when every counted selection member corroborates one owner face. Work-point records retain typed vertex, circle-center, two-edge, three-plane, edge-plane, and path-fraction construction rules with their exact source input arity. These rules project as neutral datum-point constructions while retaining the solved position. Edge-valued inputs retain their complete recipe operands and history context. Vertex-valued inputs resolve their persistent face references to an exact state-qualified historical vertex. Plane-valued inputs resolve to exact WorkPlane scopes and neutral feature dependencies through persistent identities. Other rule codes and counted inputs remain lossless native values.
-  When design-intent decoding of a document fails, the decode keeps its geometry, topology, and product prerequisites and drops every design-intent record: sketches, features, parameters, and history. It reports the error-severity loss `design.intent-undecoded`, which strict mode refuses, and records the failure in the native `design_intent_failures` arena. In an `.f3z` archive the failure is scoped to the member document. A resource refusal during design-intent decoding still refuses the whole document. Semantic patching refuses a source whose design intent was dropped.
+  When design-intent decoding fails, the document keeps its geometry, topology, and typed product prerequisites, exactly as when design projection is omitted. Its scope excludes design. The report carries the error-severity loss `design.intent-undecoded` and the missing delivered class; the document carries no failure record. An `.f3z` archive holds design when any member delivers design. A resource refusal during design-intent decoding still refuses the whole document. Retained bytes cannot supply design records absent from typed neutral and native arenas.
 - **Product structure: Partial.** Body transforms and root-component records transfer. `.f3z` archives merge multi-document XREF placements into the root document. Intra-document multi-component structure and constraints remain open.
 - **Presentation and metadata: Partial.** Linked source attributes, Protein appearance assets, material properties, body bindings, and per-body display visibility transfer. Appearance assets transfer from every document, including a document that serializes no B-rep stream. A document-local catalog that no body or face assignment names is a complete transfer; a serialized assignment that resolves to no topology is an appearance loss carrying the decoded asset count. Body appearance bindings resolve through an exactly framed named or bare typed owner, a browser-node GUID, or a browser-node reference, so a body carries its assigned colour in both Design segment generations. Face appearance bindings resolve through the B-rep face material attribute in both Design segment generations. External material-library display names and some schema fields remain unresolved.
   Canvas timeline objects with a structurally complete image-plane binding transfer as neutral reference-image features carrying their image asset, plane frame, opacity, and plane-local bounds; objects without a resolved binding remain identity-preserving native records and report an attribute loss. Decals transfer as presentation timeline objects. Neither counts as an incomplete shape-history operation.
 
 ### Write and round trip
 
-- **Native write: Partial.** An unchanged retained source archive writes byte for byte. The writer patches model points, common analytic and NURBS B-rep curves and surfaces, rational/non-rational pcurves, procedural caches, sketch geometry, constraints, history fields, design records, supported ACT GUID, channel, registry, and root fields, and supported appearance properties in their original records. Source-less generation writes multi-body B-reps containing solid, sheet, wire, and mixed-dimensional general topology with analytic or rational/non-rational NURBS carriers; exact, compound, ruled, sum, revolution, offset, rolling-ball, taper, loft, G2-blend, and translational-extrusion surface constructions; exact-cache, compound, deformable, helix, vector-offset, and subset curve constructions; inline rational/non-rational NURBS pcurves; placements; document tolerance metadata; direct body/face color attributes; body/face/edge persistent-design tags; coedge-to-sketch provenance; typed ASM history; Design object and construction streams; sketch geometry and constraints; and Protein appearances with body bindings. Source-less ACT generation is rejected because it does not synthesize the required MetaStream record registry.
-- **Write limits:** General writing requires a retained source archive and the original entity and record layouts. Source-less generation supports multiple placed bodies, regions, and shells with plane, cylinder, cone, sphere, torus, or rational/non-rational NURBS faces; multiple loops; shared radial edges; line, circle, ellipse, point-degenerate, or rational/non-rational NURBS edge curves; inline rational/non-rational NURBS pcurves; cache-local tolerant-coedge NURBS use curves; face-less wire bodies with chained regions and shells; edge-ring and point wires; and mixed face-and-wire shells containing either wire form. Retained cache-local tolerant-coedge NURBS use curves support structure-preserving geometry edits. Edits outside the listed fields are rejected.
-- **Procedural write invariant:** One curve has at most one procedural construction. Exact-cache, compound, deformable, helix with or without a solved cache, vector-offset, surface-offset, spring (including conditional null-carrier ranges), subset, ranged and early-close projection, silhouette/taper-silhouette, two- and three-surface intersection, two-sided offset, and prefix-only blend/surface/parametric/skin definitions with paired analytic/NURBS surface and NURBS UV supports serialize with their native construction fields, child carriers, role fields, and solved caches. Scalar offset and blend-spine definitions remain rejected source-less until their external fields can be emitted without semantic loss.
+- **Native write: Partial.** Every output is authored from the document: neutral geometry, appearances, scalar document parameters and configurations take precedence over their native projections. Supported typed native records carry native-only metadata. Retained source bytes select byte layout and identities only. Replay and patch require empty `SourceFidelity.unrepresented` and content equivalent to synthesis. A patch that cannot express an edit falls back to synthesis and reports `PatchDeclined`; unrepresented source content never reappears through a retained archive.
+- **Write limits:** Unsupported design/sketch graphs, products, SubDs, assets, tessellations, PMI and other unsupported arenas are dropped with export losses. Scalar document parameters and named configurations are regenerated individually, so one unsupported record does not discard supported siblings. Unsupported procedural constructions use a solved carrier where one exists. Unsupported pcurves are omitted while spatial edge geometry remains; unsupported faces produce an open shell where possible, with body omission only when no supported body graph remains. Structural degradation is reported at Error severity. Malformed input, format capacity limits and an unresolvable target remain preconditions. An empty output reports `NoExportableSolids`. The CLI writes it by default; `--reject-empty` refuses it.
+- **Procedural write invariant:** One curve has at most one procedural construction. Supported analytic/NURBS carriers and native construction grammars are regenerated from neutral records. Unsupported native construction fields, including source-only history payloads, never supply content from retained bytes; their reduction or omission is reported.
+
 - **Round trip: Partial.** Generated byte fixtures cover byte-exact replay and each writable geometry, history, Design, sketch, ACT, and appearance family.
 
 See [`formats/f3d.md`](formats/f3d.md), [`formats/f3d-open-items.md`](formats/f3d-open-items.md), and [`formats/protein.md`](formats/protein.md).
@@ -380,6 +442,14 @@ See [`formats/f3d.md`](formats/f3d.md), [`formats/f3d-open-items.md`](formats/f3
 | `nx:splmsstr`   | detected | none  |
 | `nx:legacy-cfb` | detected | none  |
 | `nx:unknown`    | refused  | none  |
+
+**Delivered full-decode scope:** `model`, `design`.
+
+**Write paths:** none.
+
+**Synthesized dropped arenas:** none.
+
+**Synthesized omitted arenas:** none.
 
 <!-- /generated: dialects nx -->
 
@@ -426,6 +496,14 @@ See the [format specification](formats/siemens_nx.md), [coverage contract](forma
 | `catia:inner-no-directory`        | L1                     | none  |
 | `catia:unknown`                   | unclassified-recovered | none  |
 
+**Delivered full-decode scope:** `model`, `design`.
+
+**Write paths:** none.
+
+**Synthesized dropped arenas:** none.
+
+**Synthesized omitted arenas:** none.
+
 <!-- /generated: dialects catia -->
 
 Geometry on the standard-nested band shows as extras. L3 requires connected topology across admitted files. Current topology depends on resolved trim, support, and endpoint assignments.
@@ -463,6 +541,14 @@ See the [coverage contract](formats/catia-coverage.md), [format specification](f
 | `creo:nd`           | L1                     | none  |
 | `creo:legacy-ascii` | detected               | none  |
 | `creo:unknown`      | unclassified-recovered | none  |
+
+**Delivered full-decode scope:** `model`, `design`.
+
+**Write paths:** none.
+
+**Synthesized dropped arenas:** none.
+
+**Synthesized omitted arenas:** none.
 
 <!-- /generated: dialects creo -->
 
@@ -510,6 +596,14 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 | `step:ap242-bo-model-xml` | refused                | none     |
 | `step:part26-hdf5`        | refused                | none     |
 | `step:unknown`            | unclassified-recovered | none     |
+
+**Delivered full-decode scope:** `model`, `design`.
+
+**Write paths:** `synthesized`.
+
+**Synthesized dropped arenas:** `subds`, `assets`, `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `attributes`.
+
+**Synthesized omitted arenas:** none.
 
 <!-- /generated: dialects step -->
 

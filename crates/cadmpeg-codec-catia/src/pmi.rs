@@ -53,6 +53,7 @@ pub(crate) fn transfer_dimensions(
         }
         ctx.charge_entities(1, "admit CATIA PMI dimension")?;
         ir.model.pmi.push(PmiAnnotation {
+            native_ref: Some(entity.id.clone()),
             id,
             name: None,
             visible: None,
@@ -121,7 +122,7 @@ fn range_only_dimension_definition(
     Some(PmiDefinition::Dimension(
         cadmpeg_ir::pmi::PmiDimension::new(
             dimension,
-            Some(nominal),
+            Some(nominal.into()),
             Some(DimensionTolerance::PlusMinus {
                 lower: lower_deviation,
                 upper: upper_deviation,
@@ -325,7 +326,10 @@ mod tests {
                     };
                     (
                         relation.kind(),
-                        nominal.value.get(),
+                        ir.dimension_value(nominal)
+                            .expect("dimension value")
+                            .value
+                            .get(),
                         lower_deviation.value.get(),
                         upper_deviation.value.get(),
                     )

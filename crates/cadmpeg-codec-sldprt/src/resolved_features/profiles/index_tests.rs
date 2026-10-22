@@ -17,6 +17,7 @@ fn feature(position: usize, native_ref: Option<String>) -> Feature {
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
+        needs_recompute: false,
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::Sketch {
                 sketch: SketchFeatureBinding::Planar(None),
@@ -127,12 +128,12 @@ fn owned_markers_match_the_lane_scans() {
             assert_eq!(
                 indexed
                     .iter()
-                    .filter(|marker| marker.offset() < end)
+                    .filter(|marker| marker.offset() < Some(end))
                     .count(),
                 markers
                     .iter()
                     .filter(|marker| {
-                        marker.feature_ref.as_deref() == Some(owner) && marker.offset() < end
+                        marker.feature_ref.as_deref() == Some(owner) && marker.offset() < Some(end)
                     })
                     .count()
             );

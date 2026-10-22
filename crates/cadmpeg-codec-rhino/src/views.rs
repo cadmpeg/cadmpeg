@@ -47,8 +47,11 @@ const VIEWPORT_USERDATA_CHILD_CAP: usize = 1 << 20;
 struct ViewChild {
     typecode: String,
     kind: &'static str,
+    #[serde(skip_serializing)]
     source_offset: u64,
+    #[serde(skip_serializing)]
     byte_len: u64,
+    #[serde(skip_serializing)]
     sha256: String,
 }
 
@@ -82,6 +85,7 @@ impl Serialize for ViewListKind {
 #[derive(Debug, Serialize)]
 struct ViewRecord {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     list_kind: ViewListKind,
     list_index: usize,
@@ -115,15 +119,7 @@ fn serialize_view_attributes<S: serde::Serializer>(
 ) -> Result<S::Ok, S::Error> {
     use serde::ser::SerializeMap;
 
-    let mut map = serializer.serialize_map(Some(6))?;
-    map.serialize_entry("view_type", &attributes.map(|value| value.view_type))?;
-    map.serialize_entry("page_width_mm", &attributes.map(|value| value.width))?;
-    map.serialize_entry("page_height_mm", &attributes.map(|value| value.height))?;
-    map.serialize_entry(
-        "display_mode_uuid",
-        &attributes.and_then(|value| value.display.as_deref()),
-    )?;
-    map.serialize_entry("attributes_version", &attributes.map(|value| value.version))?;
+    let mut map = serializer.serialize_map(Some(1))?;
     map.serialize_entry("attributes", &attributes)?;
     map.end()
 }
@@ -151,6 +147,7 @@ struct ConstructionPlane {
 #[derive(Debug, Serialize)]
 struct NamedConstructionPlane {
     id: String,
+    #[serde(skip_serializing)]
     source_offset: u64,
     list_index: usize,
     value: ConstructionPlane,
@@ -158,6 +155,7 @@ struct NamedConstructionPlane {
 
 #[derive(Debug, Serialize)]
 struct Viewport {
+    #[serde(skip_serializing)]
     version: NativeBytes<[u8; 2]>,
     #[serde(flatten)]
     validity: ViewportValidity,
@@ -202,6 +200,7 @@ struct FrustumSymmetry {
 
 #[derive(Debug, Serialize)]
 struct WindowPosition {
+    #[serde(skip_serializing)]
     version: NativeBytes<[u8; 2]>,
     maximized: bool,
     left: Fraction,
@@ -265,6 +264,7 @@ struct ViewAttributes {
     width: FiniteReal,
     height: FiniteReal,
     display: Option<String>,
+    #[serde(skip_serializing)]
     version: NativeBytes<[u8; 2]>,
     page_settings: Option<PageSettings>,
     projection_locked: bool,
@@ -1700,10 +1700,56 @@ pub(crate) fn install(
             }
         }
     }
+    let mut source_layout = std::collections::BTreeMap::new();
+    for view in &views {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", view.id),
+            view.source_offset.to_string(),
+        );
+        if let Some(viewport) = &view.viewport {
+            source_layout.insert(
+                format!("rhino.layout.{}.viewport.version", view.id),
+                format!("{}", viewport.version),
+            );
+        }
+        if let Some(position) = &view.window_position {
+            source_layout.insert(
+                format!("rhino.layout.{}.window.version", view.id),
+                format!("{}", position.version),
+            );
+        }
+        if let Some(attributes) = &view.attributes {
+            source_layout.insert(
+                format!("rhino.layout.{}.attributes.version", view.id),
+                format!("{}", attributes.version),
+            );
+        }
+        for (ordinal, child) in view.children.iter().enumerate() {
+            source_layout.insert(
+                format!("rhino.layout.{}.child.{ordinal}.offset", view.id),
+                child.source_offset.to_string(),
+            );
+            source_layout.insert(
+                format!("rhino.layout.{}.child.{ordinal}.byte_len", view.id),
+                child.byte_len.to_string(),
+            );
+            source_layout.insert(
+                format!("rhino.layout.{}.child.{ordinal}.sha256", view.id),
+                child.sha256.clone(),
+            );
+        }
+    }
+    for cplane in &cplanes {
+        source_layout.insert(
+            format!("rhino.layout.{}.offset", cplane.id),
+            cplane.source_offset.to_string(),
+        );
+    }
     let namespace = ir.native.namespace_mut("rhino");
     namespace.set_arena(ctx, "views", &views)?;
     namespace.set_arena(ctx, "construction_planes", &cplanes)?;
     Ok(NativeInstall {
+        source_layout,
         losses,
         opaque_records,
     })

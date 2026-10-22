@@ -380,8 +380,8 @@ pub(crate) fn bind_mirror_constructions(
         let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
         let count = unique_match(owners.iter().filter(|owner| {
             native_stream(owner.id()) == Some(stream.as_str())
-                && owner.scope_record_index() == scope_record_index
-                && owner.local_ordinal() == 0
+                && owner.scope_record_index() == Some(scope_record_index)
+                && owner.local_ordinal() == Some(0)
                 && owner.evaluated_value().get() == 2.0
         }));
         let inline_count = exact_legacy_mirror_scope_count(bytes, records, &scopes[index]);
@@ -391,29 +391,33 @@ pub(crate) fn bind_mirror_constructions(
                 .iter()
                 .filter(|owner| {
                     native_stream(owner.id()) == Some(stream.as_str())
-                        && owner.scope_record_index() == scope_record_index
+                        && owner.scope_record_index() == Some(scope_record_index)
                 })
-                .filter(|owner| owner.local_ordinal() == 1)
+                .filter(|owner| owner.local_ordinal() == Some(1))
                 .filter_map(|owner| {
                     Some((owner, PositiveReal::try_from(owner.evaluated_value()).ok()?))
                 }),
         );
         let (count, tolerance_source) = (
             match (count, inline_count) {
-                (UniqueMatch::One(count), None) => {
-                    Some((count.record_index(), count.evaluated_value_offset()))
-                }
+                (UniqueMatch::One(count), None) => count
+                    .evaluated_value_offset()
+                    .map(|offset| (count.record_index(), offset)),
                 (UniqueMatch::Zero, Some(count)) => Some(count),
                 _ => None,
             },
             match (tolerance, inline_tolerance) {
-                (UniqueMatch::One((tolerance, value)), None) => Some((
-                    value,
-                    tolerance.evaluated_value_offset(),
-                    mirror::DesignMirrorToleranceSource::Owner {
-                        record_index: tolerance.record_index(),
-                    },
-                )),
+                (UniqueMatch::One((tolerance, value)), None) => {
+                    tolerance.evaluated_value_offset().map(|offset| {
+                        (
+                            value,
+                            offset,
+                            mirror::DesignMirrorToleranceSource::Owner {
+                                record_index: tolerance.record_index(),
+                            },
+                        )
+                    })
+                }
                 (UniqueMatch::Zero, Some((value, value_offset, scope_tail))) => Some((
                     value,
                     value_offset,
@@ -466,7 +470,8 @@ fn borrowed_ascii_tag(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
 }
 
 fn compact_feature_reference(bytes: &[u8], header: &DesignRecordHeader) -> Option<(u32, u64)> {
-    let start = usize::try_from(header.byte_offset).ok()?;
+    let header_offset = header.byte_offset?;
+    let start = usize::try_from(header_offset).ok()?;
     if bytes.get(start + 11..start + 21) != Some(&[0; 10][..])
         || bytes.get(start + 21) != Some(&1)
         || View::u32_le_at(bytes, start + 22) != header.record_index.checked_add(3)

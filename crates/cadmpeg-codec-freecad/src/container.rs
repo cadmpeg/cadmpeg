@@ -18,9 +18,13 @@ use crate::brep::ShapePayloadRecord;
 use crate::gui;
 use crate::native::element_map::ElementMapRecord;
 use crate::native::{
-    ArchiveSpan, ByteCoverageRecord, DocumentFacts, EntryRecord, LogicalClassification,
-    LogicalSpan, PropertyFamily, PropertyRecord, StringTableRecord,
+    DocumentFacts, EntryRecord, PropertyFamily, PropertyRecord, StringTableRecord,
 };
+use cadmpeg_ir::source_fidelity::freecad::{
+    ArchiveSpan, ArchiveSpanRole, ByteCoverageRecord, LogicalClassification, LogicalSpan,
+};
+
+pub(crate) mod parts;
 
 const DETECTION_XML_BYTES: usize = 8 * 1024;
 
@@ -72,6 +76,8 @@ pub(crate) fn has_document_markers(
 
 /// Fully scanned container used by inspection and decode.
 pub(crate) struct Scan<'a> {
+    /// Actual source archive retained transiently for entry-origin framing.
+    pub(crate) archive: ArchiveSnapshot<'a>,
     /// Recoverable container metadata diagnostics.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Container summary entries.
@@ -86,6 +92,8 @@ pub(crate) struct Scan<'a> {
     pub(crate) ledger: Vec<ArchiveSpan>,
     /// Bounded physical payloads that could not be opened.
     pub(crate) unreadable_entries: Vec<UnreadableEntry>,
+    /// Independently framed members given up by the shared part helper.
+    pub(crate) failed_members: BTreeSet<String>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
     pub(crate) data: BTreeMap<String, View<'a>>,
 }
@@ -96,15 +104,43 @@ pub(crate) struct Scan<'a> {
 pub(crate) struct UnreadableEntry {
     pub(crate) id: String,
     pub(crate) name: String,
+    #[serde(skip)]
     pub(crate) data_start: u64,
+    #[serde(skip)]
     pub(crate) data_end: u64,
-    #[serde(deserialize_with = "crate::native::deserialize_lowercase_native_bytes")]
+    #[serde(skip)]
     pub(crate) stored_data: NativeBytes,
+    pub(crate) byte_len: u64,
+    pub(crate) sha256: String,
     pub(crate) error: String,
 }
 
 /// Scan an archive through the session resource budget.
 pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
+    scan_impl(ctx, root, None)
+}
+
+pub(crate) fn scan_for_decode<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<
+    (
+        Scan<'a>,
+        cadmpeg_ir::source_fidelity::parts::ParserPartOutput,
+    ),
+    CodecError,
+> {
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::ParserPartOutput::new(cadmpeg_ir::CodecFormat::Fcstd);
+    let scan = scan_impl(ctx, root, Some(&mut parts))?;
+    Ok((scan, parts))
+}
+
+fn scan_impl<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+    shared: Option<&mut cadmpeg_ir::source_fidelity::parts::ParserPartOutput>,
+) -> Result<Scan<'a>, CodecError> {
     let archive = ArchiveSnapshot::new(ctx, root)?;
     if !archive
         .entries()
@@ -122,7 +158,16 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     }
     let mut losses = Vec::new();
     let document_xml = admit_document(ctx, document_bytes)?;
-    let (document, schema_version) = parse_document(&document_xml, &mut losses)?;
+    let source = crate::persistence::source::Source::new(ctx, document_view, &document_xml)?;
+    let (document, schema_version) = source.record(
+        &crate::native::native_id("document", "0"),
+        document_xml.root_element(),
+        || parse_document_impl(&document_xml, &mut losses, Some(&source)),
+    )?;
+    let mut opened = match shared {
+        Some(output) => parts::open_optional(ctx, root, &archive, output)?,
+        None => parts::OptionalMembers::default(),
+    };
     let mut data = BTreeMap::new();
     let mut unreadable_entries = Vec::new();
     for file in archive.entries() {
@@ -134,6 +179,10 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         }
         let view = if file.name == "Document.xml" {
             document_view
+        } else if let Some(view) = opened.data.remove(&file.name) {
+            view
+        } else if opened.failed.contains(&file.name) {
+            continue;
         } else {
             match archive.open(ctx, &file.name) {
                 Ok(view) => view,
@@ -165,6 +214,8 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
                         data_start: range.start,
                         data_end: end,
                         stored_data: bytes.to_vec().into(),
+                        byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
+                        sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                         error: format!("{error}"),
                     });
                     continue;
@@ -178,25 +229,26 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     for (index, span) in physical_ledger.into_iter().enumerate() {
         ledger.push(ArchiveSpan {
             id: crate::native::native_id("archive-span", index.to_string()),
-            span: crate::native::ByteSpan::try_new(span.start, span.end)
+            span: cadmpeg_ir::source_fidelity::freecad::ByteSpan::try_new(span.start, span.end)
                 .map_err(CodecError::Malformed)?,
-            role: crate::native::ArchiveSpanRole::from(&span.role),
+            role: archive_span_role(&span.role),
         });
     }
     Ok(Scan {
         losses,
         entries: archive.container_entries(classify),
+        archive,
         document,
         schema_version,
         document_xml,
         unreadable_entries,
+        failed_members: opened.failed,
         ledger,
         data,
     })
 }
 
 pub(crate) fn entry_records(
-    ctx: &DecodeContext<'_>,
     scan: &Scan<'_>,
     properties: &[PropertyRecord],
 ) -> Result<Vec<EntryRecord>, CodecError> {
@@ -205,6 +257,7 @@ pub(crate) fn entry_records(
     for entry in &scan.unreadable_entries {
         unreadable_names.insert(entry.name.as_str());
     }
+    unreadable_names.extend(scan.failed_members.iter().map(String::as_str));
     let references = {
         let mut references = HashMap::<&str, Vec<usize>>::new();
         for (index, property) in properties.iter().enumerate() {
@@ -219,7 +272,7 @@ pub(crate) fn entry_records(
         Ok::<_, CodecError>(references)
     }?;
     for entry in &scan.entries {
-        let Some(bytes) = scan.data.get(&entry.name).map(|view| view.window()) else {
+        if !scan.data.contains_key(&entry.name) {
             if unreadable_names.contains(entry.name.as_str()) {
                 // Stored source-only bytes have no expanded-byte coverage.
                 continue;
@@ -236,16 +289,11 @@ pub(crate) fn entry_records(
         for &index in owners {
             referenced_by.push(properties[index].id.clone());
         }
-        ctx.retain_bytes(
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            "retain FCStd entry",
-        )?;
         records.push(EntryRecord::new(
             crate::native::native_id("entry", &entry.name),
             entry.name.clone(),
             entry.role,
             referenced_by,
-            bytes.to_vec(),
         )?);
     }
     Ok(records)
@@ -514,9 +562,18 @@ pub(crate) fn admit_document<'input>(
 }
 
 /// Read container metadata from the admitted persistence tree.
+#[cfg(test)]
 pub(crate) fn parse_document(
     xml: &roxmltree::Document<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(DocumentFacts, String), CodecError> {
+    parse_document_impl(xml, losses, None)
+}
+
+fn parse_document_impl(
+    xml: &roxmltree::Document<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    source: Option<&crate::persistence::source::Source<'_, '_>>,
 ) -> Result<(DocumentFacts, String), CodecError> {
     let root = xml.root_element();
     if root.tag_name().name() != "Document" {
@@ -533,7 +590,8 @@ pub(crate) fn parse_document(
         "fileVersion",
         crate::loss::FreecadLossCode::FileVersionNoncanonical,
         losses,
-    )
+        source,
+    )?
     .unwrap_or_else(|| "0".into());
     let vocabulary = crate::persistence::Vocabulary::from_declaration(&schema_version)?;
     let file_version = crate::native::FileVersion::from(file_version);
@@ -571,7 +629,8 @@ pub(crate) fn parse_document(
         "programVersion",
         crate::loss::FreecadLossCode::ProgramVersionNoncanonical,
         losses,
-    );
+        source,
+    )?;
     let document = DocumentFacts {
         id: crate::native::native_id("document", "0"),
         file_version,
@@ -590,7 +649,8 @@ fn metadata_attribute(
     alias: &str,
     code: crate::loss::FreecadLossCode,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Option<String> {
+    source: Option<&crate::persistence::source::Source<'_, '_>>,
+) -> Result<Option<String>, CodecError> {
     let value = root.attribute(canonical);
     if let Some(alias_value) = root.attribute(alias) {
         let message = if value.is_some_and(|value| value != alias_value) {
@@ -600,12 +660,25 @@ fn metadata_attribute(
         };
         losses.push(code.note(message));
     }
-    value.or_else(|| root.attribute(alias)).map(str::to_owned)
+    let Some(attribute) = root.attributes().find(|attribute| {
+        attribute.namespace().is_none()
+            && attribute.name() == if value.is_some() { canonical } else { alias }
+    }) else {
+        return Ok(None);
+    };
+    match source
+        .filter(|_| canonical != "FileVersion" || attribute.value().parse::<usize>().is_ok())
+    {
+        Some(source) => source.attribute(&attribute).map(Some),
+        None => Ok(Some(attribute.value().to_owned())),
+    }
 }
 
 pub(crate) fn logical_ledger(
     entries: &[EntryRecord],
     properties: &[PropertyRecord],
+    property_sources: &BTreeMap<String, crate::fidelity::ValueSourceRanges>,
+    sources: &crate::entry_sources::EntrySources<'_>,
     gui: &gui::Graph,
     shape_payloads: &[ShapePayloadRecord],
     string_tables: &[StringTableRecord],
@@ -629,12 +702,13 @@ pub(crate) fn logical_ledger(
     }
     let mut output = Vec::new();
     for entry in entries {
+        let entry_len = sources.byte_len(entry)?;
         if typed_entries.contains(entry.id()) || typed_entries.contains(entry.name()) {
             push_logical_span(
                 &mut output,
                 entry,
                 0,
-                entry.byte_len(),
+                entry_len,
                 LogicalClassification::Typed {
                     owner: entry.id().to_owned(),
                 },
@@ -643,9 +717,15 @@ pub(crate) fn logical_ledger(
             let mut ranges = Vec::new();
             if entry.name() == "Document.xml" {
                 for property in properties {
+                    let range = property_sources
+                        .get(&property.id)
+                        .ok_or_else(|| {
+                            CodecError::malformed("property has no original source range")
+                        })?
+                        .record_range();
                     ranges.push((
-                        property.xml.start(),
-                        property.xml.end(),
+                        cadmpeg_core::decode::u64_from_index(range.start),
+                        cadmpeg_core::decode::u64_from_index(range.end),
                         if property.family == PropertyFamily::Unknown {
                             "named_opaque"
                         } else {
@@ -656,9 +736,13 @@ pub(crate) fn logical_ledger(
                 }
             } else {
                 for property in &gui.properties {
+                    let source = gui.property_sources.get(&property.id).ok_or_else(|| {
+                        CodecError::malformed("GUI property has no original source range")
+                    })?;
+                    let range = source.record_range();
                     ranges.push((
-                        property.xml.start(),
-                        property.xml.end(),
+                        cadmpeg_core::decode::u64_from_index(range.start),
+                        cadmpeg_core::decode::u64_from_index(range.end),
                         if gui::has_registered_property_grammar(&property.name, &property.type_name)
                         {
                             "typed"
@@ -668,21 +752,20 @@ pub(crate) fn logical_ledger(
                         property.id.clone(),
                     ));
                 }
-                for document in &gui.documents {
-                    for state in &document.states {
-                        ranges.push((
-                            state.xml.start(),
-                            state.xml.end(),
-                            "typed",
-                            state.id.clone(),
-                        ));
-                    }
+                for source in gui.state_sources.values() {
+                    let range = source.record_range();
+                    ranges.push((
+                        cadmpeg_core::decode::u64_from_index(range.start),
+                        cadmpeg_core::decode::u64_from_index(range.end),
+                        "typed",
+                        source.id().to_owned(),
+                    ));
                 }
             }
             ranges.sort_by_key(|left| left.0);
             let mut cursor = 0_u64;
             for (start, end, classification, owner) in ranges {
-                if start < cursor || end < start || end > entry.byte_len() {
+                if start < cursor || end < start || end > entry_len {
                     return Err(CodecError::malformed(format_args!(
                         "overlapping or invalid {} record spans",
                         entry.name()
@@ -706,7 +789,7 @@ pub(crate) fn logical_ledger(
                 &mut output,
                 entry,
                 cursor,
-                entry.byte_len(),
+                entry_len,
                 LogicalClassification::Structural,
             )?;
         } else {
@@ -714,7 +797,7 @@ pub(crate) fn logical_ledger(
                 &mut output,
                 entry,
                 0,
-                entry.byte_len(),
+                entry_len,
                 LogicalClassification::NamedOpaque {
                     owner: entry.id().to_owned(),
                 },
@@ -727,9 +810,15 @@ pub(crate) fn logical_ledger(
 pub(crate) fn byte_coverage(
     physical: &[ArchiveSpan],
     entries: &[EntryRecord],
+    sources: &crate::entry_sources::EntrySources<'_>,
     logical: &[LogicalSpan],
     physical_byte_len: u64,
-) -> ByteCoverageRecord {
+) -> Result<ByteCoverageRecord, CodecError> {
+    let logical_byte_len = entries.iter().try_fold(0_u64, |total, entry| {
+        total
+            .checked_add(sources.byte_len(entry)?)
+            .ok_or_else(|| CodecError::malformed("logical entry byte length sum overflows u64"))
+    })?;
     let mut classification_bytes = BTreeMap::new();
     let mut named_opaque_entries = BTreeSet::new();
     for span in logical {
@@ -765,12 +854,13 @@ pub(crate) fn byte_coverage(
         .all(|span| entries.iter().any(|entry| entry.name() == span.entry));
     if logical_exact {
         for entry in entries {
+            let entry_len = sources.byte_len(entry)?;
             let mut spans = Vec::new();
             for span in logical.iter().filter(|span| span.entry == entry.name()) {
                 spans.push(span);
             }
             spans.sort_by_key(|left| left.span.start());
-            let exact = if entry.byte_len() == 0 {
+            let exact = if entry_len == 0 {
                 spans.is_empty()
             } else {
                 spans.first().is_some_and(|span| span.span.start() == 0)
@@ -779,7 +869,7 @@ pub(crate) fn byte_coverage(
                         .all(|pair| pair[0].span.end() == pair[1].span.start())
                     && spans
                         .last()
-                        .is_some_and(|span| span.span.end() == entry.byte_len())
+                        .is_some_and(|span| span.span.end() == entry_len)
             };
             if !exact {
                 logical_exact = false;
@@ -789,20 +879,17 @@ pub(crate) fn byte_coverage(
     }
     let mut opaque_entries = Vec::new();
     opaque_entries.extend(named_opaque_entries);
-    ByteCoverageRecord {
+    Ok(ByteCoverageRecord {
         id: crate::native::native_id("byte-coverage", "0"),
         physical_byte_len,
         physical_span_count: physical.len(),
         logical_entry_count: entries.len(),
-        logical_byte_len: entries
-            .iter()
-            .map(super::native::EntryRecord::byte_len)
-            .sum(),
+        logical_byte_len,
         logical_span_count: logical.len(),
         classification_bytes,
         named_opaque_entries: opaque_entries,
         exact: physical_exact && logical_exact,
-    }
+    })
 }
 
 fn push_logical_span(
@@ -818,7 +905,8 @@ fn push_logical_span(
     output.push(LogicalSpan {
         id: crate::native::native_id("logical-span", output.len().to_string()),
         entry: entry.name().to_owned(),
-        span: crate::native::ByteSpan::try_new(start, end).map_err(CodecError::Malformed)?,
+        span: cadmpeg_ir::source_fidelity::freecad::ByteSpan::try_new(start, end)
+            .map_err(CodecError::Malformed)?,
         classification,
     });
     Ok(())
@@ -826,3 +914,27 @@ fn push_logical_span(
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+fn archive_span_role(role: &cadmpeg_container::ZipSpanRole) -> ArchiveSpanRole {
+    use cadmpeg_container::ZipSpanRole;
+    match role {
+        ZipSpanRole::LocalSignature(entry) => ArchiveSpanRole::LocalSignature(entry.clone()),
+        ZipSpanRole::LocalFields(entry) => ArchiveSpanRole::LocalFields(entry.clone()),
+        ZipSpanRole::LocalName(entry) => ArchiveSpanRole::LocalName(entry.clone()),
+        ZipSpanRole::LocalExtra(entry) => ArchiveSpanRole::LocalExtra(entry.clone()),
+        ZipSpanRole::CompressedPayload(entry) => ArchiveSpanRole::CompressedPayload(entry.clone()),
+        ZipSpanRole::DataDescriptor(entry) => ArchiveSpanRole::DataDescriptor(entry.clone()),
+        ZipSpanRole::CentralSignature(entry) => ArchiveSpanRole::CentralSignature(entry.clone()),
+        ZipSpanRole::CentralFields(entry) => ArchiveSpanRole::CentralFields(entry.clone()),
+        ZipSpanRole::CentralName(entry) => ArchiveSpanRole::CentralName(entry.clone()),
+        ZipSpanRole::CentralExtra(entry) => ArchiveSpanRole::CentralExtra(entry.clone()),
+        ZipSpanRole::CentralComment(entry) => ArchiveSpanRole::CentralComment(entry.clone()),
+        ZipSpanRole::Padding { entry: Some(entry) } => {
+            ArchiveSpanRole::EntryArchivePadding(entry.clone())
+        }
+        ZipSpanRole::Padding { entry: None } => ArchiveSpanRole::ArchivePadding,
+        ZipSpanRole::Zip64EndRecord => ArchiveSpanRole::Zip64EndRecord,
+        ZipSpanRole::Zip64EndLocator => ArchiveSpanRole::Zip64EndLocator,
+        ZipSpanRole::EndRecord => ArchiveSpanRole::EndRecord,
+    }
+}

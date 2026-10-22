@@ -261,77 +261,20 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
     definition: &mut SketchConstraintDefinitionInput,
     emitted: &BTreeSet<ParameterId>,
 ) -> bool {
-    match definition {
-        SketchConstraintDefinitionInput::Native { parameter, .. } => {
-            if parameter
-                .as_ref()
-                .is_some_and(|parameter| !emitted.contains(parameter))
-            {
-                *parameter = None;
-            }
-            true
+    if let SketchConstraintDefinitionInput::Native { parameter, .. } = definition {
+        if parameter
+            .as_ref()
+            .is_some_and(|parameter| !emitted.contains(parameter))
+        {
+            *parameter = None;
         }
-        SketchConstraintDefinitionInput::PolarDistance {
-            distance_parameter, ..
-        } => {
-            if distance_parameter
-                .as_ref()
-                .is_some_and(|parameter| !emitted.contains(parameter))
-            {
-                *distance_parameter = None;
-            }
-            true
-        }
-        SketchConstraintDefinitionInput::DistanceLociValue { parameter, .. } => {
-            if parameter
-                .as_ref()
-                .is_some_and(|parameter| !emitted.contains(parameter))
-            {
-                *parameter = None;
-            }
-            true
-        }
-        SketchConstraintDefinitionInput::Distance { parameter, .. }
-        | SketchConstraintDefinitionInput::DistanceLoci { parameter, .. }
-        | SketchConstraintDefinitionInput::HorizontalDistance { parameter, .. }
-        | SketchConstraintDefinitionInput::VerticalDistance { parameter, .. }
-        | SketchConstraintDefinitionInput::Angle { parameter, .. }
-        | SketchConstraintDefinitionInput::Radius { parameter, .. }
-        | SketchConstraintDefinitionInput::Diameter { parameter, .. } => {
-            emitted.contains(parameter)
-        }
-        SketchConstraintDefinitionInput::SnellsLaw { parameter, .. }
-        | SketchConstraintDefinitionInput::Weight { parameter, .. } => emitted.contains(parameter),
-        SketchConstraintDefinitionInput::Coincident { .. }
-        | SketchConstraintDefinitionInput::CoincidentLoci { .. }
-        | SketchConstraintDefinitionInput::SameCoordinate { .. }
-        | SketchConstraintDefinitionInput::Midpoint { .. }
-        | SketchConstraintDefinitionInput::PointCoordinateValues { .. }
-        | SketchConstraintDefinitionInput::MidpointCoordinate { .. }
-        | SketchConstraintDefinitionInput::Concentric { .. }
-        | SketchConstraintDefinitionInput::Coradial { .. }
-        | SketchConstraintDefinitionInput::Collinear { .. }
-        | SketchConstraintDefinitionInput::Symmetric { .. }
-        | SketchConstraintDefinitionInput::PointSymmetric { .. }
-        | SketchConstraintDefinitionInput::Horizontal { .. }
-        | SketchConstraintDefinitionInput::Vertical { .. }
-        | SketchConstraintDefinitionInput::Parallel { .. }
-        | SketchConstraintDefinitionInput::Perpendicular { .. }
-        | SketchConstraintDefinitionInput::Tangent { .. }
-        | SketchConstraintDefinitionInput::TangentLoci { .. }
-        | SketchConstraintDefinitionInput::Equal { .. }
-        | SketchConstraintDefinitionInput::EqualDistance { .. }
-        | SketchConstraintDefinitionInput::Fixed { .. } => true,
-        SketchConstraintDefinitionInput::Disabled {}
-        | SketchConstraintDefinitionInput::PointOnObject { .. }
-        | SketchConstraintDefinitionInput::AtIntersection { .. }
-        | SketchConstraintDefinitionInput::ArcAngle { .. }
-        | SketchConstraintDefinitionInput::EllipseAngle { .. }
-        | SketchConstraintDefinitionInput::InternalAlignment { .. }
-        | SketchConstraintDefinitionInput::Group { .. }
-        | SketchConstraintDefinitionInput::Text { .. } => true,
-        _ => true,
+        return true;
     }
+    definition.dimension_parameters().is_ok_and(|parameters| {
+        parameters
+            .iter()
+            .all(|parameter| emitted.contains(parameter))
+    })
 }
 
 pub(in super::super) fn close_sketch_constraint_parameter_references(ir: &mut CadIr) {
@@ -920,7 +863,10 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
             };
             let parameter = parameter.clone();
             let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                SketchConstraintDefinitionInput::Radius { entity, parameter },
+                SketchConstraintDefinitionInput::Radius {
+                    entity,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
+                },
             ) else {
                 continue;
             };
@@ -1098,8 +1044,10 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
                     SketchConstraintDefinitionInput::DistanceLociValue {
                         first,
                         second,
-                        distance: Length::from(distance),
-                        parameter,
+                        distance: parameter.map_or_else(
+                            || cadmpeg_ir::features::Dimension::Literal(Length::from(distance)),
+                            cadmpeg_ir::features::Dimension::Parameter,
+                        ),
                     },
                     equation.active(),
                     equation.offset,
@@ -1201,7 +1149,7 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
                 equation.equation_id,
                 SketchConstraintDefinitionInput::PointCoordinateValues {
                     point,
-                    values: [u, v],
+                    values: ([u, v]).map(Into::into),
                 },
                 equation.active,
                 equation.offset,
@@ -1228,7 +1176,7 @@ pub(super) fn section_equation_function_sixteen_angle_difference_constraints(
                         first: equation.first.1,
                         second: equation.second.1,
                         difference: equation.difference.1,
-                        value,
+                        value: (value).into(),
                     },
                     equation.active,
                     equation.offset,
@@ -1304,9 +1252,11 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
                     SketchConstraintDefinitionInput::PolarDistance {
                         first,
                         second,
-                        distance: distance.into(),
-                        angle,
-                        distance_parameter,
+                        distance: distance_parameter.map_or_else(
+                            || cadmpeg_ir::features::Dimension::Literal(Length::from(distance)),
+                            cadmpeg_ir::features::Dimension::Parameter,
+                        ),
+                        angle: (angle).map(Into::into),
                     },
                     equation.active,
                     equation.offset,
@@ -1676,12 +1626,12 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
                 SectionAxis::U => SketchConstraintDefinitionInput::HorizontalDistance {
                     first,
                     second,
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 },
                 SectionAxis::V => SketchConstraintDefinitionInput::VerticalDistance {
                     first,
                     second,
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 },
             };
             Ok(equation_constraint(
@@ -1730,12 +1680,12 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
                     SectionAxis::U => SketchConstraintDefinitionInput::HorizontalDistance {
                         first,
                         second,
-                        parameter,
+                        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                     },
                     SectionAxis::V => SketchConstraintDefinitionInput::VerticalDistance {
                         first,
                         second,
-                        parameter,
+                        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                     },
                 };
                 Ok(equation_constraint(
@@ -1755,9 +1705,15 @@ fn circular_dimension_constraint(
     dimension_type: u32,
 ) -> SketchConstraintDefinitionInput {
     if dimension_type == 4 {
-        SketchConstraintDefinitionInput::Diameter { entity, parameter }
+        SketchConstraintDefinitionInput::Diameter {
+            entity,
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
+        }
     } else {
-        SketchConstraintDefinitionInput::Radius { entity, parameter }
+        SketchConstraintDefinitionInput::Radius {
+            entity,
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
+        }
     }
 }
 
@@ -2027,7 +1983,7 @@ pub(in super::super) fn section_dimension_constraints(
                         return Some(SketchConstraintDefinitionInput::Angle {
                             first,
                             second,
-                            parameter,
+                            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                         });
                     }
                     if relation.relation_type == 0
@@ -2170,14 +2126,14 @@ pub(in super::super) fn section_dimension_constraints(
                                                     SketchConstraintDefinitionInput::HorizontalDistance {
                                                         first,
                                                         second,
-                                                        parameter,
+                                                        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                                                     }
                                                 }
                                                 SectionAxis::V => {
                                                     SketchConstraintDefinitionInput::VerticalDistance {
                                                         first,
                                                         second,
-                                                        parameter,
+                                                        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                                                     }
                                                 }
                                             });
@@ -2200,14 +2156,20 @@ pub(in super::super) fn section_dimension_constraints(
                                             SketchConstraintDefinitionInput::HorizontalDistance {
                                                 first,
                                                 second,
-                                                parameter,
+                                                parameter:
+                                                    cadmpeg_ir::features::Dimension::Parameter(
+                                                        parameter,
+                                                    ),
                                             }
                                         }
                                         SectionAxis::V => {
                                             SketchConstraintDefinitionInput::VerticalDistance {
                                                 first,
                                                 second,
-                                                parameter,
+                                                parameter:
+                                                    cadmpeg_ir::features::Dimension::Parameter(
+                                                        parameter,
+                                                    ),
                                             }
                                         }
                                     });
@@ -2221,7 +2183,7 @@ pub(in super::super) fn section_dimension_constraints(
                         return Some(SketchConstraintDefinitionInput::DistanceLoci {
                             first,
                             second,
-                            parameter,
+                            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                         });
                     }
                     if let Some(incidence) =
@@ -2235,7 +2197,9 @@ pub(in super::super) fn section_dimension_constraints(
                                 return Some(SketchConstraintDefinitionInput::DistanceLoci {
                                     first,
                                     second,
-                                    parameter,
+                                    parameter: cadmpeg_ir::features::Dimension::Parameter(
+                                        parameter,
+                                    ),
                                 });
                             }
                         }
@@ -2249,7 +2213,7 @@ pub(in super::super) fn section_dimension_constraints(
                                         relation.relation_id,
                                     )),
                                 )?,
-                                parameter,
+                                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                             });
                         }
                     }
@@ -2263,7 +2227,7 @@ pub(in super::super) fn section_dimension_constraints(
                     )?;
                     (!entities.is_empty()).then_some(SketchConstraintDefinitionInput::Distance {
                         entities,
-                        parameter,
+                        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                     })
                 })();
                 let active =
@@ -2530,6 +2494,7 @@ mod tests {
             .model
             .parameters
             .push(cadmpeg_ir::features::DesignParameter {
+                driving: true,
                 id: id.clone(),
                 owner: None,
                 ordinal: 0,
@@ -2537,7 +2502,7 @@ mod tests {
                 expression: "x".into(),
                 display: None,
                 value: None,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+
                 properties: std::collections::BTreeMap::new(),
                 pmi: None,
                 native_ref: None,
@@ -2680,7 +2645,9 @@ mod tests {
                 first: 10,
                 second: 11,
                 difference: 20,
-                value: cadmpeg_ir::scalar::Angle::new(1.5).expect("finite angle fixture"),
+                value: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::Angle::new(1.5).expect("finite angle fixture")
+                ),
             }
         );
     }
@@ -2810,8 +2777,10 @@ mod tests {
             .expect("valid test fixture");
         let mut constraint = SketchConstraintDefinitionInput::Distance {
             entities: vec![missing],
-            parameter: ParameterId::mint("synthetic:test:id#synthetic:test:dimension-parameter")
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#synthetic:test:dimension-parameter")
+                    .expect("identity grammar"),
+            ),
         };
 
         assert!(reconcile_section_dimension_constraint(
@@ -2836,8 +2805,10 @@ mod tests {
             .expect("valid test fixture");
         let mut missing_parameter = SketchConstraintDefinitionInput::Distance {
             entities: vec![emitted_entity.clone()],
-            parameter: ParameterId::mint("synthetic:test:id#synthetic:test:dimension-parameter")
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(
+                ParameterId::mint("synthetic:test:id#synthetic:test:dimension-parameter")
+                    .expect("identity grammar"),
+            ),
         };
         assert!(reconcile_section_dimension_constraint(
             &mut missing_parameter,

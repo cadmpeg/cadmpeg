@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "7",
+      "ir_version": "8",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -71,9 +70,7 @@
               "field_count": 1,
               "field_names_xmt": 1,
               "id": "nx:s0:attribute-definition#202",
-              "identifier_inflated_offset": 73,
               "identifier_xmt": 201,
-              "inflated_offset": 91,
               "legal_owner_flags": "00000000000000000000000000000000",
               "name": "ATTR_CLASS",
               "next_definition_xmt": 1,
@@ -88,7 +85,6 @@
               "definition_xmt": 202,
               "flags": 1,
               "id": "nx:s0:entity-51#50-181",
-              "inflated_offset": 181,
               "leading_references": [
                 100,
                 101,
@@ -111,6 +107,10 @@
           ]
         }
       },
+      "scope": {
+        "design": false,
+        "model": false
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -118,7 +118,6 @@
           "file_size": "263",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "249",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -200,6 +199,17 @@
           },
           "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -208,7 +218,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": false,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
@@ -246,6 +259,12 @@
           }
         }
       },
+      "metadata": {
+        "native.nx.parasolid_attribute_definitions.nx:s0:attribute-definition#202.identifier_inflated_offset": "73",
+        "native.nx.parasolid_attribute_definitions.nx:s0:attribute-definition#202.inflated_offset": "91",
+        "native.nx.parasolid_entity_51_records.nx:s0:entity-51#50-181.inflated_offset": "181",
+        "source.footer_offset": "249"
+      },
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
@@ -253,9 +272,20 @@
             "retention": "inline"
           },
           "offset": 76,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAAD5AAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAACtAAAAAAAAAHgBNU4xCsJAEJyzEdL4hQObWIl22sgZIgZOjbnrj+hdIBCNhDR+RH1DfhJfZOkmkGV3dnZgho0VgPma60Qc1SHSfBfJkPuPtKrzOi/vM36tXFo7yy9PfiutKwpXkWWigr3RodJmYVZUwIlUD63QOjGBFEohBsDwpWmBqY+h2ECGzZAQZXCEY3QfMWSbH11dawIPtg+WYhtK4EwSw5JwRPmWjBleeOPTNH9zTCdYRk9PVEVSAAAAAAAAAAA=",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

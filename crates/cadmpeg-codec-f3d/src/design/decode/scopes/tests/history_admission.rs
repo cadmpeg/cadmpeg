@@ -21,7 +21,7 @@ fn history_state(
         AsmDeltaState {
             id: format!("history:state#{state_id}"),
             parent: "history".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             state_id,
             version_flag: 1,
             state_flag: 0,

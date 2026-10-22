@@ -102,14 +102,14 @@ fn work_point_stream(
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let scope = parse_parameter_scope(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("WorkPoint scope");
@@ -421,14 +421,14 @@ fn work_point_direct_record_carries_model_space_position() {
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let scope = parse_parameter_scope(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("WorkPoint scope");
@@ -519,7 +519,7 @@ fn work_point_input_count_frames_the_rule_inputs() {
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let scope = parse_parameter_scope(
@@ -527,7 +527,7 @@ fn work_point_input_count_frames_the_rule_inputs() {
         &records,
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("WorkPoint scope");

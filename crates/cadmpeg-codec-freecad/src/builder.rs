@@ -169,72 +169,36 @@ impl FcstdDocumentBuilder {
     }
 
     fn document_xml(&self) -> String {
-        let mut xml = String::from("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
-        xml.push_str(
-            "<Document SchemaVersion=\"4\" ProgramVersion=\"cadmpeg\" FileVersion=\"1\">\n",
-        );
-        xml.push_str("  <Properties Count=\"1\" TransientCount=\"0\">\n");
-        xml.push_str(
-            "    <Property name=\"Label\" type=\"App::PropertyString\" status=\"16777217\"><String value=\"",
-        );
-        crate::writer::escape_xml(&self.label, &mut xml, true);
-        xml.push_str("\"/></Property>\n  </Properties>\n");
-        let objects_open = format!(
-            "  <Objects Count=\"{}\" Dependencies=\"1\">\n",
-            self.objects.len()
-        );
-        xml.push_str(&objects_open);
-        for object in &self.objects {
-            xml.push_str("    <ObjectDeps Name=\"");
-            crate::writer::escape_xml(&object.name, &mut xml, true);
-            if object.dependencies.is_empty() {
-                xml.push_str("\" Count=\"0\"/>\n");
-            } else {
-                let dependency_count = format!("\" Count=\"{}\">\n", object.dependencies.len());
-                xml.push_str(&dependency_count);
-                for dependency in &object.dependencies {
-                    xml.push_str("      <Dep Name=\"");
-                    crate::writer::escape_xml(dependency, &mut xml, true);
-                    xml.push_str("\"/>\n");
+        let properties = [(
+            "Label".to_owned(),
+            crate::writer::xml::string("Label", &self.label),
+        )]
+        .into();
+        let objects = self
+            .objects
+            .iter()
+            .map(|object| {
+                let mut output = crate::writer::xml::Object::new(
+                    object.name.clone(),
+                    &object.type_name,
+                    &object.name,
+                );
+                output.properties.clear();
+                output.dependencies.clone_from(&object.dependencies);
+                for property in &object.properties {
+                    let mut content = String::new();
+                    for value in &property.values {
+                        write_value(value, &mut content);
+                    }
+                    output.set(
+                        &property.name,
+                        crate::writer::xml::property(&property.name, &property.type_name, &content),
+                    );
                 }
-                xml.push_str("    </ObjectDeps>\n");
-            }
-        }
-        for (index, object) in self.objects.iter().enumerate() {
-            xml.push_str("    <Object type=\"");
-            crate::writer::escape_xml(&object.type_name, &mut xml, true);
-            xml.push_str("\" name=\"");
-            crate::writer::escape_xml(&object.name, &mut xml, true);
-            let object_id = format!("\" id=\"{}\"/>\n", index + 1);
-            xml.push_str(&object_id);
-        }
-        xml.push_str("  </Objects>\n");
-        let object_data_open = format!("  <ObjectData Count=\"{}\">\n", self.objects.len());
-        xml.push_str(&object_data_open);
-        for object in &self.objects {
-            xml.push_str("    <Object name=\"");
-            crate::writer::escape_xml(&object.name, &mut xml, true);
-            xml.push_str("\">\n");
-            let properties_open = format!(
-                "      <Properties Count=\"{}\" TransientCount=\"0\">\n",
-                object.properties.len()
-            );
-            xml.push_str(&properties_open);
-            for property in &object.properties {
-                xml.push_str("        <Property name=\"");
-                crate::writer::escape_xml(&property.name, &mut xml, true);
-                xml.push_str("\" type=\"");
-                crate::writer::escape_xml(&property.type_name, &mut xml, true);
-                xml.push_str("\">");
-                for value in &property.values {
-                    write_value(value, &mut xml);
-                }
-                xml.push_str("</Property>\n");
-            }
-            xml.push_str("      </Properties>\n    </Object>\n");
-        }
-        xml.push_str("  </ObjectData>\n</Document>\n");
-        xml
+                output
+            })
+            .collect::<Vec<_>>();
+        document_xml(&objects, &properties, "4")
     }
 }
 
@@ -308,3 +272,109 @@ pub(crate) mod test_support;
 
 #[cfg(test)]
 mod tests;
+
+fn properties_xml(properties: &BTreeMap<String, String>) -> String {
+    let transient = properties
+        .values()
+        .filter(|value| value.starts_with("<_Property "))
+        .count();
+    let persisted = properties
+        .values()
+        .filter(|value| !value.starts_with("<_Property "))
+        .count();
+    let declaration = format!("<Properties Count=\"{persisted}\" TransientCount=\"{transient}\">");
+    format!(
+        "{declaration}{}</Properties>",
+        properties
+            .values()
+            .filter(|property| property.starts_with("<_Property"))
+            .chain(
+                properties
+                    .values()
+                    .filter(|property| !property.starts_with("<_Property"))
+            )
+            .cloned()
+            .collect::<String>()
+    )
+}
+
+pub(crate) fn document_xml(
+    objects: &[crate::writer::xml::Object],
+    properties: &BTreeMap<String, String>,
+    schema: &str,
+) -> String {
+    let (objects_tag, data_tag, object_tag) = if schema == "2" {
+        ("Features", "FeatureData", "Feature")
+    } else {
+        ("Objects", "ObjectData", "Object")
+    };
+    let mut result = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document SchemaVersion=\"{schema}\" FileVersion=\"1\" ProgramVersion=\"cadmpeg\" StringHasher=\"1\"><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>{}<{objects_tag} Count=\"{}\"{}>", properties_xml(properties), objects.len(), if schema == "2" { "" } else { " Dependencies=\"1\"" });
+    if schema != "2" {
+        for object in objects {
+            result.push_str("<ObjectDeps Name=\"");
+            result.push_str(&crate::writer::xml::escaped(&object.name));
+            result.push_str("\" Count=\"");
+            result.push_str(&object.dependencies.len().to_string());
+            result.push_str("\">");
+            for dependency in &object.dependencies {
+                result.push_str(&crate::writer::xml::element(
+                    "Dep",
+                    &[("Name", dependency.clone())],
+                ));
+            }
+            result.push_str("</ObjectDeps>");
+        }
+    }
+    for (index, object) in objects.iter().enumerate() {
+        result.push('<');
+        result.push_str(object_tag);
+        result.push_str(" name=\"");
+        result.push_str(&crate::writer::xml::escaped(&object.name));
+        result.push_str("\" type=\"");
+        result.push_str(&crate::writer::xml::escaped(&object.kind));
+        result.push_str("\" id=\"");
+        result.push_str(&(index + 1).to_string());
+        result.push('"');
+        for (name, value) in &object.declaration_attributes {
+            result.push(' ');
+            result.push_str(name);
+            result.push_str("=\"");
+            result.push_str(&crate::writer::xml::escaped(value));
+            result.push('"');
+        }
+        result.push_str("/>");
+    }
+    result.push_str("</");
+    result.push_str(objects_tag);
+    result.push_str("><");
+    result.push_str(data_tag);
+    result.push_str(" Count=\"");
+    result.push_str(&objects.len().to_string());
+    result.push_str("\">");
+    for object in objects {
+        result.push('<');
+        result.push_str(object_tag);
+        result.push_str(" name=\"");
+        result.push_str(&crate::writer::xml::escaped(&object.name));
+        result.push('"');
+        if !object.extensions.is_empty() {
+            result.push_str(" Extensions=\"True\"");
+        }
+        result.push('>');
+        if !object.extensions.is_empty() {
+            result.push_str("<Extensions Count=\"");
+            result.push_str(&object.extensions.len().to_string());
+            result.push_str("\">");
+            result.push_str(&object.extensions.join(""));
+            result.push_str("</Extensions>");
+        }
+        result.push_str(&properties_xml(&object.properties));
+        result.push_str("</");
+        result.push_str(object_tag);
+        result.push('>');
+    }
+    result.push_str("</");
+    result.push_str(data_tag);
+    result.push_str("></Document>");
+    result
+}

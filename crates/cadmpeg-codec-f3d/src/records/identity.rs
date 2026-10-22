@@ -292,15 +292,15 @@ impl NonEmptyByteSpan {
 
 /// A value with its source encoding location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RecordedValue<T> {
+pub(crate) struct RecordedValue<T, O = u64> {
     pub(crate) value: T,
-    pub(crate) offset: u64,
+    pub(crate) offset: O,
 }
 
-impl<T> RecordedValue<T> {
+impl<T, O> RecordedValue<T, O> {
     pub(super) fn from_wire(
         value: Option<T>,
-        offset: Option<u64>,
+        offset: Option<O>,
         field: &str,
     ) -> Result<Option<Self>, String> {
         match (value, offset) {
@@ -411,6 +411,23 @@ pub(super) struct NativeRecordId {
 }
 
 impl NativeRecordId {
+    /// Admit a document identity without deriving a physical location from its key.
+    pub(super) fn from_content(text: String, kind: &str) -> Result<Self, String> {
+        cadmpeg_ir::ids::Identity::new(text.clone())
+            .map_err(|_| "native id is not a valid document identity")?;
+        let stream = crate::ids::native_stream(&text).ok_or("id must contain a native stream")?;
+        let suffix = text
+            .strip_prefix(stream)
+            .and_then(|suffix| suffix.strip_prefix(':'))
+            .and_then(|suffix| suffix.strip_prefix(kind))
+            .and_then(|suffix| suffix.strip_prefix('#'));
+        if suffix.is_none_or(str::is_empty) {
+            return Err(format!("id must identify {kind}"));
+        }
+        let stream_end = stream.len();
+        Ok(Self { text, stream_end })
+    }
+
     pub(super) fn try_new(
         text: String,
         kind: &str,

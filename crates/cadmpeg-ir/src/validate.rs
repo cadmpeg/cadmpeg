@@ -23,7 +23,10 @@ use cadmpeg_core::CodecError;
 pub mod admit;
 mod annotations_native;
 mod carriers_parameterization;
+mod design_caches;
+mod design_dimensions;
 mod drawings;
+mod encode;
 pub(crate) mod evaluation_cycles;
 mod geometry_consistency;
 mod geometry_payloads;
@@ -31,11 +34,14 @@ mod identity_order;
 mod pmi;
 mod presentation;
 mod products;
+mod reciprocity;
 mod referential_integrity;
 mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
 mod topology;
+
+pub use encode::ValidatedFinding;
 
 use annotations_native::{check_annotations, check_native_links};
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
@@ -153,6 +159,13 @@ fn record_related_finding(
     findings.push(finding);
 }
 
+pub(crate) fn check_topology_reciprocity(
+    model: &crate::document::Model,
+    findings: &mut Vec<Finding>,
+) {
+    reciprocity::check(model, findings);
+}
+
 /// Validate `ir` and copy `losses` into the returned report unchanged.
 fn validate_model(
     ctx: &DecodeContext<'_>,
@@ -178,8 +191,11 @@ fn validate_model_with_index<'ir>(
     check_identity_and_order(ids, &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
+    reciprocity::check(&ir.model, &mut findings);
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
     check_pmi(ir, &mut findings);
+    design_dimensions::check(ctx, ir, &mut findings)?;
+    design_caches::check(ctx, ir, &mut findings)?;
     check_coedge_pairing(ir, &mut findings)?;
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
@@ -459,6 +475,8 @@ mod tests {
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
 
+            needs_recompute: false,
+
             evaluation: crate::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: crate::features::SketchFeatureBinding::Unresolved,
@@ -484,7 +502,7 @@ mod tests {
             id: ConfigurationId::mint("test:model:configuration#default")
                 .expect("identity grammar"),
             ordinal: 0,
-            active: true,
+            active: false,
             source_index: None,
             name: Some("Default".to_string()),
             material: None,
@@ -494,14 +512,10 @@ mod tests {
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id,
-                ConfigurationFeatureState {
-                    evaluation: crate::features::ConfigurationEvaluation::Active {
-                        outputs: crate::features::DistinctMembers::default(),
-                    },
-                    dependencies: crate::features::DistinctMembers::default(),
-                    definition: FeatureDefinition::Operation(FeatureOperation::Sketch {
+                ConfigurationFeatureState::Definition {
+                    definition: Box::new(FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-                    }),
+                    })),
                 },
             )]),
             native_ref: None,
@@ -518,6 +532,7 @@ mod tests {
                        ordinal,
                        dependencies: Vec<FeatureId>,
                        definition: FeatureDefinition| Feature {
+            needs_recompute: false,
             id,
             ordinal,
             name: None,

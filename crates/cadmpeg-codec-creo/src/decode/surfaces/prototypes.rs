@@ -516,10 +516,6 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                         section.name(),
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -671,10 +667,6 @@ pub(in super::super) fn transfer_positional_spline_replays(
                         section.name(),
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -838,6 +830,12 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
+        crate::decode::source_carriers::admit_surface_visibility(
+            ctx,
+            ir,
+            &id,
+            carrier.namespace.is_visible(),
+        )?;
         source_carriers.admit_surface(
             ctx,
             ir,
@@ -852,10 +850,6 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                         carrier.namespace.source_prefix(),
                         carrier.surface_id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: Some(carrier.namespace.is_visible()),
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
