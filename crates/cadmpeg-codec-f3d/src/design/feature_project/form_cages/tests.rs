@@ -11,7 +11,7 @@ use cadmpeg_core::decode::index_from_u32;
 use super::{
     distinct_form_cage_ids, form_cage_objects, form_cage_serializers, form_cage_surface,
     form_cage_surfaces, form_class_325_cage_objects, form_class_325_cage_surface,
-    form_class_328_envelope, legacy_form_cage_count, FormCageSerializers,
+    form_class_328_envelope, legacy_form_owner_count, FormCageSerializers,
 };
 
 fn parsed_serializers(
@@ -542,26 +542,36 @@ fn resolves_class_325_cage_surface_from_unique_class_310_reference() {
 }
 
 #[test]
-fn reads_compact_form_one_cage_envelope() {
-    let mut list = indexed_frame(b"355", 205, 100);
-    list[21] = 1;
-    list[22..30].copy_from_slice(&201u64.to_le_bytes());
-    list[32..36].copy_from_slice(&1u32.to_le_bytes());
-    list[36] = 1;
-    list[37..45].copy_from_slice(&971u64.to_le_bytes());
-    list[47..49].copy_from_slice(&[0xfc, 0]);
-    let paired = indexed_frame(b"262", 205, 15);
-    let object = indexed_frame(b"325", 971, 15);
-    let bytes = [list, paired, object].concat();
-    assert_eq!(
-        legacy_form_cage_count(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            205,
-            201,
-        ),
-        Some(1)
-    );
+fn selection_group_counts_do_not_bind_a_cage() {
+    for flag_width in [2, 3] {
+        for ordinal in [1u32, 252, 65_536] {
+            let mut list = indexed_frame(b"355", 205, 97 + flag_width);
+            list[21] = 1;
+            list[22..30].copy_from_slice(&201u64.to_le_bytes());
+            list[32..36].copy_from_slice(&1u32.to_le_bytes());
+            list[36] = 1;
+            list[37..45].copy_from_slice(&971u64.to_le_bytes());
+            list[47..51].copy_from_slice(&ordinal.to_le_bytes());
+            list[51..59].copy_from_slice(&0.25f64.to_le_bytes());
+            list[59..63].copy_from_slice(&ordinal.to_le_bytes());
+            list[63] = 1;
+            list[64..72].copy_from_slice(&909u64.to_le_bytes());
+            if flag_width == 3 {
+                list[74] = 1;
+            }
+            list[74 + flag_width] = 1;
+            list[75 + flag_width..83 + flag_width].copy_from_slice(&206u64.to_le_bytes());
+            list[86 + flag_width] = 1;
+            list[87 + flag_width..95 + flag_width].copy_from_slice(&201u64.to_le_bytes());
+            let paired = indexed_frame(b"262", 205, 15);
+            let member = indexed_frame(b"325", 971, 15);
+            let bytes = [list, paired, member].concat();
+            let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+            assert_eq!(legacy_form_owner_count(&bytes, &records, 205, 201), None);
+            let (_, cage_counts) = super::form_cage_lists(&bytes, &records, [205].into_iter(), 201);
+            assert!(cage_counts.is_empty());
+        }
+    }
 }
 
 #[test]
@@ -583,7 +593,7 @@ fn reads_legacy_form_one_cage_owner_envelopes() {
         let nested = indexed_frame(nested_class, 211, 15);
         let bytes = [owner, paired, nested].concat();
         assert_eq!(
-            legacy_form_cage_count(
+            legacy_form_owner_count(
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 205,
@@ -608,7 +618,7 @@ fn rejects_legacy_form_owner_with_wrong_nested_class() {
     let nested = indexed_frame(b"329", 211, 15);
     let bytes = [owner, paired, nested].concat();
     assert_eq!(
-        legacy_form_cage_count(
+        legacy_form_owner_count(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             205,

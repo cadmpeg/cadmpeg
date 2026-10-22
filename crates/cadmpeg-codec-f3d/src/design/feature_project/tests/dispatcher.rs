@@ -1012,16 +1012,16 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
 
     let stream = "FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
     let mut bulk = Vec::new();
-    let mut cage_list = vec![0; 100];
+    let mut cage_list = vec![0; 81];
     cage_list[..4].copy_from_slice(&3u32.to_le_bytes());
-    cage_list[4..7].copy_from_slice(b"355");
+    cage_list[4..7].copy_from_slice(b"335");
     cage_list[7..11].copy_from_slice(&205u32.to_le_bytes());
-    cage_list[21] = 1;
-    cage_list[22..30].copy_from_slice(&201u64.to_le_bytes());
-    cage_list[32..36].copy_from_slice(&1u32.to_le_bytes());
-    cage_list[36] = 1;
-    cage_list[37..45].copy_from_slice(&971u64.to_le_bytes());
-    cage_list[47..49].copy_from_slice(&[0xfc, 0]);
+    cage_list[25] = 1;
+    cage_list[26..34].copy_from_slice(&201u64.to_le_bytes());
+    cage_list[58] = 1;
+    cage_list[59..67].copy_from_slice(&971u64.to_le_bytes());
+    cage_list[70] = 1;
+    cage_list[71..79].copy_from_slice(&201u64.to_le_bytes());
     bulk.extend_from_slice(&cage_list);
 
     let mut paired = vec![0; 15];
@@ -1032,7 +1032,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
 
     let mut object = vec![0; 15];
     object[..4].copy_from_slice(&3u32.to_le_bytes());
-    object[4..7].copy_from_slice(b"325");
+    object[4..7].copy_from_slice(b"328");
     object[7..11].copy_from_slice(&971u32.to_le_bytes());
     bulk.extend_from_slice(&object);
 
@@ -1142,7 +1142,7 @@ fn merged_direct_edges_keep_source_order_and_native_fallback() {
 }
 
 #[test]
-fn form_dispatcher_binds_a_unique_long_cage_list() {
+fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 
@@ -1228,8 +1228,9 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
     assert_eq!(
         *features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Form {
-                cages: vec![cages[0].id.clone()],
+            cadmpeg_ir::features::FeatureOperation::Native {
+                kind: "Form".into(),
+                parameters: Default::default(),
             }
         )
     );

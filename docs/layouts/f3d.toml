@@ -8216,14 +8216,14 @@ name = "owner_marker"
 offset = 25
 type = "u8"
 source = "spec"
-anchor = "`u8 1`, the owning Form scope's u64 record index"
+anchor = "a marked owning-scope reference"
 
 [[record.field]]
 name = "owner_scope_record_index"
 offset = 26
 type = "u64"
 source = "spec"
-anchor = "owning Form scope's u64 record index"
+anchor = "a marked owning-scope reference"
 
 [[record.field]]
 name = "zero_run_24"
@@ -8275,87 +8275,168 @@ source = "spec"
 anchor = "two zero bytes"
 
 [[record]]
-name = "form_compact_one_cage_list"
+name = "compact_selection_prefix"
 kind = "byte"
-section = "1.1.1"
-anchor = "A compact one-cage cage-list record is 100 bytes from its indexed header to its same-index paired header."
-size = 100
-note = "Offsets are relative to the primary indexed header. The class tags are dynamic; the frame length and fixed fields select the compact one-cage form."
+section = "3.1"
+anchor = "The prefix through `member_count` is 36 bytes."
+size = 36
+note = "Offsets are relative to the primary indexed header. Ordered 11-byte member references follow this prefix."
 
 [[record.field]]
 name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "indexed header"
+anchor = "starts with an indexed header"
 
 [[record.field]]
-name = "zero_run_10"
+name = "zero_run"
 offset = 11
 type = "bytes[10]"
 source = "spec"
-anchor = "Ten zero bytes follow the indexed header"
+anchor = "ten zero bytes"
 
 [[record.field]]
-name = "owner_marker"
+name = "owner_reference"
 offset = 21
-type = "u8"
+type = "bytes[11]"
 source = "spec"
-anchor = "`u8 1`, the owning Form scope's u64 record index"
+anchor = "a marked owning-scope reference"
 
 [[record.field]]
-name = "owner_scope_record_index"
-offset = 22
-type = "u64"
-source = "spec"
-anchor = "owning Form scope's u64 record index"
-
-[[record.field]]
-name = "zero_run_2"
-offset = 30
-type = "bytes[2]"
-source = "spec"
-anchor = "two zero bytes"
-
-[[record.field]]
-name = "cage_count"
+name = "member_count"
 offset = 32
 type = "u32"
 source = "spec"
-anchor = "a u32 cage count of one"
+anchor = "`u32 member_count`"
+
+[[record]]
+name = "compact_selection_tail_flags_2"
+kind = "byte"
+section = "3.1"
+anchor = "The two-byte-flag tail is 52 bytes:"
+size = 52
+note = "Offsets are relative to T = 36 + 11 * member_count; the paired header follows this tail."
 
 [[record.field]]
-name = "member_marker"
-offset = 36
+name = "ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "`u32 ordinal`"
+
+[[record.field]]
+name = "scalar"
+offset = 4
+type = "f64"
+source = "spec"
+anchor = "a finite nonnegative `f64 scalar`"
+
+[[record.field]]
+name = "ordinal_repeat"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "the same `u32 ordinal`"
+
+[[record.field]]
+name = "first_reference"
+offset = 16
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked independent record reference"
+
+[[record.field]]
+name = "flags"
+offset = 27
+type = "bytes[2]"
+source = "spec"
+anchor = "a two- or three-byte flag block"
+
+[[record.field]]
+name = "next_reference"
+offset = 29
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to record `N+1`"
+
+[[record.field]]
+name = "zero"
+offset = 40
 type = "u8"
 source = "spec"
-anchor = "The sole member is `u8 1`"
+anchor = "a zero byte"
 
 [[record.field]]
-name = "cage_object_record_index"
-offset = 37
-type = "u64"
+name = "owner_reference"
+offset = 41
+type = "bytes[11]"
 source = "spec"
-anchor = "a u64 cage-object record index"
+anchor = "a repeated marked owning-scope reference"
+
+[[record]]
+name = "compact_selection_tail_flags_3"
+kind = "byte"
+section = "3.1"
+anchor = "The three-byte-flag tail is 53 bytes:"
+size = 53
+note = "Offsets are relative to T = 36 + 11 * member_count; the paired header follows this tail."
 
 [[record.field]]
-name = "member_zero"
-offset = 45
-type = "u16"
+name = "ordinal"
+offset = 0
+type = "u32"
 source = "spec"
-anchor = "`u16 0`"
+anchor = "`u32 ordinal`"
 
 [[record.field]]
-name = "member_flags"
-offset = 47
-type = "u16"
+name = "scalar"
+offset = 4
+type = "f64"
 source = "spec"
-anchor = "`u16 0x00fc`"
+anchor = "a finite nonnegative `f64 scalar`"
 
-[[record.gap]]
-offset = 49
-size = 51
-note = "The compact-form tail is retained with the native record; no semantic field is assigned."
+[[record.field]]
+name = "ordinal_repeat"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "the same `u32 ordinal`"
+
+[[record.field]]
+name = "first_reference"
+offset = 16
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked independent record reference"
+
+[[record.field]]
+name = "flags"
+offset = 27
+type = "bytes[3]"
+source = "spec"
+anchor = "a two- or three-byte flag block"
+
+[[record.field]]
+name = "next_reference"
+offset = 30
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to record `N+1`"
+
+[[record.field]]
+name = "zero"
+offset = 41
+type = "u8"
+source = "spec"
+anchor = "a zero byte"
+
+[[record.field]]
+name = "owner_reference"
+offset = 42
+type = "bytes[11]"
+source = "spec"
+anchor = "a repeated marked owning-scope reference"
 
 [[record]]
 name = "form_class_325_cage_table"

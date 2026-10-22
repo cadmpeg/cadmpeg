@@ -2503,36 +2503,6 @@ pub(crate) mod form_legacy_one_cage_owner {
     pub(crate) const TAIL_ZERO_RUN: usize = 79;
 }
 
-/// Byte offsets for the `form_compact_one_cage_list` record.
-///
-/// Spec §1.1.1. Record length 100 B.
-///
-/// ```text
-/// Offsets are relative to the primary indexed header. The class tags are dynamic; the frame length and fixed fields select the compact one-cage form.
-/// ```
-pub(crate) mod form_compact_one_cage_list {
-    /// Record length in bytes. Spec §1.1.1.
-    pub(crate) const LEN: usize = 100;
-    /// Offset of `zero_run_10` (`bytes[10]`). Spec §1.1.1.
-    pub(crate) const ZERO_RUN_10: usize = 11;
-    /// Offset of `owner_marker` (`u8`). Spec §1.1.1.
-    pub(crate) const OWNER_MARKER: usize = 21;
-    /// Offset of `owner_scope_record_index` (`u64`, little-endian). Spec §1.1.1.
-    pub(crate) const OWNER_SCOPE_RECORD_INDEX: usize = 22;
-    /// Offset of `zero_run_2` (`bytes[2]`). Spec §1.1.1.
-    pub(crate) const ZERO_RUN_2: usize = 30;
-    /// Offset of `cage_count` (`u32`, little-endian). Spec §1.1.1.
-    pub(crate) const CAGE_COUNT: usize = 32;
-    /// Offset of `member_marker` (`u8`). Spec §1.1.1.
-    pub(crate) const MEMBER_MARKER: usize = 36;
-    /// Offset of `cage_object_record_index` (`u64`, little-endian). Spec §1.1.1.
-    pub(crate) const CAGE_OBJECT_RECORD_INDEX: usize = 37;
-    /// Offset of `member_zero` (`u16`, little-endian). Spec §1.1.1.
-    pub(crate) const MEMBER_ZERO: usize = 45;
-    /// Offset of `member_flags` (`u16`, little-endian). Spec §1.1.1.
-    pub(crate) const MEMBER_FLAGS: usize = 47;
-}
-
 /// Byte offsets for the `form_class_325_cage_table` record.
 ///
 /// Spec §1.1.1. Record length 1850 B.

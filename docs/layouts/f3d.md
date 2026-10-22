@@ -2504,8 +2504,8 @@ Offsets are relative to the primary indexed header. The owner/paired/nested clas
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | indexed header |
 | 11 | 14 | `zero_run_14` | `bytes[14]` | little | spec | fourteen zero bytes |
-| 25 | 1 | `owner_marker` | `u8` | little | spec | `u8 1`, the owning Form scope's u64 record index |
-| 26 | 8 | `owner_scope_record_index` | `u64` | little | spec | owning Form scope's u64 record index |
+| 25 | 1 | `owner_marker` | `u8` | little | spec | a marked owning-scope reference |
+| 26 | 8 | `owner_scope_record_index` | `u64` | little | spec | a marked owning-scope reference |
 | 34 | 24 | `zero_run_24` | `bytes[24]` | little | spec | twenty-four zero bytes |
 | 58 | 1 | `nested_marker` | `u8` | little | spec | marked nested cage-object reference |
 | 59 | 8 | `nested_record_index` | `u64` | little | spec | nested cage-object reference |
@@ -2514,28 +2514,52 @@ Offsets are relative to the primary indexed header. The owner/paired/nested clas
 | 71 | 8 | `owner_repeat_scope` | `u64` | little | spec | repeated marked owning-scope reference |
 | 79 | 2 | `tail_zero_run` | `bytes[2]` | little | spec | two zero bytes |
 
-## `form_compact_one_cage_list`
+## `compact_selection_prefix`
 
-Spec §1.1.1 · layout: byte offsets · size: 100 B
+Spec §3.1 · layout: byte offsets · size: 36 B
 
-Offsets are relative to the primary indexed header. The class tags are dynamic; the frame length and fixed fields select the compact one-cage form.
+Offsets are relative to the primary indexed header. Ordered 11-byte member references follow this prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | indexed header |
-| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Ten zero bytes follow the indexed header |
-| 21 | 1 | `owner_marker` | `u8` | little | spec | `u8 1`, the owning Form scope's u64 record index |
-| 22 | 8 | `owner_scope_record_index` | `u64` | little | spec | owning Form scope's u64 record index |
-| 30 | 2 | `zero_run_2` | `bytes[2]` | little | spec | two zero bytes |
-| 32 | 4 | `cage_count` | `u32` | little | spec | a u32 cage count of one |
-| 36 | 1 | `member_marker` | `u8` | little | spec | The sole member is `u8 1` |
-| 37 | 8 | `cage_object_record_index` | `u64` | little | spec | a u64 cage-object record index |
-| 45 | 2 | `member_zero` | `u16` | little | spec | `u16 0` |
-| 47 | 2 | `member_flags` | `u16` | little | spec | `u16 0x00fc` |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | starts with an indexed header |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | ten zero bytes |
+| 21 | 11 | `owner_reference` | `bytes[11]` | little | spec | a marked owning-scope reference |
+| 32 | 4 | `member_count` | `u32` | little | spec | `u32 member_count` |
 
-Unstated regions:
+## `compact_selection_tail_flags_2`
 
-- `49..100` (51 B): The compact-form tail is retained with the native record; no semantic field is assigned.
+Spec §3.1 · layout: byte offsets · size: 52 B
+
+Offsets are relative to T = 36 + 11 * member_count; the paired header follows this tail.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `ordinal` | `u32` | little | spec | `u32 ordinal` |
+| 4 | 8 | `scalar` | `f64` | little | spec | a finite nonnegative `f64 scalar` |
+| 12 | 4 | `ordinal_repeat` | `u32` | little | spec | the same `u32 ordinal` |
+| 16 | 11 | `first_reference` | `bytes[11]` | little | spec | a marked independent record reference |
+| 27 | 2 | `flags` | `bytes[2]` | little | spec | a two- or three-byte flag block |
+| 29 | 11 | `next_reference` | `bytes[11]` | little | spec | a marked reference to record `N+1` |
+| 40 | 1 | `zero` | `u8` | little | spec | a zero byte |
+| 41 | 11 | `owner_reference` | `bytes[11]` | little | spec | a repeated marked owning-scope reference |
+
+## `compact_selection_tail_flags_3`
+
+Spec §3.1 · layout: byte offsets · size: 53 B
+
+Offsets are relative to T = 36 + 11 * member_count; the paired header follows this tail.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `ordinal` | `u32` | little | spec | `u32 ordinal` |
+| 4 | 8 | `scalar` | `f64` | little | spec | a finite nonnegative `f64 scalar` |
+| 12 | 4 | `ordinal_repeat` | `u32` | little | spec | the same `u32 ordinal` |
+| 16 | 11 | `first_reference` | `bytes[11]` | little | spec | a marked independent record reference |
+| 27 | 3 | `flags` | `bytes[3]` | little | spec | a two- or three-byte flag block |
+| 30 | 11 | `next_reference` | `bytes[11]` | little | spec | a marked reference to record `N+1` |
+| 41 | 1 | `zero` | `u8` | little | spec | a zero byte |
+| 42 | 11 | `owner_reference` | `bytes[11]` | little | spec | a repeated marked owning-scope reference |
 
 ## `form_class_325_cage_table`
 
