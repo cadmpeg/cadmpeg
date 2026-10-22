@@ -13,6 +13,7 @@ use crate::layout::assembly_class_383_258_scope_1011 as class_383_scope;
 use crate::layout::assembly_class_388_266_scope_968 as class_388_assemble;
 use crate::layout::assembly_class_406_261_scope_671 as class_406_assemble;
 use crate::layout::assembly_operand_path_locator as path_locator;
+use crate::layout::assembly_wide_operand_path_locator as wide_locator;
 use crate::records::feature::assembly::DesignAssemblyOperandFrame;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::scope::DesignParameterScope;
@@ -224,18 +225,52 @@ pub(super) fn exact_assembly_operand_frames(
     (first.reference_record_index != second.reference_record_index).then_some([first, second])
 }
 
+/// The operand frames an as-built scope's two locators carry. A common locator
+/// stores its transform; a wide locator (`wide`) stores one only when its
+/// identity flag is 0, and its frame is the identity otherwise, located at the
+/// flag.
 pub(super) fn exact_as_built_operand_frames(
     bytes: &[u8],
     paths: &[DesignAssemblyOperandPath; 2],
+    wide: bool,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
     let frames = paths.each_ref().map(|path| {
         let locator_at = usize::try_from(path.link().locator_byte_offset).ok()?;
-        let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
-        let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
+        let (reference_at, transform_at, transform) = if wide {
+            let reference_at = locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?;
+            let flag_at = locator_at.checked_add(wide_locator::IDENTITY_FLAG)?;
+            match bytes.get(flag_at)? {
+                0 => {
+                    let transform_at = locator_at.checked_add(wide_locator::TRANSFORM)?;
+                    (
+                        reference_at,
+                        transform_at,
+                        rigid_transform_at(bytes, transform_at)?,
+                    )
+                }
+                1 => (
+                    reference_at,
+                    flag_at,
+                    cadmpeg_ir::transform::Transform::identity()
+                        .rows()
+                        .try_into()
+                        .ok()?,
+                ),
+                _ => return None,
+            }
+        } else {
+            let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
+            let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
+            (
+                reference_at,
+                transform_at,
+                rigid_transform_at(bytes, transform_at)?,
+            )
+        };
         Some(DesignAssemblyOperandFrame {
             reference_record_index: marked_record_reference(bytes, reference_at)?,
             reference_offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
-            transform: rigid_transform_at(bytes, transform_at)?,
+            transform,
             transform_offset: u64::try_from(transform_at).ok()?,
         })
     });

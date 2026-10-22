@@ -1060,6 +1060,16 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 return None;
             }
         }
+        // An `As-built` scope without references stores count 0 before its
+        // history state; the last reference of a counted table also ends in
+        // four zero bytes, so the empty table is read only when no counted
+        // table matches.
+        if reference_table.is_none() && kind == scope::DesignFeatureKind::AsBuilt {
+            let count_at = reference_table_end.checked_sub(4)?;
+            if View::u32_le_at(bytes, count_at)? == 0 {
+                reference_table = Some((count_at, Vec::new(), Vec::new()));
+            }
+        }
         let reference_table = reference_table?;
         let (reference_count_at, reference_members, reference_member_offsets) = &reference_table;
         let surface_stitch_operation = if kind == scope::DesignFeatureKind::SurfaceStitch {

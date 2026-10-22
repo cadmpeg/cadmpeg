@@ -1786,3 +1786,5 @@ mod axial;
 mod compact_wide;
 
 mod legacy_alignment;
+
+mod rigid_as_built;

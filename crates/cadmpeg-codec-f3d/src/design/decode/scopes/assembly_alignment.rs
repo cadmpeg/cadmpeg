@@ -167,6 +167,15 @@ pub(super) fn exact_assembly_alignment_with_types(
                     angle.evaluated_value().get(),
                     [0.0, 0.0, axial_offset.evaluated_value().get()],
                 ),
+                // A rigid as-built joint has no alignment owners.
+                [] if crate::design::assembly::rigid_as_built_scope(
+                    scope.frame_length(),
+                    scope.class_tag.as_str(),
+                    scope.paired_class_tag.as_str(),
+                ) =>
+                {
+                    (0.0, [0.0; 3])
+                }
                 _ => return None,
             };
             // Both supported alignment lanes use one fixed four-owner allocation.
@@ -272,7 +281,15 @@ pub(super) fn exact_assembly_alignment_with_types(
             paths
                 .map(|paths| {
                     DesignAssemblyAlignmentForm::try_from(AsBuiltAlignmentDraft {
-                        frames: exact_as_built_operand_frames(bytes, &paths),
+                        frames: exact_as_built_operand_frames(
+                            bytes,
+                            &paths,
+                            crate::design::assembly::rigid_as_built_scope(
+                                scope.frame_length(),
+                                scope.class_tag.as_str(),
+                                scope.paired_class_tag.as_str(),
+                            ),
+                        ),
                         paths,
                     })
                 })

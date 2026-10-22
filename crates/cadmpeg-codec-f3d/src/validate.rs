@@ -109,7 +109,12 @@ fn valid_assembly_operand_path_link(
         scope.paired_class_tag.as_str(),
     )
     .operand_frame_variant()
-    .is_some_and(design::assembly::AssemblyOperandFrameVariant::is_wide_family);
+    .is_some_and(design::assembly::AssemblyOperandFrameVariant::is_wide_family)
+        || design::assembly::rigid_as_built_scope(
+            scope.frame_length(),
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
+        );
     // A wide locator is 97 bytes without its transform and 225 with it; its
     // backlink and wrapper reference are 28 and 17 bytes before its end.
     let locator_length = if wide {
@@ -2195,9 +2200,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     operand_frame_variant,
                     Some(design::assembly::AssemblyOperandFrameVariant::CompactWide)
                 );
+                let rigid_as_built = design::assembly::rigid_as_built_scope(
+                    scope.frame_length(),
+                    scope.class_tag.as_str(),
+                    scope.paired_class_tag.as_str(),
+                );
                 let as_built_frames = scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-                    && scope.frame_length() == 399;
+                    && (scope.frame_length() == 399 || rigid_as_built);
                 let as_built_421_generation = design::assembly::legacy_as_built_421_generation(
                     scope.frame_length(),
                     scope.class_tag.as_str(),
@@ -2267,15 +2277,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     alignment.operand_frames().is_none_or(|frames| {
                         frames[0].reference_record_index != frames[1].reference_record_index
                             && frames.iter().enumerate().all(|(ordinal, frame)| {
+                                // A wide locator's frame is its transform at 68, or the
+                                // identity located at its flag at 67.
+                                let (reference_at, transform_at): (u64, &[u64]) = if rigid_as_built
+                                {
+                                    (57, &[67, 68])
+                                } else {
+                                    (22, &[33])
+                                };
                                 let offsets_match = if as_built_frames {
                                     operand_paths.as_ref().is_some_and(|paths| {
-                                        paths[ordinal].link().locator_byte_offset.checked_add(22)
+                                        let locator = paths[ordinal].link().locator_byte_offset;
+                                        locator.checked_add(reference_at)
                                             == Some(frame.reference_offset)
-                                            && paths[ordinal]
-                                                .link()
-                                                .locator_byte_offset
-                                                .checked_add(33)
-                                                == Some(frame.transform_offset)
+                                            && transform_at.iter().any(|at| {
+                                                locator.checked_add(*at)
+                                                    == Some(frame.transform_offset)
+                                            })
                                     })
                                 } else {
                                     Some(frame.reference_offset)

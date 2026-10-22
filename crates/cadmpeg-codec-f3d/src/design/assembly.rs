@@ -110,6 +110,9 @@ impl AssemblyScopeGeneration {
             806 | 861 => (Some(CompactWide), Some((4, 0, 4)), Some([534, 545])),
             850 => (Some(CompactWide), Some((6, 0, 4)), Some([556, 567])),
             945 => (Some(Wide), Some((4, 0, 4)), Some([541, 552])),
+            269 if rigid_as_built_scope(frame_length, class_tag, paired_class_tag) => {
+                (None, Some((0, 0, 0)), Some([41, 52]))
+            }
             length if length == u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
                 (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
                     crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES,
@@ -158,6 +161,16 @@ impl AssemblyScopeGeneration {
     pub(crate) fn operand_path_locator_offsets(self) -> Option<[usize; 2]> {
         self.locator_offsets
     }
+}
+
+/// The 269-byte class-405/262 rigid `As-built` scope: no parameter owners and
+/// two wide operand-path locators.
+pub(crate) fn rigid_as_built_scope(
+    frame_length: u64,
+    class_tag: &str,
+    paired_class_tag: &str,
+) -> bool {
+    frame_length == 269 && class_tag == "405" && paired_class_tag == "262"
 }
 
 /// Admit the legacy 383/258 assembly scope only as its exact generation.

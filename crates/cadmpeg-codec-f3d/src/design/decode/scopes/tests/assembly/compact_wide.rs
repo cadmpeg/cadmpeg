@@ -6,7 +6,7 @@ use crate::records::identity::ReferenceRun;
 use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
 use crate::records::references::DesignClassTag;
 
-fn push_lp_utf16(bytes: &mut Vec<u8>, value: &str) {
+pub(super) fn push_lp_utf16(bytes: &mut Vec<u8>, value: &str) {
     bytes.extend_from_slice(
         &u32::try_from(value.encode_utf16().count())
             .unwrap()
@@ -17,13 +17,13 @@ fn push_lp_utf16(bytes: &mut Vec<u8>, value: &str) {
     }
 }
 
-fn push_marked(bytes: &mut Vec<u8>, target: u32) {
+pub(super) fn push_marked(bytes: &mut Vec<u8>, target: u32) {
     bytes.push(1);
     bytes.extend_from_slice(&target.to_le_bytes());
     bytes.extend_from_slice(&[0; 6]);
 }
 
-fn push_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
+pub(super) fn push_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     bytes.extend_from_slice(class_tag);
     bytes.extend_from_slice(&record_index.to_le_bytes());
@@ -31,7 +31,12 @@ fn push_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
 
 /// A wide locator `index` with its typed path `index + 1` and wrapper
 /// `index + 2`, owned by scope `scope_record_index`.
-fn push_wide_operand_path(bytes: &mut Vec<u8>, index: u32, scope_record_index: u32, guid: &str) {
+pub(super) fn push_wide_operand_path(
+    bytes: &mut Vec<u8>,
+    index: u32,
+    scope_record_index: u32,
+    guid: &str,
+) {
     let start = bytes.len();
     push_header(bytes, b"283", index);
     bytes.resize(start + 39, 0);

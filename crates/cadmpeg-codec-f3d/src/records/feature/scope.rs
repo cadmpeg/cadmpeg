@@ -2234,7 +2234,6 @@ impl DesignParameterScope {
         }
         if !(draft.byte_offset < draft.reference_count_offset
             && draft.reference_count_offset < draft.kind_offset)
-            || draft.reference_members.is_empty()
         {
             return Err(fail("reference_count_offset/reference_members"));
         }
@@ -2253,13 +2252,14 @@ impl DesignParameterScope {
                 .checked_add(u64_from_index(stride))
                 .ok_or_else(|| fail("reference_member_offsets"))?;
         }
+        // An empty table is its count, then the history state and the kind's
+        // length prefix.
+        let table_end = match draft.reference_members.offsets().next_back() {
+            Some(offset) => offset.checked_add(u64_from_index(stride) + 7),
+            None => draft.reference_count_offset.checked_add(12),
+        };
         if draft.reference_members.offsets().count() != draft.reference_members.len()
-            || draft
-                .reference_members
-                .offsets()
-                .next_back()
-                .and_then(|offset| offset.checked_add(u64_from_index(stride) + 7))
-                != Some(draft.kind_offset)
+            || table_end != Some(draft.kind_offset)
         {
             return Err(fail("reference_member_offsets/kind_offset"));
         }

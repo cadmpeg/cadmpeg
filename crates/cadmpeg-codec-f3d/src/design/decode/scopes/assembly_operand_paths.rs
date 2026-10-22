@@ -123,13 +123,18 @@ fn exact_assembly_operand_path_envelope(
             scope.paired_class_tag.as_str(),
         );
         // The wide scope's locator: its own record type and prologue.
-        let wide = crate::design::assembly::AssemblyScopeGeneration::new(
+        let wide = (crate::design::assembly::AssemblyScopeGeneration::new(
             scope.frame_length(),
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
         )
         .operand_frame_variant()
         .is_some_and(crate::design::assembly::AssemblyOperandFrameVariant::is_wide_family)
+            || crate::design::assembly::rigid_as_built_scope(
+                scope.frame_length(),
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
+            ))
             && stream_types
                 .get(&u64::from(locator_record_index))
                 .is_some_and(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
