@@ -459,7 +459,11 @@ The class-version-8 closure follows `(u,v,w)` with a u64 selector, a state byte,
 
 The point selector, point state, and versioned point flags do not select the neutral construction Boolean. A point projects as a non-construction point. A curve becomes construction geometry only through a valid `TextFrame` relation; its endpoint point records do not inherit that status. In particular, `(4,0)` point endpoints can belong to a bounded line used by a midpoint relation or to a bounded line with no sketch relation, and neither the points nor that line become construction geometry from the pair alone. Profile admission therefore remains based on the resolved curve graph and the explicit `TextFrame` exclusion, not on point closure values.
 
-The `(2,1)` selector-state pair is the standalone-point form. Its companion has an incident-curve count of zero, and the point remains non-construction.
+The selector-state pair is native record state, not a complete geometric role code. Pair `(2,1)` permits both an empty incident-curve run and an explicit line incidence. The companion run determines incidence independently of the pair. The point remains non-construction.
+
+Flag lanes are zero-based. In modern point forms lane 2 is zero. Lane 5 requires lane 3 and positive-zero bit patterns for all three coordinates. A zero coordinate triple does not require lane 5. Lane 7 requires class version 11, closure `(0,1)`, and one incident circular curve whose center is the point position. The remaining lanes retain independent opaque Boolean state; their values do not derive from coordinate equality or the neutral construction Boolean.
+
+The point-tail layouts in [the fixed-layout tables](../layouts/f3d.md) start at the first flag byte. The legacy tail contains the flag, coordinates, zero lanes, f32 constants, marker, repeated paired reference, and owner reference. Each modern fixed prefix contains the flags, coordinates, selector, state, zero lane, f32 constants, and marker. Repeated paired and final owner references follow the modern prefix; their widths depend on the same-segment or inline-typed form.
 
 Class version 10 has a second member sequence. Its first and repeated `paired_reference` members serialize the target type GUID `362B7EC3-0F09-47C8-A3BE-DC066715CDAE` inline between the u64 entity ID and the two same-segment flag bytes. The final member is an inline-typed reference whose target type GUID is `44A64366-4BD3-4B24-881A-F94C206E8F2D`. That final member is not a direct owner backlink.
 

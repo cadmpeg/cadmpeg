@@ -5439,6 +5439,72 @@ Unstated regions:
 
 - `33..35` (2 B): Two zero trailing bytes of the local component reference.
 
+## `sketch_point_legacy_tail`
+
+Spec §3.1 · layout: byte offsets · size: 93 B
+
+Relative to the first flag byte; excludes the preceding property and first paired reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `flag` | `u8` | little | spec | The legacy tail contains the flag |
+| 1 | 16 | `coordinates` | `f64[2]` | little | spec | coordinates |
+| 17 | 20 | `coordinate_zero_lane` | `bytes[20]` | little | spec | zero lanes |
+| 37 | 4 | `unit_scalar` | `f32` | little | spec | f32 constants |
+| 41 | 12 | `zero_lane` | `bytes[12]` | little | spec | zero lane |
+| 53 | 8 | `unit_pair` | `f32[2]` | little | spec | f32 constants |
+| 61 | 10 | `marker` | `bytes[10]` | little | spec | marker |
+| 71 | 11 | `paired_reference` | `bytes[11]` | little | spec | repeated paired reference |
+| 82 | 11 | `owner_reference` | `bytes[11]` | little | spec | owner reference |
+
+## `sketch_point_v8_tail_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 61 B
+
+Relative to the first flag byte; excludes the preceding property and first paired reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 7 | `flags` | `bytes[7]` | little | spec | Each modern fixed prefix contains the flags |
+| 7 | 24 | `coordinates` | `f64[3]` | little | spec | coordinates |
+| 31 | 8 | `selector` | `u64` | little | spec | selector |
+| 39 | 1 | `state` | `u8` | little | spec | state |
+| 40 | 8 | `zero_lane` | `bytes[8]` | little | spec | zero lane |
+| 48 | 8 | `unit_pair` | `f32[2]` | little | spec | f32 constants |
+| 56 | 5 | `marker` | `bytes[5]` | little | spec | marker |
+
+## `sketch_point_v10_tail_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 65 B
+
+Relative to the first flag byte; excludes the preceding property and first paired reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 7 | `flags` | `bytes[7]` | little | spec | Each modern fixed prefix contains the flags |
+| 7 | 24 | `coordinates` | `f64[3]` | little | spec | coordinates |
+| 31 | 8 | `selector` | `u64` | little | spec | selector |
+| 39 | 1 | `state` | `u8` | little | spec | state |
+| 40 | 12 | `zero_lane` | `bytes[12]` | little | spec | zero lane |
+| 52 | 8 | `unit_pair` | `f32[2]` | little | spec | f32 constants |
+| 60 | 5 | `marker` | `bytes[5]` | little | spec | marker |
+
+## `sketch_point_v11_tail_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 66 B
+
+Relative to the first flag byte; excludes the preceding property and first paired reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `flags` | `bytes[8]` | little | spec | Each modern fixed prefix contains the flags |
+| 8 | 24 | `coordinates` | `f64[3]` | little | spec | coordinates |
+| 32 | 8 | `selector` | `u64` | little | spec | selector |
+| 40 | 1 | `state` | `u8` | little | spec | state |
+| 41 | 12 | `zero_lane` | `bytes[12]` | little | spec | zero lane |
+| 53 | 8 | `unit_pair` | `f32[2]` | little | spec | f32 constants |
+| 61 | 5 | `marker` | `bytes[5]` | little | spec | marker |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

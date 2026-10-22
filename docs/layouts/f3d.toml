@@ -18186,3 +18186,247 @@ offset = 40
 type = "u32"
 source = "spec"
 anchor = "An attributed local component occurrence carries"
+
+# --- Versioned point-tail prefixes ----------------------------------------
+
+[[record]]
+name = "sketch_point_legacy_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The point-tail layouts"
+size = 93
+note = "Relative to the first flag byte; excludes the preceding property and first paired reference."
+
+[[record.field]]
+name = "flag"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "The legacy tail contains the flag"
+
+[[record.field]]
+name = "coordinates"
+offset = 1
+type = "f64[2]"
+source = "spec"
+anchor = "coordinates"
+
+[[record.field]]
+name = "coordinate_zero_lane"
+offset = 17
+type = "bytes[20]"
+source = "spec"
+anchor = "zero lanes"
+
+[[record.field]]
+name = "unit_scalar"
+offset = 37
+type = "f32"
+source = "spec"
+anchor = "f32 constants"
+
+[[record.field]]
+name = "zero_lane"
+offset = 41
+type = "bytes[12]"
+source = "spec"
+anchor = "zero lane"
+
+[[record.field]]
+name = "unit_pair"
+offset = 53
+type = "f32[2]"
+source = "spec"
+anchor = "f32 constants"
+
+[[record.field]]
+name = "marker"
+offset = 61
+type = "bytes[10]"
+source = "spec"
+anchor = "marker"
+
+[[record.field]]
+name = "paired_reference"
+offset = 71
+type = "bytes[11]"
+source = "spec"
+anchor = "repeated paired reference"
+
+[[record.field]]
+name = "owner_reference"
+offset = 82
+type = "bytes[11]"
+source = "spec"
+anchor = "owner reference"
+
+[[record]]
+name = "sketch_point_v8_tail_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The point-tail layouts"
+size = 61
+note = "Relative to the first flag byte; excludes the preceding property and first paired reference."
+
+[[record.field]]
+name = "flags"
+offset = 0
+type = "bytes[7]"
+source = "spec"
+anchor = "Each modern fixed prefix contains the flags"
+
+[[record.field]]
+name = "coordinates"
+offset = 7
+type = "f64[3]"
+source = "spec"
+anchor = "coordinates"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "u64"
+source = "spec"
+anchor = "selector"
+
+[[record.field]]
+name = "state"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "state"
+
+[[record.field]]
+name = "zero_lane"
+offset = 40
+type = "bytes[8]"
+source = "spec"
+anchor = "zero lane"
+
+[[record.field]]
+name = "unit_pair"
+offset = 48
+type = "f32[2]"
+source = "spec"
+anchor = "f32 constants"
+
+[[record.field]]
+name = "marker"
+offset = 56
+type = "bytes[5]"
+source = "spec"
+anchor = "marker"
+
+[[record]]
+name = "sketch_point_v10_tail_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The point-tail layouts"
+size = 65
+note = "Relative to the first flag byte; excludes the preceding property and first paired reference."
+
+[[record.field]]
+name = "flags"
+offset = 0
+type = "bytes[7]"
+source = "spec"
+anchor = "Each modern fixed prefix contains the flags"
+
+[[record.field]]
+name = "coordinates"
+offset = 7
+type = "f64[3]"
+source = "spec"
+anchor = "coordinates"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "u64"
+source = "spec"
+anchor = "selector"
+
+[[record.field]]
+name = "state"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "state"
+
+[[record.field]]
+name = "zero_lane"
+offset = 40
+type = "bytes[12]"
+source = "spec"
+anchor = "zero lane"
+
+[[record.field]]
+name = "unit_pair"
+offset = 52
+type = "f32[2]"
+source = "spec"
+anchor = "f32 constants"
+
+[[record.field]]
+name = "marker"
+offset = 60
+type = "bytes[5]"
+source = "spec"
+anchor = "marker"
+
+[[record]]
+name = "sketch_point_v11_tail_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The point-tail layouts"
+size = 66
+note = "Relative to the first flag byte; excludes the preceding property and first paired reference."
+
+[[record.field]]
+name = "flags"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "Each modern fixed prefix contains the flags"
+
+[[record.field]]
+name = "coordinates"
+offset = 8
+type = "f64[3]"
+source = "spec"
+anchor = "coordinates"
+
+[[record.field]]
+name = "selector"
+offset = 32
+type = "u64"
+source = "spec"
+anchor = "selector"
+
+[[record.field]]
+name = "state"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "state"
+
+[[record.field]]
+name = "zero_lane"
+offset = 41
+type = "bytes[12]"
+source = "spec"
+anchor = "zero lane"
+
+[[record.field]]
+name = "unit_pair"
+offset = 53
+type = "f32[2]"
+source = "spec"
+anchor = "f32 constants"
+
+[[record.field]]
+name = "marker"
+offset = 61
+type = "bytes[5]"
+source = "spec"
+anchor = "marker"

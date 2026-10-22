@@ -2383,6 +2383,14 @@ pub(super) fn validate_sketch_point_edits(
     }
     let mut edits: BTreeMap<String, Vec<SketchPointEdit>> = BTreeMap::new();
     for point in target {
+        point
+            .validate_for_write(
+                target_native
+                    .as_ref()
+                    .map(|native| native.sketch_curve_identities.as_slice())
+                    .unwrap_or_default(),
+            )
+            .map_err(CodecError::Malformed)?;
         let before = by_id[point.id.as_str()];
         let mut normalized = point.clone();
         normalized
