@@ -3487,23 +3487,13 @@ impl<'a> DecodeContext<'a> {
                 Exactness::ByteExact
             },
         );
-        if mesh.ngon_count != 0 {
+        if mesh.dropped_ngons != 0 {
             self.report
                 .typed_losses
                 .push(RhinoLossCode::MeshNgonGroupingDropped.note(format_args!(
-                    "{} n-gon grouping record(s) were not transferred for mesh {id}",
-                    mesh.ngon_count
+                    "{} n-gon record(s) of mesh {id} list a missing or repeated face; their grouping was not transferred",
+                    mesh.dropped_ngons
                 )));
-        }
-        if mesh.quad_count != 0 {
-            self.report
-                .typed_losses
-                .push(
-                    RhinoLossCode::MeshQuadTopologyTriangulated.note(format_args!(
-                        "{} quadrilateral face(s) were triangulated for mesh {id}",
-                        mesh.quad_count
-                    )),
-                );
         }
         self.append_link(source_order, &id)?;
         Ok(true)
@@ -3643,7 +3633,6 @@ impl<'a> DecodeContext<'a> {
                         match warning.code {
                             Some(
                                 code @ (RhinoLossCode::TopologyBrepFallback
-                                | RhinoLossCode::PolycurveJoinGap
                                 | RhinoLossCode::TrimPcurveDropped),
                             ) => {
                                 self.report

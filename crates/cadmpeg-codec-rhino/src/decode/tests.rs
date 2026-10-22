@@ -864,7 +864,7 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
             ),
             (
                 finite_parameter(20.0),
-                decoded_nurbs(line_nurbs(-2.0, 2.0, false)),
+                decoded_nurbs(line_nurbs(1.0, 2.0, false)),
             ),
         ],
         end_parameter: finite_parameter(40.0),
@@ -894,7 +894,7 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
             ),
             (
                 finite_parameter(1.0),
-                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+                decoded_nurbs(line_nurbs(1.0, 2.0, false)),
             ),
         ],
         end_parameter: finite_parameter(2.0),
@@ -917,9 +917,9 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.5, 1.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.5, 1.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
         ],
         Some(vec![1.0, 0.5, 1.0]),
         false,

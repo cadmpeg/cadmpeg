@@ -59,6 +59,6 @@ fn current_mesh_ngon_records_read_one_ngon() {
             &mut Diagnostics::new()
         )
         .unwrap(),
-        1
+        vec![vec![0]]
     );
 }

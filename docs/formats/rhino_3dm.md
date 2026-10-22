@@ -950,12 +950,10 @@ count mismatch or failed old-form index validation discards the list. The
 serialized record count is not the admitted list count when a nonpositive
 corner count is skipped.
 
-CADIR decision: neutral tessellation carries the mesh faces and their derived
-triangles but has no n-gon grouping field. A valid legacy list therefore
-contributes its admitted record count to the existing
-`mesh.ngon-grouping-dropped` loss; it does not alter the face triangles. An
-invalid or malformed list contributes no grouping count and leaves the mesh
-admissible.
+CADIR decision: each admitted legacy record supplies the face indices of one
+n-gon, without its `-1` suffix, to the triangle grouping of section 14. It
+does not alter the face triangles. An invalid or malformed list contributes no
+grouping and leaves the mesh admissible.
 
 When this item is attached to an `ON_Mesh` nested in a Brep render or analysis
 side, failure is local to the userdata item. A valid nested mesh class-data
@@ -3035,16 +3033,22 @@ CADIR emits one compound procedural-curve record for the polycurve and one
 neutral carrier curve for each child. Child geometry is converted to
 millimetres; child and polycurve parameters, the reserved values, and the
 reserved bounds are not converted. The parent retains the source object
-record. A bounded child gap is represented by the midpoint join repair and
-emits its geometry warning; a malformed child or parameter array does not
-enter the typed compound record.
+record. Each child carrier keeps its own source endpoints, so a gap between
+adjacent children remains a gap between their carriers. A malformed child or
+parameter array does not enter the typed compound record.
 
 Conversion of a polycurve to one NURBS curve first maps each segment to its
 polycurve parameter interval. Each segment is endpoint-clamped. Segments of
-lower degree are elevated to the maximum segment degree. At each join, the last
-control point of the accumulated curve and the first control point of the next
-segment move to their midpoint. The first control point of the next segment is
-then omitted. The appended knots are translated by the difference between the
+lower degree are elevated to the maximum segment degree. At each join, the end
+of the accumulated curve and the start of the next segment must coincide under
+the `ON_PointsAreCoincident` rule: every coordinate pair differs by at most
+`ON_ZERO_TOLERANCE` (`2^-32`) or by at most `ON_RELATIVE_TOLERANCE` (`2^-42`)
+times the sum of their magnitudes. Otherwise the polycurve has no single NURBS
+conversion, and an owner that needs one (an extrusion profile, a surface
+profile, a nonuniformly placed instance curve, or a Brep C2 trim curve) does
+not admit that curve. The accumulated curve keeps its end control point. When
+the two endpoint weights are equal, the first control point of the next
+segment is omitted. The appended knots are translated by the difference between the
 accumulated end parameter and the next segment start parameter. The internal
 join has `degree` equal knots. The result has this identity:
 
@@ -3418,8 +3422,26 @@ Indices are little-endian unsigned values. A triangle is `[v0,v1,v2,v2]`; a
 quad is `[v0,v1,v2,v3]`. Neutral triangulation splits a quad along its shorter
 geometric diagonal; equal diagonals select `0-2`. A repeated quad vertex is
 removed before triangulation.
-Quad topology is not preserved in the neutral tessellation: every four-vertex
-face is transferred as two triangles, and the transfer is derived.
+Every four-vertex face is transferred as two consecutive triangles, and the
+transfer is derived. When the mesh has a four-vertex face or a grouped n-gon,
+the tessellation carries a triangle-group partition:
+
+| Group source ID | Triangles |
+| --- | --- |
+| `ngon:<record>` | the triangles of every face that n-gon record `<record>` lists |
+| `face:<index>` | the one or two triangles of face `<index>`, which no grouped n-gon lists |
+
+`<record>` is the zero-based n-gon record index and `<index>` is the
+zero-based face index. A face with fewer than three distinct vertices has no
+triangle and no group. The n-gon records group faces only when every listed
+face index is less than the face count and no face is listed twice; otherwise
+no n-gon is grouped and the mesh reports `mesh.ngon-grouping-dropped`. The
+n-gon boundary vertex list is the outer boundary of its faces and is not
+stored. A mesh whose faces are all triangles and that groups no n-gon carries
+no triangle groups.
+
+A `face:` group of two triangles `[a,b,c]` and `[a,c,d]`, or `[a,b,d]` and
+`[b,c,d]`, is the quad `[a,b,c,d]`.
 
 Major 1 follows the face array with raw counted arrays:
 
@@ -3462,10 +3484,10 @@ values whose casts equal the float vertex channel; rejected userdata leaves
 the float channel authoritative.
 
 Mesh objects in every archive band can carry the class-userdata item in
-section 7.2.4 when it remains attached. Its admitted record count reports
-source n-gon grouping; the mesh face table remains the neutral tessellation
-input. When both this item and the inline major-3 n-gon chunk are present, the
-inline count is authoritative for the neutral grouping loss.
+section 7.2.4 when it remains attached. Its admitted records supply the n-gon
+face lists of the triangle grouping; the mesh face table remains the neutral
+tessellation input. When both this item and a nonempty inline major-3 n-gon
+chunk are present, the inline records are authoritative.
 
 A top-level mesh object written from a runtime SubD in an archive below 60 can
 also carry the section 7.2.6 proxy item. Its parent-array counts and raw-array
@@ -3738,9 +3760,8 @@ byte per face; nonzero is followed by a polymorphic object which must be an
 count and exact f64-to-f32 cast checks apply to that nested mesh. These are
 cache channels and do not alter Brep topology.
 Any archive band can carry the `ON_V4V5_MeshNgonUserData` item from section
-7.2.4 on the nested mesh when it remains attached. Its admitted grouping count
-contributes the same neutral `mesh.ngon-grouping-dropped` loss; it does not
-alter Brep topology.
+7.2.4 on the nested mesh when it remains attached. Its admitted records group
+the nested mesh triangles in the same way; they do not alter Brep topology.
 Failure of that userdata item after a nested mesh class-data payload has been
 admitted is local to the item. The nested mesh remains a typed tessellation,
 the Brep side remains present, and no n-gon grouping is admitted. CADIR retains

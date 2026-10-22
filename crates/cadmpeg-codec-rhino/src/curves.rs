@@ -1199,6 +1199,26 @@ fn elevate_to_degree(
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
+/// `ON_ZERO_TOLERANCE`: the absolute coordinate difference below which
+/// openNURBS treats two points as one.
+const ON_ZERO_TOLERANCE: f64 = 2.328_306_436_538_696_3e-10;
+/// `ON_RELATIVE_TOLERANCE`: the coordinate difference, relative to the
+/// coordinate magnitudes, below which openNURBS treats two points as one.
+const ON_RELATIVE_TOLERANCE: f64 = 2.273_736_754_432_320_6e-13;
+
+/// `ON_PointsAreCoincident` for two Euclidean points.
+fn points_coincide(left: Point3, right: Point3) -> bool {
+    [(left.x, right.x), (left.y, right.y), (left.z, right.z)]
+        .into_iter()
+        .all(|(a, b)| {
+            let difference = (a - b).abs();
+            difference <= ON_ZERO_TOLERANCE
+                || difference <= (a.abs() + b.abs()) * ON_RELATIVE_TOLERANCE
+        })
+}
+
+/// Joins endpoint-clamped segments into one NURBS curve. Adjacent endpoints
+/// must coincide; the accumulated curve keeps its endpoint at each join.
 pub(crate) fn join_nurbs_segments(
     ctx: &DecodeContext<'_>,
     mut segments: Vec<NurbsCurve>,
@@ -1270,9 +1290,9 @@ pub(crate) fn join_nurbs_segments(
     let mut control_points: Vec<Point3> = Vec::new();
     let mut knots: Vec<f64> = Vec::new();
     let mut weights = rational.then(Vec::new);
-    let mut warnings = Diagnostics::new();
+    let warnings = Diagnostics::new();
     for (index, segment) in segments.into_iter().enumerate() {
-        let midpoint = if index > 0 {
+        if index > 0 {
             let Some(previous) = control_points.last().copied() else {
                 return Err(error(
                     offset,
@@ -1284,26 +1304,17 @@ pub(crate) fn join_nurbs_segments(
                 .point_at(0)
                 .ok_or_else(|| error(offset, "polycurve segment has no control point"))?
                 .get();
-            let midpoint = Point3::new(
-                previous.x.midpoint(next.x),
-                previous.y.midpoint(next.y),
-                previous.z.midpoint(next.z),
-            );
-            let gap = previous.distance(next);
-            if gap > 0.0 {
-                warnings.push_coded(
-                    crate::loss::RhinoLossCode::PolycurveJoinGap,
-                    format_args!("polycurve join moved endpoints by half of gap {gap}"),
-                );
+            if !points_coincide(previous, next) {
+                return Err(error(
+                    offset,
+                    format!(
+                        "polycurve segments {} and {index} leave an endpoint gap of {}; no continuous NURBS carrier exists",
+                        index - 1,
+                        previous.distance(next)
+                    ),
+                ));
             }
-            let Some(previous) = control_points.last_mut() else {
-                return Err(error(offset, "polycurve join has no previous endpoint"));
-            };
-            *previous = midpoint;
-            Some(midpoint)
-        } else {
-            None
-        };
+        }
         // Unequal endpoint weights are different homogeneous poles. Keep both
         // with a full-multiplicity knot so neither segment's rational shape changes.
         let unit = NonZeroReal::from(PositiveReal::ONE);
@@ -1337,11 +1348,7 @@ pub(crate) fn join_nurbs_segments(
                 .point_at(point_index)
                 .ok_or_else(|| error(offset, "polycurve segment has no control point"))?
                 .get();
-            control_points.push(if point_index == 0 {
-                midpoint.unwrap_or(point)
-            } else {
-                point
-            });
+            control_points.push(point);
         }
         let segment_start = segment.knots()[multiplicity - 1];
         let dk = if index == 0 {
@@ -3115,7 +3122,7 @@ mod tests {
         };
         let finite = |value: f64| FiniteReal::new(value).expect("finite parameter");
         let nested = DecodedCurve::Compound {
-            children: vec![(finite(2.0), line(0.0, 1.0)), (finite(3.0), line(0.0, 1.0))],
+            children: vec![(finite(2.0), line(0.0, 1.0)), (finite(3.0), line(1.0, 2.0))],
             end_parameter: finite(5.0),
             warnings: Diagnostics::new(),
         };
@@ -3126,7 +3133,7 @@ mod tests {
     }
 
     #[test]
-    fn join_elevates_degree_and_midpoints_a_gap() {
+    fn join_refuses_an_endpoint_gap() {
         let line = NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
@@ -3147,17 +3154,34 @@ mod tests {
             false,
         )
         .expect("valid test quadratic");
-        let joined = with_test_context(|ctx| join_nurbs_segments(ctx, vec![line, quadratic], 0))
-            .expect("join");
+        let Err(error) = with_test_context(|ctx| {
+            join_nurbs_segments(ctx, vec![line.clone(), quadratic.clone()], 0)
+        }) else {
+            panic!("a gap has no continuous carrier");
+        };
+        assert!(error.to_string().contains("endpoint gap of 2"), "{error}");
+        let touching = NurbsCurve::from_lanes(
+            2,
+            vec![5.0, 5.0, 5.0, 7.0, 7.0, 7.0],
+            vec![
+                Point3::new(1.0 + 1.0e-10, 0.0, 0.0),
+                Point3::new(4.0, 1.0, 0.0),
+                Point3::new(5.0, 0.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .expect("valid test quadratic");
+        let joined = with_test_context(|ctx| join_nurbs_segments(ctx, vec![line, touching], 0))
+            .expect("coincident endpoints join");
         assert_eq!(joined.curve.degree(), 2);
         assert_eq!(
             joined.curve.knots().as_slice(),
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 3.0, 3.0, 3.0]
         );
         assert_eq!(joined.curve.control_points().len(), 5);
-        assert_eq!(joined.curve.control_points()[2], Point3::new(2.0, 0.0, 0.0));
-        assert_eq!(joined.warnings.len(), 1);
-        assert!(joined.warnings[0].contains("gap 2"));
+        assert_eq!(joined.curve.control_points()[2], Point3::new(1.0, 0.0, 0.0));
+        assert!(joined.warnings.is_empty());
     }
     #[test]
     fn audit_regression_degree_elevation_normalizes_large_common_weights() {

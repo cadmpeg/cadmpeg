@@ -588,28 +588,6 @@ must fail under the current disputed rule before that rule is changed.
 they do not close the selection questions because none supplies the competing
 candidate or boundary value that makes the arbitration observable.
 
-### PC-01. Polycurve endpoints moved to an invented midpoint
-
-**Question.** What neutral geometry can transfer from an `ON_PolyCurve` whose
-adjacent child endpoints do not agree?
-
-**Known.** `rhino_3dm.md` §12.6 states that the source validity rule rejects a
-gap between adjacent children. The same section defines a CADIR midpoint
-repair. `crates/cadmpeg-codec-rhino/src/curves.rs:912-931` computes the midpoint
-of every unequal adjacent endpoint pair, replaces the last control point of the
-preceding segment and the first control point of the next segment with that
-midpoint, and reports the distance moved. The joined neutral NURBS therefore
-contains neither source endpoint at that join.
-
-**Conflict.** The source object is invalid because it does not define one
-continuous join. The decoder creates a continuous curve by changing both
-source geometries and admits the result as the neutral carrier.
-
-**Need.** The answer keeps the ordered child carriers and their endpoint gap
-without claiming one continuous curve, or defines an explicit repaired
-geometry whose invented join and displacement remain queryable on that curve.
-The ordinary neutral carrier must not present the midpoint as source geometry.
-
 ### BR-01. Region topology replaced by incidence-derived shells
 
 **Question.** What neutral region and shell structure can transfer when a
@@ -828,24 +806,6 @@ binding.
 dimension-style references against every versioned dimension-style table
 grammar. If a style cannot resolve, retain the serialized reference explicitly
 and do not present the annotation as fully styled neutral PMI.
-
-### MS-01. Mesh face topology is reduced during decode
-
-**Question.** How can Rhino quadrilateral and n-gon face identity survive in
-neutral tessellation?
-
-**Known.** `decode.rs:3220-3260` always emits triangles with an empty
-`triangle_groups` array. It reports every quad through
-`mesh.quad-topology-triangulated` and every n-gon through
-`mesh.ngon-grouping-dropped`. A mesh with many quads produces one loss per
-mesh and no machine-readable relation from the emitted triangles back to the
-serialized face. Section 14 currently documents this reduction as the chosen
-transfer.
-
-**Need.** Preserve source face grouping for both quads and n-gons, including
-the selected quad diagonal, or add a neutral mesh-face carrier that keeps the
-original face topology. The loss report alone cannot reconstruct which
-triangles belonged to one source face.
 
 ### PR-01. Presentation and viewport records have no typed owner
 

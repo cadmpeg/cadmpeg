@@ -2480,19 +2480,21 @@ fn legacy_mesh(
             )
             .map_err(|error| malformed(&error))?;
     }
-    let triangles =
-        crate::mesh::triangulate_faces(&faces, &vertices, |point| point).map_err(|error| {
-            match error {
-                crate::curves::GeometryError::Codec(error) => error,
-                other => CodecError::Malformed(other.to_string()),
-            }
-        })?;
+    let crate::mesh::FaceTriangles {
+        triangles, groups, ..
+    } = crate::mesh::triangulate_faces(&faces, &vertices, |point| point, &[]).map_err(|error| {
+        match error {
+            crate::curves::GeometryError::Codec(error) => error,
+            other => CodecError::Malformed(other.to_string()),
+        }
+    })?;
     Tessellation::new(
         cadmpeg_ir::tessellation::TessellationId::mint(id)
             .map_err(|error| CodecError::Malformed(error.to_string()))?,
         cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, triangles, normals)?,
         Vec::new(),
     )
+    .and_then(|mesh| mesh.with_triangle_groups(groups))
     .map_err(|err| CodecError::Malformed(err.to_string()))
 }
 

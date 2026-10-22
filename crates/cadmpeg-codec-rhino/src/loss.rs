@@ -163,8 +163,6 @@ pub(crate) enum RhinoLossCode {
     BrepMeshCacheDegraded,
     /// A duplicate source record was resolved by the format's ownership rule.
     DuplicateRecordResolved,
-    /// A stored quad was converted to neutral triangles.
-    MeshQuadTopologyTriangulated,
     /// Embedded history geometry could not be decoded.
     HistoryEmbeddedGeometryDropped,
     /// A dimension-style override object was not applied.
@@ -183,8 +181,6 @@ pub(crate) enum RhinoLossCode {
     ObjectFramingUndecodable,
     /// A decode phase surfaced a per-record diagnostic.
     ObjectDecodeDiagnostic,
-    /// A discontinuous polycurve join moved both source endpoints to their midpoint.
-    PolycurveJoinGap,
     /// One B-rep trim lost its parameter-space curve while its topology remained.
     TrimPcurveDropped,
     /// B-rep topology fell back to a carrier-only transfer.
@@ -265,7 +261,6 @@ impl RhinoLossCode {
         Self::RedundantFieldRepaired,
         Self::BrepMeshCacheDegraded,
         Self::DuplicateRecordResolved,
-        Self::MeshQuadTopologyTriangulated,
         Self::HistoryEmbeddedGeometryDropped,
         Self::DimensionOverrideDropped,
         Self::HistoryDependencyDropped,
@@ -275,7 +270,6 @@ impl RhinoLossCode {
         Self::ObjectAttributesDegraded,
         Self::ObjectFramingUndecodable,
         Self::ObjectDecodeDiagnostic,
-        Self::PolycurveJoinGap,
         Self::TrimPcurveDropped,
         Self::TopologyBrepFallback,
         Self::HatchFillNotTransferred,
@@ -315,7 +309,6 @@ impl RhinoLossCode {
             Self::RedundantFieldRepaired => "container.redundant-field-repaired",
             Self::BrepMeshCacheDegraded => "brep.mesh-cache-degraded",
             Self::DuplicateRecordResolved => "container.duplicate-record-resolved",
-            Self::MeshQuadTopologyTriangulated => "mesh.quad-topology-triangulated",
             Self::HistoryEmbeddedGeometryDropped => "history.embedded-geometry-dropped",
             Self::DimensionOverrideDropped => "dimension.override-dropped",
             Self::HistoryDependencyDropped => "history.dependency-dropped",
@@ -325,7 +318,6 @@ impl RhinoLossCode {
             Self::ObjectAttributesDegraded => "object.attributes-degraded",
             Self::ObjectFramingUndecodable => "object.framing-undecodable",
             Self::ObjectDecodeDiagnostic => "object.decode-diagnostic",
-            Self::PolycurveJoinGap => "curve.polycurve-join-gap",
             Self::TrimPcurveDropped => "brep.trim-pcurve-dropped",
             Self::TopologyBrepFallback => "topology.brep-fallback",
             Self::HatchFillNotTransferred => "hatch.fill-not-transferred",
@@ -371,7 +363,6 @@ impl RhinoLossCode {
             | Self::ObjectDecodeDiagnostic
             | Self::AnnotationRecordDropped
             | Self::AnnotationUserdataDropped
-            | Self::PolycurveJoinGap
             | Self::ReferenceMemberUnresolved
             | Self::ReferenceMemberAmbiguous => LossTaxonomy::DecodeDiagnostic,
             Self::TrimPcurveDropped => LossTaxonomy::PcurveOmitted,
@@ -380,9 +371,7 @@ impl RhinoLossCode {
             Self::ViewportUserdataDropped | Self::ProductOccurrenceDropped => {
                 LossTaxonomy::RecordNotTyped
             }
-            Self::MeshNgonGroupingDropped | Self::MeshQuadTopologyTriangulated => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::MeshNgonGroupingDropped => LossTaxonomy::RecordNotTyped,
             Self::EnumerationValueDegraded | Self::RedundantFieldRepaired => {
                 LossTaxonomy::DecodeDiagnostic
             }
@@ -482,7 +471,6 @@ mod tests {
                 "container.redundant-field-repaired",
                 "brep.mesh-cache-degraded",
                 "container.duplicate-record-resolved",
-                "mesh.quad-topology-triangulated",
                 "history.embedded-geometry-dropped",
                 "dimension.override-dropped",
                 "history.dependency-dropped",
@@ -492,7 +480,6 @@ mod tests {
                 "object.attributes-degraded",
                 "object.framing-undecodable",
                 "object.decode-diagnostic",
-                "curve.polycurve-join-gap",
                 "brep.trim-pcurve-dropped",
                 "topology.brep-fallback",
                 "hatch.fill-not-transferred",
