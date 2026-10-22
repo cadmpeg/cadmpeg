@@ -226,3 +226,58 @@ fn normal_and_split_edges_keep_the_coedge_interval_until_spline_emission() {
         }
     }
 }
+
+/// A cylinder strip of two lines and two arcs, as in #190: the first arc lies
+/// one period above the lines and the second one period below.
+fn strip_ends() -> Vec<([f64; 2], [f64; 2])> {
+    let (first, second, height) = (5.6, 6.9, 8.15);
+    vec![
+        ([first, 0.0], [first, height]),
+        ([first + TAU, height], [second + TAU, height]),
+        ([second, height], [second, 0.0]),
+        ([second - TAU, 0.0], [first - TAU, 0.0]),
+    ]
+}
+
+#[test]
+fn loop_pcurves_in_other_periods_move_onto_the_previous_pcurve() {
+    let shifts = super::loop_period_shifts(&strip_ends(), [Some(TAU), None]);
+    let expected = [[0.0, 0.0], [-TAU, 0.0], [0.0, 0.0], [TAU, 0.0]];
+    for (shift, expected) in shifts.iter().zip(expected) {
+        assert!((shift[0] - expected[0]).abs() < EPS_KNOT);
+        assert!((shift[1] - expected[1]).abs() < EPS_KNOT);
+    }
+}
+
+#[test]
+fn a_gap_that_no_whole_period_closes_and_a_nonperiodic_surface_keep_their_pcurves() {
+    let mut ends = strip_ends();
+    ends[1].0[0] += 0.5;
+    let shifts = super::loop_period_shifts(&ends, [Some(TAU), None]);
+    assert_eq!(shifts[1], [0.0, 0.0]);
+
+    let shifts = super::loop_period_shifts(&strip_ends(), [None, None]);
+    assert!(shifts.iter().all(|shift| *shift == [0.0, 0.0]));
+}
+
+#[test]
+fn a_shifted_spline_moves_every_pole_and_keeps_its_knots() {
+    let geometry = spline();
+    let moved = super::shifted(&geometry, [-TAU, 1.0]).unwrap();
+    let PcurveGeometry::Nurbs { nurbs } = &moved else {
+        panic!("spline")
+    };
+    let PcurveGeometry::Nurbs { nurbs: source } = &geometry else {
+        panic!("spline")
+    };
+    assert_eq!(nurbs.knots(), source.knots());
+    for (moved, source) in nurbs
+        .pole_rows()
+        .points()
+        .iter()
+        .zip(source.pole_rows().points())
+    {
+        assert!((moved.get().u - (source.get().u - TAU)).abs() < EPS_KNOT);
+        assert!((moved.get().v - (source.get().v + 1.0)).abs() < EPS_KNOT);
+    }
+}

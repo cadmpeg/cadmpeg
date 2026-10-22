@@ -259,6 +259,7 @@ mod pcurves;
 #[derive(Clone, Copy)]
 struct PcurveUse<'a> {
     use_: &'a cadmpeg_ir::topology::PcurveUse,
+    coedge: &'a str,
     surface: &'a str,
     face: &'a str,
 }
@@ -304,6 +305,9 @@ pub(crate) struct Builder<'a> {
     pub(crate) active_curves: BTreeSet<String>,
     written_procedural_surfaces: BTreeSet<String>,
     written_procedural_curves: BTreeSet<String>,
+    /// Whole-period parameter-space shift per coedge that joins its pcurve to
+    /// the previous pcurve of its loop, computed once over every face.
+    pcurve_period_shifts: HashMap<&'a str, [f64; 2]>,
     /// Helix constructions written as fitted B-splines because they carry no
     /// solved carrier.
     fitted_helix_curves: BTreeSet<String>,
@@ -441,12 +445,13 @@ impl<'a> Builder<'a> {
                     .or_default()
                     .push(PcurveUse {
                         use_: pcurve,
+                        coedge: coedge.id.as_str(),
                         surface,
                         face,
                     });
             }
         }
-        Ok(Builder {
+        let mut builder = Builder {
             approximations: approximation::Approximator::new(ir),
             ir,
             schema,
@@ -539,6 +544,7 @@ impl<'a> Builder<'a> {
             active_curves: BTreeSet::new(),
             written_procedural_surfaces: BTreeSet::new(),
             written_procedural_curves: BTreeSet::new(),
+            pcurve_period_shifts: HashMap::new(),
             fitted_helix_curves: BTreeSet::new(),
             fitted_helix_surfaces: BTreeSet::new(),
             failed_helix_fits: BTreeMap::new(),
@@ -582,7 +588,9 @@ impl<'a> Builder<'a> {
             ratio_unit: None,
             geometry_emission_depth: 0,
             construction_supports,
-        })
+        };
+        builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts()?;
+        Ok(builder)
     }
 
     fn loss(&mut self, code: StepLossCode, message: String) {
@@ -2503,6 +2511,7 @@ impl<'a> Builder<'a> {
                     if let Some((surface, face)) = self.coedge_faces.get(coedge.id.as_str()) {
                         pcurves.extend(coedge.pcurves.iter().map(|pcurve| PcurveUse {
                             use_: pcurve,
+                            coedge: coedge.id.as_str(),
                             surface,
                             face,
                         }));
@@ -3042,6 +3051,15 @@ impl<'a> Builder<'a> {
         self.curves.get(edge.curve()?.as_str())?;
         let aligned =
             pcurves::align_spline_to_edge(&pcurve.geometry, use_.use_.parameter_range, edge);
+        let shift = self
+            .pcurve_period_shifts
+            .get(use_.coedge)
+            .copied()
+            .unwrap_or([0.0; 2]);
+        let aligned = match pcurves::shifted(aligned.as_ref(), shift) {
+            Some(moved) if shift != [0.0, 0.0] => std::borrow::Cow::Owned(moved),
+            _ => aligned,
+        };
         let surface = self.emit_surface(surface_id)?;
         if self.surface_is_fitted_helix(surface_id) {
             return None;
@@ -3070,6 +3088,100 @@ impl<'a> Builder<'a> {
             self.emitter
                 .emit("PCURVE", &format!("'',{surface},{representation}")),
         )
+    }
+
+    /// The nonzero pcurve period shifts of every loop on a periodic surface.
+    fn loop_pcurve_period_shifts(
+        &self,
+    ) -> Result<HashMap<&'a str, [f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+        let mut shifts = HashMap::new();
+        for face in self.faces.values() {
+            let Some(surface) = self
+                .surfaces
+                .get(face.surface.as_str())
+                .and_then(|surface| surface.geometry.solved())
+            else {
+                continue;
+            };
+            let periods = pcurves::surface_periods(surface);
+            if periods == [None, None] {
+                continue;
+            }
+            for loop_id in &face.loops {
+                let Some(lp) = self.loops.get(loop_id.as_str()).copied() else {
+                    continue;
+                };
+                let Some(ends) = lp
+                    .coedges()
+                    .iter()
+                    .map(|coedge_id| self.coedge_pcurve_ends(coedge_id.as_str()))
+                    .collect::<Result<Option<Vec<_>>, _>>()?
+                else {
+                    continue;
+                };
+                for (coedge_id, shift) in lp
+                    .coedges()
+                    .iter()
+                    .zip(pcurves::loop_period_shifts(&ends, periods))
+                {
+                    if shift != [0.0, 0.0] {
+                        shifts.insert(coedge_id.as_str(), shift);
+                    }
+                }
+            }
+        }
+        Ok(shifts)
+    }
+
+    /// The parameter-space start and end of `coedge`'s spline pcurve on its
+    /// edge's range, in the coedge's direction.
+    fn coedge_pcurve_ends(
+        &self,
+        coedge: &str,
+    ) -> Result<Option<([f64; 2], [f64; 2])>, cadmpeg_core::decode::ResourceLimit> {
+        let Some(coedge) = self.coedges.get(coedge).copied() else {
+            return Ok(None);
+        };
+        let (Some(use_), Some(edge)) = (
+            coedge.pcurves.first(),
+            self.edges.get(coedge.edge.as_str()).copied(),
+        ) else {
+            return Ok(None);
+        };
+        let Some(pcurve) = self.pcurves.get(use_.pcurve.as_str()).copied() else {
+            return Ok(None);
+        };
+        let Some(range) = edge.param_range() else {
+            return Ok(None);
+        };
+        if !matches!(
+            pcurve.geometry,
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
+        ) {
+            return Ok(None);
+        }
+        let aligned = pcurves::align_spline_to_edge(&pcurve.geometry, use_.parameter_range, edge);
+        let at = |parameter: f64| {
+            Ok::<_, cadmpeg_core::decode::ResourceLimit>(
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    aligned.as_ref(),
+                    parameter,
+                ))?
+                .map(|point| {
+                    let point = point.get();
+                    [point.u, point.v]
+                }),
+            )
+        };
+        let [start, end] = range.get();
+        let (Some(start), Some(end)) = (at(start)?, at(end)?) else {
+            return Ok(None);
+        };
+        Ok(Some(match coedge.sense {
+            Sense::Forward => (start, end),
+            Sense::Reversed => (end, start),
+        }))
     }
 
     fn emit_vertex(&mut self, vertex_id: &str) -> Option<Ref> {
