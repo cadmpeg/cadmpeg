@@ -2,6 +2,7 @@
 //! Facade-level measurement of built documents.
 
 mod acceptance;
+mod compare;
 mod cones;
 mod cube;
 mod cylinders;

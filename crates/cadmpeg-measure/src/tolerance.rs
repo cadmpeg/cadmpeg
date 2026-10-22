@@ -41,6 +41,9 @@ pub(crate) const MEMBER_OFFSET_RELATIVE: f64 = 1.0e-6;
 /// witness.
 pub(crate) const TANGENT_WITNESS_ANGLE: f64 = 1.0e-2;
 
+/// Default relative floor of an ID-free comparison's tolerance.
+pub(crate) const COMPARE_RELATIVE_FLOOR: f64 = 1.0e-9;
+
 /// A ring loop that encloses less than this fraction of its 3D box diagonal
 /// squared encloses no area.
 pub(crate) const LOOP_DEGENERATE_RELATIVE_AREA: f64 = 1.0e-12;

@@ -141,6 +141,19 @@ Caveat codes follow the reason discipline.
 | `measure.provenance-not-recorded` | undefined | document | Neutral CADIR without a decode sidecar; every exactness is `not_recorded`. |
 | `measure.geometry-not-transferred` | input | document | The decode report states that no geometry was transferred. |
 
+## Comparison causes
+
+A comparison cause states why an ID-free comparison is inconclusive or why
+one of its rows is not compared. Cause codes follow the reason discipline.
+
+| Code | When |
+| --- | --- |
+| `compare.occurrence-placement` | A document's occurrences place bodies non-trivially. |
+| `compare.unavailable` | A quantity is unavailable for a `budget`, `unsupported` or `placement` reason on at least one side and has no comparable candidates. |
+| `compare.ambiguous-class` | Bodies whose compatibility is not transitive. |
+| `compare.unmeasured-body` | A body with no comparable quantity. |
+| `compare.nothing-compared` | No numeric or signature row is compared. |
+
 ## Rings
 
 A ring lists its coedges in traversal order. When the listed order is not
@@ -432,6 +445,57 @@ A body with faces and no closed shell reports `area_centroid`, the
 area-weighted centroid `P_ref + Σ σ Φ_A / A`, where `A` is the body area.
 `document.closed_volume` is the sum of the body volumes; it is unavailable
 when one is.
+
+## Comparison
+
+An ID-free comparison measures every body of two documents in model space
+and matches bodies by their measured geometry, not by their IDs.
+
+- Placement. A document's placement is `trivial` when it has no
+  occurrences, or when every occurrence has a local prototype, unit scale and
+  an effective transform whose linear part is the identity within `1e-8` and
+  whose translation is within `tolerances.linear` of zero, every product
+  definition that lists bodies is the prototype of exactly one occurrence,
+  and no body is listed by two definitions. Otherwise it is `occurrences`:
+  the document row `occurrences` is not compared
+  (`compare.occurrence-placement`), and the bodies are still compared.
+- Tolerance. A value compares within
+  `t = e_a + e_b + u_a + u_b + floor × max(|a|, |b|, L^d)`, with `e` the
+  numeric error, `u` the model uncertainty, `L` the larger document box
+  diagonal, `d` the quantity's dimension and `floor` the relative floor,
+  `1e-9` by default.
+- Rows of a body pair. `area`, `volume`, `centroid`, `area_centroid` and
+  `length` are `equal` within `t` when measured on both sides; a vector
+  splits into components. A value measured under a reading compares with
+  the same reading on the other side when that side has it. A value
+  measured on one side and unavailable on the other disagrees for an
+  `input` or `undefined` category, and is not compared
+  (`compare.unavailable`) for `budget`, `unsupported` or `placement`. Values
+  unavailable on both sides compare by their candidates of the same reading
+  (`volume.face_sense`, `volume.loop_winding`); without such candidates the
+  reason codes compare `exact` when both categories are `input` or
+  `undefined`, and the row is not compared otherwise. Two `tight` boxes
+  compare their corners `equal`; otherwise each side's boundary box must lie
+  in the other side's box widened by `t` (`containment`, with the largest
+  violation as the difference). `closed` compares `exact`;
+  `orientation.consistent` compares `exact` when it is not `null` on both
+  sides.
+- Signature. Two bodies with no measured numeric quantity, whose
+  unavailable values all have the category `input` or `undefined`, compare
+  their kind, face, edge and vertex counts and their sets of reason codes.
+- Classes. Two bodies are compatible when at least one numeric or
+  signature row is compared and every compared row agrees, across and within
+  the two documents. Compatibility splits the bodies into connected classes.
+  A class whose bodies are all pairwise compatible pairs its bodies of the
+  two documents by multiplicity in ID order and leaves the surplus
+  unmatched; another class is ambiguous (`compare.ambiguous-class`). A body
+  with no comparable quantity is unmeasured (`compare.unmeasured-body`).
+- Document rows: `body_count` (`exact`), total `area` and `closed_volume`
+  when measured on both sides, the union box, and `occurrences`.
+- Verdict: `disagree` when a compared row disagrees or a body is
+  unmatched; else `inconclusive` when a cause applies, including
+  `compare.nothing-compared`; else `agree`. Surface-kind counts and `visible`
+  are informational.
 
 ## Pass allowance
 

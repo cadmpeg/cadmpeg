@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The pinned measurement vocabulary: categories, unavailable reasons and
-//! caveats.
+//! The pinned measurement vocabulary: categories, unavailable reasons,
+//! caveats and comparison causes.
 //!
 //! Every reason and caveat serializes as a `family.detail` string.
 //! The strings are the contract: a code is never renamed, removed, or given
@@ -339,9 +339,55 @@ impl Serialize for CaveatCode {
     }
 }
 
+/// Why an ID-free comparison is inconclusive or a row is not compared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CompareCause {
+    /// A document's occurrences place bodies non-trivially.
+    OccurrencePlacement,
+    /// A quantity is unavailable for a `budget`, `unsupported` or
+    /// `placement` reason on at least one side and has no comparable
+    /// candidates.
+    Unavailable,
+    /// Bodies whose compatibility is not transitive.
+    AmbiguousClass,
+    /// A body with no comparable quantity.
+    UnmeasuredBody,
+    /// No numeric or signature row was compared.
+    NothingCompared,
+}
+
+impl CompareCause {
+    /// Every cause, in declaration order.
+    pub const ALL: [Self; 5] = [
+        Self::OccurrencePlacement,
+        Self::Unavailable,
+        Self::AmbiguousClass,
+        Self::UnmeasuredBody,
+        Self::NothingCompared,
+    ];
+
+    /// The pinned `family.detail` string.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::OccurrencePlacement => "compare.occurrence-placement",
+            Self::Unavailable => "compare.unavailable",
+            Self::AmbiguousClass => "compare.ambiguous-class",
+            Self::UnmeasuredBody => "compare.unmeasured-body",
+            Self::NothingCompared => "compare.nothing-compared",
+        }
+    }
+}
+
+impl Serialize for CompareCause {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.code())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Category, CaveatCode, UnavailableReason};
+    use super::{Category, CaveatCode, CompareCause, UnavailableReason};
 
     const REASONS: [(&str, Option<&str>); 39] = [
         ("carrier.unknown", Some("input")),
@@ -413,7 +459,8 @@ mod tests {
         let codes = UnavailableReason::ALL
             .iter()
             .map(|reason| reason.code())
-            .chain(CaveatCode::ALL.iter().map(|code| code.code()));
+            .chain(CaveatCode::ALL.iter().map(|code| code.code()))
+            .chain(CompareCause::ALL.iter().map(|cause| cause.code()));
         for code in codes {
             let (family, detail) = code.split_once('.').expect("family.detail");
             assert!(!family.is_empty() && !detail.is_empty(), "{code}");
@@ -437,6 +484,20 @@ mod tests {
         for (code, (text, category)) in CaveatCode::ALL.into_iter().zip(expected) {
             assert_eq!(code.code(), text);
             assert_eq!(code.category().as_str(), category);
+        }
+    }
+
+    #[test]
+    fn compare_causes_are_pinned() {
+        let expected = [
+            "compare.occurrence-placement",
+            "compare.unavailable",
+            "compare.ambiguous-class",
+            "compare.unmeasured-body",
+            "compare.nothing-compared",
+        ];
+        for (cause, text) in CompareCause::ALL.into_iter().zip(expected) {
+            assert_eq!(cause.code(), text);
         }
     }
 
@@ -476,6 +537,11 @@ mod tests {
         for (row, caveat) in caveats.iter().zip(CaveatCode::ALL) {
             assert_eq!(row[0], caveat.code());
             assert_eq!(row[1], caveat.category().as_str(), "{}", row[0]);
+        }
+        let causes = contract_rows(contract, "## Comparison causes");
+        assert_eq!(causes.len(), CompareCause::ALL.len());
+        for (row, cause) in causes.iter().zip(CompareCause::ALL) {
+            assert_eq!(row[0], cause.code());
         }
     }
 }

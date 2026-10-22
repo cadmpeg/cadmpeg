@@ -34,6 +34,7 @@ mod body;
 mod boundary;
 mod budget;
 mod canonical;
+pub mod compare;
 mod context;
 mod edges;
 mod extent;
