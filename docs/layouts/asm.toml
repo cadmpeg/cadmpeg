@@ -751,8 +751,8 @@ anchor = "one 25-byte model-space `POSITION`"
 name = "plane_surface"
 kind = "slot"
 section = "6.2"
-anchor = "**`plane`**: origin (`0x13`) + unit normal (`0x14`) + unit UV-reference direction (`0x14`)"
-note = "Total record size is not stated. Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`; `v_dir = normal × u_dir` for `forward_v` and its negation for `reverse_v`."
+anchor = "**`plane`**: origin (`0x13`) + unit normal (`0x14`) + UV-reference vector `u_vec` (`0x14`)"
+note = "Total record size is not stated. Evaluation `S(u,v) = origin + u·u_vec + v·v_vec`; `v_vec = normal × u_vec` for `forward_v` and its negation for `reverse_v`. `u_vec` is not always a unit vector."
 
 [[record.field]]
 name = "origin"
@@ -767,10 +767,10 @@ source = "spec"
 anchor = "unit normal (`0x14`)"
 
 [[record.field]]
-name = "u_dir"
+name = "u_vec"
 type = "sab_vector3d"
 source = "spec"
-anchor = "unit UV-reference direction (`0x14`)"
+anchor = "UV-reference vector `u_vec` (`0x14`)"
 
 [[record.field]]
 name = "v_sense"

@@ -231,6 +231,96 @@ fn generated_signed_sphere_patches_exact_frame_and_radius() {
 }
 
 #[test]
+fn generated_plane_patch_keeps_its_reference_vector_length_and_sense() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"\x0d\x05plane");
+    bytes.push(0x13);
+    for value in [0.0f64, 0.0, 0.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    // The normal, then a reference vector of length 0.5.
+    for vector in [[0.0f64, 0.0, 1.0], [0.5, 0.0, 0.0]] {
+        bytes.push(0x14);
+        for value in vector {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    // Reversed v-sense.
+    bytes.push(0x0a);
+    bytes.push(0x11);
+    let records = sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("generated plane record");
+    let planes = BTreeMap::from([(
+        "f3d:brep:entity#0".to_string(),
+        (
+            Point3::new(10.0, 20.0, 30.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+    )]);
+    patch_framed_geometry(
+        &mut bytes,
+        &records,
+        &GeometryEdits {
+            positions: &BTreeMap::new(),
+            lines: &BTreeMap::new(),
+            conics: &BTreeMap::new(),
+            degenerate_curves: &BTreeMap::new(),
+            planes: &planes,
+            spheres: &BTreeMap::new(),
+            tori: &BTreeMap::new(),
+            cones: &BTreeMap::new(),
+            body_transforms: &BTreeMap::new(),
+            entity_colors: &BTreeMap::new(),
+            edge_ranges: &BTreeMap::new(),
+            face_senses: &BTreeMap::new(),
+            coedge_senses: &BTreeMap::new(),
+            procedural_surface_edits: &BTreeMap::new(),
+            nurbs_surfaces: &BTreeMap::new(),
+            nurbs_curves: &BTreeMap::new(),
+            pcurves: &BTreeMap::new(),
+            procedural_curve_edits: &BTreeMap::new(),
+            procedural_surface_fits: &BTreeMap::new(),
+            creation_timestamps: &BTreeMap::new(),
+            edge_continuities: &BTreeMap::new(),
+            vertex_ownerships: &BTreeMap::new(),
+            face_sidedness: &BTreeMap::new(),
+            tolerant_edges: &BTreeMap::new(),
+            tolerant_vertices: &BTreeMap::new(),
+        },
+        1.0,
+    )
+    .expect("generated plane edit");
+    let decoded = sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("patched plane record");
+    // The new reference direction keeps the stored length, so the plane's
+    // pcurve chart is unchanged.
+    assert_eq!(
+        cadmpeg_asm::nurbs::support_chart::plane_record_chart(
+            decoded[0].head(),
+            &decoded[0].tokens
+        ),
+        Some(cadmpeg_asm::nurbs::support_chart::NativeChart::Plane {
+            reverse_v: true,
+            scale: 0.5,
+        })
+    );
+    assert!(decoded[0]
+        .tokens
+        .contains(&cadmpeg_asm::sab::Token::Vector3([0.0, 0.0, 0.5])));
+}
+
+#[test]
 fn generated_torus_preserves_signed_self_intersecting_radii() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"\x0d\x05torus");

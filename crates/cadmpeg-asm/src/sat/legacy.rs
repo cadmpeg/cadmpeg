@@ -73,7 +73,7 @@ pub(super) fn type_record(
         "point" => &[&[P]],
         "transform" => &[&[VUnit, VUnit, VUnit, VLen, D, B, B, B]],
         "plane" if save_format < 103 => &[&[P, VUnit]],
-        "plane" => &[&[P, VUnit, VLen, UvSense]],
+        "plane" => &[&[P, VUnit, VUnit, UvSense]],
         "straight" => &[&[P, VLen]],
         "ellipse" => &[&[P, VUnit, VLen, D]],
         "sphere" if save_format < 103 => &[&[P, DLen]],
