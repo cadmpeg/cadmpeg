@@ -5973,11 +5973,13 @@ fn native_support_pcurve_for_range(
 ) -> Result<PcurveNurbs, CodecError> {
     let native = native_pcurve_geometry(pcurve, range)?;
     // The chart of the native support fields `native_embedded_surface` writes:
-    // the neutral frame, forward senses, and `u_scale` equal to the radius.
+    // the neutral frame with a unit plane reference vector, forward senses,
+    // and `u_scale` equal to the radius.
     let chart = match geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-            Some(NativeChart::Plane { reverse_v: false })
-        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => Some(NativeChart::Plane {
+            reverse_v: false,
+            scale: 1.0,
+        }),
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             NativeChart::cone(1.0, cylinder_surface.radius().get() / LEN_TO_MM, false)
         }

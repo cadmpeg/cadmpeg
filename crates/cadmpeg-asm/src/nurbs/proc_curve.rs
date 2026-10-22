@@ -2826,8 +2826,10 @@ pub(crate) fn analytic_support(
     match kind {
         "plane" => {
             let normal = normalized(cur.take_vector3()?)?;
-            let u_axis = normalized(cur.take_vector3()?)?;
-            let chart = SupportChart::plane(cur.take_bool()?);
+            let reference = cur.take_vector3()?;
+            let u_axis = normalized(reference)?;
+            let scale = reference[0].hypot(reference[1]).hypot(reference[2]);
+            let chart = SupportChart::plane(cur.take_bool()?, scale)?;
             let (origin, frame) = admitted_placement(point, normal, u_axis)?;
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(

@@ -20,11 +20,15 @@ use cadmpeg_ir::math::Point2;
 /// torus.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NativeChart {
-    /// Native lengths along `u_dir` and along `normal × u_dir`; `reverse_v`
-    /// negates the second coordinate.
+    /// Native coordinates along `u_dir` and along `normal × u_dir`, each in
+    /// units of the stored reference-vector length; `reverse_v` negates the
+    /// second coordinate.
     Plane {
         /// The surface v-sense slot.
         reverse_v: bool,
+        /// Positive native length of one coordinate unit: the length of the
+        /// stored reference vector.
+        scale: f64,
     },
     /// Generator coordinate first and azimuth about the native axis from the
     /// major axis second.
@@ -58,9 +62,9 @@ impl NativeChart {
     #[must_use]
     pub fn frame_point(self, native: Point2) -> Point2 {
         match self {
-            Self::Plane { reverse_v } => Point2::new(
-                native.u * LEN_TO_MM,
-                native.v * sense_sign(reverse_v) * LEN_TO_MM,
+            Self::Plane { reverse_v, scale } => Point2::new(
+                native.u * scale * LEN_TO_MM,
+                native.v * sense_sign(reverse_v) * scale * LEN_TO_MM,
             ),
             Self::Cone { axial_scale } => Point2::new(native.v, native.u * axial_scale),
             Self::LatitudeFirst { reverse_v } => {
@@ -73,9 +77,9 @@ impl NativeChart {
     #[must_use]
     pub fn native_point(self, frame: Point2) -> Point2 {
         match self {
-            Self::Plane { reverse_v } => Point2::new(
-                frame.u / LEN_TO_MM,
-                frame.v * sense_sign(reverse_v) / LEN_TO_MM,
+            Self::Plane { reverse_v, scale } => Point2::new(
+                frame.u / (scale * LEN_TO_MM),
+                frame.v * sense_sign(reverse_v) / (scale * LEN_TO_MM),
             ),
             Self::Cone { axial_scale } => Point2::new(frame.v / axial_scale, frame.u),
             Self::LatitudeFirst { reverse_v } => {
@@ -146,12 +150,14 @@ pub(crate) enum SupportChart {
 }
 
 impl SupportChart {
-    /// The chart of a plane with v-sense slot `reverse_v`.
-    pub(crate) fn plane(reverse_v: bool) -> Self {
-        Self::Native {
-            chart: NativeChart::Plane { reverse_v },
+    /// The chart of a plane with v-sense slot `reverse_v` and stored
+    /// reference-vector length `scale`. A zero or non-finite length defines no
+    /// chart.
+    pub(crate) fn plane(reverse_v: bool, scale: f64) -> Option<Self> {
+        (scale.is_finite() && scale > 0.0).then_some(Self::Native {
+            chart: NativeChart::Plane { reverse_v, scale },
             map: FrameMap::Frame,
-        }
+        })
     }
 
     /// The chart of a sphere with v-sense slot `reverse_v`.
