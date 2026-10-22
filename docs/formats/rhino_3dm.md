@@ -1886,10 +1886,13 @@ A document with unit system `none` or `unset` uses the model coordinates at
 scale 1.0 for every length-dependent record: object geometry, annotations,
 instance placements, detail views, named and active views, named construction
 planes, lights, linetypes, hatch patterns, dimension styles, and the
-annotation, grid, and render settings. The document then carries one
-`geometry.document-length-unit-undeclared` loss, which states that these
-lengths are not physical millimetres. No record is retained only because the
-document has no physical unit.
+annotation, grid, and render settings. `ON::UnitScale` returns 1.0 for unit
+system `none` and has no value for `unset`. A document with unit system `none`
+carries one `geometry.document-length-unit-undeclared` warning, which states
+that the unitless model lengths are reported as millimetres. A document with
+unit system `unset` carries one `geometry.document-length-unit-unset` error,
+which states that the lengths have no source scale. No record is retained only
+because the document has no physical unit.
 
 Unit values 23, 24, and 25 scale one stored unit to
 `149597870000000`, `9460730472580800000`, and `30856775800000000000`

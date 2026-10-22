@@ -249,9 +249,12 @@ pub(crate) enum RhinoLossCode {
     SubdFaceAttributeOmitted,
     /// `SubD` component group IDs have no neutral carrier.
     SubdComponentGroupOmitted,
-    /// The document declares no physical length unit; model units stand in
-    /// for millimetres.
+    /// The document declares unit system `none`; model units stand in for
+    /// millimetres at the source scale 1.0.
     DocumentLengthUnitUndeclared,
+    /// The document declares unit system `unset`, which has no source scale;
+    /// model units stand in for millimetres.
+    DocumentLengthUnitUnset,
 }
 
 impl RhinoLossCode {
@@ -305,6 +308,7 @@ impl RhinoLossCode {
         Self::SubdFaceAttributeOmitted,
         Self::SubdComponentGroupOmitted,
         Self::DocumentLengthUnitUndeclared,
+        Self::DocumentLengthUnitUnset,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -358,6 +362,7 @@ impl RhinoLossCode {
             Self::SubdFaceAttributeOmitted => "subd.face-attribute-omitted",
             Self::SubdComponentGroupOmitted => "subd.component-group-omitted",
             Self::DocumentLengthUnitUndeclared => "geometry.document-length-unit-undeclared",
+            Self::DocumentLengthUnitUnset => "geometry.document-length-unit-unset",
         }
     }
 
@@ -368,7 +373,7 @@ impl RhinoLossCode {
             Self::ObjectRecordCensus => Severity::Info,
             Self::ObjectFramingUndecodable
             | Self::IntegrityFailure
-            | Self::DocumentLengthUnitUndeclared => Severity::Error,
+            | Self::DocumentLengthUnitUnset => Severity::Error,
             _ => Severity::Warning,
         }
     }
@@ -419,9 +424,10 @@ impl RhinoLossCode {
             Self::SourceWriterStampUnverified | Self::SourceDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
-            Self::WriterSupportGeometryWithheld | Self::DocumentLengthUnitUndeclared => {
+            Self::WriterSupportGeometryWithheld | Self::DocumentLengthUnitUnset => {
                 LossTaxonomy::GeometryNotTransferred
             }
+            Self::DocumentLengthUnitUndeclared => LossTaxonomy::MetadataNotTransferred,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::AnnotationRichTextUnflattened => LossTaxonomy::PmiOmitted,
             Self::HatchPatternUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
@@ -530,6 +536,7 @@ mod tests {
                 "subd.face-attribute-omitted",
                 "subd.component-group-omitted",
                 "geometry.document-length-unit-undeclared",
+                "geometry.document-length-unit-unset",
             ]
         );
     }
@@ -562,6 +569,19 @@ mod tests {
             assert_eq!(note.code.local_code(), code.code());
             assert!(note.provenance.is_none());
         }
+    }
+
+    #[test]
+    fn unit_none_is_a_metadata_warning_and_unit_unset_an_error() {
+        let none = RhinoLossCode::DocumentLengthUnitUndeclared;
+        assert_eq!(none.severity(), cadmpeg_ir::report::Severity::Warning);
+        assert_eq!(none.kind().strict_floor(), None);
+        let unset = RhinoLossCode::DocumentLengthUnitUnset;
+        assert_eq!(unset.severity(), cadmpeg_ir::report::Severity::Error);
+        assert_eq!(
+            unset.kind().strict_floor(),
+            Some(cadmpeg_ir::report::Severity::Warning)
+        );
     }
 
     #[test]

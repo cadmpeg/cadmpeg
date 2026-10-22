@@ -850,9 +850,14 @@ fn legacy_curve(
 ) -> Result<NurbsCurve, CodecError> {
     let offset = range.start;
     let segments = legacy_curve_segments(data, range, scale)?;
-    crate::curves::join_nurbs_segments(ctx, segments, offset)
-        .map(|joined| joined.curve)
-        .map_err(geometry_error)
+    crate::curves::join_nurbs_segments(
+        ctx,
+        segments,
+        crate::curves::SegmentJoins::Coincident(scale),
+        offset,
+    )
+    .map(|joined| joined.curve)
+    .map_err(geometry_error)
 }
 
 fn nested_chunk(
@@ -1572,22 +1577,6 @@ fn curve_domain(curve: &NurbsCurve) -> Result<[f64; 2], CodecError> {
     Ok([curve.knots()[degree], curve.knots()[end]])
 }
 
-/// `ON_ZERO_TOLERANCE`, the absolute coordinate tolerance of `ON_PointsAreCoincident`.
-const ON_ZERO_TOLERANCE: f64 = 2.328_306_436_538_696_3e-10;
-/// `ON_RELATIVE_TOLERANCE`, the relative coordinate tolerance of `ON_PointsAreCoincident`.
-const ON_RELATIVE_TOLERANCE: f64 = 2.273_736_754_432_320_6e-13;
-
-/// `ON_PointsAreCoincident` for two Euclidean points.
-fn points_coincident(left: Point3, right: Point3) -> bool {
-    [(left.x, right.x), (left.y, right.y), (left.z, right.z)]
-        .into_iter()
-        .all(|(a, b)| {
-            let difference = (a - b).abs();
-            difference <= ON_ZERO_TOLERANCE
-                || difference <= (a.abs() + b.abs()) * ON_RELATIVE_TOLERANCE
-        })
-}
-
 /// `ON_NurbsCurve::IsClosed`: at least four poles, coincident ends, and
 /// points at one third and two thirds of the domain distinct from both ends.
 fn legacy_curve_is_closed(
@@ -1595,12 +1584,15 @@ fn legacy_curve_is_closed(
     domain: [f64; 2],
     ends: [Point3; 2],
 ) -> Result<bool, CodecError> {
-    if curve.pole_count() < 4 || !points_coincident(ends[0], ends[1]) {
+    if curve.pole_count() < 4 || !crate::coincidence::points_are_coincident(ends[0], ends[1]) {
         return Ok(false);
     }
     for fraction in [1.0 / 3.0, 2.0 / 3.0] {
         let point = evaluate_nurbs(curve, (1.0 - fraction) * domain[0] + fraction * domain[1])?;
-        if ends.iter().any(|end| points_coincident(*end, point)) {
+        if ends
+            .iter()
+            .any(|end| crate::coincidence::points_are_coincident(*end, point))
+        {
             return Ok(false);
         }
     }

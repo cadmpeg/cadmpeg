@@ -127,6 +127,9 @@ pub(crate) enum DecodedCurve {
         children: Vec<(FiniteReal, DecodedCurve)>,
         /// End parameter of the last child.
         end_parameter: FiniteReal,
+        /// Whether `ON_PolyCurve::HasGapAt` finds no gap at any child join,
+        /// evaluated in source model units.
+        gap_free: bool,
         /// Non-fatal source warnings.
         warnings: Diagnostics,
     },
@@ -781,6 +784,7 @@ pub(crate) fn exact_nurbs(
         DecodedCurve::Compound {
             children,
             end_parameter,
+            gap_free,
             ..
         } => {
             let mut segments = Vec::new();
@@ -798,7 +802,15 @@ pub(crate) fn exact_nurbs(
                     offset,
                 )?);
             }
-            Ok(join_nurbs_segments(ctx, segments, offset)?.curve)
+            Ok(join_nurbs_segments(
+                ctx,
+                segments,
+                SegmentJoins::Source {
+                    gap_free: *gap_free,
+                },
+                offset,
+            )?
+            .curve)
         }
     }
 }
@@ -1217,22 +1229,129 @@ fn elevate_to_degree(
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
-/// `ON_ZERO_TOLERANCE`: the absolute coordinate difference below which
-/// openNURBS treats two points as one.
-const ON_ZERO_TOLERANCE: f64 = 2.328_306_436_538_696_3e-10;
-/// `ON_RELATIVE_TOLERANCE`: the coordinate difference, relative to the
-/// coordinate magnitudes, below which openNURBS treats two points as one.
-const ON_RELATIVE_TOLERANCE: f64 = 2.273_736_754_432_320_6e-13;
+/// `ON_PolyCurve::HasGapAt` multiplies an arc's radius and angle by this
+/// factor to form its endpoint allowance.
+const ARC_GAP_ALLOWANCE_FACTOR: f64 = 1.0e-10;
 
-/// `ON_PointsAreCoincident` for two Euclidean points.
-fn points_coincide(left: Point3, right: Point3) -> bool {
-    [(left.x, right.x), (left.y, right.y), (left.z, right.z)]
-        .into_iter()
-        .all(|(a, b)| {
-            let difference = (a - b).abs();
-            difference <= ON_ZERO_TOLERANCE
-                || difference <= (a.abs() + b.abs()) * ON_RELATIVE_TOLERANCE
-        })
+/// How a join decides that adjacent segment endpoints meet.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SegmentJoins {
+    /// The source polycurve decides: `gap_free` holds when
+    /// `ON_PolyCurve::HasGapAt` finds no gap at any join.
+    Source {
+        /// Whether every source join is gap free.
+        gap_free: bool,
+    },
+    /// Adjacent endpoints must satisfy `ON_PointsAreCoincident` in model
+    /// units; the segments were scaled by this factor.
+    Coincident(MillimeterScale),
+}
+
+/// The `ON_ArcCurve` endpoint allowance of `ON_PolyCurve::HasGapAt`, in
+/// decoded lengths, for an arc payload decoded at `scale`.
+fn arc_gap_allowance(
+    data: &[u8],
+    range: Range<usize>,
+    scale: MillimeterScale,
+) -> Result<f64, GeometryError> {
+    let mut reader = BoundedReader::new(data, range.start, range.end)?;
+    reader.u8()?;
+    let circle = read_circle(&mut reader, scale)?;
+    let angle = interval(&mut reader)?.0.get();
+    Ok(circle.radius.get() * (angle[1] - angle[0]) * ARC_GAP_ALLOWANCE_FACTOR)
+}
+
+/// The start and end points of a decoded curve tree, absent when a point
+/// has no finite value.
+fn decoded_curve_ends(curve: &DecodedCurve) -> Result<Option<[Point3; 2]>, GeometryError> {
+    match curve {
+        DecodedCurve::Compound { children, .. } => {
+            let (Some(first), Some(last)) = (children.first(), children.last()) else {
+                return Ok(None);
+            };
+            let (Some(first), Some(last)) =
+                (decoded_curve_ends(&first.1)?, decoded_curve_ends(&last.1)?)
+            else {
+                return Ok(None);
+            };
+            Ok(Some([first[0], last[1]]))
+        }
+        DecodedCurve::Leaf { geometry, .. } => match geometry.solved() {
+            Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                let Some(domain) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs) else {
+                    return Ok(None);
+                };
+                let geometry = SolvedCurveGeometry::Nurbs(nurbs.clone());
+                let mut ends = [Point3::new(0.0, 0.0, 0.0); 2];
+                for (end, parameter) in ends.iter_mut().zip(domain.endpoints()) {
+                    let evaluation = cadmpeg_ir::eval::decode::curve_point_solved(
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                        &geometry,
+                        parameter,
+                    );
+                    let Some(point) = cadmpeg_ir::eval::finite_or_refusal(evaluation)
+                        .map_err(|limit| GeometryError::Codec(CodecError::ResourceLimit(limit)))?
+                    else {
+                        return Ok(None);
+                    };
+                    *end = point.get();
+                }
+                Ok(Some(ends))
+            }
+            Some(SolvedCurveGeometry::Circle(circle)) => {
+                let center = circle.center().get();
+                let reference = circle.frame().reference().as_raw();
+                let radius = circle.radius().get();
+                let point = Point3::new(
+                    center.x + reference.x * radius,
+                    center.y + reference.y * radius,
+                    center.z + reference.z * radius,
+                );
+                Ok(Some([point, point]))
+            }
+            _ => Ok(None),
+        },
+    }
+}
+
+/// `ON_PolyCurve::HasGapAt` over every child join. Each child carries its
+/// arc allowance when it is an `ON_ArcCurve`.
+fn polycurve_gap_free(
+    children: &[(FiniteReal, DecodedCurve)],
+    arc_allowances: &[Option<f64>],
+    scale: MillimeterScale,
+) -> Result<bool, GeometryError> {
+    for (pair, allowances) in children.windows(2).zip(arc_allowances.windows(2)) {
+        let (Some(first), Some(second)) = (
+            decoded_curve_ends(&pair[0].1)?,
+            decoded_curve_ends(&pair[1].1)?,
+        ) else {
+            return Ok(false);
+        };
+        if !joint_is_gap_free(first[1], second[0], [allowances[0], allowances[1]], scale) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn joint_is_gap_free(
+    end: Point3,
+    start: Point3,
+    arc_allowances: [Option<f64>; 2],
+    scale: MillimeterScale,
+) -> bool {
+    if crate::coincidence::points_are_coincident_at_scale(end, start, scale) {
+        return true;
+    }
+    if arc_allowances.iter().all(Option::is_none) {
+        return false;
+    }
+    let tolerance = arc_allowances.into_iter().flatten().fold(
+        crate::coincidence::ON_ZERO_TOLERANCE * scale.value(),
+        f64::max,
+    );
+    end.distance(start) <= tolerance
 }
 
 /// Joins endpoint-clamped segments into one NURBS curve. Adjacent endpoints
@@ -1240,6 +1359,7 @@ fn points_coincide(left: Point3, right: Point3) -> bool {
 pub(crate) fn join_nurbs_segments(
     ctx: &DecodeContext<'_>,
     mut segments: Vec<NurbsCurve>,
+    joins: SegmentJoins,
     offset: usize,
 ) -> Result<NurbsJoin, GeometryError> {
     let Some(_) = segments.first() else {
@@ -1322,7 +1442,13 @@ pub(crate) fn join_nurbs_segments(
                 .point_at(0)
                 .ok_or_else(|| error(offset, "polycurve segment has no control point"))?
                 .get();
-            if !points_coincide(previous, next) {
+            let meets = match joins {
+                SegmentJoins::Source { gap_free } => gap_free,
+                SegmentJoins::Coincident(scale) => {
+                    crate::coincidence::points_are_coincident_at_scale(previous, next, scale)
+                }
+            };
+            if !meets {
                 return Err(error(
                     offset,
                     format!(
@@ -1489,6 +1615,7 @@ fn read_polycurve_2d(
     let (parameters, end_parameter) =
         read_polycurve_parameters(reader, segment_count, "C2 polycurve")?;
     let mut children = Vec::new();
+    let mut arc_allowances = Vec::new();
     for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
@@ -1500,6 +1627,15 @@ fn read_polycurve_2d(
             &mut wrapper_warnings,
         )?;
         reader.skip(wrapper.next_offset() - start)?;
+        arc_allowances.push(if class.class_uuid == ARC {
+            Some(arc_gap_allowance(
+                data,
+                class.class_data_range.clone(),
+                MillimeterScale::IDENTITY,
+            )?)
+        } else {
+            None
+        });
         let child = decode_inner_2d(
             ctx,
             data,
@@ -1517,9 +1653,11 @@ fn read_polycurve_2d(
         curve.warnings_mut().prepend(wrapper_warnings);
         children.push((parameter, curve));
     }
+    let gap_free = polycurve_gap_free(&children, &arc_allowances, MillimeterScale::IDENTITY)?;
     Ok(DecodedCurve::Compound {
         children,
         end_parameter,
+        gap_free,
         warnings: Diagnostics::new(),
     })
 }
@@ -1876,6 +2014,7 @@ fn read_polycurve(
     let (parameters, end_parameter) =
         read_polycurve_parameters(reader, segment_count, "polycurve")?;
     let mut children = Vec::new();
+    let mut arc_allowances = Vec::new();
     for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
@@ -1893,6 +2032,15 @@ fn read_polycurve(
                 "polycurve child is not a curve",
             ));
         }
+        arc_allowances.push(if class.class_uuid == ARC {
+            Some(arc_gap_allowance(
+                data,
+                class.class_data_range.clone(),
+                scale,
+            )?)
+        } else {
+            None
+        });
         let child = decode_inner(
             ctx,
             data,
@@ -1911,9 +2059,11 @@ fn read_polycurve(
         curve.warnings_mut().prepend(wrapper_warnings);
         children.push((parameter, curve));
     }
+    let gap_free = polycurve_gap_free(&children, &arc_allowances, scale)?;
     Ok(DecodedCurve::Compound {
         children,
         end_parameter,
+        gap_free,
         warnings: Diagnostics::new(),
     })
 }
@@ -2213,9 +2363,15 @@ mod tests {
             false,
         )
         .unwrap();
-        let joined =
-            with_test_context(|ctx| super::join_nurbs_segments(ctx, vec![first, second], 0))
-                .unwrap();
+        let joined = with_test_context(|ctx| {
+            super::join_nurbs_segments(
+                ctx,
+                vec![first, second],
+                crate::curves::SegmentJoins::Coincident(crate::settings::MillimeterScale::IDENTITY),
+                0,
+            )
+        })
+        .unwrap();
         let actual = cadmpeg_ir::eval::decode::curve_point_solved(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &SolvedCurveGeometry::Nurbs(joined.curve),
@@ -2243,7 +2399,12 @@ mod tests {
         .unwrap();
         assert_eq!(remapped.knots().as_slice(), &[0.0, 0.0, 1.0e200, 1.0e200]);
         let joined = with_test_context(|ctx| {
-            super::join_nurbs_segments(ctx, vec![remapped.clone(), remapped], 0)
+            super::join_nurbs_segments(
+                ctx,
+                vec![remapped.clone(), remapped],
+                crate::curves::SegmentJoins::Coincident(crate::settings::MillimeterScale::IDENTITY),
+                0,
+            )
         })
         .unwrap();
         assert!(joined
@@ -2478,9 +2639,16 @@ mod tests {
             })
             .collect();
         let curve = NurbsCurve::from_lanes(3, knots, points, None, false).expect("cubic segment");
-        let joined = with_test_context(|ctx| join_nurbs_segments(ctx, vec![curve.clone()], 0))
-            .expect("join one long segment")
-            .curve;
+        let joined = with_test_context(|ctx| {
+            join_nurbs_segments(
+                ctx,
+                vec![curve.clone()],
+                crate::curves::SegmentJoins::Coincident(crate::settings::MillimeterScale::IDENTITY),
+                0,
+            )
+        })
+        .expect("join one long segment")
+        .curve;
         assert_eq!(joined.control_points().len(), 3 * spans + 1);
         assert_eq!(joined.control_points()[0], curve.control_points()[0]);
         assert_eq!(
@@ -2508,9 +2676,14 @@ mod tests {
             false,
         )
         .expect("high-degree segment");
-        let Err(GeometryError::Malformed(error)) =
-            with_test_context(|ctx| join_nurbs_segments(ctx, vec![curve], 0))
-        else {
+        let Err(GeometryError::Malformed(error)) = with_test_context(|ctx| {
+            join_nurbs_segments(
+                ctx,
+                vec![curve],
+                crate::curves::SegmentJoins::Coincident(crate::settings::MillimeterScale::IDENTITY),
+                0,
+            )
+        }) else {
             panic!("a degree above the cap fails the join");
         };
         assert!(error.to_string().contains("MAX_JOIN_DEGREE"), "{error}");
@@ -2544,9 +2717,14 @@ mod tests {
             false,
         )
         .expect("many-span segment");
-        let Err(GeometryError::Malformed(error)) =
-            with_test_context(|ctx| join_nurbs_segments(ctx, vec![high, polyline], 0))
-        else {
+        let Err(GeometryError::Malformed(error)) = with_test_context(|ctx| {
+            join_nurbs_segments(
+                ctx,
+                vec![high, polyline],
+                crate::curves::SegmentJoins::Coincident(crate::settings::MillimeterScale::IDENTITY),
+                0,
+            )
+        }) else {
             panic!("elevated poles above the cap fail the join");
         };
         assert!(
@@ -2938,6 +3116,7 @@ mod tests {
         let mut decoded = DecodedCurve::Compound {
             children: vec![(FiniteReal::ZERO, leaf())],
             end_parameter: FiniteReal::ONE,
+            gap_free: true,
             warnings: Diagnostics::new(),
         };
         let Err(GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) =
@@ -3171,12 +3350,48 @@ mod tests {
         let nested = DecodedCurve::Compound {
             children: vec![(finite(2.0), line(0.0, 1.0)), (finite(3.0), line(1.0, 2.0))],
             end_parameter: finite(5.0),
+            gap_free: true,
             warnings: Diagnostics::new(),
         };
         let converted =
             with_test_context(|ctx| exact_nurbs(ctx, &nested, 0)).expect("required invariant");
         assert_eq!(converted.knots().as_slice(), vec![2.0, 2.0, 3.0, 5.0, 5.0]);
         assert_eq!(converted.control_points().len(), 3);
+    }
+
+    #[test]
+    fn polycurve_joints_follow_has_gap_at_in_model_units() {
+        use crate::settings::{MillimeterScale, StandardUnit};
+        let end = Point3::new(0.0, 0.0, 0.0);
+        let start = Point3::new(5.0e-10, 0.0, 0.0);
+        assert!(!super::joint_is_gap_free(
+            end,
+            start,
+            [None, None],
+            MillimeterScale::IDENTITY
+        ));
+        let arc = Some(10.0 * PI * super::ARC_GAP_ALLOWANCE_FACTOR);
+        assert!(super::joint_is_gap_free(
+            end,
+            start,
+            [arc, None],
+            MillimeterScale::IDENTITY
+        ));
+        assert!(super::joint_is_gap_free(
+            end,
+            start,
+            [None, arc],
+            MillimeterScale::IDENTITY
+        ));
+        let inches = MillimeterScale::from(StandardUnit::Inches);
+        let scaled = Point3::new(2.0e-10 * 25.4, 0.0, 0.0);
+        assert!(super::joint_is_gap_free(end, scaled, [None, None], inches));
+        assert!(!super::joint_is_gap_free(
+            end,
+            scaled,
+            [None, None],
+            MillimeterScale::IDENTITY
+        ));
     }
 
     #[test]
@@ -3202,7 +3417,12 @@ mod tests {
         )
         .expect("valid test quadratic");
         let Err(error) = with_test_context(|ctx| {
-            join_nurbs_segments(ctx, vec![line.clone(), quadratic.clone()], 0)
+            join_nurbs_segments(
+                ctx,
+                vec![line.clone(), quadratic.clone()],
+                crate::curves::SegmentJoins::Coincident(crate::settings::MillimeterScale::IDENTITY),
+                0,
+            )
         }) else {
             panic!("a gap has no continuous carrier");
         };
@@ -3219,8 +3439,15 @@ mod tests {
             false,
         )
         .expect("valid test quadratic");
-        let joined = with_test_context(|ctx| join_nurbs_segments(ctx, vec![line, touching], 0))
-            .expect("coincident endpoints join");
+        let joined = with_test_context(|ctx| {
+            join_nurbs_segments(
+                ctx,
+                vec![line, touching],
+                crate::curves::SegmentJoins::Coincident(crate::settings::MillimeterScale::IDENTITY),
+                0,
+            )
+        })
+        .expect("coincident endpoints join");
         assert_eq!(joined.curve.degree(), 2);
         assert_eq!(
             joined.curve.knots().as_slice(),

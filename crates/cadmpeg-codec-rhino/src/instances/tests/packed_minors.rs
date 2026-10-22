@@ -95,3 +95,22 @@ fn packed_custom_units_take_the_minor_3_scale_when_positive() {
         assert_eq!(units.meters_per_unit_bits(), bits);
     }
 }
+
+#[test]
+fn packed_standard_units_record_the_unit_system_meter_scale() {
+    for (unit, bits) in [
+        (0_u32, 1.0_f64.to_bits()),
+        (2, 1.0e-3_f64.to_bits()),
+        (8, 2.54e-2_f64.to_bits()),
+        (9, (2.54e-2_f64 * 12.0).to_bits()),
+        (10, 1609.344_f64.to_bits()),
+        (255, 0x7ff8_0000_0000_0000),
+    ] {
+        let record = packed_record(ArchiveVersion::V4, 3, unit, 0.5);
+        let document = bytes::document_with_definitions("4", ArchiveVersion::V4, &[record], &[]);
+        let scan = crate::container::scan_owned(document).expect("packed definition document");
+        let units = &scan.definitions.definitions()[0].units;
+        assert_eq!(units.unit, unit);
+        assert_eq!(units.meters_per_unit_bits(), bits, "unit={unit}");
+    }
+}

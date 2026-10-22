@@ -35,8 +35,6 @@ const ON_V5_EXTRUSION_DISPLAY_MESH_CACHE: Uuid = Uuid::from_canonical([
 ]);
 const UNIT_TOLERANCE: f64 = EPS_EXTRUSION_DEGENERATE;
 const MITER_Z_MINIMUM: f64 = 1.0 / 64.0;
-const CLOSURE_ABSOLUTE_TOLERANCE: f64 = 2.328_306_436_538_696_3e-10;
-const CLOSURE_RELATIVE_TOLERANCE: f64 = 2.273_736_754_432_320_6e-13;
 
 /// One exact profile boundary at both effective path ends.
 #[derive(Debug, Clone)]
@@ -434,7 +432,7 @@ fn exact_orientation(
         }
     };
     if !source_periodic(&curve) {
-        if !points_coincident(start, end) {
+        if !crate::coincidence::points_are_coincident(start, end) {
             return Ok(0);
         }
         let span = domain[1] - domain[0];
@@ -457,10 +455,10 @@ fn exact_orientation(
             offset,
             &mut basis,
         )?;
-        if points_coincident(start, one_third)
-            || points_coincident(start, two_thirds)
-            || points_coincident(end, one_third)
-            || points_coincident(end, two_thirds)
+        if crate::coincidence::points_are_coincident(start, one_third)
+            || crate::coincidence::points_are_coincident(start, two_thirds)
+            || crate::coincidence::points_are_coincident(end, one_third)
+            || crate::coincidence::points_are_coincident(end, two_thirds)
         {
             return Ok(0);
         }
@@ -543,7 +541,7 @@ fn source_periodic(curve: &NurbsCurve) -> bool {
     let control_points = curve.pole_rows().raw_points();
     control_points.len() >= degree
         && (0..degree).all(|offset| {
-            points_coincident(
+            crate::coincidence::points_are_coincident(
                 control_points[degree - 1 - offset],
                 control_points[control_points.len() - 1 - offset],
             )
@@ -569,20 +567,6 @@ fn evaluate_profile_point(
                 error(offset, "extrusion profile cannot be evaluated")
             }
         })
-}
-
-fn points_coincident(first: Point3, second: Point3) -> bool {
-    [
-        (first.x, second.x),
-        (first.y, second.y),
-        (first.z, second.z),
-    ]
-    .into_iter()
-    .all(|(a, b)| {
-        let difference = (a - b).abs();
-        difference <= CLOSURE_ABSOLUTE_TOLERANCE
-            || difference <= (a.abs() + b.abs()) * CLOSURE_RELATIVE_TOLERANCE
-    })
 }
 
 fn require_profile_plane(curve: &NurbsCurve, offset: usize) -> Result<(), GeometryError> {
@@ -1041,10 +1025,11 @@ pub(crate) mod tests {
 
     use super::{
         active_miter, cap_frame, exact_orientation, mitered_local, read_mesh_cache,
-        read_v5_mesh_cache, split_profiles, ExtrusionFormat, ANONYMOUS, CLOSURE_ABSOLUTE_TOLERANCE,
+        read_v5_mesh_cache, split_profiles, ExtrusionFormat, ANONYMOUS,
         ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
     };
     use crate::chunks::ArchiveVersion;
+    use crate::coincidence::ON_ZERO_TOLERANCE;
     use crate::curves::DecodedCurve;
     use crate::curves::GeometryError;
     use crate::layout::anonymous_version_prefix as anon_ver;
@@ -1375,7 +1360,7 @@ pub(crate) mod tests {
             Point3::new(-radius, -radius, 0.0),
             Point3::new(0.0, -radius, 0.0),
             Point3::new(radius, -radius, 0.0),
-            Point3::new(radius, CLOSURE_ABSOLUTE_TOLERANCE / 2.0, 0.0),
+            Point3::new(radius, ON_ZERO_TOLERANCE / 2.0, 0.0),
         ];
         let mut weights = vec![
             1.0,
@@ -1601,6 +1586,7 @@ pub(crate) mod tests {
         let profile = DecodedCurve::Compound {
             children: vec![(finite(0.0), outer), (finite(1.0), inner)],
             end_parameter: finite(2.0),
+            gap_free: true,
             warnings: Diagnostics::new(),
         };
         {

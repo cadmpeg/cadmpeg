@@ -23,6 +23,7 @@ mod annotations;
 mod brep;
 mod cage;
 mod chunks;
+mod coincidence;
 mod container;
 mod coverage;
 mod curve_on_surface;

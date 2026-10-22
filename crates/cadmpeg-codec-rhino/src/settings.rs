@@ -355,6 +355,41 @@ impl StandardUnit {
         }
     }
 
+    /// `ON::UnitScale(unit, Meters)`, evaluated in the openNURBS operation
+    /// order so that the result has the same bits.
+    pub(crate) fn meters_per_unit(self) -> f64 {
+        const INCH_METERS: f64 = 2.54e-2;
+        const ANGSTROM_METERS: f64 = 1.0e-10;
+        const NANOMETER_METERS: f64 = 1.0e-9;
+        const MICRO: f64 = 1.0e-6;
+        match self {
+            Self::Angstroms => ANGSTROM_METERS,
+            Self::Nanometers => NANOMETER_METERS,
+            Self::Microns => MICRO,
+            Self::Millimeters => 1.0e-3,
+            Self::Centimeters => 1.0e-2,
+            Self::Decimeters => 1.0e-1,
+            Self::Meters => 1.0,
+            Self::Dekameters => 10.0,
+            Self::Hectometers => 100.0,
+            Self::Kilometers => 1000.0,
+            Self::Megameters => 1.0e6,
+            Self::Gigameters => 1.0e9,
+            Self::Microinches => INCH_METERS * MICRO,
+            Self::Mils => INCH_METERS * 1.0e-3,
+            Self::Inches => INCH_METERS,
+            Self::Feet => INCH_METERS * 12.0,
+            Self::Yards => INCH_METERS * 36.0,
+            Self::Miles => 1609.344,
+            Self::PrinterPoints => INCH_METERS / 72.0,
+            Self::PrinterPicas => INCH_METERS / 6.0,
+            Self::NauticalMiles => 1852.0,
+            Self::AstronomicalUnits => 1.495_978_7e11,
+            Self::LightYears => 9.460_730_472_580_8e15,
+            Self::Parsecs => 3.085_677_58e16,
+        }
+    }
+
     const fn millimeters_per_unit(self) -> f64 {
         match self {
             Self::Microns => 0.001,
@@ -574,16 +609,19 @@ impl UnitBinding {
     /// Returns the loss that states model units stand in for millimetres,
     /// or `None` when the source declares a physical unit.
     pub(crate) fn undeclared_unit_loss(self) -> Option<cadmpeg_ir::report::loss::LossNote> {
-        let reason = match self {
-            Self::Millimeters(_) => return None,
-            Self::Native => "declares no unit system",
-            Self::Unavailable => "has no usable unit system",
-        };
-        Some(
-            crate::loss::RhinoLossCode::DocumentLengthUnitUndeclared.note(format_args!(
-                "the document {reason}; model coordinates and lengths are unscaled and reported as millimetres"
+        match self {
+            Self::Millimeters(_) => None,
+            Self::Native => Some(
+                crate::loss::RhinoLossCode::DocumentLengthUnitUndeclared.note(
+                    "the document declares no unit system; model coordinates and lengths keep \
+                     scale 1.0 and are reported as millimetres",
+                ),
+            ),
+            Self::Unavailable => Some(crate::loss::RhinoLossCode::DocumentLengthUnitUnset.note(
+                "the document unit system is unset and has no scale; model coordinates and \
+                 lengths are unscaled and reported as millimetres",
             )),
-        )
+        }
     }
 }
 

@@ -30,11 +30,12 @@ fn unit_binding_document(unit: Option<i32>) -> (Vec<u8>, Vec<u8>) {
 
 #[test]
 fn full_document_unit_binding_transfers_model_units_and_reports_an_undeclared_unit() {
-    for (unit, label, undeclared) in [
-        (Some(2), "millimeters", false),
-        (Some(0), "native", true),
-        (Some(255), "unavailable", true),
-        (None, "millimeters", false),
+    use crate::loss::RhinoLossCode::{DocumentLengthUnitUndeclared, DocumentLengthUnitUnset};
+    for (unit, label, expected) in [
+        (Some(2), "millimeters", None),
+        (Some(0), "native", Some(DocumentLengthUnitUndeclared)),
+        (Some(255), "unavailable", Some(DocumentLengthUnitUnset)),
+        (None, "millimeters", None),
     ] {
         let (bytes, object) = unit_binding_document(unit);
         let result = decode(bytes);
@@ -50,15 +51,25 @@ fn full_document_unit_binding_transfers_model_units_and_reports_an_undeclared_un
             .retained_record("rhino:object:record#000000")
             .unwrap_or_else(|| panic!("{label} object source was not retained"));
         assert_eq!(retained.data(), Some(object.as_slice()), "{label}");
-        let undeclared_losses = result
+        let unit_losses = result
             .report()
             .losses
             .iter()
             .filter(|loss| {
-                loss.code == crate::loss::RhinoLossCode::DocumentLengthUnitUndeclared.kind()
+                [DocumentLengthUnitUndeclared, DocumentLengthUnitUnset]
+                    .iter()
+                    .any(|code| loss.code == code.kind())
             })
-            .count();
-        assert_eq!(undeclared_losses, usize::from(undeclared), "{label}");
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            unit_losses,
+            expected
+                .map(|code| code.kind())
+                .into_iter()
+                .collect::<Vec<_>>(),
+            "{label}"
+        );
         assert!(!result
             .report()
             .losses

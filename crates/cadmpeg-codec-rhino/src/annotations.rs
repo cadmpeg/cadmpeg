@@ -1576,12 +1576,12 @@ mod tests {
         ];
         let archive = ArchiveVersion::V8;
         for (class, payload, arena, position_field) in fixtures {
-            for (unit, expected_scale, undeclared) in [
-                (Some(2), 1.0, false),
-                (Some(3), 10.0, false),
-                (Some(0), 1.0, true),
-                (Some(255), 1.0, true),
-                (None, 1.0, false),
+            for (unit, expected_scale, undeclared, unset) in [
+                (Some(2), 1.0, false, false),
+                (Some(3), 10.0, false, false),
+                (Some(0), 1.0, true, false),
+                (Some(255), 1.0, false, true),
+                (None, 1.0, false, false),
             ] {
                 let object = object_record_with_payload(archive, 0x20, class.to_wire(), &payload);
                 let point = object_record_with_payload(
@@ -1640,6 +1640,11 @@ mod tests {
                 assert_eq!(
                     count(super::RhinoLossCode::DocumentLengthUnitUndeclared),
                     usize::from(undeclared),
+                    "class={class} unit={unit:?}"
+                );
+                assert_eq!(
+                    count(super::RhinoLossCode::DocumentLengthUnitUnset),
+                    usize::from(unset),
                     "class={class} unit={unit:?}"
                 );
                 assert_eq!(

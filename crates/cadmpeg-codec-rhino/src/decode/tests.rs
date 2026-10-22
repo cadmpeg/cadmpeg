@@ -868,6 +868,7 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
             ),
         ],
         end_parameter: finite_parameter(40.0),
+        gap_free: true,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| {
@@ -898,11 +899,13 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
             ),
         ],
         end_parameter: finite_parameter(2.0),
+        gap_free: true,
         warnings: Diagnostics::new(),
     };
     let outer = crate::curves::DecodedCurve::Compound {
         children: vec![(finite_parameter(5.0), nested)],
         end_parameter: finite_parameter(9.0),
+        gap_free: true,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| c2_curve_to_nurbs_join(expand.ctx(), outer, 0))
@@ -934,6 +937,7 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
             (finite_parameter(1.0), decoded_nurbs(quadratic)),
         ],
         end_parameter: finite_parameter(2.0),
+        gap_free: true,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| {

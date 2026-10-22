@@ -5973,6 +5973,7 @@ fn c2_curve_to_nurbs_join(
         crate::curves::DecodedCurve::Compound {
             children,
             end_parameter,
+            gap_free,
             ..
         } => {
             let mut segments = Vec::new();
@@ -5995,7 +5996,12 @@ fn c2_curve_to_nurbs_join(
                     offset,
                 )?);
             }
-            let mut joined = crate::curves::join_nurbs_segments(ctx, segments, offset)?;
+            let mut joined = crate::curves::join_nurbs_segments(
+                ctx,
+                segments,
+                crate::curves::SegmentJoins::Source { gap_free },
+                offset,
+            )?;
             warnings.append(&mut joined.warnings);
             joined.warnings = warnings;
             Ok(joined)
