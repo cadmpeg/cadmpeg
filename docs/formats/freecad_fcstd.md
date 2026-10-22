@@ -615,8 +615,11 @@ collapsed array, element `i` uses `PlacementList[i]` and `ScaleList[i]` when eac
 placement is the identity relative to the scalar link placement; an absent scale is `(1, 1, 1)`.
 Entries beyond the active count do not create occurrences. Inactive carriers remain document data.
 Visibility bits do not determine array cardinality. A missing visibility bit means visible; a scalar
-link does not apply the per-element visibility list. Element objects belong to their containing
-link and do not create independent root occurrences. For an active array, the transform order is
+link does not apply the per-element visibility list. A member with runtime `App::LinkElement` and
+an absent or zero `_LinkOwner` acquires the containing link's persistent object ID at restoration.
+A nonzero `_LinkOwner` retains that owner; another containing list does not replace it. Owned link
+elements do not create independent root occurrences. A member of another runtime remains an
+independent object; membership alone does not make an ordinary `App::Link` an owned element. For an active array, the transform order is
 scalar placement, scalar scale, element placement, element scale, and the linked prototype placement
 when `LinkTransform` enables it. A scalar link applies scalar placement and scalar scale before the
 linked prototype placement. Nonuniform scale does not commute with rotation or translation.

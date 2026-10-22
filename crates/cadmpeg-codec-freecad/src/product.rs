@@ -82,10 +82,11 @@ pub(crate) fn transfer(
         let placement = selected_placement(&owned)?;
         let local_transform = placement.map(placement_matrix).transpose()?.flatten();
         let link_transform = bool_property(&owned, "LinkTransform")?;
-        let element_count = integer_property(&owned, "ElementCount")?
-            .map(u64::try_from)
-            .transpose()
-            .map_err(|_| malformed("negative ElementCount"))?;
+        let element_count =
+            integer_property(&owned, "ElementCount", "App::PropertyIntegerConstraint")?
+                .map(u64::try_from)
+                .transpose()
+                .map_err(|_| malformed("negative ElementCount"))?;
         let claim_child = bool_property(&owned, "LinkClaimChild")?;
         let copy_on_change = copy_on_change_property(&owned)?;
         let copy_on_change_source = linked_target(
@@ -334,7 +335,7 @@ pub(crate) fn transfer_neutral(
         }
     }
 
-    let element_objects = link_element_objects(records);
+    let element_objects = link_element_objects(records, objects, &properties_by_owner)?;
     let mut occurrences = Vec::new();
     for record in records.iter().filter(|record| {
         matches!(record.node, ProductNode::Occurrence(_))
@@ -635,12 +636,38 @@ fn link_scale_transform([x, y, z]: [f64; 3]) -> Result<Transform, CodecError> {
         .ok_or_else(|| malformed("link scale must be finite"))
 }
 
-fn link_element_objects(records: &[ProductNodeRecord]) -> HashSet<&str> {
-    records
+fn link_element_objects<'a>(
+    records: &'a [ProductNodeRecord],
+    objects: &[ObjectRecord],
+    properties: &HashMap<&str, Vec<&PropertyRecord>>,
+) -> Result<HashSet<&'a str>, CodecError> {
+    let objects_by_id = objects
+        .iter()
+        .map(|object| (object.id().as_str(), object))
+        .collect::<HashMap<_, _>>();
+    let mut owned_elements = HashSet::new();
+    for record in records
         .iter()
         .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
-        .flat_map(|record| record.element_objects().iter().map(String::as_str))
-        .collect()
+    {
+        let parent_id = objects_by_id
+            .get(record.object.as_str())
+            .and_then(|object| object.persistent_id);
+        for name in record.element_objects() {
+            let Some(object) = objects_by_id.get(name.as_str()) else {
+                continue;
+            };
+            if object.type_name != "App::LinkElement" {
+                continue;
+            }
+            let owned = properties.get(name.as_str()).map_or(&[][..], Vec::as_slice);
+            let owner = integer_property(owned, "_LinkOwner", "App::PropertyInteger")?;
+            if owner.is_none_or(|owner| owner == 0 || Some(owner) == parent_id) {
+                owned_elements.insert(name.as_str());
+            }
+        }
+    }
+    Ok(owned_elements)
 }
 
 fn restored_cardinality(
@@ -687,6 +714,7 @@ fn occurrence_count(
 /// any occurrence.
 pub(crate) fn link_occurrence_count(
     records: &[ProductNodeRecord],
+    objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<u64, CodecError> {
     let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
@@ -696,7 +724,7 @@ pub(crate) fn link_occurrence_count(
             .or_default()
             .push(property);
     }
-    let element_objects = link_element_objects(records);
+    let element_objects = link_element_objects(records, objects, &properties_by_owner)?;
     let mut total = 0_u64;
     for record in records.iter().filter(|record| {
         matches!(record.node, ProductNode::Occurrence(_))
@@ -1082,11 +1110,15 @@ fn bool_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<bo
     Ok(Some(value))
 }
 
-fn integer_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<i64>, CodecError> {
+fn integer_property(
+    properties: &[&PropertyRecord],
+    name: &str,
+    type_name: &str,
+) -> Result<Option<i64>, CodecError> {
     let Some(property) = sole_named_property("product", properties, name)? else {
         return Ok(None);
     };
-    let value = single_value(property, "App::PropertyIntegerConstraint", name, "Integer")?;
+    let value = single_value(property, type_name, name, "Integer")?;
     let Some(value) = value.attributes.get("value") else {
         return Err(CodecError::malformed(format_args!(
             "product property {} has no Integer value",

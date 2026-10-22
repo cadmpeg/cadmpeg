@@ -296,3 +296,65 @@ fn link_scales_precede_the_linked_prototype_placement() {
         assert_valid_document(decoded.ir());
     }
 }
+
+#[test]
+fn element_list_suppresses_only_owned_link_element_runtimes() {
+    for runtime in ["App::Link", "App::LinkElement"] {
+        for owner in [None, Some(0), Some(17), Some(99)] {
+            for expanded in [true, false] {
+                let owner_property = owner.map_or(String::new(), |owner| format!(r#"<Property name="_LinkOwner" type="App::PropertyInteger"><Integer value="{owner}"/></Property>"#));
+                let count = 1 + usize::from(owner.is_some());
+                let document = format!(
+                    r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Part::Feature" name="Prototype" id="1"/><Object type="{runtime}" name="Member" id="2"/><Object type="App::Link" name="Array" id="17"/></Objects>
+<ObjectData Count="3"><Object name="Prototype"><Properties Count="0"/></Object>
+<Object name="Member"><Properties Count="{count}"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>{owner_property}</Properties></Object>
+<Object name="Array"><Properties Count="4">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
+<Property name="ShowElement" type="App::PropertyBool"><Bool value="{expanded}"/></Property>
+<Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property>
+</Properties></Object></ObjectData></Document>"#
+                );
+                let decoded = FcstdCodec
+                    .decode(
+                        &mut Cursor::new(archive(&document)),
+                        &DecodeOptions::default(),
+                    )
+                    .unwrap();
+                let owned = runtime == "App::LinkElement" && owner != Some(99);
+                let expected_count = if owned { 1 } else { 2 };
+                assert_eq!(
+                    decoded.ir().model.occurrences.len(),
+                    expected_count,
+                    "{runtime}: owner={owner:?}, expanded={expanded}"
+                );
+                assert_eq!(
+                    decoded
+                        .ir()
+                        .model
+                        .occurrences
+                        .iter()
+                        .any(|occurrence| occurrence.native_ref.as_deref()
+                            == Some("fcstd:native:object#Member")),
+                    !owned
+                );
+                let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+                let records = namespace
+                    .arena_as::<native::ProductNodeRecord>("product_nodes")
+                    .unwrap();
+                let objects = namespace
+                    .arena_as::<native::ObjectRecord>("objects")
+                    .unwrap();
+                let properties = namespace
+                    .arena_as::<native::PropertyRecord>("properties")
+                    .unwrap();
+                assert_eq!(
+                    crate::product::link_occurrence_count(&records, &objects, &properties).unwrap(),
+                    u64::try_from(expected_count).unwrap()
+                );
+                assert_valid_document(decoded.ir());
+            }
+        }
+    }
+}
