@@ -25,7 +25,10 @@ impl Retention {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         fidelity: &mut SourceFidelity,
     ) -> Result<(), CodecError> {
-        crate::pmi::layout::install(ctx, std::mem::take(&mut self.pmi_pointers), fidelity)
+        let mut pointers = std::mem::take(&mut self.pmi_pointers);
+        // insert and insert_class enforce disjoint owner identities.
+        pointers.extend(std::mem::take(&mut self.class_sources).into_pointers(ctx)?);
+        crate::pmi::layout::install(ctx, pointers, fidelity)
     }
 
     pub(super) fn source(&mut self, class: ArenaClass) {

@@ -127,8 +127,12 @@ fn body_vector_pointer_is_lane_relative_but_layout_and_reads_use_actual_source()
         serde_json::from_value(wire).expect("native readback");
     assert_eq!(&restored, record);
     let mut fidelity = SourceFidelity::default();
-    crate::pmi::layout::install(&ctx, sources.into_pointers(&ctx).unwrap(), &mut fidelity)
-        .expect("captured layout");
+    crate::pmi::layout::install(
+        &ctx,
+        crate::test_support::native::layout_pointers(&ctx, sources),
+        &mut fidelity,
+    )
+    .expect("captured layout");
     let layout = &fidelity.record_layout()[&record.id];
     assert_eq!(layout.stream(), "file");
     assert_eq!(
@@ -233,7 +237,12 @@ fn duplicate_named_blocks_keep_distinct_actual_body_layout_streams() {
     super::super::bindings::bind_scalar_operands(&ctx, &histories, &mut lanes, &mut sources)
         .unwrap();
     let mut fidelity = SourceFidelity::default();
-    crate::pmi::layout::install(&ctx, sources.into_pointers(&ctx).unwrap(), &mut fidelity).unwrap();
+    crate::pmi::layout::install(
+        &ctx,
+        crate::test_support::native::layout_pointers(&ctx, sources),
+        &mut fidelity,
+    )
+    .unwrap();
     for (lane, stream) in lanes.iter().zip(streams) {
         let [record] = lane.body_selections.as_slice() else {
             panic!("one body selection")

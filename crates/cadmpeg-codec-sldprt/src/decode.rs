@@ -2545,9 +2545,7 @@ fn build_geometry_ir(
         &mut supplemental_config_lanes,
         &mut body_sources,
     )?;
-    retention
-        .pmi_pointers
-        .extend(body_sources.into_pointers(ctx)?);
+    retention.pmi_pointers.extend(body_sources.into_pointers());
     crate::resolved_features::projections::project_compact_edge_selections(
         &class_sources,
         &mut ir.model.features,
@@ -3664,9 +3662,7 @@ fn build_metadata_ir(
         &mut supplemental_config_lanes,
         &mut body_sources,
     )?;
-    retention
-        .pmi_pointers
-        .extend(body_sources.into_pointers(ctx)?);
+    retention.pmi_pointers.extend(body_sources.into_pointers());
     crate::resolved_features::projections::project_compact_edge_selections(
         &class_sources,
         &mut ir.model.features,

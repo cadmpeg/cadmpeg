@@ -121,7 +121,7 @@ impl ClassSources {
         Ok(())
     }
 
-    pub(super) fn into_pointers(
+    pub(crate) fn into_pointers(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<BTreeMap<String, BTreeMap<String, u64>>, CodecError> {

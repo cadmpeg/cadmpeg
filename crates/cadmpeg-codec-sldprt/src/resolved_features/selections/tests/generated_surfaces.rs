@@ -27,7 +27,12 @@ fn captured_identities(
     crate::resolved_features::generated_surface_layout::capture(ctx, &staged, &mut sources)
         .unwrap();
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    crate::pmi::layout::install(ctx, sources.into_pointers(ctx).unwrap(), &mut fidelity).unwrap();
+    crate::pmi::layout::install(
+        ctx,
+        crate::test_support::native::layout_pointers(ctx, sources),
+        &mut fidelity,
+    )
+    .unwrap();
     (staged.generated_surface_identities, fidelity)
 }
 

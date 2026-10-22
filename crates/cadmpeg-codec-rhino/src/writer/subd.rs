@@ -144,9 +144,6 @@ fn incidence(
     count: usize,
     values: impl Iterator<Item = Incidence>,
 ) -> Result<Vec<Incidence>, CodecError> {
-    // Partitioned u32 component counts and u16 face rings bound this product.
-    let bytes = u64_from_index(count) * u64_from_index(std::mem::size_of::<Incidence>());
-    ctx.retain_bytes(bytes, "Rhino SubD incidence")?;
     let mut result = ctx.alloc_filled(count, Incidence::default(), "Rhino SubD incidence")?;
     let mut values = values;
     let mut staged = 0;

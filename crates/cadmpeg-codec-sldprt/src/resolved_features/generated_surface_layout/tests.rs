@@ -85,7 +85,12 @@ fn full_path_extent_keeps_the_earlier_producer_when_terminal_source_is_reserved(
     let mut sources = BodySources::from_views([(lane.id.clone(), source)]).unwrap();
     capture(&ctx, &lane, &mut sources).unwrap();
     let mut fidelity = SourceFidelity::default();
-    crate::pmi::layout::install(&ctx, sources.into_pointers(&ctx).unwrap(), &mut fidelity).unwrap();
+    crate::pmi::layout::install(
+        &ctx,
+        crate::test_support::native::layout_pointers(&ctx, sources),
+        &mut fidelity,
+    )
+    .unwrap();
     let layout = &fidelity.record_layout()[&record.id];
     assert_eq!(layout.stream(), "file");
     assert_eq!(layout.offset(), u64::try_from(37 + offset).unwrap());

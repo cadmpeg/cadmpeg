@@ -27,6 +27,18 @@ pub(crate) fn update_sldprt_native<R>(
     result
 }
 
+/// Every pending layout pointer of `sources`: its feature-input pointers and
+/// its class pointers, as the decoder installs them.
+pub(crate) fn layout_pointers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    sources: crate::resolved_features::body_sources::BodySources<'_>,
+) -> std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>> {
+    let classes = sources.class_sources();
+    let mut pointers = sources.into_pointers();
+    pointers.extend(classes.into_pointers(ctx).unwrap());
+    pointers
+}
+
 /// Admit class positions from the unchanged fixture source, independently of
 /// held native edits. Source-capture tests use their original View directly.
 pub(crate) fn class_sources<L: std::borrow::Borrow<crate::records::FeatureInputLane>>(

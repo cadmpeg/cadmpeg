@@ -115,7 +115,12 @@ fn assert_source_layout(reference_list: bool) {
     .unwrap();
     capture(&ctx, &histories, &lane, &mut sources).unwrap();
     let mut fidelity = SourceFidelity::default();
-    crate::pmi::layout::install(&ctx, sources.into_pointers(&ctx).unwrap(), &mut fidelity).unwrap();
+    crate::pmi::layout::install(
+        &ctx,
+        crate::test_support::native::layout_pointers(&ctx, sources),
+        &mut fidelity,
+    )
+    .unwrap();
     let record = &lane.edge_selections[0];
     let layout = &fidelity.record_layout()[&record.id];
     assert_eq!(layout.stream(), "file");

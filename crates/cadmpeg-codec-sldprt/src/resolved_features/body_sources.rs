@@ -140,14 +140,10 @@ impl<'a> BodySources<'a> {
         Ok(())
     }
 
-    pub(crate) fn into_pointers(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<BTreeMap<String, BTreeMap<String, u64>>, CodecError> {
-        let mut pointers = self.pointers;
-        // insert and insert_class enforce disjoint owner identities.
-        pointers.extend(self.classes.into_pointers(ctx)?);
-        Ok(pointers)
+    /// The feature-input pointers. The class pointers stay in the shared
+    /// class bank, and its last owner moves them into the layout.
+    pub(crate) fn into_pointers(self) -> BTreeMap<String, BTreeMap<String, u64>> {
+        self.pointers
     }
 }
 
