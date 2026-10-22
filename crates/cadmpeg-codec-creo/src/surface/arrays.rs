@@ -30,7 +30,7 @@ impl<Shape> ScalarExtent<Shape> {
 pub(crate) struct Scalars<Shape> {
     shape: Shape,
     values: FiniteScalarSlots,
-    tokens: Option<Vec<crate::source_bytes::SourceBytes>>,
+    tokens: Option<Vec<cadmpeg_ir::native::bytes::NativeBytes>>,
 }
 /// An outer dimension and a scalar count per dimension.
 pub(crate) type DimensionedScalars = Scalars<[u32; 2]>;
@@ -142,7 +142,7 @@ impl<Shape> Scalars<Shape> {
     pub(crate) fn values(&self) -> &[Option<f64>] {
         &self.values.0
     }
-    pub(crate) fn tokens(&self) -> Option<&[crate::source_bytes::SourceBytes]> {
+    pub(crate) fn tokens(&self) -> Option<&[cadmpeg_ir::native::bytes::NativeBytes]> {
         self.tokens.as_deref()
     }
 }
