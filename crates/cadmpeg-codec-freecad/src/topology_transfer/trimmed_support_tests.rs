@@ -31,7 +31,7 @@ fn trimmed_sphere_face_uses_unrestricted_support_without_healing_pcurves() {
         } else {
             "Locations 0"
         };
-        let root_location = usize::from(placed);
+        let face_location = usize::from(placed);
         let trims = "10 0 6.283185307179586 -0.5 0.5 ".repeat(trims);
         let brep = format!(
             "CASCADE Topology V1, (c) Matra-Datavision
@@ -45,13 +45,14 @@ PolygonOnTriangulations 0
 Surfaces 1
 {trims}4 0 0 0 0 0 1 1 0 0 0 1 0 {radius}
 Triangulations 0
-TShapes 5
+TShapes 6
 Ve 0.0000001 {first_x} {first_y} {first_z} 0 0 1001000 *
 Ve 0.0000001 {last_x} {last_y} {last_z} 0 0 1001000 *
-Ed 0.0000001 1 1 0 1 1 0 0 {last_latitude} 2 1 1 0 0 {last_latitude} 0 1001000 +5 0 -4 0 *
-Wi 1001000 +3 0 -3 0 *
-Fa 0 0.0000001 1 0 1001000 +2 0 *
-+1 {root_location} *",
+Ed 0.0000001 1 1 0 1 1 0 0 {last_latitude} 2 1 1 0 0 {last_latitude} 0 1001000 +6 0 -5 0 *
+Wi 1001000 +4 0 -4 0 *
+Fa 0 0.0000001 1 0 1001000 +3 0 *
+Co 1001000 +2 {face_location} *
++1 0 *",
             negative_cosine = -cosine,
             first_x = first.x,
             first_y = first.y,
@@ -97,7 +98,10 @@ Fa 0 0.0000001 1 0 1001000 +2 0 *
             } else {
                 expected
             };
-            assert!(Point3::distance(actual, expected) < 1.0e-12);
+            assert!(
+                Point3::distance(actual, expected) < 1.0e-12,
+                "longitude={longitude}, latitude={parameter}, placed={placed}: {actual:?} != {expected:?}",
+            );
         }
         let validation = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
         assert!(
