@@ -404,8 +404,9 @@ pub(crate) struct DecodeContext<'a> {
     expansion_undo: Option<ExpansionUndo>,
     /// Table records that object records name by UUID or archive index.
     resources: crate::presentation::ResourceIndex,
-    /// Presentation-table losses and opaque records, reported at commit.
-    presentation: Option<crate::container::NativeInstall>,
+    /// Presentation-table losses, opaque records, and native arenas, reported
+    /// and installed at commit.
+    presentation: Option<(crate::container::NativeInstall, CadIr)>,
     /// Native annotation arenas, installed at commit.
     annotation_arenas: Option<crate::annotations::NativeArenas>,
     /// `SubD` channels outside the cage, one per committed `SubD` surface.
@@ -470,10 +471,23 @@ impl<'a> DecodeContext<'a> {
         };
         context.retain_object_records()?;
         context.retain_opaque_records()?;
-        let presentation =
-            crate::presentation::install(session, scan, context.session.document_mut()?)?;
+        let mut staged = CadIr::empty();
+        let presentation = crate::presentation::install(session, scan, &mut staged)?;
+        // Candidate admission resolves style references against these tables only.
+        if let Some(namespace) = staged.native.namespace("rhino") {
+            let document = context.session.document_mut()?;
+            for name in ["dimension_styles", "text_styles"] {
+                if let Some(records) = namespace.arenas().get(name) {
+                    document
+                        .native
+                        .namespace_mut("rhino")
+                        .arenas_mut()
+                        .insert(name.to_owned(), records.clone());
+                }
+            }
+        }
         context.resources = presentation.resources;
-        context.presentation = Some(presentation.native);
+        context.presentation = Some((presentation.native, staged));
         Ok(context)
     }
 
@@ -1178,8 +1192,16 @@ impl<'a> DecodeContext<'a> {
     fn decode_annotations(&mut self) -> Result<(), cadmpeg_core::CodecError> {
         use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationId};
 
+        struct Pending {
+            source_order: usize,
+            annotation: SemanticAnnotation,
+            style_unresolved: bool,
+            rich_text_unflattened: bool,
+        }
+
         let collected = crate::annotations::collect(self.expand.ctx(), self.scan)?;
         self.report.typed_losses.extend(collected.losses);
+        let mut pending = Vec::new();
         for projection in collected.projections {
             let source_order = projection.source_order;
             let Some(object) = self.scan.objects[source_order].framed() else {
@@ -1189,16 +1211,6 @@ impl<'a> DecodeContext<'a> {
                 self.scan_warning(source_order, format_args!("definition-member annotation retained because annotation instance expansion is unsupported"));
                 continue;
             }
-            let Ok(order) = u32::try_from(self.session.document().model.semantic_annotations.len())
-            else {
-                self.scan_warning(
-                    source_order,
-                    format_args!(
-                        "annotation retained because the annotation arena exceeds u32 ordinals"
-                    ),
-                );
-                continue;
-            };
             let style = crate::annotations::style_binding(&self.resources, projection.style)?;
             let key = cadmpeg_ir::ids::IdentityKey::try_new(projection.key)
                 .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
@@ -1211,53 +1223,104 @@ impl<'a> DecodeContext<'a> {
                 .id()
                 .as_str()
                 .to_owned();
-            let annotation = SemanticAnnotation {
-                id,
-                object: object.clone(),
-                kind: projection.kind,
-                runtime_type: projection.runtime_type.to_owned(),
-                order,
-                text: projection.text,
-                references: style.reference.into_iter().collect(),
-                value: None,
-                format: projection.format,
-                position: projection.position,
-                parameters: projection.parameters,
-                assets: Vec::new(),
-                native_ref: object,
-            };
-            let links = [annotation.id.as_str().to_owned()];
-            match self.validate_candidate(|candidate, _annotations| {
-                candidate.model.semantic_annotations.push(annotation);
-            }) {
-                Ok(()) => {
-                    self.append_links(source_order, &links)?;
-                    self.mark_decoded(source_order);
-                    if style.unresolved {
-                        self.report.typed_losses.push(
-                            RhinoLossCode::DimensionStyleUnresolved.note(format_args!(
-                                "annotation record {source_order} style reference is not \
-                                 resolved to a decoded record"
-                            )),
-                        );
-                    }
-                    if projection.rich_text_unflattened {
-                        self.report.typed_losses.push(
-                            RhinoLossCode::AnnotationRichTextUnflattened.note(format_args!(
-                                "annotation record {source_order} carries RTF text without a \
-                                 plain-text fragment"
-                            )),
-                        );
-                    }
-                }
-                Err(CandidateError::Codec(error)) => return Err(error),
-                Err(error) => self.scan_warning(
-                    source_order,
-                    format_args!("annotation candidate rejected: {error}"),
-                ),
-            }
+            pending.push(Pending {
+                source_order,
+                annotation: SemanticAnnotation {
+                    id,
+                    object: object.clone(),
+                    kind: projection.kind,
+                    runtime_type: projection.runtime_type.to_owned(),
+                    order: 0,
+                    text: projection.text,
+                    references: style.reference.into_iter().collect(),
+                    value: None,
+                    format: projection.format,
+                    position: projection.position,
+                    parameters: projection.parameters,
+                    assets: Vec::new(),
+                    native_ref: object,
+                },
+                style_unresolved: style.unresolved,
+                rich_text_unflattened: projection.rich_text_unflattened,
+            });
         }
         self.annotation_arenas = Some(collected.arenas);
+        // `SemanticAnnotation::order` is the dense arena index, a `u32`.
+        let first = self.session.document().model.semantic_annotations.len();
+        let mut batch = Vec::new();
+        for (index, item) in pending.iter().enumerate() {
+            let Some(order) = first
+                .checked_add(index)
+                .and_then(|order| u32::try_from(order).ok())
+            else {
+                break;
+            };
+            let mut annotation = item.annotation.clone();
+            annotation.order = order;
+            batch.push(annotation);
+        }
+        let admitted = if batch.len() == pending.len() && !batch.is_empty() {
+            match self.validate_candidate(|candidate, _annotations| {
+                candidate.model.semantic_annotations.extend(batch);
+            }) {
+                Ok(()) => true,
+                Err(CandidateError::Codec(error)) => return Err(error),
+                Err(_) => false,
+            }
+        } else {
+            false
+        };
+        for mut item in pending {
+            let source_order = item.source_order;
+            if !admitted {
+                let Ok(order) =
+                    u32::try_from(self.session.document().model.semantic_annotations.len())
+                else {
+                    self.scan_warning(
+                        source_order,
+                        format_args!(
+                            "annotation retained because the annotation arena exceeds u32 ordinals"
+                        ),
+                    );
+                    continue;
+                };
+                item.annotation.order = order;
+                let annotation = item.annotation.clone();
+                match self.validate_candidate(|candidate, _annotations| {
+                    candidate.model.semantic_annotations.push(annotation);
+                }) {
+                    Ok(()) => {}
+                    Err(CandidateError::Codec(error)) => return Err(error),
+                    Err(error) => {
+                        self.scan_warning(
+                            source_order,
+                            format_args!("annotation candidate rejected: {error}"),
+                        );
+                        continue;
+                    }
+                }
+            }
+            self.append_links(source_order, &[item.annotation.id.as_str().to_owned()])?;
+            self.mark_decoded(source_order);
+            if item.style_unresolved {
+                self.report
+                    .typed_losses
+                    .push(RhinoLossCode::DimensionStyleUnresolved.note(format_args!(
+                        "annotation record {source_order} style reference is not resolved to a \
+                         decoded record"
+                    )));
+            }
+            if item.rich_text_unflattened {
+                self.report
+                    .typed_losses
+                    .push(
+                        RhinoLossCode::AnnotationRichTextUnflattened.note(format_args!(
+                        "annotation record {source_order} carries RTF text without a plain-text \
+                         fragment"
+                    )),
+                    );
+            }
+        }
         Ok(())
     }
 
@@ -2951,7 +3014,14 @@ impl<'a> DecodeContext<'a> {
         for source in document_data.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        if let Some(presentation) = self.presentation.take() {
+        if let Some((presentation, mut staged)) = self.presentation.take() {
+            let arenas = std::mem::take(staged.native.namespace_mut("rhino").arenas_mut());
+            self.session
+                .document_mut()?
+                .native
+                .namespace_mut("rhino")
+                .arenas_mut()
+                .extend(arenas);
             self.report.typed_losses.extend(presentation.losses);
             for source in presentation.opaque_records {
                 self.retain_opaque_record(&source)?;
