@@ -90,13 +90,13 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links.
 
-### DR-61. u64 values in a cross-document `Combine` selector tail
+### DR-61. Cross-document selection stamp and evaluation scalar
 
-**Question.** What do the two u64 values around the fixed `u32 48` in a cross-document `Combine` body-selector tail mean?
+**Question.** How does the producer allocate or derive the selection-payload stamp, and what unit and evaluation event does the scalar represent?
 
-**Known.** `f3d.md` §3.1 "A tool body-selection record" gives the complete selector grammar and the independent occurrence, external-body, segment, asset, link, property, and version fields. The first u64 follows u32 `9` and u16 `2`. The second follows u32 `48`. The two values are retained in source order and can differ between selectors that share the same owning scope. The exact class-`329` forms already admitted by the decoder show the first value repeated by selectors in one operation and zero in the observed operation without the optional property/version tail. The second value differs between selectors and reads as a finite little-endian f64 in the four observed selectors. The first value's byte sequence also occurs in other fixed reference records, so it is not a unique external-body identity token.
+**Known.** `f3d.md` §3.1 "The selector tail is u32 `9`" defines a u64 stamp, a u32 evaluation epoch, and a finite nonnegative f64 scalar. The scalar is not an integer identity, and the epoch is not a fixed selector constant. Selectors with the same asset, context, external body, segment, property, and version can have different stamps. Different occurrences can share a stamp. A zero stamp can occur with a valid nonzero occurrence and external-body reference, so it does not establish an absent selection or a general default. The complete native selector remains the preservation unit.
 
-**Need.** Their meanings determine whether they participate in persistent body identity and how a writer derives them from a cross-document body selection.
+**Need.** Controlled producer saves must separate selection creation, occurrence choice, selected entity, reevaluation, source version, and relink operations. A producer trace or documented evaluator contract must establish the scalar unit and event. A stamp derivation must reproduce the known cases and predict held-out saves, or identify the allocation event and persistence boundary if the value is allocated state.
 
 ### DR-62. Point selectors and flags
 

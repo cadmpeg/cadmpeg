@@ -5499,7 +5499,7 @@ anchor = "a same-segment reference to `N+3`, u32 one"
 name = "combine_external_selector_tail"
 kind = "byte"
 section = "3.1"
-anchor = "The selector tail is u32 `9`, u16 `2`, a retained u64 value, u32 `48`, a second retained u64 value"
+anchor = "The selector tail is u32 `9`, u16 `2`, a u64 selection-payload stamp, a u32 evaluation epoch, a finite nonnegative f64 evaluation scalar"
 size = 62
 note = "Offsets are relative to the first byte after the cross-document reference. The same-index paired header starts at offset 62."
 
@@ -5518,25 +5518,25 @@ source = "spec"
 anchor = "u16 `2`"
 
 [[record.field]]
-name = "tail_value_0"
+name = "selection_payload_stamp"
 offset = 6
 type = "u64"
 source = "spec"
-anchor = "a retained u64 value"
+anchor = "a u64 selection-payload stamp"
 
 [[record.field]]
-name = "constant_forty_eight"
+name = "evaluation_epoch"
 offset = 14
 type = "u32"
 source = "spec"
-anchor = "u32 `48`"
+anchor = "a u32 evaluation epoch"
 
 [[record.field]]
-name = "tail_value_1"
+name = "evaluation_scalar"
 offset = 18
-type = "u64"
+type = "f64"
 source = "spec"
-anchor = "a second retained u64 value"
+anchor = "a finite nonnegative f64 evaluation scalar"
 
 [[record.field]]
 name = "nested_two_reference"

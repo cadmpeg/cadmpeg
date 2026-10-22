@@ -1853,9 +1853,9 @@ Offsets are relative to the first byte after the cross-document reference. The s
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `constant_nine` | `u32` | little | spec | The selector tail is u32 `9` |
 | 4 | 2 | `constant_two` | `u16` | little | spec | u16 `2` |
-| 6 | 8 | `tail_value_0` | `u64` | little | spec | a retained u64 value |
-| 14 | 4 | `constant_forty_eight` | `u32` | little | spec | u32 `48` |
-| 18 | 8 | `tail_value_1` | `u64` | little | spec | a second retained u64 value |
+| 6 | 8 | `selection_payload_stamp` | `u64` | little | spec | a u64 selection-payload stamp |
+| 14 | 4 | `evaluation_epoch` | `u32` | little | spec | a u32 evaluation epoch |
+| 18 | 8 | `evaluation_scalar` | `f64` | little | spec | a finite nonnegative f64 evaluation scalar |
 | 26 | 11 | `nested_two_reference` | `bytes[11]` | little | spec | a same-segment reference to `N+2` |
 | 37 | 2 | `zero_run_2` | `bytes[2]` | little | spec | two zero bytes |
 | 39 | 11 | `nested_one_reference` | `bytes[11]` | little | spec | a same-segment reference to `N+1` |

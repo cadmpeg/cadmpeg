@@ -1551,6 +1551,29 @@ pub(crate) mod combine_external_selector_prefix {
     pub(crate) const NESTED_REFERENCE_MARKER: usize = 25;
 }
 
+/// Byte offsets for the `combine_external_selector_tail` record.
+///
+/// Spec §3.1. Record length 62 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the cross-document reference. The same-index paired header starts at offset 62.
+/// ```
+pub(crate) mod combine_external_selector_tail {
+    /// Offset of `constant_nine` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_NINE: usize = 0;
+    /// Offset of `constant_two` (`u16`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_TWO: usize = 4;
+    /// Offset of `selection_payload_stamp` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const SELECTION_PAYLOAD_STAMP: usize = 6;
+    /// Offset of `evaluation_epoch` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const EVALUATION_EPOCH: usize = 14;
+    /// Offset of `evaluation_scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const EVALUATION_SCALAR: usize = 18;
+    /// Offset of `nested_two_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const NESTED_TWO_REFERENCE: usize = 26;
+}
+
 /// Byte offsets for the `indexed_companion_record_prefix` record.
 ///
 /// Spec §3.1. Record length 58 B.
