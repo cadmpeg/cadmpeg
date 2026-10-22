@@ -31,3 +31,40 @@ fn hollerith_source_bytes_keep_the_exact_native_value() {
         serde_json::json!({"value":{"kind": "string", "value": "70617274"}})
     );
 }
+
+#[test]
+fn absent_parameter_slots_are_null_without_becoming_format_defaults() {
+    let mut record = super::super::ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        3,
+        vec![
+            Token {
+                value: TokenValue::Integer(116),
+                span: 0..3,
+            },
+            Token {
+                value: TokenValue::Omitted,
+                span: 4..4,
+            },
+            Token {
+                value: TokenValue::Integer(7),
+                span: 5..6,
+            },
+        ],
+        Vec::new(),
+    );
+    assert_eq!(record.integer_or(1, 9), Some(9));
+    assert_eq!(record.number_or(1, 9.0), Some(9.0));
+    assert_eq!(record.string_or_empty(1), Some(&[][..]));
+    record.tokens[1] = None;
+    assert_eq!(record.integer_or(1, 9), None);
+    assert_eq!(record.number_or(1, 9.0), None);
+    assert_eq!(record.string_or_empty(1), None);
+    let tokens = serde_json::to_value(record.tokens()).unwrap();
+    assert_eq!(tokens.as_array().unwrap().len(), 3);
+    assert!(tokens[1].is_null());
+    assert_eq!(tokens[0]["value"]["value"], 116);
+    assert_eq!(tokens[2]["value"]["value"], 7);
+}

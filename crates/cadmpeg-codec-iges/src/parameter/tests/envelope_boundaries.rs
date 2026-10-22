@@ -293,7 +293,7 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
         directory_sequence: 1,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens,
+        tokens: (tokens).into_iter().map(Some).collect(),
         parameter_end: token_count,
         comment: Vec::new(),
     };
@@ -312,13 +312,16 @@ fn field_defaults_do_not_cross_the_selected_parameter_boundary() {
         directory_sequence: 1,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: [106, 1, 2, 1, 9, 0]
+        tokens: ([106, 1, 2, 1, 9, 0]
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: 4,
         comment: Vec::new(),
     };
@@ -336,13 +339,16 @@ fn unique_invalid_trailing_pointer_group_remains_visible() {
         directory_sequence: 1,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: [116, 1, 99, 0]
+        tokens: ([116, 1, 99, 0]
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: 4,
         comment: Vec::new(),
     };
@@ -375,13 +381,16 @@ fn unique_valid_trailing_pointer_group_boundary_wins() {
         directory_sequence: 1,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: [116, 0, 0, 2, 3, 1, 0]
+        tokens: ([116, 0, 0, 2, 3, 1, 0]
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: 7,
         comment: Vec::new(),
     };

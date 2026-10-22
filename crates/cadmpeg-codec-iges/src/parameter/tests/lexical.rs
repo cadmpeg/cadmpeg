@@ -7,7 +7,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::super::{tokenize, ParameterDefect, Token, TokenValue, TokenizeFailure};
 use crate::global::{GlobalTable, NumericLimits};
-use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::test_support::test_owned::{owned_test_file_with_raw_parameters, OwnedTestEntity};
 use crate::IgesCodec;
@@ -158,12 +157,16 @@ fn parameter_numeric_capability_checks_are_proven_for_v4_and_v5_0() {
         bytes[offset..offset + old.len()].copy_from_slice(new);
 
         let result = IgesCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
             .unwrap();
         assert!(result.ir().model.points.is_empty(), "version {version}");
-        assert!(result.report().losses.iter().any(|loss| {
-            loss.code == IgesLossCode::ParameterLiteralUnusable.kind()
-        }), "version {version}: {:#?}", result.report().losses);
+        crate::test_support::parameter_parts::assert_one_parameter_field(&result, &bytes, 4, b"1E2,");
+        let native = result.ir().native.namespace("iges").unwrap();
+        let parameters = &native.arenas()["entities"][0].fields().unwrap()["parameters"];
+        assert_eq!(parameters.as_array().unwrap().len(), 4);
+        assert!(parameters[1].is_null());
+        assert_eq!(parameters[2]["value"]["value"], 2.0);
+        assert_eq!(parameters[3]["value"]["value"], 3.0);
     }
 }
 
@@ -243,26 +246,65 @@ fn a_split_numeric_parameter_is_quarantined_in_the_decode() {
     let mut x = String::with_capacity(60);
     x.extend(std::iter::repeat_n('0', 59));
     x.push('1');
+    let bytes = owned_test_file_with_raw_parameters(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "SPLIT".into(),
+        status: "00010000",
+        parameters: format!("116,{x},2,3,0;"),
+    }]);
     let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file_with_raw_parameters(&[OwnedTestEntity {
-                entity_type: 116,
-                form: 0,
-                label: "SPLIT".into(),
-                status: "00010000",
-                parameters: format!("116,{x},2,3,0;"),
-            }])),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
 
     assert!(result.ir().model.points.is_empty());
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(
-        result.report().losses[0].code,
-        IgesLossCode::ParameterDataQuarantined.kind()
+        result.report().losses[0].code.local_code(),
+        "record.unreadable"
+    );
+    assert_eq!(
+        result.report().losses[0].severity,
+        cadmpeg_ir::report::Severity::Error
     );
     assert!(result.report().losses[0]
         .message
         .contains("numeric field or its delimiter crosses a card boundary"));
+    let native = result.ir().native.namespace("iges").unwrap();
+    let fields = native.arenas()["entities"][0].fields().unwrap();
+    let parameters = &fields["parameters"];
+    assert_eq!(parameters.as_array().unwrap().len(), 5);
+    assert!(parameters[1].is_null());
+    for (index, value) in [(0, 116), (2, 2), (3, 3), (4, 0)] {
+        assert_eq!(parameters[index]["value"]["value"], value);
+    }
+    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    let unknowns = native
+        .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+        .unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let fidelity = result.source_fidelity();
+    let part = &fidelity.parts()[&unknowns[0].id];
+    assert_eq!(part.level().as_str(), "iges.parameter_field");
+    assert_eq!(
+        part.state(),
+        &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+    );
+    assert_eq!(part.offset(), 4);
+    assert_eq!(part.byte_len(), 61);
+    assert_eq!(part.framing_bytes(), &[64..65]);
+    assert_eq!(
+        fidelity
+            .retained_record(unknowns[0].id.as_str())
+            .unwrap()
+            .data(),
+        Some(format!("{x},").as_bytes())
+    );
+    let parent = &fidelity.parts()[part.parent().unwrap()];
+    assert_eq!(parent.level().as_str(), "iges.parameter_record");
+    assert_eq!(
+        parent.state(),
+        &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+    );
+    assert_eq!(parent.byte_len(), 162);
 }

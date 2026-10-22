@@ -15,7 +15,7 @@ use cadmpeg_ir::report::{
     loss::LossNote,
     Severity,
 };
-use cadmpeg_ir::source_fidelity::parts::ParserPartOutput;
+use cadmpeg_ir::source_fidelity::parts::{ParserPartOutput, PartOutput};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -263,7 +263,8 @@ struct PhysicalParse<'a> {
     given_up_parameters: BTreeSet<u32>,
     framing_recoveries: card::FramingRecoveries,
     references: BTreeMap<u32, Vec<graph::ReferenceEdge>>,
-    parts: ParserPartOutput,
+    parser_parts: ParserPartOutput,
+    parts: PartOutput,
 }
 
 impl<'a> PhysicalParse<'a> {
@@ -280,21 +281,22 @@ impl<'a> PhysicalParse<'a> {
             Some(source) => card::scan_source(source, ctx)?,
             None => card::scan(bytes)?,
         };
-        let mut parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
+        let mut parser_parts = ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges);
         let (global, mut global_losses) = if scan.source_view().is_some() {
-            global::parts::parse(&scan, ctx, &mut parts)?
+            global::parts::parse(&scan, ctx, &mut parser_parts)?
         } else {
             global::parse(&scan)?
         };
         let (directory, quarantined_directory) = if scan.source_view().is_some() {
             (
-                directory::parts::parse(&scan, global.global_table(), ctx, &mut parts)?,
+                directory::parts::parse(&scan, global.global_table(), ctx, &mut parser_parts)?,
                 Vec::new(),
             )
         } else {
             directory::parse(&scan, global.global_table(), ctx)?
         };
         global_losses.extend(directory::metadata_losses(&directory));
+        let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Iges);
         let parameter::ParameterAssembly {
             records: parameters,
             trailing_pointer_analysis,
@@ -333,6 +335,7 @@ impl<'a> PhysicalParse<'a> {
             given_up_parameters,
             framing_recoveries,
             references,
+            parser_parts,
             parts,
         })
     }
@@ -370,7 +373,11 @@ impl<'a> PhysicalParse<'a> {
         let mut entries = BTreeMap::new();
         for record in &self.parameters {
             for (index, token) in record.tokens().iter().enumerate() {
-                let parameter::TokenValue::Unreadable(defect) = token.value else {
+                let Some(parameter::Token {
+                    value: parameter::TokenValue::Unreadable(defect),
+                    ..
+                }) = token
+                else {
                     continue;
                 };
                 if entries.is_empty() {
@@ -449,6 +456,18 @@ fn decode_with_occurrence_limits(
     let mut source_fidelity = source_fidelity(source.window(), ctx)?;
     let view = (representation == Representation::FixedAscii).then_some(source);
     let mut parse = PhysicalParse::run_with_source(parse_bytes, view, ctx)?;
+    let parser_parts = std::mem::replace(
+        &mut parse.parser_parts,
+        ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges),
+    );
+    let (_, parser_native, parser_fidelity, mut parser_losses) =
+        parser_parts.into_parts().into_parts();
+    let parts = std::mem::replace(
+        &mut parse.parts,
+        PartOutput::new(cadmpeg_ir::CodecFormat::Iges),
+    );
+    let (part_model, part_native, part_fidelity, mut part_losses) =
+        parts.into_parts(ctx)?.into_parts();
     let length_context = parse.global.length_context();
     let mut unavailable_parameter_sequences =
         quarantined_parameter_sequences(&parse.quarantined_parameters);
@@ -500,7 +519,7 @@ fn decode_with_occurrence_limits(
                 record
                     .tokens()
                     .iter()
-                    .map(|token| token.span.clone())
+                    .map(|token| token.as_ref().map(|token| token.span.clone()))
                     .collect::<Vec<_>>(),
             )
         })
@@ -517,6 +536,7 @@ fn decode_with_occurrence_limits(
     } else {
         cadmpeg_ir::ContentScope::full()
     };
+    ir.model = part_model;
     let mut invalid_resolution = false;
     if let Some(context) = &length_context {
         match cadmpeg_ir::scalar::PositiveLength::new(context.minimum_resolution_mm()) {
@@ -570,36 +590,36 @@ fn decode_with_occurrence_limits(
         ),
         ctx,
     )?;
-    let parts = std::mem::replace(
-        &mut parse.parts,
-        ParserPartOutput::new(cadmpeg_ir::CodecFormat::Iges),
-    );
-    let (_, mut part_native, part_fidelity, mut part_losses) = parts.into_parts().into_parts();
-    let source_arenas = part_native.namespace_mut("iges").arenas_mut();
-    for (name, mut records) in std::mem::take(source_arenas) {
-        let destination = ir
-            .native
-            .namespace_mut("iges")
-            .arenas_mut()
-            .entry(name)
-            .or_default();
-        let bytes = cadmpeg_core::decode::u64_from_index(
-            records
-                .len()
-                .checked_mul(size_of::<cadmpeg_ir::native::NativeRecord>())
-                .ok_or_else(|| CodecError::malformed("IGES parser record composition overflows"))?,
-        );
-        ctx.retain_bytes(bytes, "IGES parser record composition")?;
-        destination.try_reserve(records.len()).map_err(|_| {
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                ctx.policy().limits.max_retained_bytes,
-                bytes,
-                "IGES parser record composition",
-            )
-        })?;
-        destination.append(&mut records);
+    for mut native in [parser_native, part_native] {
+        let source_arenas = native.namespace_mut("iges").arenas_mut();
+        for (name, mut records) in std::mem::take(source_arenas) {
+            let destination = ir
+                .native
+                .namespace_mut("iges")
+                .arenas_mut()
+                .entry(name)
+                .or_default();
+            let bytes = cadmpeg_core::decode::u64_from_index(
+                records
+                    .len()
+                    .checked_mul(size_of::<cadmpeg_ir::native::NativeRecord>())
+                    .ok_or_else(|| {
+                        CodecError::malformed("IGES parser record composition overflows")
+                    })?,
+            );
+            ctx.retain_bytes(bytes, "IGES parser record composition")?;
+            destination.try_reserve(records.len()).map_err(|_| {
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    ctx.policy().limits.max_retained_bytes,
+                    bytes,
+                    "IGES parser record composition",
+                )
+            })?;
+            destination.append(&mut records);
+        }
     }
+    source_fidelity.append(parser_fidelity)?;
     source_fidelity.append(part_fidelity)?;
     if parse.scan.source_view().is_some() {
         source_fidelity.install_record_captures(ctx, |_, _| Ok(()))?;
@@ -609,6 +629,7 @@ fn decode_with_occurrence_limits(
     ir.finalize();
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses();
+    losses.append(&mut parser_losses);
     losses.append(&mut part_losses);
     losses.extend(projection_losses);
     if invalid_resolution
@@ -733,6 +754,13 @@ fn decode_with_occurrence_limits(
     if !ctx.container_only() {
         let mut attributed_before_generic = attributed_sequences(&losses);
         attributed_before_generic.extend(&parse.given_up_parameters);
+        attributed_before_generic.extend(
+            parse
+                .parameters
+                .iter()
+                .filter(|record| record.has_absent_fields())
+                .map(|record| record.directory_sequence),
+        );
         append_generic_losses(
             &mut losses,
             &parse.directory,
@@ -747,6 +775,13 @@ fn decode_with_occurrence_limits(
     } else {
         let mut attributed = attributed_sequences(&losses);
         attributed.extend(&parse.given_up_parameters);
+        attributed.extend(
+            parse
+                .parameters
+                .iter()
+                .filter(|record| record.has_absent_fields())
+                .map(|record| record.directory_sequence),
+        );
         attributed
     };
     let mut transfer_ledger = TransferLedger::default();

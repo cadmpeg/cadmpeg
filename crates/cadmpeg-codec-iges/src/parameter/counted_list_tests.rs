@@ -8,13 +8,16 @@ fn integer_record(values: &[i64], parameter_end: usize) -> ParameterRecord {
         directory_sequence: 1,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values
+        tokens: (values
             .iter()
             .map(|value| Token {
                 value: TokenValue::Integer(*value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end,
         comment: Vec::new(),
     }

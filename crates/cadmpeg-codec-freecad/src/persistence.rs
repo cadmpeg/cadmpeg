@@ -800,17 +800,83 @@ fn parse_persisted_property(
                 values,
                 links,
                 side_entries,
-                dynamic: node.attribute("group").map(|group| DynamicPropertyMeta {
-                    group: group.to_owned(),
-                    documentation: node.attribute("doc").map(str::to_owned),
-                    attributes: node.attribute("attr").and_then(|value| value.parse().ok()),
-                    read_only: bool_attr(node.attribute("ro")),
-                    hidden: bool_attr(node.attribute("hide")),
-                }),
+                dynamic: dynamic_property_metadata(node, source)?,
             }
         },
         order,
     })
+}
+
+fn dynamic_property_metadata(
+    node: roxmltree::Node<'_, '_>,
+    source: Option<&source::Source<'_, '_>>,
+) -> Result<Option<DynamicPropertyMeta>, CodecError> {
+    let Some(group) = node
+        .attributes()
+        .find(|attribute| attribute.namespace().is_none() && attribute.name() == "group")
+    else {
+        return Ok(None);
+    };
+    let text = |attribute: roxmltree::Attribute<'_, '_>| match source {
+        Some(source) => source.attribute(&attribute),
+        None => Ok(attribute.value().to_owned()),
+    };
+    Ok(Some(DynamicPropertyMeta {
+        group: text(group)?,
+        documentation: node
+            .attributes()
+            .find(|attribute| attribute.namespace().is_none() && attribute.name() == "doc")
+            .map(text)
+            .transpose()?,
+        attributes: dynamic_integer(node, source)?,
+        read_only: dynamic_bool(node, "ro", source)?,
+        hidden: dynamic_bool(node, "hide", source)?,
+    }))
+}
+
+fn dynamic_integer(
+    node: roxmltree::Node<'_, '_>,
+    source: Option<&source::Source<'_, '_>>,
+) -> Result<Option<i64>, CodecError> {
+    let Some(attribute) = node
+        .attributes()
+        .find(|attribute| attribute.namespace().is_none() && attribute.name() == "attr")
+    else {
+        return Ok(None);
+    };
+    let Some(source) = source else {
+        return Ok(attribute.value().parse().ok());
+    };
+    if attribute.value().parse::<i64>().is_err() {
+        return Ok(None);
+    }
+    let text = source.attribute(&attribute)?;
+    text.parse().map(Some).map_err(|_| {
+        CodecError::malformed("tracked dynamic attribute flags differ from their admitted integer")
+    })
+}
+
+fn dynamic_bool(
+    node: roxmltree::Node<'_, '_>,
+    key: &str,
+    source: Option<&source::Source<'_, '_>>,
+) -> Result<Option<bool>, CodecError> {
+    let Some(attribute) = node
+        .attributes()
+        .find(|attribute| attribute.namespace().is_none() && attribute.name() == key)
+    else {
+        return Ok(None);
+    };
+    let legacy = bool_attr(Some(attribute.value()));
+    // Keep legacy fallback behavior without presenting an unrecognized spelling
+    // (or a differently interpreted mixed-case true) as a semantic source read.
+    if let Some(source) = source.filter(|_| crate::native::parse_bool(attribute.value()) == legacy)
+    {
+        let text = source.attribute(&attribute)?;
+        Ok(bool_attr(Some(&text)))
+    } else {
+        Ok(legacy)
+    }
 }
 
 // Source reads are admitted only for a complete, single, kept vector carrier.

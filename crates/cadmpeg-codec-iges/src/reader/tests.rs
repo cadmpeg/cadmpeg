@@ -241,6 +241,10 @@ fn decode_enforces_each_iges_session_resource_dimension() {
                 error,
                 cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
                     if limit.dimension == expected && limit.operation == operation
+                        && limit.scope == cadmpeg_core::decode::LimitScope::Session
+                        && (expected != ResourceDimension::Entities ||
+                            (limit.limit == u64::from(operation == "part neutral entity")
+                             && limit.used == limit.limit && limit.additional == 1))
             ),
             "{error:#?}"
         );
@@ -259,7 +263,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
     assert_refusal(
         |limits| limits.max_entities = 1,
         ResourceDimension::Entities,
-        "iges_geometry_primitives",
+        "part neutral entity",
     );
     let mut options = DecodeOptions {
         depth: cadmpeg_core::decode::DecodeDepth::Container,

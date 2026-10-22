@@ -102,7 +102,7 @@ pub(super) fn serialize_instance<S: Serializer>(
         form: i64,
         definition: &'a Option<String>,
         declared_row_count: Option<i64>,
-        rows: &'a [Vec<TokenValue>],
+        rows: &'a [Vec<Option<TokenValue>>],
     }
     Wire {
         id: &record.id,
@@ -391,6 +391,9 @@ pub(super) fn project(
                 break;
             };
             for (column, (value, data_type)) in values.iter().zip(types).enumerate() {
+                let Some(value) = value else {
+                    continue;
+                };
                 match fields::typed_token(value, data_type) {
                     Ok(Some(value)) => fields.push((format!("rows.{row}.{column}"), vec![value])),
                     Ok(None) => {}

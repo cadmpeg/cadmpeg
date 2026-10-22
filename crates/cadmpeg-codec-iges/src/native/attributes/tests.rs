@@ -219,3 +219,107 @@ fn full_name_property_and_distinct_directory_label_remain_distinct_facts() {
 }
 
 mod linkage;
+
+#[test]
+fn absent_attribute_cells_keep_native_slots_and_neutral_column_positions() {
+    use crate::native::{
+        NativeAttributeDefinition, NativeAttributeTableDefinition, NativeAttributeTableInstance,
+    };
+    use crate::parameter::TokenValue;
+
+    let definition = NativeAttributeTableDefinition {
+        id: "iges:native:attribute-table-definition#D1".into(),
+        source_entity: "iges:entity:directory#1".into(),
+        form: 0,
+        name: None,
+        attribute_list_type: Some(0),
+        declared_attribute_count: Some(1),
+        attributes: vec![NativeAttributeDefinition {
+            attribute_type: Some(1),
+            value_data_type: Some(1),
+            declared_value_count: Some(3),
+            values: Vec::new(),
+        }],
+    };
+    let instance = NativeAttributeTableInstance {
+        id: "iges:native:attribute-table-instance#D3".into(),
+        source_entity: "iges:entity:directory#3".into(),
+        form: 1,
+        definition: Some(definition.id.clone()),
+        declared_row_count: Some(2),
+        rows: vec![
+            vec![
+                Some(TokenValue::Integer(1)),
+                None,
+                Some(TokenValue::Integer(3)),
+            ],
+            vec![
+                Some(TokenValue::Integer(4)),
+                Some(TokenValue::Omitted),
+                Some(TokenValue::Integer(6)),
+            ],
+        ],
+    };
+    let wire = serde_json::to_value(&instance).expect("valid nullable attribute fixture");
+    assert_eq!(
+        wire["rows"]
+            .as_array()
+            .expect("valid nullable attribute fixture")
+            .len(),
+        2
+    );
+    assert_eq!(
+        wire["rows"][0]
+            .as_array()
+            .expect("valid nullable attribute fixture")
+            .len(),
+        3
+    );
+    assert!(wire["rows"][0][1].is_null());
+    assert_eq!(wire["rows"][1][1]["kind"], "omitted");
+    assert_eq!(wire["rows"][0][2]["value"], 3);
+    assert_eq!(wire["rows"][1][2]["value"], 6);
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let losses = crate::test_support::with_service_context(&[], |ctx| {
+        super::project(
+            &mut ir,
+            &crate::entities::geometry::SourceSequences::default(),
+            &[],
+            super::PropertyRecords {
+                properties: &[],
+                definitions: &[definition],
+                instances: &[instance],
+            },
+            ctx,
+        )
+    })
+    .expect("valid nullable attribute fixture");
+    assert!(losses.is_empty());
+    let actual: std::collections::BTreeMap<_, _> = ir
+        .model
+        .attributes
+        .iter()
+        .map(|attribute| (attribute.name.as_str(), attribute.values.clone()))
+        .collect();
+    assert_eq!(
+        actual,
+        std::collections::BTreeMap::from([
+            (
+                "iges.attribute_table.value.rows.0.0",
+                vec![AttributeValue::Integer(1)]
+            ),
+            (
+                "iges.attribute_table.value.rows.0.2",
+                vec![AttributeValue::Integer(3)]
+            ),
+            (
+                "iges.attribute_table.value.rows.1.0",
+                vec![AttributeValue::Integer(4)]
+            ),
+            (
+                "iges.attribute_table.value.rows.1.2",
+                vec![AttributeValue::Integer(6)]
+            ),
+        ])
+    );
+}

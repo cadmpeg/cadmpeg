@@ -623,13 +623,16 @@ fn type402_form18_entity_table_boundary_follows_all_class_lists() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end,
             comment: Vec::new(),
         };
@@ -747,7 +750,7 @@ fn type402_form18_malformed_fields_do_not_enable_generic_recovery() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens,
+            tokens: (tokens).into_iter().map(Some).collect(),
             parameter_end,
             comment: Vec::new(),
         };
@@ -790,13 +793,16 @@ fn type402_form20_entity_table_boundary_follows_all_class_lists() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end,
             comment: Vec::new(),
         };
@@ -831,13 +837,16 @@ fn type402_form20_entity_table_boundary_beats_target_valid_generic_alternative()
         directory_sequence: 5,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values
+        tokens: (values
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
     };
@@ -945,7 +954,7 @@ fn type402_form20_malformed_fields_do_not_enable_generic_recovery() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens,
+            tokens: (tokens).into_iter().map(Some).collect(),
             parameter_end,
             comment: Vec::new(),
         };

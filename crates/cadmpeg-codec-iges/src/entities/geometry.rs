@@ -1756,11 +1756,29 @@ pub(crate) fn project_geometry(
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }
+    let mut staged_points = BTreeSet::new();
+    for point in &ir.model.points {
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(size_of::<PointId>() + point.id.as_str().len()),
+            "IGES staged point index",
+        )?;
+        staged_points.insert(point.id.clone());
+    }
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 116 && entry.form == 0)
     {
-        let factor = global.length_factor_mm();
+        let point_id = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
+        if staged_points.contains(&point_id) {
+            sequences.record_point(&point_id, &crate::ids::Stem::directory(entry.sequence));
+            if !entry.status.is_physically_dependent() {
+                free_vertices.push(crate::ids::vertex(&crate::ids::Stem::directory(
+                    entry.sequence,
+                )));
+            }
+            decoded.insert(entry.sequence);
+            continue;
+        }
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
                 &mut losses,
@@ -1769,67 +1787,33 @@ pub(crate) fn project_geometry(
             );
             continue;
         };
-        let coordinates = [record.number(1), record.number(2), record.number(3)];
-        let [Some(x), Some(y), Some(z)] = coordinates else {
-            super::push_geometry_loss(
-                &mut losses,
-                entry,
-                format_args!("X, Y, or Z is not numeric"),
-            );
-            continue;
-        };
-        if !point_display_symbol_valid(record, &entries, global.global_table()) {
-            super::push_attributed_loss(&mut losses, entry, IgesLossCode::DisplayDataNotProjected,
-                format_args!("Type 116 display symbol pointer is invalid for the effective specification family"));
-        }
-        let transform = match resolve_transform(
-            entry.transform,
+        let point = match point::project(
+            entry,
+            record,
             &entries,
             &records,
-            factor,
-            global.real_precision(),
-            &mut BTreeSet::new(),
+            (global, analytic_surface_locations.contains(&entry.sequence)),
             ctx,
+            &mut losses,
         ) {
-            Ok(transform) => transform,
-            Err(error) => {
-                let message = error.non_resource()?;
+            Ok(Some(point)) => point,
+            Ok(None) => continue,
+            Err(CodecError::Malformed(message)) => {
                 super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
+            Err(error) => return Err(error),
         };
-        let Some(position) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
-        else {
-            super::push_geometry_loss(
-                &mut losses,
-                entry,
-                format_args!("placement produces a non-finite point"),
-            );
-            continue;
-        };
-        let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
-        sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
-
+        sequences.record_point(
+            &point.point.id,
+            &crate::ids::Stem::directory(entry.sequence),
+        );
         ctx.charge_entities(1, "iges_geometry_primitives")?;
-        ir.model.points.push(Point::new(
-            point.clone(),
-            position,
-            Some(source_object(entry)?),
-        ));
-        if !entry.status.is_physically_dependent()
-            && (entry.status.subordinate() == Some(Subordinate::Independent)
-                || !analytic_surface_locations.contains(&entry.sequence))
-        {
-            let vertex = crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence));
-
+        ir.model.points.push(point.point);
+        if let Some(vertex) = point.vertex {
             ctx.charge_entities(1, "iges_geometry_primitives")?;
-            ir.model.vertices.push(Vertex {
-                id: vertex.clone(),
-                point,
-                tolerance: None,
-            });
-
-            free_vertices.push(vertex);
+            free_vertices.push(vertex.id.clone());
+            ir.model.vertices.push(vertex);
         }
         decoded.insert(entry.sequence);
     }
@@ -2677,6 +2661,7 @@ pub(crate) fn project_geometry(
 }
 
 mod free_geometry;
+pub(crate) mod point;
 
 #[cfg(test)]
 mod tests;

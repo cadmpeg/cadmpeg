@@ -199,3 +199,5 @@ mod property_identity;
 mod string_values;
 
 mod vector_values;
+
+mod dynamic_metadata;

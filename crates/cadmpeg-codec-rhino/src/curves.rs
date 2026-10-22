@@ -507,6 +507,14 @@ pub(crate) fn is_line(class: Uuid) -> bool {
     class == LINE
 }
 
+pub(crate) fn is_arc(class: Uuid) -> bool {
+    class == ARC
+}
+
+pub(crate) fn is_polyline(class: Uuid) -> bool {
+    class == POLYLINE
+}
+
 /// Decode the point fields through their actual source view.
 pub(crate) fn decode_point_view(
     ctx: &DecodeContext<'_>,
@@ -536,6 +544,43 @@ pub(crate) fn decode_line_view(
     let curve = DecodedCurve::line(read_line(&mut reader, scale, None)?);
     reader.skip_remaining()?;
     Ok(DecodedGeometry::Curve { curve })
+}
+
+/// Decode the arc fields through their actual source view.
+pub(crate) fn decode_arc_view(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    range: Range<usize>,
+    scale: MillimeterScale,
+) -> Result<DecodedGeometry, GeometryError> {
+    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
+    let mut reader = BoundedReader::from_view(source, range.start, range.end)?;
+    let (geometry, warnings) = read_arc(&mut reader, scale, None, false)?;
+    reader.skip_remaining()?;
+    Ok(DecodedGeometry::Curve {
+        curve: DecodedCurve::leaf(geometry, warnings),
+    })
+}
+
+/// Decode the polyline fields through their actual source view.
+pub(crate) fn decode_polyline_view(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    range: Range<usize>,
+    scale: MillimeterScale,
+) -> Result<DecodedGeometry, GeometryError> {
+    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
+    let mut reader = BoundedReader::from_view(source, range.start, range.end)?;
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_polyline(
+        ctx,
+        &mut reader,
+        scale,
+        None,
+    )?));
+    reader.skip_remaining()?;
+    Ok(DecodedGeometry::Curve {
+        curve: DecodedCurve::leaf(geometry, Diagnostics::new()),
+    })
 }
 
 /// Decodes a Brep C2 curve in surface parameter space.
@@ -614,6 +659,7 @@ pub(crate) fn decode_inner(
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_polyline(
+                    ctx,
                     &mut reader,
                     scale,
                     None,
@@ -1518,6 +1564,7 @@ pub(crate) fn decode_inner_2d(
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_polyline(
+                    ctx,
                     &mut reader,
                     MillimeterScale::IDENTITY,
                     Some(2),
@@ -1738,6 +1785,7 @@ fn read_line(
 }
 
 fn read_polyline(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     expected_dimension: Option<i32>,
@@ -1751,13 +1799,11 @@ fn read_polyline(
             "polyline needs at least two points",
         ));
     }
-    let mut points = Vec::new();
-    for _ in 0..point_count {
+    let mut points = ctx.alloc_filled(point_count, FinitePoint3::ZERO, "Rhino polyline points")?;
+    for position in &mut points {
         let point = native_point(reader)?;
-        points.push(
-            crate::wire::scaled_point(point.0.get(), scale)
-                .ok_or_else(|| error(reader.position(), "scaled polyline coordinate is invalid"))?,
-        );
+        *position = crate::wire::scaled_point(point.0.get(), scale)
+            .ok_or_else(|| error(reader.position(), "scaled polyline coordinate is invalid"))?;
     }
     let parameter_count = crate::wire::element_count(reader, 8)?;
     if parameter_count != point_count {
@@ -1766,8 +1812,13 @@ fn read_polyline(
             "polyline parameter count mismatch",
         ));
     }
-    let mut parameters = Vec::new();
-    for _ in 0..parameter_count {
+    let mut parameters = ctx.alloc_filled(
+        parameter_count,
+        FiniteReal::ZERO,
+        "Rhino polyline parameters",
+    )?;
+    let mut previous = None;
+    for parameter in &mut parameters {
         let value = reader.f64()?;
         let Some(value) = FiniteReal::new(value) else {
             return Err(error(
@@ -1775,16 +1826,14 @@ fn read_polyline(
                 "polyline parameters are not increasing",
             ));
         };
-        if parameters
-            .last()
-            .is_some_and(|previous: &FiniteReal| value.get() <= previous.get())
-        {
+        if previous.is_some_and(|previous: FiniteReal| value.get() <= previous.get()) {
             return Err(error(
                 reader.position(),
                 "polyline parameters are not increasing",
             ));
         }
-        parameters.push(value);
+        *parameter = value;
+        previous = Some(value);
     }
     let dimension = reader.i32()?;
     if expected_dimension.is_some_and(|expected| dimension != expected)
@@ -1792,12 +1841,12 @@ fn read_polyline(
     {
         return Err(error(reader.position(), "polyline dimension is invalid"));
     }
-    let mut knots = Vec::new();
-    knots.push(parameters[0]);
-    knots.push(parameters[0]);
-    knots.extend_from_slice(&parameters[1..point_count - 1]);
-    knots.push(parameters[point_count - 1]);
-    knots.push(parameters[point_count - 1]);
+    let knot_count = point_count
+        .checked_add(2)
+        .ok_or_else(|| error(reader.position(), "polyline knot count overflow"))?;
+    let mut knots = ctx.alloc_filled(knot_count, parameters[0], "Rhino polyline knots")?;
+    knots[2..point_count].copy_from_slice(&parameters[1..point_count - 1]);
+    knots[point_count..].fill(parameters[point_count - 1]);
     let knots = cadmpeg_ir::geometry::nurbs::KnotVector::from_finite_lanes(knots)
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
     NurbsCurve::from_checked_lanes(1, knots, points, None, false)
@@ -2197,8 +2246,10 @@ pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError 
 
 #[cfg(test)]
 mod tests {
+    mod source_arc_reads;
     mod source_line_reads;
     mod source_point_reads;
+    mod source_polyline_reads;
     #[test]
     fn numerical_audit_nurbs_elevation_preserves_active_spans_and_discontinuities() {
         use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -2942,8 +2993,10 @@ mod tests {
             bytes.extend(12.0_f64.to_le_bytes());
             bytes.extend(dimension.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-            let curve = read_polyline(&mut reader, MillimeterScale::IDENTITY, None)
-                .expect("valid polyline");
+            let curve = with_test_context(|ctx| {
+                read_polyline(ctx, &mut reader, MillimeterScale::IDENTITY, None)
+            })
+            .expect("valid polyline");
             assert_eq!(curve.control_points().len(), 2);
             assert_eq!(curve.knots().as_slice(), vec![10.0, 10.0, 12.0, 12.0]);
         }
@@ -2963,7 +3016,9 @@ mod tests {
             }
             bytes.extend(3_i32.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-            let result = read_polyline(&mut reader, MillimeterScale::IDENTITY, None);
+            let result = with_test_context(|ctx| {
+                read_polyline(ctx, &mut reader, MillimeterScale::IDENTITY, None)
+            });
             assert!(matches!(
                 result,
                 Err(GeometryError::Malformed(FramingError::Structural { offset, message }))

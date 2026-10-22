@@ -658,7 +658,7 @@ pub(crate) fn losses(
         {
             let parameter_location = edge.origin.parameter_index().and_then(|index| {
                 let record = records.get(source)?;
-                let span = record.tokens().get(index)?.span.start;
+                let span = record.tokens().get(index)?.as_ref()?.span.start;
                 let card = u32::try_from(span / 64).ok()?;
                 let sequence = record.line_range.start.checked_add(card)?;
                 let offset = parameter_lines

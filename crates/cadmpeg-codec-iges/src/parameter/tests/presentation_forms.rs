@@ -391,7 +391,7 @@ fn type406_form2_malformed_np_or_span_does_not_enable_generic_recovery() {
     }
 
     let mut record = integer_parameter_record(1, &[406, 3, 0, 1, 2, 1, 3, 0]);
-    record.tokens[1].value = TokenValue::real(3.0);
+    record.tokens[1].as_mut().unwrap().value = TokenValue::real(3.0);
     let analysis = analyze_trailing_pointer_groups_for_global_table(
         &record,
         &directory,

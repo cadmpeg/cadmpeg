@@ -984,7 +984,7 @@ struct NativeAttributeTableInstance {
     form: i64,
     definition: Option<String>,
     declared_row_count: Option<i64>,
-    rows: Vec<Vec<TokenValue>>,
+    rows: Vec<Vec<Option<TokenValue>>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1499,7 +1499,7 @@ impl UnstatableAttributeTable {
 /// `values` holds exactly `rows * values_per_row` tokens of the instance
 /// record's primary parameters.
 struct AttributeTableRows<'a> {
-    values: &'a [crate::parameter::Token],
+    values: &'a [Option<crate::parameter::Token>],
     values_per_row: std::num::NonZeroUsize,
 }
 
@@ -1936,7 +1936,7 @@ impl Serialize for NativeParameterRecordSlot<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            parameters: &'a [Token],
+            parameters: &'a [Option<Token>],
             comment: NativeBytes<&'a [u8]>,
         }
         let record = self.0;
@@ -1993,7 +1993,7 @@ struct NativeMacroInstance<'a> {
     form: i64,
     macro_definition: Option<String>,
     macro_library: Option<String>,
-    parameters: &'a [Token],
+    parameters: &'a [Option<Token>],
 }
 
 fn binary_integer(value: Option<i64>) -> Option<bool> {
@@ -4529,6 +4529,7 @@ pub(crate) fn store(
                             let value = record
                                 .tokens()
                                 .get(value_index)
+                                .and_then(Option::as_ref)
                                 .map_or(TokenValue::Omitted, |token| token.value.clone());
                             let display_template = (entry.form == 2)
                                 .then(|| record.integer(value_index + 1))
@@ -4614,7 +4615,11 @@ pub(crate) fn store(
                     let row_width = grid.values_per_row.get();
                     grid.values
                         .chunks_exact(row_width)
-                        .map(|row| row.iter().map(|item| item.value.clone()).collect())
+                        .map(|row| {
+                            row.iter()
+                                .map(|item| item.as_ref().map(|item| item.value.clone()))
+                                .collect()
+                        })
                         .collect()
                 }
                 Ok(None) => Vec::new(),
@@ -4903,6 +4908,7 @@ pub(crate) fn store(
                                 value: record
                                     .tokens()
                                     .get(index + 1)
+                                    .and_then(Option::as_ref)
                                     .map_or(TokenValue::Omitted, |token| token.value.clone()),
                             }
                         })

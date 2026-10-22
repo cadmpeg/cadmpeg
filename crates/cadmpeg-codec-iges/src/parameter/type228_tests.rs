@@ -18,13 +18,16 @@ fn type228_standard_and_implementor_forms_share_entity_table_boundary() {
             directory_sequence: 5,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end: values.len(),
             comment: Vec::new(),
         };

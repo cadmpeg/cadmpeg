@@ -17,10 +17,10 @@ use crate::IgesCodec;
 
 #[test]
 fn native_macro_instance_keeps_parameter_wire_fields() {
-    let tokens = [crate::parameter::Token {
+    let tokens = [Some(crate::parameter::Token {
         value: crate::parameter::TokenValue::String(b"abc".to_vec().into()),
         span: 0..3,
-    }];
+    })];
     let instance = super::NativeMacroInstance {
         id: "iges:native:macro-instance#D3".into(),
         source_entity: "iges:entity:directory#3".into(),
@@ -30,7 +30,7 @@ fn native_macro_instance_keeps_parameter_wire_fields() {
         macro_library: None,
         parameters: &tokens,
     };
-    assert_eq!(tokens[0].span, 0..3);
+    assert_eq!(tokens[0].as_ref().unwrap().span, 0..3);
     assert_eq!(
         serde_json::to_value(instance).unwrap(),
         serde_json::json!({
@@ -62,7 +62,7 @@ fn native_parameter_record_keeps_bytes_tokens_comment_and_line_wire_fields() {
     );
     assert_eq!(record.line_range, 1..2);
     assert_eq!(record.bytes, b"abc");
-    assert_eq!(record.tokens()[0].span, 0..1);
+    assert_eq!(record.tokens()[0].as_ref().unwrap().span, 0..1);
     assert_eq!(
         serde_json::to_value(super::NativeParameterRecordSlot(Some(&record))).unwrap(),
         serde_json::json!({

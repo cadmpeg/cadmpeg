@@ -61,20 +61,16 @@ fn an_unreadable_literal_retains_the_other_fields_and_refuses_required_geometry(
             .len(),
         5
     );
-    assert_eq!(
-        entity.fields().unwrap()["parameters"][3]["value"]["kind"],
-        "unreadable"
-    );
+    assert!(entity.fields().unwrap()["parameters"][3].is_null());
+    for (index, value) in [(0, 116), (1, 1), (2, 2), (4, 0)] {
+        assert_eq!(
+            entity.fields().unwrap()["parameters"][index]["value"]["value"],
+            value
+        );
+    }
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
     assert!(result.ir().model.points.is_empty());
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterLiteralUnusable),
-        1
-    );
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::GeometryNotProjected),
-        1
-    );
+    crate::test_support::parameter_parts::assert_one_parameter_field(&result, &bytes, 8, b"3x4,");
     assert!(matches!(
         IgesCodec.decode(&mut Cursor::new(bytes), &strict_options()),
         Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. })
@@ -267,18 +263,19 @@ fn a_non_ascii_literal_retains_its_framed_record() {
     let mut bytes = point_file("116,1,2,3,0;");
     let card_offset = parameter_card_offset(&bytes);
     bytes[card_offset + 4] = 0xff;
-    let result = decode(bytes);
+    let result = decode(bytes.clone());
     assert!(result.ir().native.namespace("iges").unwrap().arenas()
         ["quarantined_parameter_records"]
         .is_empty());
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterLiteralUnusable),
-        1
-    );
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::GeometryNotProjected),
-        1
-    );
+    crate::test_support::parameter_parts::assert_one_parameter_field(&result, &bytes, 4, b"\xff,");
+    let native = result.ir().native.namespace("iges").unwrap();
+    let fields = native.arenas()["entities"][0].fields().unwrap();
+    assert_eq!(fields["parameters"].as_array().unwrap().len(), 5);
+    assert!(fields["parameters"][1].is_null());
+    for (index, value) in [(0, 116), (2, 2), (3, 3), (4, 0)] {
+        assert_eq!(fields["parameters"][index]["value"]["value"], value);
+    }
+    assert!(result.ir().model.points.is_empty());
 }
 
 #[test]

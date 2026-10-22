@@ -641,3 +641,5 @@ mod source_property_reads;
 mod source_scalar_reads;
 
 mod source_vector_reads;
+
+mod source_property_group_reads;

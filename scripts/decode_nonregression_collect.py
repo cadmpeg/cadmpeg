@@ -20,6 +20,8 @@ from decode_nonregression_d10 import PAIRS, verify_length_pairs
 from decode_nonregression_inputs import dump_fixture
 from decode_nonregression_schema_bindings import attach_external, generated_arena
 from decode_nonregression_wire import verify_wire_rows
+from decode_nonregression_source_names import verify_source_names
+from decode_nonregression_retained import load_bound_sidecar, sidecar_path, compare_retained
 
 
 class CollectionError(ValueError):
@@ -219,6 +221,22 @@ def compare_collected(comparator: Any, base: dict, head: dict, baseline: Produce
         witnessed = {(row.record_id, 'sketch_constraints', '#', *row.companion_path) for row in equalities}
         findings = [finding for finding in findings if not (
             finding.code in {'neutral-leaf', 'resolver-evidence-required'} and finding.path in witnessed)]
+    named = [record['id'] for record in before.get('model', {}).get('curves', [])
+             if isinstance(record.get('source_object'), dict)
+             and record['source_object'].get('format') == 'step'
+             and record['source_object'].get('name') is not None]
+    if named:
+        report = helper.run(['--source-names', *named], before)
+        if report.get('requested') != named:
+            raise CollectionError('typed name helper did not cover the actual requested IDs')
+        base_queries = {arena: baseline.schema(arena, helper)
+                        for arena in ('curves', 'appearance_bindings', 'appearances')}
+        head_queries = {arena: current.schema(arena, helper)
+                        for arena in ('curves', 'appearance_bindings', 'appearances', 'attributes')}
+        names = verify_source_names(report, before, after, base_queries, head_queries)
+        witnessed_names = {(row.record_id, 'curves', '#', *row.value_path) for row in names}
+        findings = [finding for finding in findings if not (
+            finding.code == 'resolver-evidence-required' and finding.path in witnessed_names)]
     findings.extend(comparator.compare_native(before.get('native', {}), after.get('native', {}), comparator.Evidence()))
     # No blanket exemptions: these are still missing whole-gate mechanisms even
     # when a tiny unchanged fixture happens to have no structural differences.
@@ -238,20 +256,32 @@ def collect_fixture(comparator: Any, fixture: str, baseline: Producer, current: 
     if expected != [blob, blob]:
         raise CollectionError('fixture source bytes differ from an authenticated producer snapshot')
     dumps = []
+    sidecars = []
+    sidecar_hashes = {}
     for producer in (baseline, current):
         producer.verify()
         target = output / (producer.proof['role'] + '.json')
         command = [producer.proof['binary'], 'dump', str(source), '-o', str(target)]
+        # Never reuse a stale sidecar from an earlier successful/failed decode.
+        sidecar_path(target).unlink(missing_ok=True)
         value = dump_fixture(Path(producer.proof['binary']), source, target)
         producer.verify()
         producer.commands.append({'command': command, 'commit': producer.proof['commit'],
                                   'binary_sha256': producer.proof['binary_sha256'],
                                   'result': 'decode_error' if 'decode_error' in value else 'decoded'})
         dumps.append(value)
+        if 'decode_error' not in value:
+            sidecars.append(load_bound_sidecar(target, value))
+            sidecar_hashes[producer.proof['role']] = digest(sidecar_path(target))
     if git(current.repo, 'hash-object', '--', str(source)) != blob:
         raise CollectionError('fixture changed during collection')
     findings = compare_collected(comparator, *dumps, baseline, current, helper)
+    retained_checked = 0
+    if len(sidecars) == 2:
+        retained_findings, retained_checked = compare_retained(*sidecars)
+        findings.extend(comparator.Finding(row.code, row.path, row.message) for row in retained_findings)
     return {'fixture': fixture, 'blob': blob,
+            'sidecar_sha256': sidecar_hashes, 'retained_source_images_checked': retained_checked,
             'commands': [command for owner, start in zip((baseline, current, helper), starts) for command in owner.commands[start:]],
             'schema_sha256': {producer.proof['role']: {arena: hashlib.sha256(json.dumps(query, sort_keys=True).encode()).hexdigest() for arena, query in producer.schemas.items()} for producer in (baseline, current)},
             'findings': [vars(finding) for finding in findings],

@@ -94,7 +94,7 @@ pub(crate) struct ParameterRecord {
     pub(crate) directory_sequence: u32,
     pub(crate) line_range: Range<u32>,
     pub(crate) bytes: Vec<u8>,
-    tokens: Vec<Token>,
+    tokens: Vec<Option<Token>>,
     /// Exclusive end of the entity-specific Parameter Data sequence.
     ///
     /// `tokens` retains the complete record so native preservation and
@@ -240,7 +240,7 @@ pub(crate) enum DefaultTailCount {
 }
 
 impl ParameterRecord {
-    pub(crate) fn tokens(&self) -> &[Token] {
+    pub(crate) fn tokens(&self) -> &[Option<Token>] {
         &self.tokens
     }
 
@@ -257,10 +257,14 @@ impl ParameterRecord {
             directory_sequence,
             line_range,
             bytes,
-            tokens,
+            tokens: tokens.into_iter().map(Some).collect(),
             parameter_end,
             comment,
         }
+    }
+
+    pub(crate) fn has_absent_fields(&self) -> bool {
+        self.tokens.iter().any(Option::is_none)
     }
 
     pub(crate) fn parameter_end(&self) -> usize {
@@ -268,7 +272,7 @@ impl ParameterRecord {
     }
 
     pub(crate) fn token(&self, index: usize) -> Option<&Token> {
-        (index < self.parameter_end()).then(|| self.tokens.get(index))?
+        (index < self.parameter_end()).then(|| self.tokens.get(index)?.as_ref())?
     }
 
     pub(crate) fn value(&self, index: usize) -> Option<&TokenValue> {
@@ -276,7 +280,7 @@ impl ParameterRecord {
     }
 
     fn raw_value(&self, index: usize) -> Option<&TokenValue> {
-        self.tokens.get(index).map(|token| &token.value)
+        self.tokens.get(index)?.as_ref().map(|token| &token.value)
     }
 
     fn raw_integer(&self, index: usize) -> Option<i64> {
@@ -303,7 +307,7 @@ impl ParameterRecord {
         let token = match self.tokens.get(index) {
             None => return Some(default),
             Some(_) if index >= self.parameter_end() => return None,
-            Some(token) => token,
+            Some(token) => token.as_ref()?,
         };
         match &token.value {
             TokenValue::Omitted => Some(default),
@@ -324,7 +328,7 @@ impl ParameterRecord {
         let token = match self.tokens.get(index) {
             None => return Some(default),
             Some(_) if index >= self.parameter_end() => return None,
-            Some(token) => token,
+            Some(token) => token.as_ref()?,
         };
         match &token.value {
             TokenValue::Omitted => Some(default),
@@ -380,7 +384,7 @@ impl ParameterRecord {
         let token = match self.tokens.get(index) {
             None => return Some(&[]),
             Some(_) if index >= self.parameter_end() => return None,
-            Some(token) => token,
+            Some(token) => token.as_ref()?,
         };
         match &token.value {
             TokenValue::Omitted => Some(&[]),
@@ -544,7 +548,7 @@ impl ParameterRecord {
 /// IGES double-precision exponent spelling.
 pub(crate) fn uses_double_precision(records: &[ParameterRecord]) -> bool {
     records.iter().any(|record| {
-        record.tokens.iter().any(|token| {
+        record.tokens.iter().flatten().any(|token| {
             matches!(&token.value, TokenValue::Real(_))
                 && record
                     .bytes
@@ -3382,6 +3386,55 @@ fn tokenize_with_limits(
     global_table: GlobalTable,
     limits: NumericLimits,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
+    tokenize_with_crossings(
+        bytes,
+        card_boundaries,
+        parameter_delimiter,
+        record_delimiter,
+        global_table,
+        limits,
+        |_, first_value| {
+            Err(TokenizeFailure::Defect(
+                ParameterDefect::NumericCrossesCard,
+                first_value,
+            ))
+        },
+    )
+}
+
+fn tokenize_source_fields(
+    bytes: &[u8],
+    card_boundaries: &[usize],
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+    global_table: GlobalTable,
+    limits: NumericLimits,
+) -> Result<(Vec<Token>, usize), TokenizeFailure> {
+    tokenize_with_crossings(
+        bytes,
+        card_boundaries,
+        parameter_delimiter,
+        record_delimiter,
+        global_table,
+        limits,
+        |span, _| {
+            Ok(Token {
+                value: TokenValue::Unreadable(ParameterDefect::NumericCrossesCard),
+                span,
+            })
+        },
+    )
+}
+
+fn tokenize_with_crossings(
+    bytes: &[u8],
+    card_boundaries: &[usize],
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+    global_table: GlobalTable,
+    limits: NumericLimits,
+    mut crossing: impl FnMut(Range<usize>, usize) -> Result<Token, TokenizeFailure>,
+) -> Result<(Vec<Token>, usize), TokenizeFailure> {
     let mut tokens = Vec::new();
     let mut cursor = 0_usize;
     loop {
@@ -3426,30 +3479,29 @@ fn tokenize_with_limits(
                     .iter()
                     .position(|byte| !byte.is_ascii_whitespace())
                     .unwrap_or(span.len());
-            if first_value < end && card_boundary_within(card_boundaries, first_value, end) {
-                return Err(TokenizeFailure::Defect(
-                    ParameterDefect::NumericCrossesCard,
-                    first_value,
-                ));
-            }
-            let token = match numeric_with_limits(bytes, span.clone(), limits) {
-                Ok(token) => token,
-                Err(TokenizeFailure::Defect(defect, _))
-                    if matches!(
-                        defect,
-                        ParameterDefect::NumericContainsBlanks
-                            | ParameterDefect::TokenNotAscii
-                            | ParameterDefect::TokenNotANumber
-                            | ParameterDefect::NumericOutOfRange
-                    ) =>
-                {
-                    Token {
-                        value: TokenValue::Unreadable(defect),
-                        span,
+            let token =
+                if first_value < end && card_boundary_within(card_boundaries, first_value, end) {
+                    crossing(span, first_value)?
+                } else {
+                    match numeric_with_limits(bytes, span.clone(), limits) {
+                        Ok(token) => token,
+                        Err(TokenizeFailure::Defect(defect, _))
+                            if matches!(
+                                defect,
+                                ParameterDefect::NumericContainsBlanks
+                                    | ParameterDefect::TokenNotAscii
+                                    | ParameterDefect::TokenNotANumber
+                                    | ParameterDefect::NumericOutOfRange
+                            ) =>
+                        {
+                            Token {
+                                value: TokenValue::Unreadable(defect),
+                                span,
+                            }
+                        }
+                        Err(error) => return Err(error),
                     }
-                }
-                Err(error) => return Err(error),
-            };
+                };
             (token, end)
         };
         tokens.push(token);
@@ -3824,10 +3876,28 @@ impl From<TokenizeFailure> for OwnedParseFailure {
     }
 }
 
+type FieldTokenizer = fn(
+    &[u8],
+    &[usize],
+    u8,
+    u8,
+    GlobalTable,
+    NumericLimits,
+) -> Result<(Vec<Token>, usize), TokenizeFailure>;
+
 fn parse_owned_record(
     owned: &Ownership<'_>,
     owned_bytes: OwnedParameterBytes,
     global: &ResolvedGlobal,
+) -> Result<ParameterRecord, OwnedParseFailure> {
+    parse_owned_record_with_tokenizer(owned, owned_bytes, global, tokenize_with_limits)
+}
+
+fn parse_owned_record_with_tokenizer(
+    owned: &Ownership<'_>,
+    owned_bytes: OwnedParameterBytes,
+    global: &ResolvedGlobal,
+    tokenize_fields: FieldTokenizer,
 ) -> Result<ParameterRecord, OwnedParseFailure> {
     let entry = owned.entry;
     let tokenized = if entry.entity_type == 306 {
@@ -3837,7 +3907,7 @@ fn parse_owned_record(
             global.record_delimiter,
         )
     } else {
-        tokenize_with_limits(
+        tokenize_fields(
             &owned_bytes.bytes,
             &owned_bytes.card_boundaries,
             global.parameter_delimiter,
@@ -3873,7 +3943,7 @@ fn parse_owned_record(
             .unwrap_or_default()
             .to_vec(),
         bytes: owned_bytes.bytes,
-        tokens,
+        tokens: tokens.into_iter().map(Some).collect(),
         parameter_end,
     })
 }

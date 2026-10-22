@@ -39,7 +39,7 @@ fn type406_form27_complete_counted_span_keeps_boundary_with_invalid_value_type()
         line_range: 1..2,
         bytes: Vec::new(),
         parameter_end: tokens.len(),
-        tokens,
+        tokens: (tokens).into_iter().map(Some).collect(),
         comment: Vec::new(),
     };
 
@@ -132,7 +132,7 @@ fn type406_form27_malformed_np_or_value_count_does_not_enable_generic_recovery()
             line_range: 1..2,
             bytes: Vec::new(),
             parameter_end: tokens.len(),
-            tokens,
+            tokens: (tokens).into_iter().map(Some).collect(),
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups_for_global_table(
@@ -182,13 +182,16 @@ fn type402_form6_entity_table_boundary_follows_view_list() {
             directory_sequence: 5,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end,
             comment: Vec::new(),
         };
@@ -223,13 +226,16 @@ fn type402_form6_entity_table_boundary_precedes_valid_generic_alternative() {
         directory_sequence: 5,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values
+        tokens: (values
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
     };
@@ -272,13 +278,16 @@ fn type402_form6_malformed_fields_do_not_enable_generic_recovery() {
             directory_sequence: 5,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end,
             comment: Vec::new(),
         };
@@ -313,7 +322,7 @@ fn type402_form6_malformed_fields_do_not_enable_generic_recovery() {
         directory_sequence: 5,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values,
+        tokens: (values).into_iter().map(Some).collect(),
         parameter_end: 8,
         comment: Vec::new(),
     };
@@ -363,13 +372,16 @@ fn type402_form16_entity_table_boundary_follows_entity_count() {
             line_range: 1..2,
             bytes: Vec::new(),
             parameter_end: values.len(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             comment: Vec::new(),
         };
 
@@ -435,13 +447,16 @@ fn type402_form16_table_boundary_precedes_valid_generic_alternative() {
         line_range: 1..2,
         bytes: Vec::new(),
         parameter_end: values.len(),
-        tokens: values
+        tokens: (values
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         comment: Vec::new(),
     };
     let generic = structural_pointer_group_candidates(&record);
@@ -782,7 +797,7 @@ fn type402_external_reference_index_entity_table_boundary_follows_entry_pairs() 
                 directory_sequence: 3,
                 line_range: 1..2,
                 bytes: Vec::new(),
-                tokens,
+                tokens: (tokens).into_iter().map(Some).collect(),
                 parameter_end,
                 comment: Vec::new(),
             };
@@ -872,7 +887,7 @@ fn type402_external_reference_index_malformed_counts_or_pairs_do_not_enable_gene
                 directory_sequence: 3,
                 line_range: 1..2,
                 bytes: Vec::new(),
-                tokens,
+                tokens: (tokens).into_iter().map(Some).collect(),
                 parameter_end,
                 comment: Vec::new(),
             };
@@ -930,7 +945,7 @@ fn type402_form13_entity_table_boundary_follows_geometry_list() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens,
+            tokens: (tokens).into_iter().map(Some).collect(),
             parameter_end,
             comment: Vec::new(),
         };
@@ -1033,7 +1048,7 @@ fn type402_form13_malformed_fields_do_not_enable_generic_recovery() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens,
+            tokens: (tokens).into_iter().map(Some).collect(),
             parameter_end,
             comment: Vec::new(),
         };

@@ -681,7 +681,9 @@ impl<'a> DecodeContext<'a> {
             }
             let source = self.expand.root();
             let source_key = if (crate::curves::is_point(object.class_uuid)
-                || crate::curves::is_line(object.class_uuid))
+                || crate::curves::is_line(object.class_uuid)
+                || crate::curves::is_arc(object.class_uuid)
+                || crate::curves::is_polyline(object.class_uuid))
                 && source.has_source_tracking()
             {
                 let Some(key) = self.checked_object_key(&object.identity, source_order) else {
@@ -726,8 +728,22 @@ impl<'a> DecodeContext<'a> {
                             object.class_data_range.clone(),
                             scale,
                         )
-                    } else {
+                    } else if crate::curves::is_line(object.class_uuid) {
                         crate::curves::decode_line_view(
+                            ctx,
+                            source,
+                            object.class_data_range.clone(),
+                            scale,
+                        )
+                    } else if crate::curves::is_arc(object.class_uuid) {
+                        crate::curves::decode_arc_view(
+                            ctx,
+                            source,
+                            object.class_data_range.clone(),
+                            scale,
+                        )
+                    } else {
+                        crate::curves::decode_polyline_view(
                             ctx,
                             source,
                             object.class_data_range.clone(),
