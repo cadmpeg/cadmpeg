@@ -2763,6 +2763,64 @@ source = "spec"
 anchor = "a marked same-segment texture-table reference at offset 27"
 
 [[record]]
+name = "paramesh_flagged_mesh_collection_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "An empty collection can instead store byte `01` at offset 20, in place of the last of the ten zero bytes, and a u32 at offset 25 after its first body count."
+size = 42
+note = "Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "in place of the last of the ten zero bytes"
+
+[[record.field]]
+name = "flag"
+offset = 20
+type = "u8"
+value = 1
+source = "spec"
+anchor = "store byte `01` at offset 20"
+
+[[record.field]]
+name = "body_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a u32 body count at offset 21"
+
+[[record.field]]
+name = "flagged_word"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "a u32 at offset 25 after its first body count"
+
+[[record.field]]
+name = "constant_01_01"
+offset = 29
+type = "bytes[2]"
+source = "spec"
+anchor = "Its bytes `01 01`, texture-table reference, and nested record then start at offsets 29, 31, and 42"
+
+[[record.field]]
+name = "texture_table_reference"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "Its bytes `01 01`, texture-table reference, and nested record then start at offsets 29, 31, and 42"
+
+[[record]]
 name = "paramesh_mesh_collection_base_prefix"
 kind = "byte"
 section = "3.1"
