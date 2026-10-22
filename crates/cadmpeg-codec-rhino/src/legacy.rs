@@ -56,6 +56,14 @@ const TCODE_UNIT_AND_TOLERANCES: u32 = 0x0200_0010;
 const TCODE_NAMED_CPLANE: u32 = 0x0200_0004;
 const TCODE_NAMED_VIEW: u32 = 0x0200_0005;
 const TCODE_VIEWPORT: u32 = 0x0200_0006;
+const TCODE_NOTES: u32 = 0x0200_000f;
+const TCODE_SUMMARY: u32 = 0x0200_0013;
+const TCODE_BITMAPPREVIEW: u32 = 0x0200_0014;
+const TCODE_ANNOTATION_SETTINGS: u32 = 0x0020_0001;
+const TCODE_LAYER: u32 = 0x0040_0010;
+const TCODE_RENDERMESHPARAMS: u32 = 0x0040_0020;
+const TCODE_CURRENTLAYER: u32 = 0x8040_0025;
+const TCODE_RH_SPOTLIGHT: u32 = 0x0080_0001;
 const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
 const TCODE_ENDOFFILE: u32 = 0x8000_7fff;
 const TCODE_TEXT_BLOCK: u32 = 0x0020_0004;
@@ -75,6 +83,25 @@ fn is_v1_presentation_setting(typecode: u32) -> bool {
         typecode,
         TCODE_NAMED_CPLANE | TCODE_NAMED_VIEW | TCODE_VIEWPORT
     )
+}
+
+/// Names a V1 flat record that holds document, table, or presentation state
+/// and no geometry.
+fn v1_nongeometry_record(typecode: u32) -> Option<&'static str> {
+    Some(match typecode {
+        TCODE_NAMED_CPLANE => "named construction plane",
+        TCODE_NAMED_VIEW => "named view",
+        TCODE_VIEWPORT => "viewport",
+        TCODE_ANNOTATION_SETTINGS => "annotation settings",
+        TCODE_LAYER => "layer",
+        TCODE_RENDERMESHPARAMS => "render-mesh parameters",
+        TCODE_CURRENTLAYER => "current layer",
+        TCODE_RH_SPOTLIGHT => "spotlight",
+        TCODE_NOTES => "notes",
+        TCODE_SUMMARY => "revision summary",
+        TCODE_BITMAPPREVIEW => "preview bitmap",
+        _ => return None,
+    })
 }
 
 fn legacy_identity_key(value: impl Into<String>) -> Result<IdentityKey, CodecError> {
@@ -2982,9 +3009,9 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         );
     }
     for (typecode, count) in omitted {
-        losses.push(if is_v1_presentation_setting(typecode) {
+        losses.push(if let Some(name) = v1_nongeometry_record(typecode) {
             RhinoLossCode::PresentationRecordDropped.note(format_args!(
-                "V1 presentation typecode {typecode:#010x}: {count} record(s) retained as opaque"
+                "V1 {name} typecode {typecode:#010x}: {count} record(s) retained as opaque"
             ))
         } else {
             RhinoLossCode::ObjectFamilyNotTransferred.note(format_args!(
@@ -3070,7 +3097,9 @@ mod tests {
         TCODE_NAMED_CPLANE, TCODE_NAMED_VIEW, TCODE_RADIAL_DIMENSION, TCODE_RHINOIO_OBJECT_BREP,
         TCODE_RHINOIO_OBJECT_DATA, TCODE_RHINOIO_OBJECT_NURBS_CURVE,
         TCODE_RHINOIO_OBJECT_NURBS_SURFACE, TCODE_RH_POINT, TCODE_TEXT_BLOCK,
-        TCODE_UNIT_AND_TOLERANCES, TCODE_VIEWPORT,
+        TCODE_UNIT_AND_TOLERANCES, TCODE_VIEWPORT, TCODE_ANNOTATION_SETTINGS, TCODE_BITMAPPREVIEW,
+        TCODE_CURRENTLAYER, TCODE_LAYER, TCODE_NOTES, TCODE_RENDERMESHPARAMS, TCODE_RH_SPOTLIGHT,
+        TCODE_SUMMARY,
     };
     use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
     use crate::loss::RhinoLossCode;
@@ -3155,6 +3184,35 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn v1_document_and_table_typecodes_are_not_geometry_losses() {
+        let mut data = archive(&[]);
+        for typecode in [
+            TCODE_ANNOTATION_SETTINGS,
+            TCODE_LAYER,
+            TCODE_RENDERMESHPARAMS,
+            TCODE_RH_SPOTLIGHT,
+            TCODE_NOTES,
+            TCODE_SUMMARY,
+            TCODE_BITMAPPREVIEW,
+        ] {
+            data.extend(chunk(typecode, b"state"));
+        }
+        data.extend(short(TCODE_CURRENTLAYER, 0));
+        let losses = decode_v1(&data)
+            .expect("decode the version 1 archive")
+            .body
+            .losses;
+        assert_eq!(losses.len(), 8);
+        assert!(losses.iter().all(|loss| {
+            loss.code == RhinoLossCode::PresentationRecordDropped.kind()
+                && !loss.message.contains("geometry")
+        }));
+        assert!(losses
+            .iter()
+            .any(|loss| loss.message.starts_with("V1 layer typecode 0x00400010")));
     }
 
     #[test]

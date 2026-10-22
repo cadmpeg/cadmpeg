@@ -1917,7 +1917,29 @@ record typecodes:
 
 The five annotation and three pre-class NURBS records are complete bounded
 records. They are not split into legacy geometry children. A direct typecode
-outside this dispatch is skipped as one complete chunk. The containing direct
+outside this dispatch is skipped as one complete chunk.
+
+These V1 flat typecodes carry document, table, or presentation state. They
+carry no geometry:
+
+| Record | Typecode | Content |
+| --- | ---: | --- |
+| `TCODE_ANNOTATION_SETTINGS` | `0x00200001` | annotation settings |
+| `TCODE_LAYER` | `0x00400010` | one V1 layer with name, color, and state children |
+| `TCODE_RENDERMESHPARAMS` | `0x00400020` | render-mesh parameters |
+| `TCODE_CURRENTLAYER` | `0x80400025` | short chunk; current layer |
+| `TCODE_RH_SPOTLIGHT` | `0x00800001` | one spotlight with optional attribute data |
+| `TCODE_NAMED_CPLANE` | `0x02000004` | one named construction plane |
+| `TCODE_NAMED_VIEW` | `0x02000005` | one named view |
+| `TCODE_VIEWPORT` | `0x02000006` | one viewport |
+| `TCODE_NOTES` | `0x0200000f` | document notes |
+| `TCODE_SUMMARY` | `0x02000013` | revision history; CRC16 |
+| `TCODE_BITMAPPREVIEW` | `0x02000014` | preview image |
+
+The spotlight body starts with an origin point, X and Y axis vectors, and
+radius, height, and hotspot doubles. The light location is
+`origin + height × (X × Y)` and its direction is `−(X × Y)`, scaled by height
+when height is positive. The containing direct
 chunk is the recovery boundary when a dispatched payload is malformed; a
 partial child is not promoted to a typed record.
 
@@ -4648,9 +4670,12 @@ minor >= 7: u8 double-vertices-present, optional double-vertex chunk
 minor >= 8: ON_BoundingBox vertex bounds
 ```
 
-The three minor-5 values are tri-state bytes: zero means unset, one means
-false, and two means true. Other values are invalid. They are not ordinary
-booleans.
+The three minor-5 values are cached topology states, not ordinary booleans.
+For manifold and oriented, zero means unset, one means true, and two means
+false. For solid, zero means unset, one means solid with outward face normals,
+two means solid with inward face normals, and three means not solid. A value
+above that range is an unset cache: the reader recomputes the state from the
+faces.
 
 The mapping tag is an anonymous major-1 chunk. Minor 1 adds the mapping type:
 

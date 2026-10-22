@@ -216,6 +216,12 @@ struct MeshChannels {
     losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
+/// The serialized topology caches after the mapping tag: manifold and
+/// oriented are 0 unset, 1 true, 2 false; solid is 0 unset, 1 outward, 2
+/// inward, 3 not solid.
+const MESH_TOPOLOGY_CACHE_FLAGS: [(&str, u8); 3] =
+    [("manifold", 2), ("oriented", 2), ("solid", 3)];
+
 /// Returns whether a UUID is `ON_Mesh`.
 pub(crate) fn supported_class(uuid: Uuid) -> bool {
     uuid == ON_MESH
@@ -346,12 +352,12 @@ pub(crate) fn decode(
     if post_2006_fields {
         read_mapping_tag(&mut reader, archive, &mut decoded.warnings)?;
         if minor >= 5 {
-            for _ in 0..3 {
+            for (label, maximum) in MESH_TOPOLOGY_CACHE_FLAGS {
                 let value = reader.u8()?;
-                if value > 2 {
-                    decoded
-                        .warnings
-                        .push("invalid mesh tri-state flag retained".to_string());
+                if value > maximum {
+                    decoded.warnings.push(format_args!(
+                        "mesh {label} cache value {value} is outside 0..={maximum}; retained as unset"
+                    ));
                 }
             }
         }
@@ -1646,6 +1652,7 @@ mod tests {
 
     use super::{
         consume_optional_chunk, decode, parse_f32_points, parse_mesh_correspondence_userdata,
+        DecodedMesh,
         quad_face_count, read_buffer, read_faces, read_mapping_tag, read_ngons,
         read_v4v5_ngon_userdata, synchronization_ok, triangulate_faces, MeshBudget, MeshBufferSpec,
         MeshDecodeOptions, MeshExpand, MAX_BUFFER_OUTPUT, OPENNURBS4, V4V5_MESH_NGON_USERDATA,
@@ -1974,6 +1981,56 @@ mod tests {
         assert!(decoded.losses.iter().any(|loss| {
             loss.code == crate::loss::RhinoLossCode::SourceWriterStampUnverified.kind()
         }));
+    }
+
+    fn minor_five_mesh_with_topology_caches(caches: [u8; 3]) -> DecodedMesh {
+        let mut bytes = compressed_mesh();
+        bytes[0] = 0x35;
+        bytes.extend(0_i32.to_le_bytes());
+        bytes.extend([0_u8; 16]);
+        bytes.extend(0_u32.to_le_bytes());
+        let mut mapping = 1_i32.to_le_bytes().to_vec();
+        mapping.extend(0_i32.to_le_bytes());
+        mapping.extend([0_u8; 16]);
+        mapping.extend(0_i32.to_le_bytes());
+        for _ in 0..16 {
+            mapping.extend(0.0_f64.to_le_bytes());
+        }
+        bytes.extend(chunk(&mapping));
+        bytes.extend(caches);
+        with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: Some(200_606_010),
+                    association: None,
+                    id: crate::mesh::MeshId::Ready(
+                        cadmpeg_ir::tessellation::TessellationId::mint(
+                            "synthetic:test:tessellation#topology-caches",
+                        )
+                        .expect("valid identity"),
+                    ),
+                    scale: MillimeterScale::IDENTITY,
+                    userdata: &[],
+                },
+                &mut MeshBudget::new(),
+            )
+        })
+        .expect("minor-5 mesh")
+    }
+
+    #[test]
+    fn mesh_topology_caches_admit_the_not_solid_state() {
+        let decoded = minor_five_mesh_with_topology_caches([2, 2, 3]);
+        assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
+        let decoded = minor_five_mesh_with_topology_caches([3, 0, 4]);
+        let messages = decoded.warnings.messages().collect::<Vec<_>>();
+        assert_eq!(messages.len(), 2, "{messages:?}");
+        assert!(messages[0].contains("manifold cache value 3"));
+        assert!(messages[1].contains("solid cache value 4"));
     }
 
     #[test]
