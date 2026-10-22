@@ -207,10 +207,13 @@ fn design_records_project_only_at_full_depth() {
     assert_eq!(parameter.name, "ratio");
     assert_eq!(full.ir().model.faces.len(), 1);
 
-    // Inventor has no geometry cut: a geometry request delivers the full document.
-    assert_eq!(geometry.report().depth(), DecodeDepth::Full);
-    assert_eq!(geometry.ir().decode_depth(), DecodeDepth::Full);
-    assert_eq!(geometry.ir().model, full.ir().model);
+    // A geometry request stops before design projection: the same geometry,
+    // no design records.
+    assert_eq!(geometry.report().depth(), DecodeDepth::Geometry);
+    assert_eq!(geometry.ir().decode_depth(), DecodeDepth::Geometry);
+    assert_eq!(geometry.ir().model.populated_design_arena(), None);
+    assert!(geometry.ir().model.parameters.is_empty());
+    assert_eq!(geometry.ir().model.faces, full.ir().model.faces);
 
     assert_eq!(container.report().depth(), DecodeDepth::Container);
     assert_eq!(container.ir().decode_depth(), DecodeDepth::Container);
@@ -238,7 +241,7 @@ fn design_records_project_only_at_full_depth() {
         &InventorCodec,
         &[("design", source.clone())],
     );
-    assert_eq!(summary.cut, 0, "{summary:?}");
+    assert_eq!(summary.cut, 1, "{summary:?}");
 }
 
 /// The model as JSON without its design arenas.
