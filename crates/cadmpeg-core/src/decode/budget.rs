@@ -29,11 +29,6 @@ pub(super) struct DecodeBudget {
 }
 
 impl DecodeBudget {
-    /// Returns the policy applied to this budget.
-    pub(super) fn policy(&self) -> &DecodePolicy {
-        &self.policy
-    }
-
     pub(super) fn new(policy: DecodePolicy, input_bytes: u64) -> Self {
         Self {
             policy,
@@ -254,33 +249,79 @@ impl DecodeBudget {
         .map_err(Into::into)
     }
 
-    pub(super) fn enter_nested(
-        &self,
-        operation: &'static str,
-    ) -> Result<DepthGuard<'_>, ResourceLimit> {
+    pub(super) fn charge_nested(&self, operation: &'static str) -> Result<(), ResourceLimit> {
         self.charge(
             ResourceDimension::RecursionDepth,
             &self.recursion_depth,
             self.policy.limits.max_recursion_depth,
             1,
             operation,
+        )
+    }
+
+    pub(super) fn enter_levels(
+        &self,
+        levels: u64,
+        operation: &'static str,
+    ) -> Result<LocalDepthGuard<'_>, ResourceLimit> {
+        self.charge(
+            ResourceDimension::RecursionDepth,
+            &self.recursion_depth,
+            self.policy.limits.max_recursion_depth,
+            levels,
+            operation,
         )?;
-        Ok(DepthGuard { budget: self })
+        Ok(LocalDepthGuard {
+            budget: self,
+            levels,
+        })
+    }
+
+    pub(super) fn active_depth(&self) -> u64 {
+        self.recursion_depth.get()
+    }
+
+    fn leave_nested(&self) {
+        if let Some(depth) = self.recursion_depth.get().checked_sub(1) {
+            self.recursion_depth.set(depth);
+        }
+    }
+}
+
+/// Synchronous source-lineage nesting while the session state is borrowed.
+pub(super) struct LocalDepthGuard<'a> {
+    budget: &'a DecodeBudget,
+    levels: u64,
+}
+
+impl Drop for LocalDepthGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(depth) = self.budget.recursion_depth.get().checked_sub(self.levels) {
+            self.budget.recursion_depth.set(depth);
+        }
     }
 }
 
 /// A guard holding one unit of recursive nesting depth.
 #[derive(Debug)]
 pub struct DepthGuard<'a> {
-    budget: &'a DecodeBudget,
+    budget: super::tracking::SessionHandle<'a>,
 }
 
 impl Drop for DepthGuard<'_> {
     fn drop(&mut self) {
-        let Some(depth) = self.budget.recursion_depth.get().checked_sub(1) else {
-            return;
-        };
-        self.budget.recursion_depth.set(depth);
+        self.budget.with_budget(DecodeBudget::leave_nested);
+        self.budget.release_guard();
+    }
+}
+
+impl<'a> super::tracking::SessionHandle<'a> {
+    pub(super) fn enter_nested(
+        self,
+        operation: &'static str,
+    ) -> Result<DepthGuard<'a>, ResourceLimit> {
+        self.with_budget(|budget| budget.charge_nested(operation))?;
+        Ok(DepthGuard { budget: self })
     }
 }
 

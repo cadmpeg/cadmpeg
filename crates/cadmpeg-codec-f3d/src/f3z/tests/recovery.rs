@@ -17,6 +17,7 @@ fn damage_local_frame(bytes: &mut [u8], name: &str) {
     let snapshot = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
     let entry = snapshot.entry(name).unwrap();
     let start = usize::try_from(entry.header_start).unwrap();
+    drop(ctx);
     bytes[start] ^= 1;
 }
 

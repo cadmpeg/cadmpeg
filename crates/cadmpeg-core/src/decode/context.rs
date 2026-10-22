@@ -7,13 +7,14 @@ use std::io::SeekFrom;
 use crate::{CodecError, ReadSeek};
 
 use super::arena::DecodeArena;
-use super::budget::{DecodeBudget, DepthGuard};
+use super::budget::DepthGuard;
 use super::depth::DecodeDepth;
 use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
 };
 use super::space::{ByteRange, SpaceId};
+use super::tracking::{ReadTransaction, RecordCapture, SessionHandle};
 use super::view::{u64_from_index, View};
 
 #[derive(Clone, Copy)]
@@ -30,7 +31,8 @@ const RESERVE_CLAMP: usize = 8 * 1024 * 1024;
 pub struct DecodeContext<'a> {
     arena: &'a DecodeArena,
     depth: DecodeDepth,
-    pub(super) budget: DecodeBudget,
+    policy: DecodePolicy,
+    pub(super) budget: SessionHandle<'a>,
     derived_spaces: Cell<usize>,
 }
 
@@ -40,7 +42,8 @@ impl<'a> DecodeContext<'a> {
         Self {
             arena,
             depth,
-            budget: DecodeBudget::new(*policy, 0),
+            policy: *policy,
+            budget: arena.tracking.session(*policy, 0),
             derived_spaces: Cell::new(0),
         }
     }
@@ -76,7 +79,9 @@ impl<'a> DecodeContext<'a> {
         let mut buffer = Vec::new();
         ctx.complete_input(reader, &mut buffer)?;
         let bytes = arena.alloc(buffer.into_boxed_slice());
-        Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
+        ctx.budget.register_root(u64_from_index(bytes.len()))?;
+        let root = View::over_space(bytes, SpaceId::ROOT).with_session(ctx.budget);
+        Ok((ctx, root))
     }
 
     /// Builds a full-depth context over caller-owned root bytes, for fuzz
@@ -126,15 +131,78 @@ impl<'a> DecodeContext<'a> {
         let ctx = DecodeContext {
             arena,
             depth,
-            budget: DecodeBudget::new(*policy, length),
+            policy: *policy,
+            budget: arena.tracking.session(*policy, length),
             derived_spaces: Cell::new(0),
         };
-        Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
+        ctx.budget.register_root(u64_from_index(bytes.len()))?;
+        let root = View::over_space(bytes, SpaceId::ROOT).with_session(ctx.budget);
+        Ok((ctx, root))
+    }
+
+    /// Assign a stable name to the registered root source stream.
+    ///
+    /// Names cannot change after a record scope begins. Detached retained-byte
+    /// views do not identify this session and cannot be promoted to source reads.
+    pub fn name_stream(&self, view: View<'a>, name: &str) -> Result<View<'a>, CodecError> {
+        self.require_source(view)?;
+        self.budget.name_stream(view, name)?;
+        Ok(view)
+    }
+
+    fn require_source(&self, view: View<'_>) -> Result<(), CodecError> {
+        if let Some(limit) = self.budget.fused() {
+            return Err(limit.into());
+        }
+        if view
+            .session()
+            .is_some_and(|session| session.same_session(self.budget))
+        {
+            Ok(())
+        } else {
+            Err(CodecError::malformed(
+                "record view belongs to another or detached decode session",
+            ))
+        }
+    }
+
+    /// Build one record while attributing successful reads to its own scope.
+    ///
+    /// A failed callback discards this record and its successful descendants.
+    /// Captures remain staged until all containing transactions have committed.
+    pub fn record<T>(
+        &self,
+        id: &str,
+        extent: View<'_>,
+        decode: impl FnOnce() -> Result<T, CodecError>,
+    ) -> Result<T, CodecError> {
+        self.require_source(extent)?;
+        let transaction = ReadTransaction::begin(self.budget, Some((id, extent)))?;
+        let value = decode();
+        if let Some(limit) = self.budget.fused() {
+            return Err(limit.into());
+        }
+        let value = value?;
+        transaction.commit()?;
+        Ok(value)
+    }
+
+    /// Stage reads and new record captures until explicit commit.
+    pub fn read_transaction(&self) -> Result<ReadTransaction<'a>, CodecError> {
+        ReadTransaction::begin(self.budget, None)
+    }
+
+    /// Extract successful record captures after every scope has closed.
+    ///
+    /// This finalizes capture collection; opening new record scopes afterwards
+    /// is refused, so one record identity cannot be silently captured twice.
+    pub fn take_record_captures(&self) -> Result<Vec<RecordCapture>, CodecError> {
+        self.budget.take_captures()
     }
 
     /// Returns the decode policy in force.
     pub fn policy(&self) -> &DecodePolicy {
-        self.budget.policy()
+        &self.policy
     }
 
     /// Returns the depth the caller requested.
@@ -161,10 +229,7 @@ impl<'a> DecodeContext<'a> {
     #[must_use]
     pub fn per_expand_allowance(&self) -> u64 {
         self.budget.proportional_allowance(
-            self.budget
-                .policy()
-                .limits
-                .max_decompressed_bytes_per_expand,
+            self.policy.limits.max_decompressed_bytes_per_expand,
             DECOMPRESSED_PER_EXPAND_BASE,
             DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
         )
@@ -348,7 +413,9 @@ impl<'a> DecodeContext<'a> {
         })
     }
 
-    /// Copies several input extents into one derived view.
+    /// Copies several input extents into one untracked derived view.
+    ///
+    /// Use [`Self::concat_named_views`] to retain explicit source provenance.
     pub fn concat_views(&self, inputs: &[View<'_>]) -> Result<View<'a>, CodecError> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
@@ -363,7 +430,7 @@ impl<'a> DecodeContext<'a> {
                 self.budget.refuse(
                     ResourceDimension::RetainedBytes,
                     ResourceFailure::BudgetExceeded,
-                    self.budget.policy().limits.max_retained_bytes,
+                    self.policy.limits.max_retained_bytes,
                     u64_from_index(total),
                     u64_from_index(view.window().len()),
                     "concat_views",
@@ -382,6 +449,28 @@ impl<'a> DecodeContext<'a> {
         let bytes = self.arena.alloc(buffer.into_boxed_slice());
         let space = self.allocate_space()?;
         Ok(View::over_space(bytes, space))
+    }
+
+    /// Concatenate explicitly named source extents with exact segment mappings.
+    ///
+    /// Copying the extents consumes no semantic bytes. Reads spanning a seam
+    /// project only their intersections into each original source stream.
+    pub fn concat_named_views(
+        &self,
+        inputs: &[View<'_>],
+        name: &str,
+    ) -> Result<View<'a>, CodecError> {
+        for input in inputs {
+            self.require_source(*input)?;
+        }
+        let raw = self.concat_views(inputs)?;
+        let space = self.budget.register_composite(
+            raw.space(),
+            name,
+            inputs,
+            u64_from_index(raw.window().len()),
+        )?;
+        Ok(View::over_space(raw.window(), space).with_session(self.budget))
     }
 
     /// Concatenates owned chunks into one retained buffer without an arena copy.
@@ -425,7 +514,8 @@ impl<'a> DecodeContext<'a> {
     /// are copied. It is the archive-entry counterpart of [`DecodeContext::begin_expand`] —
     /// stored ZIP entries take this path, compressed ones take the expander.
     /// Registration still refuses on a fused context so a stored entry cannot be
-    /// admitted after a refusal.
+    /// admitted after a refusal. This raw variant adds no read provenance; use
+    /// [`Self::register_named_slice`] for an explicitly named source alias.
     pub fn register_slice<'v>(
         &self,
         parent: View<'v>,
@@ -452,15 +542,48 @@ impl<'a> DecodeContext<'a> {
         Ok(View::over_space(child.window(), space))
     }
 
+    /// Register an explicitly named stored stream with an exact parent extent.
+    ///
+    /// Registration and byte navigation do not consume source bytes. Successful
+    /// semantic reads in the returned stream also consume their exact parent
+    /// ranges, within the same record transaction.
+    pub fn register_named_slice<'v>(
+        &self,
+        parent: View<'v>,
+        range: ByteRange,
+        name: &str,
+    ) -> Result<View<'v>, CodecError> {
+        self.require_source(parent)?;
+        let raw = self.register_slice(parent, range)?;
+        let source = usize::try_from(range.start)
+            .ok()
+            .zip(usize::try_from(range.end).ok())
+            .and_then(|(start, end)| parent.child(start, end))
+            .ok_or_else(|| CodecError::malformed("stored source extent escapes its parent"))?;
+        let session = parent
+            .session()
+            .ok_or_else(|| CodecError::malformed("detached source stream"))?;
+        let space = self.budget.register_alias(
+            raw.space(),
+            name,
+            source,
+            u64_from_index(raw.window().len()),
+        )?;
+        Ok(View::over_space(raw.window(), space).with_session(session))
+    }
+
     // --- lifecycle ----------------------------------------------------------
 
     /// Closes a decode or inspection session, returning a fused resource error
     /// even when codec code swallowed the charge that caused it.
     pub fn finish_session(self) -> Result<(), CodecError> {
-        if let Some(limit) = self.budget.fused() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
-        Ok(())
+        self.budget.finish()
+    }
+}
+
+impl Drop for DecodeContext<'_> {
+    fn drop(&mut self) {
+        self.budget.end_context();
     }
 }
 
@@ -545,12 +668,30 @@ impl<'a> ExpandWriter<'_, 'a> {
         Ok(())
     }
 
-    /// Finalizes the expansion, stores it in the arena, and registers its space.
+    /// Finalize the expansion as an untracked arena-backed space.
+    ///
+    /// Use [`Self::finalize_from`] to retain explicit compressed provenance.
     pub fn finalize(self) -> Result<View<'a>, CodecError> {
         self.check_exact()?;
         let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
         let space = self.ctx.allocate_space()?;
         Ok(View::over_space(bytes, space))
+    }
+
+    /// Finalize a named expansion with its exact compressed source extent.
+    ///
+    /// Decompression itself adds no semantic read. Each successful read in this
+    /// stream attributes the compressed extent to the same record transaction.
+    pub fn finalize_from(self, source: View<'_>, name: &str) -> Result<View<'a>, CodecError> {
+        self.ctx.require_source(source)?;
+        self.check_exact()?;
+        let space = self.ctx.allocate_space()?;
+        let space = self
+            .ctx
+            .budget
+            .register_expanded(space, name, source, self.written())?;
+        let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
+        Ok(View::over_space(bytes, space).with_session(self.ctx.budget))
     }
 
     /// Finalizes an expansion directly into a caller-owned buffer.

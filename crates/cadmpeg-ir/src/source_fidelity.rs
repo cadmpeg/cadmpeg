@@ -18,6 +18,11 @@ use crate::unknown::UnknownRecord;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
+pub mod b1;
+mod part;
+
+pub use part::RecordLayout;
+
 /// Retained-byte operation for one appended native unknown record.
 const ATTACH_UNKNOWN_RECORD: &str = "attach native unknown record";
 
@@ -371,6 +376,8 @@ pub struct SourceFidelity {
     pub annotations: Annotations,
     /// Source layout and fingerprint facts, never document content or payload bytes.
     pub metadata: BTreeMap<String, String>,
+    /// Source extents and reads keyed by native or neutral record identity.
+    record_layout: BTreeMap<String, RecordLayout>,
     /// Native records retained for recovery or replay, keyed by record id.
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
 }
@@ -388,6 +395,9 @@ struct SourceFidelityWire {
     /// Facts about source layout and fingerprints.
     #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     metadata: BTreeMap<String, String>,
+    /// Source extents and reads keyed by native or neutral record identity.
+    #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    record_layout: BTreeMap<String, RecordLayout>,
     /// Native records retained for recovery or replay.
     #[serde(default, deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     retained_records: BTreeMap<UnknownId, RetainedSourceRecord>,
@@ -400,6 +410,7 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
         let value = Self {
             annotations: wire.annotations,
             metadata: wire.metadata,
+            record_layout: wire.record_layout,
             retained_records: wire.retained_records,
         };
         let derived = value.unrepresented();
@@ -424,12 +435,15 @@ impl Serialize for SourceFidelity {
             #[serde(skip_serializing_if = "BTreeMap::is_empty")]
             metadata: &'a BTreeMap<String, String>,
             #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+            record_layout: &'a BTreeMap<String, RecordLayout>,
+            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
             retained_records: &'a BTreeMap<UnknownId, RetainedSourceRecord>,
         }
         Wire {
             unrepresented: self.unrepresented(),
             annotations: &self.annotations,
             metadata: &self.metadata,
+            record_layout: &self.record_layout,
             retained_records: &self.retained_records,
         }
         .serialize(serializer)
@@ -442,6 +456,7 @@ impl SourceFidelity {
         Self {
             annotations,
             metadata: BTreeMap::new(),
+            record_layout: BTreeMap::new(),
             retained_records: std::collections::BTreeMap::new(),
         }
     }
@@ -453,8 +468,14 @@ impl SourceFidelity {
         Annotations,
         BTreeMap<UnknownId, RetainedSourceRecord>,
         BTreeMap<String, String>,
+        BTreeMap<String, RecordLayout>,
     ) {
-        (self.annotations, self.retained_records, self.metadata)
+        (
+            self.annotations,
+            self.retained_records,
+            self.metadata,
+            self.record_layout,
+        )
     }
 
     /// Classes whose source content survives in no typed document record.
@@ -480,9 +501,16 @@ impl SourceFidelity {
         Ok(())
     }
 
-    /// Append source metadata after checking both tables for identity collisions.
+    /// Append source metadata after checking all tables for identity collisions.
     /// Failure leaves this source metadata unchanged.
     pub fn append(&mut self, mut other: Self) -> Result<(), cadmpeg_core::CodecError> {
+        for id in other.record_layout.keys() {
+            if self.record_layout.contains_key(id) {
+                return Err(CodecError::malformed(format_args!(
+                    "duplicate source record layout {id}"
+                )));
+            }
+        }
         for key in other.metadata.keys() {
             if self.metadata.contains_key(key) {
                 return Err(CodecError::malformed(format_args!(
@@ -500,7 +528,31 @@ impl SourceFidelity {
         self.annotations.append(other.annotations)?;
         self.retained_records.append(&mut other.retained_records);
         self.metadata.append(&mut other.metadata);
+        self.record_layout.append(&mut other.record_layout);
         Ok(())
+    }
+
+    /// Borrow source layouts without permitting replacement or read attribution.
+    pub const fn record_layout(&self) -> &BTreeMap<String, RecordLayout> {
+        &self.record_layout
+    }
+
+    /// Inserts a source layout without replacing an existing record identity.
+    pub fn insert_record_layout(
+        &mut self,
+        id: String,
+        layout: RecordLayout,
+    ) -> Result<(), CodecError> {
+        match self.record_layout.entry(id) {
+            Entry::Vacant(entry) => {
+                entry.insert(layout);
+                Ok(())
+            }
+            Entry::Occupied(entry) => Err(CodecError::malformed(format_args!(
+                "duplicate source record layout {}",
+                entry.key()
+            ))),
+        }
     }
 
     /// Finds a retained source record by identifier.
@@ -666,6 +718,7 @@ fn duplicate_record(id: &UnknownId) -> NativeConvertError {
 #[cfg(test)]
 mod tests {
     mod admission;
+    mod record_layout;
     mod unknown_keys;
 
     use std::path::{Path, PathBuf};

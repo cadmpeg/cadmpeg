@@ -94,3 +94,54 @@ fn source_rescoping_and_append_union_unrepresented_classes() {
     parent.append(rescoped).unwrap();
     assert_eq!(parent.unrepresented(), [Model, Design].into());
 }
+
+#[test]
+fn record_layout_rescoping_preserves_alias_reads_pointers_and_payloads() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::native::bytes::NativeBytes;
+    use cadmpeg_ir::source_fidelity::RecordLayout;
+
+    let bytes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let root = ctx.name_stream(root, "member").unwrap();
+    let alias = ctx
+        .register_named_slice(
+            root,
+            cadmpeg_core::decode::ByteRange { start: 4, end: 12 },
+            "member/inner",
+        )
+        .unwrap();
+    ctx.record(ID, alias, || {
+        let mut cursor = alias;
+        assert_eq!(cursor.u8(), Some(5));
+        cursor.skip(1).unwrap();
+        assert_eq!(cursor.u8(), Some(7));
+        Ok(())
+    })
+    .unwrap();
+    let capture = ctx.take_record_captures().unwrap().pop().unwrap();
+    let (id, mut layout) = RecordLayout::from_capture(capture);
+    layout.insert_pointer("next".into(), 9).unwrap();
+    layout
+        .insert_payload("opaque".into(), NativeBytes::new(vec![0xaa, 0xbb]))
+        .unwrap();
+    let mut input = SourceFidelity::default();
+    input.insert_record_layout(id, layout.clone()).unwrap();
+
+    let output = rescope_fidelity(input, "part/occurrence-0").unwrap();
+    let scoped = &output.record_layout()["f3d:xref/part/occurrence-0/native:record#one"];
+    let prefix = "f3d:xref/part%2Foccurrence-0/";
+    assert_eq!(scoped.stream(), format!("{prefix}member/inner"));
+    assert_eq!((scoped.offset(), scoped.byte_len()), (0, 8));
+    assert_eq!(scoped.reads().len(), 2);
+    assert_eq!(scoped.reads()[&format!("{prefix}member")], [4..5, 6..7]);
+    assert_eq!(
+        scoped.reads()[&format!("{prefix}member/inner")],
+        [0..1, 2..3]
+    );
+    assert_eq!(scoped.pointers(), layout.pointers());
+    assert_eq!(scoped.payloads(), layout.payloads());
+    assert!(!output.record_layout().contains_key(ID));
+}

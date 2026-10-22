@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 mod reader_routes;
+mod record_layout;
 
 /// Every hand-written `Deserialize` in the three wire crates, with the reader
 /// route that admits its wire value.
