@@ -2,6 +2,8 @@
 //! Classes of unconsumed spans from typed record ownership.
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 use std::ops::Range;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -138,8 +140,9 @@ impl<'ir> ClassificationIndex<'ir> {
 
     /// Classify a partition from this document's indexed typed owners.
     ///
-    /// Extents must be nested, equal or disjoint. Crossing extents are an
-    /// inconsistent-fidelity error. Empty owner classes use both classes;
+    /// A span's owner is the shortest record extent that contains it; equal
+    /// extents and crossing extents of equal length union their classes.
+    /// Empty owner classes use both classes;
     /// design-only stream defaults need a separate proof over all goldens.
     /// Forced B1 intervals, fidelity mutation and losses are separate steps.
     pub fn classify_partition(
@@ -164,25 +167,17 @@ impl<'ir> ClassificationIndex<'ir> {
         )?;
         let linked =
             unknown_link_ranges(ctx, fidelity, stream, partition.byte_len(), &self.natives)?;
-        let mut active = allocate(ctx, extents.len(), 0_usize)?;
-        for (index, extent) in extents.iter().enumerate() {
-            while active
-                .last()
-                .is_some_and(|&parent| extents[parent].end <= extent.start)
-            {
-                active.pop();
-            }
-            if active
-                .last()
-                .is_some_and(|&parent| extents[parent].end < extent.end)
-            {
-                return Err(CodecError::malformed(
-                    "crossing source record extents have ambiguous innermost ownership",
-                ));
-            }
-            active.push(index);
-        }
-        active.clear();
+        // Extents with a start at or before the span start enter both heaps.
+        // An extent whose end is before the span end cannot contain this or
+        // any later span, because spans are sorted and disjoint; it leaves
+        // both heaps. The remaining extents all contain the span, and the
+        // shortest of them is the innermost owner (#214 §3.1).
+        let entry = Reverse((0_u64, 0_usize));
+        let mut by_end = BinaryHeap::from(allocate(ctx, extents.len(), entry)?);
+        let mut by_len = BinaryHeap::from(allocate(ctx, extents.len(), entry)?);
+        let mut removed = allocate(ctx, extents.len(), false)?;
+        removed.resize(extents.len(), false);
+        let mut ties = allocate(ctx, extents.len(), 0_usize)?;
         let mut output = allocate(
             ctx,
             partition.b1().len(),
@@ -194,22 +189,36 @@ impl<'ir> ClassificationIndex<'ir> {
         let mut next = 0;
         for span in partition.b1() {
             while next < extents.len() && extents[next].start <= span.start {
-                while active
-                    .last()
-                    .is_some_and(|&index| extents[index].end <= extents[next].start)
-                {
-                    active.pop();
-                }
-                active.push(next);
+                let extent = extents[next];
+                by_end.push(Reverse((extent.end, next)));
+                by_len.push(Reverse((extent.end - extent.start, next)));
                 next += 1;
             }
-            while active
-                .last()
-                .is_some_and(|&index| extents[index].end < span.end)
-            {
-                active.pop();
+            while let Some(&Reverse((end, index))) = by_end.peek() {
+                if end >= span.end {
+                    break;
+                }
+                by_end.pop();
+                removed[index] = true;
             }
-            let mut mask = active.last().map_or(0, |&index| extents[index].mask);
+            let mut innermost = None;
+            while let Some(&Reverse((length, index))) = by_len.peek() {
+                if removed[index] {
+                    by_len.pop();
+                } else if innermost.is_none_or(|shortest| length == shortest) {
+                    innermost = Some(length);
+                    ties.push(index);
+                    by_len.pop();
+                } else {
+                    break;
+                }
+            }
+            let mut mask = 0;
+            for index in ties.drain(..) {
+                let extent = extents[index];
+                mask |= extent.mask;
+                by_len.push(Reverse((extent.end - extent.start, index)));
+            }
             for (bit, ranges) in [(MODEL, &linked[0]), (DESIGN, &linked[1])] {
                 let index = ranges.partition_point(|range| range.end <= span.start);
                 if ranges
