@@ -400,6 +400,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-test-support",
  "encoding_rs",
  "hdf5-reader",
