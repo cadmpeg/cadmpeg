@@ -247,7 +247,7 @@ the record grammar does not identify one construction.
 
 **Question.** Which point of the profile circle does a profile parameter `u` select, and what does the angle stored before the path control?
 
-**Known.** `asm.md` §6.3 `helix_spl_circ` gives the swept circle. The stored angle is `0`, `π`, or `-π`. The map `u ↦ C(t)+r·(-cos(u+a)·ρ̂(t)+sin(u+a)·n)`, with `a` the stored angle and `ρ̂(t)` the unit vector of `ρ(t)`, puts the pcurves of helix and spline edges on their edges. It puts some pcurves of circular cap edges a quarter or half turn away from their edges.
+**Known.** `asm.md` §6.3 `helix_spl_circ` gives the swept circle. The stored angle is `0`, `π`, or `-π`. The map `u ↦ C(t)+r·(-cos(u+a)·ρ̂(t)+sin(u+a)·n)`, with `a` the stored angle and `ρ̂(t)` the unit vector of `ρ(t)`, puts the pcurves of helix and spline edges on their edges. It puts some pcurves of circular cap edges a quarter or half turn away from their edges. On two coil faces with `a=0`, a zero apex factor, and a path interval starting at `t=0`, every trim pcurve endpoint, including the `u=±π` ends of the circular cap-edge pcurves, maps onto its edge vertex, and `u=±π` gives the outer seam helix at distance `|major|+r` from the axis.
 
 **Need.** A writer that emits pcurves on this surface needs the map. A rule that also holds for the cap-edge pcurves settles it.
 

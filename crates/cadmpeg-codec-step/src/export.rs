@@ -33,6 +33,7 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
+pub(crate) mod approximation;
 mod non_manifold;
 mod ownership;
 mod wire;
@@ -314,6 +315,11 @@ pub(crate) struct Builder<'a> {
     failed_helix_fits: BTreeMap<String, &'static str>,
     /// Pcurves omitted because their surface is a fitted helix surface.
     fitted_surface_pcurves: BTreeSet<String>,
+    /// Procedural surface constructions written as sampled B-spline
+    /// carriers.
+    sampled_surfaces: BTreeSet<String>,
+    /// Procedural curve constructions written as sampled B-spline carriers.
+    sampled_curves: BTreeSet<String>,
     /// Analytic surface records the writer put in the file, in emission order.
     written_analytic_surfaces: Vec<WrittenAnalyticSurface<'a>>,
 
@@ -368,6 +374,7 @@ pub(crate) struct Builder<'a> {
     ratio_unit: Option<Ref>,
     geometry_emission_depth: usize,
     construction_supports: BTreeSet<String>,
+    approximations: approximation::Approximator<'a>,
 }
 
 /// STEP names for entities that carry an id and an optional source name.
@@ -440,6 +447,7 @@ impl<'a> Builder<'a> {
             }
         }
         Ok(Builder {
+            approximations: approximation::Approximator::new(ir),
             ir,
             schema,
             model_name: "cadmpeg_model",
@@ -535,6 +543,8 @@ impl<'a> Builder<'a> {
             fitted_helix_surfaces: BTreeSet::new(),
             failed_helix_fits: BTreeMap::new(),
             fitted_surface_pcurves: BTreeSet::new(),
+            sampled_surfaces: BTreeSet::new(),
+            sampled_curves: BTreeSet::new(),
             written_analytic_surfaces: Vec::new(),
             curveless_edges: BTreeSet::new(),
             point_loop_curves: BTreeSet::new(),
@@ -2967,11 +2977,12 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        if self
+        let unwritable = self
             .curves
             .get(curve_id.as_str())
-            .is_some_and(|curve| !self.curve_is_writable(curve))
-        {
+            .copied()
+            .is_some_and(|curve| !self.curve_is_writable(curve));
+        if unwritable {
             self.curveless_edges.insert(edge_id.to_string());
             self.topology_relation_loss(
                 format!("edge:{edge_id}:unsupported-curve:{curve_id}"),
@@ -3132,11 +3143,9 @@ impl<'a> Builder<'a> {
                     geometry::surface(&mut self.emitter, &SolvedSurfaceGeometry::Nurbs(fitted))?;
                 self.fitted_helix_surfaces.insert(id.to_owned());
                 (reference, false)
-            } else {
-                let solved = solved?;
-                if !geometry::surface_is_supported(solved) {
-                    return None;
-                }
+            } else if let Some(solved) =
+                solved.filter(|solved| geometry::surface_is_supported(solved))
+            {
                 // The basis is taken before the record is emitted, so the
                 // census cannot miss a record the writer put in the file.
                 let basis = geometry::emitted_basis(solved);
@@ -3145,6 +3154,12 @@ impl<'a> Builder<'a> {
                     .push(WrittenAnalyticSurface::Carrier(basis));
                 let reversed = matches!(basis, SolvedSurfaceGeometry::Cone(cone) if cone.half_angle().get() < 0.0);
                 (reference, reversed)
+            } else {
+                let procedural = self.procedural_surfaces.get(surface_id)?.id.to_string();
+                let surface = self.approximations.surface(surface_id)?;
+                let reference = geometry::surface(&mut self.emitter, &surface)?;
+                self.sampled_surfaces.insert(procedural);
+                (reference, false)
             };
             Some((r, reversed))
         })();
@@ -3390,10 +3405,14 @@ impl<'a> Builder<'a> {
                     geometry::curve(&mut self.emitter, &SolvedCurveGeometry::Nurbs(fitted))?;
                 self.fitted_helix_curves.insert(id.to_owned());
                 reference
-            } else if !geometry::curve_is_supported(&geometry) {
-                return None;
-            } else {
+            } else if geometry::curve_is_supported(&geometry) {
                 geometry::curve(&mut self.emitter, geometry.solved()?)?
+            } else {
+                let procedural = self.procedural_curves.get(curve_id)?.id.to_string();
+                let curve = self.approximations.curve(curve_id)?;
+                let reference = geometry::curve(&mut self.emitter, &curve)?;
+                self.sampled_curves.insert(procedural);
+                reference
             };
             Some(r)
         })();
@@ -3405,11 +3424,13 @@ impl<'a> Builder<'a> {
         result
     }
 
-    /// Whether `curve` has a STEP carrier: a supported solved carrier, or a
-    /// helix construction the writer fits.
-    fn curve_is_writable(&self, curve: &Curve) -> bool {
+    /// Whether `curve` has a STEP carrier: a supported solved carrier, a
+    /// helix construction the writer fits, or a procedural curve the writer
+    /// samples.
+    fn curve_is_writable(&mut self, curve: &Curve) -> bool {
         geometry::curve_is_supported(&curve.geometry)
             || self.unsolved_helix(curve.id.as_str()).is_some()
+            || self.approximations.curve(curve.id.as_str()).is_some()
     }
 
     /// The construction id and helix of a curve whose helix construction
@@ -5191,6 +5212,7 @@ impl<'a> Builder<'a> {
                         .written_procedural_surfaces
                         .contains(procedural.id.as_str())
                     && !self.fitted_helix_surfaces.contains(procedural.id.as_str())
+                    && !self.sampled_surfaces.contains(procedural.id.as_str())
             })
             .map(|(_, procedural)| procedural.id.as_str())
             .collect();
@@ -5203,6 +5225,7 @@ impl<'a> Builder<'a> {
                         .written_procedural_curves
                         .contains(procedural.id.as_str())
                     && !self.fitted_helix_curves.contains(procedural.id.as_str())
+                    && !self.sampled_curves.contains(procedural.id.as_str())
             })
             .map(|(_, procedural)| procedural.id.as_str())
             .collect();
@@ -5217,6 +5240,7 @@ impl<'a> Builder<'a> {
                     .contains(procedural.id.as_str())
                     && !self.fitted_helix_surfaces.contains(procedural.id.as_str())
                     && !self.failed_helix_fits.contains_key(procedural.id.as_str())
+                    && !self.sampled_surfaces.contains(procedural.id.as_str())
                     && !reduced_surfaces.contains(procedural.id.as_str())
             })
             .count();
@@ -5231,6 +5255,7 @@ impl<'a> Builder<'a> {
                     .contains(procedural.id.as_str())
                     && !self.fitted_helix_curves.contains(procedural.id.as_str())
                     && !self.failed_helix_fits.contains_key(procedural.id.as_str())
+                    && !self.sampled_curves.contains(procedural.id.as_str())
                     && !reduced_curves.contains(procedural.id.as_str())
             })
             .count();
@@ -5251,6 +5276,17 @@ impl<'a> Builder<'a> {
                     "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance",
                     self.fitted_helix_curves.len(),
                     self.fitted_helix_surfaces.len()
+                ),
+            );
+        }
+        if !self.sampled_curves.is_empty() || !self.sampled_surfaces.is_empty() {
+            self.loss(
+                StepLossCode::ProceduralSampledToBspline,
+                format!(
+                    "{} procedural curve definition(s) and {} procedural surface definition(s) without another STEP carrier were written as sampled cubic B-splines with sampled residuals of at most {}",
+                    self.sampled_curves.len(),
+                    self.sampled_surfaces.len(),
+                    self.approximations.residual_limit()
                 ),
             );
         }

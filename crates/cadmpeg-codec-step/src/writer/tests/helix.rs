@@ -170,6 +170,7 @@ fn a_face_on_an_uncached_helix_surface_is_written_on_a_fitted_bspline_surface() 
     assert!(codes.contains(&StepLossCode::HelixFittedToBspline.kind()));
     assert!(!codes.contains(&StepLossCode::UnknownSurfaceFaceOmitted.kind()));
     assert!(!codes.contains(&StepLossCode::ProceduralReducedToCarrier.kind()));
+    assert!(!codes.contains(&StepLossCode::ProceduralSampledToBspline.kind()));
     assert!(!codes.contains(&StepLossCode::ProceduralDefinitionNotWritten.kind()));
 }
 
@@ -201,5 +202,6 @@ fn a_helix_without_a_bspline_within_the_tolerance_reports_its_failed_fit() {
     );
     let codes: Vec<_> = report.losses.iter().map(|loss| loss.code.clone()).collect();
     assert!(!codes.contains(&StepLossCode::HelixFittedToBspline.kind()));
+    assert!(!codes.contains(&StepLossCode::ProceduralSampledToBspline.kind()));
     assert!(!codes.contains(&StepLossCode::ProceduralDefinitionNotWritten.kind()));
 }

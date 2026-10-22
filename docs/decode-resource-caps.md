@@ -214,6 +214,10 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE`     | `16`, plus `EXPANDED_PAYLOAD_BASE` (16 MiB)             | 4    | String, binary and name octets that the anchor pass, and separately the REFERENCE pass, may copy out of anchors, per input byte. Copies that an omitted item discards stay charged. An item whose copy does not fit is omitted with its exact source and `parse.expansion-bounded`, naming this constant. Recorded anchor and reference outcomes carry their octets, so a later item that cannot fit is decided before anything is copied. Working storage, not `retain_bytes`. |
 | `cadmpeg-codec-step`     | `src/reader/tessellation.rs`                       | `MAX_ITEM_PLACEMENTS`                     | `64`                                                    | 4    | Distinct inherited placements that one association walk follows into a tessellated item. Past it the item and the items it contains keep source coordinates, and `tessellation.placement-ambiguous` names the limit.                                                        |
 | `cadmpeg-codec-step`     | `src/reader/product.rs`                            | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the NAUO graph. At the limit expansion stops and `occurrence.expansion-output-truncated` is reported. A NAUO path of `max_recursion_depth` usages stops that branch with `occurrence.expansion-depth-truncated`.                                   |
+| `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_PATCHES`                             | `1024`                                                  | N    | STEP writer: sampled B-spline patches along one parameter axis. A fit that needs more keeps the face or curve omitted; not a decode path.                                                                                                                                    |
+| `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_POLES`                               | `1 << 20`                                               | N    | STEP writer: sampled approximation poles of one export. A carrier that does not fit keeps the face or curve omitted; not a decode path.                                                                                                                                      |
+| `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_SAMPLES`                             | `1 << 23`                                               | N    | STEP writer: procedural point evaluations of one export for sampling and residual probes. Exhaustion keeps the face or curve omitted; not a decode path.                                                                                                                     |
+| `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_EVALUATION_WORK`                     | `1 << 26`                                               | N    | STEP writer: model evaluation work of one export's sampled carriers, trim checks included. Exhaustion keeps the face or curve omitted and does not fail the export; not a decode path.                                                                                       |
 | `cadmpeg-codec-iges`     | `src/native.rs`                                    | `MAX_PRODUCT_OCCURRENCES`                 | `100_000`                                               | 4    | Occurrence expansion output (`OccurrenceExpansion::expand`). At the limit expansion stops and `reader.rs` reports `occurrence.expansion-output-truncated`.                                                                                                                   |
 | `cadmpeg-codec-iges`     | `src/native.rs`                                    | `MAX_PRODUCT_OCCURRENCE_DEPTH`            | `64`                                                    | 4    | Occurrence path depth; `reader::decode` takes `min` with `max_recursion_depth`, and each level charges `enter_nested`. At the limit the branch stops and `occurrence.expansion-depth-truncated` is reported.                                                                 |
 | `cadmpeg-codec-iges`     | `src/binary.rs`                                    | `MAX_SEQUENCE`                            | `9_999_999`                                             | 1    | Seven-digit Fixed ASCII sequence and section-count field when binary IGES is normalized. Excess is `Malformed`.                                                                                                                                                              |
@@ -443,7 +447,7 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 228.
+Production `MAX_*` constants: 232.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -451,14 +455,14 @@ Production `MAX_*` constants: 228.
 | 2    | Per-input bound            | 69    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 107   |
-| N    | Not a decode bound         | 22    |
-|      | Total                      | 228   |
+| N    | Not a decode bound         | 26    |
+|      | Total                      | 232   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-asm` 4,
-`cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
+`cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 13,
