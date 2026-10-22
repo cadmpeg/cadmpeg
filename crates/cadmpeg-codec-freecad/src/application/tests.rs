@@ -406,8 +406,6 @@ fn repeated_application_payloads_borrow_entry_identity_without_source_evidence()
             },
             order: 0,
         };
-        let _fidelity =
-            crate::test_support::source_fidelity::xml_layout_fixture(&property.id, "<Property/>");
         property
     });
     let entry = crate::test_support::entry_fixture(

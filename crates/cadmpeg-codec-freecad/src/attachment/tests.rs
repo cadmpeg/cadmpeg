@@ -25,16 +25,10 @@ fn diagnostic_property(
         },
         order: 0,
     };
-    let _fidelity =
-        crate::test_support::source_fidelity::xml_layout_fixture(&property.id, "<Property/>");
     property
 }
 
 fn enum_value(tag: &str, value: Option<&str>) -> crate::native::ValueRecord {
-    let _fidelity = crate::test_support::source_fidelity::value_layout_fixture(
-        "fcstd:native:property#Attachment:MapMode",
-        &["<Integer/>"],
-    );
     crate::native::ValueRecord {
         parent: None,
         tag: tag.into(),

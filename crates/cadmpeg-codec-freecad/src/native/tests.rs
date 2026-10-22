@@ -92,8 +92,6 @@ fn duplicate_property_is_malformed() {
         body: super::PropertyBody::Transient,
         order: 0,
     };
-    let _fidelity =
-        crate::test_support::source_fidelity::xml_layout_fixture(&property.id, "<Property/>");
     let error = super::sole_named_property("product", &[&property, &property], &property.name)
         .expect_err("duplicate property");
     assert_eq!(

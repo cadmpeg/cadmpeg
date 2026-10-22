@@ -103,10 +103,6 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
                     },
                     order: 0,
                 };
-                let _fidelity = crate::test_support::source_fidelity::xml_layout_fixture(
-                    &property.id,
-                    "<Property/>",
-                );
                 property
             })
             .collect();
