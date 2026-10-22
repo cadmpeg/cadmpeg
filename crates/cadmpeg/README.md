@@ -225,7 +225,9 @@ tolerance made of both values' errors and a relative floor
 `disagree` or `inconclusive`; exit status `1` means `disagree` or
 `inconclusive`. `--tsv` prints one row per compared value; `--json` adds a
 `geometry` member with both measurements and the comparison to the report.
-`docs/measurement.md` states the comparison rules.
+Only body pairs that can match are compared, within a pair allowance that
+`--limits` scales with the body count; a comparison that needs more is
+refused. `docs/measurement.md` states the comparison rules.
 
 ## Measure models
 
