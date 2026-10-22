@@ -104,7 +104,6 @@ fn overflow_cell_view_maps_a_semantic_read_across_exact_overflow_page_pieces() {
         captures[0].reads().get("file"),
         Some(&vec![16383..16384, 16392..16393])
     );
-
 }
 
 #[test]

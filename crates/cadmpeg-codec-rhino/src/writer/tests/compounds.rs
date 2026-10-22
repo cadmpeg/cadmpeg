@@ -289,7 +289,11 @@ fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() 
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("compound geometry decodes");
             let actual = curve_geometry(decoded.ir());
-            assert_eq!(actual.len(), expected.len(), "{name} {version:?}: curve count");
+            assert_eq!(
+                actual.len(),
+                expected.len(),
+                "{name} {version:?}: curve count"
+            );
             let mut unmatched = actual;
             for geometry in &expected {
                 let index = unmatched
