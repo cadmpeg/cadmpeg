@@ -683,7 +683,9 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
     duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
     assert_eq!(
         feature_completeness::incomplete_expression_parameters(&duplicate_name),
-        std::collections::BTreeSet::default(), // D3: token identities remain unambiguous after a display-name collision.
+        // D6: references are identity tokens. The renamed parameters[1]
+        // still reads parameters[0], and 7 * 2 = 14 agrees with its value.
+        std::collections::BTreeSet::default(),
     );
 
     let mut unevaluated = ir.clone();
@@ -750,6 +752,7 @@ fn nx_cyclic_formula_table_retains_identity_dependency_edges() {
         crate::test_support::parameter_expression_text(&ir, &ir.model.parameters[1].expression),
         "p2 + 1"
     );
+    // D6: a cycle is retained. p2 reads p3 and p3 reads p2.
     assert_eq!(
         ir.model.parameters[0]
             .expression
@@ -838,6 +841,7 @@ fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
             .as_slice(),
         [ir.model.parameters[0].id.clone()]
     );
+    // D6: the p2/p3 cycle is retained. p2 reads p3 and p3 reads p2.
     assert_eq!(
         ir.model.parameters[2]
             .expression
