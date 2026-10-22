@@ -2024,7 +2024,9 @@ pub(crate) fn bind_edge_identity_history(
             .unwrap_or(&history_identities);
         if let Some((kind, entity_ref, states)) = scoped_identities
             .selection_identity_kind(operand.local_id)
-            .filter(|(_, _, states)| states.contains(&previous_state_id))
+            .filter(|(_, _, states)| {
+                !lineage_scopes.contains(&scope.id) && states.contains(&previous_state_id)
+            })
         {
             operand.historical = Some(crate::records::topology::fillet::HistoricalBinding {
                 kind,
@@ -2175,6 +2177,9 @@ pub(crate) fn bind_edge_identity_history(
                                 treatment_edges.into_iter().collect::<Vec<_>>();
                         }
                     }
+                }
+                if lineage_scopes.contains(&scope.id) {
+                    continue;
                 }
                 let direct = if let Some(binding) = operand
                     .historical

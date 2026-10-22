@@ -362,6 +362,17 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         ],
     );
     let mut lineage_operand = operands[2].clone();
+    lineage_operand.local_id = 17;
+    bind_edge_identity_history(
+        std::slice::from_mut(&mut lineage_operand),
+        &[],
+        std::slice::from_ref(&scope),
+        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        &HashMap::from([(scope.id.clone(), history.id.clone())]),
+        &HashSet::new(),
+    );
+    assert_eq!(lineage_operand.resolved_edge_slot, Some(17));
+    assert!(lineage_operand.historical.is_some());
     bind_edge_identity_history(
         std::slice::from_mut(&mut lineage_operand),
         &[],
@@ -372,6 +383,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
     );
     assert!(lineage_operand.transition_edge_candidates.is_empty());
     assert!(lineage_operand.resolved_edge_slot.is_none());
+    assert!(lineage_operand.historical.is_none());
 }
 
 #[test]
