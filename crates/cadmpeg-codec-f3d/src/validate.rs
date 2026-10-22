@@ -112,8 +112,7 @@ fn valid_assembly_operand_path_link(
     .is_some_and(design::assembly::AssemblyOperandFrameVariant::is_wide_family)
         || design::assembly::rigid_as_built_scope(
             scope.frame_length(),
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
+            scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
         );
     // A wide locator is 97 bytes without its transform and 225 with it; its
     // backlink and wrapper reference are 28 and 17 bytes before its end.
@@ -2202,8 +2201,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 );
                 let rigid_as_built = design::assembly::rigid_as_built_scope(
                     scope.frame_length(),
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
+                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
                 );
                 let as_built_frames = scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::AsBuilt

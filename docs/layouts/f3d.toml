@@ -17359,7 +17359,7 @@ name = "assembly_rigid_as_built_scope"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
 kind = "byte"
 section = "Assembly operands"
-anchor = "The 269-byte class-405/262 `As-built` form is a"
+anchor = "The 269-byte `As-built` form is a"
 note = "This size-less byte record describes the fixed prefix of the 269-byte rigid As-built scope through its empty reference table. Offsets are relative to the scope's primary indexed header."
 
 [[record.field]]

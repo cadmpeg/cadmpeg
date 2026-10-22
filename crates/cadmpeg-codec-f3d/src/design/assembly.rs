@@ -110,7 +110,7 @@ impl AssemblyScopeGeneration {
             806 | 861 => (Some(CompactWide), Some((4, 0, 4)), Some([534, 545])),
             850 => (Some(CompactWide), Some((6, 0, 4)), Some([556, 567])),
             945 => (Some(Wide), Some((4, 0, 4)), Some([541, 552])),
-            269 if rigid_as_built_scope(frame_length, class_tag, paired_class_tag) => {
+            269 => {
                 (None, Some((0, 0, 0)), Some([
                     crate::layout::assembly_rigid_as_built_scope::FIRST_LOCATOR_REFERENCE,
                     crate::layout::assembly_rigid_as_built_scope::SECOND_LOCATOR_REFERENCE,
@@ -220,14 +220,11 @@ pub(crate) fn joint_placed_occurrence_loss(
     })
 }
 
-/// The 269-byte class-405/262 rigid `As-built` scope: no parameter owners and
-/// two wide operand-path locators.
-pub(crate) fn rigid_as_built_scope(
-    frame_length: u64,
-    class_tag: &str,
-    paired_class_tag: &str,
-) -> bool {
-    frame_length == 269 && class_tag == "405" && paired_class_tag == "262"
+/// The 269-byte rigid `As-built` scope: no parameter owners and two wide
+/// operand-path locators. Its class tags are per-file dynamic values, so its
+/// kind and frame length identify it.
+pub(crate) fn rigid_as_built_scope(frame_length: u64, as_built: bool) -> bool {
+    as_built && frame_length == 269
 }
 
 /// Admit the legacy 383/258 assembly scope only as its exact generation.

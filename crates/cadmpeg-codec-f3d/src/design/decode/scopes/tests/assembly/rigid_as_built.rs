@@ -4,7 +4,7 @@
 
 use super::compact_wide::{push_header, push_lp_utf16, push_marked, push_wide_operand_path};
 
-/// A 269-byte class-405/262 rigid as-built scope (record 10) whose operand
+/// A 269-byte rigid as-built scope (record 10) whose operand
 /// locators are records 64 and 67, then its paired header, the two wide
 /// operand paths and the next header.
 fn rigid_as_built_stream() -> Vec<u8> {
@@ -54,18 +54,39 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
     );
     assert_eq!(scope.frame_length(), 269);
     assert_eq!(scope.reference_members().len(), 0);
-    // The empty table is read only in the rigid 269-byte class-405/262 form.
+    // Class tags are per-file dynamic values: the same scope under other tags
+    // is the same rigid form, and the kind and frame length identify it.
+    let mut retagged = bytes.clone();
+    retagged[4..7].copy_from_slice(b"328");
+    retagged[269 + 4..269 + 7].copy_from_slice(b"264");
+    let retagged_records = crate::design::decode::sketch::IndexedRecordOffsets::build(&retagged);
+    let retagged_class =
+        crate::records::references::DesignClassTag::try_from("328".to_owned()).unwrap();
+    let retagged_scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+        &retagged,
+        &retagged_records,
+        10,
+        &retagged_class,
+        0,
+    )
+    .unwrap()
+    .expect("the rigid form under other class tags");
+    assert_eq!(retagged_scope.frame_length(), 269);
+    assert_eq!(retagged_scope.reference_members().len(), 0);
+    // The empty table is read only for the `As-built` kind.
     let mut other = bytes.clone();
-    other[4..7].copy_from_slice(b"406");
+    let kind_at = other
+        .windows(4)
+        .position(|window| window == [b'A', 0, b's', 0])
+        .expect("the kind name");
+    other[kind_at] = b'B';
     let other_records = crate::design::decode::sketch::IndexedRecordOffsets::build(&other);
-    let other_class =
-        crate::records::references::DesignClassTag::try_from("406".to_owned()).unwrap();
     assert!(
         crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
             &other,
             &other_records,
             10,
-            &other_class,
+            &class_tag,
             0,
         )
         .unwrap()

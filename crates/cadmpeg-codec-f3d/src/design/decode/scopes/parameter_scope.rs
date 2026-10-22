@@ -1064,11 +1064,9 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         // immediately before its history state, with no reference marker in
         // the slot before it. Every other scope keeps a counted table.
         if reference_table.is_none()
-            && kind == scope::DesignFeatureKind::AsBuilt
             && crate::design::assembly::rigid_as_built_scope(
                 u64::try_from(paired_at.checked_sub(start)?).ok()?,
-                class_tag.as_str(),
-                paired_class_tag,
+                kind == scope::DesignFeatureKind::AsBuilt,
             )
         {
             let count_at =

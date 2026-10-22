@@ -170,8 +170,7 @@ pub(super) fn exact_assembly_alignment_with_types(
                 // A rigid as-built joint has no alignment owners.
                 [] if crate::design::assembly::rigid_as_built_scope(
                     scope.frame_length(),
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
+                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
                 ) =>
                 {
                     (0.0, [0.0; 3])
@@ -286,8 +285,7 @@ pub(super) fn exact_assembly_alignment_with_types(
                             &paths,
                             crate::design::assembly::rigid_as_built_scope(
                                 scope.frame_length(),
-                                scope.class_tag.as_str(),
-                                scope.paired_class_tag.as_str(),
+                                scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
                             ),
                         ),
                         paths,

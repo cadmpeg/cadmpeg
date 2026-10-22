@@ -132,8 +132,7 @@ fn exact_assembly_operand_path_envelope(
         .is_some_and(crate::design::assembly::AssemblyOperandFrameVariant::is_wide_family)
             || crate::design::assembly::rigid_as_built_scope(
                 scope.frame_length(),
-                scope.class_tag.as_str(),
-                scope.paired_class_tag.as_str(),
+                scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
             ))
             && stream_types
                 .get(&u64::from(locator_record_index))
