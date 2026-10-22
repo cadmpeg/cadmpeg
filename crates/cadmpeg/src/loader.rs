@@ -83,19 +83,18 @@ pub(crate) fn load_artifact(
             path.display()
         )
     })?;
-    let Some(sidecar) = artifact_store::load_matching_sidecar(path, text.as_bytes(), max_bytes)?
-    else {
-        return Ok(LoadedDocument::neutral(
-            ir,
-            cadmpeg_core::decode::u64_from_index(text.len()),
-        ));
-    };
-    Ok(LoadedDocument::restored(
-        ir,
-        sidecar.report,
-        sidecar.fidelity,
-        cadmpeg_core::decode::u64_from_index(text.len()),
-    ))
+    let input_bytes = cadmpeg_core::decode::u64_from_index(text.len());
+    Ok(
+        match artifact_store::load_matching_sidecar(path, text.as_bytes(), max_bytes)? {
+            artifact_store::SidecarLoad::Absent => LoadedDocument::neutral(ir, input_bytes),
+            artifact_store::SidecarLoad::Stale(message) => {
+                LoadedDocument::stale_sidecar(ir, input_bytes, message)
+            }
+            artifact_store::SidecarLoad::Matching(sidecar) => {
+                LoadedDocument::restored(ir, sidecar.report, sidecar.fidelity, input_bytes)
+            }
+        },
+    )
 }
 
 #[cfg(test)]
@@ -128,7 +127,7 @@ mod tests {
     }
 
     #[test]
-    fn matching_sidecar_restores_decoded_origin_and_mismatch_is_hard_error() {
+    fn matching_sidecar_restores_history_and_stale_binding_is_current_warning() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty().to_canonical_json().unwrap();
@@ -164,13 +163,27 @@ mod tests {
         assert_eq!(outcome.input_bytes, u64::try_from(text.len()).unwrap());
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
-        let error = load_artifact(
+        let stale = load_artifact(
             &InputCatalog::with_builtins(),
             &path,
             DecodeOptions::default(),
             Some(ForcedInput::Cadir),
         )
-        .unwrap_err();
-        assert!(error.to_string().contains("does not match"));
+        .unwrap();
+        assert!(matches!(stale.origin, LoadOrigin::Neutral));
+        assert!(stale.fidelity().is_none());
+        assert_eq!(stale.ir, outcome.ir);
+        let current = stale
+            .current_decode_report()
+            .expect("current parse warning");
+        assert_eq!(stale.decode_report(), Some(current));
+        assert_eq!(current.format(), "cadir");
+        assert_eq!(current.scope(), stale.ir.scope);
+        assert_eq!(current.losses.len(), 1);
+        assert_eq!(current.losses[0].code.local_code(), "sidecar.stale");
+        assert_eq!(
+            current.losses[0].severity,
+            cadmpeg_ir::report::Severity::Warning
+        );
     }
 }

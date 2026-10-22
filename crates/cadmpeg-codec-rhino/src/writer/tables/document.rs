@@ -9,22 +9,49 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 
 fn current_fields(
     ir: &CadIr,
+    arena: &str,
     record: &cadmpeg_ir::NativeRecord,
-) -> Result<Option<Map<String, Value>>, CodecError> {
+) -> Result<Map<String, Value>, CodecError> {
     let mut fields = record.fields()?;
-    let links = fields
-        .get("neutral_attributes")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    for (name, id) in links {
-        let Some(attribute) = id.as_str().and_then(|id| {
-            ir.model.attributes.iter().find(|attribute| {
-                attribute.id.as_str() == id && attribute.target == AttributeTarget::Document
+    let prefix = format!("rhino.{arena}.");
+    let mut linked = std::collections::BTreeSet::new();
+    for attribute in ir
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| attribute.native_ref.as_deref() == Some(record.id()))
+    {
+        let role = attribute
+            .name
+            .strip_prefix(prefix.as_str())
+            .filter(|role| match arena {
+                "document_notes" => matches!(
+                    *role,
+                    "html" | "text" | "visible" | "window_rectangle" | "locked"
+                ),
+                "revisions" => matches!(
+                    *role,
+                    "created_by"
+                        | "created_utc_fields"
+                        | "last_edited_by"
+                        | "last_edited_utc_fields"
+                        | "revision_count"
+                ),
+                "applications" => matches!(*role, "name" | "url" | "details"),
+                _ => false,
             })
-        }) else {
-            return Ok(None);
-        };
+            .ok_or_else(|| {
+                CodecError::UnsupportedContent(format!(
+                    "attribute {} has no current Rhino {arena} field role",
+                    attribute.id
+                ))
+            })?;
+        if attribute.target != AttributeTarget::Document || !linked.insert(role) {
+            return Err(CodecError::UnsupportedContent(format!(
+                "attribute {} has an invalid or duplicate current Rhino {arena}.{role} binding",
+                attribute.id
+            )));
+        }
         let value = match attribute.values.as_slice() {
             [AttributeValue::String(value)] => Value::String(value.clone()),
             [AttributeValue::Boolean(value)] => Value::Bool(*value),
@@ -35,17 +62,29 @@ fn current_fields(
             [AttributeValue::Vector(values)] => {
                 serde_json::to_value(values).map_err(CodecError::malformed)?
             }
-            _ => return Ok(None),
+            _ => {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "attribute {} has no single current Rhino {arena}.{role} field value",
+                    attribute.id
+                )))
+            }
         };
-        fields.insert(name, value);
+        fields.insert(role.to_owned(), value);
     }
-    Ok(Some(fields))
+    Ok(fields)
+}
+
+fn boolean(fields: &Map<String, Value>, name: &str) -> Result<bool, CodecError> {
+    fields.get(name).and_then(Value::as_bool).ok_or_else(|| {
+        CodecError::UnsupportedContent(format!("Rhino document {name} needs a boolean value"))
+    })
 }
 
 fn text(fields: &Map<String, Value>, name: &str, output: &mut Vec<u8>) -> Result<(), CodecError> {
-    output.extend(utf16(
-        fields.get(name).and_then(Value::as_str).unwrap_or(""),
-    )?);
+    let value = fields.get(name).and_then(Value::as_str).ok_or_else(|| {
+        CodecError::UnsupportedContent(format!("Rhino document {name} needs a string value"))
+    })?;
+    output.extend(utf16(value)?);
     Ok(())
 }
 
@@ -87,6 +126,7 @@ fn integer_vector(
 pub(in crate::writer) struct PropertyExport {
     pub(in crate::writer) records: Vec<Vec<u8>>,
     pub(in crate::writer) regenerated: std::collections::BTreeSet<String>,
+    pub(in crate::writer) written: std::collections::BTreeSet<String>,
     pub(in crate::writer) losses: Vec<LossNote>,
 }
 
@@ -102,31 +142,24 @@ fn property(arena: &str, fields: &Map<String, Value>) -> Result<Vec<u8>, CodecEr
             integer_vector(fields, "created_utc_fields", 8, &mut payload)?;
             text(fields, "last_edited_by", &mut payload)?;
             integer_vector(fields, "last_edited_utc_fields", 8, &mut payload)?;
-            payload.extend(integer(Some(fields), "revision_count", 0).to_le_bytes());
+            let count = fields
+                .get("revision_count")
+                .and_then(Value::as_i64)
+                .and_then(|count| i32::try_from(count).ok())
+                .ok_or_else(|| {
+                    CodecError::UnsupportedContent(
+                        "Rhino document revision_count needs an i32 value".into(),
+                    )
+                })?;
+            payload.extend(count.to_le_bytes());
             0x2000_8021
         }
         "document_notes" => {
-            payload.extend(
-                i32::from(fields.get("html").and_then(Value::as_bool).unwrap_or(false))
-                    .to_le_bytes(),
-            );
+            payload.extend(i32::from(boolean(fields, "html")?).to_le_bytes());
             text(fields, "text", &mut payload)?;
-            payload.extend(
-                i32::from(
-                    fields
-                        .get("visible")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false),
-                )
-                .to_le_bytes(),
-            );
+            payload.extend(i32::from(boolean(fields, "visible")?).to_le_bytes());
             integer_vector(fields, "window_rectangle", 4, &mut payload)?;
-            payload.push(u8::from(
-                fields
-                    .get("locked")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-            ));
+            payload.push(u8::from(boolean(fields, "locked")?));
             0x2000_8022
         }
         _ => {
@@ -143,17 +176,26 @@ pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, CodecE
     let mut output = PropertyExport {
         records: Vec::new(),
         regenerated: std::collections::BTreeSet::new(),
+        written: std::collections::BTreeSet::new(),
         losses: Vec::new(),
     };
     for arena in ["revisions", "document_notes", "applications"] {
         for record in records(ir, arena) {
-            let Some(fields) = current_fields(ir, record)? else {
-                continue;
-            };
-            match property(arena, &fields) {
+            let encoded =
+                current_fields(ir, arena, record).and_then(|fields| property(arena, &fields));
+            match encoded {
                 Ok(encoded) => {
+                    let unchanged = match property(arena, &record.fields()?) {
+                        Ok(native) => native == encoded,
+                        Err(CodecError::UnsupportedContent(_)) => false,
+                        Err(error) => return Err(error),
+                    };
                     output.records.push(encoded);
-                    output.regenerated.insert(record.id().to_owned());
+                    if unchanged {
+                        output.written.insert(record.id().to_owned());
+                    } else {
+                        output.regenerated.insert(record.id().to_owned());
+                    }
                 }
                 Err(CodecError::UnsupportedContent(reason)) => output.losses.push(
                     RhinoLossCode::WriterAttributesOmitted
@@ -212,24 +254,14 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError
             }
         }
         if let Some(index) = fields.get("current_material_index").and_then(Value::as_i64) {
-            if let Some(id) = records(ir, "materials")
-                .iter()
-                .find(|record| {
-                    record
-                        .field("archive_index")
-                        .and_then(|value| value.as_i64())
-                        == Some(index)
-                })
-                .and_then(|record| record.field("neutral_ref"))
-                .and_then(|value| value.as_str().map(str::to_owned))
-            {
-                if let Some(index) = ir
-                    .model
-                    .appearances
-                    .iter()
-                    .position(|appearance| appearance.id.as_str() == id)
-                {
-                    let mut body = wire_index(index)?.to_le_bytes().to_vec();
+            if let Some(record) = records(ir, "materials").iter().find(|record| {
+                record
+                    .field("archive_index")
+                    .and_then(|value| value.as_i64())
+                    == Some(index)
+            }) {
+                if let Some(material_index) = super::materials::native_index(ir, record.id())? {
+                    let mut body = material_index.to_le_bytes().to_vec();
                     body.extend(integer(Some(&fields), "current_material_source", 0).to_le_bytes());
                     output.push(crc_chunk(0x2000_8039, &body)?);
                 }
@@ -238,3 +270,6 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError
     }
     Ok(output)
 }
+
+#[cfg(test)]
+mod tests;

@@ -2,8 +2,7 @@
 //! Saved views expose their names and admitted camera poses as neutral state.
 
 use cadmpeg_core::{decode::DecodeContext, CodecError};
-use cadmpeg_ir::ids::{Identity, IdentityKey};
-use cadmpeg_ir::native::NativeRecord;
+use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, PresentationStateKind,
     ViewPresentation,
@@ -150,11 +149,8 @@ pub(super) fn project(
             sources.push((record.id().to_owned(), record.copy_fields(ctx)?));
         }
     }
-    // Copy source records before editing the neutral arenas; the copy is an
-    // ephemeral decoder projection, never retained as another content home.
-    let mut replacements = Vec::new();
     let mut losses = Vec::new();
-    for (ordinal, (native_id, mut fields)) in sources.into_iter().enumerate() {
+    for (ordinal, (native_id, fields)) in sources.into_iter().enumerate() {
         let view_id = id("view", ordinal)?;
         let mut properties = BTreeMap::new();
         if let Some(name) = fields
@@ -206,8 +202,7 @@ pub(super) fn project(
             properties,
             native_ref: Some(native_id.clone()),
         });
-        fields.insert("neutral_view".into(), Value::String(view_id.to_string()));
-        if let Some(viewport) = fields.get_mut("viewport").and_then(Value::as_object_mut) {
+        if let Some(viewport) = fields.get("viewport").and_then(Value::as_object) {
             let camera = vector(viewport, "camera_location_mm")
                 .and_then(FiniteVector::new)
                 .zip(orientation(viewport));
@@ -229,24 +224,10 @@ pub(super) fn project(
                     .map_err(CodecError::malformed)?;
                 ctx.charge_entities(1, "Rhino neutral cameras")?;
                 ir.model.presentation_documents.push(document);
-                viewport.insert(
-                    "neutral_camera".into(),
-                    Value::String(camera_id.to_string()),
-                );
             } else {
                 losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!("{native_id}: camera frame has no admitted neutral rigid pose; typed viewport retained")));
             }
         }
-        replacements.push(NativeRecord::new(
-            Identity::new(native_id).map_err(CodecError::malformed)?,
-            fields,
-        )?);
-    }
-    if !replacements.is_empty() {
-        ir.native
-            .namespace_mut("rhino")
-            .arenas_mut()
-            .insert("views".into(), replacements);
     }
     Ok(losses)
 }

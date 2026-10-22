@@ -3,8 +3,8 @@
 //!
 //! CADIR and its decode-fidelity sidecar are written as two separate atomic
 //! renames. Those renames are not transactional: a crash between them can leave
-//! a stale sidecar beside a newer CADIR. Digest verification failing closed on
-//! the next load is what saves the caller, not a transactional pair.
+//! a stale sidecar beside a newer CADIR. Digest verification prevents the next
+//! load from restoring metadata from that stale sidecar.
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
@@ -142,14 +142,23 @@ pub(crate) fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String, C
     Ok(text)
 }
 
-/// Load and parse a decode sidecar, verifying it against CADIR bytes.
-///
-/// Mismatch is a hard error (fail-closed).
+/// Sidecar state after parsing and checking the CADIR binding.
+#[derive(Debug)]
+pub(crate) enum SidecarLoad {
+    /// No sidecar is present.
+    Absent,
+    /// The sidecar belongs to this document.
+    Matching(Box<DecodeSidecar>),
+    /// The sidecar belongs to different document bytes.
+    Stale(String),
+}
+
+/// Loads and parses a sidecar, separating stale bindings from read failures.
 pub(crate) fn load_matching_sidecar(
     cadir_path: &Path,
     cadir_bytes: &[u8],
     max_bytes: u64,
-) -> Result<Option<DecodeSidecar>, ApplicationError> {
+) -> Result<SidecarLoad, ApplicationError> {
     let Some(path) = decode_sidecar_path(cadir_path) else {
         return Err(anyhow!(
             "{} names no file, so it has no decode sidecar",
@@ -158,20 +167,19 @@ pub(crate) fn load_matching_sidecar(
         .into());
     };
     if !path.exists() {
-        return Ok(None);
+        return Ok(SidecarLoad::Absent);
     }
     let text = read_bounded_text(&path, max_bytes)?;
     let sidecar = DecodeSidecar::from_json(&text)
         .with_context(|| format!("parsing decode sidecar {}", path.display()))?;
     if !sidecar.matches(cadir_bytes) {
-        return Err(anyhow!(
-            "decode sidecar {} does not match {}",
+        return Ok(SidecarLoad::Stale(format!(
+            "sidecar.stale: decode sidecar {} does not match {}; ignoring the sidecar",
             path.display(),
             cadir_path.display()
-        )
-        .into());
+        )));
     }
-    Ok(Some(sidecar))
+    Ok(SidecarLoad::Matching(Box::new(sidecar)))
 }
 
 /// Refuse to overwrite the input path, or an existing output without force.
@@ -488,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn matching_sidecar_loads_and_mismatch_fails_closed() {
+    fn matching_sidecar_loads_and_only_digest_mismatch_is_stale() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty().to_canonical_json().unwrap();
@@ -512,12 +520,22 @@ mod tests {
         .unwrap();
 
         let loaded = load_matching_sidecar(&path, text.as_bytes(), 1024 * 1024).unwrap();
-        assert!(loaded.is_some());
+        assert!(matches!(loaded, super::SidecarLoad::Matching(_)));
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
-        let error =
-            load_matching_sidecar(&path, format!("{text}\n").as_bytes(), 1024 * 1024).unwrap_err();
-        assert!(error.to_string().contains("does not match"));
+        let stale =
+            load_matching_sidecar(&path, format!("{text}\n").as_bytes(), 1024 * 1024).unwrap();
+        assert!(
+            matches!(stale, super::SidecarLoad::Stale(message) if message.contains("does not match"))
+        );
+        std::fs::write(decode_sidecar_path(&path).unwrap(), "not JSON").unwrap();
+        let error = load_matching_sidecar(&path, text.as_bytes(), 1024 * 1024).unwrap_err();
+        assert!(error.to_string().contains("parsing decode sidecar"));
+        std::fs::remove_file(decode_sidecar_path(&path).unwrap()).unwrap();
+        assert!(matches!(
+            load_matching_sidecar(&path, text.as_bytes(), 1024 * 1024).unwrap(),
+            super::SidecarLoad::Absent
+        ));
     }
 
     #[test]

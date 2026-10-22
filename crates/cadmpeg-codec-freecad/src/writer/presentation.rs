@@ -6,9 +6,7 @@ mod document;
 
 use super::xml::{self, Object};
 use crate::loss::FreecadLossCode;
-use crate::native::{
-    GuiPropertyRecord, GuiViewProviderRecord, PropertyBody, PropertyFamily, PropertyRecord,
-};
+use crate::native::{GuiPropertyRecord, GuiViewProviderRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
@@ -62,24 +60,7 @@ impl Provider {
 }
 
 fn native_property(record: &GuiPropertyRecord) -> Result<Option<String>, CodecError> {
-    // Only typed values are consumed. xml::native never reads this diagnostic
-    // XML/span field, nor any opaque archive entry referenced by the values.
-    xml::native(&PropertyRecord {
-        id: record.id.clone(),
-        owner: record.owner.clone(),
-        name: record.name.clone(),
-        type_name: record.type_name.clone(),
-        family: PropertyFamily::Unknown,
-        status: record.status,
-        body: PropertyBody::Persisted {
-            values: record.values.clone(),
-            links: Vec::new(),
-            side_entries: record.side_entries.clone(),
-            dynamic: None,
-        },
-        order: record.order,
-        xml: record.xml.clone(),
-    })
+    xml::native_gui(record)
 }
 
 fn native(

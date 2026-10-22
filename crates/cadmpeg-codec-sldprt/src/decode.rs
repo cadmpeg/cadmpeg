@@ -293,6 +293,7 @@ fn decode_result(
             }
         }
     }
+    retention.install_layouts(ctx, &mut source_fidelity)?;
     retention.apply(&mut source_fidelity)?;
     // Layout oracles describe the delivered neutral state, including an
     // explicit Container request and derived configuration snapshots.
@@ -2429,11 +2430,22 @@ fn build_geometry_ir(
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
-    crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    let mut body_sources = crate::resolved_features::body_sources::BodySources::from_scan(
+        scan,
+        &lanes,
+        &supplemental_config_lanes,
+    )?;
+    crate::resolved_features::bindings::bind_scalar_operands(
+        ctx,
+        &histories,
+        &mut lanes,
+        &mut body_sources,
+    )?;
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
         &mut supplemental_config_lanes,
+        &mut body_sources,
     )?;
     let mut untyped_pmi_sections = BTreeSet::new();
     let pmi_dimensions = crate::pmi::dimensions(
@@ -2443,6 +2455,8 @@ fn build_geometry_ir(
         &mut pmi_losses,
         &mut untyped_pmi_sections,
     )?;
+    retention.pmi_pointers = pmi_dimensions.pointers;
+    let pmi_dimensions = pmi_dimensions.records;
     for id in untyped_pmi_sections {
         // A malformed or capped map's semantic payload was never admitted as
         // a PmiDimension record; retaining its section does not type it.
@@ -2517,7 +2531,9 @@ fn build_geometry_ir(
         &ir.model.features,
         &histories,
         &mut supplemental_config_lanes,
+        &mut body_sources,
     )?;
+    retention.pmi_pointers.extend(body_sources.into_pointers());
     crate::resolved_features::projections::project_compact_edge_selections(
         &mut ir.model.features,
         &[],
@@ -3264,14 +3280,6 @@ fn source_meta(
             display.triangles.to_string(),
         );
     }
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("block_count"),
-        scan.blocks.len().to_string(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("compound_stream_count"),
-        scan.compound_streams.len().to_string(),
-    );
     if let Some(site) = container::select_active_parasolid_site(scan) {
         attributes.insert(
             cadmpeg_core::nonblank_literal!("active_parasolid_block"),
@@ -3293,85 +3301,11 @@ fn source_meta(
             header.description.clone(),
         );
     }
-    add_preview_metadata(scan, &mut attributes);
     add_solidworks_xml_metadata(scan, &mut attributes)?;
     Ok(SourceMeta::classified(
         classification.layers().clone(),
         attributes,
     ))
-}
-
-fn add_preview_metadata(
-    scan: &ContainerScan,
-    attributes: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-) {
-    let mut png_index = 0;
-    let mut bmp_index = 0;
-    for section in scan.sections() {
-        let payload = section.payload();
-        match container::payload_family(payload) {
-            container::PayloadFamily::PngPreview => {
-                if payload.get(8..16) != Some(&[0, 0, 0, 13, b'I', b'H', b'D', b'R']) {
-                    continue;
-                }
-                let Some(width) = View::u32_be_at(payload, 16) else {
-                    continue;
-                };
-                let Some(height) = View::u32_be_at(payload, 20) else {
-                    continue;
-                };
-                let Some(fields) = payload.get(24..29) else {
-                    continue;
-                };
-                let key = |field: &str| {
-                    cadmpeg_core::nonblank_literal!("png_preview_{png_index}_{field}")
-                };
-                attributes.insert(key("width"), width.to_string());
-                attributes.insert(key("height"), height.to_string());
-                attributes.insert(key("bit_depth"), fields[0].to_string());
-                attributes.insert(key("color_type"), fields[1].to_string());
-                attributes.insert(key("compression"), fields[2].to_string());
-                attributes.insert(key("filter"), fields[3].to_string());
-                attributes.insert(key("interlace"), fields[4].to_string());
-                png_index += 1;
-            }
-            container::PayloadFamily::BmpThumbnail => {
-                let (Some(width), Some(height), Some(image_size)) = (
-                    View::i32_le_at(payload, 8),
-                    View::i32_le_at(payload, 12),
-                    View::u32_le_at(payload, 24),
-                ) else {
-                    continue;
-                };
-                let (Some(planes), Some(bits_per_pixel), Some(compression)) = (
-                    View::u16_le_at(payload, 16),
-                    View::u16_le_at(payload, 18),
-                    View::u32_le_at(payload, 20),
-                ) else {
-                    continue;
-                };
-                let key = |field: &str| {
-                    cadmpeg_core::nonblank_literal!("bmp_thumbnail_{bmp_index}_{field}")
-                };
-                attributes.insert(key("width"), width.to_string());
-                attributes.insert(key("height"), height.to_string());
-                attributes.insert(key("planes"), planes.to_string());
-                attributes.insert(key("bit_count"), bits_per_pixel.to_string());
-                attributes.insert(key("compression"), compression.to_string());
-                attributes.insert(key("image_size"), image_size.to_string());
-                bmp_index += 1;
-            }
-            _ => {}
-        }
-    }
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("png_preview_count"),
-        png_index.to_string(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("bmp_thumbnail_count"),
-        bmp_index.to_string(),
-    );
 }
 
 fn add_solidworks_xml_metadata(
@@ -3550,11 +3484,22 @@ fn build_metadata_ir(
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
-    crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    let mut body_sources = crate::resolved_features::body_sources::BodySources::from_scan(
+        scan,
+        &lanes,
+        &supplemental_config_lanes,
+    )?;
+    crate::resolved_features::bindings::bind_scalar_operands(
+        ctx,
+        &histories,
+        &mut lanes,
+        &mut body_sources,
+    )?;
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
         &mut supplemental_config_lanes,
+        &mut body_sources,
     )?;
     let mut untyped_pmi_sections = BTreeSet::new();
     let pmi_dimensions = crate::pmi::dimensions(
@@ -3564,6 +3509,8 @@ fn build_metadata_ir(
         &mut pmi_losses,
         &mut untyped_pmi_sections,
     )?;
+    retention.pmi_pointers = pmi_dimensions.pointers;
+    let pmi_dimensions = pmi_dimensions.records;
     for id in untyped_pmi_sections {
         // A malformed or capped map's semantic payload was never admitted as
         // a PmiDimension record; retaining its section does not type it.
@@ -3592,10 +3539,6 @@ fn build_metadata_ir(
     attributes.insert(
         cadmpeg_core::nonblank_literal!("outer_version"),
         format!("0x{:08x}", scan.version),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("block_count"),
-        scan.blocks.len().to_string(),
     );
     add_solidworks_xml_metadata(scan, &mut attributes)?;
 
@@ -3689,7 +3632,9 @@ fn build_metadata_ir(
         &ir.model.features,
         &histories,
         &mut supplemental_config_lanes,
+        &mut body_sources,
     )?;
+    retention.pmi_pointers.extend(body_sources.into_pointers());
     crate::resolved_features::projections::project_compact_edge_selections(
         &mut ir.model.features,
         &[],

@@ -1,25 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Camera frame reconstruction from the current neutral axis-angle pose.
 
-use super::{crc_chunk_with_direct, flag, integer, vector, CadIr, CodecError, Map, Value};
-use cadmpeg_ir::presentation::PresentationStateKind;
+use super::{crc_chunk_with_direct, flag, integer, vector, CodecError, Map, Value};
+use cadmpeg_ir::presentation::{PresentationDocument, PresentationStateKind};
 
 type CameraPose = ([f64; 3], [[f64; 3]; 3]);
 
-fn pose(ir: &CadIr, fields: &Map<String, Value>) -> Result<Option<CameraPose>, CodecError> {
-    let Some(id) = fields.get("neutral_camera").and_then(Value::as_str) else {
+fn pose(document: Option<&PresentationDocument>) -> Result<Option<CameraPose>, CodecError> {
+    let Some(document) = document else {
         return Ok(None);
     };
-    let document = ir
-        .model
-        .presentation_documents
-        .iter()
-        .find(|document| document.id.as_str() == id)
-        .ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
-                "camera {id} is absent from the current document"
-            ))
-        })?;
+    let id = &document.id;
     let cameras = document
         .states()
         .iter()
@@ -75,8 +66,11 @@ fn pose(ir: &CadIr, fields: &Map<String, Value>) -> Result<Option<CameraPose>, C
     Ok(Some((position, axes)))
 }
 
-pub(super) fn encode(ir: &CadIr, fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
-    let pose = pose(ir, fields)?;
+pub(super) fn encode(
+    fields: &Map<String, Value>,
+    camera: Option<&PresentationDocument>,
+) -> Result<Vec<u8>, CodecError> {
+    let pose = pose(camera)?;
     let mut body = vec![0x15];
     for name in ["camera_valid", "frustum_valid", "port_valid"] {
         body.extend(i32::from(flag(fields, name, false)).to_le_bytes());

@@ -481,6 +481,7 @@ fn retained_xml_records_validate_evidence_without_source_spans() {
         serde_json::json!({"id":"fcstd:native:object#A", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
         serde_json::json!({"id":"property", "owner":"object", "name":"Label", "type_name":"App::PropertyString", "family":"scalar", "transient":false, "order":0, "values":[], "links":[], "side_entries":[]}),
     ];
+    let remaining_property_owner = bases[3].clone();
     let hash = cadmpeg_ir::hash::sha256_hex(b"<A/>");
     for (kind, base) in bases.into_iter().enumerate() {
         for (length, digest, valid) in [
@@ -498,8 +499,14 @@ fn retained_xml_records_validate_evidence_without_source_spans() {
                     .extend(evidence.as_object().unwrap().clone());
             }
             let admitted = match kind {
-                0 => serde_json::from_value::<super::GuiStateRecord>(wire).map(|_| ()),
-                1 => serde_json::from_value::<super::GuiPropertyRecord>(wire).map(|_| ()),
+                0 | 1 => {
+                    // #212 removes GUI state/property XML wrappers. Exercise their
+                    // unchanged evidence cases through a remaining native owner.
+                    let mut owner = remaining_property_owner.clone();
+                    owner["length"] = wire["length"].clone();
+                    owner["sha256"] = wire["sha256"].clone();
+                    serde_json::from_value::<super::PropertyRecord>(owner).map(|_| ())
+                }
                 2 => serde_json::from_value::<super::ObjectRecord>(wire).map(|_| ()),
                 _ => serde_json::from_value::<super::PropertyRecord>(wire).map(|_| ()),
             };

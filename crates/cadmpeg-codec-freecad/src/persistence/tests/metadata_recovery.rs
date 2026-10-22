@@ -127,7 +127,10 @@ fn many_unique_object_names_decode() {
         super::parse(document.as_bytes(), "4", ctx).unwrap()
     });
     assert_eq!(graph.objects.len(), count);
-    assert!(graph.objects.iter().all(|object| object.data.is_some()));
+    assert!(graph
+        .objects
+        .iter()
+        .all(|object| graph.object_sources.iter().any(|(id, _)| id == object.id())));
 }
 
 #[test]

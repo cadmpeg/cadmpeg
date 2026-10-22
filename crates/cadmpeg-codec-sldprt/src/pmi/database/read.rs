@@ -10,26 +10,51 @@ use cadmpeg_core::CodecError;
 pub(crate) struct MapImage<'a> {
     pub(crate) key: String,
     pub(crate) encoded: View<'a>,
-    spans: Vec<(usize, usize, usize)>,
+    pieces: Vec<View<'a>>,
+    database: View<'a>,
 }
 
 impl MapImage<'_> {
-    pub(crate) fn source_offset(&self, logical: u64) -> u64 {
-        usize::try_from(logical)
-            .ok()
-            .and_then(|logical| {
-                self.spans.iter().find_map(|&(start, end, source)| {
-                    (start <= logical && logical < end).then(|| source + logical - start)
-                })
-            })
-            .and_then(|offset| u64::try_from(offset).ok())
-            .unwrap_or(0)
+    /// Pointer values retain the containing database's coordinates, while the
+    /// owning RecordLayout extent uses the cell's composite stream.
+    pub(crate) fn original_pointer(
+        &self,
+        ctx: &DecodeContext<'_>,
+        logical: u64,
+    ) -> Result<u64, CodecError> {
+        let logical = usize::try_from(logical).map_err(|_| malformed())?;
+        let mut start = 0usize;
+        for piece in &self.pieces {
+            let end = start
+                .checked_add(piece.window().len())
+                .ok_or_else(malformed)?;
+            if start <= logical && logical < end {
+                let position = piece
+                    .start()
+                    .checked_add(logical - start)
+                    .ok_or_else(malformed)?;
+                let actual = piece
+                    .child(position, position.checked_add(1).ok_or_else(malformed)?)
+                    .ok_or_else(malformed)?;
+                let actual = ctx.capture_part_extent(actual)?;
+                let database = ctx.capture_part_extent(self.database)?;
+                if actual.stream() != database.stream() {
+                    return Err(malformed());
+                }
+                return actual
+                    .offset()
+                    .checked_sub(database.offset())
+                    .ok_or_else(malformed);
+            }
+            start = end;
+        }
+        Err(malformed())
     }
 }
 
 pub(in crate::pmi) fn images<'a>(
     ctx: &DecodeContext<'a>,
-    source: View<'_>,
+    source: View<'a>,
 ) -> Result<Option<Vec<MapImage<'a>>>, CodecError> {
     let payload = source.window();
     if !payload.starts_with(b"unqlite") || View::u32_be_at(payload, 7) != Some(0xdb7c_2712) {
@@ -106,7 +131,7 @@ pub(in crate::pmi) fn images<'a>(
 
 struct Reader<'a, 'context> {
     ctx: &'a DecodeContext<'context>,
-    source: View<'a>,
+    source: View<'context>,
     page_size: usize,
     remaining: Cell<usize>,
 }
@@ -121,7 +146,7 @@ impl<'context> Reader<'_, 'context> {
         self.source.window().get(start..end).ok_or_else(malformed)
     }
 
-    fn source_child(&self, offset: usize, len: usize) -> Result<View<'_>, CodecError> {
+    fn source_child(&self, offset: usize, len: usize) -> Result<View<'context>, CodecError> {
         let start = self
             .source
             .start()
@@ -153,7 +178,6 @@ impl<'context> Reader<'_, 'context> {
         let mut bytes = self
             .ctx
             .alloc_filled(size, 0u8, "reconstruct UnQLite record")?;
-        let mut spans = Vec::new();
         let mut pieces = Vec::new();
         if overflow == 0 {
             let start = cell + 26;
@@ -165,9 +189,6 @@ impl<'context> Reader<'_, 'context> {
                 .and_then(|start_of_page| start_of_page.checked_add(start))
                 .ok_or_else(malformed)?;
             pieces.push(self.source_child(source, size)?);
-            if value_len != 0 {
-                spans.push((0, value_len, source + key_len));
-            }
         } else {
             let mut next = overflow;
             let mut first = true;
@@ -187,18 +208,6 @@ impl<'context> Reader<'_, 'context> {
                     .and_then(|page_start| page_start.checked_add(start))
                     .ok_or_else(malformed)?;
                 pieces.push(self.source_child(piece_start, count)?);
-                let value_start = position.max(key_len);
-                let value_end = (position + count).max(key_len);
-                if value_start < value_end {
-                    let source = usize::try_from(next)
-                        .ok()
-                        .and_then(|number| number.checked_mul(self.page_size))
-                        .and_then(|page_start| {
-                            page_start.checked_add(start + value_start - position)
-                        })
-                        .ok_or_else(malformed)?;
-                    spans.push((value_start - key_len, value_end - key_len, source));
-                }
                 position += count;
                 next = View::u64_be_at(page, 0).ok_or_else(malformed)?;
                 first = false;
@@ -226,7 +235,8 @@ impl<'context> Reader<'_, 'context> {
         Ok(MapImage {
             key,
             encoded,
-            spans,
+            pieces,
+            database: self.source,
         })
     }
 }

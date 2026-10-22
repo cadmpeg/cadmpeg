@@ -14,8 +14,7 @@ Unsupported neutral arenas are dropped with export losses. Unsupported
 geometry is degraded to an available solved carrier, omitted as an entity, or
 omitted with its containing body when that is required for a valid Brep; a
 structural omission reports an Error-severity loss. Supported independent
-objects remain writable. Empty output reports `NoExportableSolids`, leaving
-acceptance to the CLI's `--allow-empty` policy. Malformed or inconsistent input,
+objects remain writable. Empty output reports `NoExportableSolids`. Malformed or inconsistent input,
 format capacities, and an unresolvable archive target can still refuse output.
 Rigid body placements are baked into emitted geometry. A nonrigid placement
 that cannot be applied is omitted; geometry is written in its local frame with

@@ -662,9 +662,13 @@ pub(crate) fn logical_ledger(
                 }
             } else {
                 for property in &gui.properties {
+                    let source = gui.property_sources.get(&property.id).ok_or_else(|| {
+                        CodecError::malformed("GUI property has no original source range")
+                    })?;
+                    let range = source.record_range();
                     ranges.push((
-                        property.xml.start(),
-                        property.xml.end(),
+                        cadmpeg_core::decode::u64_from_index(range.start),
+                        cadmpeg_core::decode::u64_from_index(range.end),
                         if gui::has_registered_property_grammar(&property.name, &property.type_name)
                         {
                             "typed"
@@ -674,15 +678,14 @@ pub(crate) fn logical_ledger(
                         property.id.clone(),
                     ));
                 }
-                for document in &gui.documents {
-                    for state in &document.states {
-                        ranges.push((
-                            state.xml.start(),
-                            state.xml.end(),
-                            "typed",
-                            state.id.clone(),
-                        ));
-                    }
+                for source in gui.state_sources.values() {
+                    let range = source.record_range();
+                    ranges.push((
+                        cadmpeg_core::decode::u64_from_index(range.start),
+                        cadmpeg_core::decode::u64_from_index(range.end),
+                        "typed",
+                        source.id().to_owned(),
+                    ));
                 }
             }
             ranges.sort_by_key(|left| left.0);

@@ -97,9 +97,9 @@ fn prepared(
         destination: ResolvedDestination::Stdout,
         loss_policy,
         loss_floor: super::LossFloor::Info,
-        allow_errors: false,
+        reject_errors: true,
         // These tests isolate export planning and loss policy.
-        allow_empty: true,
+        reject_empty: false,
     }
 }
 
@@ -235,7 +235,7 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
     );
     // The lone point is an orphan carrier, a check error the Rhino payload
     // carries. This test covers the export-loss gate, so it permits errors.
-    conversion.allow_errors = true;
+    conversion.reject_errors = false;
     let Err(error) = conversion.plan() else {
         panic!("the omitted product definition must refuse");
     };
@@ -494,8 +494,8 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path) -> PreparedConversion {
         &super::ConversionPolicy {
             losses: LossPolicy::Allow,
             loss_floor: super::LossFloor::Info,
-            allow_errors: false,
-            allow_empty: false,
+            reject_errors: true,
+            reject_empty: true,
             destination: DestinationPolicy::Stdout {
                 allow_binary: false,
             },
@@ -678,8 +678,8 @@ fn a_design_arena_error_blocks_a_freecad_round_trip() {
             destination: ResolvedDestination::Stdout,
             loss_policy: LossPolicy::Allow,
             loss_floor: super::LossFloor::Info,
-            allow_errors: false,
-            allow_empty: false,
+            reject_errors: true,
+            reject_empty: true,
         };
         if inject_error {
             conversion.validation.findings.push(Finding {
@@ -713,7 +713,7 @@ fn a_design_arena_error_blocks_a_freecad_round_trip() {
 
 #[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
-fn allow_errors_writes_past_a_carried_error() {
+fn default_conversion_writes_past_a_carried_error() {
     use cadmpeg_ir::report::{
         check::{Check, Finding},
         Severity,
@@ -734,10 +734,10 @@ fn allow_errors_writes_past_a_carried_error() {
         message: "synthetic document-wide error".into(),
         entity: None,
     });
-    conversion.allow_errors = true;
+    conversion.reject_errors = false;
     let planned = conversion
         .plan()
-        .expect("allow-errors permits a carried error");
+        .expect("default conversion permits a carried error");
     assert_eq!(planned.carried_errors(), 1);
 }
 
@@ -824,7 +824,7 @@ fn loss_floors_include_their_threshold_and_all_higher_severities() {
 fn export_loss_gate_uses_the_configured_floor() {
     for (floor, refuses) in [
         (super::LossFloor::Info, true),
-        (super::LossFloor::Warning, false),
+        (super::LossFloor::Warning, true),
         (super::LossFloor::Error, false),
         (super::LossFloor::Blocking, false),
     ] {
@@ -848,3 +848,30 @@ fn export_loss_gate_uses_the_configured_floor() {
         }
     }
 }
+
+#[test]
+fn conversion_refusals_are_opt_in_and_allow_flags_are_removed() {
+    use clap::Parser;
+    for flag in [None, Some("--reject-errors"), Some("--reject-empty")] {
+        let mut args = vec!["cadmpeg", "convert", "input.step"];
+        args.extend(flag);
+        let crate::Command::Convert {
+            reject_errors,
+            reject_empty,
+            ..
+        } = crate::Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("convert command");
+        };
+        assert_eq!(reject_errors, flag == Some("--reject-errors"));
+        assert_eq!(reject_empty, flag == Some("--reject-empty"));
+    }
+    for flag in ["--allow-errors", "--allow-empty"] {
+        let error =
+            crate::Cli::try_parse_from(["cadmpeg", "convert", "input.step", flag]).unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+}
+
+#[cfg(feature = "rhino")]
+mod emptiness;

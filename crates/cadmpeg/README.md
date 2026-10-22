@@ -86,13 +86,12 @@ output, because that spelling is nearly always `--input-format` (alias
 `--from`) written as `--format`; pass `-o FILE` or, for a deliberate binary
 pipe, `--binary-stdout`.
 
-Conversion stops before export if the check finds errors in what the output
-writes. An error in data the output format does not carry, for example
-feature history in a STEP export, stays in the report and does not stop the
-write. Conversion also refuses
-geometry output when decoding transfers no geometry. `--allow-errors` and
-`--allow-empty` write the current result anyway. They leave model data
-unchanged.
+Conversion reports check errors and writes the current result. `--reject-errors`
+refuses if an error concerns data the output writes. An error in data the output
+format does not carry, for example feature history in a STEP export, stays in
+the report and does not stop that write. Empty geometry output is written with
+an `export:output.empty` Warning. `--reject-empty` refuses that output. These
+policies leave model data unchanged.
 
 `convert` decodes a native source only as deeply as the output needs: STEP,
 IGES, and Rhino output decodes geometry and skips design intent, so the decode
@@ -100,13 +99,18 @@ report lists no loss in sketches, features, or history. `--full-decode`, and
 every `--reject-lossy` scope, decode the whole source whatever the output.
 
 `--reject-lossy=decode` judges the current input decode. Reading CADIR is
-lossless; a decode report restored from its sidecar is printed as history.
+lossless unless a stale sidecar must be discarded; a decode report restored
+from a matching sidecar is printed as history.
 `--reject-lossy=export` judges export losses, and bare `--reject-lossy` judges
 both phases. `--reject-lossy-floor=info|warning|error|blocking` selects the
 minimum refused severity; the default is `info`. A document scope that excludes
 a content class prints a note under any loss policy and does not refuse the
-write. After editing CADIR, re-bind its sidecar with
-`DecodeSidecar::bind_sha256`; a stale sidecar still refuses the artifact.
+write. A sidecar whose digest does not match the CADIR is ignored, without
+restoring its fidelity or history. The current parse reports `sidecar.stale`
+(Warning), so `--reject-lossy=decode` refuses it at floor `info` or `warning`.
+Sidecar read and parse failures remain errors. After editing CADIR, re-bind a
+sidecar only if its metadata still belongs to the edited document, using
+`DecodeSidecar::bind_sha256`.
 
 ## Inspect, dump, and check
 
@@ -136,8 +140,7 @@ cadmpeg check bracket.f3d --json
 
 `--container-only` stops native decoding before geometry and delivers an empty
 content scope. It is useful for container diagnostics. The CLI permits only
-CADIR output with this flag; `--allow-empty` does not override this caller
-policy. Writers synthesize from what the document holds. Native patch and
+CADIR output with this flag, under either empty-output policy. Writers synthesize from what the document holds. Native patch and
 replay require all retained source
 records to have typed document representations; otherwise the writer uses
 synthesis.

@@ -42,8 +42,8 @@ pub(crate) fn matches_native(
     Ok(actual.next().is_none())
 }
 
-// Census records refer to authoritative bytes through identities, ranges and digests.
-// Absent object data uses zero offsets and the empty-byte digest.
+// Census records describe authoritative typed objects and their owned properties.
+// Object source bytes and physical extent belong to the object RecordLayout.
 #[derive(Serialize)]
 struct ApplicationRecordWire<'a> {
     id: String,
@@ -55,8 +55,6 @@ struct ApplicationRecordWire<'a> {
     side_entries: Vec<&'a str>,
     inert_payload: bool,
     order: usize,
-    byte_len: u64,
-    sha256: String,
     property_records: Vec<ApplicationPropertyWire<'a>>,
 }
 
@@ -155,14 +153,6 @@ fn wire_records<'a>(
             side_entries,
             inert_payload: property_records.iter().any(|property| property.inert),
             order: object.order,
-            byte_len: object
-                .data
-                .as_ref()
-                .map_or(0, crate::native::RetainedXml::length),
-            sha256: object.data.as_ref().map_or_else(
-                || cadmpeg_ir::hash::sha256_hex(&[]),
-                |data| data.sha256().to_owned(),
-            ),
             property_records,
         });
     }

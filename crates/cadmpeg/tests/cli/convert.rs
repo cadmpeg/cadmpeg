@@ -112,13 +112,7 @@ fn convert_reports_the_delivered_scope() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
     for extra in [None, Some("--full-decode")] {
-        let mut args = vec![
-            "convert",
-            input.to_str().unwrap(),
-            "-f",
-            "step",
-            "--allow-empty",
-        ];
+        let mut args = vec!["convert", input.to_str().unwrap(), "-f", "step"];
         args.extend(extra);
         Command::cargo_bin("cadmpeg")
             .unwrap()
@@ -350,7 +344,6 @@ fn source_less_ir_exports_to_decodable_rhino() {
             input.to_str().unwrap(),
             "-o",
             output.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -405,7 +398,6 @@ fn rhino_output_version_is_selected_explicitly() {
                 output.to_str().unwrap(),
                 "--to",
                 spelling,
-                "--allow-errors",
             ])
             .assert()
             .success();
@@ -422,7 +414,7 @@ fn rhino_output_version_is_selected_explicitly() {
 }
 
 #[test]
-fn check_blocks_conversion_unless_overridden() {
+fn reject_errors_blocks_conversion_while_default_writes() {
     let dir = tempdir().unwrap();
     let mut invalid = unit_cube().expect("unit cube fixture is admitted");
     invalid.model.faces[0].surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
@@ -443,6 +435,7 @@ fn check_blocks_conversion_unless_overridden() {
             "step",
             "-o",
             output.to_str().unwrap(),
+            "--reject-errors",
         ])
         .assert()
         .code(1)
@@ -457,10 +450,10 @@ fn check_blocks_conversion_unless_overridden() {
             "step",
             "-o",
             output.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
-        .success();
+        .success()
+        .stderr(predicate::str::contains("error"));
     assert!(output.exists());
 }
 
@@ -847,7 +840,6 @@ fn convert_refuses_binary_output_to_stdout() {
             "rhino",
             "-o",
             out.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -861,7 +853,6 @@ fn convert_refuses_binary_output_to_stdout() {
             point.to_str().unwrap(),
             "--format",
             "rhino",
-            "--allow-errors",
             "--binary-stdout",
         ])
         .output()
@@ -939,7 +930,6 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
             original.to_str().unwrap(),
             "--to",
             "5.1",
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -953,7 +943,6 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
             original.to_str().unwrap(),
             "-o",
             inherited.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -969,7 +958,6 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
             upgraded.to_str().unwrap(),
             "--to",
             "5.3",
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1008,7 +996,6 @@ fn a_to_that_names_only_the_format_still_inherits() {
             original.to_str().unwrap(),
             "--to",
             "iges:5.1-fixed-ascii",
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1025,7 +1012,6 @@ fn a_to_that_names_only_the_format_still_inherits() {
                 inherited.to_str().unwrap(),
                 "--to",
                 spelling,
-                "--allow-errors",
             ])
             .assert()
             .success();

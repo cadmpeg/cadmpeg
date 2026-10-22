@@ -588,15 +588,7 @@ impl<'a> Builder<'a> {
         let has_standalone_geometry = !standalone_items.is_empty();
         let mut emitted_items = shape_items;
         emitted_items.extend(standalone_items.iter().copied());
-        if emitted_items.is_empty() && !self.ir.model.bodies.is_empty() {
-            self.loss(
-                StepLossCode::NoExportableSolids,
-                "no exportable solids: the IR document contains no body/region/shell \
-                          geometry, so the STEP representation is empty"
-                    .to_string(),
-            );
-            emitted_items.clear();
-        }
+        let has_shape_geometry = !emitted_items.is_empty();
         let mut items = emitted_items;
         let origin = geometry::placement(
             &mut self.emitter,
@@ -651,6 +643,13 @@ impl<'a> Builder<'a> {
 
         self.emit_visibility();
         self.emit_tessellations(context);
+        if !has_shape_geometry && self.tessellation_step_refs.is_empty() {
+            self.loss(
+                StepLossCode::NoExportableSolids,
+                "no exportable solids or standalone geometry; the STEP representation is empty"
+                    .to_string(),
+            );
+        }
         self.emit_presentation(context);
         self.emit_appearance_visibility();
         self.emit_pmi(context);

@@ -382,6 +382,22 @@ impl std::ops::Deref for Coverage {
 }
 
 impl DecodeReport {
+    /// Reports a discarded stale sidecar during a current neutral CADIR parse.
+    #[must_use]
+    pub fn stale_sidecar(ir: &crate::CadIr, message: impl Into<String>) -> Self {
+        Self {
+            classification: FormatIdentity::unclassified("cadir"),
+            transfer: DecodeTransfer {
+                scope: ir.scope,
+                geometry_transferred: !ir.model.bodies.is_empty(),
+            },
+            coverage: Coverage::default(),
+            losses: vec![crate::codec::DecodeLossCode::SidecarStale.note(message)],
+            notes: Vec::new(),
+            transfer_ledger: TransferLedger::default(),
+        }
+    }
+
     /// Stamps a classification onto a report body.
     ///
     /// The sealed decode wrapper is the production caller: the classification

@@ -12,6 +12,8 @@ use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
 
 #[cfg(feature = "catia")]
 mod catia;
+#[cfg(feature = "step")]
+mod empty_step;
 
 #[test]
 fn garbage_reports_supported_formats() {
@@ -67,7 +69,6 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
             lossy.to_str().unwrap(),
             "-f",
             "step",
-            "--allow-empty",
             "--reject-lossy",
         ])
         .assert()
@@ -82,7 +83,6 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
             lossy.to_str().unwrap(),
             "-f",
             "step",
-            "--allow-empty",
             "--reject-lossy",
             "--report",
             report.to_str().unwrap(),
@@ -95,13 +95,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args([
-            "convert",
-            lossy.to_str().unwrap(),
-            "-f",
-            "step",
-            "--allow-empty",
-        ])
+        .args(["convert", lossy.to_str().unwrap(), "-f", "step"])
         .assert()
         .success();
 }
@@ -146,15 +140,9 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
 }
 
 #[test]
-fn convert_rejects_empty_native_geometry_unless_allowed() {
+fn reject_empty_refuses_while_default_writes_empty_native_geometry() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
-    Command::cargo_bin("cadmpeg")
-        .unwrap()
-        .args(["convert", input.to_str().unwrap(), "-f", "step"])
-        .assert()
-        .code(1)
-        .stderr(predicate::str::contains("--allow-empty"));
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
@@ -162,8 +150,14 @@ fn convert_rejects_empty_native_geometry_unless_allowed() {
             input.to_str().unwrap(),
             "-f",
             "step",
-            "--allow-empty",
+            "--reject-empty",
         ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("refusing to write an empty"));
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["convert", input.to_str().unwrap(), "-f", "step"])
         .assert()
         .success()
         .stdout(predicate::str::starts_with("ISO-10303-21"));
@@ -171,11 +165,11 @@ fn convert_rejects_empty_native_geometry_unless_allowed() {
 
 /// Container-only output remains an explicit caller policy, independent of writer scope.
 #[test]
-fn convert_refuses_container_only_native_output_even_when_empty_is_allowed() {
+fn convert_refuses_container_only_native_output_under_each_empty_policy() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
-    for allow_empty in [false, true] {
-        let report = dir.path().join(format!("container-{allow_empty}.json"));
+    for reject_empty in [false, true] {
+        let report = dir.path().join(format!("container-{reject_empty}.json"));
         let mut args = vec![
             "convert",
             input.to_str().unwrap(),
@@ -185,8 +179,8 @@ fn convert_refuses_container_only_native_output_even_when_empty_is_allowed() {
             "--report",
             report.to_str().unwrap(),
         ];
-        if allow_empty {
-            args.push("--allow-empty");
+        if reject_empty {
+            args.push("--reject-empty");
         }
         Command::cargo_bin("cadmpeg")
             .unwrap()
@@ -333,7 +327,6 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
             output.to_str().unwrap(),
             "--to",
             "ap242e3",
-            "--allow-errors",
         ])
         .assert()
         .code(1)
@@ -352,7 +345,6 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
             input.to_str().unwrap(),
             "-o",
             native_input.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -369,7 +361,6 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
             "9.9",
             "--report",
             report.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .code(1)
@@ -402,7 +393,6 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
             "8.8",
             "--report",
             report.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .code(2)
@@ -436,13 +426,7 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
     // encoder receives the token after the colon unchanged.
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args([
-            "convert",
-            input.to_str().unwrap(),
-            "-f",
-            "step:ap999",
-            "--allow-errors",
-        ])
+        .args(["convert", input.to_str().unwrap(), "-f", "step:ap999"])
         .assert()
         .code(1)
         .stderr(
@@ -471,7 +455,6 @@ fn rhino_word_5_is_refused_with_the_encoder_catalog() {
             output.to_str().unwrap(),
             "--to",
             "5",
-            "--allow-errors",
         ])
         .assert()
         .code(1)
@@ -506,7 +489,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     ] {
         Command::cargo_bin("cadmpeg")
             .unwrap()
-            .args(["convert", path, "-f", "step", "--allow-empty", scope])
+            .args(["convert", path, "-f", "step", scope])
             .assert()
             .code(1)
             .stderr(predicate::str::contains("decode reported"));
@@ -519,7 +502,6 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
             path,
             "-f",
             "step",
-            "--allow-empty",
             "--reject-lossy=export",
             "--report",
             export_report.to_str().unwrap(),
@@ -527,7 +509,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         .assert()
         .code(1)
         .stderr(
-            predicate::str::contains("export planning reported 1 loss(es)")
+            predicate::str::contains("export planning reported 3 loss(es)")
                 .and(predicate::str::contains(
                     "uninterpreted passthrough record(s)",
                 ))
@@ -538,7 +520,16 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     assert_eq!(report["refusal"]["code"], "export_loss_rejected");
     assert!(report["export"].is_object());
     assert_eq!(report["export"]["identity"]["payload"], "native");
-    assert_eq!(report["export"]["losses"].as_array().unwrap().len(), 1);
+    assert_eq!(report["export"]["losses"].as_array().unwrap().len(), 3);
+    assert!(report["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| {
+            loss["code"]["namespace"] == "export"
+                && loss["code"]["code"] == "output.empty"
+                && loss["severity"] == "warning"
+        }));
 
     let lossless = fixture(
         dir.path(),
@@ -559,14 +550,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args([
-            "convert",
-            path,
-            "-f",
-            "step",
-            "--allow-empty",
-            "--reject-lossy=nonesuch",
-        ])
+        .args(["convert", path, "-f", "step", "--reject-lossy=nonesuch"])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("invalid value"));
@@ -688,8 +672,6 @@ fn decode_loss_policy_treats_restored_sidecars_as_history() {
             "-f",
             "cadir",
             "--reject-lossy=decode",
-            "--allow-errors",
-            "--allow-empty",
         ]);
         let assertion = command.assert().success();
         if with_history {
@@ -701,7 +683,7 @@ fn decode_loss_policy_treats_restored_sidecars_as_history() {
 }
 
 #[test]
-fn edited_cadir_requires_rebinding_its_decode_sidecar() {
+fn edited_cadir_ignores_stale_sidecar_and_decode_policy_gates_current_warning() {
     use cadmpeg_ir::{decode_sidecar_path, hash::digest::Sha256Digest, CadIr, DecodeSidecar};
 
     let dir = tempdir().unwrap();
@@ -729,15 +711,37 @@ fn edited_cadir_requires_rebinding_its_decode_sidecar() {
         "-f",
         "cadir",
         "--reject-lossy=decode",
-        "--allow-errors",
-        "--allow-empty",
     ];
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(arguments)
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains("does not match"));
+        .code(1)
+        .stderr(predicate::str::contains("sidecar.stale"));
+    for floor in ["warning", "info"] {
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(arguments)
+            .args(["--reject-lossy-floor", floor])
+            .assert()
+            .code(1)
+            .stderr(predicate::str::contains("sidecar.stale"));
+    }
+    for floor in ["error", "blocking"] {
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(arguments)
+            .args(["--reject-lossy-floor", floor])
+            .assert()
+            .success()
+            .stderr(predicate::str::contains("sidecar.stale"));
+    }
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["convert", cadir.to_str().unwrap(), "-f", "cadir"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("sidecar.stale"));
     let rebound = DecodeSidecar::bind_sha256(
         Sha256Digest::digest(edited.as_bytes()),
         sidecar.report,
@@ -828,7 +832,7 @@ fn decode_loss_floor_applies_to_native_input_and_never_to_history() {
 
 #[cfg(all(feature = "step", feature = "rhino"))]
 #[test]
-fn native_geometry_all_omitted_by_target_requires_allow_empty() {
+fn reject_empty_refuses_geometry_all_omitted_by_target() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
@@ -867,10 +871,11 @@ fn native_geometry_all_omitted_by_target_requires_allow_empty() {
             "rhino:archive-80",
             "--report",
             report.to_str().unwrap(),
+            "--reject-empty",
         ])
         .assert()
         .code(1)
-        .stderr(predicate::str::contains("--allow-empty"));
+        .stderr(predicate::str::contains("refusing to write an empty"));
     assert!(!output.exists());
     let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(report["refusal"]["code"], "empty_geometry");
@@ -894,7 +899,6 @@ fn native_geometry_all_omitted_by_target_requires_allow_empty() {
             output.to_str().unwrap(),
             "--to",
             "rhino:archive-80",
-            "--allow-empty",
         ])
         .assert()
         .success();
@@ -969,4 +973,68 @@ fn an_info_only_native_decode_is_rejected_at_info_and_passes_higher_floors() {
             .iter()
             .all(|loss| loss["severity"] == "info"));
     }
+}
+
+#[test]
+fn empty_cadir_writes_warning_and_export_floor_applies_before_emission() {
+    let dir = tempdir().unwrap();
+    let input = fixture(dir.path(), "empty.cadir.json", &cadmpeg_ir::CadIr::empty());
+    let output = dir.path().join("empty.step");
+    let report = dir.path().join("empty-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert!(fs::read(&output).unwrap().starts_with(b"ISO-10303-21"));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(value["status"], "ok");
+    let empty = value["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|loss| {
+            loss["code"]["namespace"] == "export" && loss["code"]["code"] == "output.empty"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(empty.len(), 1);
+    assert_eq!(empty[0]["severity"], "warning");
+    for (floor, exit) in [("info", 1), ("warning", 1), ("error", 0), ("blocking", 0)] {
+        let target = dir.path().join(format!("empty-{floor}.step"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                input.to_str().unwrap(),
+                "-o",
+                target.to_str().unwrap(),
+                "--reject-lossy=export",
+                "--reject-lossy-floor",
+                floor,
+            ])
+            .assert()
+            .code(exit);
+        assert_eq!(target.exists(), exit == 0);
+    }
+    let rejected = dir.path().join("rejected.step");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            rejected.to_str().unwrap(),
+            "--reject-empty",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("refusing to write an empty"));
+    assert!(!rejected.exists());
 }

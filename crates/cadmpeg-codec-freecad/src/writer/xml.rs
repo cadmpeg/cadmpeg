@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structured XML output. Retained XML is never read for content or layout.
 
-use crate::native::{PropertyBody, PropertyRecord, ValueRecord};
+use crate::native::{
+    DynamicPropertyMeta, GuiPropertyRecord, PropertyBody, PropertyFamily, PropertyRecord,
+    ValueRecord,
+};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
@@ -177,18 +180,69 @@ pub(crate) fn native_named(
             }),
         );
     };
+    native_values(
+        PersistedProperty {
+            id: &property_record.id,
+            name: &property_record.name,
+            type_name: &property_record.type_name,
+            family: property_record.family,
+            status: property_record.status,
+            values,
+            side_entries,
+            dynamic: dynamic.as_ref(),
+        },
+        names,
+    )
+}
+
+/// Serialize a GUI property's actual typed fields without a source-XML adapter.
+pub(crate) fn native_gui(property: &GuiPropertyRecord) -> Result<Option<String>, CodecError> {
+    native_values(
+        PersistedProperty {
+            id: &property.id,
+            name: &property.name,
+            type_name: &property.type_name,
+            family: PropertyFamily::Unknown,
+            status: property.status,
+            values: &property.values,
+            side_entries: &property.side_entries,
+            dynamic: None,
+        },
+        &std::collections::HashMap::new(),
+    )
+}
+
+/// The semantic fields consumed by both application and GUI property writers.
+struct PersistedProperty<'a> {
+    id: &'a str,
+    name: &'a str,
+    type_name: &'a str,
+    family: PropertyFamily,
+    status: Option<u64>,
+    values: &'a [ValueRecord],
+    side_entries: &'a [String],
+    dynamic: Option<&'a DynamicPropertyMeta>,
+}
+
+fn native_values(
+    property: PersistedProperty<'_>,
+    names: &std::collections::HashMap<String, String>,
+) -> Result<Option<String>, CodecError> {
+    let values = property.values;
+    let side_entries = property.side_entries;
+    let dynamic = property.dynamic;
     // A filename carried in a typed property does not make its opaque payload
     // typed content. The owner must regenerate that payload before this path.
-    if (property_record.type_name.contains("PropertyPythonObject")
+    if (property.type_name.contains("PropertyPythonObject")
         && !values.iter().any(|value| value.decoded_json.is_some()))
-        || crate::persistence::opaque_python_payload(property_record)
+        || crate::persistence::opaque_python_values(property.type_name, values)
         || !side_entries.is_empty()
         || values.iter().any(|value| {
             value.attributes.iter().any(|(key, name)| {
                 !name.is_empty()
                     && ((matches!(key.as_str(), "file" | "File")
-                        && !crate::persistence::is_xlink_type(&property_record.type_name))
-                        || (property_record.family == crate::native::PropertyFamily::File
+                        && !crate::persistence::is_xlink_type(property.type_name))
+                        || (property.family == crate::native::PropertyFamily::File
                             && matches!(key.as_str(), "name" | "Name")))
             })
         })
@@ -204,7 +258,7 @@ pub(crate) fn native_named(
         {
             return Err(CodecError::malformed(format_args!(
                 "property {} has an invalid typed value tree",
-                property_record.id
+                property.id
             )));
         }
         children.entry(value.parent).or_default().push(index);
@@ -269,10 +323,10 @@ pub(crate) fn native_named(
         }
     }
     let mut attributes = vec![
-        ("name", property_record.name.clone()),
-        ("type", property_record.type_name.clone()),
+        ("name", property.name.to_owned()),
+        ("type", property.type_name.to_owned()),
     ];
-    if let Some(status) = property_record.status {
+    if let Some(status) = property.status {
         attributes.push(("status", status.to_string()));
     }
     if let Some(dynamic) = dynamic {

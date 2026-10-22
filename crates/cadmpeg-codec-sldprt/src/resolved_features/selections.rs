@@ -76,6 +76,9 @@ fn selection_objects<'history, 'lane>(
 }
 
 pub(super) fn compact_body_selections(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    pointers: &mut super::body_sources::BodySources<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Result<Vec<FeatureInputBodySelection>, CodecError> {
@@ -84,7 +87,6 @@ pub(super) fn compact_body_selections(
         .id
         .rsplit_once('#')
         .map_or(lane.id.as_str(), |(_, key)| key);
-    let state_token = compact_body_state_token(lane);
     let mut result = Vec::new();
     for (object_index, &(name, feature, _)) in objects.iter().enumerate() {
         let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
@@ -130,7 +132,7 @@ pub(super) fn compact_body_selections(
         } else {
             None
         };
-        let Some((offset, local_body_ids)) = selection else {
+        let Some((offset, _)) = selection else {
             continue;
         };
         let ordinal = u32::try_from(result.len())
@@ -139,19 +141,98 @@ pub(super) fn compact_body_selections(
         let parent = lane.id.clone();
         let object_name_ref = name.id.clone();
         let feature_ref = feature.id.clone();
-        let (body_state_ids, mode) = match (kind, state_token) {
-            (NativeClassKind::DeleteBody, Some(token)) => (
-                compact_body_state_ids(&lane.native_payload, start, offset, token),
-                compact_body_retention_mode(&lane.native_payload, start, offset, token),
-            ),
-            _ => (Vec::new(), None),
-        };
+        // The actual object extent includes the state/mode before its vector.
+        // Probing establishes framing; only the tracked reparse supplies values.
+        let extent = source
+            .child(
+                source
+                    .start()
+                    .checked_add(start)
+                    .ok_or_else(|| CodecError::malformed("body source start overflow"))?,
+                source
+                    .start()
+                    .checked_add(end)
+                    .ok_or_else(|| CodecError::malformed("body source end overflow"))?,
+            )
+            .ok_or_else(|| CodecError::malformed("body selection source extent is invalid"))?;
+        let (local_body_ids, body_state_ids, mode) = ctx.record(&id, extent, || {
+            if kind == NativeClassKind::DeleteBody {
+                let bytes = source
+                    .read_at(
+                        source
+                            .start()
+                            .checked_add(offset)
+                            .ok_or_else(|| CodecError::malformed("body vector source overflow"))?,
+                        end - offset,
+                    )
+                    .ok_or_else(|| CodecError::malformed("body vector source is unavailable"))?;
+                let (confirmed, ids) = compact_body_selection_vector(bytes, offset, next_token)
+                    .ok_or_else(|| {
+                        CodecError::malformed("body vector no longer matches its framing")
+                    })?;
+                if confirmed != offset {
+                    return Err(CodecError::malformed("body vector framing changed"));
+                }
+                let token = compact_body_source_token(source, lane);
+                let (states, mode) = if let Some(token) = token {
+                    (
+                        compact_body_state_ids(source, start, offset, token),
+                        compact_body_retention_mode(source, start, offset, token),
+                    )
+                } else {
+                    (Vec::new(), None)
+                };
+                Ok((ids, states, mode))
+            } else {
+                let class = lane
+                    .classes
+                    .iter()
+                    .find(|class| {
+                        class.name == "moMoveCopyBodyData_c"
+                            && class.offset.is_some_and(|position| {
+                                (u64_from_index(start)..u64_from_index(end)).contains(&position)
+                            })
+                    })
+                    .ok_or_else(|| CodecError::malformed("move-body data class is missing"))?;
+                let record = super::direct_edits::move_body_translation_source_record(
+                    source,
+                    start,
+                    end,
+                    class.offset,
+                )
+                .ok_or_else(|| {
+                    CodecError::malformed("move-body source no longer matches its framing")
+                })?;
+                if record.selection_offset != offset {
+                    return Err(CodecError::malformed("move-body selection framing changed"));
+                }
+                Ok((record.local_body_ids, Vec::new(), None))
+            }
+        })?;
+        // Format-defined lane-relative pointer, proved by the genuine child.
+        let vector = source
+            .child(
+                source
+                    .start()
+                    .checked_add(offset)
+                    .ok_or_else(|| CodecError::malformed("body vector pointer overflow"))?,
+                source
+                    .start()
+                    .checked_add(offset)
+                    .and_then(|position| position.checked_add(4))
+                    .ok_or_else(|| CodecError::malformed("body vector pointer overflow"))?,
+            )
+            .ok_or_else(|| CodecError::malformed("body vector pointer is out of bounds"))?;
+        let pointer = vector
+            .start()
+            .checked_sub(source.start())
+            .ok_or_else(|| CodecError::malformed("body vector precedes lane"))?;
+        pointers.insert(id.clone(), u64_from_index(pointer))?;
         result.push(FeatureInputBodySelection {
             id,
             parent,
             ordinal,
             sequence: ordinal,
-            offset: Some(u64_from_index(offset)),
             object_name_ref,
             feature_ref,
             local_body_ids,
@@ -162,7 +243,7 @@ pub(super) fn compact_body_selections(
     Ok(result)
 }
 
-fn compact_body_state_token(lane: &FeatureInputLane) -> Option<u16> {
+fn compact_body_source_token(source: View<'_>, lane: &FeatureInputLane) -> Option<u16> {
     let mut classes = lane
         .classes
         .iter()
@@ -171,14 +252,15 @@ fn compact_body_state_token(lane: &FeatureInputLane) -> Option<u16> {
     if classes.next().is_some() {
         return None;
     }
-    let offset = class
-        .offset
-        .and_then(|offset| usize::try_from(offset).ok())?;
-    View::u16_le_at(&lane.native_payload, offset + 8 + class.name.len())
+    let offset = usize::try_from(class.offset?)
+        .ok()?
+        .checked_add(8)?
+        .checked_add(class.name.len())?;
+    View::u16_le_at(source.read_at(source.start().checked_add(offset)?, 2)?, 0)
 }
 
 fn compact_body_retention_mode(
-    payload: &[u8],
+    source: View<'_>,
     start: usize,
     end: usize,
     token: u16,
@@ -188,10 +270,10 @@ fn compact_body_retention_mode(
     (|| {
         let token = token.to_le_bytes();
         let state_end = (start..scan_end)
-            .filter(|offset| compact_body_state_id(payload, *offset, token).is_some())
+            .filter(|offset| compact_body_state_id(source.window(), *offset, token).is_some())
             .map(|offset| offset + HEADER_LEN)
             .max()?;
-        let field = payload.get(state_end..state_end + 10)?;
+        let field = source.read_at(source.start().checked_add(state_end)?, 10)?;
         if field[0..2] != [0x30, 0x80] || field[6..10] != [0; 4] {
             return None;
         }
@@ -216,7 +298,7 @@ fn compact_body_state_id(payload: &[u8], offset: usize, token: [u8; 2]) -> Optio
     .then_some(body_id)
 }
 
-fn compact_body_state_ids(payload: &[u8], start: usize, end: usize, token: u16) -> Vec<u32> {
+fn compact_body_state_ids(source: View<'_>, start: usize, end: usize, token: u16) -> Vec<u32> {
     const HEADER_LEN: usize = 83;
     let token = token.to_le_bytes();
     let mut result = Vec::new();
@@ -224,10 +306,18 @@ fn compact_body_state_ids(payload: &[u8], start: usize, end: usize, token: u16) 
         return result;
     };
     for offset in start..scan_end {
-        let Some(body_id) = compact_body_state_id(payload, offset, token) else {
+        if compact_body_state_id(source.window(), offset, token).is_none() {
+            continue;
+        }
+        let Some(start) = source.start().checked_add(offset) else {
             continue;
         };
-        result.push(body_id);
+        let Some(header) = source.read_at(start, HEADER_LEN) else {
+            continue;
+        };
+        if let Some(body_id) = compact_body_state_id(header, 0, token) {
+            result.push(body_id);
+        }
     }
     result
 }

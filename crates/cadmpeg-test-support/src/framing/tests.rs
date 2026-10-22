@@ -437,3 +437,24 @@ fn a_composite_host_maps_only_its_actual_source_segments() {
     assert_eq!(frames[2].view().window(), b"45672345");
     assert!(ctx.take_record_captures().unwrap().is_empty());
 }
+
+#[test]
+fn empty_physical_parts_share_boundaries_without_owning_sibling_bytes() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"abc", &arena, &DecodePolicy::service()).expect("source");
+    let frames = vec![
+        frame(&ctx, "zip.archive", root, FrameParent::File),
+        frame(
+            &ctx,
+            "zip.central_directory",
+            root.child(0, 0).expect("actual empty directory"),
+            FrameParent::Part(0),
+        ),
+        frame(&ctx, "zip.end_record", root, FrameParent::Part(0)),
+    ];
+    PartTable::load()
+        .expect("table")
+        .validate(&ctx, &frames)
+        .expect("an empty extent owns no bytes");
+}

@@ -50,6 +50,7 @@ struct DependencyInfo {
 pub(crate) struct Graph {
     /// Declared objects.
     pub(crate) objects: Vec<ObjectRecord>,
+    pub(crate) object_sources: Vec<(String, std::ops::Range<usize>)>,
     /// Dynamic extensions.
     pub(crate) extensions: Vec<ExtensionRecord>,
     pub(crate) extension_sources: Vec<(String, std::ops::Range<usize>)>,
@@ -224,6 +225,7 @@ pub(crate) fn parse_document(
     check_count(data_node, "Count", data_by_name.len(), &mut losses);
 
     let mut objects: Vec<ObjectRecord> = Vec::new();
+    let mut object_sources = Vec::new();
     let mut object_names = HashSet::new();
     for (order, node) in objects_node
         .children()
@@ -260,6 +262,9 @@ pub(crate) fn parse_document(
             Some(dependency) => (dependency.dependencies, dependency.allow_partial),
             None => (Vec::new(), None),
         };
+        if let Some(data) = data_node {
+            object_sources.push((identity.id().clone(), data.range()));
+        }
         objects.push(ObjectRecord {
             identity,
             type_name,
@@ -269,14 +274,6 @@ pub(crate) fn parse_document(
             dependencies,
             dependency_allow_partial,
             order,
-            data: data_node
-                .map(|data| {
-                    crate::native::RetainedXml::from_source(
-                        &text[data.range()],
-                        cadmpeg_core::decode::u64_from_index(data.range().start),
-                    )
-                })
-                .transpose()?,
         });
     }
 
@@ -459,6 +456,7 @@ pub(crate) fn parse_document(
     )?;
     Ok(Graph {
         objects,
+        object_sources,
         extensions,
         extension_sources,
         value_sources,
@@ -1170,8 +1168,13 @@ pub(crate) mod tests;
 /// A typed XML tree does not turn a serialized language-object blob into a
 /// validated native construction record.
 pub(crate) fn opaque_python_payload(property: &PropertyRecord) -> bool {
-    property.type_name.contains("PropertyPythonObject")
-        && property.values().iter().any(|value| {
+    opaque_python_values(&property.type_name, property.values())
+}
+
+/// The same opacity rule for property owners without application source wrappers.
+pub(crate) fn opaque_python_values(type_name: &str, values: &[ValueRecord]) -> bool {
+    type_name.contains("PropertyPythonObject")
+        && values.iter().any(|value| {
             value.decoded_json.is_none()
                 && (value
                     .text

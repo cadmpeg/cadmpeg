@@ -23,9 +23,6 @@ pub(crate) struct PmiDimension {
     pub(crate) id: String,
     /// Source block containing this record.
     pub(crate) parent: String,
-    /// Byte offset of the `MessagePack` map within the decompressed block.
-    #[serde(skip)]
-    pub(crate) offset: Option<u64>,
     /// `UnQLite` record key.
     pub(crate) guid: String,
     /// CAD dimension reference, such as `D1@Sketch4`.
@@ -37,77 +34,30 @@ pub(crate) struct PmiDimension {
     pub(crate) subtype: String,
     /// Stored dimension value.
     pub(crate) value: FiniteReal,
-    /// Byte offset of the big-endian `f64` value.
-    #[serde(skip)]
-    pub(crate) value_offset: Option<u64>,
     /// Display precision.
     pub(crate) precision: i64,
-    /// Byte offset of the `MessagePack` precision value.
-    #[serde(skip)]
-    pub(crate) precision_offset: Option<u64>,
-    /// Native formatted dimension text and its byte offset.
-    #[serde(flatten, with = "pmi_display_text_wire")]
-    pub(crate) display_text: Option<(String, Option<u64>)>,
+    /// Native formatted dimension text.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_display_text"
+    )]
+    pub(crate) display_text: Option<String>,
     /// Basic-dimension flag.
     pub(crate) basic: bool,
-    /// Byte offset of the basic flag.
-    #[serde(skip)]
-    pub(crate) basic_offset: Option<u64>,
     /// Inspection-dimension flag.
     pub(crate) inspection: bool,
-    /// Byte offset of the inspection flag.
-    #[serde(skip)]
-    pub(crate) inspection_offset: Option<u64>,
     /// Reference-only flag.
     pub(crate) reference_only: bool,
-    /// Byte offset of the reference-only flag.
-    #[serde(skip)]
-    pub(crate) reference_only_offset: Option<u64>,
 }
 
 impl PmiDimension {
     pub(crate) fn display_text(&self) -> Option<&str> {
-        self.display_text.as_ref().map(|(text, _)| text.as_str())
-    }
-
-    pub(crate) fn display_text_offset(&self) -> Option<u64> {
-        self.display_text.as_ref().and_then(|(_, offset)| *offset)
+        self.display_text.as_deref()
     }
 }
 
-mod pmi_display_text_wire {
-    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
-    use std::borrow::Borrow;
-
-    #[derive(Deserialize)]
-    struct Wire {
-        #[serde(default, deserialize_with = "deserialize_display_text")]
-        display_text: Option<String>,
-    }
-
-    // Serde passes the field by reference to this adapter.
-    pub(super) fn serialize<S: Serializer>(
-        display: &impl Borrow<Option<(String, Option<u64>)>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        let display: &Option<(String, Option<u64>)> = display.borrow();
-        let mut map = serializer.serialize_map(None)?;
-        if let Some((text, _)) = display {
-            map.serialize_entry("display_text", text)?;
-        }
-        map.end()
-    }
-
-    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Option<(String, Option<u64>)>, D::Error> {
-        let wire = Wire::deserialize(deserializer)?;
-        Ok(wire.display_text.map(|text| (text, None)))
-    }
-
-    // Each optional key below names itself in whatever it refuses.
-    cadmpeg_core::named_optional_field!(deserialize_display_text, String, "display_text");
-}
+cadmpeg_core::named_optional_field!(deserialize_display_text, String, "display_text");
 
 fn default_pmi_item_count() -> NonZeroU32 {
     NonZeroU32::MIN
@@ -642,9 +592,6 @@ pub(crate) struct FeatureInputBodySelection {
     pub(crate) ordinal: u32,
     /// Order among the lane\'s typed content records.
     pub(crate) sequence: u32,
-    /// Byte offset of the schema word opening the vector.
-    #[serde(skip)]
-    pub(crate) offset: Option<u64>,
     /// Feature-input name record owning this vector.
     pub(crate) object_name_ref: String,
     /// Native history feature owning this vector.
@@ -844,9 +791,6 @@ pub(crate) struct FeatureInputRelationBinding {
     pub(crate) ordinal: u32,
     /// Order among the lane\'s typed content records.
     pub(crate) sequence: u32,
-    /// Byte offset of the relation class declaration.
-    #[serde(skip)]
-    pub(crate) offset: Option<u64>,
     /// Declared class record.
     pub(crate) class_ref: String,
     /// Native relation family.
@@ -2340,16 +2284,41 @@ mod tests {
     fn pmi_display_text_wire_keeps_text_without_source_position() {
         #[derive(serde::Serialize, serde::Deserialize)]
         struct Display {
-            #[serde(flatten, with = "super::pmi_display_text_wire")]
-            value: Option<(String, Option<u64>)>,
+            #[serde(
+                rename = "display_text",
+                default,
+                skip_serializing_if = "Option::is_none",
+                deserialize_with = "super::deserialize_display_text"
+            )]
+            value: Option<String>,
         }
+        let mut source_bytes = vec![0; 17];
+        source_bytes.extend_from_slice(b"25 mm");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &source_bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        ctx.record("pmi:test:display#0", root.child(17, 22).unwrap(), || {
+            assert_eq!(root.read_at(17, 5), Some(b"25 mm".as_slice()));
+            Ok(())
+        })
+        .unwrap();
+        let capture = ctx.take_record_captures().unwrap().pop().unwrap();
+        let (_, mut layout) = cadmpeg_ir::source_fidelity::RecordLayout::from_capture(capture);
+        layout
+            .insert_pointer("display_text_offset".into(), 17)
+            .unwrap();
+        assert_eq!(layout.pointers()["display_text_offset"], 17);
         let source = Display {
-            value: Some(("25 mm".into(), Some(17))),
+            value: Some("25 mm".into()),
         };
         let wire = serde_json::json!({"display_text": "25 mm"});
         assert_eq!(serde_json::to_value(source).unwrap(), wire);
         let restored: Display = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(restored.value, Some(("25 mm".into(), None)));
+        assert_eq!(restored.value, Some("25 mm".into()));
         assert_eq!(serde_json::to_value(restored).unwrap(), wire);
         let absent: Display = serde_json::from_value(serde_json::json!({})).unwrap();
         assert_eq!(serde_json::to_value(absent).unwrap(), serde_json::json!({}));
@@ -2731,9 +2700,14 @@ mod tests {
     fn a_flattened_record_reader_names_the_null_key_it_refuses() {
         #[derive(serde::Deserialize)]
         struct Display {
-            #[serde(flatten, with = "super::pmi_display_text_wire")]
+            #[serde(
+                rename = "display_text",
+                default,
+                skip_serializing_if = "Option::is_none",
+                deserialize_with = "super::deserialize_display_text"
+            )]
             #[allow(dead_code)]
-            value: Option<(String, Option<u64>)>,
+            value: Option<String>,
         }
         #[derive(serde::Deserialize)]
         struct Parent {
@@ -2797,33 +2771,27 @@ mod tests {
         let dimension = PmiDimension {
             id: "dimension".into(),
             parent: "block".into(),
-            offset: Some(0),
             guid: "guid".into(),
             cad_text: "D1@Pattern1".into(),
             item_count: std::num::NonZeroU32::MIN,
             subtype: String::new(),
             value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test dimension"),
-            value_offset: Some(0),
             precision: 0,
-            precision_offset: Some(0),
             display_text: None,
             basic: false,
-            basic_offset: Some(0),
             inspection: false,
-            inspection_offset: Some(0),
             reference_only: false,
-            reference_only_offset: Some(0),
         };
         let wire = serde_json::to_value(&dimension).unwrap();
         assert!(wire.get("item_count").is_none());
         let decoded: PmiDimension = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&decoded).unwrap(), wire);
-        assert!(decoded.offset.is_none());
-        assert!(decoded.value_offset.is_none());
-        assert!(decoded.precision_offset.is_none());
-        assert!(decoded.basic_offset.is_none());
-        assert!(decoded.inspection_offset.is_none());
-        assert!(decoded.reference_only_offset.is_none());
+        assert!(wire.get("offset").is_none());
+        assert!(wire.get("value_offset").is_none());
+        assert!(wire.get("precision_offset").is_none());
+        assert!(wire.get("basic_offset").is_none());
+        assert!(wire.get("inspection_offset").is_none());
+        assert!(wire.get("reference_only_offset").is_none());
         assert!(wire
             .as_object()
             .unwrap()

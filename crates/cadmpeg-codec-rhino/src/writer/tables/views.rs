@@ -5,7 +5,7 @@ use super::{
     anonymous, anonymous_with_children, crc_chunk_with_direct, integer, records, short_chunk,
     utf16, wire_index, CadIr, CodecError, Map, Value, TCODE_ENDOFTABLE,
 };
-use cadmpeg_ir::presentation::ViewPresentation;
+use cadmpeg_ir::presentation::{PresentationDocument, ViewPresentation};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeSet;
 
@@ -16,6 +16,7 @@ mod viewport;
 pub(in crate::writer) struct ViewExport {
     pub(in crate::writer) settings: Vec<Vec<u8>>,
     pub(in crate::writer) regenerated: BTreeSet<String>,
+    pub(in crate::writer) written: BTreeSet<String>,
     pub(in crate::writer) losses: Vec<LossNote>,
 }
 
@@ -110,9 +111,9 @@ fn property<'a>(view: &'a ViewPresentation, name: &str) -> Option<&'a str> {
 }
 
 fn encode_view(
-    ir: &CadIr,
     fields: &Map<String, Value>,
     view: Option<&ViewPresentation>,
+    camera: Option<&PresentationDocument>,
 ) -> Result<Vec<u8>, CodecError> {
     let mut children = Vec::new();
     let name = view
@@ -132,7 +133,7 @@ fn encode_view(
         children.push(cplane(cplane_fields)?);
     }
     if let Some(viewport_fields) = object(fields, "viewport") {
-        children.push(viewport::encode(ir, viewport_fields)?);
+        children.push(viewport::encode(viewport_fields, camera)?);
     }
     if let Some(window_fields) = object(fields, "window_position") {
         children.push(window(window_fields)?);
@@ -211,6 +212,55 @@ fn encode_view(
     crc_chunk_with_direct(0x2000_803b, &children.concat(), &[])
 }
 
+fn native_only_supported(fields: &Map<String, Value>) -> bool {
+    ["attributes", "trace_image", "wallpaper"]
+        .iter()
+        .all(|name| fields.get(*name).is_none_or(Value::is_null))
+        && fields
+            .get("parse_warnings")
+            .is_none_or(|warnings| warnings.as_array().is_some_and(Vec::is_empty))
+        && [
+            "show_construction_grid",
+            "show_construction_axes",
+            "show_world_axes",
+        ]
+        .iter()
+        .all(|name| fields.get(*name).is_some_and(Value::is_boolean))
+        && fields.get("name").is_some_and(Value::is_string)
+        && object(fields, "viewport").is_none_or(|viewport| {
+            [
+                "camera_valid",
+                "frustum_valid",
+                "port_valid",
+                "camera_up_locked",
+                "camera_direction_locked",
+                "camera_location_locked",
+                "frustum_left_right_symmetric",
+                "frustum_top_bottom_symmetric",
+            ]
+            .iter()
+            .all(|name| viewport.get(*name).is_some_and(Value::is_boolean))
+                && viewport.get("source_uuid").is_some_and(|value| {
+                    value.is_null()
+                        || value
+                            .as_str()
+                            .and_then(crate::presentation::parse_uuid_text)
+                            .filter(|uuid| !uuid.is_nil())
+                            .is_some()
+                })
+                && (viewport.get("view_scale").is_none_or(Value::is_null)
+                    || viewport
+                        .get("camera_frame_valid")
+                        .is_some_and(Value::is_boolean))
+                && (viewport
+                    .get("target_millimeters")
+                    .is_some_and(|value| !value.is_null())
+                    || ["camera_frame_valid", "view_scale"]
+                        .iter()
+                        .all(|name| viewport.get(*name).is_none_or(Value::is_null)))
+        })
+}
+
 fn list(typecode: u32, children: &[Vec<u8>]) -> Result<Vec<u8>, CodecError> {
     let count = wire_index(children.len())?.to_le_bytes();
     let mut body = count.to_vec();
@@ -222,6 +272,7 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, CodecError> 
     let mut result = ViewExport {
         settings: Vec::new(),
         regenerated: BTreeSet::new(),
+        written: BTreeSet::new(),
         losses: Vec::new(),
     };
     let mut named = Vec::new();
@@ -268,40 +319,63 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, CodecError> 
     }
     for record in records(ir, "views") {
         let fields = record.fields()?;
-        let view = fields
-            .get("neutral_view")
-            .and_then(Value::as_str)
-            .and_then(|id| {
-                ir.model
-                    .view_presentations
-                    .iter()
-                    .find(|view| view.id.as_str() == id)
-            });
-        if ir.scope.model && view.is_none() {
+        let mut views = ir
+            .model
+            .view_presentations
+            .iter()
+            .filter(|view| view.native_ref.as_deref() == Some(record.id()));
+        let view = views.next();
+        let mut cameras = ir
+            .model
+            .presentation_documents
+            .iter()
+            .filter(|camera| camera.native_ref.as_deref() == Some(record.id()));
+        let camera = cameras.next();
+        if views.next().is_some() || cameras.next().is_some() {
             result.losses.push(
                 crate::loss::RhinoLossCode::WriterAttributesOmitted.note(format!(
-                    "{}: its current neutral view is absent",
+                    "{}: more than one current view or camera names this native view",
                     record.id()
                 )),
             );
             continue;
         }
-        match encode_view(ir, &fields, view) {
+        if view.is_none() && camera.is_none() && !native_only_supported(&fields) {
+            let reason = if object(&fields, "viewport")
+                .and_then(|viewport| viewport.get("source_uuid"))
+                .and_then(Value::as_str)
+                .and_then(crate::presentation::parse_uuid_text)
+                .is_some_and(|uuid| uuid.is_nil())
+            {
+                "present nil viewport source_uuid has no complete saved-view encoding that retains its presence"
+            } else {
+                "extended or incomplete native-only view fields have no complete saved-view encoding"
+            };
+            result.losses.push(
+                crate::loss::RhinoLossCode::WriterAttributesOmitted
+                    .note(format!("{}: {reason}", record.id())),
+            );
+            continue;
+        }
+        match encode_view(&fields, view, camera) {
             Ok(encoded) => {
                 match fields.get("list_kind").and_then(Value::as_str) {
                     Some("active") => active.push(encoded),
                     Some("named") => named.push(encoded),
                     _ => return Err(CodecError::malformed("Rhino view has no valid list kind")),
                 }
-                result.regenerated.insert(record.id().to_owned());
+                if view.is_none() && camera.is_none() {
+                    result.written.insert(record.id().to_owned());
+                } else {
+                    result.regenerated.insert(record.id().to_owned());
+                }
                 if let Some(view) = view {
                     written_views.insert(view.id.as_str());
                 }
-                if let Some(camera) = object(&fields, "viewport")
-                    .and_then(|viewport| viewport.get("neutral_camera"))
-                    .and_then(Value::as_str)
-                {
-                    written_cameras.insert(camera.to_owned());
+                if object(&fields, "viewport").is_some() {
+                    if let Some(camera) = camera {
+                        written_cameras.insert(camera.id.as_str());
+                    }
                 }
             }
             Err(CodecError::UnsupportedContent(reason)) => result.losses.push(
@@ -318,7 +392,7 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, CodecError> 
         // A saved view can carry a name and display controls without a camera
         // viewport. Do not invent a camera-to-view association for authored
         // independent presentation states.
-        named.push(encode_view(ir, &Map::new(), Some(view))?);
+        named.push(encode_view(&Map::new(), Some(view), None)?);
     }
     for document in &ir.model.presentation_documents {
         if !written_cameras.contains(document.id.as_str()) && !document.states().is_empty() {

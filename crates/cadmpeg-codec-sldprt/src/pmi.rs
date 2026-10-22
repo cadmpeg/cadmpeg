@@ -17,6 +17,7 @@ use crate::loss::SldprtLossCode;
 use crate::records::PmiDimension;
 
 mod database;
+pub(crate) mod layout;
 #[cfg(test)]
 mod patch_slots;
 pub(crate) mod write;
@@ -240,6 +241,7 @@ pub(crate) fn patch_payload(
     ir: &cadmpeg_ir::CadIr,
     block_id: &str,
     payload: &mut [u8],
+    fidelity: &cadmpeg_ir::SourceFidelity,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::{
         attributes::{AttributeTarget, AttributeValue},
@@ -321,40 +323,29 @@ pub(crate) fn patch_payload(
                 record.display_text().map(str::to_owned),
             )
         };
-        FloatPatchSlot::read(
-            payload,
-            record
-                .offset
-                .ok_or_else(|| CodecError::malformed("PMI patch lacks source map position"))?,
-        )?
-        .write(value);
-        IntegerPatchSlot::read(
-            payload,
-            record
-                .offset
-                .ok_or_else(|| CodecError::malformed("PMI patch lacks source map position"))?,
-            "valPrecision",
-        )?
-        .write(precision)
-        .map_err(CodecError::malformed)?;
+        let pointers = fidelity
+            .record_layout()
+            .get(&record.id)
+            .ok_or_else(|| CodecError::malformed("PMI patch lacks source record layout"))?
+            .pointers();
+        let map_offset = *pointers
+            .get("offset")
+            .ok_or_else(|| CodecError::malformed("PMI patch lacks source map position"))?;
+        FloatPatchSlot::read(payload, map_offset)?.write(value);
+        IntegerPatchSlot::read(payload, map_offset, "valPrecision")?
+            .write(precision)
+            .map_err(CodecError::malformed)?;
         for (field, value) in [
             ("isBasic", basic),
             ("isInspection", inspection),
             ("isReferenceOnly", reference_only),
         ] {
-            BooleanPatchSlot::read(
-                payload,
-                record
-                    .offset
-                    .ok_or_else(|| CodecError::malformed("PMI patch lacks source map position"))?,
-                field,
-            )?
-            .write(value);
+            BooleanPatchSlot::read(payload, map_offset, field)?.write(value);
         }
         match (record.display_text.as_ref(), text.as_deref()) {
-            (Some((previous, offset)), Some(text)) if previous.len() == text.len() => patch_bytes(
+            (Some(previous), Some(text)) if previous.len() == text.len() => patch_bytes(
                 payload,
-                offset.ok_or_else(|| {
+                *pointers.get("display_text_offset").ok_or_else(|| {
                     CodecError::malformed("PMI patch lacks source display-text position")
                 })?,
                 text.as_bytes(),
@@ -696,14 +687,21 @@ enum ValueKind<'a> {
 /// document silently. Each section spends at most
 /// [`PMI_PARSE_WORK_PER_PAYLOAD_BYTE`] per payload byte; candidates left when
 /// it runs out emit one [`SldprtLossCode::PmiSemanticParseCapped`].
+#[derive(Debug)]
+pub(crate) struct ParsedDimensions {
+    pub(crate) records: Vec<PmiDimension>,
+    pub(crate) pointers: BTreeMap<String, BTreeMap<String, u64>>,
+}
+
 pub(crate) fn dimensions(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
     untyped_sections: &mut std::collections::BTreeSet<String>,
-) -> Result<Vec<PmiDimension>, CodecError> {
+) -> Result<ParsedDimensions, CodecError> {
     let mut records = Vec::new();
+    let mut pointers = BTreeMap::new();
     let mut seen = HashSet::<String>::new();
     for source in scan.sections() {
         let Some(section) = source.name() else {
@@ -722,13 +720,14 @@ pub(crate) fn dimensions(
             losses,
             DimensionOutput {
                 records: &mut records,
+                pointers: &mut pointers,
                 seen: &mut seen,
                 untyped_sections: Some(untyped_sections),
             },
         )?;
     }
     records.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(records)
+    Ok(ParsedDimensions { records, pointers })
 }
 
 /// Parse PMI records from a raw `PMISemanticDataDB` payload.
@@ -739,9 +738,10 @@ pub(crate) fn parse_payload(
     ctx: &DecodeContext<'_>,
     payload: View<'_>,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<PmiDimension>, CodecError> {
+) -> Result<ParsedDimensions, CodecError> {
     let mut annotations = Annotations::default();
     let mut records = Vec::new();
+    let mut pointers = BTreeMap::new();
     let mut seen = HashSet::<String>::new();
     let stream = cadmpeg_ir::stream_name!("Contents/PMISemanticDataDB");
     collect_dimensions(
@@ -753,16 +753,18 @@ pub(crate) fn parse_payload(
         losses,
         DimensionOutput {
             records: &mut records,
+            pointers: &mut pointers,
             seen: &mut seen,
             untyped_sections: None,
         },
     )?;
     records.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(records)
+    Ok(ParsedDimensions { records, pointers })
 }
 
 struct DimensionOutput<'a> {
     records: &'a mut Vec<PmiDimension>,
+    pointers: &'a mut BTreeMap<String, BTreeMap<String, u64>>,
     seen: &'a mut HashSet<String>,
     untyped_sections: Option<&'a mut std::collections::BTreeSet<String>>,
 }
@@ -831,32 +833,23 @@ fn collect_dimensions(
             losses,
             DimensionOutput {
                 records: output.records,
+                pointers: output.pointers,
                 seen: output.seen,
                 untyped_sections: output.untyped_sections.as_deref_mut(),
             },
         )?;
-        for record in &mut output.records[first..] {
-            let source = |offset: u64| {
-                offset
-                    .checked_sub(36)
-                    .map(|offset| image.source_offset(offset))
-            };
-            record.offset = record.offset.and_then(source);
-            record.value_offset = record.value_offset.and_then(source);
-            record.precision_offset = record.precision_offset.and_then(source);
-            record.basic_offset = record.basic_offset.and_then(source);
-            record.inspection_offset = record.inspection_offset.and_then(source);
-            record.reference_only_offset = record.reference_only_offset.and_then(source);
-            if let Some((_, offset)) = &mut record.display_text {
-                *offset = offset.and_then(source);
+        for record in &output.records[first..] {
+            let fields = output.pointers.get_mut(&record.id).ok_or_else(|| {
+                CodecError::malformed("PMI source pointer handoff lacks record identity")
+            })?;
+            for offset in fields.values_mut() {
+                *offset = image.original_pointer(ctx, *offset)?;
             }
             crate::annotations::note(
                 annotations,
                 &record.id,
                 stream,
-                record.offset.ok_or_else(|| {
-                    CodecError::malformed("source PMI dimension lacks its parsed map position")
-                })?,
+                fields["offset"],
                 "messagepack_dim_sem_data",
                 Exactness::ByteExact,
             )?;
@@ -877,6 +870,7 @@ fn collect_dimension_maps(
     let payload = source.window();
     let DimensionOutput {
         records,
+        pointers,
         seen,
         mut untyped_sections,
     } = output;
@@ -892,13 +886,58 @@ fn collect_dimension_maps(
         return Ok(());
     };
     let work = WorkBudget::new(work_limit);
+    let framing_work = WorkBudget::new(work_limit);
     while let Some((guid, offset)) = candidates.next() {
         let normalized = guid.to_ascii_lowercase();
         if seen.contains(&normalized) {
             continue;
         }
-        match extract_dimension(ctx, payload, offset, &normalized, parent, &work) {
-            Ok(Some(record)) => {
+        let id = format!("sldprt:pmi:dimension#{normalized}");
+        let extent = layout::map_extent(source, offset, &framing_work);
+        if extent.is_none() && framing_work.exhausted() {
+            if let Some(sections) = untyped_sections.as_deref_mut() {
+                sections.insert(parent.to_owned());
+            }
+            let skipped = candidates.count() + 1;
+            losses.push(parse_capped_loss(parent, payload.len(), offset, skipped));
+            return Ok(());
+        }
+        let transaction = ctx.read_transaction()?;
+        let mut parse_error = None;
+        let result = if let Some(extent) = extent {
+            ctx.record(&id, extent, || {
+                match extract_dimension(ctx, source, offset, &normalized, parent, &work) {
+                    Ok(record) => Ok(record),
+                    Err(error) => {
+                        parse_error = Some(error);
+                        Ok(None)
+                    }
+                }
+            })?
+        } else {
+            match extract_dimension(ctx, source, offset, &normalized, parent, &work) {
+                Ok(record) => record,
+                Err(error) => {
+                    parse_error = Some(error);
+                    None
+                }
+            }
+        };
+        let result = match parse_error {
+            Some(error) => Err(error),
+            None => Ok(result),
+        };
+        if result.as_ref().is_ok_and(Option::is_some) {
+            if extent.is_none() {
+                return Err(CodecError::malformed(
+                    "admitted PMI record lacks its exact map extent",
+                ));
+            }
+            transaction.commit()?;
+        }
+        match result {
+            Ok(Some((record, fields))) => {
+                pointers.insert(record.id.clone(), fields);
                 if record.item_count.get() != 1 {
                     if let Some(sections) = untyped_sections.as_deref_mut() {
                         sections.insert(parent.to_owned());
@@ -987,18 +1026,19 @@ impl From<CodecError> for PmiParseError {
 /// Malformed candidates carry a loss; resource refusals end the decode.
 fn extract_dimension(
     ctx: &DecodeContext<'_>,
-    payload: &[u8],
+    source: View<'_>,
     offset: usize,
     guid: &str,
     parent: &str,
     work: &WorkBudget,
-) -> Result<Option<PmiDimension>, PmiParseError> {
+) -> Result<Option<(PmiDimension, BTreeMap<String, u64>)>, PmiParseError> {
+    let payload = source.window();
     let mut cursor = offset;
     let parse = Parse {
         shape: Shape::Record,
         work,
     };
-    let Some(outer_value) = parse_value(ctx, payload, &mut cursor, 0, parse)? else {
+    let Some(outer_value) = parse_value(ctx, source, &mut cursor, 0, parse)? else {
         if work.exhausted() {
             return Err(PmiParseError::Capped);
         }
@@ -1064,40 +1104,79 @@ fn extract_dimension(
     let reference_field = item
         .get("isReferenceOnly")
         .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
+    let identity_start = offset.checked_sub(36).ok_or("PMI map lacks its GUID key")?;
+    let identity = source
+        .read_at(
+            source
+                .start()
+                .checked_add(identity_start)
+                .ok_or("PMI GUID source offset overflows")?,
+            36,
+        )
+        .ok_or("PMI GUID key lies outside its source")?;
+    let actual_guid = std::str::from_utf8(identity)
+        .map_err(|_| PmiParseError::from("PMI GUID key is not UTF-8"))?
+        .to_ascii_lowercase();
+    if actual_guid != guid {
+        return Err("PMI GUID key differs from its record identity".into());
+    }
     let id = format!("sldprt:pmi:dimension#{guid}");
     let display_text = match outer.get("dimText") {
         Some(SpannedValue {
             kind: ValueKind::String(text),
             data_offset,
             ..
-        }) => Some(((*text).to_owned(), Some(u64_from_index(*data_offset)))),
+        }) => Some(((*text).to_owned(), *data_offset)),
         _ => None,
     };
-    Ok(Some(PmiDimension {
-        id,
-        parent: parent.to_owned(),
-        offset: Some(u64_from_index(offset)),
-        guid: guid.to_owned(),
-        cad_text: cad_text.to_owned(),
-        item_count,
-        subtype: string_field(item, "dimSubType")
-            .unwrap_or_default()
-            .to_owned(),
-        value,
-        value_offset: Some(u64_from_index(value_field.data_offset)),
-        precision: int_from(precision_field)
-            .ok_or_else(|| "valPrecision is not an integer".to_string())?,
-        precision_offset: Some(u64_from_index(precision_field.data_offset)),
-        display_text,
-        basic: bool_from(basic_field).ok_or_else(|| "basic is not a boolean".to_string())?,
-        basic_offset: Some(u64_from_index(basic_field.data_offset)),
-        inspection: bool_from(inspection_field)
-            .ok_or_else(|| "inspection is not a boolean".to_string())?,
-        inspection_offset: Some(u64_from_index(inspection_field.data_offset)),
-        reference_only: bool_from(reference_field)
-            .ok_or_else(|| "reference_only is not a boolean".to_string())?,
-        reference_only_offset: Some(u64_from_index(reference_field.data_offset)),
-    }))
+    let mut pointers = BTreeMap::from([
+        ("offset".into(), u64_from_index(offset)),
+        (
+            "value_offset".into(),
+            u64_from_index(value_field.data_offset),
+        ),
+        (
+            "precision_offset".into(),
+            u64_from_index(precision_field.data_offset),
+        ),
+        (
+            "basic_offset".into(),
+            u64_from_index(basic_field.data_offset),
+        ),
+        (
+            "inspection_offset".into(),
+            u64_from_index(inspection_field.data_offset),
+        ),
+        (
+            "reference_only_offset".into(),
+            u64_from_index(reference_field.data_offset),
+        ),
+    ]);
+    if let Some((_, offset)) = &display_text {
+        pointers.insert("display_text_offset".into(), u64_from_index(*offset));
+    }
+    Ok(Some((
+        PmiDimension {
+            id,
+            parent: parent.to_owned(),
+            guid: guid.to_owned(),
+            cad_text: cad_text.to_owned(),
+            item_count,
+            subtype: string_field(item, "dimSubType")
+                .unwrap_or_default()
+                .to_owned(),
+            value,
+            precision: int_from(precision_field)
+                .ok_or_else(|| "valPrecision is not an integer".to_string())?,
+            display_text: display_text.map(|(text, _)| text),
+            basic: bool_from(basic_field).ok_or_else(|| "basic is not a boolean".to_string())?,
+            inspection: bool_from(inspection_field)
+                .ok_or_else(|| "inspection is not a boolean".to_string())?,
+            reference_only: bool_from(reference_field)
+                .ok_or_else(|| "reference_only is not a boolean".to_string())?,
+        },
+        pointers,
+    )))
 }
 
 /// True when a short window after `offset` still encodes the PMI map keys.
@@ -1165,7 +1244,7 @@ fn guid_before(payload: &[u8], offset: usize) -> Option<&str> {
 /// budget then reads exhausted.
 fn parse_value<'a>(
     ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
+    bytes: View<'a>,
     cursor: &mut usize,
     depth: usize,
     parse: Parse<'_>,
@@ -1226,7 +1305,7 @@ fn parse_value<'a>(
 }
 
 fn parse_scalar<'a>(
-    bytes: &'a [u8],
+    bytes: View<'a>,
     cursor: &mut usize,
     marker: Marker,
     start: usize,
@@ -1394,14 +1473,14 @@ fn opaque(start: usize) -> SpannedValue<'static> {
 /// fields.
 fn parse_map<'a>(
     ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
+    bytes: View<'a>,
     cursor: &mut usize,
     len: usize,
     depth: usize,
     start: usize,
     parse: Parse<'_>,
 ) -> Result<Option<SpannedValue<'a>>, CodecError> {
-    let Some(remaining) = bytes.len().checked_sub(*cursor) else {
+    let Some(remaining) = bytes.window().len().checked_sub(*cursor) else {
         return Ok(None);
     };
     // Each entry is at least a one-byte key marker and a one-byte value marker.
@@ -1441,7 +1520,7 @@ fn parse_map<'a>(
 
 fn parse_array<'a>(
     ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
+    bytes: View<'a>,
     cursor: &mut usize,
     len: usize,
     depth: usize,
@@ -1450,7 +1529,7 @@ fn parse_array<'a>(
 ) -> Result<Option<SpannedValue<'a>>, CodecError> {
     // Every element encodes as at least one marker byte, so a length exceeding
     // the unread input cannot be satisfied and is rejected before allocating.
-    let Some(remaining) = bytes.len().checked_sub(*cursor) else {
+    let Some(remaining) = bytes.window().len().checked_sub(*cursor) else {
         return Ok(None);
     };
     let Some(len) = cadmpeg_core::decode::bounded_len(u64_from_index(len), 1, remaining) else {
@@ -1483,7 +1562,7 @@ fn parse_array<'a>(
 
 /// A skipped string is not validated; any other string charges its length.
 fn parse_string<'a>(
-    bytes: &'a [u8],
+    bytes: View<'a>,
     cursor: &mut usize,
     len: usize,
     start: usize,
@@ -1491,7 +1570,11 @@ fn parse_string<'a>(
 ) -> Option<SpannedValue<'a>> {
     let data_offset = *cursor;
     let end = cursor.checked_add(len)?;
-    let value = bytes.get(*cursor..end)?;
+    let value = if parse.shape == Shape::Skip {
+        bytes.window().get(*cursor..end)?
+    } else {
+        bytes.read_at(bytes.start().checked_add(*cursor)?, len)?
+    };
     let kind = if parse.shape == Shape::Skip {
         ValueKind::Opaque
     } else {
@@ -1508,41 +1591,43 @@ fn parse_string<'a>(
     })
 }
 
-fn skip_bytes(bytes: &[u8], cursor: &mut usize, len: usize) -> Option<()> {
+fn skip_bytes(bytes: View<'_>, cursor: &mut usize, len: usize) -> Option<()> {
     let end = cursor.checked_add(len)?;
     // discarded-value: the skipped range is proven to lie in the record; ? states the refusal and the slice has no reader
-    let _ = bytes.get(*cursor..end)?;
+    let _ = bytes.window().get(*cursor..end)?;
     *cursor = end;
     Some(())
 }
 
-fn take_u8(bytes: &[u8], cursor: &mut usize) -> Option<u8> {
-    let value = *bytes.get(*cursor)?;
+fn take_u8(bytes: View<'_>, cursor: &mut usize) -> Option<u8> {
+    let value = *bytes
+        .read_at(bytes.start().checked_add(*cursor)?, 1)?
+        .first()?;
     *cursor += 1;
     Some(value)
 }
 
-fn take_u16(bytes: &[u8], cursor: &mut usize) -> Option<u16> {
-    let mut view = View::over_retained(bytes);
-    view.seek(*cursor)?;
+fn take_u16(bytes: View<'_>, cursor: &mut usize) -> Option<u16> {
+    let mut view = bytes;
+    view.seek(bytes.start().checked_add(*cursor)?)?;
     let value = view.u16_be()?;
-    *cursor = view.position();
+    *cursor = view.position().checked_sub(bytes.start())?;
     Some(value)
 }
 
-fn take_u32(bytes: &[u8], cursor: &mut usize) -> Option<u32> {
-    let mut view = View::over_retained(bytes);
-    view.seek(*cursor)?;
+fn take_u32(bytes: View<'_>, cursor: &mut usize) -> Option<u32> {
+    let mut view = bytes;
+    view.seek(bytes.start().checked_add(*cursor)?)?;
     let value = view.u32_be()?;
-    *cursor = view.position();
+    *cursor = view.position().checked_sub(bytes.start())?;
     Some(value)
 }
 
-fn take_u64(bytes: &[u8], cursor: &mut usize) -> Option<u64> {
-    let mut view = View::over_retained(bytes);
-    view.seek(*cursor)?;
+fn take_u64(bytes: View<'_>, cursor: &mut usize) -> Option<u64> {
+    let mut view = bytes;
+    view.seek(bytes.start().checked_add(*cursor)?)?;
     let value = view.u64_be()?;
-    *cursor = view.position();
+    *cursor = view.position().checked_sub(bytes.start())?;
     Some(value)
 }
 

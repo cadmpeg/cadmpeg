@@ -14,9 +14,18 @@ use cadmpeg_ir::{Annotations, SourceFidelity};
 pub(super) struct Retention {
     records: BTreeMap<String, ArenaClasses>,
     source: ArenaClasses,
+    pub(super) pmi_pointers: BTreeMap<String, BTreeMap<String, u64>>,
 }
 
 impl Retention {
+    pub(super) fn install_layouts(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        fidelity: &mut SourceFidelity,
+    ) -> Result<(), CodecError> {
+        crate::pmi::layout::install(ctx, std::mem::take(&mut self.pmi_pointers), fidelity)
+    }
+
     pub(super) fn source(&mut self, class: ArenaClass) {
         self.source.insert(class);
     }

@@ -443,6 +443,18 @@ pub struct ExportPlan {
 }
 
 impl ExportPlan {
+    /// Records the caller's empty-output observation without changing the payload.
+    pub fn note_empty_output(&mut self) {
+        if !self.report.losses.iter().any(|loss| {
+            loss.code.namespace() == "export" && loss.code.local_code() == "output.empty"
+        }) {
+            self.report.losses.push(
+                ExportLossCode::OutputEmpty
+                    .note("output contains no decoded or exportable geometry"),
+            );
+        }
+    }
+
     /// Returns the complete plan-time export report.
     pub fn report(&self) -> &ExportReport {
         &self.report

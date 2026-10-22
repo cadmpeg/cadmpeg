@@ -82,7 +82,9 @@ fn authored_control(keywords: &[u8], reference_only: bool) -> cadmpeg_ir::codec:
     let mut payload = pmi_semantic_payload();
     if !reference_only {
         let parsed = parse_payload(&payload, &mut Vec::new());
-        let offset = usize::try_from(parsed[0].reference_only_offset.unwrap()).unwrap();
+        let offset =
+            usize::try_from(super::pointer(&payload, &parsed[0], "reference_only_offset").unwrap())
+                .unwrap();
         assert_eq!(payload[offset], 0xc3);
         payload[offset] = 0xc2;
     }

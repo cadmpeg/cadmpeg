@@ -95,7 +95,8 @@ else:
         for arguments in calls[1::2]:
             self.assertEqual(arguments[0], "convert")
             self.assertEqual(arguments[arguments.index("--to") + 1], "fcstd:schema-4")
-            self.assertIn("--allow-empty", arguments)
+            self.assertNotIn("--allow-empty", arguments)
+            self.assertNotIn("--reject-empty", arguments)
         for report in self.output.glob("*.report.json"):
             self.assertEqual(json.loads(report.read_text()), SUCCESS)
 

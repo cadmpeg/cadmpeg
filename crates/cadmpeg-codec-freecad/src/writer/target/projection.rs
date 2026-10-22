@@ -171,23 +171,7 @@ fn gui_xml_impl(
             .iter()
             .filter(|property| property.owner == provider.id)
         {
-            let record = native::PropertyRecord {
-                id: property.id.clone(),
-                owner: property.owner.clone(),
-                name: property.name.clone(),
-                type_name: property.type_name.clone(),
-                family: native::PropertyFamily::Unknown,
-                status: property.status,
-                body: native::PropertyBody::Persisted {
-                    values: property.values.clone(),
-                    links: Vec::new(),
-                    side_entries: property.side_entries.clone(),
-                    dynamic: None,
-                },
-                order: property.order,
-                xml: property.xml.clone(),
-            };
-            let Some(value) = xml::native(&record)? else {
+            let Some(value) = xml::native_gui(property)? else {
                 if let Some(losses) = losses.as_deref_mut() {
                     losses.push(
                         crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred.note(

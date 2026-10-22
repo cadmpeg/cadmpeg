@@ -3,12 +3,11 @@
 
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-use cadmpeg_ir::ids::{AttributeId, Identity, IdentityKey};
-use cadmpeg_ir::native::NativeRecord;
+use cadmpeg_ir::ids::{AttributeId, IdentityKey};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::CadIr;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 fn values(value: &Value) -> Option<Vec<AttributeValue>> {
     Some(match value {
@@ -61,9 +60,7 @@ pub(super) fn project(
                 projected.push((record.id().to_owned(), record.copy_fields(ctx)?));
             }
         }
-        let mut replacements = Vec::new();
-        for (ordinal, (native_id, mut fields)) in projected.into_iter().enumerate() {
-            let mut links = Map::new();
+        for (ordinal, (native_id, fields)) in projected.into_iter().enumerate() {
             for field in consumed {
                 let Some(value) = fields.get(*field) else {
                     continue;
@@ -84,24 +81,12 @@ pub(super) fn project(
                 ctx.charge_entities(1, "Rhino document attributes")?;
                 ir.model.attributes.push(SourceAttribute {
                     native_ref: Some(native_id.clone()),
-                    id: id.clone(),
+                    id,
                     target: AttributeTarget::Document,
                     name: format!("rhino.{arena}.{field}"),
                     values,
                 });
-                links.insert((*field).to_owned(), Value::String(id.to_string()));
             }
-            fields.insert("neutral_attributes".to_owned(), Value::Object(links));
-            replacements.push(NativeRecord::new(
-                Identity::new(native_id).map_err(CodecError::malformed)?,
-                fields,
-            )?);
-        }
-        if !replacements.is_empty() {
-            ir.native
-                .namespace_mut("rhino")
-                .arenas_mut()
-                .insert(arena.to_owned(), replacements);
         }
     }
     Ok(losses)

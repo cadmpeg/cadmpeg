@@ -15,59 +15,95 @@ pub(super) fn project(
     annotations: &mut Annotations,
 ) -> Result<(), CodecError> {
     for (ordinal, section) in scan.sections().enumerate() {
-        let (name, media_type, bytes) = match crate::container::payload_family(section.payload()) {
-            PayloadFamily::PngPreview => (
-                "preview.png",
-                Some(cadmpeg_core::nonblank_literal!("image/png")),
-                super::retained_copy(ctx, section.payload(), "project SLDPRT PNG preview")?,
-            ),
-            PayloadFamily::BmpThumbnail => match bitmap_file(section.payload()) {
-                Some(bytes) => (
-                    "thumbnail.bmp",
-                    Some(cadmpeg_core::nonblank_literal!("image/bmp")),
-                    bytes,
-                ),
-                None => (
-                    "thumbnail.dib",
-                    None,
-                    super::retained_copy(ctx, section.payload(), "project SLDPRT DIB thumbnail")?,
-                ),
-            },
-            _ => continue,
-        };
+        let family = crate::container::payload_family(section.payload());
+        if !matches!(
+            family,
+            PayloadFamily::PngPreview | PayloadFamily::BmpThumbnail
+        ) {
+            continue;
+        }
         let id = AssetId::mint(format!("sldprt:asset:preview#{ordinal}"))
             .map_err(CodecError::malformed)?;
+        let source = scan
+            .section_view(section)
+            .ok_or_else(|| CodecError::malformed("SLDPRT preview lacks its source view"))?;
+        let asset = ctx.record(id.as_str(), source, || {
+            let (name, media_type, bytes) = match family {
+                PayloadFamily::PngPreview => (
+                    "preview.png",
+                    Some(cadmpeg_core::nonblank_literal!("image/png")),
+                    super::retained_copy(
+                        ctx,
+                        source
+                            .read_at(source.start(), source.window().len())
+                            .ok_or_else(|| {
+                                CodecError::malformed("SLDPRT PNG preview lies outside its source")
+                            })?,
+                        "project SLDPRT PNG preview",
+                    )?,
+                ),
+                PayloadFamily::BmpThumbnail => match bitmap_file(source) {
+                    Some(bytes) => (
+                        "thumbnail.bmp",
+                        Some(cadmpeg_core::nonblank_literal!("image/bmp")),
+                        bytes,
+                    ),
+                    None => (
+                        "thumbnail.dib",
+                        None,
+                        super::retained_copy(
+                            ctx,
+                            source
+                                .read_at(source.start(), source.window().len())
+                                .ok_or_else(|| {
+                                    CodecError::malformed(
+                                        "SLDPRT thumbnail lies outside its source",
+                                    )
+                                })?,
+                            "project SLDPRT DIB thumbnail",
+                        )?,
+                    ),
+                },
+                _ => {
+                    return Err(CodecError::malformed(
+                        "SLDPRT preview changed its admitted family",
+                    ))
+                }
+            };
+            Ok(Asset {
+                id: id.clone(),
+                name: Some(
+                    cadmpeg_core::text::NonBlankString::new(name.to_owned())
+                        .ok_or_else(|| CodecError::malformed("empty preview name"))?,
+                ),
+                media_type,
+                content: AssetContent::Embedded {
+                    data: AssetData::new(bytes)
+                        .ok_or_else(|| CodecError::malformed("empty SLDPRT preview"))?,
+                },
+                native_ref: None,
+            })
+        })?;
         crate::annotations::note(
             annotations,
             id.as_str(),
             section.source_stream(),
             0,
             "preview_asset",
-            if name == "preview.png" {
+            if family == PayloadFamily::PngPreview {
                 Exactness::ByteExact
             } else {
                 Exactness::Derived
             },
         )?;
-        ir.model.assets.push(Asset {
-            id,
-            name: Some(
-                cadmpeg_core::text::NonBlankString::new(name.to_owned())
-                    .ok_or_else(|| CodecError::malformed("empty preview name"))?,
-            ),
-            media_type,
-            content: AssetContent::Embedded {
-                data: AssetData::new(bytes)
-                    .ok_or_else(|| CodecError::malformed("empty SLDPRT preview"))?,
-            },
-            native_ref: None,
-        });
+        ir.model.assets.push(asset);
     }
     Ok(())
 }
 
 /// Put the typed DIB in a standard bitmap file header. Pixel bytes are content.
-fn bitmap_file(payload: &[u8]) -> Option<Vec<u8>> {
+fn bitmap_file(source: View<'_>) -> Option<Vec<u8>> {
+    let payload = source.window();
     let header = usize::try_from(View::u32_le_at(payload, 4)?).ok()?;
     if header < 40 {
         return None;
@@ -95,7 +131,8 @@ fn bitmap_file(payload: &[u8]) -> Option<Vec<u8>> {
         .checked_add(header)?
         .checked_add(masks)?
         .checked_add(usize::try_from(colors).ok()?.checked_mul(4)?)?;
-    let dib = payload.get(4..)?;
+    let source = source.child(source.start().checked_add(4)?, source.end())?;
+    let dib = source.read_at(source.start(), source.window().len())?;
     let file_size = 14usize.checked_add(dib.len())?;
     if pixel_offset > file_size {
         return None;

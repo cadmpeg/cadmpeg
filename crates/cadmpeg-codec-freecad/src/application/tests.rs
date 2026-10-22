@@ -140,7 +140,6 @@ fn absent_object_data_keeps_empty_ranges_and_digest() {
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
-        data: None,
     }];
     let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     super::install(
@@ -151,7 +150,11 @@ fn absent_object_data_keeps_empty_ranges_and_digest() {
         &[],
     )
     .unwrap();
-    assert!(objects[0].data.is_none());
+    let source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    assert!(source_fidelity
+        .record_layout()
+        .get(objects[0].id())
+        .is_none());
     let records = namespace
         .arena_as::<serde_json::Value>("applications")
         .unwrap();
@@ -370,7 +373,6 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
-        data: None,
     };
     let properties = ["First", "Second"].map(|name| crate::native::PropertyRecord {
         id: format!("fcstd:native:property#Owner:{name}"),

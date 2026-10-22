@@ -35,7 +35,7 @@ Every writer refusal has one of these classifications. A codec-local loss identi
 | O-capacity | A count, name, or other value exceeds target capacity | Refuse the precondition |
 | O-target | The requested target cannot be resolved | Refuse the target |
 
-An empty export is represented by a `NoExportableSolids` loss. The CLI's `--allow-empty` controls whether that output is acceptable. `--container-only` remains CLI policy and allows CADIR output only. A library writer does not infer either policy.
+An empty export is represented by a `NoExportableSolids` loss. The CLI writes empty geometry output with an `export:output.empty` Warning by default; `--reject-empty` refuses it. Check errors remain in the report and do not stop conversion unless `--reject-errors` is set. `--container-only` remains CLI policy and allows CADIR output only. A library writer does not infer these caller policies.
 
 ## Content scope
 

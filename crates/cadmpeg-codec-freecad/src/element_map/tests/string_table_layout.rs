@@ -38,7 +38,7 @@ fn inline_entities_unicode_cdata_and_nested_elements_use_a_real_expanded_stream(
         }),
     )
     .unwrap();
-    crate::fidelity::install_layouts(&ctx, &mut fidelity, pending).unwrap();
+    crate::fidelity::install_layouts(&ctx, &mut fidelity, pending, BTreeMap::new()).unwrap();
     let table = &tables.as_slice()[0];
     assert!(maps.is_empty());
     assert_eq!(table.entries().unwrap()[2].string_id, 10);
@@ -136,7 +136,7 @@ fn side_entry_raw_ranges_use_the_registered_member_view_and_preserve_multiline_p
         }),
     )
     .unwrap();
-    crate::fidelity::install_layouts(&ctx, &mut fidelity, pending).unwrap();
+    crate::fidelity::install_layouts(&ctx, &mut fidelity, pending, BTreeMap::new()).unwrap();
     let table = &tables.as_slice()[0];
     assert_eq!(table.entries().unwrap()[0].payload, "Ω\nsecond");
     let layout = &fidelity.record_layout()[&table.id()];
