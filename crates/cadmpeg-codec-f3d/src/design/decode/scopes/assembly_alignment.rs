@@ -331,7 +331,9 @@ pub(super) fn exact_assembly_alignment_with_types(
         // The wide forms store how the operand frames mate: 1 opposed, 0
         // aligned.
         let sense_at = match generation.operand_frame_variant() {
-            Some(crate::design::assembly::AssemblyOperandFrameVariant::Wide) => Some(25),
+            Some(crate::design::assembly::AssemblyOperandFrameVariant::Wide) => {
+                Some(crate::layout::assembly_wide_scope::FRAME_SENSE)
+            }
             Some(crate::design::assembly::AssemblyOperandFrameVariant::CompactWide) => {
                 Some(crate::layout::assembly_compact_wide_scope::OPERAND_FLAG)
             }

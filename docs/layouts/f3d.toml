@@ -17307,6 +17307,54 @@ contains = "let run = start + 526;"
 note = "The run starts at scope offset 526."
 
 [[record]]
+name = "assembly_wide_scope"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 945-byte `Assemble` scope uses the wide operand-frame form"
+note = "This size-less byte record describes the frame-sense prefix of the 945-byte scope. Offsets are relative to the scope's primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The 945-byte `Assemble` scope uses the wide operand-frame form"
+
+[[record.gap]]
+offset = 11
+size = 9
+note = "Bytes 11 through 19 precede the wide marker and are not read for the frame sense."
+
+[[record.field]]
+name = "wide_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "`u8 1` at offset 20"
+
+[[record.field]]
+name = "zero_run_21"
+offset = 21
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes, the frame-sense byte at offset 25"
+
+[[record.field]]
+name = "frame_sense"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "the frame-sense byte at offset 25"
+
+[[record.field]]
+name = "zero_run_26"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "zero\nbytes at offsets 26 through 36"
+
+[[record]]
 name = "assembly_compact_wide_scope"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_frames.rs"
 kind = "byte"
