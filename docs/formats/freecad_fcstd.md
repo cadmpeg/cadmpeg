@@ -419,9 +419,15 @@ record is a cached external carrier. Its external key is the `Ref` attribute of 
 the same reference and flag bits when the extension is not present, and a current record mirrors
 them in lowercase `ref` and `flags`. If both spellings are present, they are equal. The key for a
 local `ExternalGeometry` link is its persisted object name, a dot, and its subelement name, such
-as `Source.Edge1`. A cache record with a non-empty key belongs to the one link with that exact key.
-One link may own zero, one, or multiple cached carriers; carrier order remains `ExternalGeo` order,
-and each carrier creates one ordered construction entity with the link's subelements. A link with
+as `Source.Edge1`. Each `LinkSubList` child has one `obj` and one `sub` string; selecting several
+subelements of one object requires repeated children with that object and one selector each.
+A selector can be empty to denote the object. The restored `shadowed` selector, when present,
+replaces `sub`; `shadow` alone does not replace the live selector. A cache reference can use the
+mapped name carried by `shadowed` or `shadow`. In a dotted selector, a mapped segment starts with
+`;`; a final dotted legacy element name after that segment is excluded from the mapped cache key.
+The old and mapped cache keys identify the same link. A cache record with a non-empty key belongs
+to the one link with that exact key; aliases that identify different links are ambiguous. One link may own zero, one, or multiple cached carriers;
+carrier order remains `ExternalGeo` order, and each carrier retains that link's single selector. A link with
 no carrier creates an unresolved external-reference entity. A non-empty key with no link is valid
 only when the carrier's `Missing` flag bit is set; its solved geometry is retained without a link.
 An empty key is a detached carrier and has no link. A short prefix, wrong reserved id, duplicate
@@ -434,19 +440,11 @@ list carries source entity order and the constraint list carries append order an
 operands. The format has no profile chain, profile seed entity, endpoint-junction tolerance, or
 junction tie-break field. `ArcFitTolerance` is a separate precision property
 for fitting arcs of projected external geometry; it is not an endpoint-junction tolerance.
-CADIR decision: FreeCAD persists no profile seed or producer-defined disconnected-profile rule.
-Each disconnected neutral profile therefore starts at the lowest unassigned non-construction
-entity ordinal in `GeometryList` order. The neutral entity retains that persisted ordinal, and
-profiles are emitted in seed order. This is a projection rule, not a producer-defined field.
-
-CADIR decision: FreeCAD persists no endpoint tolerance or junction tie-break. For neutral profile
-projection, an endpoint without an explicit active coincident relation matches another endpoint
-only when their Euclidean distance is at most `64 × f64::EPSILON × max(1, |a.u|, |a.v|, |b.u|,
-|b.v|)`. An explicit coincident relation supplies endpoint identity before coordinate matching.
-When an endpoint has more than one eligible continuation, including multiple explicit coincident
-continuations, all involved entities remain separate profile seeds; no source-order tie-break is
-applied. This numeric boundary and ambiguity result are CADIR projection rules, not producer
-tolerances.
+Coincident endpoint constraints state relations between geometry loci. They do not serialize wire
+membership, edge-use direction, or a starting entity. Equal endpoint coordinates do not carry a
+constraint. The cached sketch `Shape` has its own edge and wire topology; those wire uses are
+separate from the geometry and constraint lists. A profile operand selects a sketch or shape
+subelement and does not add a profile-chain record to `GeometryList`.
 
 Sketch constraints retain their append-only native family code and ordered geometry-position
 operands. Each `Constrain` has a required integer `Type` attribute. Code `0` is an explicit
@@ -1452,17 +1450,21 @@ be ordered. Incomplete or invalid primitive definitions remain attributable nati
 Part cut, fuse, common, multi-fuse, and multi-common objects transfer as neutral Boolean combine
 operations. Two-input forms retain distinct `Base` and `Tool` property identities. Multi-input
 forms define link zero as the target and the remaining ordered `Shapes` links as tools without
-claiming that application-object links are already neutral body ids. For non-container features,
-feature dependencies are the stable union of all declared object dependencies and earlier
-link-property operands in source order. PartDesign body dependency records describe structural
-membership and do not duplicate the body's neutral child relations. Body membership comes from the
-current `Group` link list or the legacy `Model` link list. A declared dependency can
-target a later declaration. Declared dependency identities are resolved before neutral ordinal
-assignment; their source declaration order does not filter them. Neutral feature ordinals use a
-stable dependency order and use source order as the tie-break rule. Forward profile, base-feature,
-and pattern-seed links also precede
-their consumers. Body child lists are structural membership, not body inputs. If the native graph
-contains a dependency, parent, or expression cycle, the native graph retains it.
+claiming that application-object links are already neutral body ids. Non-hidden link-property
+runtime families carry directed object dependencies, including dynamically added properties and
+extension-owned properties. An arbitrary property name and object declaration order do not select dependencies.
+The `App::PropertyLink`, `PropertyLinkList`, `PropertyLinkSub`, and `PropertyLinkSubList` families
+include their child and global variants; their hidden variants retain references without creating
+dependency edges. `PropertyXLink`, `PropertyXLinkSub`, `PropertyXLinkList`, and
+`PropertyXLinkSubList` follow the same rule, with `PropertyXLinkSubHidden` excluded. Display-hidden
+property metadata is distinct from a hidden link runtime. Runtime-owned scope also applies:
+`PartDesign::SubShapeBinder` properties `Context` and `_CopiedLink` are hidden references;
+`Part::AttachExtension` and `Part::AttachExtensionPython` restore `BaseAttachment` with hidden
+scope, including a retained older non-hidden link runtime. Expression-engine object references
+supply separate dependencies; quoted string values do not. A declared `ObjectDeps` record remains an explicit directed relation even when no
+property carrier names it. Forward links have the same meaning as backward links. PartDesign body
+`Group` or legacy `Model` links carry structural membership. Body child lists are not construction
+inputs. A native dependency, parent, or expression graph can contain cycles.
 The dependency envelope has no neutral cycle ordinal or edge-discard field.
 CADIR decision: when acyclic admission cannot progress, the remaining cycle-affected objects receive
 ordinals in persisted object order for stable identity, but they have no neutral feature dependency,

@@ -1803,8 +1803,11 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         .expect("design history");
     assert_eq!(result.ir().model.sketches.len(), 1);
     assert_eq!(result.ir().model.sketch_entities.len(), 4);
-    assert_eq!(result.ir().model.sketches[0].profiles.len(), 1);
-    assert_eq!(result.ir().model.sketches[0].profiles[0].len(), 4);
+    assert_eq!(result.ir().model.sketches[0].profiles.len(), 4);
+    assert!(result.ir().model.sketches[0]
+        .profiles
+        .iter()
+        .all(|profile| profile.len() == 1));
     let (origin, normal, _) = result.ir().model.sketches[0]
         .resolved_placement()
         .expect("resolved sketch placement");

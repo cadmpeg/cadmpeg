@@ -43,6 +43,33 @@ then execute `tools/validate_fcstd_interop.py` inside `FreeCADCmd`. The validato
 document is refused. Set `CADMPEG_FCSTD_REQUIRE_NATIVE_RESAVE=1` for fixtures expected to recompute,
 save, and reopen without application-specific external assets.
 
+## Design projection boundaries
+
+Neutral sketch profiles are derived from active explicit coincident endpoint constraints. They do
+not reproduce the cached shape's wires or the result of application recomputation. Unconstrained
+equal or nearby endpoint coordinates remain separate; no decoder tolerance creates connectivity.
+Non-construction entities participate in chains, including independently closed curves as single
+entity profiles. Constraint branches and overlapping unconstrained entities do not acquire an
+arbitrary continuation. Native geometry, constraints, cached topology, and operation selectors
+remain independent retained records.
+
+For deterministic neutral serialization, the lowest unused geometry ordinal seeds a chain with its
+native direction. A unique explicit continuation extends each end, reversing an entity use when
+its matching end requires that direction. Disconnected chains retain seed order. Closed chains
+stop when no unused entity remains in the component. This ordering is a CADIR convention; it does
+not claim persisted profile identity or producer wire traversal order. Full cached-wire-to-sketch
+entity correspondence is not projected.
+
+Non-container neutral feature dependencies include declared object dependencies and non-hidden link
+runtime operands, without name or source-order filtering. Dependencies are resolved before stable
+ordinal assignment. Known runtime and attachment-extension hidden-scope overrides apply in addition
+to hidden link runtime names. Expression-engine dependencies resolve local object-name selectors and
+unambiguous `<<Label>>` selectors, excluding quoted strings and external-document selectors. This
+owner resolution does not evaluate formulas or claim complete expression-language coverage; unresolved
+and external expressions remain native. PartDesign bodies keep membership as parent/child structure. Source declaration
+order breaks ties between independently ready features. Cyclic native relations remain native and
+use the existing blocking history diagnostic.
+
 ## Implementation checklist
 
 Apply this boundary to every phase:

@@ -1043,7 +1043,10 @@ impl CodecBackend for FcstdCodec {
                 let (cycle_affected, design_losses) = design::transfer(
                     ctx,
                     &mut ir,
-                    &graph.objects,
+                    design::DesignObjects {
+                        objects: &graph.objects,
+                        extensions: &graph.extensions,
+                    },
                     &graph.properties,
                     &shape_payloads,
                     &entry_records,
