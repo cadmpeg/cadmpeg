@@ -836,6 +836,4 @@ mod coverage;
 mod sketches;
 
 #[cfg(test)]
-mod marker_admission_tests;
-#[cfg(test)]
 mod tests;

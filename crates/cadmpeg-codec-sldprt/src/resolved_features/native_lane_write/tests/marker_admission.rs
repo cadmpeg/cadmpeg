@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native scalar operands must survive as actual reconstructed markers.
 
-use super::*;
+use super::super::*;
 
 fn source() -> SldprtNative {
     crate::test_support::native::complete_marker_source()
