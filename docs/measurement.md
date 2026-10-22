@@ -154,6 +154,7 @@ one of its rows is not compared. Cause codes follow the reason discipline.
 | `compare.unmeasured-body` | A body with no comparable quantity. |
 | `compare.nothing-compared` | No numeric or signature row is compared. |
 | `compare.no-lower-bound` | Neither box of a `containment` row has a lower bound. |
+| `compare.signature-unplaced` | A signature pair has no vertex on either side, so no compared row depends on the bodies' positions. |
 
 ## Rings
 
@@ -370,6 +371,10 @@ with no faces. A document box is the union of its body boxes. A union is
 member boxes and of the `boundary` boxes of the `conservative` members. It
 is absent when no member has a lower bound.
 
+A body with vertices also reports `vertex_box`, the box of its placed vertex
+points: `tight`, with the method `closed_form` and a model uncertainty of the
+larger of the document's linear tolerance and the vertex tolerances.
+
 `u_range` and `v_range` of a NURBS face are the parameter ranges of its
 boundary pieces, or the domain when the region reaches the domain's natural
 edges.
@@ -493,7 +498,10 @@ and matches bodies by their measured geometry, not by their IDs.
   sides.
 - Signature. Two bodies with no measured numeric quantity, whose
   unavailable values all have the category `input` or `undefined`, compare
-  their kind, face, edge and vertex counts and their sets of reason codes.
+  their kind, face, edge and vertex counts, their `vertex_box` corners
+  (`equal` within `t`) and their sets of reason codes. The vertex box is the
+  only signature row that depends on position. When neither body has a
+  vertex, it is not compared (`compare.signature-unplaced`).
 - Classes. Two bodies are compatible when at least one numeric or
   signature row is compared and every compared row agrees, across and within
   the two documents. Compatibility splits the bodies into connected classes.

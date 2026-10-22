@@ -404,8 +404,11 @@ fn closed(body: &BodyMeasures) -> bool {
     !body.shells().is_empty() && body.shells().iter().all(|shell| *shell.closed())
 }
 
-/// The signature rows of two bodies with no measured numeric quantity.
-fn signature_rows(a: &BodyMeasures, b: &BodyMeasures) -> Vec<Row> {
+/// The signature rows of two bodies with no measured numeric quantity:
+/// kind, counts, vertex box and reason codes. The vertex box is the one row
+/// that depends on position; with no vertex on either side it is not
+/// compared.
+fn signature_rows(a: &BodyMeasures, b: &BodyMeasures, context: &Context) -> Vec<Row> {
     let row = |quantity: &str, left: Operand, right: Operand| {
         let agrees = left == right;
         Row {
@@ -428,7 +431,7 @@ fn signature_rows(a: &BodyMeasures, b: &BodyMeasures) -> Vec<Row> {
                 .collect(),
         )
     };
-    vec![
+    let mut rows = vec![
         row(
             "signature.kind",
             Operand::Text(kind_name(*a.kind()).to_owned()),
@@ -449,15 +452,29 @@ fn signature_rows(a: &BodyMeasures, b: &BodyMeasures) -> Vec<Row> {
             Operand::Count(*a.vertices()),
             Operand::Count(*b.vertices()),
         ),
-        row("signature.reasons", codes(a), codes(b)),
-    ]
+    ];
+    let vertex_box = Quantum {
+        name: "signature.vertex_box",
+        unit: Unit::Millimeter,
+        dimension: 1,
+    };
+    match [a.vertex_box().as_ref(), b.vertex_box().as_ref()] {
+        [None, None] => rows.push(not_compared(
+            vertex_box.name,
+            Some(vertex_box.unit),
+            CompareCause::SignatureUnplaced,
+        )),
+        pair => quantity_rows(vertex_box, pair, context, &mut rows),
+    }
+    rows.push(row("signature.reasons", codes(a), codes(b)));
+    rows
 }
 
 /// The compared rows of two bodies.
 pub(super) fn body_rows(a: &BodyMeasures, b: &BodyMeasures, context: &Context) -> BodyComparison {
     if signature_only(a) && signature_only(b) {
-        let rows = signature_rows(a, b);
-        let compatible = rows.iter().all(|row| row.agrees == Some(true));
+        let rows = signature_rows(a, b, context);
+        let compatible = rows.iter().all(|row| row.agrees != Some(false));
         return BodyComparison { rows, compatible };
     }
     let mut rows = Vec::new();

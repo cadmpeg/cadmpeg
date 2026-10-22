@@ -112,12 +112,60 @@ fn geometry_diff_detects_moved_body() {
     assert_eq!(row("bbox.min.x")["agrees"], false);
 }
 
+/// `text` with the `x` coordinate of every `CARTESIAN_POINT` moved by `dx`.
+#[cfg(feature = "step")]
+fn shifted_x(text: &str, dx: f64) -> String {
+    const POINT: &str = "CARTESIAN_POINT('',(";
+    text.lines()
+        .map(|line| {
+            let Some(start) = line.find(POINT).map(|at| at + POINT.len()) else {
+                return line.to_owned();
+            };
+            let end = start + line[start..].find(',').expect("a coordinate list");
+            let x: f64 = line[start..end].parse().expect("a coordinate");
+            format!("{}{:?}{}", &line[..start], x + dx, &line[end..])
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A face whose loops bound no region compares by its signature. Its
+/// vertex box is the row that depends on position, so a copy moved by
+/// +100 mm in `x` disagrees, and the unmoved file agrees with itself.
+#[cfg(feature = "step")]
+#[test]
+fn geometry_diff_detects_a_moved_signature_body() {
+    let dir = tempdir().unwrap();
+    let source = measure_fixture("measure_plane_islands.p21");
+    let text = std::fs::read_to_string(&source).unwrap();
+    let moved = dir.path().join("moved.p21");
+    std::fs::write(&moved, shifted_x(&text, 100.0)).unwrap();
+    let (code, report) = geometry_json(source.to_str().unwrap(), source.to_str().unwrap());
+    assert_eq!(code, Some(0), "{report:#}");
+    let comparison = &report["geometry"]["comparison"];
+    assert_eq!(comparison["verdict"], "agree");
+    let rows = comparison["pairs"][0]["quantities"].as_array().unwrap();
+    assert!(rows
+        .iter()
+        .all(|row| row["quantity"].as_str().unwrap().starts_with("signature.")));
+    assert!(rows
+        .iter()
+        .any(|row| row["quantity"] == "signature.vertex_box.min.x" && row["agrees"] == true));
+    let (code, report) = geometry_json(source.to_str().unwrap(), moved.to_str().unwrap());
+    assert_eq!(code, Some(1), "{report:#}");
+    let comparison = &report["geometry"]["comparison"];
+    assert_eq!(comparison["verdict"], "disagree");
+    assert_eq!(comparison["unmatched_a"].as_array().unwrap().len(), 1);
+    assert_eq!(comparison["unmatched_b"].as_array().unwrap().len(), 1);
+}
+
 /// Each `FreeCAD` corpus file against itself. Identical documents give
 /// identical rows, so nothing disagrees and no body is unmatched. Bodies
 /// whose faces lie on procedural carriers without an admitted cache
-/// (`Loft`, `Sweep`, `Swept`) have no comparable quantity, and occurrences
-/// that place bodies (`core_design_product`) keep the verdict
-/// inconclusive.
+/// (`Loft`, `Sweep`, `Swept`) have no comparable quantity, datum bodies
+/// with no vertex (`DatumPlane`, `DatumCoordinateSystem`) compare by a
+/// signature that does not depend on position, and occurrences that place
+/// bodies (`core_design_product`) keep the verdict inconclusive.
 #[cfg(feature = "fcstd")]
 #[test]
 fn geometry_diff_self_comparison() {
@@ -126,7 +174,7 @@ fn geometry_diff_self_comparison() {
         (
             "core_operations.FCStd",
             &["#Loft:", "#Sweep:"][..],
-            &["compare.unmeasured-body"][..],
+            &["compare.unmeasured-body", "compare.signature-unplaced"][..],
         ),
         (
             "geometry_topology.FCStd",

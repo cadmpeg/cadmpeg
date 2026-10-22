@@ -240,6 +240,17 @@ impl<'ir> Owners<'ir> {
         self.body_vertices.get(body).map_or(0, BTreeSet::len)
     }
 
+    /// The largest stored tolerance of a body's vertices.
+    pub(crate) fn body_vertex_tolerance(&self, body: &str) -> Option<f64> {
+        self.body_vertices
+            .get(body)
+            .into_iter()
+            .flatten()
+            .filter_map(|vertex| self.vertex(vertex)?.tolerance)
+            .map(cadmpeg_ir::scalar::PositiveReal::get)
+            .reduce(f64::max)
+    }
+
     /// The body-local positions of a body's vertices, in vertex ID order.
     pub(crate) fn body_vertex_points(&self, body: &str) -> Vec<Point3> {
         self.body_vertices

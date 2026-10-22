@@ -10,16 +10,19 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Body, Sense, Shell};
 
 use crate::canonical::placement::Placement;
+use crate::failure::Outcome;
 use volume::{Member, VolumeInput};
 
 use crate::aggregate::BoxUnion;
 use crate::edges::EdgeGeometry;
-use crate::face::{FaceResult, Verdict};
+use crate::face::{box_value, FaceResult, Verdict};
+use crate::geom::Aabb;
 use crate::owners::Owners;
 use crate::reason::CaveatCode;
 use crate::report::{
     BodyMeasures, BodyOrientation, CaveatCount, ShellMeasures, ShellRole, StatusTally,
 };
+use crate::tolerance::model_tolerance;
 use crate::value::{
     measured, BoxKind, BoxValue, Errors, Method, Quantity, Reading, Scalar, Unavailable, Unit,
 };
@@ -34,6 +37,8 @@ pub(crate) struct BodyInput<'a, 'ir> {
     pub(crate) edges: &'a HashMap<&'ir str, EdgeGeometry<'ir>>,
     /// The reference point of each body's fluxes.
     pub(crate) origins: &'a HashMap<&'ir str, Point3>,
+    /// The placement of each body.
+    pub(crate) placements: &'a HashMap<&'ir str, Outcome<Placement>>,
 }
 
 /// One aggregate of member values: a sum, or the first unavailable member.
@@ -138,6 +143,7 @@ impl<'a> BodyInput<'a, '_> {
             sum.finish(Unit::Millimeter, id)
         });
         let bbox = self.bbox(id, &face_ids, &edge_ids);
+        let vertex_box = self.vertex_box(body);
         let mut shells = self.shells(body);
         let caveats = caveats
             .into_iter()
@@ -225,6 +231,7 @@ impl<'a> BodyInput<'a, '_> {
             area_centroid,
             length,
             bbox,
+            vertex_box,
             orientation,
             caveats,
             status: crate::report::RowStatus::Measured,
@@ -264,6 +271,35 @@ impl<'a> BodyInput<'a, '_> {
             }
         }
         union.finish(Some(id), "the body has no bounded member")
+    }
+
+    /// The box of the body's placed vertex points; `None` for a body with
+    /// no vertex. Its model uncertainty is the larger of the document's
+    /// linear tolerance and the vertex tolerances.
+    fn vertex_box(&self, body: &Body) -> Option<Quantity<BoxValue>> {
+        let id = body.id.as_str();
+        let points = self.owners.body_vertex_points(id);
+        let (first, rest) = points.split_first()?;
+        let placement = match self.placements.get(id) {
+            Some(Ok(placement)) => *placement,
+            Some(Err(missing)) => return Some(missing.quantity()),
+            None => Placement::identity(),
+        };
+        let mut aabb = Aabb::of_point(placement.point(*first));
+        for point in rest {
+            aabb.include(placement.point(*point));
+        }
+        let tau = model_tolerance(
+            self.owners.ir.tolerances.linear.get(),
+            self.owners.body_vertex_tolerance(id),
+        );
+        Some(measured(
+            box_value(aabb, BoxKind::Tight, None),
+            Unit::Millimeter,
+            Method::ClosedForm,
+            Errors::new(0.0, tau),
+            id,
+        ))
     }
 
     /// The body's faces with their shell positions in region order.

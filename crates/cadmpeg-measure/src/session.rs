@@ -278,6 +278,7 @@ impl<'ir> Measurer<'ir> {
             faces: &faces,
             edges: &edges,
             origins: &flux_origins,
+            placements: &placements,
         };
         let body_out: Vec<BodyMeasures> = body_rows.iter().map(|body| bodies.row(body)).collect();
 

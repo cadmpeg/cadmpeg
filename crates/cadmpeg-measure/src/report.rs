@@ -923,6 +923,8 @@ pub struct BodyMeasures {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) length: Option<Quantity<Scalar>>,
     pub(crate) bbox: Quantity<BoxValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) vertex_box: Option<Quantity<BoxValue>>,
     pub(crate) orientation: BodyOrientation,
     pub(crate) caveats: Vec<CaveatCount>,
     pub(crate) status: RowStatus,
@@ -959,6 +961,8 @@ accessors!(BodyMeasures {
     length: Option<Quantity<Scalar>>;
     /// Union of member boxes.
     bbox: Quantity<BoxValue>;
+    /// Box of the vertex points; absent for a body with no vertex.
+    vertex_box: Option<Quantity<BoxValue>>;
     /// Orientation facts.
     orientation: BodyOrientation;
     /// Face caveats per code.
@@ -1241,5 +1245,6 @@ impl BodyMeasures {
         visitor.visit_option(self.area_centroid.as_ref());
         visitor.visit_option(self.length.as_ref());
         visitor.visit(&self.bbox);
+        visitor.visit_option(self.vertex_box.as_ref());
     }
 }

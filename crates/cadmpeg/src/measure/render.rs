@@ -871,6 +871,9 @@ fn body_text(out: &mut impl Write, body: &BodyMeasures) -> io::Result<()> {
         line(out, "length", &scalar_text(length, "mm"))?;
     }
     line(out, "bbox", &box_text(body.bbox()))?;
+    if let Some(vertex_box) = body.vertex_box() {
+        line(out, "vertex box", &box_text(vertex_box))?;
+    }
     if *body.faces() > 0 {
         line(
             out,

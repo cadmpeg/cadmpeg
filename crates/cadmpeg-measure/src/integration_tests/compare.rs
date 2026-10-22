@@ -12,7 +12,7 @@ use crate::compare::{compare, CompareOptions, Comparison, Operand, Rule, Verdict
 use crate::reason::CompareCause;
 use crate::select::Selection;
 use crate::test_support::{measure, Builder};
-use crate::value::BoxKind;
+use crate::value::{BoxKind, Quantity};
 
 fn cube() -> CadIr {
     cadmpeg_ir::examples::unit_cube().expect("fixture")
@@ -141,6 +141,8 @@ fn coincident_bodies_pair_by_multiplicity() {
     assert!(result.unmatched_b().is_empty());
 }
 
+/// A datum plane has no vertex, so nothing in its signature depends on its
+/// position: the pair is made, and the verdict stays inconclusive.
 #[test]
 fn unbounded_faces_compare_by_signature() {
     let mut builder = Builder::new();
@@ -148,14 +150,80 @@ fn unbounded_faces_compare_by_signature() {
     builder.face(&plane, Sense::Forward, &[], false);
     let datum = builder.finish(BodyKind::Sheet);
     let result = comparison(&datum, &datum);
-    assert_eq!(result.verdict(), Verdict::Agree);
+    assert_eq!(result.verdict(), Verdict::Inconclusive);
+    assert_eq!(
+        result.inconclusive_causes(),
+        [CompareCause::SignatureUnplaced]
+    );
     let [pair] = result.pairs() else {
+        panic!("one pair");
+    };
+    for row in pair.quantities() {
+        if row.quantity() == "signature.vertex_box" {
+            assert_eq!(row.rule(), Rule::NotCompared);
+            assert_eq!(row.cause(), Some(CompareCause::SignatureUnplaced));
+        } else {
+            assert_eq!(row.rule(), Rule::Signature, "{}", row.quantity());
+            assert_eq!(row.agrees(), Some(true), "{}", row.quantity());
+        }
+    }
+}
+
+/// One plane face with two disjoint square loops, 10 mm wide and 10 mm
+/// apart: no loop winds around the other, so the face has no region and the
+/// body compares by its signature.
+fn islands(shift: f64) -> CadIr {
+    let mut builder = Builder::new();
+    let plane = builder.plane([0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    let rings: Vec<Vec<_>> = [0.0, 20.0]
+        .iter()
+        .map(|x0| {
+            let vertices: Vec<_> = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]
+                .iter()
+                .map(|[x, y]| builder.vertex([x0 + x, *y, 0.0]))
+                .collect();
+            (0..4)
+                .map(|index| {
+                    (
+                        builder.line(&vertices[index], &vertices[(index + 1) % 4]),
+                        Sense::Forward,
+                    )
+                })
+                .collect()
+        })
+        .collect();
+    builder.face(&plane, Sense::Forward, &rings, false);
+    let ir = builder.finish(BodyKind::Sheet);
+    translated(&ir, shift)
+}
+
+#[test]
+fn a_moved_signature_body_disagrees_by_its_vertex_box() {
+    let here = islands(0.0);
+    let report = measure(&here, &Selection::default());
+    let body = &report.bodies()[0];
+    assert!(body.area().as_ref().and_then(Quantity::measured).is_none());
+    assert!(body.bbox().measured().is_none());
+    let vertex_box = body
+        .vertex_box()
+        .as_ref()
+        .and_then(Quantity::measured)
+        .expect("vertex box");
+    assert_eq!(vertex_box.value().max.get().x, 30.0);
+    let same = comparison(&here, &islands(0.0));
+    assert_eq!(same.verdict(), Verdict::Agree);
+    let [pair] = same.pairs() else {
         panic!("one pair");
     };
     assert!(pair
         .quantities()
         .iter()
-        .all(|row| row.rule() == Rule::Signature && row.agrees() == Some(true)));
+        .any(|row| row.quantity() == "signature.vertex_box.min.x" && row.agrees() == Some(true)));
+    let moved = comparison(&here, &islands(100.0));
+    assert_eq!(moved.verdict(), Verdict::Disagree);
+    assert!(moved.pairs().is_empty());
+    assert_eq!(moved.unmatched_a().len(), 1);
+    assert_eq!(moved.unmatched_b().len(), 1);
 }
 
 #[test]

@@ -356,17 +356,21 @@ pub enum CompareCause {
     NothingCompared,
     /// Neither box of a containment row has a lower bound.
     NoLowerBound,
+    /// A signature pair has no vertex on either side, so no compared row
+    /// depends on the bodies' positions.
+    SignatureUnplaced,
 }
 
 impl CompareCause {
     /// Every cause, in declaration order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::OccurrencePlacement,
         Self::Unavailable,
         Self::AmbiguousClass,
         Self::UnmeasuredBody,
         Self::NothingCompared,
         Self::NoLowerBound,
+        Self::SignatureUnplaced,
     ];
 
     /// The pinned `family.detail` string.
@@ -379,6 +383,7 @@ impl CompareCause {
             Self::UnmeasuredBody => "compare.unmeasured-body",
             Self::NothingCompared => "compare.nothing-compared",
             Self::NoLowerBound => "compare.no-lower-bound",
+            Self::SignatureUnplaced => "compare.signature-unplaced",
         }
     }
 }
@@ -500,6 +505,7 @@ mod tests {
             "compare.unmeasured-body",
             "compare.nothing-compared",
             "compare.no-lower-bound",
+            "compare.signature-unplaced",
         ];
         for (cause, text) in CompareCause::ALL.into_iter().zip(expected) {
             assert_eq!(cause.code(), text);
