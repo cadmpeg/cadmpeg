@@ -441,7 +441,7 @@ fn transfer_schema_one(
             push_body_update(
                 &mut plan,
                 body_id,
-                Assignment::Set(visibility),
+                visibility.map_or(Assignment::Keep, |visible| Assignment::Set(Some(visible))),
                 packed_color
                     .map(|packed| decode_color(packed, transparency))
                     .transpose(),
@@ -3873,7 +3873,7 @@ fn displayed_shape_bodies(
     ))
 }
 
-fn select_shape_bodies<'a>(
+pub(crate) fn select_shape_bodies<'a>(
     ir: &CadIr,
     payload_ids: impl IntoIterator<Item = &'a str>,
 ) -> Vec<cadmpeg_ir::ids::BodyId> {
