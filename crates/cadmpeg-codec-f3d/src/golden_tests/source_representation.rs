@@ -61,6 +61,10 @@ const UNREPRESENTED: &[(F3dLossCode, Representation)] = &[
         F3dLossCode::AssemblyJointMotionUndecoded,
         Representation::Typed,
     ),
+    (
+        F3dLossCode::AssemblyOperandPathPairsNative,
+        Representation::Typed,
+    ),
     (F3dLossCode::DrawingDocumentOmitted, Representation::Model),
     (
         F3dLossCode::HistoryBindingBudgetExceeded,
