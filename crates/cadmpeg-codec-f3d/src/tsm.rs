@@ -8,21 +8,22 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use cadmpeg_ir::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
     SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface,
-    SubdSymmetry, SubdSymmetryKind, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
+    SubdSymmetry, SubdSymmetryKind, SubdUserKnot, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
 };
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::container::ContainerScan;
 use crate::loss::F3dLossCode;
 
+pub(crate) mod user_knots;
+
 const ENTRY_MARKER: &str = "/TSplines.BlobParts/";
 const CAGE_COORDINATE_SCALE: f64 = 10.0;
 const FULL_CREASE_SHARPNESS: f64 = 1.0;
-const EDGE_KNOT_MIRROR_RELATIVE_EPS: f64 = 1.0e-12;
 const SYMMETRY_FRAME_EPS: f64 = 1.0e-9;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -782,6 +783,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut edge_roots: Vec<Option<usize>> = Vec::new();
     let mut edge_knot_intervals: Vec<Option<PositiveReal>> = Vec::new();
     let mut edge_knot_records = Vec::new();
+    let mut edge_knot_start = None;
+    let mut edge_knot_finished = false;
+    let mut edge_knot_contiguous = true;
     let mut vertex_roots: Vec<Option<(usize, SubdGripDirection)>> = Vec::new();
     let mut vertex_live: Vec<bool> = Vec::new();
     let mut half_edges: Vec<Option<ParsedHalfEdge>> = Vec::new();
@@ -790,7 +794,6 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut grip_points: Vec<Option<GripPoint>> = Vec::new();
     let mut in_grip_map = false;
     let mut declarations = BTreeSet::new();
-    let mut end_conditions = None;
     let mut derived_grips = Vec::new();
     let mut selected_edges = BTreeSet::new();
     let mut selected_vertices = BTreeSet::new();
@@ -803,6 +806,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
         let mut fields = line.split_ascii_whitespace();
         let record_kind = fields.next();
+        if record_kind == Some("106ek") {
+            edge_knot_start.get_or_insert(edge_roots.len());
+            edge_knot_contiguous &= !edge_knot_finished;
+        } else if edge_knot_start.is_some() {
+            edge_knot_finished = true;
+        }
         let selection = match record_kind {
             Some("100edges") => Some(EditorSelectionKind::Edges),
             Some("100verts") => Some(EditorSelectionKind::Vertices),
@@ -842,12 +851,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 declarations.insert("degree");
             }
             Some(declaration @ ("cap-type" | "end-conditions" | "star-knot-rule")) => {
-                let value = fields
+                fields
                     .next()
                     .ok_or_else(|| malformed(name, format_args!("missing {declaration} value")))?;
-                if declaration == "end-conditions" {
-                    end_conditions = Some(value);
-                }
                 require_end(name, fields, declaration)?;
                 declarations.insert(declaration);
             }
@@ -1179,22 +1185,15 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         symmetry_blocks.push(block);
     }
 
-    let edge_knot_mirror = !edge_knot_records.is_empty()
-        && end_conditions == Some("SUBD_CREASES")
+    let edge_user_knots_valid = !edge_knot_records.is_empty()
+        && edge_knot_contiguous
+        && edge_knot_start == Some(edge_roots.len())
         && edge_knot_records.len() == edge_roots.len()
         && edge_knot_records
             .iter()
-            .zip(&edge_knot_intervals)
-            .all(|(record, interval)| match interval {
-                Some(interval) => {
-                    record.get() > 0.0
-                        && (record.get() - interval.get()).abs()
-                            <= EDGE_KNOT_MIRROR_RELATIVE_EPS
-                                * record.get().abs().max(interval.get().abs()).max(1.0)
-                }
-                None => record.get() == -1.0,
-            });
-    if !edge_knot_records.is_empty() && !edge_knot_mirror {
+            .zip(&edge_roots)
+            .all(|(value, edge)| value.get() == -1.0 || edge.is_some() && value.get() >= 0.0);
+    if !edge_knot_records.is_empty() && !edge_user_knots_valid {
         if let Some(count) = unknown_record_kinds.get_mut("106ek") {
             *count += edge_knot_records.len();
         } else {
@@ -1558,13 +1557,29 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             creased_edges.insert(edge);
         }
     }
+    let mut user_knots = ctx.alloc_filled(edge_vertices.len(), None, "map T-spline user knots")?;
+    if edge_user_knots_valid {
+        for (slot, value) in edge_knot_records.iter().enumerate() {
+            let Some(edge) = edge_ir[slot] else {
+                continue;
+            };
+            user_knots[index_from_u32(edge)] = Some(if value.get() == -1.0 {
+                SubdUserKnot::Inherit
+            } else {
+                SubdUserKnot::Override(
+                    NonNegativeReal::new(value.get())
+                        .ok_or_else(|| malformed(name, "invalid user knot interval"))?,
+                )
+            });
+        }
+    }
     let mut edges = Vec::new();
     for (index, vertices) in edge_vertices.into_iter().enumerate() {
         let edge_index =
             u32::try_from(index).map_err(|_| malformed(name, "T-spline edge index exceeds u32"))?;
         let crease = creased_edges.contains(&edge_index);
         let sharpness = if crease { FULL_CREASE_SHARPNESS } else { 0.0 };
-        let edge = SubdEdge::from_parts(
+        let mut edge = SubdEdge::from_parts(
             vertices,
             [sharpness; 2],
             if crease {
@@ -1576,6 +1591,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             [0.0, 0.0],
         )
         .map_err(|error| malformed(name, error))?;
+        edge.user_knot = user_knots[index];
         edges.push(edge);
     }
     let source_key = name
@@ -1607,6 +1623,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
 
 #[cfg(test)]
 mod tests {
+    mod user_knots;
+
     use cadmpeg_ir::subd;
     use cadmpeg_test_support::wire;
 
@@ -1935,7 +1953,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     }
 
     #[test]
-    fn retains_the_unresolved_edge_knot_state_form() {
+    fn transfers_explicit_zero_user_knot_overrides() {
         let source = format!(
             "#TS0200\n{}106ek 0\n106ek 1\n106ek 0\n106ek 1\n\
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n",
@@ -1944,11 +1962,20 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
                 "end-conditions MULTIPLE_KNOTS"
             )
         );
-        let cage = parse_cage(source.as_bytes()).expect("unresolved edge-knot state");
-        assert_eq!(
-            cage.unknown_record_kinds,
-            std::collections::BTreeMap::from([("106ek".to_string(), 4)])
-        );
+        let cage = parse_cage(source.as_bytes()).expect("user-knot overrides");
+        assert!(cage.unknown_record_kinds.is_empty());
+        let edges = cage.surface.cage.edges();
+        for (edge, expected) in edges.iter().zip([0.0, 1.0, 0.0, 1.0]) {
+            assert_eq!(edge.effective_knot_interval(), Some(expected));
+            assert!(matches!(
+                edge.user_knot,
+                Some(subd::SubdUserKnot::Override(_))
+            ));
+            assert_eq!(
+                wire::field_or_default::<Option<f64>>(edge, "knot_interval"),
+                Some(1.0)
+            );
+        }
     }
 
     #[test]

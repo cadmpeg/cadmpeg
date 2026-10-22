@@ -89,14 +89,7 @@ impl TryFrom<SubdCageWire> for SubdCage {
     type Error = SubdError;
 
     fn try_from(wire: SubdCageWire) -> Result<Self, Self::Error> {
-        let cage = Self {
-            vertices: wire.vertices,
-            edges: wire.edges,
-            faces: wire.faces,
-            symmetries: wire.symmetries,
-        };
-        cage.validate()?;
-        Ok(cage)
+        Self::new(wire.vertices, wire.edges, wire.faces, wire.symmetries)
     }
 }
 
@@ -108,6 +101,8 @@ impl SubdCage {
         faces: Vec<SubdFace>,
         symmetries: Vec<SubdSymmetry>,
     ) -> Result<Self, SubdError> {
+        let mut edges = edges;
+        normalize_user_knots(&mut edges);
         let cage = Self {
             vertices,
             edges,
@@ -127,6 +122,26 @@ impl SubdCage {
         edit(&mut vertices)?;
         self.validate_vertices(&vertices)?;
         self.vertices = vertices;
+        Ok(())
+    }
+
+    /// Control edges in cage order.
+    #[must_use]
+    pub fn edges(&self) -> &[SubdEdge] {
+        &self.edges
+    }
+
+    /// Atomically edit edge copies while preserving cage invariants.
+    /// A present user-knot extension gives every unannotated edge an inherited value.
+    pub fn edit_edges(
+        &mut self,
+        edit: impl FnOnce(&mut [SubdEdge]) -> Result<(), SubdError>,
+    ) -> Result<(), SubdError> {
+        let mut candidate = self.clone();
+        edit(&mut candidate.edges)?;
+        normalize_user_knots(&mut candidate.edges);
+        candidate.validate()?;
+        self.edges = candidate.edges;
         Ok(())
     }
 
@@ -274,6 +289,14 @@ impl SubdCage {
             }
         }
         Ok(())
+    }
+}
+
+fn normalize_user_knots(edges: &mut [SubdEdge]) {
+    if edges.iter().any(|edge| edge.user_knot.is_some()) {
+        for edge in edges {
+            edge.user_knot.get_or_insert(SubdUserKnot::Inherit);
+        }
     }
 }
 
@@ -837,6 +860,9 @@ pub struct SubdEdge {
         deserialize_with = "deserialize_knot_interval"
     )]
     knot_interval: Option<PositiveReal>,
+    /// User-knot extension state. Absence means that the extension is absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_knot: Option<SubdUserKnot>,
     /// Sector coefficients at the two endpoints.
     sector_coefficients: [FiniteReal; 2],
 }
@@ -854,6 +880,9 @@ struct SubdEdgeWire {
     /// Parametric knot interval, when the source cage exposes one.
     #[serde(default, deserialize_with = "deserialize_knot_interval")]
     knot_interval: Option<f64>,
+    /// User-knot extension state.
+    #[serde(default)]
+    user_knot: Option<SubdUserKnot>,
     /// Sector coefficients at the two endpoints.
     sector_coefficients: [f64; 2],
 }
@@ -869,10 +898,23 @@ impl TryFrom<SubdEdgeWire> for SubdEdge {
             wire.knot_interval,
             wire.sector_coefficients,
         )
+        .map(|mut edge| {
+            edge.user_knot = wire.user_knot;
+            edge
+        })
     }
 }
 
 impl SubdEdge {
+    /// Effective knot interval, with an explicit user value taking precedence.
+    #[must_use]
+    pub fn effective_knot_interval(&self) -> Option<f64> {
+        match self.user_knot {
+            Some(SubdUserKnot::Override(value)) => Some(value.get()),
+            Some(SubdUserKnot::Inherit) | None => self.knot_interval.map(PositiveReal::get),
+        }
+    }
+
     /// Construct an edge from admitted numeric controls. Only distinct
     /// endpoints remain to be checked.
     pub fn from_controls(
@@ -892,6 +934,7 @@ impl SubdEdge {
             sharpness,
             tag,
             knot_interval,
+            user_knot: None,
             sector_coefficients,
         })
     }
@@ -965,9 +1008,26 @@ impl SubdEdge {
             sharpness: [start, end],
             tag,
             knot_interval,
+            user_knot: None,
             sector_coefficients: [first, second],
         })
     }
+}
+
+/// A user-supplied knot interval layered over an edge's base interval.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum SubdUserKnot {
+    /// Use the edge's base knot interval.
+    Inherit,
+    /// Use this finite nonnegative interval, including explicit zero.
+    Override(NonNegativeReal),
 }
 
 /// A control-cage edge tag.

@@ -569,3 +569,96 @@ fn subd_carriers_hold_their_admitted_points_axes_and_weights() {
 }
 
 mod admission;
+
+#[test]
+fn user_knots_distinguish_absence_inheritance_and_explicit_zero() {
+    use crate::subd::SubdUserKnot;
+
+    let mut edge =
+        SubdEdge::new([0, 1], [0.0; 2], SubdEdgeTag::Smooth, Some(0.25), [0.0; 2]).unwrap();
+    assert_eq!(edge.effective_knot_interval(), Some(0.25));
+    assert!(serde_json::to_value(&edge)
+        .unwrap()
+        .get("user_knot")
+        .is_none());
+    edge.user_knot = Some(SubdUserKnot::Inherit);
+    assert_eq!(edge.effective_knot_interval(), Some(0.25));
+    assert_eq!(
+        serde_json::to_value(&edge).unwrap()["user_knot"],
+        serde_json::json!({"kind":"inherit"})
+    );
+    edge.user_knot = Some(SubdUserKnot::Override(NonNegativeReal::new(0.0).unwrap()));
+    assert_eq!(edge.effective_knot_interval(), Some(0.0));
+    let decoded: SubdEdge = serde_json::from_str(&serde_json::to_string(&edge).unwrap()).unwrap();
+    assert_eq!(decoded, edge);
+    assert_eq!(decoded.knot_interval.map(PositiveReal::get), Some(0.25));
+    let mut wire = serde_json::to_value(edge).unwrap();
+    wire["user_knot"]["value"] = (-0.5).into();
+    assert!(serde_json::from_value::<SubdEdge>(wire).is_err());
+}
+
+#[test]
+fn cage_user_knots_follow_edges_and_preserve_extension_presence() {
+    use crate::subd::SubdUserKnot;
+
+    let mut cage = triangle_cage();
+    cage.edit_edges(|edges| {
+        edges[0].user_knot = Some(SubdUserKnot::Override(NonNegativeReal::new(0.0).unwrap()));
+        edges[1].user_knot = Some(SubdUserKnot::Override(NonNegativeReal::new(1.0).unwrap()));
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(cage.edges()[2].user_knot, Some(SubdUserKnot::Inherit));
+    let mut reordered = cage.edges.clone();
+    reordered.swap(0, 1);
+    let faces = vec![SubdFace::new(vec![
+        SubdEdgeUse {
+            edge: 1,
+            reversed: false,
+        },
+        SubdEdgeUse {
+            edge: 0,
+            reversed: false,
+        },
+        SubdEdgeUse {
+            edge: 2,
+            reversed: false,
+        },
+    ])
+    .unwrap()];
+    let reordered =
+        crate::subd::SubdCage::new(cage.vertices.clone(), reordered, faces, Vec::new()).unwrap();
+    assert_eq!(reordered.edges()[0].vertices, [1, 2]);
+    assert_eq!(reordered.edges()[0].effective_knot_interval(), Some(1.0));
+    assert_eq!(reordered.edges()[1].vertices, [0, 1]);
+    assert_eq!(reordered.edges()[1].effective_knot_interval(), Some(0.0));
+    let retained = cage.clone();
+    assert!(cage
+        .edit_edges(|edges| {
+            edges[0].vertices = [0, 2];
+            Ok(())
+        })
+        .is_err());
+    assert_eq!(cage, retained);
+    cage.edit_edges(|edges| {
+        for edge in edges {
+            edge.user_knot = Some(SubdUserKnot::Inherit);
+        }
+        Ok(())
+    })
+    .unwrap();
+    let inherited = cage.clone();
+    assert!(inherited
+        .edges()
+        .iter()
+        .all(|edge| edge.user_knot == Some(SubdUserKnot::Inherit)));
+    cage.edit_edges(|edges| {
+        for edge in edges {
+            edge.user_knot = None;
+        }
+        Ok(())
+    })
+    .unwrap();
+    assert_ne!(cage, inherited);
+    assert!(cage.edges().iter().all(|edge| edge.user_knot.is_none()));
+}
