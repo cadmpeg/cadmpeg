@@ -1451,11 +1451,11 @@ fn project_constraint(
         };
     }
 
-    if constraint.header.scalar_map.metadata().is_some()
-        || !constraint.header.scalar_map.entries().is_empty()
-        || constraint.header.reference_map.metadata().is_some()
-        || !constraint.header.reference_map.entries().is_empty()
-    {
+    let maps_are_empty = constraint.header.scalar_map.metadata().is_none()
+        && constraint.header.scalar_map.entries().is_empty()
+        && constraint.header.reference_map.metadata().is_none()
+        && constraint.header.reference_map.entries().is_empty();
+    if !maps_are_empty && !coincident_solver_hint(constraint) {
         return None;
     }
     let resolve = |reference: PmDcReference| {
@@ -1783,6 +1783,27 @@ fn project_constraint(
         metadata: None,
         native_ref: Some(constraint.id()),
     }))
+}
+
+/// Whether the constraint maps hold only a coincident relation's solver
+/// hint: entries keyed by one of its two operands, with null reference values.
+fn coincident_solver_hint(constraint: &PmDcSketchConstraint) -> bool {
+    let PmDcSketchConstraintKind::Coincident { first, second } = constraint.kind else {
+        return false;
+    };
+    let operand = |key: &PmDcReference| key.index() != 0 && (*key == first || *key == second);
+    constraint
+        .header
+        .scalar_map
+        .entries()
+        .iter()
+        .all(|(key, _)| operand(key))
+        && constraint
+            .header
+            .reference_map
+            .entries()
+            .iter()
+            .all(|(key, value)| operand(key) && value.index() == 0 && !value.qualified())
 }
 
 fn resolve_parameter(
@@ -3223,7 +3244,8 @@ mod tests {
         mapped_constraint.extend_from_slice(&0x3000u16.to_le_bytes());
         mapped_constraint.extend_from_slice(&1u32.to_le_bytes());
         mapped_constraint.extend_from_slice(&[0; 8]);
-        mapped_constraint.extend_from_slice(&4u32.to_le_bytes());
+        // The scalar-map key is not an operand, so the map is not a solver hint.
+        mapped_constraint.extend_from_slice(&6u32.to_le_bytes());
         mapped_constraint.extend_from_slice(&0.5f64.to_le_bytes());
         mapped_constraint.extend(list(6, &[]));
         mapped_constraint.extend_from_slice(&0u32.to_le_bytes());
@@ -3369,6 +3391,58 @@ mod tests {
         ));
         assert_eq!(projected.sketches[0].profiles.len(), 1);
         assert_eq!(projected.sketches[0].profiles[0].len(), 2);
+    }
+
+    #[test]
+    fn a_coincident_relation_with_a_solver_hint_projects() {
+        let (mut inventory, mut sketch) = closed_square_inventory();
+        // Point 4 lies at the start of line 7; the maps hold the hint keyed
+        // by the line.
+        let mut hinted = content(11);
+        hinted.extend_from_slice(&(-1i32).to_le_bytes());
+        hinted.extend_from_slice(&0u32.to_le_bytes());
+        let map_prefix = |bytes: &mut Vec<u8>| {
+            bytes.extend_from_slice(&6u16.to_le_bytes());
+            bytes.extend_from_slice(&0x3000u16.to_le_bytes());
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&[0; 8]);
+            bytes.extend_from_slice(&8u32.to_le_bytes());
+        };
+        map_prefix(&mut hinted);
+        hinted.extend_from_slice(&0.0f64.to_le_bytes());
+        map_prefix(&mut hinted);
+        hinted.extend_from_slice(&0u32.to_le_bytes());
+        hinted.extend_from_slice(&0u32.to_le_bytes());
+        hinted.extend_from_slice(&8u32.to_le_bytes());
+        hinted.extend_from_slice(&4u32.to_le_bytes());
+        let hinted = parse(&hinted, |_, source| {
+            parse_constraint(SketchConstraintTag::Coincident, source, 22).expect("coincident")
+        });
+        assert_eq!(hinted.header.scalar_map.entries().len(), 1);
+        assert_eq!(hinted.header.reference_map.entries().len(), 1);
+        inventory.constraints.push(Located::new(
+            hinted,
+            crate::record_identity::RecordTypeId::from_bytes(COINCIDENT_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            11,
+        ));
+        let (marker, metadata, mut references) = sketch.entities.clone().into_parts();
+        references.push(PmDcReference::new(12, false).expect("test reference index fits 31 bits"));
+        sketch.entities =
+            PmDcReferenceList::new(marker, metadata, references).expect("extended entity list");
+        inventory.sketches[0] = Located::new(
+            sketch,
+            crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            2,
+        );
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        let projected = project(&ctx, &inventory, &[]).expect("sketch projection");
+        assert_eq!(projected.unresolved_sketches, 0);
+        assert_eq!(projected.unresolved_constraints, 0);
+        assert_eq!(projected.constraints.len(), 1);
     }
 
     /// The closed square with a horizontal constraint on its first line, the
