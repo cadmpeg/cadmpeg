@@ -2112,7 +2112,9 @@ control-point count × (dimension + rational) × f64 control points
 
 The clamped-end mask supplies omitted repeated end knots. The neutral knot
 vector restores the two superfluous end knots. A rational control point stores
-one weight after its coordinates.
+one weight after its coordinates. Both nonzero rational forms store Euclidean
+coordinates: the reader multiplies each coordinate by the weight to form the
+homogeneous point, so the rational-form value does not select a layout.
 
 `TCODE_LEGACY_FAC` (`0x00010004`) contains one
 `TCODE_LEGACY_FACSTUFF` (`0x00010104`). Face stuff stores:
@@ -2169,13 +2171,17 @@ and shell permutation pair trim records. A pair shares one edge only when
 exactly one trim stores a model-space edge curve; the curve-less trim aliases
 that edge. If both trims store model-space edge curves, both records remain as
 separate edges. If neither trim stores one, neither trim has a model-space edge
-curve.
+curve. A trim with no edge curve and no mate flag is singular. A seam or mated
+trim with no edge curve has no edge, and `ON_Brep::IsValid` rejects the Brep.
 
 V1 Brep vertices are identified by trim-loop adjacency and the shared-edge
-permutations. The endpoint coordinates do not merge separate topological
-vertices. A vertex position is the arithmetic mean of its incident
-model-space edge endpoints, and its tolerance is the maximum incident edge
-tolerance.
+permutations. A loop joins the end of each trim to the start of the next trim.
+A singular trim starts and ends at one vertex. An edge whose curve is closed
+starts and ends at one vertex. The endpoint coordinates do not merge separate
+topological vertices. A vertex position is the arithmetic mean of its incident
+model-space edge endpoints. Its tolerance is the maximum of the incident edge
+tolerances and the distances from the vertex position to its incident edge
+endpoints.
 
 `TCODE_LEGACY_SHL` (`0x00010003`) contains one
 `TCODE_LEGACY_SHLSTUFF` (`0x00010103`):
@@ -2789,6 +2795,7 @@ These registered legacy identities use the current class payload layout:
 | polycurve          | `EF638317-154B-11D4-8000-0010830122F0`                                                                  |
 | Brep               | `0705FDEF-3E2A-11D4-800E-0010830122F0`, `2D4CFEDB-3E2A-11D4-800E-0010830122F0`, `F06FC243-A32A-4608-9DD8-A7D2C4CE2A36` |
 | revolution surface | `0A8401B6-4D34-4B99-8615-1B4E723DC4E5`                                                                  |
+| sum surface        | `665F6331-2A66-4CCE-81D0-B5EEBD9B5417`                                                                  |
 
 Alias identity does not add a payload prefix or suffix. It participates in
 the same curve/surface base-class checks used by polymorphic Brep arrays.
@@ -3533,8 +3540,11 @@ Major-2 has no serialized vertex table. The source reader establishes vertex
 identity by walking each directed loop ring and by joining both uses of an
 edge, with `reversed-3D` selecting which trim endpoint corresponds to each
 edge endpoint. It then averages the incident C3 endpoints for the vertex
-position. The decoder applies this same endpoint-equivalence rule. An edge
-with no trim uses its C3 endpoints as independent vertex positions.
+position. The decoder applies this same endpoint-equivalence rule. The
+reader creates one edge for each C3 curve but assigns vertices only through
+loop trims, so an edge that no trim uses keeps vertex indexes `-1`. Such a
+Brep fails `ON_Brep::IsValid`; its topology does not transfer, and the decode
+report emits `topology.brep-fallback`.
 
 The face, loop, and trim bounds are cached source boxes. The source reader
 fills missing trim and loop boxes from the C2 curves after topology loading;
@@ -3691,6 +3701,17 @@ The `reversed surface` field states whether the face normal is opposite to the
 surface normal. A region face-side direction identifies the side that contains
 the region and does not replace the face orientation.
 
+Every loop runs with its face on the left in surface parameter space: an
+outer loop runs counterclockwise about the surface normal for both values of
+`reversed surface`. `reversed 3D` states that the trim runs opposite to its
+edge curve. Two trims of an oriented manifold edge satisfy
+`reversed 3D XOR reversed surface` with opposite values. The neutral loop
+runs with the face on its left about the face normal. A face with `reversed
+surface` 0 transfers its trim order and coedge senses equal to `reversed 3D`.
+A face with `reversed surface` 1 transfers its trims in reverse order, each
+coedge sense opposite to `reversed 3D`, and each stated pcurve-use range from its end
+to its start. The writer applies the inverse mapping.
+
 Negative material channels map to zero. A vertex, edge, trim, loop, or face
 array position is authoritative and replaces a disagreeing stored positional
 index. References must be in range and non-null where required. Standard
@@ -3723,13 +3744,17 @@ admissible when its analytic topology is valid.
 For minor at least 2, the writer copies the Brep `m_is_solid` cache to an
 `i32` without deriving it. Its OpenNURBS runtime meanings are 0 unset, 1 solid
 with outward normals, 2 solid with inward normals, and 3 not solid. The source
-reader resets a value below 0 or at least 3 to 0. It also resets the value to 0
-when the archive OpenNURBS writer version is before 2 October 2002. Thus 3 is a
-source-writable not-solid cache value, not a stable source-read value.
+reader resets a value below 0 or at least 3 to 0, so 3 is a valid
+source-written not-solid value that reads as unset. The reader also compares
+the archive OpenNURBS version with the eight-digit literal `20021002`. Every
+archive OpenNURBS version that a complete archive read supplies is at least
+`200012210`: an archive at most 2 without a version stamp reads as
+`200012210`. That comparison is therefore false for every archive, and the
+writer version never resets the cache.
 
 CADIR decision: the parser retains the serialized `i32` in native fidelity and
-reports an enumeration degradation for values outside 0 through 2. Neutral
-body kind treats 1 and 2 as solid. It treats 0, a pre-2 October 2002 value, and
+reports an enumeration degradation for values outside 0 through 3. Neutral
+body kind treats 1 and 2 as solid for every writer version. It treats 0, 3, and
 an invalid value as unset and derives the result from the validated Brep. A
 Brep is closed when it has at least one face and every edge has exactly two
 trim uses. A closed Brep is solid; another Brep is a sheet. The outward and
@@ -3750,9 +3775,15 @@ complete optional region topology is discarded and the decode report emits
 `container.redundant-field-repaired` with the diagnostic cause; the Brep remains
 admissible.
 
-CADIR decision: when an inline minor-3 topology does not assign exactly one
-bounded region to each face, neutral shell grouping falls back to edge
-incidence and the decode report emits
+CADIR decision: a neutral region is one connected component of the body. When
+the region topology assigns exactly one bounded region to each face, each
+neutral shell is one edge-incidence component of the faces in one bounded
+region, and the neutral region identity carries the serialized region index
+(`.slot-N`). Otherwise each edge-incidence component of the faces is one
+neutral shell and one neutral region, and the neutral region identity carries
+the component number (`.component-N`), so it never names a serialized region.
+When an inline minor-3 topology exists but does not assign exactly one bounded
+region to each face, the decode report also emits
 `Brep 3.3 region topology was not representable; incidence-derived shells used`.
 The native region records remain retained.
 
@@ -3783,6 +3814,14 @@ within a region, and unassigned sides use region index -1.
 Every reference, domain, reversal, ring, and region satisfies the invariants
 above. For minor 3, serialized region membership agrees with face-edge
 incidence.
+
+CADIR decision: a staged Brep, including a V1 legacy Brep, commits its
+topology only when the staged model alone passes the `coedge_pairing`,
+`shell_topology`, and `geometric_consistency` checks without an error. A
+chunked-archive Brep that fails keeps its decoded child carriers and the
+decode report emits `topology.brep-fallback` with the first failing findings.
+A V1 Brep that fails remains an opaque source record and the decode report
+counts it under `object.family-not-transferred`.
 
 ## 16. Extrusion
 

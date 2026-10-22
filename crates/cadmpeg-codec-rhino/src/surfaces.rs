@@ -53,10 +53,17 @@ pub(crate) const REV_SURFACE_LEGACY: Uuid = Uuid::from_canonical([
 pub(crate) const SUM_SURFACE: Uuid = Uuid::from_canonical([
     0xc4, 0xcd, 0x53, 0x59, 0x44, 0x6d, 0x46, 0x90, 0x9f, 0xf5, 0x29, 0x05, 0x97, 0x32, 0x47, 0x2b,
 ]);
+/// `TL_SumSurface`, which `ON_ClassId::ClassId` reads as `ON_SumSurface`.
+pub(crate) const SUM_SURFACE_LEGACY: Uuid = Uuid::from_canonical([
+    0x66, 0x5f, 0x63, 0x31, 0x2a, 0x66, 0x4c, 0xce, 0x81, 0xd0, 0xb5, 0xee, 0xbd, 0x9b, 0x54, 0x17,
+]);
 
 /// Returns whether a class is one of the native procedural surfaces.
 pub(crate) fn is_procedural_class(uuid: Uuid) -> bool {
-    matches!(uuid, REV_SURFACE | REV_SURFACE_LEGACY | SUM_SURFACE)
+    matches!(
+        uuid,
+        REV_SURFACE | REV_SURFACE_LEGACY | SUM_SURFACE | SUM_SURFACE_LEGACY
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -241,7 +248,7 @@ pub(crate) fn decode(
         read_clipping_plane_surface(data, &mut reader, scale, archive)?
     } else if matches!(class, REV_SURFACE | REV_SURFACE_LEGACY) {
         read_revolution(ctx, data, &mut reader, scale, archive, depth)?
-    } else if class == SUM_SURFACE {
+    } else if matches!(class, SUM_SURFACE | SUM_SURFACE_LEGACY) {
         read_sum(ctx, data, &mut reader, scale, archive, depth)?
     } else {
         return Err(GeometryError::unsupported(

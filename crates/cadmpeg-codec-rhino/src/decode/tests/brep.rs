@@ -443,10 +443,11 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
 #[test]
 fn disconnected_incidence_produces_deterministic_shell_groups() {
     let grouping = with_expand_bytes(&[], |expand| {
-        region_shell_groups_without_records(expand.ctx(), &[1, 0, 1, 0])
+        region_shell_groups_without_records(expand.ctx(), &[1, 0, 1, 0], true)
             .expect("shell-group allocation")
     });
     assert!(grouping.fallback);
+    assert!(!grouping.serialized_regions);
     assert_eq!(grouping.face_groups, vec![1, 0, 1, 0]);
     assert_eq!(
         grouping
@@ -681,4 +682,281 @@ fn fallback_keeps_thousands_of_free_carriers() {
     assert_eq!(staged.draft.model().curves.len(), 4096);
     assert_eq!(staged.links.len(), 4096);
     ctx.finish_session().unwrap();
+}
+
+/// Two triangles share edge 1. Face 1 lies on a plane whose normal is `-z`
+/// and is reversed, so both face normals point along `+z`. Every loop runs
+/// counterclockwise in its plane's parameter space, as `ON_Brep` requires,
+/// and the shared edge satisfies the `ON_Brep::IsManifold` orientation rule:
+/// `reversed 3D XOR reversed surface` differs between its two trims.
+fn two_face_shared_edge_brep() -> (Vec<u8>, crate::brep::RawBrep) {
+    let line_uuid = super::class_uuid([
+        0xdb, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22,
+        0xf0,
+    ]);
+    let plane_uuid = super::class_uuid([
+        0xdf, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22,
+        0xf0,
+    ]);
+    let points = [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 1.0, 0.0],
+    ];
+    // Face 1 parameters are `(x, -y)`.
+    let uv = |face: usize, vertex: usize| {
+        let [x, y, _] = points[vertex];
+        if face == 0 {
+            [x, y, 0.0]
+        } else {
+            [x, -y, 0.0]
+        }
+    };
+    let edge_vertices = [[0, 1], [1, 2], [2, 0], [2, 3], [3, 1]];
+    // (face, edge, trim start vertex, trim end vertex), loop order.
+    let trim_rows = [
+        (0, 0, 0, 1),
+        (0, 1, 1, 2),
+        (0, 2, 2, 0),
+        (1, 1, 1, 2),
+        (1, 3, 2, 3),
+        (1, 4, 3, 1),
+    ];
+    let mut data = Vec::new();
+    let c3_ranges = edge_vertices
+        .iter()
+        .map(|[start, end]| super::append_line_payload(&mut data, points[*start], points[*end], 3))
+        .collect::<Vec<_>>();
+    let c2_ranges = trim_rows
+        .iter()
+        .map(|(face, _, start, end)| {
+            super::append_line_payload(&mut data, uv(*face, *start), uv(*face, *end), 2)
+        })
+        .collect::<Vec<_>>();
+    let mut surface_ranges = Vec::new();
+    for (y_axis, z_axis) in [
+        ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+        ([0.0, -1.0, 0.0], [0.0, 0.0, -1.0]),
+    ] {
+        let start = data.len();
+        data.push(0x11);
+        for value in [0.0_f64, 0.0, 0.0, 1.0, 0.0, 0.0]
+            .into_iter()
+            .chain(y_axis)
+            .chain(z_axis)
+            .chain([z_axis[0], z_axis[1], z_axis[2], 0.0])
+        {
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        for _ in 0..4 {
+            for value in [-2.0_f64, 2.0] {
+                data.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        surface_ranges.push(start..data.len());
+    }
+    let interval = super::finite_interval([0.0, 1.0]);
+    let index = |value: usize| i32::try_from(value).expect("index");
+    let vertices = (0..points.len())
+        .map(|vertex| crate::brep::RawBrepVertex {
+            index: index(vertex),
+            point: crate::settings::CoordinateLane::Admitted(
+                crate::test_support::point3(points[vertex]).0,
+            ),
+            edges: edge_vertices
+                .iter()
+                .enumerate()
+                .filter(|(_, ends)| ends.contains(&vertex))
+                .map(|(edge, _)| index(edge))
+                .collect(),
+            tolerance: 0.0,
+            source_range: 0..0,
+        })
+        .collect();
+    let edges = edge_vertices
+        .iter()
+        .enumerate()
+        .map(|(edge, ends)| crate::brep::RawBrepEdge {
+            index: index(edge),
+            curve: index(edge),
+            proxy_reversed: false,
+            proxy_domain: interval,
+            vertices: [index(ends[0]), index(ends[1])],
+            trims: trim_rows
+                .iter()
+                .enumerate()
+                .filter(|(_, row)| row.1 == edge)
+                .map(|(trim, _)| index(trim))
+                .collect(),
+            tolerance: 0.0,
+            domain: interval,
+            source_range: 0..0,
+        })
+        .collect();
+    let trims = trim_rows
+        .iter()
+        .enumerate()
+        .map(
+            |(trim, (face, edge, start, end))| crate::brep::RawBrepTrim {
+                index: index(trim),
+                curve: Some(index(trim)),
+                proxy_domain: interval,
+                edge: Some(index(*edge)),
+                vertices: [index(*start), index(*end)],
+                reversed_3d: edge_vertices[*edge] != [*start, *end],
+                trim_type: if *edge == 1 {
+                    crate::brep::RawTrimKind::Mated
+                } else {
+                    crate::brep::RawTrimKind::Boundary
+                },
+                iso: crate::brep::RawTrimIso::None,
+                loop_index: index(*face),
+                tolerances: [0.0, 0.0],
+                domain: interval,
+                proxy_reversed: false,
+                reserved: Vec::new(),
+                legacy_tolerances: [0.0, 0.0],
+                source_range: 0..0,
+            },
+        )
+        .collect();
+    let children =
+        |ranges: Vec<std::ops::Range<usize>>, uuid, expected_type| crate::brep::RawBrepChildren {
+            slots: ranges
+                .into_iter()
+                .map(|range| Some(super::child(uuid, range)))
+                .collect(),
+            source_range: 0..0,
+            expected_type,
+        };
+    (
+        data,
+        crate::brep::RawBrep {
+            losses: Vec::new(),
+            minor: 2,
+            c2: children(c2_ranges, line_uuid, crate::brep::RawBrepBaseType::Curve),
+            c3: children(c3_ranges, line_uuid, crate::brep::RawBrepBaseType::Curve),
+            surfaces: children(
+                surface_ranges,
+                plane_uuid,
+                crate::brep::RawBrepBaseType::Surface,
+            ),
+            vertices,
+            edges,
+            trims,
+            loops: (0..2)
+                .map(|face| crate::brep::RawBrepLoop {
+                    index: index(face),
+                    trims: (face * 3..face * 3 + 3).map(index).collect(),
+                    loop_type: crate::brep::RawLoopKind::Outer,
+                    face: index(face),
+                    source_range: 0..0,
+                })
+                .collect(),
+            faces: (0..2)
+                .map(|face| crate::brep::RawBrepFace {
+                    index: index(face),
+                    loops: vec![index(face)],
+                    surface: index(face),
+                    reversed_surface: face == 1,
+                    material_channel: 0,
+                    uuid: None,
+                    color: None,
+                    source_range: 0..0,
+                })
+                .collect(),
+            bounds: crate::settings::BoundingBox {
+                minimum: crate::test_support::point3([0.0, 0.0, 0.0]),
+                maximum: crate::test_support::point3([1.0, 1.0, 0.0]),
+            },
+            render_meshes: Vec::new(),
+            analysis_meshes: Vec::new(),
+            is_solid: crate::brep::RawSolidFlag::Known(crate::brep::SolidState::NotSolid),
+            face_sides: Vec::new(),
+            regions: Vec::new(),
+            source_range: 0..0,
+        },
+    )
+}
+
+/// The neutral loop of a reversed face runs about the face normal: its trims
+/// are traversed backwards with flipped senses, so an oriented shared edge has
+/// opposite coedge senses and every loop stays endpoint-continuous.
+#[test]
+fn reversed_face_loop_runs_about_the_face_normal() {
+    let (data, raw) = two_face_shared_edge_brep();
+    let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate two-face Brep");
+    let association = SourceObjectAssociation {
+        geometry_role: None,
+        format: cadmpeg_ir::CodecFormat::Rhino,
+        object_id: cadmpeg_core::nonblank_literal!("two-face"),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let unknown: UnknownId = "rhino:object:record#two-face"
+        .try_into()
+        .expect("valid identity");
+    let staged = with_expand_bytes(&data, |expand| {
+        stage_brep(BrepTransferInput {
+            expand,
+            data: &data,
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_206_180),
+            brep: &brep,
+            key: "two-face",
+            association: &association,
+            unknown: &unknown,
+            scale: MillimeterScale::IDENTITY,
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        })
+    })
+    .expect("stage two-face Brep");
+    assert_eq!(staged.kind, BrepTransferKind::FullTopology);
+    let model = staged.draft.model();
+    let coedge = |trim: usize| {
+        model
+            .coedges
+            .iter()
+            .find(|coedge| coedge.id.as_str().ends_with(&format!(".slot-{trim}")))
+            .expect("coedge for trim")
+    };
+    let loop_coedges = |face: usize| {
+        model.loops[face]
+            .coedges()
+            .iter()
+            .map(|id| id.as_str().rsplit('-').next().expect("slot").to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(loop_coedges(0), ["0", "1", "2"]);
+    assert_eq!(loop_coedges(1), ["5", "4", "3"]);
+    assert_eq!(coedge(1).sense, cadmpeg_ir::topology::Sense::Forward);
+    assert_eq!(coedge(3).sense, cadmpeg_ir::topology::Sense::Reversed);
+    assert_eq!(coedge(1).radial_next, coedge(3).id);
+    assert_eq!(coedge(3).radial_next, coedge(1).id);
+    for trim in [4, 5] {
+        assert_eq!(coedge(trim).sense, cadmpeg_ir::topology::Sense::Reversed);
+    }
+    let mut candidate = CadIr::empty();
+    candidate.model = model.clone();
+    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
+        .expect("validate the neutral model");
+    assert!(
+        !report.findings.iter().any(|finding| matches!(
+            finding.check,
+            cadmpeg_ir::report::check::Check::CoedgePairing
+                | cadmpeg_ir::report::check::Check::GeometricConsistency
+        )),
+        "{report:?}"
+    );
+    assert!(super::super::brep_topology_rejection(
+        &cadmpeg_test_support::service_decode_context(),
+        model,
+        candidate.tolerances,
+    )
+    .expect("validate staged Brep")
+    .is_none());
 }

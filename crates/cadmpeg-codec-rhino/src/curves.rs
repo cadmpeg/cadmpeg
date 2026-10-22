@@ -73,6 +73,7 @@ const CLIPPING_PLANE_SURFACE: Uuid = crate::surfaces::CLIPPING_PLANE_SURFACE;
 const REV_SURFACE: Uuid = crate::surfaces::REV_SURFACE;
 const REV_SURFACE_LEGACY: Uuid = crate::surfaces::REV_SURFACE_LEGACY;
 const SUM_SURFACE: Uuid = crate::surfaces::SUM_SURFACE;
+const SUM_SURFACE_LEGACY: Uuid = crate::surfaces::SUM_SURFACE_LEGACY;
 
 /// A decoded point or curve before it is inserted into the IR arenas.
 #[derive(Debug, Clone)]
@@ -278,6 +279,7 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
             | REV_SURFACE
             | REV_SURFACE_LEGACY
             | SUM_SURFACE
+            | SUM_SURFACE_LEGACY
     )
 }
 
@@ -310,6 +312,7 @@ pub(crate) fn surface_class(uuid: Uuid) -> bool {
             | REV_SURFACE
             | REV_SURFACE_LEGACY
             | SUM_SURFACE
+            | SUM_SURFACE_LEGACY
     )
 }
 
@@ -470,6 +473,7 @@ pub(crate) fn decode_inner(
             | REV_SURFACE
             | REV_SURFACE_LEGACY
             | SUM_SURFACE
+            | SUM_SURFACE_LEGACY
     ) {
         return Ok(DecodedGeometry::Surface {
             surface: crate::surfaces::decode(ctx, data, class_uuid, range, scale, archive, depth)?,

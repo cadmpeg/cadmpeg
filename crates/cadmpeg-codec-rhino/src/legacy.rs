@@ -729,11 +729,10 @@ fn legacy_spline(
             let weight = reader.f64().map_err(|error| malformed(&error))?;
             let weight = NonZeroReal::new(weight)
                 .ok_or_else(|| CodecError::Malformed("invalid V1 spline weight".to_string()))?;
-            let divisor = if rational == 2 { weight.get() } else { 1.0 };
             control_points.push(Point3::new(
-                x * scale.value() / divisor,
-                y * scale.value() / divisor,
-                z * scale.value() / divisor,
+                x * scale.value(),
+                y * scale.value(),
+                z * scale.value(),
             ));
             weights.push(weight);
         } else {
@@ -1546,6 +1545,41 @@ fn curve_domain(curve: &NurbsCurve) -> Result<[f64; 2], CodecError> {
     Ok([curve.knots()[degree], curve.knots()[end]])
 }
 
+/// `ON_ZERO_TOLERANCE`, the absolute coordinate tolerance of `ON_PointsAreCoincident`.
+const ON_ZERO_TOLERANCE: f64 = 2.328_306_436_538_696_3e-10;
+/// `ON_RELATIVE_TOLERANCE`, the relative coordinate tolerance of `ON_PointsAreCoincident`.
+const ON_RELATIVE_TOLERANCE: f64 = 2.273_736_754_432_320_6e-13;
+
+/// `ON_PointsAreCoincident` for two Euclidean points.
+fn points_coincident(left: Point3, right: Point3) -> bool {
+    [(left.x, right.x), (left.y, right.y), (left.z, right.z)]
+        .into_iter()
+        .all(|(a, b)| {
+            let difference = (a - b).abs();
+            difference <= ON_ZERO_TOLERANCE
+                || difference <= (a.abs() + b.abs()) * ON_RELATIVE_TOLERANCE
+        })
+}
+
+/// `ON_NurbsCurve::IsClosed`: at least four poles, coincident ends, and
+/// points at one third and two thirds of the domain distinct from both ends.
+fn legacy_curve_is_closed(
+    curve: &NurbsCurve,
+    domain: [f64; 2],
+    ends: [Point3; 2],
+) -> Result<bool, CodecError> {
+    if curve.pole_count() < 4 || !points_coincident(ends[0], ends[1]) {
+        return Ok(false);
+    }
+    for fraction in [1.0 / 3.0, 2.0 / 3.0] {
+        let point = evaluate_nurbs(curve, (1.0 - fraction) * domain[0] + fraction * domain[1])?;
+        if ends.iter().any(|end| points_coincident(*end, point)) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 fn find_root(parents: &mut [usize], mut index: usize) -> usize {
     while parents[index] != index {
         parents[index] = parents[parents[index]];
@@ -1659,6 +1693,7 @@ fn append_legacy_brep(
 
     let mut group_curve = BTreeMap::<usize, NurbsCurve>::new();
     let mut group_tolerance = BTreeMap::<usize, f64>::new();
+    let mut group_mated = BTreeMap::<usize, bool>::new();
     for (index, (face, loop_index, trim)) in trim_paths.iter().copied().enumerate() {
         let record = &brep.faces[face].loops[loop_index].trims[trim];
         let root = roots[index];
@@ -1671,50 +1706,26 @@ fn append_legacy_brep(
             .entry(root)
             .and_modify(|value| *value = value.max(record.tolerance_3d))
             .or_insert(record.tolerance_3d);
+        *group_mated.entry(root).or_default() |= record.mate != Mate::None;
     }
 
     let mut group_points = BTreeMap::<usize, [Point3; 2]>::new();
+    let mut closed_groups = Vec::new();
     for (root, curve) in &group_curve {
         let domain = curve_domain(curve)?;
-        group_points.insert(
-            *root,
-            [
-                evaluate_nurbs(curve, domain[0])?,
-                evaluate_nurbs(curve, domain[1])?,
-            ],
-        );
-    }
-    for (face_index, face) in brep.faces.iter().enumerate() {
-        for (loop_index, loop_record) in face.loops.iter().enumerate() {
-            let start = trim_paths
-                .iter()
-                .enumerate()
-                .find_map(|(global, path)| (*path == (face_index, loop_index, 0)).then_some(global))
-                .ok_or_else(|| CodecError::malformed("V1 loop has no indexed trim"))?;
-
-            let mut globals = Vec::new();
-            globals.extend(start..start + loop_record.trims.len());
-            for (position, global) in globals.iter().copied().enumerate() {
-                let root = roots[global];
-                if group_points.contains_key(&root) {
-                    continue;
-                }
-                let previous = globals[(position + globals.len() - 1) % globals.len()];
-                let previous_record =
-                    &loop_record.trims[(position + globals.len() - 1) % globals.len()];
-                if let Some(points) = group_points.get(&roots[previous]).copied() {
-                    let point = if previous_record.reversed {
-                        points[0]
-                    } else {
-                        points[1]
-                    };
-                    group_points.insert(root, [point, point]);
-                }
-            }
+        let ends = [
+            evaluate_nurbs(curve, domain[0])?,
+            evaluate_nurbs(curve, domain[1])?,
+        ];
+        if legacy_curve_is_closed(curve, domain, ends)? {
+            closed_groups.push(*root);
         }
+        group_points.insert(*root, ends);
     }
+    // A trim with no edge curve and no mate is singular. Every other trim
+    // reaches an edge curve through its own record or through glue.
     for root in &group_roots {
-        if !group_points.contains_key(root) {
+        if !group_points.contains_key(root) && group_mated.get(root).copied().unwrap_or(true) {
             return Err(CodecError::Malformed(
                 "V1 edge group has no model-space endpoint curve".to_string(),
             ));
@@ -1722,10 +1733,13 @@ fn append_legacy_brep(
     }
 
     // The V1 reader creates vertices from trim connectivity.  A loop joins
-    // each trim end to the next trim start, and a glued edge joins the
-    // corresponding ends of every trim that uses that edge.  Coordinates
-    // are only used for the resulting vertex position; they never identify
-    // two topologically separate vertices.
+    // each trim end to the next trim start, a glued edge joins the
+    // corresponding ends of every trim that uses that edge, a singular trim
+    // starts and ends at one vertex, and a closed edge curve starts and ends
+    // at one vertex.  Coordinates are only used for the resulting vertex
+    // position; they never identify two topologically separate vertices.
+    // Node `root * 2 + slot` is the start (`slot` 0) or end (`slot` 1) of
+    // the edge curve of edge group `root`.
     let endpoint_count = trim_paths.len().checked_mul(2).ok_or_else(|| {
         CodecError::NotImplemented("Rhino V1 Brep endpoint count exceeds address space".to_string())
     })?;
@@ -1762,22 +1776,17 @@ fn append_legacy_brep(
             }
         }
     }
-    for (index, root) in roots.iter().copied().enumerate() {
-        let (_, loop_index, trim_index) = trim_paths[index];
-        let trim = &brep.faces[trim_paths[index].0].loops[loop_index].trims[trim_index];
-        for endpoint in 0..2 {
-            let slot = if trim.reversed {
-                1 - endpoint
-            } else {
-                endpoint
-            };
-            union(&mut endpoint_parents, index * 2 + endpoint, root * 2 + slot);
-        }
+    for root in group_roots
+        .iter()
+        .filter(|root| !group_points.contains_key(root))
+        .chain(&closed_groups)
+    {
+        union(&mut endpoint_parents, root * 2, root * 2 + 1);
     }
 
     let mut class_samples = BTreeMap::<usize, Vec<(Point3, f64)>>::new();
-    for root in &group_roots {
-        let points = group_points[root];
+    for (root, points) in &group_points {
+        let points = *points;
         let tolerance = group_tolerance
             .get(root)
             .copied()
@@ -1828,16 +1837,20 @@ fn append_legacy_brep(
         let count = cadmpeg_core::convert::f64_from_index(samples.len()).ok_or_else(|| {
             CodecError::Malformed("Rhino V1 endpoint count exceeds exact float range".into())
         })?;
-        let (position, tolerance) = samples.into_iter().fold(
+        let (position, edge_tolerance) = samples.iter().fold(
             (Point3::new(0.0, 0.0, 0.0), 0.0_f64),
             |(sum, maximum_tolerance), (point, sample_tolerance)| {
                 (
                     Point3::new(sum.x + point.x, sum.y + point.y, sum.z + point.z),
-                    maximum_tolerance.max(sample_tolerance),
+                    maximum_tolerance.max(*sample_tolerance),
                 )
             },
         );
         let position = Point3::new(position.x / count, position.y / count, position.z / count);
+        let tolerance = samples
+            .iter()
+            .map(|(point, _)| Point3::distance(position, *point))
+            .fold(edge_tolerance, f64::max);
         let index = vertex_by_class.len();
         let point_id = cadmpeg_ir::ids::PointId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
@@ -2058,6 +2071,27 @@ fn append_legacy_brep(
                 });
                 global_trim += 1;
             }
+            if face_record.reversed {
+                // Trims run with the face on their left about the surface
+                // normal; a neutral loop runs about the reversed face normal.
+                coedge_ids.reverse();
+                let first = model.coedges.len() - coedge_ids.len();
+                for coedge in &mut model.coedges[first..] {
+                    coedge.sense = match coedge.sense {
+                        Sense::Forward => Sense::Reversed,
+                        Sense::Reversed => Sense::Forward,
+                    };
+                    for curve_use in &mut coedge.pcurves {
+                        if let Some(range) = curve_use.parameter_range {
+                            let [start, end] = range.endpoints();
+                            curve_use.parameter_range = Some(
+                                cadmpeg_ir::geometry::DirectedParameterRange::new([end, start])
+                                    .map_err(CodecError::malformed)?,
+                            );
+                        }
+                    }
+                }
+            }
             let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
             model.loops.push(Loop {
@@ -2146,6 +2180,12 @@ fn append_legacy_brep(
         color: None,
         visible: None,
     });
+    if let Some(cause) = crate::decode::brep_topology_rejection(ctx, draft.model(), ir.tolerances)?
+    {
+        return Err(CodecError::malformed(format_args!(
+            "V1 Brep topology fails validation: {cause}"
+        )));
+    }
     draft.commit_model(ir, ctx)?.map_err(CodecError::malformed)
 }
 

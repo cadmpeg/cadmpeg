@@ -3681,7 +3681,19 @@ impl<'a> DecodeContext<'a> {
             ),
         };
         match staged {
-            Ok(staged) => {
+            Ok(mut staged) => {
+                if staged.kind == BrepTransferKind::FullTopology {
+                    if let Some(cause) = brep_topology_rejection(
+                        self.expand.ctx(),
+                        staged.draft.model(),
+                        self.session.document().tolerances,
+                    )? {
+                        staged = finish_brep_fallback(
+                            staged,
+                            format_args!("topology fails validation: {cause}"),
+                        );
+                    }
+                }
                 let BrepDraft {
                     kind,
                     draft,
@@ -3893,6 +3905,27 @@ fn validation_findings(report: &cadmpeg_ir::report::check::ValidationReport) -> 
         }
     }
     format!("{}", ValidationFindings(selected))
+}
+
+/// Checks a staged Brep model must pass on its own before its topology commits.
+const BREP_TOPOLOGY_CHECKS: &[cadmpeg_ir::report::check::Check] = &[
+    cadmpeg_ir::report::check::Check::CoedgePairing,
+    cadmpeg_ir::report::check::Check::ShellTopology,
+    cadmpeg_ir::report::check::Check::GeometricConsistency,
+];
+
+/// Validates one staged Brep model alone and names its first error findings.
+pub(crate) fn brep_topology_rejection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    model: &cadmpeg_ir::document::Model,
+    tolerances: cadmpeg_ir::units::Tolerances,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    let mut candidate = CadIr::empty();
+    candidate.tolerances = tolerances;
+    candidate.model = model.clone();
+    let report =
+        cadmpeg_ir::validate::admit::admit(ctx, &candidate, BREP_TOPOLOGY_CHECKS, Vec::new())?;
+    Ok((!report.is_ok()).then(|| validation_findings(&report)))
 }
 
 trait ExactnessTarget {
@@ -4821,8 +4854,17 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             ))
         }?;
         let face_id = face_ids[loop_record.face].clone();
+        let face_reversed = raw.faces[loop_record.face].reversed_surface;
         let mut coedges = Vec::new();
-        for trim_index in &loop_record.trims {
+        // Trims run with the face on their left about the surface normal; a
+        // neutral loop runs about the face normal, so a reversed face
+        // traverses its trims backwards.
+        let traversal: Vec<&usize> = if face_reversed {
+            loop_record.trims.iter().rev().collect()
+        } else {
+            loop_record.trims.iter().collect()
+        };
+        for trim_index in traversal {
             let trim = &raw.trims[*trim_index];
             let trim_refs = &resolved.trims[*trim_index];
             let coedge_id = {
@@ -4877,7 +4919,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 edge: edge_id,
                 radial_next: coedge_id.clone(),
                 sense: coedge_sense(
-                    trim.reversed_3d,
+                    trim.reversed_3d ^ face_reversed,
                     trim_refs
                         .edge
                         .is_some_and(|edge| raw.edges[edge].proxy_reversed),
@@ -4939,14 +4981,18 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
 
     for (component, shell) in grouping.shells.iter().enumerate() {
         let region_label = shell.region;
-        let region_id = {
-            Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::RegionId::compose(
-                &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
+        let region_id = cadmpeg_ir::ids::RegionId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
+            if grouping.serialized_regions {
                 key.clone()
                     .then(cadmpeg_ir::identity_key!(".slot-"))
-                    .then(region_label),
-            ))
-        }?;
+                    .then(region_label)
+            } else {
+                key.clone()
+                    .then(cadmpeg_ir::identity_key!(".component-"))
+                    .then(region_label)
+            },
+        );
         let shell_id = {
             Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::ShellId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
@@ -4988,10 +5034,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     for region in &staged.draft.model().regions {
         body_regions.push(region.id.clone());
     }
-    let (body_kind, body_kind_substituted) = brep.body_kind(writer_version);
-    if let Some(loss) = body_kind_substituted {
-        staged.typed_losses.push(loss);
-    }
+    let body_kind = brep.body_kind();
 
     staged.draft.model_mut().bodies.push(Body {
         id: body_id.clone(),
@@ -5710,7 +5753,12 @@ fn brep_free_vertex_indices(
 struct ShellGrouping {
     face_groups: Vec<usize>,
     shells: Vec<ShellGroup>,
+    /// The Brep serializes region records that do not assign one bounded
+    /// region to each face.
     fallback: bool,
+    /// Each shell's region label is a serialized region index rather than an
+    /// edge-incidence component number.
+    serialized_regions: bool,
 }
 
 struct ShellGroup {
@@ -5725,28 +5773,7 @@ fn region_shell_groups(
     components: &[usize],
 ) -> Result<ShellGrouping, crate::curves::GeometryError> {
     if raw.minor < 3 || raw.regions.is_empty() {
-        let mut face_groups =
-            ctx.alloc_filled(components.len(), 0usize, "Rhino Brep fallback face groups")?;
-        let mut groups = HashMap::new();
-        for (face, component) in components.iter().copied().enumerate() {
-            push_group_face(&mut groups, component, face);
-        }
-        let groups = ordered_group_faces(groups);
-        let mut shells = Vec::new();
-        for (group, (_component, faces)) in groups.into_iter().enumerate() {
-            for face in &faces {
-                face_groups[*face] = group;
-            }
-            shells.push(ShellGroup {
-                region: group,
-                faces,
-            });
-        }
-        return Ok(ShellGrouping {
-            face_groups,
-            shells,
-            fallback: false,
-        });
+        return region_shell_groups_without_records(ctx, components, false);
     }
     let mut face_groups =
         ctx.alloc_filled(components.len(), 0usize, "Rhino Brep region face groups")?;
@@ -5769,7 +5796,7 @@ fn region_shell_groups(
             bounded_count += 1;
         }
         if bounded_count != 1 {
-            return region_shell_groups_without_records(ctx, components);
+            return region_shell_groups_without_records(ctx, components, true);
         }
         if let Some(region) = bounded_region {
             push_group_face(&mut grouped, (region, components[face]), face);
@@ -5787,12 +5814,15 @@ fn region_shell_groups(
         face_groups,
         shells,
         fallback: false,
+        serialized_regions: true,
     })
 }
 
+/// Groups faces into one shell and one region per edge-incidence component.
 fn region_shell_groups_without_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     components: &[usize],
+    records_unusable: bool,
 ) -> Result<ShellGrouping, crate::curves::GeometryError> {
     let mut face_groups =
         ctx.alloc_filled(components.len(), 0usize, "Rhino Brep incidence face groups")?;
@@ -5814,7 +5844,8 @@ fn region_shell_groups_without_records(
     Ok(ShellGrouping {
         face_groups,
         shells,
-        fallback: true,
+        fallback: records_unusable,
+        serialized_regions: false,
     })
 }
 

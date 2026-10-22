@@ -20,10 +20,8 @@
 //! shared policy. Each record reader owns the counterfactual for the field or
 //! topology choice the stamp would verify. Missing-stamp field and layout
 //! choices charge
-//! [`crate::loss::RhinoLossCode::SourceWriterStampUnverified`]; a body-kind
-//! choice charges
-//! [`crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted`]. Both are
-//! losses inside an admitted archive dialect. Archive-level admission is
+//! [`crate::loss::RhinoLossCode::SourceWriterStampUnverified`], a loss inside
+//! an admitted archive dialect. Archive-level admission is
 //! orthogonal to those record decisions and must never be derived from them.
 //!
 //! # Residual admission follows the observed archive word

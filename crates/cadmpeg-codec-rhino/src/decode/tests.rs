@@ -1638,10 +1638,12 @@ fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_determi
         .any(|loss| loss.severity == Severity::Error));
 }
 
-/// The body-kind and B-rep domain charges reach the report as typed codes.
+/// The B-rep domain charge reaches the report as a typed code, and the stored
+/// solid cache selects the body kind for every writer version.
 ///
-/// Both are produced as typed losses at their parse sites. This asserts the
-/// loss codes that survive the decode pipeline.
+/// `ON_Brep::Read` resets `m_is_solid` only below `20021002`, a value no
+/// archive `OpenNURBS` version reaches, so the stamped and unstamped readings
+/// agree.
 #[test]
 fn missing_stamp_carries_brep_typed_loss_codes() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -1664,15 +1666,6 @@ fn missing_stamp_carries_brep_typed_loss_codes() {
     // The stored flag is trusted, though the three edges carry one trim each.
     assert_eq!(unstamped.ir().model.bodies[0].kind, BodyKind::Solid);
     assert!(
-        unstamped
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind()),
-        "{:?}",
-        unstamped.report().losses
-    );
-    assert!(
         unstamped.report().losses.iter().any(|loss| loss.code
             == RhinoLossCode::SourceWriterStampUnverified.kind()
             && loss.message.contains("edge domains")),
@@ -1680,21 +1673,21 @@ fn missing_stamp_carries_brep_typed_loss_codes() {
         unstamped.report().losses
     );
 
-    // A stamp older than both cutoffs keeps the same record layout readable and
-    // vouches for the reading, so the body is gauged as a sheet and nothing is
-    // charged. Any newer stamp would also change the edge and trim layout.
+    // A stamp older than the edge and trim layout cutoffs keeps the same record
+    // layout readable and vouches for the reading, so nothing is charged.
     let stamped = decode_archive(crate::test_support::test_archive::archive_writer(
         "50",
         200_206_170,
         &[solid_brep],
     ));
     assert_eq!(stamped.ir().model.bodies.len(), 1);
-    assert_eq!(stamped.ir().model.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(stamped.ir().model.bodies[0].kind, BodyKind::Solid);
     assert!(
-        !stamped.report().losses.iter().any(|loss| {
-            loss.code == RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind()
-                || loss.code == RhinoLossCode::SourceWriterStampUnverified.kind()
-        }),
+        !stamped
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == RhinoLossCode::SourceWriterStampUnverified.kind()),
         "{:?}",
         stamped.report().losses
     );

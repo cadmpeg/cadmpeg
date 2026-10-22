@@ -447,61 +447,6 @@ object-attributes reader selects the item-coded form only at or above
 expects the mapping tag only at or above 200606010
 (`opennurbs_mesh.cpp:2692`). A corrected value must stay above both.
 
-### QA-08. Legacy major-2 Brep vertices for an edge with no trim
-
-**Question.** What vertex identity does a legacy major-2 Brep edge with no
-trim receive, and what does the transfer record for it?
-
-**Known.** `rhino_3dm.md` §15.0 "Major-2 has no serialized vertex table."
-states that an edge with no trim uses its C3 endpoints as independent vertex
-positions. `brep.rs:1056-1076` does not keep them independent: `legacy_vertex`
-at `brep.rs:1350-1358` returns an existing vertex when its stored point is
-exactly equal to the new point, so two such edges share a vertex and
-`brep.rs:1078-1097` then averages their endpoints. The source reader creates
-one edge for each C3 curve at `opennurbs_brep_io.cpp:1239-1244`, but builds
-vertices only from loop rings at `opennurbs_brep.cpp:5994-6006`; an edge with
-no trim keeps the `ON_BrepEdge` initial vertex indices of `-1`
-(`opennurbs_brep.cpp:158-171`). The transfer emits no loss for the added
-vertices.
-
-**Need.** The owner must state the vertex identity rule for a trimless legacy
-edge, the specification must state the same rule, and the added vertices need
-a named loss or finding because the source admits none.
-
-**Note.** Exact floating-point equality is the current identity test. Two
-trimless edges whose endpoints differ by one unit in the last place receive
-separate vertices, and a trimless edge whose two C3 endpoints are exactly
-equal collapses to one vertex used twice. Each result changes the vertex
-count, the averaged vertex position, and the vertex tolerance that §15.0
-derives from that position.
-
-### QA-09. Brep solid-cache reset threshold
-
-**Question.** Which archive OpenNURBS version values make the serialized Brep
-`m_is_solid` cache unusable, and does any source reader discard it?
-
-**Known.** `rhino_3dm.md` §15.5 "For minor at least 2, the writer copies the
-Brep" states that the source reader resets the value to 0 when the archive
-OpenNURBS writer version is before 2 October 2002.
-`decode.rs:4613-4615` puts that rule in code: it keeps the stored value only
-when the writer version is at least 200210020. The source literal is not that
-value. `opennurbs_brep_io.cpp:1134-1137` reads
-`ArchiveOpenNURBSVersion() < 20021002`, which is eight digits, while every
-archive value in the year-month-day form has nine digits and starts at
-200012210 (`opennurbs_version_number.cpp:167-174`). The source condition is
-therefore false for every such archive, and the source reader keeps the stored
-value in each of them.
-
-**Need.** The owner and the specification must state the reset rule that the
-source applies, or state that the codec deliberately departs from the source
-literal and name the evidence for the departure.
-
-**Note.** A Brep in an archive whose writer version is between 200012210 and
-200210019 has a minor at least 2 record whose `m_is_solid` the source keeps and
-the codec discards. When that stored value is 1 or 2 and the topology does not
-close, the neutral `BodyKind` becomes a sheet where the source is solid. The
-codec also has no diagnostic for the discarded cache.
-
 ### QA-10. Marked CADIR decisions have no decision records
 
 **Question.** Where does each marked CADIR decision record its Question,
@@ -565,18 +510,16 @@ side-effect rule.
 ### QA-12. Shipped-guess paths lack discriminating witnesses
 
 **Question.** Which tests fail when the shipped selection and version-gate
-rules named by QA-04 through QA-09 and QA-11 choose the wrong branch?
+rules named by QA-04 through QA-07 and QA-11 choose the wrong branch?
 
 **Known.** The current tests exercise archive-2 framing, current instance
 definitions, individual valid and malformed gradient carriers, current earth
 anchors, and current material forms. No test contains an archive-2 through
 archive-4 packed instance definition, an archive-60 dimension style below the
 arrow-block writer threshold, a zero-valued old-writer earth anchor, an
-archive-60-or-later old-writer packed material, a trimless legacy major-2 Brep
-edge, a Brep solid cache on either side of the disputed threshold, or a
-malformed-first duplicate gradient sequence. The source tree contains no test
-literal for thresholds `2348833437`, `2348834428`, `2348833910`, or
-`200210020`. Writer round-trip tests accept the writer-version value emitted by
+archive-60-or-later old-writer packed material, or a malformed-first
+duplicate gradient sequence. The source tree contains no test literal for
+thresholds `2348833437`, `2348834428`, or `2348833910`. Writer round-trip tests accept the writer-version value emitted by
 the same implementation and therefore do not independently establish QA-07.
 
 **Need.** One independent or source-derived witness per branch boundary named
@@ -609,27 +552,6 @@ source geometries and admits the result as the neutral carrier.
 without claiming one continuous curve, or defines an explicit repaired
 geometry whose invented join and displacement remain queryable on that curve.
 The ordinary neutral carrier must not present the midpoint as source geometry.
-
-### BR-01. Region topology replaced by incidence-derived shells
-
-**Question.** What neutral region and shell structure can transfer when a
-minor-3 Brep's serialized region topology does not assign exactly one bounded
-region to each face?
-
-**Known.** The Brep stores explicit face-side and region records.
-`crates/cadmpeg-codec-rhino/src/decode.rs:4997-5060` uses those records only
-when every face has one bounded side. Otherwise
-`region_shell_groups_without_records` groups faces by edge-incidence component
-and assigns generated numeric region labels. The decoder commits those inferred
-shells and reports that incidence-derived shells were used. The source region
-records remain in native data but no longer determine the neutral ownership
-graph.
-
-**Need.** Edge incidence can identify connected face components, but it does
-not define the source's bounded-region membership. The answer withholds the
-region and shell projection when the explicit relationship is unusable, or
-represents the incidence grouping as inferred topology that cannot be mistaken
-for the serialized Brep regions.
 
 ### WR-01. Unspecified loop role selected from neutral list order
 
@@ -722,73 +644,25 @@ findings. If an integrity loss is recoverable enough for a successful check,
 its severity and strict consequence must say so instead of placing an ignored
 error in a successful report.
 
-### TP-01. Decoder output fails geometric-consistency validation
+### AR-01. Non-canonical arc NURBS form misses its arc parameterization
 
-**Question.** Which topology and geometry can the decoder return as a
-successful Rhino decode?
+**Question.** Which neutral carrier reproduces `ON_ArcCurve` evaluation at an
+arbitrary parameter when the arc is not a full circle on `[0, 2π]`?
 
-**Known.** The V1 path appends legacy Breps directly at
-`legacy.rs:2107-2444` and never applies the Rhino candidate-admission gate.
-The object path commits Brep drafts at `decode.rs:3320-3405`. Returned models
-from both paths can fail final geometric consistency: edge curves miss their
-declared vertex positions, and pcurves mapped through their face surfaces miss
-the same vertices. The observed displacement reaches `190.716486` model
-units. The same defect is present in archive-2 and current class-table Breps,
-so it is not confined to V1 framing.
+**Known.** `ON_ArcCurve::Evaluate` maps its domain linearly onto the arc
+angle. `curves.rs` `read_arc` keeps a neutral circle only for a full circle
+whose angle and domain are both `[0, 2π]`, and otherwise emits a rational
+quadratic NURBS whose knots span the native domain. The rational quadratic
+form is not linear in angle, so a point at an interior parameter differs from
+the arc point at the same parameter. A Brep edge whose proxy domain is a
+proper sub-interval of such an arc then misses its vertex: in the
+`flevodam_example.3dm` web file two edges on `[-2π, 0]` arcs miss by up to
+1260.79 model units, and the Brep topology falls back with
+`topology.brep-fallback`.
 
-**Need.** Every Brep transfer path must establish edge/vertex and
-pcurve/surface consistency before commit. A failing candidate must remain
-opaque or retain only independently valid carriers; a successful decode must
-pass the same geometric checks used by `cadmpeg check`.
-
-### TP-02. Legacy Breps emit equal senses in two-member radial rings
-
-**Question.** Which orientation relation must the two coedges of a shared V1
-edge have in neutral topology?
-
-**Known.** `legacy.rs:1382-1770` builds V1 edges, coedges, and radial rings.
-Final validation at `validate/topology.rs:6374-6385` reports
-`two-member radial ring has equal coedge senses` when both incident coedges
-carry the same sense. The condition occurs across many decoded V1 Breps and
-produces thousands of warnings, rather than an isolated degenerate edge.
-
-**Need.** Establish whether the V1 trim-reversal mapping or the neutral
-validator's sense invariant is wrong, then make the decoder and invariant
-agree. Add a two-face shared-edge witness that checks face reversal, trim
-reversal, coedge sense, and radial order together.
-
-### BR-02. Invalid face surface slots discard complete Brep topology
-
-**Question.** What can transfer when a Brep face references a surface slot
-that the current reader does not admit?
-
-**Known.** `brep.rs:496-503` rejects the complete raw topology when
-`face.surface` does not identify a typed surface slot. `decode.rs:3406-3428`
-then retains decoded child curves, surfaces, or mesh caches but discards the
-body, regions, shells, faces, loops, edges, coedges, vertices, points, and
-pcurves. The resulting `topology.brep-fallback` loss has occurred repeatedly
-for otherwise readable Breps.
-
-**Need.** Determine whether the rejected indexes use an unhandled serialized
-slot form or genuinely reference absent data. Admit the correct slot grammar
-when present. When the source reference is absent, retain the complete Brep
-record and expose only carriers whose identity does not imply discarded
-topology.
-
-### BR-03. Valid Brep not-solid cache value is reported as invalid
-
-**Question.** Which values are valid for the serialized Brep `m_is_solid`
-cache?
-
-**Known.** OpenNURBS defines `0` as unset, `1` as outward solid, `2` as inward
-solid, and `3` as not solid at `opennurbs_brep.cpp:6977-6996`.
-`brep.rs:647-657` accepts only `0..=2` and reports value `3` as an invalid
-enumeration. Valid non-solid Breps therefore receive
-`container.enumeration-value-degraded` warnings.
-
-**Need.** Accept all four source-defined values and map value `3` to the
-documented non-solid result. Add a witness for each cache value and for a value
-outside the source-defined range.
+**Need.** A carrier or parameter map that reproduces `ON_ArcCurve`
+evaluation for every domain and angle interval, applied to object curves,
+Brep C3 curves, and Brep C2 curves.
 
 ### OF-01. Built-in object families remain opaque
 

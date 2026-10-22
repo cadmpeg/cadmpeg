@@ -78,6 +78,8 @@ pub(super) struct WritableCoedge<'a> {
     pub(super) edge: usize,
     pub(super) owner_loop: usize,
     radial_next: usize,
+    /// Rhino `m_bRev3d`: the coedge sense relative to the face's surface normal.
+    pub(super) reversed_3d: bool,
     pub(super) c2: ([u8; 16], Vec<u8>),
     pub(super) fit_tolerance: f64,
 }
@@ -91,6 +93,8 @@ pub(super) struct WritablePcurve<'a> {
 pub(super) struct WritableLoop<'a> {
     pub(super) source: &'a Loop,
     pub(super) face: usize,
+    /// Coedges in Rhino trim order, with the face on their left about the
+    /// surface normal.
     pub(super) coedges: Vec<usize>,
 }
 
@@ -621,7 +625,7 @@ impl<'a> WritableModel<'a> {
                         loop_.id.as_str()
                     )));
                 }
-                let coedges = loop_
+                let mut coedges = loop_
                     .coedges()
                     .iter()
                     .map(|id| {
@@ -634,6 +638,9 @@ impl<'a> WritableModel<'a> {
                         resolve(&coedge_positions, id.as_str())
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                if faces[face].source.sense == Sense::Reversed {
+                    coedges.reverse();
+                }
                 Ok(WritableLoop {
                     source: loop_,
                     face,
@@ -692,10 +699,13 @@ impl<'a> WritableModel<'a> {
                     .and_then(|pcurve| pcurve.source.fit_tolerance())
                     .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
                 let face = &faces[loops[owner_loop].face];
+                let reversed_3d =
+                    (coedge.sense == Sense::Reversed) ^ (face.source.sense == Sense::Reversed);
+                let trim_sense = if reversed_3d { Sense::Reversed } else { Sense::Forward };
                 let c2 = match surfaces[face.surface] {
                     WritableFaceSurface::Plane { origin, normal, u_axis } => {
                         let generated = generated_projected_brep_c2_curve(
-                            &vertices, &edges[edge], coedge.sense, origin, u_axis,
+                            &vertices, &edges[edge], trim_sense, origin, u_axis,
                             normal.cross(u_axis),
                         )?;
                         match pcurve {
@@ -722,7 +732,7 @@ impl<'a> WritableModel<'a> {
                         )?;
                         validate_nurbs_trim(
                             surface, face_tolerance,
-                            &edges[edge], coedge.sense, &pcurve,
+                            &edges[edge], trim_sense, &pcurve,
                         )?;
                         pcurve.payload
                     }
@@ -732,6 +742,7 @@ impl<'a> WritableModel<'a> {
                     edge,
                     owner_loop,
                     radial_next: resolve(&coedge_positions, coedge.radial_next.as_str())?,
+                    reversed_3d,
                     c2,
                     fit_tolerance,
                 })
@@ -903,13 +914,14 @@ impl<'a> WritableModel<'a> {
         Ok(result)
     }
 
+    /// The start and end vertices of a coedge in Rhino trim direction.
     pub(super) fn endpoints(&self, coedge: usize) -> (usize, usize) {
         let coedge = &self.coedges[coedge];
         let edge = &self.edges[coedge.edge];
-        if coedge.source.sense == Sense::Forward {
-            (edge.start, edge.end)
-        } else {
+        if coedge.reversed_3d {
             (edge.end, edge.start)
+        } else {
+            (edge.start, edge.end)
         }
     }
 }

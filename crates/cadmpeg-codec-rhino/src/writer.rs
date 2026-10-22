@@ -966,7 +966,7 @@ fn brep_payload(
             record.extend(wire_index(coedge.edge)?.to_le_bytes());
             record.extend(wire_index(from)?.to_le_bytes());
             record.extend(wire_index(to)?.to_le_bytes());
-            record.extend(i32::from(coedge.source.sense == Sense::Reversed).to_le_bytes());
+            record.extend(i32::from(coedge.reversed_3d).to_le_bytes());
             let same_loop = edge.uses.len() == 2
                 && model.coedges[edge.uses[0]].owner_loop == model.coedges[edge.uses[1]].owner_loop;
             record.extend(brep_trim_type(edge.uses.len(), same_loop).to_le_bytes());
@@ -1087,6 +1087,8 @@ fn brep_loop_type(role: LoopBoundaryRole, first_on_face: bool) -> i32 {
 }
 
 fn planar_solid_orientation(model: &WritableModel<'_>) -> i32 {
+    use cadmpeg_ir::topology::Sense;
+
     let Some(reference) = model.vertices.first().map(|vertex| vertex.point) else {
         return 0;
     };
@@ -1113,11 +1115,18 @@ fn planar_solid_orientation(model: &WritableModel<'_>) -> i32 {
             .iter()
             .map(|coedge| model.vertices[model.endpoints(*coedge).0].point)
             .collect::<Vec<_>>();
+        // Trim order winds about the surface normal; the face normal of a
+        // reversed face winds the other way.
+        let orientation = if model.faces[loop_.face].source.sense == Sense::Reversed {
+            -1.0
+        } else {
+            1.0
+        };
         if let Some(origin) = ring.first() {
             for triangle in ring[1..].windows(2) {
                 let a = local(triangle[0]);
                 let b = local(triangle[1]);
-                let term = local(*origin).dot(a.cross(b));
+                let term = orientation * local(*origin).dot(a.cross(b));
                 let adjusted = term - correction;
                 let total = volume6 + adjusted;
                 correction = (total - volume6) - adjusted;

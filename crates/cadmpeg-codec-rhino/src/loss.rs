@@ -241,9 +241,6 @@ pub(crate) enum RhinoLossCode {
     SourceDialectUnverified,
     /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
-    /// Body kind came from the closed-shell gauge or from an unverified stored
-    /// solid flag rather than from a flag the writer stamp vouches for.
-    TopologyBodyKindGaugeSubstituted,
 }
 
 impl RhinoLossCode {
@@ -292,7 +289,6 @@ impl RhinoLossCode {
         Self::SourceWriterStampUnverified,
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
-        Self::TopologyBodyKindGaugeSubstituted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -341,7 +337,6 @@ impl RhinoLossCode {
             Self::SourceWriterStampUnverified => "source.writer-stamp-unverified",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
-            Self::TopologyBodyKindGaugeSubstituted => "topology.body-kind-gauge-substituted",
         }
     }
 
@@ -406,7 +401,6 @@ impl RhinoLossCode {
             }
             Self::WriterSupportGeometryWithheld => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
-            Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
         }
     }
 
@@ -503,7 +497,6 @@ mod tests {
                 "source.writer-stamp-unverified",
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",
-                "topology.body-kind-gauge-substituted",
             ]
         );
     }

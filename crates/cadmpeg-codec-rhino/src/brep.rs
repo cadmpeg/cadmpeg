@@ -370,12 +370,17 @@ pub(crate) struct RawBrepRegion {
     pub(crate) source_range: Range<usize>,
 }
 
-/// The `ON_Brep` solid state a stored flag names.
+/// The `ON_Brep::m_is_solid` cache state a stored flag names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SolidState {
-    Open,
-    Closed,
-    ClosedManifold,
+    /// 0: the cache is unset.
+    Unset,
+    /// 1: a solid with outward normals.
+    SolidOutward,
+    /// 2: a solid with inward normals.
+    SolidInward,
+    /// 3: not a solid.
+    NotSolid,
 }
 
 /// The `ON_Brep` solid flag as the archive carries it.
@@ -391,20 +396,11 @@ pub(crate) enum RawSolidFlag {
 impl RawSolidFlag {
     fn parse(value: i32) -> Self {
         match value {
-            0 => Self::Known(SolidState::Open),
-            1 => Self::Known(SolidState::Closed),
-            2 => Self::Known(SolidState::ClosedManifold),
+            0 => Self::Known(SolidState::Unset),
+            1 => Self::Known(SolidState::SolidOutward),
+            2 => Self::Known(SolidState::SolidInward),
+            3 => Self::Known(SolidState::NotSolid),
             other => Self::OutOfRange(other),
-        }
-    }
-
-    fn stored(self) -> Option<i32> {
-        match self {
-            Self::Unstamped => None,
-            Self::Known(SolidState::Open) => Some(0),
-            Self::Known(SolidState::Closed) => Some(1),
-            Self::Known(SolidState::ClosedManifold) => Some(2),
-            Self::OutOfRange(value) => Some(value),
         }
     }
 }
@@ -807,81 +803,34 @@ impl ValidatedRawBrep {
         &self.warnings
     }
 
-    /// Selects the serialized body kind and reports an unverified stamp-dependent gauge.
-    pub(crate) fn body_kind(
-        &self,
-        writer_version: Option<i64>,
-    ) -> (BrepBodyKind, Option<cadmpeg_ir::report::loss::LossNote>) {
-        body_kind(&self.raw, &self.resolved, writer_version)
+    /// Selects the serialized body kind.
+    pub(crate) fn body_kind(&self) -> BrepBodyKind {
+        let closed = !self.raw.faces.is_empty()
+            && (0..self.resolved.edges.len()).all(|edge| {
+                self.resolved
+                    .trims
+                    .iter()
+                    .filter(|trim| trim.edge == Some(edge))
+                    .count()
+                    == 2
+            });
+        serialized_body_kind(self.raw.is_solid, closed)
     }
 }
 
-/// Classifies one B-rep body, reporting whether a missing stamp decided it.
-fn body_kind(
-    raw: &RawBrep,
-    resolved: &ResolvedBrep,
-    writer_version: Option<i64>,
-) -> (BrepBodyKind, Option<cadmpeg_ir::report::loss::LossNote>) {
-    let closed = !raw.faces.is_empty()
-        && (0..resolved.edges.len()).all(|edge| {
-            resolved
-                .trims
-                .iter()
-                .filter(|trim| trim.edge == Some(edge))
-                .count()
-                == 2
-        });
-    let kind = serialized_body_kind(raw.is_solid, writer_version, closed);
-    let loss = if body_kind_rests_on_missing_stamp(raw.is_solid, writer_version, closed) {
-        let code = crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted;
-        Some(match raw.is_solid.stored() {
-            Some(stored) => code.note(format_args!("Brep body kind gauge substituted: stored solid flag {stored} was trusted over the closed-shell gauge because the writer-version stamp is absent")),
-            None => code.note(format_args!("Brep body kind gauge substituted: stored solid flag absent was trusted over the closed-shell gauge because the writer-version stamp is absent")),
-        })
-    } else {
-        None
-    };
-    (kind, loss)
-}
-
-/// First openNURBS writer version whose `ON_Brep` stores a meaningful solid flag.
-const SOLID_FLAG_WRITER_VERSION: i64 = 200_210_020;
-
-/// True when a missing writer stamp is what decided the body kind.
-///
-/// The stored solid flag is trusted when the stamp is absent and ignored when
-/// the stamp is older than [`SOLID_FLAG_WRITER_VERSION`], so an unstamped
-/// archive is classified on an assumption the archive does not carry. This
-/// compares the two readings of the same bytes and reports only a disagreement:
-/// where both readings pick the same body kind nothing was substituted.
-fn body_kind_rests_on_missing_stamp(
-    is_solid: RawSolidFlag,
-    writer_version: Option<i64>,
-    closed: bool,
-) -> bool {
-    writer_version.is_none()
-        && serialized_body_kind(is_solid, None, closed)
-            != serialized_body_kind(is_solid, Some(SOLID_FLAG_WRITER_VERSION - 1), closed)
-}
-
-fn serialized_body_kind(
-    is_solid: RawSolidFlag,
-    writer_version: Option<i64>,
-    closed: bool,
-) -> BrepBodyKind {
-    let trusted = writer_version.is_none_or(|version| version >= SOLID_FLAG_WRITER_VERSION);
-    let shell_gauge = if closed {
-        BrepBodyKind::Solid
-    } else {
-        BrepBodyKind::Sheet
-    };
+fn serialized_body_kind(is_solid: RawSolidFlag, closed: bool) -> BrepBodyKind {
     match is_solid {
-        RawSolidFlag::Known(state) if trusted => match state {
-            SolidState::Closed | SolidState::ClosedManifold => BrepBodyKind::Solid,
-            SolidState::Open => shell_gauge,
-        },
-        RawSolidFlag::Known(_) | RawSolidFlag::Unstamped | RawSolidFlag::OutOfRange(_) => {
-            shell_gauge
+        RawSolidFlag::Known(SolidState::SolidOutward | SolidState::SolidInward) => {
+            BrepBodyKind::Solid
+        }
+        RawSolidFlag::Known(SolidState::Unset | SolidState::NotSolid)
+        | RawSolidFlag::Unstamped
+        | RawSolidFlag::OutOfRange(_) => {
+            if closed {
+                BrepBodyKind::Solid
+            } else {
+                BrepBodyKind::Sheet
+            }
         }
     }
 }
@@ -1445,23 +1394,22 @@ fn parse_legacy_major2(
     }
     let mut edges = Vec::new();
     for (edge_index, curve) in c3_meta.iter().enumerate() {
-        let endpoints = if let Some(trim_index) = edge_trim_indexes[edge_index].first() {
+        // The source reader assigns vertices only through loop trims, so an
+        // edge that no trim uses keeps vertex index -1 and fails validation.
+        let endpoints = edge_trim_indexes[edge_index].first().map(|trim_index| {
             let trim = &trims[*trim_index];
             [
                 endpoint_vertices[legacy_trim_endpoint_for_edge(trim, *trim_index, 0)],
                 endpoint_vertices[legacy_trim_endpoint_for_edge(trim, *trim_index, 1)],
             ]
-        } else {
-            let start = legacy_vertex(&mut vertices, curve.endpoints[0], curve.range.start)?;
-            let end = legacy_vertex(&mut vertices, curve.endpoints[1], curve.range.start)?;
-            [start, end]
-        };
-        for (vertex, point) in endpoints
-            .into_iter()
-            .zip([curve.endpoints[0], curve.endpoints[1]])
-        {
-            let vertex = &mut vertices[vertex];
-            vertex.add_point(point);
+        });
+        if let Some(endpoints) = endpoints {
+            for (vertex, point) in endpoints
+                .into_iter()
+                .zip([curve.endpoints[0], curve.endpoints[1]])
+            {
+                vertices[vertex].add_point(point);
+            }
         }
         let edge_index_i32 = i32::try_from(edge_index)
             .map_err(|_| error(curve.range.start, "legacy Brep edge index overflow"))?;
@@ -1478,12 +1426,15 @@ fn parse_legacy_major2(
                     .map_err(|_| error(curve.range.start, "legacy Brep trim index overflow"))?,
             );
         }
-        let endpoints = [
-            i32::try_from(endpoints[0])
-                .map_err(|_| error(curve.range.start, "legacy Brep vertex index overflow"))?,
-            i32::try_from(endpoints[1])
-                .map_err(|_| error(curve.range.start, "legacy Brep vertex index overflow"))?,
-        ];
+        let endpoints = match endpoints {
+            Some(endpoints) => [
+                i32::try_from(endpoints[0])
+                    .map_err(|_| error(curve.range.start, "legacy Brep vertex index overflow"))?,
+                i32::try_from(endpoints[1])
+                    .map_err(|_| error(curve.range.start, "legacy Brep vertex index overflow"))?,
+            ],
+            None => [-1, -1],
+        };
         edges.push(RawBrepEdge {
             index: edge_index_i32,
             curve: edge_index_i32,
@@ -1516,9 +1467,9 @@ fn parse_legacy_major2(
     }
     for edge in &edges {
         for vertex in edge.vertices {
-            let vertex = slot(vertex, vertices.len(), "legacy Brep edge vertex")?;
-
-            vertices[vertex].edges.push(edge.index);
+            if let Some(vertex) = position(Some(vertex)) {
+                vertices[vertex].edges.push(edge.index);
+            }
         }
     }
     for edge in &edges {
@@ -1757,37 +1708,6 @@ fn legacy_union(parent: &mut [usize], left: usize, right: usize) {
 /// instance it happened at. `position` is what names it — the archive offset
 /// this vertex was read from. It has no other use, and it is a parameter
 /// because the vertex list alone does not carry it.
-fn legacy_vertex(
-    vertices: &mut Vec<LegacyVertex>,
-    point: [f64; 3],
-    position: usize,
-) -> Result<usize, GeometryError> {
-    if let Some((index, _)) = vertices
-        .iter()
-        .enumerate()
-        .find(|(_, value)| value.vertex.point.get() == point)
-    {
-        return Ok(index);
-    }
-    let index = vertices.len();
-    let stored_index =
-        i32::try_from(index).map_err(|_| error(position, "legacy Brep vertex index overflow"))?;
-
-    vertices.push(LegacyVertex {
-        vertex: RawBrepVertex {
-            index: stored_index,
-            point: CoordinateLane::Derived(point),
-            edges: Vec::new(),
-            tolerance: 0.0,
-            source_range: 0..0,
-        },
-        point_sum: [0.0; 3],
-        point_scale: [0.0; 3],
-        point_count: 0,
-    });
-    Ok(index)
-}
-
 fn read_legacy_mesh_sides(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -3004,12 +2924,22 @@ mod tests {
     #[test]
     fn numerical_followup_legacy_vertex_mean_stays_finite() {
         for endpoints in [[1e308, 1e308], [-1e308, 1e308]] {
-            let mut vertices = Vec::new();
-            super::legacy_vertex(&mut vertices, [endpoints[0], 0., 0.], 0).unwrap();
+            let mut vertex = super::LegacyVertex {
+                vertex: super::RawBrepVertex {
+                    index: 0,
+                    point: super::CoordinateLane::Derived([0.0; 3]),
+                    edges: Vec::new(),
+                    tolerance: 0.0,
+                    source_range: 0..0,
+                },
+                point_sum: [0.0; 3],
+                point_scale: [0.0; 3],
+                point_count: 0,
+            };
             for x in endpoints {
-                vertices[0].add_point([x, 0., 0.]);
+                vertex.add_point([x, 0., 0.]);
             }
-            let vertex = vertices.pop().unwrap().into_vertex().unwrap();
+            let vertex = vertex.into_vertex().unwrap();
             assert_eq!(
                 vertex.point.get(),
                 [(endpoints[0] / 2.0 + endpoints[1] / 2.0), 0., 0.]
@@ -3018,9 +2948,8 @@ mod tests {
     }
 
     use super::{
-        body_kind_rests_on_missing_stamp, finite_tolerance, legacy_curve_shape,
-        legacy_decoded_curve_endpoints, ordered_interval, read_children, read_faces,
-        read_legacy_mesh_sides, read_mesh_sides, read_region_records,
+        finite_tolerance, legacy_curve_shape, legacy_decoded_curve_endpoints, ordered_interval,
+        read_children, read_faces, read_legacy_mesh_sides, read_mesh_sides, read_region_records,
         read_region_topology_userdata, read_regions, read_trims, read_vertices,
         serialized_body_kind, supported_class, validate_rings, BrepBodyKind, RawBrep,
         RawBrepBaseType, RawBrepChild, RawBrepChildren, RawBrepEdge, RawBrepFace, RawBrepFaceSide,
@@ -3466,119 +3395,62 @@ mod tests {
         }
     }
 
+    /// `opennurbs_brep_io.cpp` reads values 0 through 3 as `m_is_solid`
+    /// (`opennurbs_brep.cpp` `SolidOrientation`: 0 unset, 1 outward solid, 2
+    /// inward solid, 3 not solid) and resets any other value to unset.
     #[test]
-    fn serialized_solid_state_uses_valid_values_and_topology_fallback() {
+    fn solid_cache_values_parse_to_the_source_states() {
         assert_eq!(
-            serialized_body_kind(
-                RawSolidFlag::Known(SolidState::Closed),
-                Some(200_210_020),
-                false
-            ),
-            BrepBodyKind::Solid
+            RawSolidFlag::parse(0),
+            RawSolidFlag::Known(SolidState::Unset)
         );
         assert_eq!(
-            serialized_body_kind(
-                RawSolidFlag::Known(SolidState::ClosedManifold),
-                Some(200_210_020),
-                false
-            ),
-            BrepBodyKind::Solid
+            RawSolidFlag::parse(1),
+            RawSolidFlag::Known(SolidState::SolidOutward)
         );
         assert_eq!(
-            serialized_body_kind(RawSolidFlag::OutOfRange(3), Some(200_210_020), false),
-            BrepBodyKind::Sheet
+            RawSolidFlag::parse(2),
+            RawSolidFlag::Known(SolidState::SolidInward)
         );
         assert_eq!(
-            serialized_body_kind(RawSolidFlag::OutOfRange(3), Some(200_210_020), true),
-            BrepBodyKind::Solid
+            RawSolidFlag::parse(3),
+            RawSolidFlag::Known(SolidState::NotSolid)
         );
-        assert_eq!(
-            serialized_body_kind(
-                RawSolidFlag::Known(SolidState::Open),
-                Some(200_210_020),
-                true
-            ),
-            BrepBodyKind::Solid
-        );
-        assert_eq!(
-            serialized_body_kind(
-                RawSolidFlag::Known(SolidState::Open),
-                Some(200_210_020),
-                false
-            ),
-            BrepBodyKind::Sheet
-        );
-        assert_eq!(
-            serialized_body_kind(RawSolidFlag::Unstamped, Some(200_210_020), true),
-            BrepBodyKind::Solid
-        );
-        assert_eq!(
-            serialized_body_kind(
-                RawSolidFlag::Known(SolidState::Closed),
-                Some(200_210_019),
-                false
-            ),
-            BrepBodyKind::Sheet
-        );
+        assert_eq!(RawSolidFlag::parse(4), RawSolidFlag::OutOfRange(4));
+        assert_eq!(RawSolidFlag::parse(-1), RawSolidFlag::OutOfRange(-1));
     }
 
-    /// A missing stamp trusts the stored solid flag; the loss follows that reading.
-    ///
-    /// The same bytes classify as `Sheet` under any stamp older than the flag, so an
-    /// unstamped archive that reads `Solid` was classified on an assumption it does
-    /// not carry. Where the two readings agree nothing was substituted.
     #[test]
-    fn body_kind_gauge_charges_only_when_a_missing_stamp_changes_the_kind() {
-        assert_eq!(
-            serialized_body_kind(RawSolidFlag::Known(SolidState::Closed), None, false),
-            BrepBodyKind::Solid
-        );
-        assert!(body_kind_rests_on_missing_stamp(
-            RawSolidFlag::Known(SolidState::Closed),
-            None,
-            false
-        ));
-        assert!(body_kind_rests_on_missing_stamp(
-            RawSolidFlag::Known(SolidState::ClosedManifold),
-            None,
-            false
-        ));
-
-        // A modern stamp vouches for the same flag: the reading is verified.
-        assert!(!body_kind_rests_on_missing_stamp(
-            RawSolidFlag::Known(SolidState::Closed),
-            Some(200_210_020),
-            false
-        ));
-        // Both readings agree, so no kind was substituted.
-        assert!(!body_kind_rests_on_missing_stamp(
-            RawSolidFlag::Known(SolidState::Closed),
-            None,
-            true
-        ));
-        assert!(!body_kind_rests_on_missing_stamp(
-            RawSolidFlag::Known(SolidState::Open),
-            None,
-            false
-        ));
-        assert!(!body_kind_rests_on_missing_stamp(
+    fn serialized_solid_state_uses_valid_values_and_topology_fallback() {
+        for state in [SolidState::SolidOutward, SolidState::SolidInward] {
+            for closed in [false, true] {
+                assert_eq!(
+                    serialized_body_kind(RawSolidFlag::Known(state), closed),
+                    BrepBodyKind::Solid
+                );
+            }
+        }
+        for flag in [
+            RawSolidFlag::Known(SolidState::Unset),
+            RawSolidFlag::Known(SolidState::NotSolid),
+            RawSolidFlag::OutOfRange(4),
             RawSolidFlag::Unstamped,
-            None,
-            false
-        ));
+        ] {
+            assert_eq!(serialized_body_kind(flag, true), BrepBodyKind::Solid);
+            assert_eq!(serialized_body_kind(flag, false), BrepBodyKind::Sheet);
+        }
+    }
 
-        // The whole-record path reports the substitution as a typed loss.
+    /// The source reader compares the writer version with an eight-digit
+    /// literal that no archive version reaches, so every writer version keeps
+    /// the stored cache.
+    #[test]
+    fn stored_solid_cache_is_kept_for_every_writer_version() {
         let mut raw = one_face_raw();
         raw.minor = 2;
-        raw.is_solid = RawSolidFlag::Known(SolidState::Closed);
+        raw.is_solid = RawSolidFlag::Known(SolidState::SolidOutward);
         let validated = ValidatedRawBrep::try_new(raw).expect("valid Brep");
-        let (kind, substituted) = validated.body_kind(None);
-        assert_eq!(kind, BrepBodyKind::Solid);
-        assert_eq!(
-            substituted.as_ref().map(|loss| &loss.code),
-            Some(&crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind())
-        );
-        assert_eq!(validated.body_kind(Some(200_210_020)).1, None);
+        assert_eq!(validated.body_kind(), BrepBodyKind::Solid);
     }
 
     fn degenerate_trim_raw(trim_type: RawTrimKind, curve: Option<i32>) -> RawBrep {
