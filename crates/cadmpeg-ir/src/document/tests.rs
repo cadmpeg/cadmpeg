@@ -745,6 +745,25 @@ fn parser_distinguishes_malformed_json_from_version_rejection() {
 }
 
 #[test]
+fn unsupported_version_after_changed_model_shape_keeps_version_diagnostic() {
+    for version in ["6", "7"] {
+        let json = format!(
+            r#"{{"model":{{"features":{{"legacy":true}}}},"ir_version":"{version}","decode_depth":"full"}}"#
+        );
+        let error = CadIr::from_json(&json).unwrap_err().to_string();
+        for expected in [
+            "unsupported ir_version",
+            "expected 8",
+            "decode_depth",
+            "scope",
+            "report",
+        ] {
+            assert!(error.contains(expected), "{error}");
+        }
+    }
+}
+
+#[test]
 fn current_document_excludes_source_byte_accounting() {
     let ir = CadIr::empty();
     let json = serde_json::to_value(&ir).unwrap();
