@@ -497,6 +497,44 @@ and matches bodies by their measured geometry, not by their IDs.
   `compare.nothing-compared`; else `agree`. Surface-kind counts and `visible`
   are informational.
 
+## Numerical facts
+
+Three steps rest on sampling or on an assumption, and are not proofs. Every
+other step is exact up to the reported error terms.
+
+- Winding numbers and region membership use boundary polylines. Each chord
+  midpoint deviates from its piece by at most `1e-3` of the loop's
+  parameter-plane box diagonal. A loop feature narrower than that deviation
+  can change a winding number.
+- The tangent witness reads a tangent-continuous edge as a smooth
+  continuation of its two faces.
+- Extremum search on pieces other than lines and conics samples the
+  derivative at the Gauss–Kronrod nodes of each panel and refines each sign
+  change by bisection. Two roots between adjacent samples can be missed.
+
+## Before and after a change
+
+To see what a code change does to measured geometry, write the model with
+the old binary and compare it with the new one:
+
+```sh
+cadmpeg dump part.step -o before.cadir.json
+cadmpeg diff before.cadir.json part.step --geometry
+```
+
+Run the first command with the old binary and the second with the new
+binary. Both binaries must read one `IR_VERSION`. Across a version change,
+run the first command with the new binary built from the old source
+revision.
+
+## Guardrail
+
+Measurement is an oracle on decoded output. A decoder or encoder never
+selects a layout, carrier, sense, unit, or interpretation by measuring
+geometry. Only the `cadmpeg` CLI crate depends on `cadmpeg-measure` outside
+`[dev-dependencies]`; the source-policy rule `measurement_dependency`
+enforces this.
+
 ## Pass allowance
 
 One measurement pass owns a work allowance of
