@@ -105,7 +105,7 @@ fn actual_directory_callbacks_match_original_values_and_independent_source_exten
         .filter(|part| part.level().as_str() == "iges.directory_entry")
     {
         assert_eq!(part.parent(), Some(section_id));
-        assert_eq!(part.state(), &PartState::Decoded);
+        assert_eq!(part.state(), &PartState::Decoded {});
     }
     assert!(ctx.take_record_captures().unwrap().is_empty());
 }
@@ -143,12 +143,12 @@ fn failed_real_pair_has_one_shared_home_and_preserves_the_independent_peer() {
     );
     assert_eq!(fidelity.parts()[id].offset(), u64::try_from(start).unwrap());
     assert_eq!(fidelity.parts()[id].byte_len(), 162);
-    assert_eq!(fidelity.parts()[id].state(), &PartState::GivenUp);
+    assert_eq!(fidelity.parts()[id].state(), &PartState::GivenUp {});
     assert_eq!(
         fidelity
             .parts()
             .values()
-            .filter(|part| part.state() == &PartState::Decoded)
+            .filter(|part| part.state() == &PartState::Decoded {})
             .count(),
         2
     );

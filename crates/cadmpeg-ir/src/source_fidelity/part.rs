@@ -137,7 +137,7 @@ impl RecordLayout {
     ///
     /// Core admits actual stream bounds and merges read intervals before this
     /// handoff. This conversion neither scans nor claims any additional bytes.
-    pub(crate) fn from_capture(capture: RecordCapture) -> (String, Self) {
+    pub fn from_capture(capture: RecordCapture) -> (String, Self) {
         let (id, stream, offset, byte_len, reads) = capture.into_parts();
         (
             id,
@@ -186,7 +186,7 @@ impl RecordLayout {
     ///
     /// A fixed prefix is injective. Byte coordinates, pointers, and payloads
     /// stay unchanged. Stream-name allocation and length overflow are checked.
-    pub(crate) fn with_stream_prefix(mut self, prefix: &str) -> Result<Self, CodecError> {
+    pub fn with_stream_prefix(mut self, prefix: &str) -> Result<Self, CodecError> {
         self.stream = prefixed_stream(prefix, &self.stream)?;
         let mut mapped = BTreeMap::new();
         for (stream, ranges) in self.reads {

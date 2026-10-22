@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed dependency closure and atomic preparation of surviving list edits.
 
-use super::{PartOutput, reserve};
+use super::{reserve, PartOutput};
 use crate::ids::UnknownId;
 use crate::native::NativeRecord;
 use crate::schema::{
-    EntitySchema,
     rewrite::typed::{
-        RewriteIdentities,
         prune::{DependencyPosition, DependencyReference, ReferencePruneEffect},
+        RewriteIdentities,
     },
+    EntitySchema,
 };
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_core::decode::{DecodeContext, u64_from_index};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Dependency finalization outcome.
