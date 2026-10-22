@@ -189,9 +189,6 @@ fn display_key_requires_one_active_configuration_and_nonempty_display_state() {
     }
     assert!(state_bodies(&model, &["<Variant_A>_Bright", "<Variant_A>_Dim"]).is_none());
     model.configurations.truncate(1);
-    assert_eq!(
-        state_bodies(&model, &["<Localized>_Bright"]).unwrap().len(),
-        1
-    );
+    assert!(state_bodies(&model, &["<Localized>_Bright"]).is_none());
     assert!(state_bodies(&model, &["missing-separator"]).is_none());
 }

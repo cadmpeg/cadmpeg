@@ -132,7 +132,6 @@ fn selected_bodies(
         .collect();
     let configuration = match matches.as_slice() {
         [configuration] => *configuration,
-        [] if model.configurations.len() == 1 => &model.configurations[0],
         _ => return Ok(None),
     };
     if !configuration.active {

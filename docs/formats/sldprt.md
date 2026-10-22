@@ -1819,8 +1819,8 @@ The offset surface retains the support parameterization. Nested offset carriers 
 One `visStateKeyData_c` interval carries a framed UTF-16LE key formed from a
 configuration name and a nonempty display-state name separated by `_`.
 A configuration name can appear inside angle brackets. A unique exact name
-prefix selects its configuration; a sole configuration supplies an unambiguous
-configuration when no name prefix matches. An inactive configuration does not
+prefix selects its configuration. An absent name match supplies no configuration
+scope. An inactive configuration does not
 supply the active geometry's appearance scope. Multiple keys or multiple
 matching configuration names supply no unique active scope.
 
