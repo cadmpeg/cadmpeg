@@ -196,12 +196,13 @@ pub(crate) fn append(
             .arenas_mut()
             .entry(name)
             .or_default();
+        // The part helper charged these records when its root output received
+        // them. This move is not a new retained copy.
         let additional = records
             .len()
             .checked_mul(size_of::<cadmpeg_ir::native::NativeRecord>())
             .map(u64_from_index)
             .ok_or_else(|| CodecError::malformed("FreeCAD shared part arena size overflows"))?;
-        ctx.retain_bytes(additional, "FreeCAD shared part arena composition")?;
         destination.try_reserve(records.len()).map_err(|_| {
             ResourceLimit::allocation_failed(
                 ResourceDimension::RetainedBytes,
