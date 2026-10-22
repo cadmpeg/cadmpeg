@@ -423,7 +423,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         scan,
         &prereqs.design_record_headers,
     )?;
-    extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
+    let untyped_tracking_paths =
+        extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
+    if untyped_tracking_paths != 0 {
+        push_loss_vec(&mut losses, F3dLossCode::ConstructionTrackingPathUntyped,
+            format_args!("{untyped_tracking_paths} construction tracking path reference(s) remain source-only because no matching indexed registration was admitted."));
+    }
     for history in &mut design.asm_histories {
         history.release_topologies();
     }
@@ -970,7 +975,7 @@ fn extend_related_design_records(
     timelines: &[DesignFeatureTimeline],
     geometry: &DesignGeometry<'_>,
     design: &mut DesignNative,
-) -> Result<(), CodecError> {
+) -> Result<usize, CodecError> {
     let indices = collect_related_indices(design.sketch_relations.iter().flat_map(|relation| {
         let scope = crate::ids::native_stream(&relation.id).unwrap_or(crate::ids::DEFAULT_STREAM);
         relation
@@ -1143,12 +1148,13 @@ fn extend_related_design_records(
         &mut design.design_construction_operand_groups,
         &design.design_record_headers,
     )?;
-    design.design_construction_operand_identities =
+    let (identities, untyped_tracking_paths) =
         crate::design::decode::operands::decode_construction_operand_identities(
             scan,
             &design.design_construction_operand_groups,
             &design.design_record_headers,
         )?;
+    design.design_construction_operand_identities = identities;
     let scopes = design
         .design_parameter_scopes
         .iter()
@@ -1443,5 +1449,5 @@ fn extend_related_design_records(
         &mut design.design_dimension_recipe_records,
         &design.design_edge_operands,
     );
-    Ok(())
+    Ok(untyped_tracking_paths)
 }

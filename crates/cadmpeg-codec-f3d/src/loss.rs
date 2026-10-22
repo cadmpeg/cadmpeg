@@ -28,6 +28,8 @@ pub(crate) enum F3dLossCode {
     DimensionCompanionUntyped,
     /// A whole-body reference tail has no admitted standard reference-run frame.
     BodyReferenceTailUntyped,
+    /// A construction tracking path has no matching indexed type registration.
+    ConstructionTrackingPathUntyped,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
     /// Design configuration rules have no unambiguous activation target.
@@ -231,6 +233,7 @@ impl F3dLossCode {
     const ALL: &'static [F3dLossCode] = &[
         Self::DimensionCompanionUntyped,
         Self::BodyReferenceTailUntyped,
+        Self::ConstructionTrackingPathUntyped,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
@@ -335,6 +338,7 @@ impl F3dLossCode {
         match self {
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::BodyReferenceTailUntyped => "body-reference.tail-untyped",
+            Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
@@ -467,6 +471,7 @@ impl F3dLossCode {
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
+            | Self::ConstructionTrackingPathUntyped
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
@@ -551,6 +556,7 @@ impl F3dLossCode {
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
+            | Self::ConstructionTrackingPathUntyped
             | Self::ParameterRecordUnparsed
             | Self::HistoryRecordFramingFailed
             | Self::SolvedRecordUntyped
@@ -700,6 +706,7 @@ mod tests {
             [
                 "dimension.companion-untyped",
                 "body-reference.tail-untyped",
+                "feature.tracking-path-untyped",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",

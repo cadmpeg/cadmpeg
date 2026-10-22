@@ -2847,13 +2847,17 @@ fn take_record_reference(bytes: &[u8], at: &mut usize) -> Option<(u32, u64)> {
     Some((u32::try_from(target).ok()?, u64::try_from(target_at).ok()?))
 }
 
+mod tracking_registration;
+
 /// Decode the persistent identity frame named by each construction-operand group.
 pub(crate) fn decode_construction_operand_identities(
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
-) -> Result<Vec<DesignConstructionOperandIdentity>, CodecError> {
+) -> Result<(Vec<DesignConstructionOperandIdentity>, usize), CodecError> {
     let headers = indexed_operand_headers(headers);
+    let mut registries = HashMap::new();
+    let mut untyped = 0;
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -2878,6 +2882,29 @@ pub(crate) fn decode_construction_operand_identities(
         if let Some(mut identity) =
             parse_construction_operand_identity(bytes, group, wrapper_header)
         {
+            if let Some(path) = identity.tracking_path() {
+                let registry = match registries.entry(stream) {
+                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(slot) => {
+                        let Some(prefix) = entry.name.strip_suffix("BulkStream.dat") else {
+                            untyped += 1;
+                            continue;
+                        };
+                        let member = format!("{prefix}MetaStream.dat");
+                        if scan.entry_view(&member).is_none() {
+                            untyped += 1;
+                            continue;
+                        }
+                        slot.insert(tracking_registration::Registry::new(
+                            scan.parsed_metastream(&member)?,
+                        ))
+                    }
+                };
+                if !registry.supports(path) {
+                    untyped += 1;
+                    continue;
+                }
+            }
             identity.id = design_record_id(
                 &entry.name,
                 ":design-construction-operand-identity#",
@@ -2889,7 +2916,7 @@ pub(crate) fn decode_construction_operand_identities(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out.dedup_by(|left, right| left.id == right.id);
-    Ok(out)
+    Ok((out, untyped))
 }
 
 /// Collect one Design stream's lost-edge records in source byte order.
