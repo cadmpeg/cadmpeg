@@ -7,6 +7,10 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 
 use super::frame;
 
+mod fields;
+
+pub use fields::{rebuild_fields, FieldEdit};
+
 /// One replacement in the source view's absolute byte coordinates.
 pub struct Edit<'a> {
     /// Exact source interval; it must be wholly inside one supported leaf.
@@ -82,13 +86,21 @@ pub fn rebuild(
         }
         cursor = edit.range.end;
     }
+    apply_edits(ctx, source, edits)
+}
+
+pub(super) fn apply_edits(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    edits: &[Edit<'_>],
+) -> Result<Vec<u8>, String> {
     ctx.retain_bytes(u64_from_index(source.window().len()), "IGES rebuilt source")
         .map_err(|error| error.to_string())?;
     let mut result = ctx
         .alloc_filled(source.window().len(), 0_u8, "IGES rebuilt source")
         .map_err(|error| error.to_string())?;
     result.copy_from_slice(source.window());
-    for edit in order {
+    for edit in edits {
         let start = usize::try_from(edit.range.start - u64_from_index(source.start()))
             .map_err(|_| "IGES edit index exceeds usize")?;
         let end = usize::try_from(edit.range.end - u64_from_index(source.start()))

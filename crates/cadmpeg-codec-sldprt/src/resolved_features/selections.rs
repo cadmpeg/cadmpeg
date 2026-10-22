@@ -344,11 +344,16 @@ pub(crate) fn compact_edge_reference_list_for_feature(
         .filter(|references| references.len() == count)
 }
 
+pub(super) struct ParsedEdgeSelections {
+    pub(super) records: Vec<FeatureInputEdgeSelection>,
+    pub(super) frames: std::collections::BTreeMap<String, std::ops::Range<usize>>,
+}
+
 pub(super) fn compact_edge_selections(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Result<Vec<FeatureInputEdgeSelection>, CodecError> {
+) -> Result<ParsedEdgeSelections, CodecError> {
     let history_features = history_features_with_object_sources(histories, lane);
     let selection_features = FeatureSources::new(&history_features);
     let objects = selection_objects(histories, lane);
@@ -357,6 +362,7 @@ pub(super) fn compact_edge_selections(
         .rsplit_once('#')
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
+    let mut frames = std::collections::BTreeMap::new();
     let mut compact_edge_classes = lane
         .classes
         .iter()
@@ -411,6 +417,7 @@ pub(super) fn compact_edge_selections(
         selections.sort_unstable_by_key(|left| left.0);
         selections.dedup_by_key(|selection| selection.0);
         let mut feature_selections = Vec::new();
+        let mut feature_frames = std::collections::BTreeMap::new();
         for (offset, local_edge_ids) in selections {
             let references = compact_edge_reference_list_for_feature(
                 &lane.native_payload,
@@ -442,6 +449,11 @@ pub(super) fn compact_edge_selections(
                 &feature.id,
             )?;
             let id = format!("sldprt:feature-input:edge-selection#{lane_key}:{offset}");
+            let frame = edge_selection_frame(ctx, &lane.native_payload, offset, &feature.kind)?
+                .ok_or_else(|| {
+                    CodecError::malformed("admitted edge selection lacks its source frame")
+                })?;
+            feature_frames.insert(id.clone(), frame);
             let parent = lane.id.clone();
             let object_name_ref = name.id.clone();
             let feature_ref = feature.id.clone();
@@ -450,7 +462,6 @@ pub(super) fn compact_edge_selections(
                 parent,
                 ordinal: 0,
                 sequence: 0,
-                offset: Some(u64_from_index(offset)),
                 object_name_ref,
                 feature_ref,
                 local_edge_ids,
@@ -463,10 +474,73 @@ pub(super) fn compact_edge_selections(
         for mut selection in input_owned_edge_selections(feature_selections) {
             selection.ordinal = u32::try_from(result.len())
                 .map_err(|_| CodecError::malformed(SELECTION_ORDINAL_OVERFLOW))?;
+            let frame = feature_frames.remove(&selection.id).ok_or_else(|| {
+                CodecError::malformed("retained edge selection lacks its source frame")
+            })?;
+            frames.insert(selection.id.clone(), frame);
             result.push(selection);
         }
     }
-    Ok(result)
+    Ok(ParsedEdgeSelections {
+        records: result,
+        frames,
+    })
+}
+
+fn edge_selection_frame(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    marker: usize,
+    feature_kind: &str,
+) -> Result<Option<std::ops::Range<usize>>, CodecError> {
+    let Some(start) = marker.checked_sub(12) else {
+        return Ok(None);
+    };
+    let Some(ids) = compact_edge_selection_at(ctx, payload, marker)? else {
+        return Ok(None);
+    };
+    let count = View::u32_le_at(payload, start)
+        .and_then(|count| usize::try_from(count).ok())
+        .filter(|count| (1..=64).contains(count))
+        .ok_or_else(|| CodecError::malformed("admitted edge selection has no valid count"))?;
+    if let Some((_, end)) = compact_component_reference_list_frame(payload, marker, true) {
+        return Ok(Some(start..end));
+    }
+    let mut end = None;
+    let mut include = |candidate: Option<(Vec<u32>, usize)>| {
+        if let Some((actual, candidate_end)) = candidate {
+            if actual == ids {
+                end = Some(end.map_or(candidate_end, |end: usize| end.max(candidate_end)));
+            }
+        }
+    };
+    include(compact_homogeneous_edge_ids_frame(
+        payload,
+        marker + 18,
+        count,
+    ));
+    include(compact_u16_edge_ids_frame(payload, marker + 18, count));
+    for (ComponentPathReference(components, _), candidate_end) in
+        compact_edge_component_path_frames(ctx, payload, marker, count)?
+    {
+        include(Some((
+            components
+                .iter()
+                .filter_map(|entry| entry.local_id)
+                .collect(),
+            candidate_end,
+        )));
+    }
+    if feature_kind.eq_ignore_ascii_case("VarFillet") {
+        if let Some((references, candidate_end)) =
+            compact_component_reference_list_frame(payload, marker, false)
+        {
+            if references.len() == count {
+                end = Some(end.map_or(candidate_end, |end| end.max(candidate_end)));
+            }
+        }
+    }
+    Ok(end.map(|end| start..end))
 }
 
 fn fillet_edge_roster_end(lane: &FeatureInputLane, start: usize, end: usize) -> Option<usize> {
@@ -2742,6 +2816,15 @@ fn compact_component_reference_list(
     marker: usize,
     require_distinct_framing: bool,
 ) -> Option<Vec<Vec<FeatureInputComponentPathEntry>>> {
+    compact_component_reference_list_frame(payload, marker, require_distinct_framing)
+        .map(|(records, _)| records)
+}
+
+fn compact_component_reference_list_frame(
+    payload: &[u8],
+    marker: usize,
+    require_distinct_framing: bool,
+) -> Option<(Vec<Vec<FeatureInputComponentPathEntry>>, usize)> {
     let header = (|| {
         let count_start = marker.checked_sub(12)?;
         if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
@@ -2778,12 +2861,13 @@ fn compact_component_reference_list(
             })
     };
     let terminal_null_at = |offset: usize| {
-        (16..=18).any(|zero_count| {
-            payload
+        (16..=18).find_map(|zero_count| {
+            (payload
                 .get(offset..offset + zero_count)
                 .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
                 && payload.get(offset + zero_count..offset + zero_count + 3)
-                    == Some(&[0xff, 0xfe, 0xff])
+                    == Some(&[0xff, 0xfe, 0xff]))
+            .then_some(offset + zero_count + 3)
         })
     };
 
@@ -2796,11 +2880,14 @@ fn compact_component_reference_list(
             reference.push(hop);
             cursor += 16;
         }
-        if reference.is_empty() && index + 1 == count && terminal_null_at(cursor) {
-            return (!references.is_empty()).then_some(references);
+        if reference.is_empty() && index + 1 == count {
+            if let Some(end) = terminal_null_at(cursor) {
+                return (!references.is_empty()).then_some((references, end));
+            }
         }
         if reference.is_empty() {
-            return (!require_distinct_framing && !references.is_empty()).then_some(references);
+            return (!require_distinct_framing && !references.is_empty())
+                .then_some((references, cursor));
         }
         has_reference_framing |= reference.len() > 1;
         let last = reference.last_mut()?;
@@ -2812,8 +2899,10 @@ fn compact_component_reference_list(
             has_reference_framing = true;
         }
         references.push(reference);
-        if index + 2 == count && terminal_null_at(cursor) {
-            return Some(references);
+        if index + 2 == count {
+            if let Some(end) = terminal_null_at(cursor) {
+                return Some((references, end));
+            }
         }
         if index + 1 == count {
             continue;
@@ -2824,11 +2913,12 @@ fn compact_component_reference_list(
                 .is_some_and(|padding| padding.iter().all(|byte| *byte == 0))
                 && hop_at(cursor + *gap).is_some()
         }) else {
-            return (!require_distinct_framing && !references.is_empty()).then_some(references);
+            return (!require_distinct_framing && !references.is_empty())
+                .then_some((references, cursor));
         };
         cursor += gap;
     }
-    (!require_distinct_framing || has_reference_framing).then_some(references)
+    (!require_distinct_framing || has_reference_framing).then_some((references, cursor))
 }
 
 #[derive(Debug)]
@@ -2983,6 +3073,20 @@ fn compact_edge_component_path_candidates(
     marker: usize,
     count: usize,
 ) -> Result<Vec<ComponentPathReference>, CodecError> {
+    Ok(
+        compact_edge_component_path_frames(ctx, payload, marker, count)?
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect(),
+    )
+}
+
+fn compact_edge_component_path_frames(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    marker: usize,
+    count: usize,
+) -> Result<Vec<(ComponentPathReference, usize)>, CodecError> {
     let component_paths =
         |entry_count| -> Result<Vec<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
             let candidates = [
@@ -3022,16 +3126,20 @@ fn compact_edge_component_path_candidates(
     let mut candidates = Vec::new();
     for candidate in terminal_paths
         .into_iter()
-        .map(|(components, _, source)| ComponentPathReference(components, Some(source)))
+        .map(|(components, end, source)| {
+            (ComponentPathReference(components, Some(source)), end + 36)
+        })
         .chain(
             full_paths
                 .into_iter()
-                .map(|(components, _)| ComponentPathReference(components, None)),
+                .map(|(components, end)| (ComponentPathReference(components, None), end)),
         )
     {
         let mut duplicate = false;
-        for existing in &candidates {
-            if existing == &candidate {
+        for existing in &mut candidates {
+            let existing: &mut (ComponentPathReference, usize) = existing;
+            if existing.0 == candidate.0 {
+                existing.1 = existing.1.max(candidate.1);
                 duplicate = true;
                 break;
             }
@@ -3171,11 +3279,15 @@ pub(crate) fn surface_selection_terminal_feature_at(
     component_path_terminal_feature(components, features.iter())
 }
 
-fn compact_homogeneous_edge_ids(
+fn compact_homogeneous_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<Vec<u32>> {
+    compact_homogeneous_edge_ids_frame(payload, cursor, count).map(|(ids, _)| ids)
+}
+
+fn compact_homogeneous_edge_ids_frame(
     payload: &[u8],
     mut cursor: usize,
     count: usize,
-) -> Option<Vec<u32>> {
+) -> Option<(Vec<u32>, usize)> {
     let window = (|| {
         let signature = payload.get(cursor + 4..cursor + 16)?;
         bounded_len(
@@ -3209,7 +3321,7 @@ fn compact_homogeneous_edge_ids(
                 }
             }
         }
-        Some(ids)
+        Some((ids, cursor))
     })()
 }
 
@@ -3414,6 +3526,14 @@ fn compact_sparse_component_path(
 }
 
 fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<Vec<u32>> {
+    compact_u16_edge_ids_frame(payload, cursor, count).map(|(ids, _)| ids)
+}
+
+fn compact_u16_edge_ids_frame(
+    payload: &[u8],
+    cursor: usize,
+    count: usize,
+) -> Option<(Vec<u32>, usize)> {
     let end = count.checked_mul(2).and_then(|len| cursor.checked_add(len));
     let end = end?;
     let bytes = payload.get(cursor..end)?;
@@ -3431,7 +3551,8 @@ fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<V
         suffix[..8].iter().all(|byte| *byte == 0)
             && View::u16_le_at(suffix, 8).is_some_and(is_class_token)
     });
-    (ids.iter().all(|id| *id != 0) && (sentinel_terminated || object_terminated)).then_some(ids)
+    (ids.iter().all(|id| *id != 0) && (sentinel_terminated || object_terminated))
+        .then_some((ids, end + if sentinel_terminated { 19 } else { 10 }))
 }
 
 fn compact_body_selection_vector(

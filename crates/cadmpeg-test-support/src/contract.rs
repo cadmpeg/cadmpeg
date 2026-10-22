@@ -217,5 +217,7 @@ pub fn assert_written_arenas_agree(report: &ExportReport, left: &CadIr, right: &
 
 mod identity;
 
+pub mod zip;
+
 #[cfg(test)]
 mod tests;

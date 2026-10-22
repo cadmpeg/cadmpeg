@@ -93,6 +93,17 @@ impl<'a> BodySources<'a> {
         Ok(source)
     }
 
+    pub(crate) fn capture_classes<'b>(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        lanes: impl IntoIterator<Item = &'b FeatureInputLane>,
+    ) -> Result<(), CodecError> {
+        for lane in lanes {
+            super::class_layout::capture(ctx, lane, self)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn pointers(&self) -> &BTreeMap<String, BTreeMap<String, u64>> {
         &self.pointers
     }

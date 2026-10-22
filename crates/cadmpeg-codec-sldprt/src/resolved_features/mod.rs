@@ -71,6 +71,8 @@ pub(crate) mod bindings;
 
 pub(crate) mod classes;
 
+mod class_layout;
+
 pub(crate) mod compact_reference_planes;
 
 pub(crate) mod component_paths;
@@ -113,6 +115,7 @@ mod relation_records;
 
 mod relation_layout;
 
+mod edge_selection_layout;
 mod generated_surface_layout;
 
 mod reference_layout;

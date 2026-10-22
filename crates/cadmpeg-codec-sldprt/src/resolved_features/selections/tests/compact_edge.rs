@@ -718,7 +718,6 @@ fn compact_edge_selection_preserves_an_idless_path_entry() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(cadmpeg_core::decode::u64_from_index(marker)),
         object_name_ref: "name".into(),
         feature_ref: "consumer".into(),
         local_edge_ids: vec![4, 4, 0],
@@ -826,7 +825,9 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(&history_ctx, &[history], &lane).unwrap();
+    let selections = compact_edge_selections(&history_ctx, &[history], &lane)
+        .unwrap()
+        .records;
 
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].feature_ref, "consumer");
@@ -1219,7 +1220,9 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(&history_ctx, &[history], &lane).unwrap();
+    let selections = compact_edge_selections(&history_ctx, &[history], &lane)
+        .unwrap()
+        .records;
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].references.len(), 4);
     assert_eq!(selections[0].references[3][0].instance, Some(0x8083));

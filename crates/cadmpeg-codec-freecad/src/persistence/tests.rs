@@ -62,7 +62,7 @@ fn persistence_link_diagnostics_become_unreadable_payloads() {
 }
 
 #[test]
-fn x63_decode_counts_object_copies_in_retained_budget() {
+fn x63_decode_counts_source_image_in_retained_budget() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let bytes = archive(document);
     FcstdCodec
@@ -74,14 +74,14 @@ fn x63_decode_counts_object_copies_in_retained_budget() {
         &bytes,
         &mut DecodeOptions::default(),
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain FCStd entry",
+        "retain FCStd source image",
         0,
     );
     assert_eq!(
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::RetainedBytes
     );
-    assert_eq!(limit.operation, "retain FCStd entry");
+    assert_eq!(limit.operation, "retain FCStd source image");
 }
 
 fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::CodecError> {
@@ -500,7 +500,13 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .find(|entry| entry.name() == "Payload.bin")
         .expect("payload entry");
     assert_eq!(payload_entry.referenced_by(), vec![payload.id.clone()]);
-    assert_eq!(payload_entry.data(), b"payload");
+    assert_eq!(
+        crate::test_support::source_fidelity::entry_bytes(
+            result.source_fidelity(),
+            payload_entry.id()
+        ),
+        b"payload"
+    );
     let ledger = namespace
         .arena_as::<crate::native::LogicalSpan>("logical_ledger")
         .expect("logical ledger");
@@ -513,7 +519,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         assert_eq!(spans.first().map(|span| span.span.start()), Some(0));
         assert_eq!(
             spans.last().map(|span| span.span.end()),
-            Some(entry.byte_len())
+            Some(result.source_fidelity().record_layout()[entry.id()].byte_len())
         );
         assert!(spans
             .windows(2)
@@ -543,7 +549,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         coverage[0].logical_byte_len,
         entries
             .iter()
-            .map(super::super::native::EntryRecord::byte_len)
+            .map(|entry| result.source_fidelity().record_layout()[entry.id()].byte_len())
             .sum::<u64>()
     );
     assert_eq!(

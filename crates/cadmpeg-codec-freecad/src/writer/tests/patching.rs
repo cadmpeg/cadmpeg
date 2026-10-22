@@ -4,7 +4,7 @@
 //! retained span can carry.
 
 use super::super::target::retained_baseline;
-use crate::native::{PropertyRecord, ValueRecord};
+use crate::native::{EntryRecord, PropertyRecord, ValueRecord};
 use crate::test_support::test_archive::{archive_entries, CORE_DESIGN_PRODUCT};
 use crate::writer::validate_entry_names;
 use crate::FcstdCodec;
@@ -15,7 +15,7 @@ use std::io::Cursor;
 
 #[test]
 fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() {
-    assert!(crate::native::EntryRecord::new(
+    assert!(crate::test_support::source_fidelity::EntryFixture::try_new(
         "test:native:entry#unsafe".into(),
         "../Document.xml".into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
@@ -23,14 +23,14 @@ fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() 
         Vec::new()
     )
     .is_err());
-    let entry = crate::test_support::entry_record(
+    let entry = crate::test_support::entry_fixture(
         "test:native:entry#document".into(),
         "Document.xml".into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
         Vec::new(),
         Vec::new(),
     );
-    let duplicate_error = validate_entry_names(&[entry.clone(), entry])
+    let duplicate_error = validate_entry_names(&[entry.record.clone(), entry.record])
         .expect_err("duplicate output paths are refused");
     assert!(matches!(
         duplicate_error,
@@ -40,7 +40,7 @@ fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() 
 
 #[test]
 fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
-    let error = crate::native::EntryRecord::new(
+    let error = crate::test_support::source_fidelity::EntryFixture::try_new(
         "test:native:entry#backslash".into(),
         r"..\outside".into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
@@ -50,7 +50,11 @@ fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
     .expect_err("constructor refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
     let wire = serde_json::json!({"id": "test:native:entry#backslash", "name": r"..\outside", "role": "auxiliary", "byte_len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[]), "referenced_by": []});
-    let error = serde_json::from_value::<crate::native::EntryRecord>(wire)
+    let mut semantic_wire = wire.clone();
+    assert!(serde_json::from_value::<crate::native::EntryRecord>(wire).is_err());
+    semantic_wire.as_object_mut().unwrap().remove("byte_len");
+    semantic_wire.as_object_mut().unwrap().remove("sha256");
+    let error = serde_json::from_value::<crate::native::EntryRecord>(semantic_wire)
         .expect_err("native entry refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
@@ -368,8 +372,11 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
 
-    let (mut stale_entry, _, fidelity) = decoded.into_parts();
-    let namespace = stale_entry.native.namespace_mut("fcstd");
+    let (stale_entry, _, mut fidelity) = decoded.into_parts();
+    let namespace = stale_entry
+        .native
+        .namespace("fcstd")
+        .expect("FCStd namespace");
     let mut entries = namespace
         .arena_as::<serde_json::Value>("entries")
         .expect("entries");
@@ -377,16 +384,14 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         .iter_mut()
         .find(|entry| entry["name"] != "Document.xml")
         .expect("side entry");
-    // Layout evidence is not content. A valid but changed digest cannot
-    // authorize reuse of the unrelated retained entry image.
+    // Retired native evidence is rejected; stale source-only layout evidence
+    // cannot authorize reuse of the original archive.
     entry["sha256"] = serde_json::json!(cadmpeg_ir::hash::sha256_hex(b"different layout"));
-    namespace
-        .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
-            "entries",
-            &entries,
-        )
-        .expect("replace entries");
+    assert!(serde_json::from_value::<EntryRecord>(entry.clone()).is_err());
+    fidelity.metadata.insert(
+        cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY.into(),
+        cadmpeg_ir::hash::sha256_hex(b"different layout"),
+    );
     let plan = FcstdCodec
         .plan(
             EncodeInput::new(&stale_entry, Some(&fidelity)),

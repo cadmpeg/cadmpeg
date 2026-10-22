@@ -80,6 +80,7 @@ pub(crate) fn parse<'input>(
     file_version: Option<usize>,
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
+    sources: &crate::entry_sources::EntrySources<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     mut fidelity: Option<&mut SourceLayouts<'_, 'input>>,
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
@@ -101,7 +102,7 @@ pub(crate) fn parse<'input>(
     )?;
     let mut entry_data = HashMap::new();
     for entry in entries {
-        entry_data.insert(entry.name(), entry.data());
+        entry_data.insert(entry.name(), sources.view(entry)?.window());
     }
 
     let hasher_nodes = xml

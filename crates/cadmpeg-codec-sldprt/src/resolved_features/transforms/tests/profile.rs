@@ -173,12 +173,11 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
             ),
         }),
     );
-    let selection = |ordinal, offset, local_edge_ids| FeatureInputEdgeSelection {
+    let selection = |ordinal, _offset: u64, local_edge_ids| FeatureInputEdgeSelection {
         id: format!("selection-{ordinal}"),
         parent: "lane".into(),
         ordinal,
         sequence: ordinal,
-        offset: Some(offset),
         object_name_ref: "name".into(),
         feature_ref: "target-native".into(),
         local_edge_ids,
@@ -247,7 +246,6 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
         parent: "lane".into(),
         ordinal,
         sequence: ordinal,
-        offset: Some(u64::from(ordinal)),
         object_name_ref: "name".into(),
         feature_ref: "consumer".into(),
         local_edge_ids: vec![ordinal],

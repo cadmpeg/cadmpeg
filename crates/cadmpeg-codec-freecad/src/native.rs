@@ -12,9 +12,7 @@ use frame::FiniteFrame;
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::IdentityKey;
-use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
@@ -338,13 +336,6 @@ impl ByteSpan {
     pub(crate) fn end(self) -> u64 {
         self.end
     }
-}
-
-fn valid_sha256(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 /// Document-level GUI state outside application-object view providers.
@@ -2379,9 +2370,6 @@ pub(crate) struct EntryRecord {
     name: ArchiveEntryName,
     pub(crate) role: cadmpeg_core::container::ContainerRole,
     referenced_by: EntryReferences,
-    data: NativeBytes,
-    length: u64,
-    sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2429,22 +2417,16 @@ impl EntryRecord {
         name: String,
         role: cadmpeg_core::container::ContainerRole,
         referenced_by: Vec<String>,
-        data: Vec<u8>,
     ) -> Result<Self, CodecError> {
         let id = cadmpeg_ir::ids::Identity::new(id).map_err(CodecError::malformed)?;
         let name = ArchiveEntryName::try_from(name).map_err(CodecError::malformed)?;
         let referenced_by =
             EntryReferences::try_from(referenced_by).map_err(CodecError::malformed)?;
-        let sha256 = sha256_hex(&data);
-        let length = cadmpeg_core::decode::u64_from_index(data.len());
         Ok(Self {
             id,
             name,
             role,
             referenced_by,
-            data: data.into(),
-            length,
-            sha256,
         })
     }
 
@@ -2457,16 +2439,6 @@ impl EntryRecord {
     pub(crate) fn referenced_by(&self) -> &[String] {
         &self.referenced_by.0
     }
-    pub(crate) fn data(&self) -> &[u8] {
-        self.data.as_ref()
-    }
-    pub(crate) fn byte_len(&self) -> u64 {
-        self.length
-    }
-    pub(crate) fn sha256(&self) -> &str {
-        &self.sha256
-    }
-
     pub(crate) fn add_reference(&mut self, owner: &str) -> Result<(), CodecError> {
         if !cadmpeg_ir::ids::is_valid_identity(owner) {
             return Err(CodecError::malformed("entry reference identity is invalid"));
@@ -2484,12 +2456,11 @@ impl EntryRecord {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct EntryRecordWire {
     id: String,
     name: String,
     role: String,
-    byte_len: u64,
-    sha256: String,
     referenced_by: Vec<String>,
 }
 
@@ -2498,8 +2469,6 @@ struct EntryRecordOut<'a> {
     id: &'a str,
     name: &'a str,
     role: &'static str,
-    byte_len: u64,
-    sha256: &'a str,
     referenced_by: &'a [String],
 }
 
@@ -2509,8 +2478,6 @@ impl Serialize for EntryRecord {
             id: self.id(),
             name: self.name(),
             role: self.role.as_str(),
-            byte_len: self.byte_len(),
-            sha256: self.sha256(),
             referenced_by: self.referenced_by(),
         }
         .serialize(serializer)
@@ -2524,18 +2491,12 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
         let id = cadmpeg_ir::ids::Identity::new(wire.id).map_err(|error| error.to_string())?;
         let name = ArchiveEntryName::try_from(wire.name).map_err(str::to_owned)?;
         let referenced_by = EntryReferences::try_from(wire.referenced_by)?;
-        if !valid_sha256(&wire.sha256) {
-            return Err("entry sha256 must use lowercase hexadecimal".to_owned());
-        }
         let record = Self {
             id,
             name,
             role: serde_json::from_value(serde_json::Value::String(wire.role))
                 .map_err(|error| format!("entry role: {error}"))?,
             referenced_by,
-            data: Vec::new().into(),
-            length: wire.byte_len,
-            sha256: wire.sha256,
         };
         Ok(record)
     }

@@ -27,12 +27,14 @@ fn inline_entities_unicode_cdata_and_nested_elements_use_a_real_expanded_stream(
     let property_ranges = BTreeMap::new();
     let reader =
         crate::property_reader::PropertyReader::source(&ctx, root, &property_ranges).unwrap();
+    let sources = crate::entry_sources::EntrySources::new(&ctx, &entries).unwrap();
     let (tables, maps) = super::super::parse(
         &reader,
         &document,
         Some(0),
         &[],
         &[],
+        &sources,
         &mut Vec::new(),
         Some(&mut SourceLayouts {
             document: root,
@@ -129,12 +131,14 @@ fn side_entry_raw_ranges_use_the_registered_member_view_and_preserve_multiline_p
     let reader =
         crate::property_reader::PropertyReader::source(&ctx, document_view, &property_ranges)
             .unwrap();
+    let sources = crate::entry_sources::EntrySources::new(&ctx, &entries).unwrap();
     let (tables, _) = super::super::parse(
         &reader,
         &document,
         Some(1),
         &[],
-        &[entry],
+        &[entry.record.clone()],
+        &sources,
         &mut Vec::new(),
         Some(&mut SourceLayouts {
             document: document_view,
@@ -187,12 +191,14 @@ fn detached_inline_source_cannot_manufacture_a_logical_record_extent() {
     let property_ranges = BTreeMap::new();
     let reader =
         crate::property_reader::PropertyReader::source(&ctx, root, &property_ranges).unwrap();
+    let sources = crate::entry_sources::EntrySources::new(&ctx, &entries).unwrap();
     assert!(super::super::parse(
         &reader,
         &document,
         Some(0),
         &[],
         &[],
+        &sources,
         &mut Vec::new(),
         Some(&mut SourceLayouts {
             document: cadmpeg_core::decode::View::over_retained(xml.as_bytes()),

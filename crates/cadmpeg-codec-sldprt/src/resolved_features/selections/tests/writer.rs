@@ -72,7 +72,6 @@ fn semantic_writer_synthesizes_compact_edge_selection_edits() {
                     parent: lane.id.clone(),
                     ordinal: 0,
                     sequence: 0,
-                    offset: Some(cadmpeg_core::decode::u64_from_index(marker)),
                     object_name_ref: lane.names[0].id.clone(),
                     feature_ref,
                     local_edge_ids: vec![7],

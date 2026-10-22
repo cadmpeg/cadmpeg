@@ -36,18 +36,26 @@ fn read(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) 
         },
         r#"<Property><Part file="Shape.brp"/></Property>"#,
     );
-    let entry = crate::test_support::entry_record(
+    let entry = crate::test_support::entry_fixture(
         crate::native::native_id("entry", "Shape.brp"),
         "Shape.brp".into(),
         cadmpeg_core::container::ContainerRole::Brep,
         vec![property.id.clone()],
         text.into_bytes(),
     );
-    let payloads = crate::test_support::source_fidelity::with_property_reader(
+    let payloads = crate::test_support::source_fidelity::with_decode_sources(
         &[],
         &[&property],
+        &[&entry],
         &DecodePolicy::default(),
-        |ctx| crate::brep::parse_payloads(ctx, &[property.property.clone()], &[entry]),
+        |ctx, sources| {
+            crate::brep::parse_payloads(
+                ctx,
+                &[property.property.clone()],
+                &[entry.record.clone()],
+                sources,
+            )
+        },
     )
     .expect("OCCT shape tables");
     let tables = Tables::from_payload(&payloads[0]).expect("text tables");

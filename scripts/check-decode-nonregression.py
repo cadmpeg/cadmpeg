@@ -13,9 +13,12 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 import math
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
+import subprocess
 import sys
 from typing import Any, Mapping
+
+from decode_nonregression_inputs import discover, pair_fixtures
 
 
 JsonPath = tuple[str, ...]
@@ -317,8 +320,20 @@ def main() -> int:
     if len(sys.argv) != 1:
         print('check-decode-nonregression.py takes no arguments or exemption switches', file=sys.stderr)
         return 2
+    repo = Path(__file__).resolve().parent.parent
+    try:
+        base = subprocess.check_output(
+            ['git', '-C', str(repo), 'merge-base', 'HEAD', 'origin/main'], text=True,
+        ).strip()
+        _, fixture_failures = pair_fixtures(discover(repo, base), discover(repo, 'HEAD'))
+    except (OSError, subprocess.CalledProcessError, ValueError) as error:
+        print(f'fixture-discovery: {error}', file=sys.stderr)
+        return 2
+    if fixture_failures:
+        print('\n'.join(fixture_failures), file=sys.stderr)
+        return 1
     print(
-        'decode non-regression gate is NOT operational: authoritative base/head CLI fixture discovery, '
+        'decode non-regression gate is NOT operational: authoritative base/head CLI dumps, '
         'CADMPEG_BASE_BIN verification, schema/typed-record and Appendix B adapters, resolver equality, '
         'Rule B payload/part/read proofs and §3.4 guards are not installed. '
         'The independently tested JSON comparator is not a passing corpus gate.',

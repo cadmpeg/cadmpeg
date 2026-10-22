@@ -21,7 +21,7 @@ use super::{
     TextCurve, TextCurve2d, TextEdgeRepresentation, TextShapeKind, TextSurface, TextTShape,
     TextTShapeGeometry, TextTShapeWire, TextTShapes, TokenCursor,
 };
-use crate::native::{EntryRecord, PropertyRecord};
+use crate::native::PropertyRecord;
 use crate::test_support::test_archive::archive_entries;
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -49,18 +49,24 @@ fn test_parse_binary_prefix(
 
 fn test_parse_payloads(
     properties: &[crate::test_support::source_fidelity::PropertyFixture],
-    entries: &[EntryRecord],
+    entries: &[crate::test_support::source_fidelity::EntryFixture],
 ) -> Result<Vec<ShapePayloadRecord>, CodecError> {
     let sources = properties.iter().collect::<Vec<_>>();
     let records = properties
         .iter()
         .map(|property| property.property.clone())
         .collect::<Vec<_>>();
-    crate::test_support::source_fidelity::with_property_reader(
+    let entry_sources = entries.iter().collect::<Vec<_>>();
+    let native_entries = entries
+        .iter()
+        .map(|entry| entry.record.clone())
+        .collect::<Vec<_>>();
+    crate::test_support::source_fidelity::with_decode_sources(
         &[],
         &sources,
+        &entry_sources,
         &DecodePolicy::default(),
-        |ctx| parse_payloads(ctx, &records, entries),
+        |ctx, sources| parse_payloads(ctx, &records, &native_entries, sources),
     )
 }
 
@@ -575,14 +581,14 @@ fn binds_only_the_direct_shape_entry_as_typed_payload() {
         },
         r#"<Property><Part file="empty.brp"/><Extra file="empty-2.brp"/></Property>"#,
     );
-    let entry = crate::test_support::entry_record(
+    let entry = crate::test_support::entry_fixture(
         crate::native::native_id("entry", "empty.brp"),
         "empty.brp".into(),
         cadmpeg_core::container::ContainerRole::Brep,
         vec![property.id.clone()],
         Vec::new(),
     );
-    let second_entry = crate::test_support::entry_record(
+    let second_entry = crate::test_support::entry_fixture(
         crate::native::native_id("entry", "empty-2.brp"),
         "empty-2.brp".into(),
         cadmpeg_core::container::ContainerRole::Brep,

@@ -121,18 +121,26 @@ fn shape_property(xml: &str) -> crate::test_support::source_fidelity::PropertyFi
 #[test]
 fn uppercase_binary_shape_extension_selects_binary_reader() {
     let property = shape_property("<Property><Part file=\"Body.BIN\"/></Property>");
-    let entry = crate::test_support::entry_record(
+    let entry = crate::test_support::entry_fixture(
         "fcstd:native:entry#Body.BIN".into(),
         "Body.BIN".into(),
         cadmpeg_core::container::ContainerRole::Brep,
         Vec::new(),
         b"garbage\n".to_vec(),
     );
-    let error = crate::test_support::source_fidelity::with_property_reader(
+    let error = crate::test_support::source_fidelity::with_decode_sources(
         &[],
         &[&property],
+        &[&entry],
         &DecodePolicy::default(),
-        |ctx| super::super::parse_payloads(ctx, &[property.property.clone()], &[entry]),
+        |ctx, sources| {
+            super::super::parse_payloads(
+                ctx,
+                &[property.property.clone()],
+                &[entry.record.clone()],
+                sources,
+            )
+        },
     )
     .expect_err("malformed binary payload");
     assert!(error

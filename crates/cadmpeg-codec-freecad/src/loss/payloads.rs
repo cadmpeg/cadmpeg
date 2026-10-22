@@ -15,7 +15,9 @@ use crate::native::{
 };
 
 pub(crate) fn decode_losses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
+    sources: &crate::entry_sources::EntrySources<'_>,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<Vec<LossNote>, CodecError> {
     let Some(native) = ir.native.namespace("fcstd") else {
@@ -190,6 +192,18 @@ pub(crate) fn decode_losses(
         }
         if classes.is_empty() {
             classes.extend([ArenaClass::Model, ArenaClass::Design]);
+        }
+        if fidelity.retained_record(entry.id()).is_none() {
+            let source = sources.view(entry)?;
+            let capture = ctx.capture_part_extent(source)?;
+            crate::fidelity::evidence(
+                fidelity,
+                entry.id(),
+                capture.stream(),
+                capture.offset(),
+                source.window(),
+                ArenaClasses::new(),
+            )?;
         }
         opaque.insert((entry.id().to_owned(), entry.name().to_owned()), classes);
     }

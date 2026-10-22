@@ -319,6 +319,7 @@ fn gui_state_xml_and_offsets_leave_native_records_without_losing_empty_or_nested
         DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service()).unwrap();
     let root = ctx.name_stream(root, "GuiDocument.xml").unwrap();
     let entries = BTreeMap::from([("GuiDocument.xml".into(), root)]);
+    let sources = crate::entry_sources::EntrySources::new(&ctx, &entries).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let graph = crate::gui::transfer(
         &ctx,
@@ -387,16 +388,24 @@ fn gui_state_xml_and_offsets_leave_native_records_without_losing_empty_or_nested
     assert!(empty.values.is_empty());
     assert_eq!(empty.attributes["flag"], "0");
     assert_eq!(fidelity.record_layout()[&empty.id].payloads().len(), 1);
-    let entry = crate::test_support::entry_record(
+    let entry = crate::test_support::entry_fixture(
         "fcstd:native:entry#GuiDocument.xml".into(),
         "GuiDocument.xml".into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
         Vec::new(),
         xml.as_bytes().to_vec(),
     );
-    let ledger =
-        crate::container::logical_ledger(&[entry], &[], &BTreeMap::new(), &graph, &[], &[], &[])
-            .unwrap();
+    let ledger = crate::container::logical_ledger(
+        &[entry.record],
+        &[],
+        &BTreeMap::new(),
+        &sources,
+        &graph,
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
     for (state, raw) in graph.documents[0].states.iter().zip(expected) {
         let span = ledger.iter().find(|span| matches!(&span.classification, crate::native::LogicalClassification::Typed { owner } if owner == &state.id)).unwrap();
         assert_eq!(
@@ -561,16 +570,25 @@ fn gui_property_wrappers_move_to_real_layouts_with_nested_values_empty_payload_a
     assert!(empty.side_entries.is_empty());
     assert_eq!(empty.order, 1);
     assert_eq!(fidelity.record_layout()[&empty.id].payloads().len(), 1);
-    let entry = crate::test_support::entry_record(
+    let entry = crate::test_support::entry_fixture(
         "fcstd:native:entry#GuiDocument.xml".into(),
         "GuiDocument.xml".into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
         Vec::new(),
         xml.as_bytes().to_vec(),
     );
-    let ledger =
-        crate::container::logical_ledger(&[entry], &[], &BTreeMap::new(), &graph, &[], &[], &[])
-            .unwrap();
+    let sources = crate::entry_sources::EntrySources::new(&ctx, &entries).unwrap();
+    let ledger = crate::container::logical_ledger(
+        &[entry.record],
+        &[],
+        &BTreeMap::new(),
+        &sources,
+        &graph,
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
     for (property, raw) in graph.properties.iter().zip(expected) {
         let span = ledger.iter().find(|span| matches!(&span.classification, crate::native::LogicalClassification::NamedOpaque { owner } if owner == &property.id)).unwrap();
         assert_eq!(
@@ -903,4 +921,89 @@ fn complete_property_xml_and_positions_live_only_on_the_original_record_layouts(
             .attributes["value"],
         "a & Ω"
     );
+}
+
+#[test]
+fn application_payloads_link_real_entry_extents_without_an_extra_source_copy() {
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    let document = "<Document SchemaVersion='4' FileVersion='1'><Objects Count='1'><Object name='Owner' type='App::Feature'/></Objects><ObjectData Count='1'><Object name='Owner'><Properties Count='1'><Property name='Included' type='App::PropertyFileIncluded'><FileIncluded file='shared.bin'/></Property></Properties></Object></ObjectData></Document>";
+    let payload = b"source bytes shared by application references";
+    let archive = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("shared.bin", payload),
+    ]);
+    let decoded = crate::FcstdCodec
+        .decode(
+            &mut std::io::Cursor::new(&archive),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let fidelity = decoded.source_fidelity();
+    let id = crate::native::native_id("entry", "shared.bin");
+    let layout = &fidelity.record_layout()[&id];
+    assert_eq!(layout.offset(), 0);
+    assert_eq!(layout.byte_len(), u64::try_from(payload.len()).unwrap());
+    assert!(!layout.stream().is_empty());
+    assert_ne!(layout.stream(), "shared.bin");
+    assert!(layout.payloads().is_empty());
+    assert_eq!(layout.pointers().len(), 5);
+    assert_eq!(
+        layout.pointers()["byte_len"],
+        u64::try_from(payload.len()).unwrap()
+    );
+    assert!(layout.reads().is_empty());
+    // #212 requires the original archive once, rather than an expanded entry copy.
+    assert!(fidelity.retained_record(&id).is_none());
+    let source = crate::test_support::source_fidelity::entry_bytes(fidelity, &id);
+    assert_eq!(source, payload);
+    assert_eq!(
+        cadmpeg_ir::hash::sha256_hex(&source),
+        cadmpeg_ir::hash::sha256_hex(payload)
+    );
+    let source_arena = cadmpeg_core::decode::DecodeArena::new();
+    let source_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (source_context, source_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &archive,
+        &source_arena,
+        &source_policy,
+    )
+    .unwrap();
+    let source_archive =
+        cadmpeg_container::ArchiveSnapshot::new(&source_context, source_root).unwrap();
+    assert_eq!(
+        layout.pointers(),
+        &crate::source_archive::entry_pointers(
+            source_archive.entry("shared.bin").unwrap(),
+            layout.byte_len(),
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        fidelity
+            .retained_record(super::SOURCE_IMAGE)
+            .unwrap()
+            .data(),
+        Some(archive.as_slice())
+    );
+    assert_eq!(
+        fidelity
+            .retained_records()
+            .values()
+            .filter(|record| record.data() == Some(archive.as_slice()))
+            .count(),
+        1
+    );
+    let applications = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<serde_json::Value>("applications")
+        .unwrap();
+    let link = &applications[0]["property_records"][0]["payloads"][0];
+    assert_eq!(link["entry"], id);
+    assert_eq!(link["name"], "shared.bin");
+    for field in ["sha256", "byte_len", "data"] {
+        assert!(link.get(field).is_none(), "{field}");
+    }
 }

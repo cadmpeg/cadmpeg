@@ -98,12 +98,7 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
                 property
             })
             .collect();
-        let entries = super::entry_records(
-            &cadmpeg_test_support::service_decode_context(),
-            scan,
-            &properties,
-        )
-        .unwrap();
+        let entries = super::entry_records(scan, &properties).unwrap();
         assert_eq!(
             entries[0].referenced_by(),
             [
@@ -115,13 +110,22 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
 }
 
 #[test]
-fn entry_data_copy_refuses_at_retained_limit() {
+fn archive_source_image_retention_refuses_at_retained_limit() {
     with_scanned_document(|scan| {
         let name = &scan.entries[0].name;
         scan.data.get(name).expect("entry data");
-        crate::test_support::assert_retained_refusal_at(&[], "retain FCStd entry", |ctx| {
-            super::entry_records(ctx, scan, &[])
-        });
+        let document = std::str::from_utf8(scan.data["Document.xml"].window()).unwrap();
+        let input = archive(document);
+        let limit = cadmpeg_test_support::decode::resource_refusal_at(
+            &FcstdCodec,
+            &input,
+            &mut DecodeOptions::default(),
+            ResourceDimension::RetainedBytes,
+            "retain FCStd source image",
+            0,
+        );
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, "retain FCStd source image");
     });
 }
 
@@ -422,7 +426,10 @@ fn thumbnail_bytes_are_retained_with_digest() {
         cadmpeg_ir::ids::IdentityKey::encode_segment("thumbnails/Thumbnail.png"),
     );
     assert_eq!(
-        crate::test_support::source_fidelity::bytes(result.source_fidelity(), thumbnail.as_str()),
+        crate::test_support::source_fidelity::entry_bytes(
+            result.source_fidelity(),
+            thumbnail.as_str()
+        ),
         b"png"
     );
 }
@@ -473,13 +480,14 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .expect("shared entry");
     let mut references = shared.referenced_by().to_vec();
     references.pop();
-    *shared = crate::test_support::entry_record(
+    *shared = crate::test_support::entry_fixture(
         shared.id().to_owned(),
         shared.name().to_owned(),
         shared.role,
         references,
-        shared.data().to_vec(),
-    );
+        crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), shared.id()),
+    )
+    .record;
     corrupted
         .native
         .namespace_mut("fcstd")

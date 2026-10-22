@@ -53,10 +53,10 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
     crate::builder::test_support::attach_part_fixture(&mut builder, b"extension payload");
     let mut ir = builder.build().expect("build source-less graph");
     assert!(crate::test_support::validate_native(&ir).is_empty());
-    crate::test_support::mutation::replace_entry(
+    crate::test_support::mutation::assert_entry_source_fields_rejected(
         &mut ir,
         "Payload.bin",
-        b"edited payload".to_vec(),
+        &[b"extension payload", b"edited payload"],
     )
     .expect("replace side entry");
 
@@ -84,10 +84,7 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
     assert_eq!(
-        entries
-            .iter()
-            .find(|entry| entry.name() == "Payload.bin")
-            .map(crate::native::EntryRecord::data),
+        entries.iter().find(|entry| entry.name() == "Payload.bin"),
         None
     );
     assert!(report

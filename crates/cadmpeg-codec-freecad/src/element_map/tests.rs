@@ -5,7 +5,7 @@ use super::{
     node_text_bytes, parse_element_map, parse_legacy_string_ids, parse_string_table,
     validate_string_hasher_framing,
 };
-use crate::native::{EntryRecord, PropertyRecord};
+use crate::native::PropertyRecord;
 use crate::test_support::test_archive::{
     archive, archive_entries, assert_valid_document, GEOMETRY,
 };
@@ -19,7 +19,7 @@ fn test_parse(
     document: &[u8],
     file_version: usize,
     properties: &[crate::test_support::source_fidelity::PropertyFixture],
-    entries: &[EntryRecord],
+    entries: &[crate::test_support::source_fidelity::EntryFixture],
 ) -> Result<
     (
         crate::native::StringTables,
@@ -28,17 +28,19 @@ fn test_parse(
     CodecError,
 > {
     let sources = properties.iter().collect::<Vec<_>>();
-    crate::test_support::source_fidelity::with_property_reader(
+    crate::test_support::source_fidelity::with_decode_sources(
         document,
         &sources,
+        &entries.iter().collect::<Vec<_>>(),
         &DecodePolicy::default(),
-        |ctx| {
+        |ctx, entry_sources| {
             parse(
                 ctx,
                 document,
                 Some(file_version),
                 properties,
                 entries,
+                entry_sources,
                 &mut Vec::new(),
             )
         },
@@ -211,8 +213,8 @@ fn parses_side_entry_headers() {
     assert_eq!(map.map_id, 1);
 }
 
-fn legacy_entry(name: &str, data: &[u8]) -> EntryRecord {
-    crate::test_support::entry_record(
+fn legacy_entry(name: &str, data: &[u8]) -> crate::test_support::source_fidelity::EntryFixture {
+    crate::test_support::entry_fixture(
         crate::native::native_id("entry", name),
         name.into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
@@ -271,11 +273,12 @@ fn unverified_file_version_withholds_only_nonempty_inline_legacy_maps() {
         ),
         (empty, Vec::new(), 0, 0),
     ] {
-        crate::test_support::source_fidelity::with_property_reader(
+        crate::test_support::source_fidelity::with_decode_sources(
             b"<Document/>",
             &[&property],
+            &entries.iter().collect::<Vec<_>>(),
             &DecodePolicy::default(),
-            |ctx| {
+            |ctx, entry_sources| {
                 let mut losses = Vec::new();
                 let (_, maps) = parse(
                     ctx,
@@ -283,6 +286,7 @@ fn unverified_file_version_withholds_only_nonempty_inline_legacy_maps() {
                     None,
                     &[property.clone()],
                     &entries,
+                    entry_sources,
                     &mut losses,
                 )
                 .unwrap();
@@ -904,7 +908,8 @@ fn parse(
     document: &[u8],
     file_version: Option<usize>,
     properties: &[crate::test_support::source_fidelity::PropertyFixture],
-    entries: &[EntryRecord],
+    entries: &[crate::test_support::source_fidelity::EntryFixture],
+    entry_sources: &crate::entry_sources::EntrySources<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<
     (
@@ -930,7 +935,11 @@ fn parse(
         &admitted_xml,
         file_version,
         &records,
-        entries,
+        &entries
+            .iter()
+            .map(|entry| entry.record.clone())
+            .collect::<Vec<_>>(),
+        entry_sources,
         losses,
         None,
     )

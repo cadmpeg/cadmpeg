@@ -1775,7 +1775,7 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         .expect("state entry");
     assert_eq!(entry.referenced_by(), std::slice::from_ref(&property.id));
     assert_eq!(
-        crate::test_support::source_fidelity::bytes(result.source_fidelity(), entry.id()),
+        crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), entry.id()),
         payload
     );
 

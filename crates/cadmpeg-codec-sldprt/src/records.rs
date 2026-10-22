@@ -621,9 +621,6 @@ pub(crate) struct FeatureInputEdgeSelection {
     pub(crate) ordinal: u32,
     /// Order among the lane\'s typed content records.
     pub(crate) sequence: u32,
-    /// Byte offset of the vector marker.
-    #[serde(skip)]
-    pub(crate) offset: Option<u64>,
     /// Feature-input name record owning this vector.
     pub(crate) object_name_ref: String,
     /// Native history feature owning this vector.

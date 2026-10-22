@@ -72,6 +72,8 @@ pub(crate) fn has_document_markers(
 
 /// Fully scanned container used by inspection and decode.
 pub(crate) struct Scan<'a> {
+    /// Actual source archive retained transiently for entry-origin framing.
+    pub(crate) archive: ArchiveSnapshot<'a>,
     /// Recoverable container metadata diagnostics.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Container summary entries.
@@ -192,6 +194,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     Ok(Scan {
         losses,
         entries: archive.container_entries(classify),
+        archive,
         document,
         schema_version,
         document_xml,
@@ -202,7 +205,6 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
 }
 
 pub(crate) fn entry_records(
-    ctx: &DecodeContext<'_>,
     scan: &Scan<'_>,
     properties: &[PropertyRecord],
 ) -> Result<Vec<EntryRecord>, CodecError> {
@@ -225,7 +227,7 @@ pub(crate) fn entry_records(
         Ok::<_, CodecError>(references)
     }?;
     for entry in &scan.entries {
-        let Some(bytes) = scan.data.get(&entry.name).map(|view| view.window()) else {
+        if !scan.data.contains_key(&entry.name) {
             if unreadable_names.contains(entry.name.as_str()) {
                 // Stored source-only bytes have no expanded-byte coverage.
                 continue;
@@ -242,16 +244,11 @@ pub(crate) fn entry_records(
         for &index in owners {
             referenced_by.push(properties[index].id.clone());
         }
-        ctx.retain_bytes(
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            "retain FCStd entry",
-        )?;
         records.push(EntryRecord::new(
             crate::native::native_id("entry", &entry.name),
             entry.name.clone(),
             entry.role,
             referenced_by,
-            bytes.to_vec(),
         )?);
     }
     Ok(records)
@@ -613,6 +610,7 @@ pub(crate) fn logical_ledger(
     entries: &[EntryRecord],
     properties: &[PropertyRecord],
     property_sources: &BTreeMap<String, crate::fidelity::ValueSourceRanges>,
+    sources: &crate::entry_sources::EntrySources<'_>,
     gui: &gui::Graph,
     shape_payloads: &[ShapePayloadRecord],
     string_tables: &[StringTableRecord],
@@ -636,12 +634,13 @@ pub(crate) fn logical_ledger(
     }
     let mut output = Vec::new();
     for entry in entries {
+        let entry_len = sources.byte_len(entry)?;
         if typed_entries.contains(entry.id()) || typed_entries.contains(entry.name()) {
             push_logical_span(
                 &mut output,
                 entry,
                 0,
-                entry.byte_len(),
+                entry_len,
                 LogicalClassification::Typed {
                     owner: entry.id().to_owned(),
                 },
@@ -698,7 +697,7 @@ pub(crate) fn logical_ledger(
             ranges.sort_by_key(|left| left.0);
             let mut cursor = 0_u64;
             for (start, end, classification, owner) in ranges {
-                if start < cursor || end < start || end > entry.byte_len() {
+                if start < cursor || end < start || end > entry_len {
                     return Err(CodecError::malformed(format_args!(
                         "overlapping or invalid {} record spans",
                         entry.name()
@@ -722,7 +721,7 @@ pub(crate) fn logical_ledger(
                 &mut output,
                 entry,
                 cursor,
-                entry.byte_len(),
+                entry_len,
                 LogicalClassification::Structural,
             )?;
         } else {
@@ -730,7 +729,7 @@ pub(crate) fn logical_ledger(
                 &mut output,
                 entry,
                 0,
-                entry.byte_len(),
+                entry_len,
                 LogicalClassification::NamedOpaque {
                     owner: entry.id().to_owned(),
                 },
@@ -743,9 +742,15 @@ pub(crate) fn logical_ledger(
 pub(crate) fn byte_coverage(
     physical: &[ArchiveSpan],
     entries: &[EntryRecord],
+    sources: &crate::entry_sources::EntrySources<'_>,
     logical: &[LogicalSpan],
     physical_byte_len: u64,
-) -> ByteCoverageRecord {
+) -> Result<ByteCoverageRecord, CodecError> {
+    let logical_byte_len = entries.iter().try_fold(0_u64, |total, entry| {
+        total
+            .checked_add(sources.byte_len(entry)?)
+            .ok_or_else(|| CodecError::malformed("logical entry byte length sum overflows u64"))
+    })?;
     let mut classification_bytes = BTreeMap::new();
     let mut named_opaque_entries = BTreeSet::new();
     for span in logical {
@@ -781,12 +786,13 @@ pub(crate) fn byte_coverage(
         .all(|span| entries.iter().any(|entry| entry.name() == span.entry));
     if logical_exact {
         for entry in entries {
+            let entry_len = sources.byte_len(entry)?;
             let mut spans = Vec::new();
             for span in logical.iter().filter(|span| span.entry == entry.name()) {
                 spans.push(span);
             }
             spans.sort_by_key(|left| left.span.start());
-            let exact = if entry.byte_len() == 0 {
+            let exact = if entry_len == 0 {
                 spans.is_empty()
             } else {
                 spans.first().is_some_and(|span| span.span.start() == 0)
@@ -795,7 +801,7 @@ pub(crate) fn byte_coverage(
                         .all(|pair| pair[0].span.end() == pair[1].span.start())
                     && spans
                         .last()
-                        .is_some_and(|span| span.span.end() == entry.byte_len())
+                        .is_some_and(|span| span.span.end() == entry_len)
             };
             if !exact {
                 logical_exact = false;
@@ -805,20 +811,17 @@ pub(crate) fn byte_coverage(
     }
     let mut opaque_entries = Vec::new();
     opaque_entries.extend(named_opaque_entries);
-    ByteCoverageRecord {
+    Ok(ByteCoverageRecord {
         id: crate::native::native_id("byte-coverage", "0"),
         physical_byte_len,
         physical_span_count: physical.len(),
         logical_entry_count: entries.len(),
-        logical_byte_len: entries
-            .iter()
-            .map(super::native::EntryRecord::byte_len)
-            .sum(),
+        logical_byte_len,
         logical_span_count: logical.len(),
         classification_bytes,
         named_opaque_entries: opaque_entries,
         exact: physical_exact && logical_exact,
-    }
+    })
 }
 
 fn push_logical_span(

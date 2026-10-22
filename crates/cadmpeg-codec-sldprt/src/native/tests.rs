@@ -79,7 +79,6 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
                 parent: parent.clone(),
                 ordinal: 0,
                 sequence: 0,
-                offset: Some(0),
                 object_name_ref: object_name_ref.clone(),
                 feature_ref: feature_ref.clone(),
                 local_edge_ids: vec![1],

@@ -153,7 +153,7 @@ pub(super) fn member<'a>(
     ))
 }
 
-fn extras<'a>(
+pub(super) fn extras<'a>(
     ctx: &DecodeContext<'_>,
     source: View<'a>,
     out: &mut Vec<FramedPart<'a>>,
@@ -198,7 +198,7 @@ fn extras<'a>(
     Ok(actual.is_some())
 }
 
-fn descriptor<'a>(
+pub(super) fn descriptor<'a>(
     ctx: &DecodeContext<'_>,
     source: View<'a>,
     out: &mut Vec<FramedPart<'a>>,
@@ -207,7 +207,35 @@ fn descriptor<'a>(
     limit: usize,
     (crc, compressed, uncompressed, wide): (u32, u64, u64, bool),
 ) -> Result<usize, String> {
-    let bytes = source.window();
+    let (prefix, crc_at, end) = descriptor_layout(
+        source.window(),
+        start,
+        limit,
+        (crc, compressed, uncompressed, wide),
+    )?;
+    let framing = if prefix == 0 {
+        vec![add(crc_at, 4)?..end]
+    } else {
+        vec![start..crc_at, add(crc_at, 4)?..end]
+    };
+    push(
+        ctx,
+        source,
+        out,
+        "zip.data_descriptor",
+        FrameParent::Part(parent),
+        start..end,
+        (framing, vec![]),
+    )?;
+    Ok(crc_at)
+}
+
+pub(super) fn descriptor_layout(
+    bytes: &[u8],
+    start: usize,
+    limit: usize,
+    (crc, compressed, uncompressed, wide): (u32, u64, u64, bool),
+) -> Result<(usize, usize, usize), String> {
     let mut selected = None;
     for prefix in [0, 4] {
         if prefix == 4 && !signature(bytes, start, b"PK\x07\x08") {
@@ -236,21 +264,5 @@ fn descriptor<'a>(
             return Err("ambiguous ZIP descriptor size".into());
         }
     }
-    let (prefix, crc_at, end) =
-        selected.ok_or("ZIP descriptor does not match its central declaration")?;
-    let framing = if prefix == 0 {
-        vec![add(crc_at, 4)?..end]
-    } else {
-        vec![start..crc_at, add(crc_at, 4)?..end]
-    };
-    push(
-        ctx,
-        source,
-        out,
-        "zip.data_descriptor",
-        FrameParent::Part(parent),
-        start..end,
-        (framing, vec![]),
-    )?;
-    Ok(crc_at)
+    selected.ok_or_else(|| "ZIP descriptor does not match its central declaration".into())
 }
