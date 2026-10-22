@@ -2194,7 +2194,7 @@ impl DesignParameterScope {
         let stride = reference_table_stride(&draft).unwrap_or(11);
         let typed = stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
         let tail_valid = if typed {
-            tail == crate::design::decode::scopes::parameter_scope::TYPED_FIXED_SCOPE_TAIL_LEN
+            tail == crate::layout::typed_reference_parameter_scope_tail::LEN
         } else {
             crate::design::decode::scopes::parameter_scope::parameter_scope_tail_length_is_valid(
                 kind, tail,
@@ -2207,7 +2207,7 @@ impl DesignParameterScope {
             None if draft.previous_history_state_id.is_none() => {}
             Some(offset) => {
                 let relative = if typed {
-                    Some(crate::design::decode::scopes::parameter_scope::TYPED_FIXED_SCOPE_PREVIOUS_HISTORY_OFFSET)
+                    Some(crate::layout::typed_reference_parameter_scope_tail::PREVIOUS_HISTORY_STATE_ID)
                 } else {
                     crate::design::decode::scopes::parameter_scope::parameter_scope_previous_history_offset(
                         kind, tail,

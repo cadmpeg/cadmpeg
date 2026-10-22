@@ -946,6 +946,9 @@ pub(crate) struct DesignProfileCurveEntry {
     pub(crate) primary_id_offset: u64,
     /// Sketch-curve secondary identity; zero names no secondary identity.
     pub(crate) secondary_id: u64,
+    /// The three u32 values after the secondary identity, retained as
+    /// encoded.
+    pub(crate) entry_fields: [u32; 3],
 }
 
 /// Profile selection whose identity record lists curve loops of one Sketch,
@@ -975,7 +978,7 @@ pub(crate) struct DesignProfileCurveSelection {
     pub(crate) sketch_scope_offset: u64,
     /// Byte offset of the identity record at the selection index plus three.
     pub(crate) identity_record_offset: u64,
-    /// Curve loops in identity-record order; every curve of every loop is
-    /// part of the selection.
-    pub(crate) loops: Vec<Vec<DesignProfileCurveEntry>>,
+    /// The identity record's two counted loop lists, each in record order;
+    /// together their curves name the selected profile.
+    pub(crate) loop_lists: [Vec<Vec<DesignProfileCurveEntry>>; 2],
 }

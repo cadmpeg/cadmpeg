@@ -37,6 +37,10 @@ use crate::layout::legacy_loft_body_carrier_class_322_tail as legacy_loft_322_ta
 use crate::layout::legacy_loft_body_carrier_class_411 as legacy_loft_411;
 use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
+use crate::layout::typed_reference_extrude_selection_group_prefix as typed_group;
+use crate::layout::typed_reference_profile_chain_record as typed_chain;
+use crate::layout::typed_reference_profile_identity_record as typed_identity;
+use crate::layout::typed_reference_profile_selection_prefix as typed_selection;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
 use crate::records::{
     decal::DesignRecordHeader,
@@ -3205,22 +3209,23 @@ fn parse_extrude_selection_group(
         >,
     > {
         let start = usize::try_from(header.byte_offset).ok()?;
-        if bytes.get(start + 11..start + 21)? != [0; 10] {
+        let scope_reference_at = start + typed_group::SCOPE_REFERENCE;
+        if bytes.get(start + typed_group::ZERO_RUN_10..scope_reference_at)? != [0; 10] {
             return None;
         }
         // Every reference of one group uses one spelling; the scope
-        // reference at offset 21 selects it.
-        let typed = crate::bytes::typed_local_reference_target(bytes, start + 21).is_some();
+        // reference selects it.
+        let typed = crate::bytes::typed_local_reference_target(bytes, scope_reference_at).is_some();
         let width = if typed {
             crate::bytes::TYPED_LOCAL_REFERENCE_LEN
         } else {
             11
         };
         let reference = |at: usize| crate::bytes::local_reference_target(bytes, at, typed);
-        if reference(start + 21)? != scope.record_index {
+        if reference(scope_reference_at)? != scope.record_index {
             return None;
         }
-        let member_count_at = start + 21 + width;
+        let member_count_at = scope_reference_at + width;
         let member_count = usize::try_from(View::u32_le_at(bytes, member_count_at)?).ok()?;
         let mut position = member_count_at.checked_add(4)?;
         // A count the remaining bytes cannot supply is corrupt and must not
@@ -5846,11 +5851,9 @@ pub(crate) fn construction_operand_group_is_retained(
 #[cfg(test)]
 mod tests;
 
-/// Prefix of the chain record at a typed profile selection's index plus one:
-/// fourteen zero bytes and `01 01 01 00 00 00`, followed by the typed Sketch
-/// scope reference at offset 31.
-const TYPED_PROFILE_SCOPE_RECORD_PREFIX: [u8; 20] =
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0];
+/// Chain-record bytes after its fourteen zero bytes and before the typed
+/// Sketch scope reference.
+const TYPED_PROFILE_CHAIN_MARKER: [u8; 6] = [1, 1, 1, 0, 0, 0];
 
 /// Decode the typed-reference profile selections named by construction
 /// operand groups: a selection prefix, a chain record naming the owning
@@ -5889,7 +5892,12 @@ pub(crate) fn decode_profile_curve_selections(
                 continue;
             };
             // Only a typed selection prefix selects this form.
-            if crate::bytes::typed_local_reference_target(bytes, start + 21).is_none() {
+            if crate::bytes::typed_local_reference_target(
+                bytes,
+                start + typed_selection::IDENTITY_REFERENCE,
+            )
+            .is_none()
+            {
                 continue;
             }
             let records = records_by_stream
@@ -5936,35 +5944,45 @@ fn parse_typed_profile_curve_selection(
     // Selection prefix: ten zero bytes, a typed reference to the identity
     // record, u32 1, the LP-UTF16 asset GUID, and the LP-UTF16 decimal
     // owner text.
-    if bytes.get(start + 11..start + 21) != Some(&[0; 10][..])
-        || target(bytes, start + 21) != Some(identity_index)
-        || View::u32_le_at(bytes, start + 72) != Some(1)
+    if bytes.get(start + typed_selection::ZERO_RUN_10..start + typed_selection::IDENTITY_REFERENCE)
+        != Some(&[0; 10][..])
+        || target(bytes, start + typed_selection::IDENTITY_REFERENCE) != Some(identity_index)
+        || View::u32_le_at(bytes, start + typed_selection::CONSTANT_ONE) != Some(1)
     {
         return None;
     }
-    let (_, after_asset) = lp_utf16_bounded(bytes, start + 76, 36..=36)?;
+    let (_, after_asset) = lp_utf16_bounded(bytes, start + typed_selection::LEN, 36..=36)?;
     let (owner_text, _) = lp_utf16_bounded(bytes, after_asset, 1..=20)?;
     if !owner_text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
     // Chain record at index plus one names the owning Sketch scope.
     let &scope_at = records.offsets(scope_index).first()?;
-    if bytes.get(scope_at + 11..scope_at + 31) != Some(&TYPED_PROFILE_SCOPE_RECORD_PREFIX[..]) {
-        return None;
-    }
-    let sketch_scope_record_index = target(bytes, scope_at + 31)?;
-    // Identity record at index plus three: ten zero bytes, a typed reference
-    // to the selection record, then two counted loop lists.
-    let &identity_at = records.offsets(identity_index).first()?;
-    if bytes.get(identity_at + 11..identity_at + 21) != Some(&[0; 10][..])
-        || target(bytes, identity_at + 21) != Some(record_index)
+    if bytes.get(scope_at + typed_chain::ZERO_RUN_14..scope_at + typed_chain::CHAIN_MARKER)
+        != Some(&[0; 14][..])
+        || bytes.get(
+            scope_at + typed_chain::CHAIN_MARKER..scope_at + typed_chain::SKETCH_SCOPE_REFERENCE,
+        ) != Some(&TYPED_PROFILE_CHAIN_MARKER[..])
     {
         return None;
     }
-    let identity_end = next_indexed_record_offset(bytes, identity_at + 11)?;
-    let mut cursor = identity_at + 72;
-    let mut loops = Vec::new();
-    for list in 0..2 {
+    let sketch_scope_record_index = target(bytes, scope_at + typed_chain::SKETCH_SCOPE_REFERENCE)?;
+    // Identity record at index plus three: ten zero bytes, a typed reference
+    // to the selection record, then two counted loop lists.
+    let &identity_at = records.offsets(identity_index).first()?;
+    if bytes.get(
+        identity_at + typed_identity::ZERO_RUN_10
+            ..identity_at + typed_identity::SELECTION_REFERENCE,
+    ) != Some(&[0; 10][..])
+        || target(bytes, identity_at + typed_identity::SELECTION_REFERENCE) != Some(record_index)
+    {
+        return None;
+    }
+    let identity_end =
+        next_indexed_record_offset(bytes, identity_at + typed_identity::ZERO_RUN_10)?;
+    let mut cursor = identity_at + typed_identity::FIRST_LOOP_COUNT;
+    let mut loop_lists: [Vec<Vec<DesignProfileCurveEntry>>; 2] = [Vec::new(), Vec::new()];
+    for (list, loops) in loop_lists.iter_mut().enumerate() {
         let loop_count = View::u32_le_at(bytes, cursor).and_then(|n| usize::try_from(n).ok())?;
         // The first list holds at least one loop; every loop and entry
         // consumes bytes, so a count the frame cannot supply is corrupt.
@@ -5999,6 +6017,11 @@ fn parse_typed_profile_curve_selection(
                     primary_id,
                     primary_id_offset: cadmpeg_core::decode::u64_from_index(cursor + 4),
                     secondary_id,
+                    entry_fields: [
+                        View::u32_le_at(bytes, cursor + 20)?,
+                        View::u32_le_at(bytes, cursor + 24)?,
+                        View::u32_le_at(bytes, cursor + 28)?,
+                    ],
                 });
                 cursor += 40;
             }
@@ -6022,8 +6045,10 @@ fn parse_typed_profile_curve_selection(
         owner_text_offset: cadmpeg_core::decode::u64_from_index(after_asset + 4),
         owner_text,
         sketch_scope_record_index,
-        sketch_scope_offset: cadmpeg_core::decode::u64_from_index(scope_at + 32),
+        sketch_scope_offset: cadmpeg_core::decode::u64_from_index(
+            scope_at + typed_chain::SKETCH_SCOPE_REFERENCE + 1,
+        ),
         identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
-        loops,
+        loop_lists,
     })
 }

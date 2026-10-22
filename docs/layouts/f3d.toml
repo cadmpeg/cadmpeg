@@ -10624,6 +10624,401 @@ size = 10
 note = "The marked reference stores the u32 angle-owner record index followed by six zero bytes."
 
 [[record]]
+name = "typed_reference_parameter_scope_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+size = 196
+note = "Offsets are relative to the u32 feature ordinal that begins the fixed scope tail after the LP-UTF16 kind."
+
+[[record.field]]
+name = "ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "zero_run_15"
+offset = 4
+type = "bytes[15]"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "first_reference"
+offset = 19
+type = "bytes[51]"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 70
+type = "u32"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "lane"
+offset = 74
+type = "u32"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "scalar"
+offset = 78
+type = "f64"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "repeated_lane"
+offset = 86
+type = "u32"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "second_reference"
+offset = 90
+type = "bytes[51]"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "second_zero_run_2"
+offset = 141
+type = "bytes[2]"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "third_reference"
+offset = 143
+type = "bytes[51]"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "third_zero_run_2"
+offset = 194
+type = "bytes[2]"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record]]
+name = "typed_reference_extrude_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A typed-reference Extrude scope stores eleven zero bytes after its indexed header"
+size = 26
+note = "Offsets are relative to the Extrude primary indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_11"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "A typed-reference Extrude scope stores eleven zero bytes after its indexed header"
+
+[[record.field]]
+name = "operation"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "A typed-reference Extrude scope stores eleven zero bytes after its indexed header"
+
+[[record]]
+name = "shifted_typed_reference_extrude_prologue"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The shifted typed-reference form instead stores nine zero bytes, u32 `1` at offset 20"
+size = 30
+note = "Offsets are relative to the Extrude primary indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The shifted typed-reference form instead stores nine zero bytes, u32 `1` at offset 20"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The shifted typed-reference form instead stores nine zero bytes, u32 `1` at offset 20"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 24
+type = "bytes[2]"
+source = "spec"
+anchor = "The shifted typed-reference form instead stores nine zero bytes, u32 `1` at offset 20"
+
+[[record.field]]
+name = "operation"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "The shifted typed-reference form instead stores nine zero bytes, u32 `1` at offset 20"
+
+[[record]]
+name = "typed_reference_extrude_selection_group_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A typed-reference Extrude selection group stores ten zero bytes after its indexed header"
+size = 76
+note = "Offsets are relative to the selection-group primary indexed header; 51-byte typed member references follow the count."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "A typed-reference Extrude selection group stores ten zero bytes after its indexed header"
+
+[[record.field]]
+name = "scope_reference"
+offset = 21
+type = "bytes[51]"
+source = "spec"
+anchor = "A typed-reference Extrude selection group stores ten zero bytes after its indexed header"
+
+[[record.field]]
+name = "member_count"
+offset = 72
+type = "u32"
+source = "spec"
+anchor = "A typed-reference Extrude selection group stores ten zero bytes after its indexed header"
+
+[[record]]
+name = "typed_reference_profile_selection_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A typed-reference profile selection is a construction-operand group member"
+size = 76
+note = "Offsets are relative to the selection primary indexed header; the LP-UTF16 asset GUID and owner text follow."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "A typed-reference profile selection is a construction-operand group member"
+
+[[record.field]]
+name = "identity_reference"
+offset = 21
+type = "bytes[51]"
+source = "spec"
+anchor = "A typed-reference profile selection is a construction-operand group member"
+
+[[record.field]]
+name = "constant_one"
+offset = 72
+type = "u32"
+source = "spec"
+anchor = "A typed-reference profile selection is a construction-operand group member"
+
+[[record]]
+name = "typed_reference_profile_chain_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The chain record at the selection's record index plus one stores fourteen zero bytes"
+size = 82
+note = "Offsets are relative to the chain record indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "The chain record at the selection's record index plus one stores fourteen zero bytes"
+
+[[record.field]]
+name = "chain_marker"
+offset = 25
+type = "bytes[6]"
+source = "spec"
+anchor = "The chain record at the selection's record index plus one stores fourteen zero bytes"
+
+[[record.field]]
+name = "sketch_scope_reference"
+offset = 31
+type = "bytes[51]"
+source = "spec"
+anchor = "The chain record at the selection's record index plus one stores fourteen zero bytes"
+
+[[record]]
+name = "typed_reference_profile_identity_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The identity record at the record index plus three stores ten zero bytes"
+size = 76
+note = "Offsets are relative to the identity record indexed header; the two counted loop lists begin at offset 72."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The identity record at the record index plus three stores ten zero bytes"
+
+[[record.field]]
+name = "selection_reference"
+offset = 21
+type = "bytes[51]"
+source = "spec"
+anchor = "The identity record at the record index plus three stores ten zero bytes"
+
+[[record.field]]
+name = "first_loop_count"
+offset = 72
+type = "u32"
+source = "spec"
+anchor = "The identity record at the record index plus three stores ten zero bytes"
+
+[[record]]
+name = "typed_reference_companion_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A typed-reference companion prefix, written by the container generation"
+size = 98
+note = "Offsets are relative to the companion indexed header; the companion-owned payload follows the prefix."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_20"
+offset = 11
+type = "bytes[20]"
+source = "spec"
+anchor = "A typed-reference companion prefix, written by the container generation"
+
+[[record.field]]
+name = "owner_reference"
+offset = 31
+type = "bytes[51]"
+source = "spec"
+anchor = "A typed-reference companion prefix, written by the container generation"
+
+[[record.field]]
+name = "timestamp_micros"
+offset = 82
+type = "u64"
+source = "spec"
+anchor = "A typed-reference companion prefix, written by the container generation"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 90
+type = "bytes[8]"
+source = "spec"
+anchor = "A typed-reference companion prefix, written by the container generation"
+
+[[record]]
+name = "base_feature_typed_reference_zero_body"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/base_feature.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32"
+size = 83
+note = "Offsets are relative to the Base Feature primary indexed header; zero bytes follow the reference up to the null GUID length field."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32"
+
+[[record.field]]
+name = "zero_body_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32"
+
+[[record.field]]
+name = "zero_run_11"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32"
+
+[[record.field]]
+name = "shared_metadata_marker"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32"
+
+[[record.field]]
+name = "shared_metadata_record"
+offset = 33
+type = "u64"
+source = "spec"
+anchor = "The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32"
+
+[[record.field]]
+name = "shared_metadata_field"
+offset = 41
+type = "bytes[42]"
+source = "spec"
+anchor = "The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32"
+
+
+[[record]]
 name = "current_extrude_operation_fields"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

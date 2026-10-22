@@ -397,8 +397,10 @@ fn primary_indexed_scope_variant_is_admitted_without_a_history_binding() {
         .expect("fixture stream")
         .to_owned();
     let primary = std::collections::HashSet::from([(stream.clone(), 100)]);
-    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut different, &[], &primary))
-        .expect("primary-indexed envelope");
+    let superseded =
+        with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut different, &[], &primary))
+            .expect("primary-indexed envelope");
+    assert_eq!(superseded, 1);
     assert_eq!(different.len(), 1);
     assert_eq!(different[0].byte_offset(), 100);
 

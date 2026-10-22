@@ -5,6 +5,7 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::fillet::deserialize_historical_binding;
 use super::fillet::HistoricalBinding;
+use crate::layout::typed_reference_extrude_selection_group_prefix as typed_group;
 use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
@@ -282,13 +283,25 @@ impl DesignExtrudeSelectionGroup {
         if count == 0 {
             return Err("members must not be empty".into());
         }
-        let (count_at, stride, tail) = if typed { (72, 51, 172) } else { (32, 11, 53) };
+        // The tail runs from the opaque index to the paired header: u32 +
+        // f64 + u32, three references, and the separator bytes between them
+        // (three typed, four plain with the variant byte).
+        let (count_at, stride, separators) = if typed {
+            (
+                typed_group::MEMBER_COUNT,
+                crate::bytes::TYPED_LOCAL_REFERENCE_LEN,
+                3,
+            )
+        } else {
+            (32, 11, 4)
+        };
+        let tail = u64_from_index(16 + 3 * stride + separators);
         let member_count_offset = byte_offset
-            .checked_add(count_at)
+            .checked_add(u64_from_index(count_at))
             .ok_or("byte_offset overflows member_count_offset")?;
         let run_size = u64::try_from(count)
             .ok()
-            .and_then(|count| count.checked_mul(stride))
+            .and_then(|count| count.checked_mul(u64_from_index(stride)))
             .ok_or("members exceed offset range")?;
         let opaque_index_offset = member_count_offset
             .checked_add(4)

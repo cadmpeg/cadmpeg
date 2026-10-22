@@ -32,6 +32,8 @@ use crate::layout::shifted_extrude_prologue as shifted_extrude;
 use crate::layout::shifted_reference_aware_extrude_class_323_symmetric_prefix as shifted_reference_aware_323_symmetric;
 use crate::layout::shifted_reference_aware_extrude_class_323_tail as shifted_reference_aware_323_tail;
 use crate::layout::shifted_reference_aware_extrude_scope_prefix as shifted_reference_aware;
+use crate::layout::shifted_typed_reference_extrude_prologue as shifted_typed;
+use crate::layout::typed_reference_extrude_prologue as typed_prologue;
 use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::extrude::DesignExtrudePrologue;
 use crate::records::feature::extrude::DesignExtrudePrologueReference;
@@ -977,15 +979,6 @@ pub(super) fn exact_typed_extrude_prologue(
     )
 }
 
-/// Offset of the operation in the typed-reference Extrude prologue: eleven
-/// zero bytes follow the indexed header and the operation fields begin.
-const TYPED_EXTRUDE_OPERATION: usize = 22;
-
-/// The shifted typed-reference prologue stores nine zero bytes, u32 `1` at
-/// offset 20, and two zero bytes before the operation fields at offset 26.
-const SHIFTED_TYPED_EXTRUDE_MARKER: usize = 20;
-const SHIFTED_TYPED_EXTRUDE_OPERATION: usize = 26;
-
 /// The current Extrude prologue in one reference spelling. The typed form
 /// stores the operation fields at offset 22 with no prologue reference, and
 /// its present extent slots are 51-byte typed references.
@@ -1010,18 +1003,21 @@ fn exact_current_extrude_prologue_with(
         return None;
     }
     let direct_offset = if typed {
-        let marker = start.checked_add(SHIFTED_TYPED_EXTRUDE_MARKER)?;
-        if bytes.get(start.checked_add(11)?..start.checked_add(TYPED_EXTRUDE_OPERATION)?)?
-            == [0; 11]
+        let marker = start.checked_add(shifted_typed::MARKER)?;
+        if bytes.get(
+            start.checked_add(typed_prologue::ZERO_RUN_11)?
+                ..start.checked_add(typed_prologue::OPERATION)?,
+        )? == [0; 11]
         {
-            start.checked_add(TYPED_EXTRUDE_OPERATION)?
-        } else if bytes.get(start.checked_add(11)?..marker)? == [0; 9]
+            start.checked_add(typed_prologue::OPERATION)?
+        } else if bytes.get(start.checked_add(shifted_typed::ZERO_RUN_9)?..marker)? == [0; 9]
             && View::u32_le_at(bytes, marker)? == 1
-            && bytes
-                .get(marker.checked_add(4)?..start.checked_add(SHIFTED_TYPED_EXTRUDE_OPERATION)?)?
-                == [0; 2]
+            && bytes.get(
+                start.checked_add(shifted_typed::ZERO_RUN_2)?
+                    ..start.checked_add(shifted_typed::OPERATION)?,
+            )? == [0; 2]
         {
-            start.checked_add(SHIFTED_TYPED_EXTRUDE_OPERATION)?
+            start.checked_add(shifted_typed::OPERATION)?
         } else {
             return None;
         }

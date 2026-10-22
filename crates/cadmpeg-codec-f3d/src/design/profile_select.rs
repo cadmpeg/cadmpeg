@@ -2318,7 +2318,7 @@ fn resolve_profile_curve_path(
     let mut curves = Vec::new();
     for entry in selections
         .iter()
-        .flat_map(|selection| selection.loops.iter().flatten())
+        .flat_map(|selection| selection.loop_lists.iter().flatten().flatten())
     {
         let mut matches = resolution.curve_identities.iter().filter(|curve| {
             native_stream(&curve.id) == Some(stream)

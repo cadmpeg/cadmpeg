@@ -19,6 +19,7 @@ use crate::layout::design_parameter_owner_prefix as owner_prefix;
 use crate::layout::design_parameter_typed_compact_owned_prefix as typed;
 use crate::layout::indexed_companion_record_prefix as companion_prefix;
 use crate::layout::indexed_design_record_header as indexed_header;
+use crate::layout::typed_reference_companion_prefix as typed_companion;
 use crate::records::{
     decal::DesignRecordHeader,
     entity_header::DesignEntityHeader,
@@ -1248,34 +1249,30 @@ impl ParsedParameterCompanion {
     }
 }
 
-/// Byte length of the typed-reference companion prefix: the owner reference
-/// is a 51-byte typed reference, forty bytes wider than the plain one.
-pub(crate) const TYPED_COMPANION_PREFIX_LEN: usize = companion_prefix::LEN + 40;
-
 /// Parse the companion prefix at the start of `frame` in either reference
 /// spelling.
 fn parse_parameter_companion(frame: &[u8]) -> Option<ParsedParameterCompanion> {
     parse_plain_parameter_companion(frame.get(..companion_prefix::LEN)?)
-        .or_else(|| parse_typed_parameter_companion(frame.get(..TYPED_COMPANION_PREFIX_LEN)?))
+        .or_else(|| parse_typed_parameter_companion(frame.get(..typed_companion::LEN)?))
 }
 
 /// Parse the typed-reference companion prefix: the indexed header, twenty
-/// zero bytes, a typed owner reference at offset 31, the nonzero timestamp
-/// at offset 82, and eight zero bytes.
+/// zero bytes, a typed owner reference, the nonzero timestamp, and eight
+/// zero bytes.
 fn parse_typed_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> {
     let (class_tag, after_tag) = lp_ascii_filtered_view(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
     let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
-    let timestamp_at = companion_prefix::OWNER_MARKER + crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
-    if prefix.len() != TYPED_COMPANION_PREFIX_LEN
+    let timestamp_at = typed_companion::TIMESTAMP_MICROS;
+    if prefix.len() != typed_companion::LEN
         || after_tag != indexed_header::RECORD_INDEX
-        || prefix.get(companion_prefix::ZERO_RUN_20..companion_prefix::OWNER_MARKER)
+        || prefix.get(typed_companion::ZERO_RUN_20..typed_companion::OWNER_REFERENCE)
             != Some(&[0; 20])
-        || prefix.get(timestamp_at + 8..TYPED_COMPANION_PREFIX_LEN) != Some(&[0; 8])
+        || prefix.get(typed_companion::ZERO_RUN_8..typed_companion::LEN) != Some(&[0; 8])
     {
         return None;
     }
     let owner_record_index =
-        crate::bytes::typed_local_reference_target(prefix, companion_prefix::OWNER_MARKER)?;
+        crate::bytes::typed_local_reference_target(prefix, typed_companion::OWNER_REFERENCE)?;
     let timestamp_micros = std::num::NonZeroU64::new(View::u64_le_at(prefix, timestamp_at)?)?;
     Some(ParsedParameterCompanion {
         class_tag,

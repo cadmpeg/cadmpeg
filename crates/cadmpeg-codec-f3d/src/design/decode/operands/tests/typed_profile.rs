@@ -140,19 +140,26 @@ fn typed_profile_selection_reads_owner_scope_and_curve_loops() {
     let selection = parse(&chain(true)).expect("typed profile selection");
     assert_eq!(selection.owner_text, "75");
     assert_eq!(selection.sketch_scope_record_index, 77);
-    let loops: Vec<Vec<u64>> = selection
-        .loops
+    let lists: Vec<Vec<Vec<u64>>> = selection
+        .loop_lists
         .iter()
-        .map(|entries| entries.iter().map(|entry| entry.primary_id).collect())
+        .map(|loops| {
+            loops
+                .iter()
+                .map(|entries| entries.iter().map(|entry| entry.primary_id).collect())
+                .collect()
+        })
         .collect();
-    assert_eq!(loops, [vec![11, 12, 13], vec![14]]);
+    assert_eq!(lists, [vec![vec![11, 12, 13]], vec![vec![14]]]);
     assert!(selection
-        .loops
+        .loop_lists
         .iter()
         .flatten()
-        .all(|entry| entry.secondary_id == 0));
+        .flatten()
+        .all(|entry| entry.secondary_id == 0 && entry.entry_fields == [0, 1, 1]));
     let outer = parse(&chain(false)).expect("single-loop selection");
-    assert_eq!(outer.loops.len(), 1);
+    assert_eq!(outer.loop_lists[0].len(), 1);
+    assert!(outer.loop_lists[1].is_empty());
     assert_eq!(u64_from_index(0), outer.byte_offset);
 }
 

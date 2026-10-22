@@ -53,6 +53,7 @@ use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids;
 use crate::ids::native_stream;
+use crate::layout::typed_reference_parameter_scope_tail as typed_tail;
 use crate::records::feature::assembly;
 use crate::records::feature::coil;
 use crate::records::feature::direct_face;
@@ -561,8 +562,9 @@ pub(crate) fn admit_history_bound_scope_variants(
     scopes: &mut Vec<DesignParameterScope>,
     histories: &[crate::history_records::AsmHistory],
     primary_frames: &std::collections::HashSet<(String, u64)>,
-) -> Result<(), CodecError> {
+) -> Result<usize, CodecError> {
     let mut admitted = vec![true; scopes.len()];
+    let mut superseded = 0usize;
     let mut groups = HashMap::<(&str, u32), Vec<usize>>::new();
     for (index, scope) in scopes.iter().enumerate() {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
@@ -622,9 +624,9 @@ pub(crate) fn admit_history_bound_scope_variants(
             (Some(index), None) => Some(index),
             _ => None,
         };
-        let keep = match (history_bound, multiple_history_bounds) {
-            (Some(keep), false) => keep,
-            (None, false) if equivalent_payload => {
+        let keep = match (history_bound, multiple_history_bounds, primary_indexed) {
+            (Some(keep), false, _) => keep,
+            (None, false, _) if equivalent_payload => {
                 following.iter().copied().fold(*first, |keep, index| {
                     if scopes[index].byte_offset() >= scopes[keep].byte_offset() {
                         index
@@ -633,7 +635,14 @@ pub(crate) fn admit_history_bound_scope_variants(
                     }
                 })
             }
-            (None, false) if primary_indexed.is_some() => primary_indexed.unwrap_or(*first),
+            (None, false, Some(keep)) => {
+                // The other envelopes are not equivalent serializations, so
+                // dropping them loses their payload.
+                superseded = superseded.checked_add(following.len()).ok_or_else(|| {
+                    CodecError::Malformed("Design scope envelope count overflows".into())
+                })?;
+                keep
+            }
             _ => {
                 return Err(CodecError::Malformed(
                     "Design scope record identity has unresolved duplicate envelopes".into(),
@@ -654,7 +663,7 @@ pub(crate) fn admit_history_bound_scope_variants(
         }
     }
     *scopes = retained;
-    Ok(())
+    Ok(superseded)
 }
 
 /// Compare two same-index scope envelopes after removing source-location and
@@ -858,12 +867,6 @@ enum ScopeTailForm {
     TypedFixed,
 }
 
-/// Length of the typed-reference spelling of the 76-byte fixed scope tail.
-pub(crate) const TYPED_FIXED_SCOPE_TAIL_LEN: usize = 196;
-
-/// Tail offset of the preceding history-state identity in the typed tail.
-pub(crate) const TYPED_FIXED_SCOPE_PREVIOUS_HISTORY_OFFSET: usize = 70;
-
 /// Whether `bytes[kind_end..paired_at]` is the typed-reference 196-byte tail:
 /// u32 ordinal, fifteen zero bytes, a typed reference, the preceding
 /// history-state identity, u32 + f64 + u32, a typed reference, two zero
@@ -872,13 +875,13 @@ fn typed_fixed_scope_tail_is_valid(bytes: &[u8], kind_end: usize, paired_at: usi
     use crate::bytes::typed_local_reference_target as target;
     (|| {
         let tail = bytes.get(kind_end..paired_at)?;
-        (tail.len() == TYPED_FIXED_SCOPE_TAIL_LEN
-            && tail.get(4..19)? == [0; 15]
-            && target(tail, 19).is_some()
-            && target(tail, 90).is_some()
-            && tail.get(141..143)? == [0; 2]
-            && target(tail, 143).is_some()
-            && tail.get(194..196)? == [0; 2])
+        (tail.len() == typed_tail::LEN
+            && tail.get(typed_tail::ZERO_RUN_15..typed_tail::FIRST_REFERENCE)? == [0; 15]
+            && target(tail, typed_tail::FIRST_REFERENCE).is_some()
+            && target(tail, typed_tail::SECOND_REFERENCE).is_some()
+            && tail.get(typed_tail::SECOND_ZERO_RUN_2..typed_tail::THIRD_REFERENCE)? == [0; 2]
+            && target(tail, typed_tail::THIRD_REFERENCE).is_some()
+            && tail.get(typed_tail::THIRD_ZERO_RUN_2..typed_tail::LEN)? == [0; 2])
             .then_some(())
     })()
     .is_some()
@@ -891,7 +894,7 @@ fn parameter_scope_previous_history_offset_for_form(
 ) -> Option<usize> {
     match tail_form {
         ScopeTailForm::Named => return None,
-        ScopeTailForm::TypedFixed => return Some(TYPED_FIXED_SCOPE_PREVIOUS_HISTORY_OFFSET),
+        ScopeTailForm::TypedFixed => return Some(typed_tail::PREVIOUS_HISTORY_STATE_ID),
         ScopeTailForm::Fixed => {}
     }
     match (kind, tail_length) {
@@ -945,7 +948,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             {
                 fixed_ambiguous = true;
             }
-            if tail_length == TYPED_FIXED_SCOPE_TAIL_LEN
+            if tail_length == typed_tail::LEN
                 && typed_fixed_scope_tail_is_valid(bytes, kind_end, paired_at)
                 && fixed_candidate
                     .replace((at, kind_end, tail_length, ScopeTailForm::TypedFixed))
