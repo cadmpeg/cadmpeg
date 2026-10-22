@@ -118,7 +118,7 @@ Supported schema carriers map to [`PropertyValue`][property-value] as follows:
 | `Boolean`               | one byte                                    | `Boolean(bool)`                                        |
 | `Integer`, `Choice`     | little-endian `u32`                         | `Integer(u32)`                                         |
 | `Float`                 | little-endian `f64`                         | `Float(f64)`                                           |
-| unit-bearing `Float`    | a unit `u32`, then an `f64`                 | `Float(f64)`; the unit tag is consumed but not exposed |
+| unit-bearing `Float`    | a unit `u32`, then an `f64`                 | `UnitFloat { unit, value }` |
 | `Distance`              | a unit `u32`, then an `f64`                 | `Distance { unit, value }`                             |
 | `String`, `Uuid`, `URL` | length-prefixed UTF-8                       | `String(String)`                                       |
 | `Color`                 | four little-endian `f64` channels           | `Color([r, g, b, a])`                                  |

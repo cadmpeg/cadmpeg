@@ -1729,6 +1729,29 @@ An `InstanceProperties` record opens with four u32-length-prefixed ASCII strings
 
 Boolean stores one u8. Integer and Choice store one little-endian u32. Float stores one little-endian f64; a Float with a `unit` schema attribute prefixes that value with a u32 unit tag. Distance stores a u32 unit tag followed by one f64. A unit tag is `(quantity class << 12) | unit index`, with the unit index one-based, so the tag is 32 bits wide: length is class `0x2`, and the length tags are `0x200d` centimetre, `0x200e` millimetre, and `0x2016` inch. The tag names the unit of the stored f64 and is a property of the asset, not of the document: the document display length unit does not select it and does not rescale the value. A schema `unit` attribute states the unit the property is authored in and does not constrain the serialized tag: a property declared in inches serializes with the millimetre tag, and one record can mix tags across its own members. The schema attribute does, however, name the unit that its declared default value is expressed in, and a default that reaches the stream unconverted carries the tag of its declared unit. String and Uuid store u32-length-prefixed ASCII. Color stores four finite little-endian f64 values in normalized RGBA order and no marker byte, for connectable and non-connectable properties alike; every channel lies in the closed interval `[0, 1]`. Reference has no value bytes. TextureURI stores a u8 kind: kind `0` is followed by a little-endian u32 path count and that many u32-length-prefixed ASCII paths, which name library resources; kind `1` is followed by one u32-length-prefixed ASCII path, a plain file name. A property declared `allowmultiplevalues="true"` on any other carrier stores a little-endian u32 value count followed by that many carrier values.
 
+A Float with a schema `unit` attribute retains its serialized unit tag and
+finite binary64 value as a tagged scalar. Its numeric payload is not a
+unitless value. The serialized tag selects the instance unit; the inherited
+schema attribute identifies the declared quantity. The tagged Float codes are:
+
+| Tag | Quantity class | Unit index | Unit |
+| --- | --- | --- | --- |
+| `0x1001` | 1 | 1 | unitless |
+| `0x11001` | 17 | 1 | kilogram per cubic metre |
+| `0x21008` | 33 | 8 | kilopascal |
+| `0x37001` | 55 | 1 | candela per square metre |
+| `0x43003` | 67 | 3 | micrometre per metre degree Celsius |
+| `0x45001` | 69 | 1 | watt per metre kelvin |
+| `0x46001` | 70 | 1 | joule per gram degree Celsius |
+| `0x47001` | 71 | 1 | nanogram per pascal second square metre |
+| `0x48001` | 72 | 1 | ohm metre |
+
+An unrecognized tag remains attached to its finite value. It does not select
+a default unit or a scale inferred from another property. Distance accepts
+`0x200d`, `0x200e`, and `0x2016` for length projection; another tag has no
+supported length conversion.
+
+
 A connectable property follows its value carrier with a connection carrier. Byte zero denotes no connection. A set connection is `u8 1`, `u8 1`, and a little-endian u32 count, followed by `count` u32-length-prefixed ASCII asset GUIDs. A Reference consists only of this connection carrier. Each GUID names a texture asset record in the same Protein stream.
 
 `UnifiedBitmapSchema` and `BumpMapSchema` records are texture assets. Their TextureURI values name library resource paths; their bitmap-URN String values name library resources rather than embedded pixels. `TextureMap2dSchema` contributes inherited `texture_*` properties inline to each derived texture record and has no separate instance. The mapping properties carry map channel, UVW source, U/V offset, U/V scale, rotation in degrees, U/V repeat flags, and real-world offsets and scales. Neutral mapping rotation is radians and neutral real-world distances are millimetres. `bumpmap_Type` value zero denotes a height map and value one denotes a normal map; BumpMap also carries depth and normal scale.

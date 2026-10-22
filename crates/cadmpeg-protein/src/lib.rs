@@ -751,13 +751,10 @@ fn read_value(
             read_f64_le(bytes, at).ok_or_else(malformed)?,
             id,
         )?),
-        ValueCarrier::UnitFloat => {
-            take::<4>(bytes, at).ok_or_else(malformed)?;
-            PropertyValue::Float(finite_value(
-                read_f64_le(bytes, at).ok_or_else(malformed)?,
-                id,
-            )?)
-        }
+        ValueCarrier::UnitFloat => PropertyValue::UnitFloat {
+            unit: read_u32_le(bytes, at).ok_or_else(malformed)?,
+            value: finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?,
+        },
         ValueCarrier::Distance => PropertyValue::Distance {
             unit: read_u32_le(bytes, at).ok_or_else(malformed)?,
             value: finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?,
@@ -860,6 +857,48 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("build the decode context");
         use_context(&ctx)
+    }
+
+    #[test]
+    fn unit_float_preserves_serialized_tags_and_finite_values() {
+        for unit in [
+            0x1001u32,
+            0x11001,
+            0x21008,
+            0x37001,
+            0x43003,
+            0x45001,
+            0x46001,
+            0x47001,
+            0x48001,
+            0x200d,
+            0x200e,
+            0x2016,
+            u32::MAX,
+        ] {
+            let mut bytes = unit.to_le_bytes().to_vec();
+            bytes.extend_from_slice(&(-0.0f64).to_le_bytes());
+            let mut offset = 0;
+            let value = super::read_value(&bytes, &mut offset, super::ValueCarrier::UnitFloat, "x")
+                .expect("complete finite tagged scalar");
+            assert_eq!(offset, 12);
+            let PropertyValue::UnitFloat {
+                unit: actual,
+                value,
+            } = value
+            else {
+                panic!("unit tag must survive the scalar boundary");
+            };
+            assert_eq!(actual, unit);
+            assert_eq!(value.get().to_bits(), (-0.0f64).to_bits());
+        }
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut bytes = 0x1001u32.to_le_bytes().to_vec();
+            bytes.extend_from_slice(&value.to_le_bytes());
+            assert!(
+                super::read_value(&bytes, &mut 0, super::ValueCarrier::UnitFloat, "x").is_err()
+            );
+        }
     }
 
     #[test]
@@ -1451,7 +1490,10 @@ mod tests {
         );
         assert_eq!(
             properties["d_unit_float"].value().unwrap().clone(),
-            PropertyValue::Float(FiniteReal::new(4.5).expect("finite"))
+            PropertyValue::UnitFloat {
+                unit: 0x200e,
+                value: FiniteReal::new(4.5).expect("finite")
+            }
         );
         assert_eq!(
             properties["e_reference"].connections(),
